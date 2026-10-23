@@ -67,8 +67,12 @@ export function rosterLeftRows(
 ): Map<SegmentKind, LeftRow[]> {
   const rolloverTime = rolloverTimeForUser(userId)
   const calendarDay = (d: Date) => DateTime.fromJSDate(d).setZone(timezone).toISODate()!
+  // The queue's panels and the deadlines page (2026-10-22) run on the
+  // OpenTask day; the rest on the calendar day.
   const dayOf = (kind: SegmentKind, d: Date) =>
-    isQueueKind(kind) ? openTaskDayOf(d, timezone, rolloverTime) : calendarDay(d)
+    isQueueKind(kind) || kind === 'deadlines'
+      ? openTaskDayOf(d, timezone, rolloverTime)
+      : calendarDay(d)
   const queueDay = openTaskDayOf(now, timezone, rolloverTime)
   const today = calendarDay(now)
   const db = getDb()
@@ -88,8 +92,15 @@ export function rosterLeftRows(
   })()
 
   const remembered = db
-    .prepare('SELECT day, kind, task_id FROM segment_roster WHERE user_id = ? AND day IN (?, ?)')
-    .all(userId, queueDay, today) as { day: string; kind: SegmentKind; task_id: number }[]
+    .prepare(
+      'SELECT day, kind, task_id, left_how FROM segment_roster WHERE user_id = ? AND day IN (?, ?)',
+    )
+    .all(userId, queueDay, today) as {
+    day: string
+    kind: SegmentKind
+    task_id: number
+    left_how: string | null
+  }[]
   const missing = remembered.filter(
     (r) =>
       r.day === dayOf(r.kind, now) && !(listed.get(r.kind) ?? []).some((t) => t.id === r.task_id),
@@ -117,7 +128,11 @@ export function rosterLeftRows(
     // Trashed: gone from M. (Not `archived_at`: done archives a one-off.)
     if (!task) continue
     const day = dayOf(r.kind, now)
-    const left = howItLeft(task, (iso) => iso !== null && dayOf(r.kind, new Date(iso)) === day)
+    const left = howItLeft(
+      task,
+      (iso) => iso !== null && dayOf(r.kind, new Date(iso)) === day,
+      r.left_how,
+    )
     if (!left) continue
     const list = out.get(r.kind) ?? []
     list.push({ task, left })
@@ -126,8 +141,28 @@ export function rosterLeftRows(
   return out
 }
 
+/**
+ * The deadlines page's Defer (`deferLeads`, 2026-10-22) marks the row it moved
+ * off the page as left DEFERRED for the OpenTask day, in the same write — so
+ * only an actual defer reads "· deferred to Thu", never a deadline change.
+ * Bookkeeping, like the roster itself: no undo entry (an undone defer puts the
+ * row back on the page, and a listed row always wins).
+ */
+export function markRosterDeferred(userId: number, day: string, taskIds: number[]): void {
+  const stmt = getDb().prepare(
+    `INSERT INTO segment_roster (user_id, day, kind, task_id, left_how)
+     VALUES (?, ?, 'deadlines', ?, 'deferred')
+     ON CONFLICT (user_id, day, kind, task_id) DO UPDATE SET left_how = 'deferred'`,
+  )
+  for (const id of taskIds) stmt.run(userId, day, id)
+}
+
 /** How the task was handled on the segment's day, or null when it was not. */
-function howItLeft(task: Task, onDay: (iso: string | null) => boolean): SegmentLeft | null {
+function howItLeft(
+  task: Task,
+  onDay: (iso: string | null) => boolean,
+  leftHow: string | null = null,
+): SegmentLeft | null {
   // `last_completed_at` for a repeating task only: an undone one-off keeps it.
   if (
     (task.done && onDay(task.done_at)) ||
@@ -136,6 +171,9 @@ function howItLeft(task: Task, onDay: (iso: string | null) => boolean): SegmentL
     return 'done'
   }
   if (onDay(task.segment_targeted_at)) return task.on_deck_day ? 'deck' : 'target'
+  // The deadlines page (2026-10-22): a Defer of the lead day, as the endpoint
+  // marked it (`markRosterDeferred`) — acting, so handled (nag-map ruling 3).
+  if (leftHow === 'deferred') return 'deferred'
   if (onDay(task.last_considered_at)) return 'considered'
   return null
 }

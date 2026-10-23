@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
 import {
+  calendarToday,
   effectiveHorizon,
   type HorizonValue,
   type SegmentKind,
@@ -32,11 +33,10 @@ import type { Task } from '@/types'
  *   is over target, a later day makes it quiet until then (spec §1 — a
  *   targeted one-off is in no horizon segment, and set today it has no
  *   heads-up today)
- * - Remove target (Upcoming's one-off rows with no deadline, 2026-10-12) →
- *   `PATCH { target_at: null }`; the task goes back to its horizon segment.
- *   "Back to auto" (a one-off with a deadline, §8.3) is the same PATCH: the
- *   server puts the deadline's automatic target back, and the row leaves
- *   Upcoming (an automatic target has no heads-ups)
+ * - Remove target (Upcoming's one-off rows, 2026-10-12) →
+ *   `PATCH { target_at: null }`; the task goes back to its horizon segment —
+ *   or, with a deadline (2026-10-22, it replaced "Back to auto"), onto the
+ *   deadlines page from its lead day (Upcoming before it)
  * - Repeating Upcoming rows have Today and its picker too (§6: moving the
  *   target leaves the occurrence where it was), but no target reset
  * - Defer All → everything still waiting in that segment, back tomorrow
@@ -60,6 +60,18 @@ import type { Task } from '@/types'
  *   (`src/lib/deck-request.ts`)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
  *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
+ *
+ * THE DEADLINES PAGE (2026-10-22, docs/TASK-MODEL.md § The deadlines page):
+ * - circle → consider, as anywhere — except in the SAFETY NET (from the day
+ *   before the deadline), where seeing never silences: the row stays,
+ *   waiting, marked seen (`{ seen: true }`), its circle a ring
+ * - Defer → `deferLead(task, day)`: `POST /api/task-segments/defer-lead`,
+ *   this instance's lead day moved to `day` (tomorrow … D−2); the row leaves,
+ *   counted as handled ("· deferred to Thu"). A per-task refusal comes back as
+ *   a 200 with nothing moved: the row comes back and the toast says why
+ * - On deck → the row STAYS on the page with its deck day, unless the deck
+ *   is for today outside the safety net (then the On deck section holds it —
+ *   plan §4's de-duplication)
  */
 
 /**
@@ -68,7 +80,15 @@ import type { Task } from '@/types'
  * so it is listed as considered, counted in N and M, as the server will send
  * it (`segment_left`). 'gone': it left unhandled (trashed), out of M.
  */
-type Overlay = SegmentState | 'gone' | { left: SegmentLeft }
+type Overlay =
+  | SegmentState
+  | 'gone'
+  /**
+   * `left`: as above. `seen` (the deadlines page's safety net): considered
+   * but still waiting. `patch`: fields the tap changed on a row that stays
+   * (a deck day on the deadlines page; the lead day a Defer moved).
+   */
+  | { left?: SegmentLeft; seen?: boolean; patch?: Partial<Task> }
 
 export interface SegmentRow {
   task: Task
@@ -80,6 +100,14 @@ export interface SegmentRow {
    * src/core/tasks/segment-roster.ts): considered, with no put-back.
    */
   left?: SegmentLeft
+  /**
+   * The deadlines page (2026-10-22): the safety net holds it — from the day
+   * before the deadline seeing does not silence it (the row stays waiting;
+   * no Defer).
+   */
+  safetyNet?: boolean
+  /** The deadlines page: seen (considered) this OpenTask day. */
+  seen?: boolean
 }
 
 export interface SegmentView {
@@ -130,12 +158,26 @@ export function useTaskSegments({
   }
 
   const view = useMemo(() => segmentViews(segments, overlay), [segments, overlay])
+  // Which rows are the deadlines page's, and which of those its safety net
+  // holds — what a consider or a deck does to a row depends on it. Read
+  // through a ref, so the actions keep one identity across refreshes.
+  // (Updated after each commit: a tap only ever comes after one.)
+  const pageRows = useRef(new Map<number, { safetyNet: boolean }>())
+  const pageRowMap = useMemo(() => deadlinePageRows(segments), [segments])
+  useEffect(() => {
+    pageRows.current = pageRowMap
+  }, [pageRowMap])
 
   const run = useCallback(
-    async (ids: number[], to: Overlay, send: () => Promise<unknown>, message: string) => {
+    async (
+      ids: number[],
+      to: Overlay | ((id: number) => Overlay),
+      send: () => Promise<unknown>,
+      message: string,
+    ) => {
       setOverlay((prev) => {
         const next = new Map(prev)
-        for (const id of ids) next.set(id, to)
+        for (const id of ids) next.set(id, typeof to === 'function' ? to(id) : to)
         return next
       })
       inFlight.current++
@@ -161,15 +203,20 @@ export function useTaskSegments({
     [onUndo, onCompleted, refresh],
   )
 
+  // In the safety net a consider marks the row seen and keeps it waiting.
+  const considered = useCallback(
+    (id: number): Overlay => (pageRows.current.get(id)?.safetyNet ? { seen: true } : 'considered'),
+    [],
+  )
   const consider = useCallback(
     (task: Task) =>
       run(
         [task.id],
-        'considered',
+        considered,
         () => post('/api/task-segments/consider', { ids: [task.id] }),
         'Considered',
       ),
-    [run],
+    [run, considered],
   )
   const done = useCallback(
     (task: Task) =>
@@ -224,7 +271,8 @@ export function useTaskSegments({
     [run],
   )
 
-  const considerAll = useConsiderAll(run)
+  const considerAll = useConsiderAll(run, considered)
+  const deferLead = useDeferLead(setOverlay, inFlight, onUndo, refresh, onCompleted)
   // The peek bubble's Open: the Quick panel, which task is open
   // (`SegmentDetailsModal`).
   const [detailsTask, setDetailsTask] = useState<Task | null>(null)
@@ -232,9 +280,10 @@ export function useTaskSegments({
   const remove = useRemoveTask(run)
 
   const removeTarget = useRemoveTarget(run)
-  const deck = useDeck(setOverlay, inFlight, timezone, onUndo, refresh, onCompleted)
+  const deck = useDeck(setOverlay, inFlight, timezone, onUndo, refresh, onCompleted, pageRows)
   const actions = {
     deck,
+    deferLead,
     consider,
     considerAll,
     done,
@@ -271,12 +320,16 @@ function segmentViews(
       const rows = seg.tasks
         .map((t) => {
           const o = overlay.get(t.id)
-          const left = typeof o === 'object' ? o.left : o === undefined ? t.segment_left : undefined
+          const obj = typeof o === 'object' ? o : null
+          const left = obj ? obj.left : o === undefined ? t.segment_left : undefined
+          const state = obj ? (obj.left ? 'considered' : t.segment_state) : (o ?? t.segment_state)
           return {
-            task: t as Task,
-            state: typeof o === 'object' ? 'considered' : (o ?? t.segment_state),
+            task: (obj?.patch ? { ...t, ...obj.patch } : t) as Task,
+            state,
             recurring: t.recurring ?? t.rrule !== null,
             ...(left ? { left } : {}),
+            ...(t.safety_net ? { safetyNet: true } : {}),
+            ...(obj?.seen || t.seen ? { seen: true } : {}),
           }
         })
         .filter((r): r is SegmentRow => r.state !== 'gone')
@@ -291,6 +344,26 @@ function segmentViews(
       }
     })
     .filter((seg) => seg.rows.length > 0)
+}
+
+/**
+ * The rows a consider still changes: waiting ones — but not a deadlines-page
+ * row its safety net holds that was already seen today (it stays waiting
+ * whatever is done to it but a target or done). "Considered all" offers
+ * itself, counts and acts on these.
+ */
+export function toConsider(segment: SegmentView): SegmentRow[] {
+  return segment.rows.filter((r) => r.state === 'waiting' && !(r.safetyNet && r.seen))
+}
+
+/** The deadlines page's rows, by id, with whether its safety net holds each. */
+function deadlinePageRows(segments: TaskSegmentPayload[]): Map<number, { safetyNet: boolean }> {
+  const rows = new Map<number, { safetyNet: boolean }>()
+  for (const seg of segments) {
+    if (seg.horizon !== 'deadlines') continue
+    for (const t of seg.tasks) rows.set(t.id, { safetyNet: !!t.safety_net })
+  }
+  return rows
 }
 
 /**
@@ -366,25 +439,25 @@ function useSetHorizon(
  * Considered all (task queue PR 3, spec rule 9): every row still waiting in
  * the segment, in one consider call — one undo entry, Undo on the toast.
  */
-function useConsiderAll(run: RunSegmentAction) {
+function useConsiderAll(run: RunSegmentAction, considered: (id: number) => Overlay) {
   return useCallback(
     (segment: SegmentView) => {
-      const ids = segment.rows.filter((r) => r.state === 'waiting').map((r) => r.task.id)
+      const ids = toConsider(segment).map((r) => r.task.id)
       if (ids.length === 0) return
       return run(
         ids,
-        'considered',
+        considered,
         () => post('/api/task-segments/consider', { ids }),
         ids.length === 1 ? 'Considered 1 task' : `Considered ${ids.length} tasks`,
       )
     },
-    [run],
+    [run, considered],
   )
 }
 
 type RunSegmentAction = (
   ids: number[],
-  to: Overlay,
+  to: Overlay | ((id: number) => Overlay),
   send: () => Promise<unknown>,
   message: string,
 ) => Promise<void>
@@ -400,7 +473,8 @@ function useDeck(
   timezone: string,
   onUndo: () => void,
   refresh: () => Promise<void>,
-  onCompleted?: () => void,
+  onCompleted: (() => void) | undefined,
+  pageRows: { current: Map<number, { safetyNet: boolean }> },
 ) {
   return useCallback(
     async (task: Task, day: string | null | undefined) => {
@@ -413,9 +487,7 @@ function useDeck(
       // Decked: handled today, counted (the day roster). Taken off deck (an
       // Upcoming deck row): the deck's consider stamp stays, so the server
       // keeps it here as handled (`segment_left: 'considered'`) — the same.
-      setOverlay((prev) =>
-        new Map(prev).set(task.id, { left: day === null ? 'considered' : 'deck' }),
-      )
+      setOverlay((prev) => new Map(prev).set(task.id, deckOverlay(task, day, timezone, pageRows)))
       inFlight.current++
       try {
         const result = await sendDeck([task.id], day)
@@ -438,16 +510,93 @@ function useDeck(
         void refresh()
       }
     },
-    [setOverlay, inFlight, timezone, onUndo, refresh, onCompleted],
+    [setOverlay, inFlight, timezone, onUndo, refresh, onCompleted, pageRows],
   )
 }
 
 /**
- * Remove target / Back to auto (2026-10-12, `targetReset`): the same PATCH
- * the dashboard's row menu sends. With no deadline the task goes back to its
- * horizon segment; with one, the server puts the deadline's automatic target
- * back (§8.3). Either way the row leaves Upcoming; Undo restores the target
- * and `target_set_at`.
+ * What a deck does to its row until the refresh. On the DEADLINES page
+ * (Trent, 2026-10-22) a decked row STAYS, waiting, showing its deck day — the
+ * server does not stamp it considered (`deckKeepsPageRow`) — except a deck for
+ * today outside the safety net, which the On deck section holds (it leaves,
+ * handled). Taking a deck off keeps the row as it is. Elsewhere: decked →
+ * handled; taken off → handled too.
+ */
+function deckOverlay(
+  task: Task,
+  day: string | null | undefined,
+  timezone: string,
+  pageRows: { current: Map<number, { safetyNet: boolean }> },
+): Overlay {
+  const page = pageRows.current.get(task.id)
+  if (!page) return { left: day === null ? 'considered' : 'deck' }
+  const today = calendarToday(timezone, new Date())
+  const deckDay = day === undefined ? today : day
+  if (deckDay === today && !page.safetyNet) return { left: 'deck' }
+  return { patch: { on_deck_day: deckDay } }
+}
+
+/**
+ * DEFER ON THE DEADLINES PAGE (2026-10-22; A3: tap + pick): this instance's
+ * lead day moved to `day` (`POST /api/task-segments/defer-lead`). Optimistic
+ * — the row leaves, counted as handled, "· deferred to Thu" — but the answer
+ * decides: a refusal (the safety net has it, a day too close to the
+ * deadline) moves nothing, so the row comes back and the toast says why.
+ */
+function useDeferLead(
+  setOverlay: React.Dispatch<React.SetStateAction<Map<number, Overlay>>>,
+  inFlight: { current: number },
+  onUndo: () => void,
+  refresh: () => Promise<void>,
+  onCompleted?: () => void,
+) {
+  return useCallback(
+    async (task: Task, day: string) => {
+      const putBack = () =>
+        setOverlay((prev) => {
+          const next = new Map(prev)
+          next.delete(task.id)
+          return next
+        })
+      setOverlay((prev) =>
+        new Map(prev).set(task.id, { left: 'deferred', patch: { lead_from: day } }),
+      )
+      inFlight.current++
+      try {
+        const result = (await post('/api/task-segments/defer-lead', {
+          ids: [task.id],
+          day,
+        })) as { deferred: number; refused: { message: string }[]; summary: string } | undefined
+        if (result && result.deferred > 0) {
+          toastResult(`${result.summary}: “${task.title}”`, onUndo)
+          onCompleted?.()
+        } else {
+          putBack()
+          showToast({
+            message: result?.refused?.[0]?.message ?? 'Could not defer this task',
+            type: 'error',
+          })
+        }
+      } catch (err) {
+        putBack()
+        showToast({
+          message: err instanceof Error && err.message ? err.message : 'Something went wrong',
+          type: 'error',
+        })
+      } finally {
+        inFlight.current--
+        void refresh()
+      }
+    },
+    [setOverlay, inFlight, onUndo, refresh, onCompleted],
+  )
+}
+
+/**
+ * Remove target (2026-10-12, `targetReset`): the same PATCH the dashboard's
+ * row menu sends. With no deadline the task goes back to its horizon segment;
+ * with one (2026-10-22) onto the deadlines page from its lead day. Either way
+ * the row leaves Upcoming; Undo restores the target and `target_set_at`.
  */
 function useRemoveTarget(run: RunSegmentAction) {
   return useCallback(
@@ -456,9 +605,7 @@ function useRemoveTarget(run: RunSegmentAction) {
         [task.id],
         'gone',
         () => patchTask(task.id, { target_at: null }),
-        task.deadline_at
-          ? `Back to the automatic target: “${task.title}”`
-          : `Target removed: “${task.title}”`,
+        `Target removed: “${task.title}”`,
       ),
     [run],
   )

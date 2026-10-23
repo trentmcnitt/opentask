@@ -27,6 +27,13 @@ enum DeepLinkRouter {
         "/?task=\(taskId)"
     }
 
+    /// The web path the deadlines-page nag's body tap loads (phone and Mac):
+    /// the dashboard with the Tasks card on the task queue's deadlines page
+    /// (`/?tasks=<kind>`, `src/lib/tasks-panel-link.ts`) — the same URL the
+    /// nag's Web Push carries. A server without the page (or a day it has no
+    /// rows) lands on the dashboard as it would open anyway.
+    static let notificationDeadlinesPath = "/?tasks=deadlines"
+
     /// The web path for a widget link, or nil when the URL isn't an
     /// `opentask://` link at all (the app then does nothing).
     static func webPath(for url: URL) -> String? {

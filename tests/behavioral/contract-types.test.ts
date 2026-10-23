@@ -138,6 +138,8 @@ const TASK: Record<keyof FormattedTask, Field> = {
   queued_from_due_at: STR_N,
   on_deck_day: STR_N,
   queued_from_deck_day: STR_N,
+  lead_days: INT_N,
+  lead_from: STR_N,
   rolled_over_at: STR_N,
   attempts_label: STR_N,
   attempts_offer: STR_N,
@@ -516,6 +518,47 @@ describe('contract fixtures: on deck (2026-10-20)', () => {
         expectShape(task, TASK, `deck fixture task ${row.id}`)
       }
     }
+  })
+})
+
+describe('contract fixtures: the deadlines page (2026-10-22)', () => {
+  test('`deadlines` comes first; its rows are segment rows plus safety_net and seen, with no target', () => {
+    // `GET /api/reminders?queue=1&deck=1&deadlines=1`: three target-less
+    // deadline tasks — the passed one in the safety net, the repeat, the one-off.
+    const segs = data('reminders-deadlines').task_segments as Obj[]
+    expect(segs[0].horizon).toBe('deadlines')
+    const rows = (segs[0] as { tasks: Obj[] }).tasks
+    expect(rows).toHaveLength(3)
+    expect(rows.map((r) => [r.safety_net, r.seen, r.recurring])).toEqual([
+      [true, false, false],
+      [false, false, true],
+      [false, false, false],
+    ])
+    for (const row of rows) {
+      expect(row).toMatchObject({ due_at: null, target_at: null, target_auto: false })
+      expect(row.deadline_at).toEqual(expect.any(String))
+      expect(row.lead_from).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      // Old builds' implied target is turned off (`nativeNagOff`, L5) — the one-offs.
+      if (!row.recurring) expect(row.deadline_nag_off).toBe(true)
+    }
+    for (const seg of segs) {
+      for (const row of seg.tasks as Obj[]) {
+        const extras = new Set(['segment_state', 'recurring', 'safety_net', 'seen'])
+        if (seg.horizon !== 'deadlines') {
+          expect(row.safety_net, 'only deadlines rows carry safety_net').toBeUndefined()
+        }
+        const task = Object.fromEntries(Object.entries(row).filter(([k]) => !extras.has(k)))
+        expectShape(task, TASK, `deadlines fixture task ${row.id}`)
+      }
+    }
+  })
+
+  test('defer-lead answers day, deferred, refused and summary', () => {
+    const d = data('task-segments-defer-lead')
+    expect(Object.keys(d).sort()).toEqual(['day', 'deferred', 'refused', 'summary'])
+    expect(d).toMatchObject({ deferred: 1, refused: [] })
+    expect(d.day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(d.summary).toEqual(expect.any(String))
   })
 })
 

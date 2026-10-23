@@ -178,21 +178,31 @@ test.describe('Task editor sheet on a phone', () => {
     }
   })
 
-  test('a deadline-only task names its stored auto target', async ({ authenticatedPage: page }) => {
-    // Deadline 20 days out: a wait of 16+ days, so the stored automatic
-    // target is 4 days before it (spec §8.1).
+  test('a deadline-only task (task queue off) shows its stored target as a date, never "auto"', async ({
+    authenticatedPage: page,
+  }) => {
+    // Deadline 20 days out. With the task queue off (this user's server
+    // default) the server still stores an automatic target, 4 days before it
+    // (spec §8.1, one more release, plan A1). Since 2026-10-22 the editor no
+    // longer labels it "auto" (the deadlines page replaced it; with the queue
+    // on there is no target — "No target" and the Lead row,
+    // tm-deadline-target.spec.ts): the Target row reads its date, like a pick.
+    const deadline = new Date(Date.now() + 20 * DAY_MS)
     const id = await createTask(page, {
       title: uniqueTitle('Renew passport'),
-      deadline_at: new Date(Date.now() + 20 * DAY_MS).toISOString(),
+      deadline_at: deadline.toISOString(),
       priority: 2,
     })
     try {
+      const stored = await (await page.request.get(`/api/tasks/${id}`)).json()
+      expect(stored.data.target_auto).toBe(true)
       await withPreferences(page, unified(), async () => {
         const sheet = await openEditor(page, id)
         const target = sheet.locator('[data-quick-panel-date]')
-        await expect(target).toContainText('auto')
-        await expect(target).toContainText('(4 days before deadline)')
+        await expect(target).not.toContainText('auto')
         await expect(target).not.toContainText('No target')
+        await expect(target).toContainText(/\w{3}, \w{3} \d+, \d+:\d{2} [AP]M/)
+        await expect(sheet.locator('[data-quick-panel-lead]')).toHaveCount(0)
       })
     } finally {
       await page.request.delete(`/api/tasks/${id}`)

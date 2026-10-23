@@ -15,6 +15,7 @@ import { readFileSync } from 'fs'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { forgetBadgeSent, recordBadgeSent } from '@/core/notifications/badge-state'
+import { OVERDUE_SUMMARY_COLLAPSE_ID, taskCollapseId } from '@/core/notifications/format'
 
 const APNS_KEY_ID = process.env.APNS_KEY_ID || ''
 const APNS_TEAM_ID = process.env.APNS_TEAM_ID || ''
@@ -227,7 +228,7 @@ export async function sendApnsNotification(
         sound: isCritical
           ? { critical: 1, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
           : 'default',
-        collapseId: `task-${payload.taskId}`,
+        collapseId: taskCollapseId(payload.taskId),
         data: {
           taskId: payload.taskId,
           dueAt: payload.dueAt,
@@ -280,7 +281,7 @@ export async function sendApnsSummaryNotification(
         category: 'TASK_SUMMARY',
         threadId: NOTIFICATION_THREADS.tasks,
         sound: 'default',
-        collapseId: 'overdue-summary',
+        collapseId: OVERDUE_SUMMARY_COLLAPSE_ID,
         data: {
           overflowCount,
           totalOverdueCount,
@@ -341,6 +342,11 @@ export interface ApnsSlotReminderPayload {
    * has to say more — it speaks for the other unfinished slots too.
    */
   body?: string
+  /**
+   * No sound: the nag only (ruling 5, sound only on overdue). The slot-open
+   * push leaves it unset and keeps the default sound.
+   */
+  silent?: boolean
 }
 
 /**
@@ -365,42 +371,55 @@ export function withDeckCount(body: string, decks: number): string {
   return decks > 0 ? `${body} · ${decks} on deck` : body
 }
 
+/**
+ * The slot push as APNs sends it (pure, so the payload is testable). The
+ * slot-OPEN push plays the default sound; the NAG passes `silent` and plays
+ * none — ruling 5 (2026-10-22): sound only on overdue, nags are silent
+ * banners. Whether the slot-open push keeps its sound is Trent's open call.
+ */
+export function buildSlotReminderNotification(
+  deviceToken: string,
+  topic: string,
+  payload: ApnsSlotReminderPayload,
+): Notification {
+  const prompts = payload.promptCount ?? 0
+  const decks = payload.deckCount ?? 0
+  const body = payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)
+  return new Notification(deviceToken, {
+    alert: { title: payload.slotLabel, body },
+    topic,
+    category: 'SLOT_REMINDER',
+    threadId: NOTIFICATION_THREADS.reminders,
+    ...(payload.silent ? {} : { sound: 'default' }),
+    collapseId: `slot-${payload.slotId}`,
+    data: {
+      slot_id: payload.slotId,
+      slot_label: payload.slotLabel,
+      reminder_count: payload.count + prompts,
+      prompt_count: prompts,
+      deck_count: decks,
+    },
+    aps: {
+      // Reminders carry no debt (§6) — they must never interrupt like an
+      // overdue task does.
+      'interruption-level': 'active',
+    },
+  })
+}
+
 export async function sendApnsSlotReminder(
   userId: number,
   payload: ApnsSlotReminderPayload,
 ): Promise<void> {
   const prompts = payload.promptCount ?? 0
-  const decks = payload.deckCount ?? 0
-  const body = payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)
-
   await sendToAllDevices(
     userId,
-    (device) =>
-      new Notification(device.device_token, {
-        alert: { title: payload.slotLabel, body },
-        topic: device.bundle_id,
-        category: 'SLOT_REMINDER',
-        threadId: NOTIFICATION_THREADS.reminders,
-        sound: 'default',
-        collapseId: `slot-${payload.slotId}`,
-        data: {
-          slot_id: payload.slotId,
-          slot_label: payload.slotLabel,
-          reminder_count: payload.count + prompts,
-          prompt_count: prompts,
-          deck_count: decks,
-        },
-        aps: {
-          // Reminders carry no debt (§6) — they must never interrupt like an
-          // overdue task does.
-          'interruption-level': 'active',
-        },
-      }),
+    (device) => buildSlotReminderNotification(device.device_token, device.bundle_id, payload),
     'slot reminders',
     (devices) => {
       log.info(
         'apns',
-        `Sending slot reminder "${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
+        `Sending slot ${payload.silent ? 'nag' : 'reminder'} "${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
       )
     },
   )
@@ -653,6 +672,52 @@ export async function sendApnsDeadlineCapNotification(
     'deadline cap notifications',
     (devices) => {
       log.info('apns', `Sending deadline cap notification to ${devices.length} device(s)`)
+    },
+  )
+}
+
+/** One deadlines-page nag at a time: a newer one replaces the older. */
+export const DEADLINES_NAG_COLLAPSE_ID = 'deadlines-page'
+/** `data.kind` of the deadlines-page nag: the native apps open the page on a body tap. */
+export const DEADLINES_NAG_KIND = 'deadlines'
+
+/**
+ * The deadlines page's nag (deadline-nags.ts; nag-map rulings 4 and 5): a
+ * SILENT banner — no `sound`, `interruption-level: active` whatever the
+ * priority (never critical, never time-sensitive) — with counts only, no
+ * titles. No `badge` (a nag is never in the badge), no category (nothing to
+ * act on from the banner) and no `taskId` (it is about a page, so no per-task
+ * `dismiss` push may clear it). `data.kind` tells the app to open the task
+ * queue's deadlines page on a body tap (`NotificationActionRunner`'s
+ * `.openDeadlines`); a build from before 2026-10-22 has no case for it and
+ * just comes forward where it was (`.missingTaskId`).
+ */
+export function buildDeadlinesNagNotification(
+  deviceToken: string,
+  topic: string,
+  payload: { title: string; body: string },
+): Notification {
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    threadId: NOTIFICATION_THREADS.tasks,
+    collapseId: DEADLINES_NAG_COLLAPSE_ID,
+    priority: Priority.immediate,
+    data: { kind: DEADLINES_NAG_KIND },
+    aps: { 'interruption-level': 'active' },
+  })
+}
+
+export async function sendApnsDeadlinesNag(
+  userId: number,
+  payload: { title: string; body: string },
+): Promise<void> {
+  await sendToAllDevices(
+    userId,
+    (device) => buildDeadlinesNagNotification(device.device_token, device.bundle_id, payload),
+    'deadlines nags',
+    (devices) => {
+      log.info('apns', `Sending deadlines nag to ${devices.length} device(s)`)
     },
   )
 }

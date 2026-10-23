@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { TargetMenu } from '@/components/TargetMenu'
-import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { targetTimeMenu } from '@/lib/row-corner'
 import type { Task } from '@/types'
 
@@ -18,14 +18,13 @@ import type { Task } from '@/types'
  * The dashboard row's TARGET TIME ("3h ago · 9:00 AM") as a control
  * (2026-10-14). A tap — phone or desktop — opens a small menu:
  *
- *   Remove target   (or "Back to auto" on a deadline task whose target the
- *                    user picked, §8.3; neither on a repeating task or an
- *                    automatic target — `targetTimeMenu`)
+ *   Remove target   (a deadline task too, 2026-10-22: it goes on the
+ *                    deadlines page; never on a repeating task —
+ *                    `targetTimeMenu`)
  *   Move…           → the Target menu (`TargetMenu`), anchored on the time
  *
  * On desktop, hovering the row also shows a small × right after the time
- * that removes the target in one click (tooltip "Remove target" / "Back to
- * auto"). Every action goes through the dashboard's own paths — Remove target
+ * that removes the target in one click (tooltip "Remove target"). Every action goes through the dashboard's own paths — Remove target
  * through `onRemoveTarget` (a PATCH), Move… through `onMove` (the row's
  * snooze) — so each one toasts with Undo.
  *
@@ -55,8 +54,7 @@ export function TargetTimeText({
 }) {
   const [moveOpen, setMoveOpen] = useState(false)
   const { reset } = targetTimeMenu(task)
-  const resetWord =
-    onRemoveTarget && reset ? (reset === 'auto' ? BACK_TO_AUTO : 'Remove target') : null
+  const resetWord = onRemoveTarget && reset ? REMOVE_TARGET : null
   const label = absolute ? `${relative} · ${absolute}` : relative
   return (
     <span
@@ -95,11 +93,7 @@ export function TargetTimeText({
               onClick={(e) => e.stopPropagation()}
             >
               {resetWord && (
-                <DropdownMenuItem
-                  data-remove-target={reset === 'remove' ? '' : undefined}
-                  data-back-to-auto={reset === 'auto' ? '' : undefined}
-                  onSelect={() => onRemoveTarget?.(task)}
-                >
+                <DropdownMenuItem data-remove-target onSelect={() => onRemoveTarget?.(task)}>
                   {resetWord}
                 </DropdownMenuItem>
               )}

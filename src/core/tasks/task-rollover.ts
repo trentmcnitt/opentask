@@ -831,12 +831,10 @@ function rollRepeating(
  * undo fence). `queued_from_due_at` is cleared: the row's remembered plan is
  * the deck day, so the queue sorts it by that day (`compareQueueRows`) and the
  * stripped-target restore never resurrects an older target for it. `due_at`
- * and `target_set_at` are untouched: a deadline deck keeps its automatic
- * target, and leaves the queue on its own once that target arrives
- * (`queueKind`). Belt and braces: a deck whose automatic target has ALREADY
- * arrived (A1 strict keeps this out; only a morning_time before the rollover,
- * or a hand-written row, can reach it) is nagging on the dashboard: its deck
- * is just cleared, not queued.
+ * and `target_set_at` are untouched. A DEADLINE task's deck (the deadlines
+ * page, 2026-10-22) is never queued: it is just cleared, and the task goes
+ * back to the deadlines page (its lead day has come by then, or the safety
+ * net holds it).
  *
  * Which days: the cron strips days BEFORE the rollover's OpenTask day (a deck
  * for today made at 1 AM, a calendar date, A2, survives the 6:30 rollover);
@@ -874,7 +872,11 @@ function stripDecks(
       endRepeatingDeck(row, task, user, rolloverTime, { m, nextM }, nowStr, ctx, run, result)
       continue
     }
-    const nagging = task.due_at !== null && Date.parse(task.due_at) <= Date.parse(nowStr)
+    // A DEADLINE task's expired deck is only cleared, never queued (the
+    // deadlines page, 2026-10-22, plan §5): it goes back to the page, whose
+    // safety net holds it from the day before its deadline. (Before the page,
+    // a deck whose automatic target had arrived was cleared the same way.)
+    const nagging = task.deadline_at !== null
     if (nagging) {
       db.prepare(
         'UPDATE tasks SET on_deck_day = NULL, rolled_over_at = ?, updated_at = ? WHERE id = ?',

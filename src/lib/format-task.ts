@@ -65,9 +65,12 @@ export interface FormattedTask extends Task {
    *   `attempts`), shown only while it has a target and at least one attempt;
    *   else null.
    * - `attempts_offer`: at 3× (`ATTEMPTS_OFFER_REMOVE`), what the row offers —
-   *   "remove" (Remove target?), "auto" (Back to auto?), or null (none yet,
-   *   an automatic target, a repeating task, or — task queue on — a
-   *   strippable one-off, whose target the rollover takes off on its own).
+   *   "remove" (Remove target?), or null (none yet, an automatic target, a
+   *   repeating task, or — task queue on — a strippable one-off, whose
+   *   target the rollover takes off on its own). "auto" (Back to auto?) is
+   *   no longer sent (2026-10-22, the deadlines page: a deadline task's
+   *   target is removed like any other); it stays in the type for builds
+   *   that decode it.
    *   The web row computes the same answer live (TaskRow: `attemptsOffer`
    *   with the switch from GET /api/user/preferences), so it never waits for
    *   a refetch.
@@ -87,6 +90,8 @@ export interface FormattedTask extends Task {
  *
  * - false for nearly every task: a deadline task's stored target is at or
  *   before its deadline, which their rule honors as set;
+ * - TRUE for a one-off with a deadline and NO target (the deadlines page,
+ *   2026-10-22): their rule would invent one;
  * - TRUE for a one-off whose deadline has PASSED and whose target is after it
  *   (Trent's ruling, 2026-10-12: once the deadline has passed any target can
  *   be picked). Their rule implies a target 4 days before the deadline for a
@@ -94,7 +99,13 @@ export interface FormattedTask extends Task {
  *   deadline has passed, in which case it leaves the task to its own target.
  */
 function nativeNagOff(task: Task, now: Date): boolean {
-  if (task.rrule !== null || task.deadline_at === null || task.due_at === null) return false
+  if (task.rrule !== null || task.deadline_at === null) return false
+  // THE DEADLINES PAGE (2026-10-22, plan L5): a one-off with a deadline and NO
+  // target. Builds installed 10-10..10-12 imply a target 4 days before the
+  // deadline whenever `due_at` is nil and the nag is not off
+  // (`TargetAge.impliedTargetDate`, fe6e8daf), and would show such a task
+  // overdue at once. The nag-off flag turns their rule off.
+  if (task.due_at === null) return true
   const deadline = Date.parse(task.deadline_at)
   return deadline <= now.getTime() && Date.parse(task.due_at) > deadline
 }

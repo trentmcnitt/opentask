@@ -1,14 +1,19 @@
 'use client'
 
 import { forwardRef, type ComponentProps, type ReactNode, type Ref } from 'react'
-import { ChevronRight, Repeat } from 'lucide-react'
+import { ChevronRight, Minus, Plus, Repeat } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
-import { AutoTargetText } from '@/components/quick-panel/AutoTargetText'
-import { DEADLINE_WORD, HORIZON_WORD, TARGET_WORD, targetQuietUntil } from '@/lib/task-model-words'
+import {
+  DEADLINE_WORD,
+  HORIZON_WORD,
+  NO_TARGET,
+  TARGET_WORD,
+  targetQuietUntil,
+} from '@/lib/task-model-words'
 import { isPastDeadline } from '@/lib/task-segments'
-import type { AutoTargetLabel } from '@/lib/editor-target-labels'
+import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target-labels'
 
 /**
  * THE QUICK PANEL'S "THIS ONE" ROWS (2026-10-22, editor plan §3, mock E;
@@ -18,6 +23,7 @@ import type { AutoTargetLabel } from '@/lib/editor-target-labels'
  *   This is the Fri Oct 16 one           (amber; only when it differs, §7)
  *   Target    Fri Nov 6, 6:00 PM · in 16 days
  *   Deadline  Sat Nov 7, 8:00 AM
+ *   Lead      On the deadlines page from Tue Nov 3 (4 days before)  − 4 days +
  *   On deck   —
  *   ↻ Repeats — Fridays at 4:00 PM · edit every time ›     · since …
  *
@@ -37,6 +43,16 @@ import type { AutoTargetLabel } from '@/lib/editor-target-labels'
  *    "+ Add" focused, the deadline's proper home (this replaces the #313
  *    stopgap that hid the row).
  *
+ * THE LEAD ROW (the deadlines page, 2026-10-22, plan §2): a deadline task
+ * with NO target goes on the deadlines page from its lead day — the row says
+ * when ("On the deadlines page from Tue Oct 20 (3 days before)", `leadLine`),
+ * adds "· deferred to Thu" when the page's Defer moved THIS instance, and
+ * carries the lead override as a stepper (1–90 days before; "Default" puts
+ * the table back). A change previews in blue what Save stores (a deadline or
+ * lead change re-derives the day and drops a deferral). Only with the task
+ * queue on, one task, and no target (staged) — a target makes the lead
+ * dormant. The Target row then reads "No target", never an automatic one.
+ *
  * The Target row's DEADLINE-CAP PREVIEW: a staged target after a deadline
  * that is still ahead reads "Sat Nov 7, 8:00 AM · stops at deadline" — the
  * server's own cap (`capAtDeadline`), so the preview is the saved value.
@@ -45,6 +61,7 @@ export function ThisOneFields({
   occurrence,
   target,
   deadline,
+  lead = null,
   quietUntil,
   deck,
   link,
@@ -56,6 +73,8 @@ export function ThisOneFields({
   occurrence: string | null
   target: TargetRowProps
   deadline: DeadlineRowProps | null
+  /** The deadlines page's lead day and override (`LeadRow`), or null. */
+  lead?: LeadRowProps | null
   /** A one-off's own target: the horizon is not in effect until it goes. */
   quietUntil: string | null
   deck: ReactNode | null
@@ -85,6 +104,12 @@ export function ThisOneFields({
           <>
             <RowLabel>{DEADLINE_WORD}</RowLabel>
             <DeadlineRow {...deadline} timezone={timezone} />
+          </>
+        )}
+        {lead && (
+          <>
+            <RowLabel>Lead</RowLabel>
+            <LeadRow {...lead} timezone={timezone} />
           </>
         )}
         {deck && (
@@ -158,7 +183,6 @@ function TargetRow({ picker, value, readonlyText }: TargetRowProps) {
 }
 
 export type TargetValueProps =
-  | { kind: 'auto'; label: AutoTargetLabel; dirty: boolean; timezone: string }
   | { kind: 'none'; dirty: boolean }
   | {
       kind: 'date'
@@ -172,13 +196,13 @@ export type TargetValueProps =
     }
 
 function TargetValue(props: TargetValueProps) {
-  if (props.kind === 'auto') {
-    return <AutoTargetText label={props.label} timezone={props.timezone} dirty={props.dirty} />
-  }
   if (props.kind === 'none') {
     return (
-      <span className={cn('font-medium', props.dirty ? 'text-blue-500' : 'text-muted-foreground')}>
-        No target
+      <span
+        data-quick-panel-no-target
+        className={cn('font-medium', props.dirty ? 'text-blue-500' : 'text-muted-foreground')}
+      >
+        {NO_TARGET}
       </span>
     )
   }
@@ -301,6 +325,112 @@ function DeadlineRow(props: DeadlineRowProps & { timezone: string }) {
 
 function deadlineWords(iso: string, timezone: string): string {
   return DateTime.fromISO(iso).setZone(timezone).toFormat('ccc LLL d, h:mm a')
+}
+
+// ---------------------------------------------------------------------------
+// Lead (the deadlines page)
+// ---------------------------------------------------------------------------
+
+export interface LeadRowProps {
+  line: LeadLine
+  /**
+   * The stepper: a one-off's own lead. A REPEAT's lead is series-wide, so
+   * this-one mode shows only the words (Trent, 10-22) — the stepper is in
+   * every-time mode, beside the deadline (`NoTargetRow`).
+   */
+  editable: boolean
+  /** Today, the OpenTask day (yyyy-MM-dd): "from today" / "since …". */
+  today: string
+  /** Stage an override (1–90), or null for the default table. */
+  onLeadDays: (days: number | null) => void
+  disabled?: boolean
+}
+
+/**
+ * "On the deadlines page from Tue Oct 20 (3 days before) · deferred to Thu"
+ * and the stepper "− 3 days +" — the text first, so it wraps under the label
+ * on a phone. The stepper's buttons are 28px boxes inside 44px hit targets on
+ * a finger (the panel's other small controls' rule). "Default" only while an
+ * override is set.
+ */
+function LeadRow({
+  line,
+  today,
+  onLeadDays,
+  editable,
+  disabled = false,
+  timezone,
+}: LeadRowProps & { timezone: string }) {
+  const tone = line.staged ? 'font-medium text-blue-500' : 'text-muted-foreground'
+  const deferred = line.deferredTo
+    ? DateTime.fromISO(line.deferredTo, { zone: timezone }).toFormat('ccc')
+    : null
+  const step = (delta: number) =>
+    onLeadDays(Math.min(line.max, Math.max(LEAD_DAYS_MIN, line.leadDays + delta)))
+  const stepClass =
+    'text-muted-foreground hover:text-foreground hover:bg-foreground/5 inline-flex size-7 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:size-9'
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" data-quick-panel-lead>
+      <span className={tone} data-lead-words>
+        {leadLineWords(line, timezone, today)}
+        {deferred && (
+          <span data-lead-deferred className="text-foreground/70">
+            {' '}
+            · deferred to {deferred}
+          </span>
+        )}
+      </span>
+      {editable && (
+        <span className="inline-flex items-center" role="group" aria-label="Lead days">
+          <button
+            type="button"
+            className={stepClass}
+            disabled={disabled || line.leadDays <= LEAD_DAYS_MIN}
+            onClick={() => step(-1)}
+            aria-label="One day less"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <span
+            data-lead-days={line.leadDays}
+            aria-live="polite"
+            className={cn(
+              'min-w-[3.5rem] px-1 text-center tabular-nums',
+              line.staged ? 'font-medium text-blue-500' : 'text-foreground',
+            )}
+          >
+            {line.leadDays} {line.leadDays === 1 ? 'day' : 'days'}
+            {line.clamped && (
+              <span data-lead-clamped className="text-muted-foreground ml-1 font-normal">
+                (as early as it can be)
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            className={stepClass}
+            disabled={disabled || line.clamped || line.leadDays >= line.max}
+            onClick={() => step(1)}
+            aria-label="One day more"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          {line.override !== null && (
+            <button
+              type="button"
+              data-lead-default
+              aria-label="Default lead"
+              disabled={disabled}
+              onClick={() => onLeadDays(null)}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 ml-1 rounded px-1.5 py-1 text-xs"
+            >
+              Default
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------

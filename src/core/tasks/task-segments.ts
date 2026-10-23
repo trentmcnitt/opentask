@@ -33,11 +33,23 @@
  * segment, ticked there today through the shared `last_considered_at`. A
  * waiting repeating task stays queued and shows again tomorrow. Switch off:
  * queued tasks fall through to the horizon segments and Upcoming as before.
+ *
+ * THE DEADLINES PAGE (2026-10-22; docs/TASK-MODEL.md § The deadlines page).
+ * With the switch on and a caller that draws it (`?deadlines=1`), a deadline
+ * task with NO target — a one-off, or a deadline-anchored repeat with no
+ * relative target — is placed by `deadlinePlace`: from its lead day
+ * (`lead_from`) on the `deadlines` segment (FIRST — the only queue page that
+ * nags), from the day before its deadline in the safety net (seeing it does
+ * not silence it); before its lead day, Upcoming heads-ups counted to that
+ * day. Rows carry `safety_net` and `seen`. Sorted priority, then the nearest
+ * deadline, then id (A4). A caller that does not draw it (a shipped native
+ * build) gets a target-less one-off in its horizon segment, as before
+ * 10-12 (the deadline pulling the horizon in) — a truthful, dated degrade.
  */
 
 import { getDb, withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
-import { ValidationError } from '@/core/errors'
+import { AppError, ValidationError } from '@/core/errors'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { listTimeSlots } from '@/core/time-slots'
 import { getAnchorTimes } from '@/core/users/anchor-times'
@@ -57,17 +69,36 @@ import {
   type SegmentKind,
   type SegmentState,
 } from '@/lib/task-segments'
-import { upcomingCandidate, upcomingState } from '@/lib/task-segments'
+import {
+  LEAD_DEFER_MESSAGES,
+  compareDeadlineRows,
+  deadlinePlace,
+  isDeadlinePageTask,
+  leadDeferRefusal,
+  openTaskToday,
+  parseDeckDay,
+  shiftDay,
+  type LeadDeferRefusal,
+  upcomingCandidate,
+  upcomingState,
+} from '@/lib/task-segments'
 import { rowToTask, taskColumns, type TaskRow } from './read'
 import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
 import { latestRollover, rolloverMoment } from '@/lib/opentask-day'
-import { rosterLeftRows, type SegmentLeft } from './segment-roster'
+import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-roster'
+import { logActivity } from '@/core/activity'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 
 export interface SegmentTask {
   task: Task
   state: SegmentState
+  /** Deadlines page rows only: the safety net holds it (from D−1; seeing does not silence it). */
+  safetyNet?: boolean
+  /** Deadlines page rows only: considered this OpenTask day. */
+  seen?: boolean
   /**
    * A row that LEFT the segment today, handled (`segment-roster.ts`): sent
    * as a considered row, saying how it left. Only with `handledRows`.
@@ -108,14 +139,16 @@ export function eligibleTasks(userId: number): Task[] {
  * recurring, with a next occurrence — never a reminder (`is_reminder`) or a
  * quota (`isTracked`), which have their own rows on the same screen. A
  * decked one (2026-10-20) has no target while decked, so it is read by its
- * deck instead.
+ * deck instead; a deadline-anchored one with no target (2026-10-22, L2) by
+ * its deadline (the deadlines page).
  */
 function repeatingTasks(userId: number): Task[] {
   const rows = getDb()
     .prepare(
       `SELECT ${taskColumns()} FROM tasks
        WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
-         AND rrule IS NOT NULL AND (due_at IS NOT NULL OR on_deck_day IS NOT NULL)
+         AND rrule IS NOT NULL
+         AND (due_at IS NOT NULL OR on_deck_day IS NOT NULL OR deadline_at IS NOT NULL)
          AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1`,
     )
     .all(userId) as TaskRow[]
@@ -173,8 +206,15 @@ export function getTaskSegments(
     queuePanels = false,
     deckRows = false,
     handledRows = false,
+    deadlineRows = false,
   }: {
     queuePanels?: boolean
+    /**
+     * The deadlines page (2026-10-22): the caller draws the `deadlines`
+     * segment and the lead day's Upcoming rows (`GET /api/reminders?deadlines=1`).
+     * Only with the task-queue switch on.
+     */
+    deadlineRows?: boolean
     /**
      * On deck (2026-10-20): the caller can draw a future deck's Upcoming row
      * ("On deck Sat Oct 24"; `GET /api/reminders?deck=1`). Without it a
@@ -212,13 +252,28 @@ export function getTaskSegments(
     const heads = upcomingState(task, timezone, now)
     if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
   }
-  for (const task of eligibleTasks(userId)) {
+  const placeDeadline = deadlinePlacer(userId, timezone, now, deadlineRows, (task, entry) => {
+    if (entry === 'deck') {
+      if (deckRows) addUpcoming(task)
+    } else if (entry.kind === 'upcoming') {
+      upcoming.push({ task, state: entry.state, target: entry.target })
+    } else {
+      add('deadlines', { task, state: entry.state, safetyNet: entry.safetyNet, seen: entry.seen })
+    }
+  })
+  // The queue's panels first (rule 7), then the deadlines page: a task one
+  // of them takes is in no other segment. True when it was taken (or hidden).
+  const placeFirst = (task: Task): boolean => {
     const queued = place(task)
-    if (queued === 'hidden') continue
+    if (queued === 'hidden') return true
     if (queued) {
       add(queued.kind, queued.entry)
-      continue
+      return true
     }
+    return placeDeadline(task)
+  }
+  for (const task of eligibleTasks(userId)) {
+    if (placeFirst(task)) continue
     // ON DECK (B6): quiet like a picked target — in no horizon segment; a
     // future deck in Upcoming on its heads-up days (for a caller that draws
     // deck rows); today's in the On deck section (`onDeckToday`), not here.
@@ -233,20 +288,26 @@ export function getTaskSegments(
     const placed = segmentState(task, timezone, now, checkInDay)
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
-  for (const task of repeatingTasks(userId)) {
-    const queued = place(task)
-    if (queued === 'hidden') continue
-    if (queued) {
-      add(queued.kind, queued.entry)
-      continue
-    }
+  const placeRepeating = (task: Task): void => {
     // A decked repeating task (2026-10-20), as a one-off's deck above: a
     // future deck's Upcoming row only for a caller that draws deck rows.
     if (task.on_deck_day) {
       if (deckRows) addUpcoming(task)
-      continue
+      return
+    }
+    // A deadline-anchored repeat with NO target (the deadlines page) for a
+    // caller that does not draw the page (a shipped native build): its
+    // horizon segment, the deadline pulling it in — the same truthful, dated
+    // degrade as a target-less one-off. Never nowhere.
+    if (task.due_at === null && task.deadline_at !== null) {
+      const placed = segmentState(task, timezone, now, checkInDay)
+      if (placed) add(placed.horizon, { task, state: placed.state })
+      return
     }
     addUpcoming(task)
+  }
+  for (const task of repeatingTasks(userId)) {
+    if (!placeFirst(task)) placeRepeating(task)
   }
   if (upcoming.length > 0) {
     upcoming.sort((a, b) => Date.parse(a.target) - Date.parse(b.target) || a.task.id - b.task.id)
@@ -255,11 +316,18 @@ export function getTaskSegments(
       upcoming.map(({ task, state }) => ({ task, state })),
     )
   }
-  if (handledRows) addLeftRows(userId, timezone, now, byKind, queuePanels)
+  if (handledRows) {
+    addLeftRows(userId, timezone, now, byKind, {
+      queuePanels,
+      deadlines: deadlineRows && taskQueueEnabled(),
+    })
+  }
   return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
     const tasks = byKind.get(kind)!
     if (kind === 'queue_today' || kind === 'queue_previous') {
       tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
+    } else if (kind === 'deadlines') {
+      tasks.sort((a, b) => compareDeadlineRows(a.task, b.task))
     } else if (kind !== 'upcoming') {
       tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
     }
@@ -279,17 +347,47 @@ function addLeftRows(
   timezone: string,
   now: Date,
   byKind: Map<SegmentKind, SegmentTask[]>,
-  /** The caller draws the queue's panels (`queuePanels`). */
-  queuePanels: boolean,
+  /**
+   * What the caller draws: the queue's panels (`queuePanels`), the deadlines
+   * page (`deadlineRows`, switch on) — never a left row of a kind it can't.
+   */
+  shown: { queuePanels: boolean; deadlines: boolean },
 ): void {
   // Never add a queue panel of left rows that would not otherwise be drawn.
-  const queueShown = queuePanels && taskQueueEnabled()
+  const queueShown = shown.queuePanels && taskQueueEnabled()
   const listed = new Map([...byKind].map(([kind, rows]) => [kind, rows.map((r) => r.task)]))
   for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
     if (isQueueKind(kind) && !queueShown) continue
+    if (kind === 'deadlines' && !shown.deadlines) continue
     const list = byKind.get(kind) ?? []
     for (const { task, left } of rows) list.push({ task, state: 'considered', left })
     byKind.set(kind, list)
+  }
+}
+
+type DeadlineEntry = Exclude<ReturnType<typeof deadlinePlace>, null | { kind: 'deck' }> | 'deck'
+
+/**
+ * The deadlines page's placement for this user and moment (switch on and a
+ * caller that draws it), or one that places nothing. Returns whether it took
+ * the task (a target-less deadline task — placed, or nowhere today), so the
+ * caller's other rules never see it. The rollover time is read once per call.
+ */
+function deadlinePlacer(
+  userId: number,
+  timezone: string,
+  now: Date,
+  deadlineRows: boolean,
+  put: (task: Task, entry: DeadlineEntry) => void,
+): (task: Task) => boolean {
+  if (!deadlineRows || !taskQueueEnabled()) return () => false
+  const rolloverTime = rolloverTimeForUser(userId)
+  return (task) => {
+    if (!isDeadlinePageTask(task)) return false
+    if (task.rrule && task.repeat_anchor !== 'deadline') return false
+    const placed = deadlinePlace(task, timezone, now, rolloverTime)
+    if (placed) put(task, placed.kind === 'deck' ? 'deck' : placed)
+    return true
   }
 }
 
@@ -404,6 +502,104 @@ export function considerTasks(userId: number, ids: number[]): number {
   return stampTasks(userId, ids, 'last_considered_at', `Considered ${plural(n)}`, {
     leaveQueue: true,
   })
+}
+
+/** What a Defer of the lead day answers (`POST /api/task-segments/defer-lead`). */
+export interface DeferLeadResult {
+  /** The day the lead moved to (yyyy-MM-dd, the OpenTask day). */
+  day: string
+  deferred: number
+  refused: { id: number; reason: LeadDeferRefusal; message: string }[]
+  summary: string
+}
+
+/**
+ * DEFER ON THE DEADLINES PAGE (2026-10-22, plan §3; A3: tap + pick): moves
+ * each task's lead day (`lead_from`, THIS instance's — the next advance
+ * re-derives it) to `day`, the OpenTask day — tomorrow when omitted. Allowed
+ * from tomorrow to D−2; refused per task once the safety net holds it (from
+ * D−1), for a day after D−2, or for a task that is not a target-less deadline
+ * task (`leadDeferRefusal`). The row simply leaves the page until that day.
+ *
+ * The write also stamps `target_set_at`, as a target write does: the lead
+ * day's Upcoming heads-ups count from the defer, so a row deferred today does
+ * not come straight back as a heads-up. One undo entry (`task_segment`) for
+ * the tasks it moved — none when every one was refused (nothing changed, and
+ * the client shows the refusal instead of an Undo). 409 with the task-queue
+ * switch off: the page does not exist then.
+ */
+export function deferLeads(
+  userId: number,
+  timezone: string,
+  ids: number[],
+  day?: string,
+  now: Date = new Date(),
+): DeferLeadResult {
+  if (!taskQueueEnabled()) {
+    throw new AppError(
+      'The deadlines page needs the task queue, which is off on this server',
+      409,
+      'CONFLICT',
+    )
+  }
+  const rolloverTime = rolloverTimeForUser(userId)
+  const target = day ?? shiftDay(openTaskToday(timezone, now, rolloverTime), 1, timezone)
+  if (!parseDeckDay(target, timezone)) throw new ValidationError('day must be a date (yyyy-MM-dd)')
+  const tasks = ownOpenTasks(userId, ids)
+  const refused: DeferLeadResult['refused'] = []
+  const moving: Task[] = []
+  for (const task of tasks) {
+    const reason = leadDeferRefusal(task, target, timezone, now, rolloverTime)
+    if (reason) refused.push({ id: task.id, reason, message: LEAD_DEFER_MESSAGES[reason] })
+    else moving.push(task)
+  }
+  const words = DateTime.fromISO(target, { zone: timezone }).toFormat('ccc LLL d')
+  const summary =
+    moving.length > 0
+      ? `Deferred ${plural(moving.length)} to ${words}`
+      : (refused[0]?.message ?? 'Nothing to defer')
+  if (moving.length > 0) {
+    const stamp = now.toISOString()
+    const fields = ['lead_from', 'target_set_at']
+    withTransaction((db) => {
+      const stmt = db.prepare(
+        'UPDATE tasks SET lead_from = ?, target_set_at = ?, updated_at = ? WHERE id = ?',
+      )
+      const snapshots = moving.map((task) => {
+        stmt.run(target, stamp, stamp, task.id)
+        return createTaskSnapshot(
+          task,
+          { ...task, lead_from: target, target_set_at: stamp },
+          fields,
+        )
+      })
+      logAction(userId, 'task_segment', summary, fields, snapshots)
+      for (const snap of snapshots) {
+        logActivity({
+          userId,
+          taskId: snap.task_id,
+          action: 'edit',
+          fields,
+          before: snap.before_state,
+          after: snap.after_state,
+          metadata: { deadlines_page: 'defer_lead' },
+        })
+      }
+      // The day roster: an actual Defer, so the row reads "· deferred to …".
+      markRosterDeferred(
+        userId,
+        openTaskToday(timezone, now, rolloverTime),
+        moving.map((t) => t.id),
+      )
+    })
+    emitSyncEvent(userId)
+    for (const task of moving) {
+      dispatchWebhookEvent(userId, 'task.updated', {
+        task: formatTaskResponse({ ...task, lead_from: target, target_set_at: stamp }, timezone),
+      })
+    }
+  }
+  return { day: target, deferred: moving.length, refused, summary }
 }
 
 /** Defer All: off today's segment, back tomorrow. Not a consider. */

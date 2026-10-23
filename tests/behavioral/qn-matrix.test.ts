@@ -128,10 +128,8 @@ describe('Progress from elsewhere', () => {
 
 describe('The first nags of a new day', () => {
   test("QNM-004: after midnight, yesterday's considered and a met daily both wait again; a met weekly does not", () => {
-    // Awake round the clock, so 01:00 is a nag hour.
-    getDb()
-      .prepare("UPDATE users SET wake_time = '00:00', sleep_time = '00:00' WHERE id = ?")
-      .run(TEST_USER_ID)
+    // No Wake–Sleep window since 2026-10-22: 01:00 could nag, so only the day
+    // rule below keeps it silent.
     const considered = quota('Cook vegetables', 'FREQ=WEEKLY', 5)
     const daily = quota('Glasses of water', 'FREQ=DAILY', 1)
     const met = quota('Date night', 'FREQ=WEEKLY', 1)

@@ -2,7 +2,7 @@
 
 import { isDeadlineAnchored, targetReset, type HorizonValue } from '@/lib/task-segments'
 import { HorizonPicker } from '@/components/HorizonDot'
-import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
 import { deckLimit } from '@/lib/deck-menu'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
@@ -17,7 +17,6 @@ import {
   Plus,
   ChevronDown,
   XCircle,
-  RotateCcw,
   Sparkles,
   Mic,
   Lightbulb,
@@ -83,6 +82,7 @@ import { EveryTimePanel } from '@/components/quick-panel/EveryTimePanel'
 import {
   deadlineRowFor,
   derivedTargetFor,
+  leadRowFor,
   repeatLinkFor,
   scrollParentToTop,
   targetValueFor,
@@ -95,7 +95,6 @@ import {
   pickerBaseDueAt,
   queuedRepeatOccurrence,
   relativeTargetWords,
-  stagedAutoTarget,
 } from '@/lib/editor-target-labels'
 import { draftRule, draftToCreateFields } from '@/lib/every-time'
 import type { Task, Project, RepeatAnchor } from '@/types'
@@ -139,6 +138,11 @@ export interface QuickActionPanelChanges {
   is_reminder?: boolean
   /** Task model (2026-10-10). Single-task only. */
   deadline_at?: string | null
+  /**
+   * The deadlines page's lead override (2026-10-22, the Lead row): local days
+   * before the deadline; null = the default table. Single-task only.
+   */
+  lead_days?: number | null
   horizon?: HorizonValue | null
   /** On deck (D2): a yyyy-MM-dd day, or null = off deck. Single-task only. */
   on_deck_day?: string | null
@@ -231,6 +235,7 @@ type DirtyField =
   | 'isReminder'
   | 'notes'
   | 'deadline'
+  | 'leadDays'
   | 'horizon'
   | 'deck'
 
@@ -404,6 +409,8 @@ export function QuickActionPanel({
   const [notesExpanded, setNotesExpanded] = useState(false)
   // Task model (2026-10-10): undefined = no change, null = clear.
   const [pendingDeadline, setPendingDeadline] = useState<string | null | undefined>(undefined)
+  // The deadlines page's lead override (the Lead row): undefined = no change, null = default.
+  const [pendingLeadDays, setPendingLeadDays] = useState<number | null | undefined>(undefined)
   const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
   // On deck (D2, `OnDeckLine`): undefined = no change, null = off deck, else a day.
   const [pendingDeck, setPendingDeck] = useState<string | null | undefined>(undefined)
@@ -491,6 +498,7 @@ export function QuickActionPanel({
     },
     timezone,
     morningTime,
+    leads: queueEnabled,
   })
   // Create mode: the schedule Done staged in every-time mode, and what Create
   // Task sends for it (`draftToCreateFields`).
@@ -557,6 +565,7 @@ export function QuickActionPanel({
     isReminder: isReminderDirty,
     notes: pendingNotes !== undefined,
     deadline: pendingDeadline !== undefined,
+    leadDays: pendingLeadDays !== undefined,
     horizon: pendingHorizon !== undefined,
     deck: pendingDeck !== undefined,
   }
@@ -616,22 +625,6 @@ export function QuickActionPanel({
   const showsNoTarget =
     pendingDueAtCleared || deckStaged || (allNoDueDate && !isDateDirty && pendingDueAt === null)
 
-  // A DEADLINE ALWAYS HAS A VISIBLE TARGET (§8, 2026-10-12): the target line
-  // labels a deadline's automatic target "auto · Tue, Oct 20, 9:00 AM (3 days
-  // before deadline)", read with the STAGED values so it shows what Save would
-  // produce — see `stagedAutoTarget`.
-  const { label: autoTarget, staged: autoTargetStaged } =
-    isBulkMode || isReminderLike || !!displayRrule
-      ? { label: null, staged: false }
-      : stagedAutoTarget(
-          effectiveTask,
-          {
-            pendingDeadline,
-            targetCleared: pendingDueAtCleared || deckStaged,
-            datePicked: isDateDirty,
-          },
-          timezone,
-        )
   // The target picker's "Deadline day" (ruling Q8): single task, deadline ahead.
   const pickerDeadlineDay = isBulkMode
     ? null
@@ -646,12 +639,12 @@ export function QuickActionPanel({
     !isBulkMode && !isCreateMode && effectiveTask && !isDateDirty
       ? occurrenceDiffers(effectiveTask, timezone, queueEnabled)
       : null
-  // The … menu's target reset (§8.3, ruling Q9): "Remove target", "Back to
-  // auto" (a deadline one-off whose target the user picked), or nothing (an
-  // automatic target, or no target). Never on a repeating task (§3): its
-  // target can't be cleared, and nothing in this mode removes its rule —
-  // that is every-time mode's "Stop repeating".
-  const singleTargetReset: 'auto' | 'remove' | null =
+  // The … menu's target reset: "Remove target" — a deadline task too since
+  // 2026-10-22 (it goes on the deadlines page; "Back to auto" is gone) — or
+  // nothing (no target; with the task queue off, an automatic target). Never
+  // on a repeating task (§3): its target can't be cleared, and nothing in
+  // this mode removes its rule — that is every-time mode's "Stop repeating".
+  const singleTargetReset: 'remove' | null =
     !effectiveTask || displayRrule ? null : targetReset(effectiveTask)
 
   // Only show delta when task originally had a due date. When due_at is null,
@@ -909,17 +902,19 @@ export function QuickActionPanel({
     if (pendingIsReminder !== null) changes.is_reminder = pendingIsReminder
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     if (pendingDeadline !== undefined) changes.deadline_at = pendingDeadline
+    if (pendingLeadDays !== undefined) changes.lead_days = pendingLeadDays
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
     // On deck (D2): unless a target staged after it overrides it — the pick
     // takes the task off deck on the server (`deck-clear.ts`).
     if (showDeckLine && pendingDeck !== undefined && !isDateDirty && !pendingDueAtCleared) {
       changes.on_deck_day = pendingDeck
     }
-    // A cleared target on a task with a deadline is "Back to auto" (§8.3): the
-    // server puts the deadline's automatic target back. Nothing extra to send.
+    // A cleared target on a task with a deadline puts it on the deadlines page
+    // from its lead day (2026-10-22). Nothing extra to send.
     return changes
   }, [
     pendingDeadline,
+    pendingLeadDays,
     pendingHorizon,
     pendingDeck,
     showDeckLine,
@@ -961,6 +956,7 @@ export function QuickActionPanel({
     setPendingNotes(undefined)
     setNotesExpanded(false)
     setPendingDeadline(undefined)
+    setPendingLeadDays(undefined)
     setPendingHorizon(undefined)
     setPendingDeck(undefined)
   }, [])
@@ -1151,7 +1147,6 @@ export function QuickActionPanel({
     timezone,
     queued: !!queuedOccurrence,
     dateDirty: isDateDirty,
-    auto: autoTarget ? { label: autoTarget, dirty: autoTargetStaged } : null,
     none: showsNoTarget ? { dirty: pendingDueAtCleared || (deckStaged && !allNoDueDate) } : null,
     header: headerText,
     relative: relativeText,
@@ -1163,6 +1158,28 @@ export function QuickActionPanel({
       ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime })
       : null,
   })
+  // THE LEAD ROW (the deadlines page, 2026-10-22): see `leadRowFor`.
+  const leadRow = leadRowFor({
+    show:
+      queueEnabled &&
+      !isBulkMode &&
+      !isCreateMode &&
+      !isReminderLike &&
+      showsNoTarget &&
+      !effectiveTask?.done,
+    task: effectiveTask,
+    pendingDeadline,
+    pendingLeadDays,
+    timezone,
+    rolloverTime,
+    onLeadDays: setPendingLeadDays,
+    disabled: !canEdit,
+  })
+  // A lead staged while the row was shown, then hidden (a target, a cleared
+  // deadline or the Reminder toggle staged after it): the lead goes too —
+  // never sent for a row the panel no longer shows (adjusted during render,
+  // as the deck's is).
+  if (!leadRow && pendingLeadDays !== undefined) setPendingLeadDays(undefined)
   // Create mode with a staged deadline-anchored repeat: the offsets set the
   // target (`draftToCreateFields` sends no `due_at`) — said in words, no pad.
   const targetText =
@@ -1505,13 +1522,13 @@ export function QuickActionPanel({
                   ? (bulkHook.presetTime ?? bulkHook.earliestDueAt)
                   : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null),
                 timezone,
-                // A deadline task's Clear is "Back to auto" (§8.3), and an
-                // automatic target has nothing to clear (ruling Q9). A
-                // repeating task's target has no Clear at all (§3).
+                // Clear is "Remove target", on a deadline task too
+                // (2026-10-22). A repeating task's target has no Clear at
+                // all (§3); with the task queue off, nor has an automatic one.
                 allowClear: isBulkMode
                   ? canBulkClearDueDate
-                  : !displayRrule && (singleTargetReset !== null || !autoTarget),
-                clearLabel: singleTargetReset === 'auto' ? BACK_TO_AUTO : undefined,
+                  : !displayRrule && !effectiveTask?.target_auto,
+                clearLabel: isBulkMode ? undefined : REMOVE_TARGET,
                 quickPick: pickerDeadlineDay,
                 emptyDefault: isBulkMode ? 'now' : 'tomorrow',
                 onChange: isBulkMode ? handleBulkPickerChange : handleSinglePickerChange,
@@ -1519,18 +1536,19 @@ export function QuickActionPanel({
               value: targetValue,
             }}
             deadline={deadlineRow}
+            lead={leadRow}
             // A one-off with a target the user picked is quiet until its
             // date (spec §1/§8.5, 2026-10-12): its horizon decides nothing
             // until the target is removed, and the rows say so. An automatic
             // deadline target keeps the horizon working. Read from the target
-            // row's own (staged) value, so Remove target or Back to auto
+            // row's own (staged) value, so Remove target
             // staged brings the horizon back at once. Only a REAL target:
             // `workingDate` is the picker's working value and is set even
             // with no target, so it counts only once a date is staged
             // (`isDateDirty`) — it made a task with no target read "quiet
             // until <today>" (2026-10-15).
             quietUntil={
-              isBulkMode || isReminderLike || displayRrule || autoTarget || showsNoTarget
+              isBulkMode || isReminderLike || displayRrule || showsNoTarget
                 ? null
                 : (pendingDueAt ??
                   (isDateDirty ? workingDate : null) ??
@@ -1919,11 +1937,10 @@ export function QuickActionPanel({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-                      {/* Clear the target — a single one-off. A one-off with a
-                          deadline never loses its target (§8.3): its picked
-                          target goes "Back to auto", and an automatic target
-                          offers neither (ruling Q9). Not on a repeating task:
-                          nothing in this mode removes a rule (§3). */}
+                      {/* Clear the target — a single one-off, a deadline one
+                          too (2026-10-22: it goes on the deadlines page). Not
+                          on a repeating task: nothing in this mode removes a
+                          rule (§3). */}
                       {isSingleTask && singleTargetReset && !pendingDueAtCleared && (
                         <DropdownMenuItem
                           // `inset` matches the left padding DropdownMenuCheckboxItem
@@ -1934,12 +1951,8 @@ export function QuickActionPanel({
                           data-target-reset={singleTargetReset}
                           onClick={() => setPendingDueAtCleared(true)}
                         >
-                          {singleTargetReset === 'auto' ? (
-                            <RotateCcw className="mr-2 size-4" />
-                          ) : (
-                            <XCircle className="mr-2 size-4" />
-                          )}
-                          {singleTargetReset === 'auto' ? BACK_TO_AUTO : 'Remove target'}
+                          <XCircle className="mr-2 size-4" />
+                          {REMOVE_TARGET}
                         </DropdownMenuItem>
                       )}
                       {/* Skip until (task queue PR 4; spec rule 10). An

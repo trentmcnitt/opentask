@@ -54,7 +54,7 @@ interface DateTimePickerProps {
   onOpenChange?: (open: boolean) => void
   /** The confirm button's text (default "Set Date"). */
   submitLabel?: string
-  /** The Clear button's text (default "Clear"): "Back to auto" on a deadline task (§8.3). */
+  /** The Clear button's text (default "Clear"): "Remove target" on the Quick panel's target. */
   clearLabel?: string
   /**
    * One ready choice above the calendar — the target picker's "Deadline day"

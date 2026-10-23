@@ -91,7 +91,7 @@ import { canUserAccessTask } from './access'
 import { getTaskById } from './read'
 import { seriesEndSkipWords, writeRecurringSkip, writeSeriesEndSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
-import { collectDeckClear } from './deck-clear'
+import { DECK_CLEAR_SQL, collectDeckClear } from './deck-clear'
 import {
   isDeadlineAnchored,
   nextLanding,
@@ -335,13 +335,17 @@ export function planSkipUntil(
   // A decked repeating task has `due_at` NULL: its occurrence is the truth —
   // judged by the target it derives (a deadline-anchored one's lies before it).
   const occurrence = task.occurrence_at ?? task.due_at
-  const derived = occurrence ? occurrenceDates(task, occurrence, timezone).targetAt : null
+  // The occurrence's own target — or, with none (a deadline-anchored repeat
+  // with no relative target, the deadlines page), the occurrence itself.
+  const target = occurrence ? occurrenceDates(task, occurrence, timezone).targetAt : null
+  const derived = target ?? occurrence
   if (occurrence && derived && Date.parse(derived) >= untilStart.getTime()) {
     const targetEarly = task.due_at !== null && Date.parse(task.due_at) < untilStart.getTime()
     const deckEarly = !!task.on_deck_day && !keepDeck
-    // The target the retarget would write: the occurrence's derived one. A re-run
-    // with no deck to clear would rewrite the same target — nothing to do.
-    const sameTarget = task.due_at !== null && Date.parse(task.due_at) === Date.parse(derived)
+    // The target the retarget would write: the occurrence's derived one (none
+    // on a target-less occurrence). A re-run with no deck to clear would
+    // rewrite the same target — nothing to do.
+    const sameTarget = isTargetAlready(task.due_at, target)
     // A deck before the date goes, and the target comes back on the occurrence.
     if (deckEarly || (targetEarly && !sameTarget)) {
       return { kind: 'retarget', landing: occurrence }
@@ -361,6 +365,12 @@ export function planSkipUntil(
   )
 }
 
+/** Whether the task's target already is `target` (none when `target` is null). */
+function isTargetAlready(dueAt: string | null, target: string | null): boolean {
+  if (target === null) return dueAt === null
+  return dueAt !== null && Date.parse(dueAt) === Date.parse(target)
+}
+
 /**
  * A DEADLINE-ANCHORED landing (2026-10-21): the walk found the first
  * occurrence (its deadline) on or after the date, but its derived target may
@@ -376,7 +386,9 @@ function targetOnOrAfter(
   walked: { landing: string; skipped: number },
 ): { landing: string; skipped: number } {
   let { landing, skipped } = walked
-  while (Date.parse(occurrenceDates(task, landing, timezone).targetAt) < untilStart.getTime()) {
+  // An occurrence with no target (L1) is judged by its deadline.
+  const nagsAt = (at: string) => occurrenceDates(task, at, timezone).targetAt ?? at
+  while (Date.parse(nagsAt(landing)) < untilStart.getTime()) {
     if (++skipped > MAX_SKIPPED) throw tooManySkips()
     landing = nextLanding({ ...task, occurrence_at: landing }, timezone, new Date(landing))
   }
@@ -484,7 +496,8 @@ function summaryLead(
     const t = r.tasks[0]
     // The landing occurrence's TARGET day (a deadline-anchored repeat's lies
     // before its deadline, 2026-10-21) — when it next nags.
-    const next = dayLabel(occurrenceTarget(t, timezone)!, timezone)
+    // No target of its own (L1, the deadlines page): its deadline's day.
+    const next = dayLabel(occurrenceTarget(t, timezone) ?? t.occurrence_at!, timezone)
     if (r.targetsMoved === 1) return [`Moved "${t.title}" to its occurrence · ${next}`]
     const lead = r.occurrencesSkipped > 1 ? `Skipped ${occ(r.occurrencesSkipped)} of` : 'Skipped'
     return [`${lead} "${t.title}" · next ${next}`]
@@ -650,6 +663,15 @@ function writeRetarget(
     isReminder: false,
     isTracked: false,
   })
+  // A target-less occurrence (the deadlines page) gets no target back, so the
+  // pick-only clear above leaves its deck: a deck before the date goes all the
+  // same — never a row left with neither (its deadline's page holds it).
+  if (dueAt === null && task.on_deck_day && !write.fieldsChanged.includes('on_deck_day')) {
+    write.setClauses.push(DECK_CLEAR_SQL)
+    write.fieldsChanged.push('on_deck_day')
+    write.beforeState!.on_deck_day = task.on_deck_day
+    write.afterState!.on_deck_day = null
+  }
   tx.prepare(`UPDATE tasks SET ${write.setClauses.join(', ')}, updated_at = ? WHERE id = ?`).run(
     ...write.values,
     nowStr,

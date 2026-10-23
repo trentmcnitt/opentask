@@ -48,6 +48,12 @@ final class DeepLinkRouterTests: XCTestCase {
         )
     }
 
+    /// The deadlines nag's tap: the Tasks card on the deadlines page — the
+    /// same path the server's Web Push carries (`DEADLINES_PAGE_PATH`).
+    func testNotificationDeadlinesPathOpensTheDeadlinesPage() {
+        XCTAssertEqual(DeepLinkRouter.notificationDeadlinesPath, "/?tasks=deadlines")
+    }
+
     /// A prompt link built by the widget round-trips through the router.
     func testPromptLinkFromTheWidgetRoutesToItsRow() throws {
         let url = try XCTUnwrap(PromptDeepLink.url(promptKey: "q:7:1:2026-01-15"))

@@ -25,7 +25,7 @@ import {
   targetReset,
   HEADS_UP_LONG_WAIT,
 } from '@/lib/task-segments'
-import { deadlineDayPick, stagedAutoTarget } from '@/lib/editor-target-labels'
+import { deadlineDayPick } from '@/lib/editor-target-labels'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -382,7 +382,9 @@ describe("TM8: the deadline's automatic target", () => {
     test('TM8-022: what each target offers (ruling Q9)', () => {
       const base = { due_at: at('2026-10-14T10:00'), deadline_at: null, rrule: null }
       expect(targetReset(base)).toBe('remove')
-      expect(targetReset({ ...base, deadline_at: at('2026-10-23T23:59') })).toBe('auto')
+      // "Back to auto" went 2026-10-22: a picked deadline target offers Remove
+      // target (with the task queue off the server still re-derives the auto one).
+      expect(targetReset({ ...base, deadline_at: at('2026-10-23T23:59') })).toBe('remove')
       expect(
         targetReset({ ...base, deadline_at: at('2026-10-23T23:59'), target_auto: true }),
       ).toBeNull()
@@ -390,31 +392,9 @@ describe("TM8: the deadline's automatic target", () => {
       expect(targetReset({ ...base, due_at: null })).toBeNull()
     })
 
-    test('TM8-023: the editor previews what Save would produce', () => {
-      const picked = {
-        due_at: at('2026-10-14T10:00'),
-        deadline_at: at('2026-10-23T23:59'),
-        target_auto: false,
-      }
-      const none = { pendingDeadline: undefined, targetCleared: false, datePicked: false }
-      expect(stagedAutoTarget(picked, none, tz, ctx).label).toBeNull()
-      const back = stagedAutoTarget(picked, { ...none, targetCleared: true }, tz, ctx)
-      expect(back.staged).toBe(true)
-      expect(back.label).toMatchObject({ lead: '3 days before deadline' })
-      expect(local(back.label!.at)).toBe('Tue Oct 20 09:00')
-      const auto = { ...picked, due_at: at('2026-10-20T09:00'), target_auto: true }
-      expect(stagedAutoTarget(auto, none, tz, ctx)).toMatchObject({ staged: false })
-      // A new deadline moves the automatic target with it.
-      const moved = stagedAutoTarget(
-        auto,
-        { ...none, pendingDeadline: at('2026-10-31T23:59') },
-        tz,
-        ctx,
-      )
-      expect(local(moved.label!.at)).toBe('Tue Oct 27 09:00')
-      // A picked date staged wins.
-      expect(stagedAutoTarget(auto, { ...none, datePicked: true }, tz, ctx).label).toBeNull()
-    })
+    // TM8-023 (the editor's "auto" preview, `stagedAutoTarget`) is gone with
+    // the line itself (2026-10-22, the deadlines page): the editor shows
+    // "No target" and a Lead row (`leadLine`, tm-editor-labels.test.ts).
   })
 
   describe('§8.4 deadline changes', () => {

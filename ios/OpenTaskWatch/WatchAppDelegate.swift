@@ -259,7 +259,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     playHaptic(.click)
                 case .slotCompleted(let affected):
                     playHaptic(affected > 0 ? .click : .failure)
-                case .ignored, .missingTaskId, .openDashboard, .openTask:
+                case .ignored, .missingTaskId, .openDashboard, .openTask, .openDeadlines:
                     break
                 }
             } catch {

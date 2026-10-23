@@ -145,12 +145,12 @@ describe('TM-RC: Today and the target-time menu', () => {
     )
   })
 
-  test('TM-RC-021: Remove target, Back to auto, or Move… only', () => {
+  test('TM-RC-021: Remove target (a deadline task too, 2026-10-22), or Move… only', () => {
     expect(targetTimeMenu(row({ due_at: '2026-10-20T14:00:00Z' })).reset).toBe('remove')
     expect(
       targetTimeMenu(row({ due_at: '2026-10-20T14:00:00Z', deadline_at: '2026-10-23T05:00:00Z' }))
         .reset,
-    ).toBe('auto')
+    ).toBe('remove')
     // An automatic target, a repeating task, a reminder: Move… only.
     expect(
       targetTimeMenu(

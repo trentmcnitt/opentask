@@ -25,3 +25,13 @@ export function interruptionLevelFor(priority: number): 'critical' | 'time-sensi
   if (priority >= HIGH_PRIORITY_THRESHOLD) return 'time-sensitive'
   return 'active'
 }
+
+/**
+ * One overdue banner per task, and one overflow summary: the APNs collapse id
+ * AND the Web Push tag (nag-map fix #6), so a repeat replaces the banner it
+ * repeats on both channels instead of stacking beside it on the web.
+ */
+export function taskCollapseId(taskId: number): string {
+  return `task-${taskId}`
+}
+export const OVERDUE_SUMMARY_COLLAPSE_ID = 'overdue-summary'

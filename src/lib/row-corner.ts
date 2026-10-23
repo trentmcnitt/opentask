@@ -194,11 +194,10 @@ export function comesBack(horizon: HorizonValue, checkInDay: CheckInDay): string
 
 /**
  * What tapping a row's target time offers: always "Move…" (the Target menu),
- * and "Remove target" — or "Back to auto" on a deadline task whose target the
- * user picked — where `targetReset` allows one (never on a repeating task or
- * an automatic target). `reset` null: Move… only.
+ * and "Remove target" where `targetReset` allows one (never on a repeating
+ * task). `reset` null: Move… only.
  */
-export function targetTimeMenu(task: CornerTask): { reset: 'auto' | 'remove' | null } {
+export function targetTimeMenu(task: CornerTask): { reset: 'remove' | null } {
   if (task.is_reminder) return { reset: null }
   return { reset: targetReset(task) }
 }
@@ -206,8 +205,8 @@ export function targetTimeMenu(task: CornerTask): { reset: 'auto' | 'remove' | n
 /**
  * The bulk "Remove target" (the action bar's More sheet): which of the
  * selected tasks it applies to — the ones a row's own menu would offer it on.
- * Repeating tasks, reminders, quotas, automatic targets and undated tasks are
- * left alone (their other state is untouched; the date part is scoped to these
+ * Repeating tasks, reminders, quotas, automatic targets (task queue off) and
+ * undated tasks are left alone (their other state is untouched; the date part is scoped to these
  * ids with `date_task_ids`).
  */
 export function removableTargetIds(tasks: (CornerTask & { id: number })[]): number[] {

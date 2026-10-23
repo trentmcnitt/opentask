@@ -117,7 +117,14 @@ describe('TQ-P: the task queue panels', () => {
   afterAll(() => teardownTestDb())
 
   test('TQ-P01: the queue panels come first in the segment order', () => {
-    expect(SEGMENT_ORDER.slice(0, 3)).toEqual(['queue_today', 'queue_previous', 'days'])
+    // After the deadlines page (2026-10-22, APPROVED: first in the carousel,
+    // the only queue page that nags).
+    expect(SEGMENT_ORDER.slice(0, 4)).toEqual([
+      'deadlines',
+      'queue_today',
+      'queue_previous',
+      'days',
+    ])
   })
 
   test('TQ-P02: precedence — a stripped one-off is in the queue, not its horizon segment', () => {

@@ -902,7 +902,8 @@ describe('TQ-O: the 3× offer by task kind (resolution 1)', () => {
     expect(plain.attempts).toBe(3)
     expect(formatTaskResponse(plain, tz).attempts_offer).toBeNull()
     expect(formatTaskResponse(high, tz).attempts_offer).toBe('remove')
-    expect(formatTaskResponse(deadline, tz).attempts_offer).toBe('auto')
+    // "Back to auto" went 2026-10-22 (the deadlines page): Remove target.
+    expect(formatTaskResponse(deadline, tz).attempts_offer).toBe('remove')
     // Switch off: as before.
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
     expect(formatTaskResponse(task(plain.id), tz).attempts_offer).toBe('remove')

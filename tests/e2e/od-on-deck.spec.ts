@@ -348,8 +348,8 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     await expect(r.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     // An Upcoming row reads like every segment row (2026-10-21).
     expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
-    // A one-off with a picked target has no On deck: both deck places are
-    // kept empty, in the same order, so the columns line up.
+    // A one-off with a picked target (2026-10-22, plan §5): On deck and On
+    // deck tomorrow are there, FADED — a deck would replace the target.
     const picked = await create(page, {
       title: uniqueTitle('OD picked'),
       target_at: DateTime.now()
@@ -364,8 +364,13 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     await page.reload()
     const p = segRow(segment(page, 'upcoming'), picked)
     await expect(p).toBeVisible()
-    expect(await controlOrder(p)).toEqual(['deck-empty', 'deck-tomorrow-empty', 'today', 'done'])
+    expect(await controlOrder(p)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    await expect(p.locator('[data-on-deck]')).toHaveAttribute('data-replaces', '')
+    await expect(p.locator('[data-deck-tomorrow]')).toHaveAttribute('data-replaces', '')
+    // Today on the decked row is faded too, and asks first (it takes it off deck).
     await r.locator('[data-target-today]').click()
+    await expect(page.locator('[data-replace-confirm]')).toContainText(`Replaces On deck`)
+    await page.locator('[data-replace-confirm] [data-replace-ok]').click()
     await expect(toast(page, /Targeted/)).toBeVisible()
     await expect.poll(() => deckOf(page, id)).toBeNull()
     expect((await stateOf(page, id)).target_at).not.toBeNull()
@@ -396,21 +401,19 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
   }
 })
 
-test('A1: a deadline already reminding refuses On deck with the toast', async ({ page }) => {
+test('A1: a deadline that has passed refuses On deck with the toast', async ({ page }) => {
   const ids: number[] = []
   try {
     const title = uniqueTitle('OD deadline')
-    // A deadline an hour ago: reminding whatever the time of day (a near one's
-    // automatic target is the morning since 2026-10-21's one lead table).
+    // A deadline an hour ago: passed whatever the time of day (the deadlines
+    // page's A1, 2026-10-22: any day up to the deadline's own, while it is ahead).
     const id = await create(page, { title, deadline_at: daysFromNow(-1 / 24) })
     ids.push(id)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
     await dashRow(page, id).hover()
     await dashRow(page, id).locator('[data-on-deck]').click()
-    await expect(
-      toast(page, 'This deadline is close and already reminding you — use Today.'),
-    ).toBeVisible()
+    await expect(toast(page, 'This deadline has passed.')).toBeVisible()
     expect(await deckOf(page, id)).toBeNull()
     await expect(dashRow(page, id)).toBeVisible()
   } finally {
@@ -469,7 +472,10 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
     const id = await create(page, {
       title: uniqueTitle('OD a long enough title to wrap on a phone screen'),
       horizon: 'days',
+      // With a deadline and no target the deadlines page holds it (2026-10-22):
+      // a 30-day lead puts it there today, the deadline chip on its row.
       deadline_at: daysFromNow(20),
+      lead_days: 30,
     })
     ids.push(id)
     madeYesterday(id)
@@ -479,7 +485,7 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
     ]) {
       await page.setViewportSize(size)
       await page.goto('/reminders')
-      const r = segRow(segment(page, 'days'), id)
+      const r = segRow(segment(page, 'deadlines'), id)
       await expect(r).toBeVisible()
       const box = r.locator('[data-on-deck-box]')
       await box.hover()
@@ -560,14 +566,12 @@ test('panel: a staged deadline and deck save in ONE request; the menu greys from
     const id = await create(page, { title: uniqueTitle('OD panel deadline'), priority: 3 })
     ids.push(id)
     const dialog = await openPanel(page, id)
-    // A deadline six days out reminds from three days before it: the later
-    // days are greyed, with the reason.
-    await stageDeadline(page, dialog, 6)
+    // A deadline three days out: the days after it are greyed, with the
+    // reason (the deadlines page's A1, 2026-10-22).
+    await stageDeadline(page, dialog, 3)
     await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'On deck options' })
-    await expect(menu.locator('[data-option-caption]').first()).toHaveText(
-      /^deadline reminds from \w{3}$/,
-    )
+    await expect(menu.locator('[data-option-caption]').first()).toHaveText(/^deadline \w{3}$/)
     const greyed = menu.locator('[role="menuitem"][aria-disabled="true"]')
     expect(await greyed.count()).toBeGreaterThan(0)
     await menu.getByRole('menuitem', { name: /^Tomorrow/ }).click()
@@ -598,16 +602,13 @@ test('panel: a refused deck saves nothing — the error shows and the panel stay
     const id = await create(page, { title: uniqueTitle('OD panel refused'), priority: 3 })
     ids.push(id)
     const dialog = await openPanel(page, id)
-    // Today: its automatic target is today (the deadline day, 2026-10-21's one
-    // lead table) — arrived or not, a deck for today is refused (A1).
-    await stageDeadline(page, dialog, 0)
+    // Yesterday: a deadline that has passed refuses every deck (A1, 2026-10-22).
+    await stageDeadline(page, dialog, -1)
     await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
     const day = dialog.locator('[data-quick-panel-deck-day]')
     await expect(day).toHaveText('today')
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(
-      toast(page, /already reminding you|after this deadline starts reminding you/),
-    ).toBeVisible()
+    await expect(toast(page, /has passed|after this task's deadline/)).toBeVisible()
     await expect(dialog).toBeVisible()
     await expect(day).toHaveClass(/text-blue-500/)
     await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
@@ -829,10 +830,15 @@ test.describe('touch', () => {
       await expect(toast(page, 'Taken off deck')).toBeVisible()
       await expect.poll(() => deckOf(page, decked)).toBeNull()
 
-      // …and Today on a section row targets it (the deck goes).
+      // …and Today on a section row targets it (the deck goes) — faded, it
+      // asks first (2026-10-22, plan §5: a target replaces the deck).
       await deck(page, [decked])
       await page.reload()
-      await page.locator(`[data-deck-list] #task-row-${decked} [data-target-today]`).tap()
+      const today = page.locator(`[data-deck-list] #task-row-${decked} [data-target-today]`)
+      await expect(today).toHaveAttribute('data-replaces', '')
+      await today.tap()
+      await expect(page.locator('[data-replace-confirm]')).toContainText('Replaces On deck today')
+      await page.locator('[data-replace-confirm] [data-replace-ok]').tap()
       await expect(toast(page, /Targeted/)).toBeVisible()
       await expect.poll(() => deckOf(page, decked)).toBeNull()
       expect((await stateOf(page, decked)).target_at).not.toBeNull()
@@ -888,7 +894,9 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     await expect(u.locator('[data-target-chip]')).toHaveText(new RegExp(`^On deck ${day} · every `))
     await expect(u.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     await page.screenshot({ path: '.tmp/od-repeating-upcoming-1280.png' })
+    // Faded on a decked row, it asks first (2026-10-22, plan §5).
     await u.locator('[data-target-today]').click()
+    await page.locator('[data-replace-confirm] [data-replace-ok]').click()
     await expect(toast(page, /Targeted/)).toBeVisible()
     await expect.poll(() => deckOf(page, id)).toBeNull()
     expect((await stateOf(page, id)).target_at).not.toBeNull()

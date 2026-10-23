@@ -66,6 +66,10 @@ enum Fixtures {
     /// The deadline-anchored repeat in `task-deadline-anchored.json`
     /// (2026-10-21), created last of all.
     static let deadlineRepeat = 123
+    /// The deadlines page's rows in `reminders-deadlines.json` (2026-10-22),
+    /// created after the repeat-ends task (124): a one-off in its window, a
+    /// one-off past its deadline (the safety net), a target-less repeat.
+    static let deadlineWindow = 125, deadlinePassed = 126, deadlineRepeatTargetless = 127
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }

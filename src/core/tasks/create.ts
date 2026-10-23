@@ -10,11 +10,15 @@ import {
   deckDayProblem,
   deckRefusal,
   deckSkip,
+  leadDaysProblem,
+  leadFor,
   occurrenceDates,
   resolveTarget,
+  type LeadContext,
   type RelativeTarget,
   type TargetContext,
 } from '@/lib/task-segments'
+import { rolloverTimeForUser } from './rollover-time'
 import {
   REPEAT_END_MESSAGES,
   assertRuleOnDeadline,
@@ -130,6 +134,10 @@ interface FirstDates {
   deadlineAt: string | null
   auto: boolean
   relative: RelativeTarget | null
+  /** The deadlines page's lead day (2026-10-22, `leadFor`), or null. */
+  leadFrom: string | null
+  /** The lead override (`lead_days`) — never on a reminder or a quota. */
+  leadDays: number | null
 }
 
 /**
@@ -146,6 +154,7 @@ function deadlineAnchoredDates(
   rrule: string,
   ctx: TargetContext,
   timezone: string,
+  lead: LeadContext,
 ): FirstDates {
   const given = input.deadline_at!
   assertRuleOnDeadline(rrule, null, given, timezone)
@@ -162,19 +171,44 @@ function deadlineAnchoredDates(
     firstDeadline: first,
     timezone,
     morningTime: ctx.morningTime,
+    // The deadlines page (switch on, L1): no default relative target.
+    leads: taskQueueEnabled(),
   })
+  const recurrenceMode = input.recurrence_mode ?? 'from_due'
+  // A lead override must be shorter than the rule's wait (`leadDaysProblem`).
+  const leadProblem = relative
+    ? null
+    : leadDaysProblem(
+        input.lead_days ?? null,
+        { rrule, recurrence_mode: recurrenceMode, anchor_time: null },
+        first,
+        timezone,
+      )
+  if (leadProblem) throw new ValidationError(leadProblem)
   const dates = occurrenceDates(
     {
       rrule,
       repeat_anchor: 'deadline',
-      target_days_before: relative.days_before,
-      target_time: relative.time,
+      target_days_before: relative?.days_before ?? null,
+      target_time: relative?.time ?? null,
+      lead_days: input.lead_days ?? null,
+      recurrence_mode: recurrenceMode,
+      anchor_time: null,
     },
     first,
     timezone,
+    lead,
   )
   const dueAt = sent && input.due_at ? capAtDeadline(input.due_at, first) : dates.targetAt
-  return { dueAt, occurrenceAt: first, deadlineAt: dates.deadlineAt, auto: false, relative }
+  return {
+    dueAt,
+    occurrenceAt: first,
+    deadlineAt: dates.deadlineAt,
+    auto: false,
+    relative,
+    leadFrom: dates.leadFrom,
+    leadDays: input.lead_days ?? null,
+  }
 }
 
 /**
@@ -217,6 +251,7 @@ function targetAnchoredDates(
   tracked: boolean,
   ctx: TargetContext,
   timezone: string,
+  lead: LeadContext,
 ): FirstDates {
   const dueAt = tracked
     ? null
@@ -230,17 +265,39 @@ function targetAnchoredDates(
       deadlineAt,
       deadlineChanged: false,
       autoEligible: !rrule && !tracked && !input.is_reminder,
+      // The deadlines page (switch on): no automatic target; a lead day.
+      leads: taskQueueEnabled(),
     },
     ctx,
   )
+  // A one-off's lead day (the deadlines page, 2026-10-22): written whenever
+  // it has a deadline — dormant while it has a target.
+  const leadFrom =
+    rrule || tracked || input.is_reminder
+      ? null
+      : leadFor(
+          { ...NO_SCHEDULE, deadline_at: input.deadline_at ?? null, lead_days: input.lead_days },
+          timezone,
+          lead,
+        )
   return {
     dueAt: target.dueAt,
     occurrenceAt: rrule && !tracked ? dueAt : null,
     deadlineAt: input.deadline_at ?? null,
     auto: target.auto,
     relative: null,
+    leadFrom,
+    leadDays: tracked || input.is_reminder ? null : (input.lead_days ?? null),
   }
 }
+
+/** A one-off's schedule fields, for `leadFor`. */
+const NO_SCHEDULE = {
+  rrule: null,
+  repeat_anchor: null,
+  target_days_before: null,
+  target_time: null,
+} as const
 
 /**
  * Create a new task
@@ -306,12 +363,13 @@ export function createTask(options: CreateTaskOptions): Task {
   })
   const rrule = timedSchedule(userId, input, tracked, targetCtx, userTimezone, anchor)
   const onDeckDay = input.on_deck_day ?? null
-  if (onDeckDay) assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx)
+  if (onDeckDay) assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx, userId)
 
+  const lead: LeadContext = { rolloverTime: rolloverTimeForUser(userId), now: new Date() }
   const first =
     anchor === 'deadline' && rrule
-      ? deadlineAnchoredDates(input, rrule, targetCtx, userTimezone)
-      : targetAnchoredDates(input, rrule, tracked, targetCtx, userTimezone)
+      ? deadlineAnchoredDates(input, rrule, targetCtx, userTimezone, lead)
+      : targetAnchoredDates(input, rrule, tracked, targetCtx, userTimezone, lead)
   const dueAt = first.dueAt
   const relative = first.relative ?? { days_before: null, time: null }
   // Repeat ends (2026-10-22): judged against the first occurrence.
@@ -376,8 +434,9 @@ export function createTask(options: CreateTaskOptions): Task {
         repeat_anchor, target_days_before, target_time, repeat_count, repeat_until,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
-        target_auto, occurrence_at, progress_period_start, on_deck_day, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        target_auto, occurrence_at, progress_period_start, on_deck_day, lead_days, lead_from,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -425,6 +484,9 @@ export function createTask(options: CreateTaskOptions): Task {
         tracked ? quotaAnchorNow(userId, rrule) : null,
         // On deck (2026-10-20): checked by `assertCreateDeck` above.
         onDeckDay,
+        // The deadlines page (2026-10-22): the override and the lead day.
+        first.leadDays,
+        first.leadFrom,
         now,
         now,
       )
@@ -501,6 +563,7 @@ function assertCreateDeck(
   rrule: string | null | undefined,
   tracked: boolean,
   ctx: TargetContext,
+  userId: number,
 ): void {
   if (!taskQueueEnabled()) {
     throw new AppError('On deck needs the task queue, which is off on this server', 409, 'CONFLICT')
@@ -518,11 +581,13 @@ function assertCreateDeck(
   const now = new Date()
   const problem = deckDayProblem(day, ctx.timezone, now)
   if (problem) throw new ValidationError(problem)
+  // A1 (2026-10-22): the deck day at most the deadline's OpenTask day.
   const refusal = deckRefusal(
-    { due_at: null, deadline_at: input.deadline_at ?? null, target_auto: false },
+    { deadline_at: input.deadline_at ?? null },
     day,
     ctx,
     now,
+    rolloverTimeForUser(userId),
   )
   if (refusal) throw new ValidationError(DECK_REFUSAL_MESSAGES[refusal])
 }

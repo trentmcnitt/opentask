@@ -4,7 +4,8 @@
  * Handles both recurring (advance in place) and one-off (archive) tasks.
  */
 
-import { attemptsRolloverTime } from './rollover-time'
+import { attemptsRolloverTime, leadContextFor, rolloverTimeForUser } from './rollover-time'
+import { autoTargetToLead } from './auto-target-lead'
 import {
   occurrenceDates,
   putBackCountedThrough,
@@ -89,7 +90,9 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   const nowStr = nowUtc()
 
   // Compute state changes
-  const computation = computeMarkDone(task, userTimezone, completedAt, nowStr)
+  const computation = computeMarkDone(task, userTimezone, completedAt, nowStr, () =>
+    rolloverTimeForUser(task.user_id),
+  )
 
   const result = withTransaction((tx) => {
     // Execute database operations
@@ -244,6 +247,10 @@ export function markUndone(options: MarkDoneOptions): Task {
     'attempts_counted_through',
     ...(recurring ? ['repeat_count_used'] : []),
   ]
+  // A pre-migration automatic target reopened (the deadlines page, switch
+  // on): converted in the same write (`autoTargetToLead`).
+  const conv = autoTargetToLead(task)
+  if (conv) fieldsChanged.push(...conv.fields)
 
   // §7: the attempts come back from the completion row it deletes (done
   // reset them), checkpointed so the days it sat done don't count.
@@ -267,7 +274,7 @@ export function markUndone(options: MarkDoneOptions): Task {
       SET done = 0, done_at = NULL, archived_at = NULL,
           completion_count = ?, first_completed_at = ?, last_completed_at = ?,
           attempts = ?, attempts_counted_through = ?, repeat_count_used = ?,
-          updated_at = ?
+          ${conv ? `${conv.sql},` : ''} updated_at = ?
       WHERE id = ?
     `,
     ).run(
@@ -277,6 +284,7 @@ export function markUndone(options: MarkDoneOptions): Task {
       restoredAttempts,
       restoredThrough,
       restoredUsed,
+      ...(conv ? conv.values : []),
       nowStr,
       taskId,
     )
@@ -297,8 +305,10 @@ export function markUndone(options: MarkDoneOptions): Task {
         attempts: task.attempts,
         attempts_counted_through: task.attempts_counted_through,
         repeat_count_used: task.repeat_count_used,
+        ...conv?.before,
       },
       {
+        ...conv?.after,
         id: taskId,
         title: task.title,
         done: false,
@@ -393,7 +403,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const restoredOccurrence = latest.occurrence_at_was ?? latest.due_at_was
   // Its dates (`occurrenceDates`): the deadline it had, and its derived target.
   const restored = restoredOccurrence
-    ? occurrenceDates(task, restoredOccurrence, userTimezone)
+    ? occurrenceDates(task, restoredOccurrence, userTimezone, leadContextFor(task))
     : null
   // The target it closed. A DECKED occurrence (2026-10-20) had none — its
   // `due_at_was` is NULL — so it comes back as debt on its occurrence's
@@ -414,6 +424,8 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   // The deadline goes back with the occurrence (a deadline-anchored repeat's
   // occurrence IS its deadline; a target-anchored one has none).
   const restoredDeadline = restored ? restored.deadlineAt : task.deadline_at
+  // The deadlines page (2026-10-22): the restored occurrence's lead day.
+  const restoredLead = restored ? restored.leadFrom : task.lead_from
   // §7: the occurrence's attempts come back from its completion row.
   const restoredAttempts = latest.attempts ?? 0
   const restoredUsed = Math.max(0, task.repeat_count_used - 1)
@@ -425,12 +437,15 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
     attemptsRolloverTime(task.user_id),
   )
   const queueClear = queueStateToClear(task)
-  const fieldsChanged = putBackFields(task, queueClear.fields)
+  const fieldsChanged = [
+    ...putBackFields(task, queueClear.fields),
+    ...(restoredLead !== task.lead_from ? ['lead_from'] : []),
+  ]
 
   const updatedTask = withTransaction((tx) => {
     tx.prepare(
       `UPDATE tasks
-        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?,
+        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, lead_from = ?,
             ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
             repeat_count_used = ?, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
@@ -440,6 +455,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
       restoredOccurrence,
       restoredTarget,
       restoredDeadline,
+      restoredLead,
       nowStr,
       restoredAttempts,
       restoredThrough,
@@ -464,6 +480,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         occurrence_at: task.occurrence_at,
         original_due_at: task.original_due_at,
         deadline_at: task.deadline_at,
+        lead_from: task.lead_from,
         target_set_at: task.target_set_at,
         attempts: task.attempts,
         attempts_counted_through: task.attempts_counted_through,
@@ -482,6 +499,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         original_due_at: restoredTarget,
         on_deck_day: null,
         deadline_at: restoredDeadline,
+        lead_from: restoredLead,
         target_set_at: nowStr,
         attempts: restoredAttempts,
         attempts_counted_through: restoredThrough,

@@ -190,11 +190,12 @@ export const taskQueueScenarios: GoldenScenario[] = [
       task: {
         '2026-10-19': 'over 1×',
         '2026-10-20': 'over 2×',
-        '2026-10-21': 'over 3× →auto',
-        '2026-10-22': 'over 4× →auto',
-        // The deadline has passed: "back to auto" would be the passed deadline.
-        '2026-10-23': 'over 5×',
-        '2026-10-24': 'over 6×',
+        // "Back to auto" went 2026-10-22 (the deadlines page): Remove target —
+        // past the deadline too, which puts it on the page in the safety net.
+        '2026-10-21': 'over 3× →remove',
+        '2026-10-22': 'over 4× →remove',
+        '2026-10-23': 'over 5× →remove',
+        '2026-10-24': 'over 6× →remove',
       },
     },
   },

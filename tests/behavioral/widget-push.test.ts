@@ -16,6 +16,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import {
   createWidgetPushCoalescer,
+  isAwake,
   isBudgetedPlatform,
   parseMinIntervalSeconds,
   parseQuietHoursEnabled,
@@ -447,6 +448,25 @@ describe('createWidgetPushCoalescer — failed sends', () => {
     coalescer.schedule(1)
     await vi.advanceTimersByTimeAsync(SETTLE)
     expect(flushes).toEqual([start + SETTLE, start + 2 * SETTLE])
+  })
+})
+
+// Moved from rm-slot-nags (2026-10-22): the slot nag lost its Wake–Sleep
+// window; widget push's quiet hours are the window's only reader now.
+describe('isAwake (the waking window quiet hours are the complement of)', () => {
+  test('ordinary, wrapping and degenerate windows', () => {
+    // Ordinary window: inclusive lower edge, exclusive upper edge.
+    expect(isAwake(6 * 60 + 59, '07:00', '22:00')).toBe(false)
+    expect(isAwake(7 * 60, '07:00', '22:00')).toBe(true)
+    expect(isAwake(21 * 60 + 59, '07:00', '22:00')).toBe(true)
+    expect(isAwake(22 * 60, '07:00', '22:00')).toBe(false)
+    // Wrapping window (awake 07:00 -> 02:00 the next morning).
+    expect(isAwake(23 * 60, '07:00', '02:00')).toBe(true)
+    expect(isAwake(0, '07:00', '02:00')).toBe(true)
+    expect(isAwake(2 * 60, '07:00', '02:00')).toBe(false)
+    // wake == sleep reads as awake all day; a malformed HH:MM is never awake.
+    expect(isAwake(3 * 60, '07:00', '07:00')).toBe(true)
+    expect(isAwake(3 * 60, 'nonsense', '22:00')).toBe(false)
   })
 })
 

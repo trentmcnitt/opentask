@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useCallback, useState } from 'react'
-import { Clock, XCircle, CalendarDays, RotateCcw } from 'lucide-react'
+import { Clock, XCircle, CalendarDays } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -20,12 +20,9 @@ import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
-import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { REMOVE_TARGET as REMOVE_TARGET_LABEL } from '@/lib/task-model-words'
 
 const SLOT_PREFIX = 'slot:'
-
-/** The target-reset entry's words, by `targetReset` (§8.3). */
-const RESET_LABELS = { auto: BACK_TO_AUTO, remove: 'Remove target' } as const
 
 /**
  * The user's time slots, fetched when a menu opens and kept for the session.
@@ -59,18 +56,15 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
   return slots
 }
 
-/** The menu's remove-target / back-to-auto entry (not a snooze option). */
+/** The menu's Remove target entry (not a snooze option). */
 const REMOVE_TARGET = 'remove-target'
-/** "Back to auto" (§8.3): the same clear as Remove target, drawn as a reset. */
-const BACK_TO_AUTO_OPTION = 'back-to-auto'
 /** The picker's "Deadline day" (ruling Q8, 2026-10-12). */
 const DEADLINE_DAY_OPTION = 'deadline-day'
 
-/** Each option's icon: custom → calendar, Remove target → ✕, Back to auto → ↺, else a clock. */
+/** Each option's icon: custom → calendar, Remove target → ✕, else a clock. */
 function OptionIcon({ option, className }: { option: string; className: string }) {
   if (option === 'custom') return <CalendarDays className={className} />
   if (option === REMOVE_TARGET) return <XCircle className={className} />
-  if (option === BACK_TO_AUTO_OPTION) return <RotateCcw className={className} />
   return <Clock className={className} />
 }
 
@@ -82,13 +76,13 @@ interface SnoozeMenuProps {
   /** Trigger element — rendered as-is; parent controls click/long-press behavior */
   children?: React.ReactNode
   /**
-   * Remove the target (2026-10-10), or put a picked target back to the
-   * deadline's automatic one (§8.3) — which, is `targetReset`. Offered only
-   * where the caller passes both.
+   * Remove the target (2026-10-10; on a deadline task too since 2026-10-22,
+   * when "Back to auto" went — the task goes on the deadlines page). Offered
+   * only where the caller passes it and `targetReset` allows it.
    */
   onRemoveTarget?: () => void
-  /** `targetReset(task)`: 'remove' → "Remove target", 'auto' → "Back to auto", null → neither. */
-  targetReset?: 'auto' | 'remove' | null
+  /** `targetReset(task)`: 'remove' → "Remove target", null → nothing. */
+  targetReset?: 'remove' | null
   /**
    * The task's deadline: while it is ahead the menu offers "Deadline day"
    * (ruling Q8 — the morning of its day, or the deadline itself if earlier),
@@ -156,7 +150,7 @@ export function SnoozeMenu({
   const [nextPeriod, ...laterSlots] = slotOptions
   const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime)
   const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now)
-  const resetLabel = onRemoveTarget && targetReset ? RESET_LABELS[targetReset] : null
+  const resetLabel = onRemoveTarget && targetReset ? REMOVE_TARGET_LABEL : null
   const options = [
     ...(nextPeriod
       ? [
@@ -178,14 +172,14 @@ export function SnoozeMenu({
       ? [
           {
             label: resetLabel,
-            option: targetReset === 'auto' ? BACK_TO_AUTO_OPTION : REMOVE_TARGET,
+            option: REMOVE_TARGET,
           },
         ]
       : []),
   ]
 
   const handleSelect = (option: string) => {
-    if (option === REMOVE_TARGET || option === BACK_TO_AUTO_OPTION) {
+    if (option === REMOVE_TARGET) {
       onOpenChange(false)
       onRemoveTarget?.()
       return

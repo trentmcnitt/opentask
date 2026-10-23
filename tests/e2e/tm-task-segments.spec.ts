@@ -319,6 +319,29 @@ test.describe('Task segments on the dashboard', () => {
     }
   })
 
+  test('/?tasks=<kind> opens the Tasks card on that page and leaves the URL clean', async ({
+    authenticatedPage: page,
+  }) => {
+    // The deadlines nag's tap (`/?tasks=deadlines`, src/lib/tasks-panel-link.ts);
+    // any kind works, so Weeks stands in while Days would be the natural page.
+    const days = await create(page, { title: uniqueTitle('TM link days'), horizon: 'days' })
+    const weeks = await create(page, { title: uniqueTitle('TM link weeks'), horizon: 'weeks' })
+    backdateCreated([days], { inSegments: true })
+    createdLongAgo([weeks])
+    try {
+      await page.goto('/?tasks=weeks')
+      await expect(tasksCard(page)).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      await expect(cardRow(page, weeks)).toBeVisible()
+      await expect.poll(() => new URL(page.url()).search).toBe('')
+      // A kind not shown today is consumed and ignored: the natural page.
+      await page.goto('/?tasks=deadlines')
+      await expect(tasksCard(page)).toHaveAttribute('data-tasks-page', 'tasks:days')
+      await expect.poll(() => new URL(page.url()).search).toBe('')
+    } finally {
+      await trash(page, [days, weeks])
+    }
+  })
+
   test('the /reminders day bar shows task segments after the slots, uncounted', async ({
     authenticatedPage: page,
   }) => {
@@ -392,10 +415,15 @@ test.describe('Dashboard over-target marks', () => {
       const row = page.locator(`#task-row-${aged}`)
       await expect(row).toBeVisible()
       await expect(row.locator('[data-attempts]')).toHaveText('4×')
-      // Past its deadline the tab stays (a count, not a second alarm); no
-      // offer — "Back to auto" would be the passed deadline.
+      // Past its deadline the tab stays (a count, not a second alarm), and the
+      // red deadline chip leads the line (2026-10-22); no offer with the task
+      // queue off — removing the target would bring back the passed deadline.
       const lateRow = page.locator(`#task-row-${late}`)
-      await expect(lateRow).toContainText('past deadline')
+      await expect(lateRow.locator('[data-deadline-chip]')).toHaveAttribute(
+        'data-deadline-chip',
+        'passed',
+      )
+      await expect(lateRow.locator('[data-deadline-chip]')).toContainText('Past deadline')
       await expect(lateRow.locator('[data-attempts]')).toHaveText('4×')
       await expect(lateRow.locator('[data-attempts-offer]')).toHaveCount(0)
       // An undated task past a month: the age label, no tab.

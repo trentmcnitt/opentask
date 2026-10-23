@@ -8,7 +8,16 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
-import { deckLimit, deckMenuDays, deckTapDay, deckTomorrowDay, offersDeck } from '@/lib/deck-menu'
+import {
+  deckLimit,
+  deckMenuDays,
+  deckReplaces,
+  deckTapDay,
+  deckTomorrowDay,
+  deferLeadDays,
+  offersDeck,
+  todayReplaces,
+} from '@/lib/deck-menu'
 import { deckPickerDefault } from '@/components/OnDeckButton'
 import { deckToastMessage, type DeckResponse } from '@/lib/deck-request'
 import { inDeckSection } from '@/lib/now-view'
@@ -88,6 +97,8 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     rolled_over_at: null,
     on_deck_day: null,
     queued_from_deck_day: null,
+    lead_days: null,
+    lead_from: null,
     target_auto: false,
     last_notified_at: null,
     last_critical_alert_at: null,
@@ -172,24 +183,24 @@ describe('OD-UI-01: the hold menu days', () => {
     expect(days.find((d) => d.day === '2026-01-18')?.caption).toBeUndefined()
   })
 
-  test('the limit: the day before the automatic target, stored or from the (staged) deadline', () => {
+  test('the limit: up to the deadline day (the deadlines page, 2026-10-22), stored or staged', () => {
     const ctx = { timezone: TZ, morningTime: '08:30' }
-    // Stored automatic target Sat Jan 17 → latest Fri Jan 16.
-    expect(
-      deckLimit({ deadline_at: local(5, 17), due_at: local(2, 9), target_auto: true }, TZ, NOW),
-    ).toEqual({ latestDay: '2026-01-16', caption: 'deadline reminds from Sat' })
-    // No stored automatic target (a picked one, or a deadline only staged):
-    // the one the deadline gives (`autoTargetAt`, the server's own) — Tue Jan
-    // 27 23:00 decided Thu Jan 15 → Sat Jan 24 08:30, so the latest is Fri Jan 23.
+    // Deadline Tue Jan 20 17:00 → the latest is Tue Jan 20 itself.
+    expect(deckLimit({ deadline_at: local(5, 17), due_at: null }, TZ, NOW)).toEqual({
+      latestDay: '2026-01-20',
+      caption: 'deadline Tue',
+    })
+    // A staged deadline (the Quick panel): the same, Tue Jan 27.
     const staged = { deadline_at: local(12, 23), due_at: null }
     expect(deckLimit(staged, TZ, NOW, ctx)).toEqual({
-      latestDay: '2026-01-23',
-      caption: 'deadline reminds from Sat',
+      latestDay: '2026-01-27',
+      caption: 'deadline Tue',
     })
-    // Already reminding: no day left (the latest is yesterday).
-    expect(
-      deckLimit({ deadline_at: local(2, 17), due_at: local(0, 8), target_auto: true }, TZ, NOW),
-    ).toEqual({ latestDay: '2026-01-14', caption: 'deadline reminds from Thu' })
+    // A passed deadline: no day left (the latest is yesterday).
+    expect(deckLimit({ deadline_at: local(-1, 17), due_at: null }, TZ, NOW)).toEqual({
+      latestDay: '2026-01-14',
+      caption: 'deadline passed',
+    })
     expect(deckLimit({ deadline_at: null, due_at: null }, TZ, NOW)).toBeNull()
   })
 
@@ -211,16 +222,60 @@ describe('OD-UI-02: the tap and the rows that offer it', () => {
     expect(deckTapDay({ on_deck_day: null }, TZ, NOW)).toBeUndefined()
   })
 
-  test('one-offs with no picked target, repeating tasks, or already on deck', () => {
+  test('every open task but a reminder or quota (2026-10-22: a picked target too)', () => {
     expect(offersDeck(makeTask())).toBe(true)
     expect(offersDeck(makeTask({ due_at: local(1, 9), target_auto: true }))).toBe(true)
-    expect(offersDeck(makeTask({ due_at: local(1, 9) }))).toBe(false)
+    // The deadlines page, plan §5: a deck may replace a target — faded, it asks.
+    expect(offersDeck(makeTask({ due_at: local(1, 9) }))).toBe(true)
     // A repeating task always offers it (2026-10-20): it decks the occurrence.
     expect(offersDeck(makeTask({ rrule: 'FREQ=DAILY', due_at: local(1, 9) }))).toBe(true)
     expect(offersDeck(makeTask({ is_reminder: true }))).toBe(false)
     expect(offersDeck(makeTask({ progress_target: 3 }))).toBe(false)
     expect(offersDeck(makeTask({ done: true }))).toBe(false)
     expect(offersDeck(makeTask({ on_deck_day: '2026-01-16' }))).toBe(true)
+  })
+})
+
+describe('OD-UI-02b: what a deck or Today replaces (plan §5, the faded buttons)', () => {
+  test("a deck replaces a one-off's picked target, said with its day and time", () => {
+    const at = DateTime.fromISO('2026-01-16T18:00', { zone: TZ }).toUTC().toISO()!
+    expect(deckReplaces(makeTask({ due_at: at }), TZ)).toBe('target Fri 6 PM')
+    const half = DateTime.fromISO('2026-01-16T18:30', { zone: TZ }).toUTC().toISO()!
+    expect(deckReplaces(makeTask({ due_at: half }), TZ)).toBe('target Fri 6:30 PM')
+    expect(deckReplaces(makeTask(), TZ)).toBeNull()
+    expect(deckReplaces(makeTask({ due_at: at, target_auto: true }), TZ)).toBeNull()
+    expect(deckReplaces(makeTask({ due_at: at, rrule: 'FREQ=DAILY' }), TZ)).toBeNull()
+  })
+
+  test('Today replaces a deck', () => {
+    expect(todayReplaces({ on_deck_day: '2026-01-17' }, TZ, NOW)).toBe('On deck Sat')
+    expect(todayReplaces({ on_deck_day: '2026-01-15' }, TZ, NOW)).toBe('On deck today')
+    expect(todayReplaces({ on_deck_day: null }, TZ, NOW)).toBeNull()
+  })
+})
+
+describe('OD-UI-02c: the deadlines page Defer menu (tomorrow … D−2)', () => {
+  // NOW is Thu Jan 15 2026, 10:00 Chicago.
+  const at = (local: string) => DateTime.fromISO(local, { zone: TZ }).toUTC().toISO()!
+
+  test('tomorrow to two days before the deadline, the last one marked', () => {
+    const days = deferLeadDays(at('2026-01-20T17:00'), TZ, NOW, null)
+    expect(days.map((d) => d.day)).toEqual(['2026-01-16', '2026-01-17', '2026-01-18'])
+    expect(days[0].label).toBe('Tomorrow')
+    expect(days[1].label).toBe('Saturday')
+    expect(days[2].caption).toBe('2 days before the deadline')
+  })
+
+  test('a far deadline: the next six days, then its last allowed day', () => {
+    const days = deferLeadDays(at('2026-02-10T17:00'), TZ, NOW, null)
+    expect(days).toHaveLength(7)
+    expect(days[6]).toMatchObject({ day: '2026-02-08', label: 'Sun Feb 8' })
+  })
+
+  test('only days after the current lead day; none once tomorrow is D−1', () => {
+    const days = deferLeadDays(at('2026-01-20T17:00'), TZ, NOW, null, '2026-01-16')
+    expect(days.map((d) => d.day)).toEqual(['2026-01-17', '2026-01-18'])
+    expect(deferLeadDays(at('2026-01-17T17:00'), TZ, NOW, null)).toEqual([])
   })
 })
 
@@ -273,6 +328,17 @@ describe("OD-UI-03: Now's On deck section", () => {
     })
     expect(inDeckSection(nagging, TZ, NOW)).toBe(false)
     expect(inDeckSection(makeTask({ on_deck_day: '2026-01-15' }), TZ, NOW)).toBe(true)
+  })
+
+  test('the deadlines page (queue on): a target-less deadline task in its safety net is the page’s, not the section’s', () => {
+    const opts = { queue: true, rolloverTime: null }
+    const inNet = makeTask({ on_deck_day: '2026-01-15', deadline_at: local(1, 17) })
+    expect(inDeckSection(inNet, TZ, NOW, opts)).toBe(false)
+    // Further out the deck day is the section's (the page suppresses it that day).
+    const ahead = makeTask({ on_deck_day: '2026-01-15', deadline_at: local(5, 17) })
+    expect(inDeckSection(ahead, TZ, NOW, opts)).toBe(true)
+    // Queue off: as before.
+    expect(inDeckSection(inNet, TZ, NOW)).toBe(true)
   })
 })
 

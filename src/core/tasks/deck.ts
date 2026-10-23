@@ -25,7 +25,12 @@
  * segment endpoints.
  *
  * Decking also stamps "considered" (A7, as Today does) and
- * `segment_targeted_at` (the dashboard's Just now card), in the same edit.
+ * `segment_targeted_at` (the dashboard's Just now card), in the same edit —
+ * EXCEPT on a row the DEADLINES PAGE will hold after the deck (2026-10-22,
+ * Trent's ruling: a decked page row STAYS on the page, waiting, showing its
+ * deck day; `deckKeepsPageRow` in deck-clear.ts). Seeing it is still its own tap. It does not
+ * nag for it outside the safety net (the deadlines nag counts decked rows only
+ * there).
  *
  * Needs the task queue switch (A14): 409 when it is off, since a deck relies
  * on the rollover to send it to the queue when its day ends.
@@ -42,12 +47,15 @@ import {
   deckSummary,
   type DeckRefusal,
   type DeckResultCounts,
+  inSafetyNet,
+  isDeadlinePageTask,
 } from '@/lib/task-segments'
 import { bulkEdit, cancelPendingEnrichment } from './bulk'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { getTargetContext } from './target-context'
 import { taskQueueEnabled } from './task-queue'
 import { deckRolloverTime } from './deck-clear'
+import { rolloverTimeForUser } from './rollover-time'
 
 export interface DeckTasksOptions {
   userId: number
@@ -126,10 +134,10 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
       userId: opts.userId,
       userTimezone: opts.timezone,
       taskIds: eligible.map((t) => t.id),
+      // The consider stamp is the deck write's own (`collect-field-changes`,
+      // A7) — not on a row the deadlines page keeps (`deckKeepsPageRow`).
       changes:
-        day === null
-          ? { on_deck_day: null }
-          : { on_deck_day: day, last_considered_at: stamp, segment_targeted_at: stamp },
+        day === null ? { on_deck_day: null } : { on_deck_day: day, segment_targeted_at: stamp },
       undo: {
         action: 'deck',
         description: (n) =>
@@ -170,5 +178,12 @@ export function onDeckToday(userId: number, timezone: string, now: Date = new Da
         ORDER BY priority DESC, id ASC`,
     )
     .all(userId, calendarToday(timezone, now), now.toISOString()) as TaskRow[]
-  return rows.map(rowToTask)
+  const tasks = rows.map(rowToTask)
+  // The deadlines page (2026-10-22, plan §4): in its SAFETY NET a target-less
+  // deadline task is on the page, deck or not — never in both places.
+  if (!taskQueueEnabled()) return tasks
+  const rolloverTime = rolloverTimeForUser(userId)
+  return tasks.filter(
+    (t) => !isDeadlinePageTask(t) || !inSafetyNet(t.deadline_at!, timezone, now, rolloverTime),
+  )
 }

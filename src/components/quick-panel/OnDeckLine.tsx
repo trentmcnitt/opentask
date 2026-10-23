@@ -3,7 +3,7 @@
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { OnDeckButton } from '@/components/OnDeckButton'
-import type { DeckLimit } from '@/lib/deck-menu'
+import { deckReplaces, type DeckLimit } from '@/lib/deck-menu'
 import { calendarToday, deckDayWords } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
@@ -22,6 +22,11 @@ import type { Task } from '@/types'
  *
  * A task the rollover sent to the queue from its deck says so here, and only
  * here (red-team A9: never on the queue row): "was on deck Tue Oct 20".
+ *
+ * A PICKED TARGET (the deadlines page, 2026-10-22, plan §5): the button is
+ * faded and the line says what a deck would replace — "Not on deck · a deck
+ * replaces target Fri 6 PM". No confirm here: the panel stages, and Reset or
+ * Cancel undoes a stage (the rows' faded buttons ask, `ReplaceConfirm`).
  */
 export function OnDeckLine({
   task,
@@ -57,6 +62,9 @@ export function OnDeckLine({
     // Back to what is stored: nothing staged — but a staged target still goes.
     onStage(next === task.on_deck_day ? undefined : next, shadowed || typeof next === 'string')
   }
+  // Only the STORED target, with nothing staged over it (a staged target is
+  // the panel's own change, already blue on the Target row).
+  const replaces = !shown && !shadowed ? deckReplaces(task, timezone) : null
   const wasOnDeck =
     !shown && task.queued_at && task.queued_from_deck_day
       ? DateTime.fromISO(task.queued_from_deck_day).toFormat('ccc LLL d')
@@ -68,7 +76,7 @@ export function OnDeckLine({
         timezone={timezone}
         onDeck={(_t, day) => stage(day)}
         limit={limit}
-        className="-my-1 -ml-1 size-6"
+        className={cn('-my-1 -ml-1 size-6', replaces && 'opacity-45 hover:opacity-100')}
         iconClassName="size-3.5"
       />
       {showLabel && <span className="text-muted-foreground/70">On deck</span>}
@@ -80,6 +88,11 @@ export function OnDeckLine({
       >
         {shown ? deckDayWords(shown, timezone, now) : 'Not on deck'}
       </span>
+      {replaces && (
+        <span data-quick-panel-deck-replaces className="text-muted-foreground">
+          · a deck replaces {replaces}
+        </span>
+      )}
       {wasOnDeck && (
         <span data-quick-panel-was-on-deck className="text-muted-foreground">
           · was on deck {wasOnDeck}

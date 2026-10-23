@@ -304,6 +304,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- rollover remembered when it sent an undone deck to the queue.
   on_deck_day TEXT DEFAULT NULL,
   queued_from_deck_day TEXT DEFAULT NULL,
+  -- THE DEADLINES PAGE (2026-10-22, docs/TASK-MODEL.md § The deadlines page):
+  -- lead_from = the owner's OpenTask day (yyyy-MM-dd) a deadline task with no
+  -- target goes on the deadlines page (this instance's; derived on every
+  -- deadline write and advance, moved by Defer — leadFor in
+  -- src/lib/task-segments.ts). lead_days = the user's override of the lead
+  -- (days before the deadline's day); NULL = the default table.
+  lead_days INTEGER DEFAULT NULL,
+  lead_from TEXT DEFAULT NULL,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat
@@ -603,8 +611,9 @@ CREATE TABLE IF NOT EXISTS time_slots (
 );
 CREATE INDEX IF NOT EXISTS idx_time_slots_user ON time_slots(user_id, start_time);
 
--- Slot nags — the ONLY state behind the hourly nag (see
--- src/core/notifications/slot-nags.ts for why the nag exists at all).
+-- Slot nags — RETIRED 2026-10-22: the slot nag paces through `nag_sends`
+-- (key 'slot-nag') and nothing writes this table any more; the weekly purge
+-- drains old rows, after which it can be dropped. Historical notes follow.
 --
 -- Notification plumbing, deliberately NOT in `user_daily_stats`: that table is
 -- user-facing (completions, tasks created, snoozes) and a delivery counter is
@@ -620,6 +629,18 @@ CREATE TABLE IF NOT EXISTS slot_nags (
   sent_count INTEGER NOT NULL DEFAULT 0,
   last_hour  INTEGER NOT NULL,           -- local hour (0-23) of the most recent nag
   PRIMARY KEY (user_id, local_date)
+);
+
+-- When a nag was last sent, per user and source (nag-map fix #5, 2026-10-22).
+-- A nag sends when now − last_sent_at ≥ its interval, in whole minutes, so a
+-- restart, a double tick or downtime can neither repeat nor lose a send.
+-- Keys: 'deadlines-page' (src/core/notifications/deadline-nags.ts), 'slot-nag'
+-- (slot-nags.ts; the slot-open push stamps it too). See nag-sends.ts.
+CREATE TABLE IF NOT EXISTS nag_sends (
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  key          TEXT NOT NULL,
+  last_sent_at TEXT NOT NULL,              -- ISO 8601 UTC
+  PRIMARY KEY (user_id, key)
 );
 
 -- Progress events (REDESIGN-V03 §5)
@@ -672,5 +693,8 @@ CREATE TABLE IF NOT EXISTS segment_roster (
   day      TEXT NOT NULL,
   kind     TEXT NOT NULL,
   task_id  INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  -- How the row left, when the writer says so itself (2026-10-22): 'deferred'
+  -- from the deadlines page's Defer (`deferLeads`). NULL = judged from the task.
+  left_how TEXT DEFAULT NULL,
   PRIMARY KEY (user_id, day, kind, task_id)
 );

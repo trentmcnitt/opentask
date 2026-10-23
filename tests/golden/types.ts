@@ -11,7 +11,7 @@
  * A day's line is the simulator's `dayLine`: the place, then the badges —
  *   quiet | days | weeks | months | eventually | upcoming | over | done
  *   + "N×" (attempts, while the task has a target) + age (">1 mo")
- *   + "→remove" / "→auto" (the 3× offer).
+ *   + "→remove" (the 3× offer; "→auto" until 2026-10-22).
  * Unlisted days are "quiet". Keys are a date ("2026-10-17") or an inclusive
  * range ("2026-10-28..2026-10-31").
  *

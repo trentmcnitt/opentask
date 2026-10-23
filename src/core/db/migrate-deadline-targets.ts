@@ -31,6 +31,12 @@
  * restored later is caught by the next start. Ordinary tasks only: never a
  * reminder or a quota.
  *
+ * THE DEADLINES PAGE (2026-10-22, plan L7): with the task-queue switch ON
+ * (`leads`) no automatic target is ever written again, so steps 2 and 4 would
+ * re-create one at every start. With `leads` step 4 is skipped and step 2
+ * only clears the retired flag (the task stays target-less: the deadlines
+ * page holds it, `migrateDeadlineLeads`). Switch off: as before.
+ *
  * COUNTING (Trent runs it on a read-only copy): `planDeadlineTargetMigration`
  * returns each step's task ids without writing anything, and
  * `scripts/count-target-migration.ts` prints them for any database file.
@@ -38,7 +44,12 @@
  */
 
 import type Database from 'better-sqlite3'
-import { autoTargetAt, type TargetContext } from '@/lib/task-segments'
+import {
+  autoTargetAt,
+  defaultRelativeTarget,
+  occurrenceDates,
+  type TargetContext,
+} from '@/lib/task-segments'
 
 /** An open, ordinary (not reminder, not quota) task, columns qualified by `t.`. */
 const OPEN_ORDINARY = `t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
@@ -59,12 +70,25 @@ const PULL_BACK_WHERE = `t.deadline_at IS NOT NULL AND t.due_at IS NOT NULL
   AND julianday(t.deadline_at) > julianday(?)
   AND julianday(t.due_at) > julianday(t.deadline_at) AND ${OPEN_ORDINARY}`
 
+/**
+ * THE SWITCH-OFF ROLLBACK for target-less deadline repeats (2026-10-22): a
+ * deadline-anchored repeat written with the switch on has no relative target
+ * (L1); with the switch off (no deadlines page) it would never nag. So with
+ * `leads` off it gets the default offsets (`defaultRelativeTarget`, the old
+ * A1 default) and its occurrence's derived target — as a one-off gets its
+ * automatic target back. Open rows only, not decked.
+ */
+const TARGETLESS_REPEAT_WHERE = `t.rrule IS NOT NULL AND t.repeat_anchor = 'deadline'
+  AND t.deadline_at IS NOT NULL AND (t.target_days_before IS NULL OR t.target_time IS NULL)
+  AND t.on_deck_day IS NULL AND ${OPEN_ORDINARY}`
+
 export interface TargetMigrationCounts {
   occurrenceSeed: number
   nagOffToAuto: number
   nagOffKeptTarget: number
   deadlineNoTargetToAuto: number
   pullBackToDeadline: number
+  targetlessRepeatToDefault: number
 }
 
 /** Each step's task ids (no titles), for checking a copy before it runs. */
@@ -105,6 +129,7 @@ function ids(db: Database.Database, where: string, ...params: unknown[]): number
 export function planDeadlineTargetMigration(
   db: Database.Database,
   now: Date = new Date(),
+  { leads = false }: { leads?: boolean } = {},
 ): TargetMigrationPlan {
   const columns = (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map(
     (c) => c.name,
@@ -116,8 +141,10 @@ export function planDeadlineTargetMigration(
     ),
     nagOffToAuto: ids(db, NAG_OFF_NO_TARGET_WHERE),
     nagOffKeptTarget: ids(db, NAG_OFF_KEEP_TARGET_WHERE),
-    deadlineNoTargetToAuto: ids(db, NO_TARGET_WHERE),
+    deadlineNoTargetToAuto: leads ? [] : ids(db, NO_TARGET_WHERE),
     pullBackToDeadline: ids(db, PULL_BACK_WHERE, now.toISOString()),
+    targetlessRepeatToDefault:
+      leads || !columns.includes('repeat_anchor') ? [] : ids(db, TARGETLESS_REPEAT_WHERE),
   }
 }
 
@@ -129,6 +156,7 @@ export function countsOf(plan: TargetMigrationPlan): TargetMigrationCounts {
     nagOffKeptTarget: plan.nagOffKeptTarget.length,
     deadlineNoTargetToAuto: plan.deadlineNoTargetToAuto.length,
     pullBackToDeadline: plan.pullBackToDeadline.length,
+    targetlessRepeatToDefault: plan.targetlessRepeatToDefault.length,
   }
 }
 
@@ -147,6 +175,7 @@ function ctxOf(row: AutoRow): TargetContext {
 export function migrateDeadlineTargets(
   db: Database.Database,
   now: Date = new Date(),
+  { leads = false }: { leads?: boolean } = {},
 ): TargetMigrationCounts {
   return db.transaction(() => {
     // UPDATE … AS t (SQLite 3.33+), so the WHEREs are shared with the plan.
@@ -170,14 +199,18 @@ export function migrateDeadlineTargets(
       }
       return rows.length
     }
-    const nagOffToAuto = applyAuto(autoRows(db, NAG_OFF_NO_TARGET_WHERE))
+    const nagOffToAuto = leads
+      ? db
+          .prepare(`UPDATE tasks AS t SET deadline_nag_off = 0 WHERE ${NAG_OFF_NO_TARGET_WHERE}`)
+          .run().changes
+      : applyAuto(autoRows(db, NAG_OFF_NO_TARGET_WHERE))
     const nagOffKeptTarget = db
       .prepare(
         `UPDATE tasks AS t SET deadline_nag_off = 0, target_auto = 0
           WHERE ${NAG_OFF_KEEP_TARGET_WHERE}`,
       )
       .run().changes
-    const deadlineNoTargetToAuto = applyAuto(autoRows(db, NO_TARGET_WHERE))
+    const deadlineNoTargetToAuto = leads ? 0 : applyAuto(autoRows(db, NO_TARGET_WHERE))
 
     const pullBackToDeadline = db
       .prepare(`UPDATE tasks AS t SET due_at = t.deadline_at WHERE ${PULL_BACK_WHERE}`)
@@ -189,6 +222,62 @@ export function migrateDeadlineTargets(
       nagOffKeptTarget,
       deadlineNoTargetToAuto,
       pullBackToDeadline,
+      targetlessRepeatToDefault: leads ? 0 : defaultTargetlessRepeats(db, now),
     }
   })()
+}
+
+interface RepeatRow {
+  id: number
+  rrule: string
+  recurrence_mode: 'from_due' | 'from_completion' | null
+  anchor_time: string | null
+  deadline_at: string
+  occurrence_at: string | null
+  timezone: string | null
+  morning_time: string | null
+}
+
+/** The switch-off rollback for target-less deadline repeats (`TARGETLESS_REPEAT_WHERE`). */
+function defaultTargetlessRepeats(db: Database.Database, now: Date): number {
+  const found = db
+    .prepare(
+      `SELECT t.id, t.rrule, t.recurrence_mode, t.anchor_time, t.deadline_at, t.occurrence_at,
+              u.timezone, u.morning_time
+         FROM tasks t JOIN users u ON u.id = t.user_id
+        WHERE ${TARGETLESS_REPEAT_WHERE} ORDER BY t.id`,
+    )
+    .all() as RepeatRow[]
+  const write = db.prepare(
+    `UPDATE tasks SET target_days_before = ?, target_time = ?, due_at = ?, original_due_at = ?,
+            target_set_at = ? WHERE id = ?`,
+  )
+  let n = 0
+  for (const row of found) {
+    const ctx = ctxOf({ ...row, deadline_at: row.deadline_at })
+    const occurrence = row.occurrence_at ?? row.deadline_at
+    try {
+      const rule = {
+        rrule: row.rrule,
+        recurrence_mode: row.recurrence_mode ?? 'from_due',
+        anchor_time: row.anchor_time,
+      }
+      const offset = defaultRelativeTarget(rule, occurrence, ctx.timezone, ctx.morningTime)
+      const target = occurrenceDates(
+        {
+          rrule: row.rrule,
+          repeat_anchor: 'deadline',
+          target_days_before: offset.days_before,
+          target_time: offset.time,
+        },
+        occurrence,
+        ctx.timezone,
+      ).targetAt
+      write.run(offset.days_before, offset.time, target, target, now.toISOString(), row.id)
+      n++
+    } catch {
+      // A rule the walk can't step (a malformed row): left for the next start.
+    }
+  }
+  return n
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, FolderOpen } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen, Forward } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -8,7 +8,15 @@ import { recurrenceSummary } from '@/lib/recurrence-summary'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
-import { deckTomorrowDay, offersDeck } from '@/lib/deck-menu'
+import {
+  deckReplaces,
+  deckTomorrowDay,
+  deferLeadDays,
+  offersDeck,
+  todayReplaces,
+} from '@/lib/deck-menu'
+import { ReplaceConfirm } from '@/components/ReplaceConfirm'
+import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
@@ -25,11 +33,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  BACK_TO_AUTO,
   HORIZON_LABELS,
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
   QUEUE_PANEL_TITLES,
+  DEADLINES_PAGE_TITLE,
+  REMOVE_TARGET,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
   taskQueueTitle,
@@ -38,6 +47,7 @@ import {
 import {
   SEGMENT_NUDGE_THRESHOLD,
   isQueueKind,
+  onlyWithQueue,
   type HorizonValue,
   type SegmentKind,
   type SegmentLeft,
@@ -48,6 +58,8 @@ import { useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
+import { DeadlineChip } from '@/components/DeadlineChip'
+import { useTimezone } from '@/hooks/useTimezone'
 
 /**
  * A TASK SEGMENT's rows (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -117,8 +129,8 @@ export function segmentCounts(segment: SegmentView): { handled: number; total: n
 
 /**
  * Whether the task queue's UI applies (PR 3): the switch from GET
- * /api/user/preferences (`useTaskQueue`) — or a queue panel itself, which the
- * server sends only with the switch on, so its rows never wear the
+ * /api/user/preferences (`useTaskQueue`) — or a queue panel (or the deadlines
+ * page) itself, which the server sends only with the switch on, so its rows never wear the
  * switch-off controls in the moment before the preferences load.
  */
 export function useQueueOn(kind: SegmentKind): boolean {
@@ -133,7 +145,7 @@ export function useQueueOn(kind: SegmentKind): boolean {
  */
 export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
   const { loaded, enabled } = useTaskQueue()
-  if (isQueueKind(kind)) return 'on'
+  if (onlyWithQueue(kind)) return 'on'
   if (!loaded) return 'pending'
   return enabled ? 'on' : 'off'
 }
@@ -146,7 +158,18 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
  */
 export function segmentTitle(kind: SegmentKind): string {
   if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
+  if (kind === 'deadlines') return taskQueueTitle(DEADLINES_PAGE_TITLE)
   return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
+}
+
+/**
+ * Whether a segment has "Defer all" (off today's list, back tomorrow —
+ * `segment_deferred_at`). Not the queue's two panels (spec rule 8: consider,
+ * Today and done), and not the DEADLINES page (2026-10-22): its Defer moves a
+ * row's lead day (`/api/task-segments/defer-lead`), one row at a time.
+ */
+export function offersDeferAll(kind: SegmentKind): boolean {
+  return !isQueueKind(kind) && kind !== 'deadlines'
 }
 
 /** `segmentTitle` for a segment: its header, section and list names. */
@@ -225,13 +248,18 @@ export function TaskSegmentRow({
 }) {
   const { task } = row
   const considered = row.state === 'considered'
+  // The deadlines page's safety net (2026-10-22): a row already seen today
+  // stays, waiting — another consider would change nothing.
+  const seenInNet = !!row.safetyNet && !!row.seen
   const consider = () => {
-    if (!considered) void actions.consider(task)
+    if (!considered && !seenInNet) void actions.consider(task)
   }
   const rowProps = useSegmentRowPress({
     onPeek: (viaKeyboard) => actions.openPeek(task, viaKeyboard),
     onConsider: consider,
     enabled: !considered,
+    // A seen safety-net row: a tap changes nothing, so it doesn't say "tap".
+    considerable: !seenInNet,
   })
   const peekOpen = actions.peek?.id === task.id
   // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
@@ -261,6 +289,8 @@ export function TaskSegmentRow({
       <li
         data-segment-task={task.id}
         data-segment-state={row.state}
+        data-safety-net={row.safetyNet ? '' : undefined}
+        data-seen={row.seen ? '' : undefined}
         tabIndex={considered ? -1 : 0}
         {...rowProps}
         // The SAME geometry as the rows around it (Trent, 2026-10-11: circles and
@@ -280,7 +310,10 @@ export function TaskSegmentRow({
           panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
           considered
             ? 'opacity-60'
-            : cn('cursor-pointer', panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'),
+            : cn(
+                !seenInNet && 'cursor-pointer',
+                panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]',
+              ),
         )}
       >
         {tryTomorrow && (
@@ -293,7 +326,13 @@ export function TaskSegmentRow({
             style={{ backgroundColor: 'var(--segment-queue_today)' }}
           />
         )}
-        <SegmentRowCircle task={task} considered={considered} panel={panel} onConsider={consider} />
+        <SegmentRowCircle
+          task={task}
+          considered={considered}
+          seenInNet={seenInNet}
+          panel={panel}
+          onConsider={consider}
+        />
         <div className="min-w-0 flex-1">
           <p
             className={cn(
@@ -385,18 +424,41 @@ function SegmentRowPeek({
   )
 }
 
-/** The row's left circle: "considered" (seen, never a completion). */
+/**
+ * The row's left circle: "considered" (seen, never a completion). On the
+ * deadlines page's SAFETY NET (2026-10-22) a seen row keeps waiting — seeing
+ * does not silence it — so its circle is a green RING with the check, not the
+ * filled considered circle: seen, still on the page, still nagging.
+ */
 function SegmentRowCircle({
   task,
   considered,
+  seenInNet = false,
   panel,
   onConsider,
 }: {
   task: Task
   considered: boolean
+  seenInNet?: boolean
   panel: boolean
   onConsider: () => void
 }) {
+  if (seenInNet) {
+    return (
+      <span
+        role="img"
+        data-seen-ring
+        aria-label={`"${task.title}" seen today — the deadline is close, so it stays`}
+        title="Seen today · the deadline is close: only a target or done takes it off"
+        className={cn(
+          'flex shrink-0 items-center justify-center rounded-full border-2 border-green-600 text-green-700 dark:border-green-500 dark:text-green-400',
+          panel ? 'size-[19px]' : 'mt-[3px] size-6',
+        )}
+      >
+        <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
+      </span>
+    )
+  }
   if (considered) {
     return (
       <span
@@ -439,6 +501,10 @@ function SegmentRowCircle({
   )
 }
 
+/** A seen safety-net row's (a tap changes nothing there). */
+export const ROW_PEEK_ONLY_DESCRIPTION =
+  'Seen today; the deadline is close. Hold, right-click or press Command-Enter for details.'
+
 /** Read to assistive tech on every waiting row: the peek's ways in. */
 export const ROW_PEEK_DESCRIPTION =
   'Tap to mark considered. Hold, right-click or press Command-Enter for details.'
@@ -470,10 +536,13 @@ function useSegmentRowPress({
   onPeek,
   onConsider,
   enabled,
+  considerable = true,
 }: {
   onPeek: (viaKeyboard: boolean) => void
   onConsider: () => void
   enabled: boolean
+  /** A tap still considers (not a seen safety-net row): the description says so. */
+  considerable?: boolean
 }) {
   const press = useLongPress({ onLongPress: enabled ? () => onPeek(false) : undefined })
   const isOwn = (e: React.SyntheticEvent<HTMLElement>) => {
@@ -482,7 +551,11 @@ function useSegmentRowPress({
   }
   return {
     'aria-keyshortcuts': enabled ? 'Meta+Enter Control+Enter' : undefined,
-    'aria-description': enabled ? ROW_PEEK_DESCRIPTION : undefined,
+    'aria-description': enabled
+      ? considerable
+        ? ROW_PEEK_DESCRIPTION
+        : ROW_PEEK_ONLY_DESCRIPTION
+      : undefined,
     onClick: (e: React.MouseEvent<HTMLLIElement>) => {
       if (press.didFire()) {
         e.preventDefault()
@@ -595,7 +668,11 @@ function TaskSegmentRowActions({
         panel={panel}
         queueUi={queueUi}
       />
-      {queueUi === 'on' ? (
+      {segmentHorizon === 'deadlines' ? (
+        // The deadlines page (2026-10-22): Defer in On deck tomorrow's place —
+        // both are "another day" — hidden in the safety net (the place kept).
+        <DeferLeadSlot row={row} actions={actions} timezone={timezone} panel={panel} />
+      ) : queueUi === 'on' ? (
         <DeckTomorrowSlot row={row} actions={actions} timezone={timezone} panel={panel} />
       ) : queueUi === 'pending' ? (
         // Preferences still loading: the slot both controls share, empty,
@@ -619,6 +696,8 @@ function TaskSegmentRowActions({
           timezone={timezone}
           onTargetToday={(t) => void actions.targetToday(t)}
           onTargetAt={(t, at) => void actions.targetAt(t, at)}
+          // Faded on a decked row: a target takes it off deck (plan §5).
+          replaces={todayReplaces(task, timezone)}
           showLabel
           // A full 44px hit target around a glyph the size of the circle and
           // the done square; the negative margin keeps the row's height. The
@@ -666,8 +745,8 @@ function TaskSegmentRowActions({
 /**
  * ON DECK (D2, spec rule 8) on a segment row: the first of the row's
  * controls, before On deck tomorrow and Today (2026-10-21), with the task
- * queue on — never on a one-off beside a target the
- * user picked (rule 1). Repeating rows (queue waiting rows, Upcoming) have it
+ * queue on — on a one-off with a target the user picked FADED, asking before
+ * it replaces that target (rule 1; plan §5, 2026-10-22). Repeating rows (queue waiting rows, Upcoming) have it
  * too since 2026-10-20: it decks the current occurrence (`offersDeck`). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
  * dead space belongs between Today and the done square only. While the
  * preferences load, its place is kept empty only if the switch was on last
@@ -688,15 +767,16 @@ function SegmentDeckSlot({
 }) {
   if (queueUi === 'off') return null
   if (queueUi === 'pending') return <DeckPlaceholder panel={panel} />
-  // A row without the button (a one-off with a target the user picked) keeps
-  // its place empty (Trent, 2026-10-20), so the row's controls line up down
-  // the column.
+  // A row without the button keeps its place empty (Trent, 2026-10-20), so
+  // the row's controls line up down the column. (Since 2026-10-22 every task
+  // row has it; a picked target makes it faded — `replaces`.)
   if (!offersDeck(row.task)) return <DeckSlotSpacer panel={panel} empty />
   return (
     <OnDeckButton
       task={row.task}
       timezone={timezone}
       onDeck={(t, day) => void actions.deck(t, day)}
+      replaces={deckReplaces(row.task, timezone)}
       // Icon only (Trent, 2026-10-20): the tooltip and the name say "On deck".
       className={CONTROL_HIT}
       boxClassName={panel ? DECK_BOX.panel : DECK_BOX.page}
@@ -722,9 +802,10 @@ const SLOT_HIT = '-my-2 size-8 shrink-0 pointer-coarse:-my-3 pointer-coarse:size
  * `deckMenuDays`, so the two can never disagree), through the same
  * `actions.deck`: the same A1 refusals and toasts, the same Undo, and the row
  * leaves its panel like any action. Repeating rows too: it decks the current
- * occurrence for tomorrow, as On deck's Tomorrow does. A row On deck isn't
- * offered on (a one-off with a target the user picked, `offersDeck`) keeps
- * the place empty, so the controls line up down the column.
+ * occurrence for tomorrow, as On deck's Tomorrow does. On a one-off with a
+ * target the user picked it is FADED and asks first (`deckReplaces`, plan §5,
+ * 2026-10-22); a row it isn't offered on (`offersDeck`) keeps the place empty,
+ * so the controls line up down the column.
  *
  * HOLD or RIGHT-CLICK (Trent, 2026-10-21): On deck's own day menu
  * (`DeckMenu` — Tomorrow, the next days, the check-in day, Pick a date…,
@@ -766,12 +847,68 @@ function DeckTomorrowButton({
   panel: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // A picked target this would replace (plan §5): faded, and it asks first.
+  const replaces = deckReplaces(task, timezone)
+  const [pending, setPending] = useState<string | null>(null)
+  // Nothing to replace any more (the row changed under an open confirm): drop it.
+  if (!replaces && pending) setPending(null)
+  const act = (day: string | null) => {
+    if (replaces && day !== null) setPending(day)
+    else void actions.deck(task, day)
+  }
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => void actions.deck(task, deckTomorrowDay(timezone, new Date())),
+    onShortPress: () => act(deckTomorrowDay(timezone, new Date())),
     // The tap takes the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
+  const button = (
+    <button
+      type="button"
+      data-deck-tomorrow
+      data-replaces={replaces ? '' : undefined}
+      data-no-row-press
+      onClick={(e) => {
+        e.stopPropagation()
+        press.onClick()
+      }}
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerLeave={press.onPointerLeave}
+      onPointerMove={press.onPointerMove}
+      onPointerCancel={press.onPointerCancel}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenuOpen(true)
+      }}
+      aria-label={`On deck tomorrow: “${task.title}” (hold for a day)`}
+      title={
+        replaces
+          ? `On deck tomorrow — replaces ${replaces} · hold for a day`
+          : 'On deck tomorrow · hold for a day'
+      }
+      className={cn(
+        'group/deck-tomorrow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+        replaces && 'opacity-45 hover:opacity-100',
+        SLOT_HIT,
+      )}
+    >
+      <span
+        data-deck-tomorrow-box
+        className={cn(
+          'group-hover/deck-tomorrow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+          panel ? DECK_BOX.panel : DECK_BOX.page,
+        )}
+      >
+        <DeckTomorrowIcon
+          className={panel ? 'size-[18px]' : 'size-[22px]'}
+          // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
+          strokeWidth={1.75}
+        />
+      </span>
+    </button>
+  )
   return (
     <span
       className="contents"
@@ -783,48 +920,107 @@ function DeckTomorrowButton({
         timezone={timezone}
         open={menuOpen}
         onOpenChange={setMenuOpen}
-        onPick={(day) => void actions.deck(task, day)}
+        onPick={act}
+      >
+        {replaces ? (
+          <ReplaceConfirm
+            open={pending !== null}
+            onOpenChange={(open) => {
+              if (!open) setPending(null)
+            }}
+            message={`Replaces ${replaces}`}
+            confirmLabel="Deck"
+            onConfirm={() => {
+              if (pending) void actions.deck(task, pending)
+            }}
+          >
+            {button}
+          </ReplaceConfirm>
+        ) : (
+          button
+        )}
+      </DeckMenu>
+    </span>
+  )
+}
+
+/**
+ * DEFER on a DEADLINES-PAGE row (2026-10-22, plan §3; A3: tap + pick), in On
+ * deck tomorrow's place: a tap opens the day menu — tomorrow up to two days
+ * before the deadline (`deferLeadDays`) — and the pick moves THIS instance's
+ * lead day there (`actions.deferLead`); the row leaves until then. In the
+ * SAFETY NET (from the day before the deadline) there is no Defer — only a
+ * target or done takes the row off — and its place stays empty, so the
+ * controls line up down the column; likewise when no day is left to pick.
+ */
+function DeferLeadSlot({
+  row,
+  actions,
+  timezone,
+  panel,
+}: {
+  row: SegmentRow
+  actions: TaskSegmentActions
+  timezone: string
+  panel: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const { attemptsRolloverTime } = useTaskQueue()
+  const { task } = row
+  const days =
+    row.safetyNet || !task.deadline_at
+      ? []
+      : deferLeadDays(task.deadline_at, timezone, new Date(), attemptsRolloverTime, task.lead_from)
+  if (days.length === 0) {
+    return <span aria-hidden data-defer-lead-empty className={SLOT_HIT} />
+  }
+  return (
+    <span
+      className="contents"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <OptionMenu
+        open={open}
+        onOpenChange={setOpen}
+        title="Defer to"
+        anchored
+        options={days.map((d) => ({
+          label: d.label,
+          option: d.day,
+          caption: d.caption,
+          icon: <Forward />,
+        }))}
+        onSelect={(day) => {
+          setOpen(false)
+          void actions.deferLead(task, day)
+        }}
       >
         <button
           type="button"
-          data-deck-tomorrow
+          data-defer-lead
           data-no-row-press
           onClick={(e) => {
             e.stopPropagation()
-            press.onClick()
+            setOpen(true)
           }}
-          onPointerDown={press.onPointerDown}
-          onPointerUp={press.onPointerUp}
-          onPointerLeave={press.onPointerLeave}
-          onPointerMove={press.onPointerMove}
-          onPointerCancel={press.onPointerCancel}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setMenuOpen(true)
-          }}
-          aria-label={`On deck tomorrow: “${task.title}” (hold for a day)`}
-          title="On deck tomorrow · hold for a day"
+          aria-label={`Defer “${task.title}” to a later day`}
+          title="Defer · pick a day (up to two days before the deadline)"
           className={cn(
-            'group/deck-tomorrow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+            'group/defer-lead text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
             SLOT_HIT,
           )}
         >
           <span
-            data-deck-tomorrow-box
             className={cn(
-              'group-hover/deck-tomorrow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+              'group-hover/defer-lead:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
               panel ? DECK_BOX.panel : DECK_BOX.page,
             )}
           >
-            <DeckTomorrowIcon
-              className={panel ? 'size-[18px]' : 'size-[22px]'}
-              // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
-              strokeWidth={1.75}
-            />
+            <Forward className={panel ? 'size-[18px]' : 'size-[22px]'} strokeWidth={1.75} />
           </span>
         </button>
-      </DeckMenu>
+      </OptionMenu>
     </span>
   )
 }
@@ -857,10 +1053,12 @@ function DeckSlotSpacer({ panel, empty = false }: { panel: boolean; empty?: bool
 }
 
 /**
- * The second line, only when there is something to say: a future target date
- * ("Nov 1") — a waiting repeating task's occurrence instead
- * (`queuedRepeatOccurrence`) — or a deadline. Without either the row is one line, a reminder row's
- * height — the segment stays bite-size.
+ * The second line, only when there is something to say: the project, the
+ * DEADLINE right after it (`DeadlineChip`, 2026-10-22 — red passed, amber in
+ * the safety net; after, so every row's project starts at the same x), a
+ * future target date ("Nov 1") — a waiting repeating task's occurrence
+ * instead (`queuedRepeatOccurrence`). Without either the row is one line, a
+ * reminder row's height — the segment stays bite-size.
  *
  * With the task queue on (PR 3) the horizon is here too, as the row corner's
  * dot (`showsHorizonDot`, the dashboard row's rule: a one-off with no picked
@@ -893,9 +1091,8 @@ function TaskSegmentMeta({
   const queuedOccurrence = queueOn ? queuedRepeatOccurrence(task) : null
   const shownAt = queuedOccurrence ?? task.due_at
   const target = shownAt ? DateTime.fromISO(shownAt).setZone(timezone) : null
-  const deadline = task.deadline_at ? DateTime.fromISO(task.deadline_at).setZone(timezone) : null
   // The dashboard row's context, compactly (Trent, 10-11): the project, the
-  // priority, a future target and the deadline.
+  // deadline chip (2026-10-22), the priority and a future target.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
       {project && (
@@ -904,6 +1101,9 @@ function TaskSegmentMeta({
           {project.name}
         </span>
       )}
+      {/* The deadline chip right AFTER the project (Trent's 10-20 rule: every
+          row's project starts at the same x), 2026-10-22. */}
+      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {/* The horizon dot AFTER the project (Trent, 2026-10-20), not before
           it: only one-offs wear it, so in front it pushed their project names
           right of the repeating rows'. Now every row's project starts at the
@@ -934,9 +1134,11 @@ function TaskSegmentMeta({
           )}
         </span>
       )}
-      {deadline && (
-        <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
-          deadline {deadline.toFormat('LLL d')}
+      {/* The deadlines page (2026-10-22): a decked row stays on the page —
+          it says its deck day. */}
+      {segmentHorizon === 'deadlines' && task.on_deck_day && (
+        <span data-deck-day-chip className="text-foreground/70 font-medium">
+          {deckChipWords(task.on_deck_day, timezone)}
         </span>
       )}
       {/* No badges on a queue row (designer, 10-19) — neither attempts nor
@@ -946,6 +1148,11 @@ function TaskSegmentMeta({
       <SegmentLabels task={task} />
     </div>
   )
+}
+
+/** "On deck Sat" / "On deck today" for a deck day (yyyy-MM-dd). */
+function deckChipWords(day: string, timezone: string): string {
+  return todayReplaces({ on_deck_day: day }, timezone) ?? 'On deck'
 }
 
 /**
@@ -1007,13 +1214,13 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
 }
 
 /**
- * An UPCOMING row's second line (2026-10-12, spec §2): the gap text —
- * "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" — after the project and
- * priority. The "Target …" part is a chip that opens a one-item menu
- * (`targetReset`, §8.3): on a one-off with no deadline, "Remove target"
- * (back to its horizon segment); on one with a deadline, "Back to auto" (the
- * deadline's automatic target again — which leaves Upcoming). Undo on the
- * toast either way. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
+ * An UPCOMING row's second line (2026-10-12, spec §2): the project, the
+ * deadline chip (2026-10-22), the priority, then "Target Tue Nov 3" —
+ * or, for a target-less deadline task before its lead day (the deadlines
+ * page's hand-off, plan §4), "on the deadlines page from Tue Oct 20". The "Target …" part is a chip that opens a one-item menu
+ * (`targetReset`): "Remove target" — back to its horizon segment, or, with a
+ * deadline (2026-10-22, it replaced "Back to auto"), onto the deadlines page
+ * from its lead day. Undo on the toast. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
  * `readOnly` (the row's peek bubble): the same words, the chip a plain label.
  */
 function UpcomingMeta({
@@ -1033,6 +1240,12 @@ function UpcomingMeta({
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const gap = upcomingGap(task, timezone)
   const reset = readOnly ? null : upcomingRowActions(row).reset
+  // The deadlines page's hand-off (plan §4): a target-less deadline task's
+  // heads-up counts to its lead day — "on the deadlines page from Tue Oct 20".
+  const leadFrom =
+    !gap.target && task.deadline_at && task.lead_from
+      ? DateTime.fromISO(task.lead_from, { zone: timezone }).toFormat('ccc LLL d')
+      : null
   return (
     <div
       data-upcoming-gap
@@ -1044,9 +1257,17 @@ function UpcomingMeta({
           {project.name}
         </span>
       )}
+      {/* The deadline chip right AFTER the project (Trent's 10-20 rule: every
+          row's project starts at the same x), 2026-10-22. */}
+      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {priority && (
         <span data-segment-priority className={priority.color}>
           {priority.label}
+        </span>
+      )}
+      {leadFrom && (
+        <span data-lead-from className="text-foreground/70">
+          on the deadlines page from {leadFrom}
         </span>
       )}
       {gap.target &&
@@ -1064,12 +1285,8 @@ function UpcomingMeta({
               <ChevronDown className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem
-                data-remove-target={reset === 'remove' ? '' : undefined}
-                data-back-to-auto={reset === 'auto' ? '' : undefined}
-                onSelect={() => void actions.removeTarget(task)}
-              >
-                {reset === 'auto' ? BACK_TO_AUTO : 'Remove target'}
+              <DropdownMenuItem data-remove-target onSelect={() => void actions.removeTarget(task)}>
+                {REMOVE_TARGET}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1084,16 +1301,6 @@ function UpcomingMeta({
             )}
           </span>
         ))}
-      {gap.target && gap.deadline && (
-        <span aria-hidden className="-mx-1">
-          ·
-        </span>
-      )}
-      {gap.deadline && (
-        <span data-deadline-chip className="text-amber-700 dark:text-amber-400">
-          {gap.deadline}
-        </span>
-      )}
       <BadgeChips task={task} timezone={timezone} />
       <SegmentLabels task={task} />
     </div>
@@ -1137,10 +1344,20 @@ export function HorizonChip({
 }
 
 /** How a row that left its segment today was handled, after its title. */
-const LEFT_WORDS: Record<Exclude<SegmentLeft, 'considered'>, string> = {
+const LEFT_WORDS: Record<Exclude<SegmentLeft, 'considered' | 'deferred'>, string> = {
   done: 'done',
   deck: 'on deck',
   target: 'targeted',
+}
+
+/**
+ * The words for a row that left today: "done", "on deck", "targeted", or —
+ * the deadlines page's Defer (2026-10-22) — "deferred to Thu" (its lead day).
+ */
+function leftWords(left: Exclude<SegmentLeft, 'considered'>, task: Task): string {
+  if (left !== 'deferred') return LEFT_WORDS[left]
+  const day = task.lead_from ? DateTime.fromISO(task.lead_from) : null
+  return day?.isValid ? `deferred to ${day.toFormat('ccc')}` : 'deferred'
 }
 
 /**
@@ -1160,6 +1377,7 @@ export function ConsideredSegmentRow({
   onPutBack: (task: Task) => void
 }) {
   const { task, state, left } = row
+  const timezone = useTimezone()
   const circle = cn(
     'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
     panel ? 'size-[19px]' : 'mt-[3px] size-6',
@@ -1199,8 +1417,15 @@ export function ConsideredSegmentRow({
       >
         {task.title}
         {state === 'deferred' && <span className="ml-1.5 text-xs">· deferred</span>}
+        {/* A deadlines-page row decked for a later day: considered today,
+            still on the page — it says its deck day (2026-10-22). */}
+        {!left && task.on_deck_day && (
+          <span data-considered-deck className="ml-1.5 text-xs">
+            · {deckChipWords(task.on_deck_day, timezone).replace('On deck', 'on deck')}
+          </span>
+        )}
         {left && left !== 'considered' && (
-          <span className="ml-1.5 text-xs">· {LEFT_WORDS[left]}</span>
+          <span className="ml-1.5 text-xs">· {leftWords(left, task)}</span>
         )}
       </p>
     </li>

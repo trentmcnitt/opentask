@@ -34,12 +34,13 @@ import {
   targetReset,
   type HorizonValue,
 } from '@/lib/task-segments'
-import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/lib/row-corner'
 import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
-import { offersDeck } from '@/lib/deck-menu'
+import { DeadlineChip } from '@/components/DeadlineChip'
+import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
@@ -408,8 +409,8 @@ export function TaskRow({
   // ATTEMPTS (spec §7): local days over target, read here with the same rule
   // the server uses, so the row shows "1×" the moment the target passes
   // without a refetch. At 3× the row OFFERS to drop the target (never does it
-  // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
-  // target the user picked; nothing on an automatic target or a repeating task.
+  // on its own): "Remove target?" — a deadline task too since 2026-10-22 (it
+  // goes on the deadlines page); nothing on a repeating task.
   //
   // The task queue (resolution 1, PR 3): with the SERVER's switch on
   // (`useTaskQueue`, from GET /api/user/preferences) "Remove target?" is
@@ -775,6 +776,8 @@ export function TaskRow({
               task={task}
               timezone={timezone}
               onDeck={(t, day) => onDeck?.(t, day)}
+              // Faded on a picked target, and it asks first (plan §5).
+              replaces={deckReplaces(task, timezone)}
               className={dayControlClasses(
                 dayControlsOnTouch,
                 // A deck stays visible while it is set: the filled icon is
@@ -790,6 +793,8 @@ export function TaskRow({
               timezone={timezone}
               onTargetToday={(t) => onTargetAt?.(t)}
               onTargetAt={(t, at) => onTargetAt?.(t, at)}
+              // Faded on a decked row: a target takes it off deck (plan §5).
+              replaces={todayReplaces(task, timezone)}
               className={dayControlClasses(dayControlsOnTouch, false)}
               iconClassName="size-4"
             />
@@ -798,8 +803,7 @@ export function TaskRow({
             open={snoozeMenuOpen}
             onOpenChange={setSnoozeMenuOpen}
             onSnooze={(until) => onSnooze(task.id, until)}
-            // Remove target, or "Back to auto" on a deadline task whose target
-            // the user picked; nothing on an automatic target (§8.3, Q9).
+            // Remove target (`targetReset`): never on a repeating task.
             targetReset={onRemoveTarget ? targetReset(task) : null}
             onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
             deadlineAt={task.deadline_at}
@@ -884,15 +888,21 @@ function TaskRowMeta({
   timezone: string
   segments: MetaSegment[]
   timeControl: boolean
-  offer: 'auto' | 'remove' | null
+  offer: 'remove' | null
   onSnooze: (taskId: number, until: string) => void
   onRemoveTarget?: (task: Task) => void
 }) {
-  if (segments.length === 0 && !offer) return null
+  // The deadline chip leads the line (2026-10-22, `DeadlineChip`) — not on a
+  // quota, which carries no deadline.
+  const deadline = task.deadline_at && !isTracked(task) ? task.deadline_at : null
+  if (segments.length === 0 && !offer && !deadline) return null
   // The segments after the target time, or all of them when it is plain text.
   const rest = timeControl ? segments.filter((seg) => !seg.target) : segments
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
+      {deadline && (
+        <DeadlineChip deadlineAt={deadline} timezone={timezone} className="mr-0.5 text-xs" />
+      )}
       {timeControl && (
         <TargetTimeText
           task={task}
@@ -928,7 +938,7 @@ function TaskRowMeta({
           }}
           className="text-over-target hover:bg-over-target/10 -my-0.5 rounded px-1 py-0.5 text-xs font-medium whitespace-nowrap underline-offset-2 hover:underline"
         >
-          {offer === 'auto' ? `${BACK_TO_AUTO}?` : 'Remove target?'}
+          {REMOVE_TARGET}?
         </button>
       )}
     </div>
@@ -986,11 +996,10 @@ function buildMetaSegments(
     segments.push({ text: formatRRuleCompact(task.rrule, task.anchor_time) })
   }
 
-  // The deadline (2026-10-10): its own field now, never moved by a snooze.
-  // Past it, the row says so — nagging continues (Trent: "sometimes it's for a
-  // client and you're in a rush"), and this marker is the honest label.
-  const deadline = deadlineSegment(task, timezone)
-  if (deadline) segments.push(deadline)
+  // The deadline (2026-10-10) is not a segment since 2026-10-22: it leads the
+  // line as the deadline chip (`DeadlineChip`, in `TaskRowMeta`) — red once
+  // passed (nagging continues; Trent: "sometimes it's for a client and you're
+  // in a rush"), amber in the safety net.
 
   // AGE (spec §7, 2026-10-12; replaced the "Xd old" text every row had): only
   // on a task with neither a target nor a deadline, and only once it is past
@@ -1001,26 +1010,6 @@ function buildMetaSegments(
   if (age) segments.push({ text: age, className: 'text-muted-foreground/70', ageLabel: true })
 
   return segments
-}
-
-/**
- * The deadline (2026-10-10): its own field now, never moved by a snooze.
- * Past it, the row says so — nagging continues (Trent: "sometimes it's for a
- * client and you're in a rush"), and this marker is the honest label.
- */
-function deadlineSegment(task: Task, timezone: string): MetaSegment | null {
-  if (!task.deadline_at) return null
-  const when = formatDueTimeParts(task.deadline_at, timezone)
-  if (isPastDeadline(task.deadline_at, new Date())) {
-    return {
-      text: `past deadline ${when.absolute || when.relative}`,
-      className: 'text-destructive font-semibold',
-    }
-  }
-  return {
-    text: `deadline ${when.relative}`,
-    className: 'text-amber-700 dark:text-amber-400 font-medium',
-  }
 }
 
 /**

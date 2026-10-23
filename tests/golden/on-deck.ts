@@ -180,55 +180,58 @@ export const onDeckScenarios: GoldenScenario[] = [
   {
     id: 'od-deadline',
     title:
-      'A deadline task: decked within its lead, refused after it; the auto target nags as ever',
-    source: 'A1; rule 1 ("the deadline protects regardless"); B5',
+      'A deadline task: decked up to its deadline day, refused after it; the expired deck is cleared, never queued',
+    source: 'A1 (the deadlines page, 2026-10-22, plan §5); rule 7',
     from: '2026-10-19',
-    to: '2026-10-27',
+    to: '2026-10-31',
     policy: ['never'],
     queue: QUEUE,
     tasks: [
       {
         name: 'task',
         created: '2026-10-19T09:00',
-        // Deadline Fri Oct 30 23:59, set Mon: wait 11 → lead 3 → auto Tue Oct 27 08:30.
+        // Deadline Fri Oct 30 23:59, set Mon: wait 11 → lead 3 → lead day Tue Oct 27.
         input: { title: 'Synthetic deadline one-off', deadline_at: iso('2026-10-30T23:59') },
       },
     ],
     events: [
-      { at: '2026-10-19T10:00', run: refused('task', '2026-10-28', 'after_auto_target') },
-      // Strict A1: the auto target's own day is refused too (it would nag that morning).
-      { at: '2026-10-19T10:00', run: refused('task', '2026-10-27', 'after_auto_target') },
+      // A1: any day up to the deadline's own day; the day after is refused.
+      { at: '2026-10-19T10:00', run: refused('task', '2026-10-31', 'after_auto_target') },
       { at: '2026-10-19T10:01', run: deck(['task'], '2026-10-24') },
       {
         at: '2026-10-19T10:02',
         run: check('task', {
           on_deck_day: '2026-10-24',
-          due_at: iso('2026-10-27T08:30'),
-          target_auto: true,
+          due_at: null,
+          target_auto: false,
+          lead_from: '2026-10-27',
         }),
       },
-      // In the queue with its automatic target kept, until that target arrives.
-      { at: '2026-10-25T06:31', run: check('task', { due_at: iso('2026-10-27T08:30') }) },
-      // Its auto target has arrived: refused now.
-      { at: '2026-10-27T10:00', run: refused('task', '2026-10-27', 'deadline_nagging') },
+      // A deadline task's expired deck is cleared, never queued (plan §5).
+      { at: '2026-10-25T06:31', run: check('task', { on_deck_day: null, queued_at: null }) },
+      // The deadline has passed: refused now.
+      { at: '2026-10-31T10:00', run: refused('task', '2026-10-31', 'deadline_nagging') },
     ],
     expect: {
       task: {
-        // A deck outranks its horizon segment (the deadline would pull it to days).
+        // The deck's heads-up (wait 5 from Mon): the day before.
         '2026-10-23': 'upcoming',
         '2026-10-24': 'deck',
-        '2026-10-25': 'queue_today queued',
-        '2026-10-26': 'queue_previous queued',
-        '2026-10-27': 'over queued 1×',
+        // Then the lead day's heads-ups (wait 8 from Mon): Sat Oct 24 (carried
+        // over the deck day) and Mon Oct 26.
+        '2026-10-25..2026-10-26': 'upcoming',
+        '2026-10-27..2026-10-28': 'deadlines',
+        '2026-10-29..2026-10-31': 'deadlines net',
       },
     },
   },
   {
     id: 'od-deadline-added',
-    title: 'A deadline added to a decked task keeps the deck (an automatic target is not a pick)',
-    source: 'B1 (the pick-only clear)',
+    title:
+      'A deadline added to a decked task keeps the deck; the expired deck is cleared, never queued',
+    source: 'B1 (the pick-only clear); plan §5',
     from: '2026-10-19',
-    to: '2026-10-23',
+    to: '2026-10-28',
     policy: ['never'],
     queue: QUEUE,
     tasks: [{ name: 'task', created: '2026-10-19T09:00', input: UNDATED }],
@@ -246,26 +249,31 @@ export const onDeckScenarios: GoldenScenario[] = [
       },
       {
         at: '2026-10-20T10:01',
+        // Tue → Fri Oct 30: wait 10 → lead 3 → Tue Oct 27.
         run: check('task', {
           on_deck_day: '2026-10-22',
-          target_auto: true,
-          due_at: iso('2026-10-27T08:30'),
+          target_auto: false,
+          due_at: null,
+          lead_from: '2026-10-27',
         }),
       },
+      { at: '2026-10-23T06:31', run: check('task', { on_deck_day: null, queued_at: null }) },
     ],
     expect: {
       task: {
         // The deadline restamped target_set_at (Tue): wait 2 → the day before.
         '2026-10-21': 'upcoming',
         '2026-10-22': 'deck',
-        '2026-10-23': 'queue_today queued',
+        // The lead day's heads-up (wait 7 from Tue): the day before.
+        '2026-10-26': 'upcoming',
+        '2026-10-27..2026-10-28': 'deadlines',
       },
     },
   },
   {
     id: 'od-deadline-wins',
-    title: 'A NEAR deadline added to a decked task wins: the deck goes, the deadline nags',
-    source: 'A1 strict (review 10-20): decks never nag',
+    title: 'A deadline added BEFORE the deck day wins: the deck goes, the deadlines page holds it',
+    source: 'A1 (plan §5): a deck day after the deadline day is refused',
     from: '2026-10-19',
     to: '2026-10-25',
     policy: ['never'],
@@ -273,8 +281,8 @@ export const onDeckScenarios: GoldenScenario[] = [
     tasks: [{ name: 'task', created: '2026-10-19T09:00', input: UNDATED }],
     events: [
       { at: '2026-10-19T10:00', run: deck(['task'], '2026-10-24') },
-      // Tue: deadline Sun Oct 25 23:59 → wait 5 → the day before → auto Sat
-      // Oct 24 08:30, the deck's own day: the deadline wins.
+      // Tue: deadline Fri Oct 23 23:59, before the deck's Saturday: the
+      // deadline wins. Wait 3 → lead 1 → Thu Oct 22, the safety net's start.
       {
         at: '2026-10-20T10:00',
         run: (ctx) =>
@@ -282,22 +290,19 @@ export const onDeckScenarios: GoldenScenario[] = [
             userId: ctx.userId,
             userTimezone: ctx.timezone,
             taskId: ctx.ids.task,
-            input: { deadline_at: iso('2026-10-25T23:59') },
+            input: { deadline_at: iso('2026-10-23T23:59') },
           }),
       },
       {
         at: '2026-10-20T10:01',
-        run: check('task', { on_deck_day: null, due_at: iso('2026-10-24T08:30') }),
+        run: check('task', { on_deck_day: null, due_at: null, lead_from: '2026-10-22' }),
       },
     ],
     expect: {
       task: {
-        // An automatic target is not quiet: its horizon segment until the
-        // target arrives Saturday. From Tue the deadline is within 7 days
-        // and pulls the horizon in to Days.
-        '2026-10-20..2026-10-23': 'days',
-        '2026-10-24': 'over 1×',
-        '2026-10-25': 'over 2×',
+        // The lead day's heads-up (wait 2 from Tue): the day before.
+        '2026-10-21': 'upcoming',
+        '2026-10-22..2026-10-25': 'deadlines net',
       },
     },
   },

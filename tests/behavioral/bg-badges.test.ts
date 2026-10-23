@@ -165,7 +165,7 @@ describe('BG: attempts', () => {
     expect(f.attempts_offer).toBe('remove')
   })
 
-  test('BG-007: what 3× offers — remove, back to auto, or nothing (auto target, repeating)', () => {
+  test('BG-007: what 3× offers — remove (a deadline task too since 2026-10-22), or nothing (auto target, repeating)', () => {
     clock('2026-10-01T09:00')
     const plain = make({ due_at: at('2026-10-02T09:00') })
     const picked = make({ due_at: at('2026-10-02T09:00'), deadline_at: at('2026-11-30T17:00') })
@@ -175,7 +175,7 @@ describe('BG: attempts', () => {
     clock('2026-10-12T12:00')
     const offer = (id: number) => formatTaskResponse(getTaskById(id)!, tz).attempts_offer
     expect(offer(plain.id)).toBe('remove')
-    expect(offer(picked.id)).toBe('auto')
+    expect(offer(picked.id)).toBe('remove')
     expect(attemptsOf(auto.id)).toBeGreaterThanOrEqual(3)
     expect(offer(auto.id)).toBeNull()
     expect(attemptsOf(repeating.id)).toBeGreaterThanOrEqual(3)

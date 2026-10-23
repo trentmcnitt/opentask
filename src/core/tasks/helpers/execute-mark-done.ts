@@ -52,8 +52,15 @@ function executeRecurringMarkDone(
   userId: number,
   nowStr: string,
 ): ExecuteMarkDoneResult {
-  const { nextDueAt, nextOccurrenceAt, nextDeadlineAt, prevDueAt, prevOccurrenceAt, stats } =
-    computation
+  const {
+    nextDueAt,
+    nextOccurrenceAt,
+    nextDeadlineAt,
+    nextLeadFrom,
+    prevDueAt,
+    prevOccurrenceAt,
+    stats,
+  } = computation
 
   // Create completion record. `occurrence_at_was` (§6, 2026-10-12): the
   // occurrence it closed, so a put-back restores the schedule with the target;
@@ -95,8 +102,8 @@ function executeRecurringMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, ${TARGET_SET_FIELD} = ?,
-        completion_count = ?, first_completed_at = ?, last_completed_at = ?,
+    SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, lead_from = ?,
+        ${TARGET_SET_FIELD} = ?, completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         repeat_count_used = ?,
         progress_current = 0, attempts = 0, attempts_counted_through = NULL,
         ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
@@ -107,6 +114,7 @@ function executeRecurringMarkDone(
     nextOccurrenceAt, // the next scheduled occurrence (§6)
     nextDueAt, // original_due_at: the new occurrence's first target
     nextDeadlineAt, // the next occurrence's deadline (occurrenceDates), or null
+    nextLeadFrom, // its lead day (the deadlines page), or null
     nowStr, // target_set_at: the next occurrence's wait counts from now
     stats.completionCount,
     stats.firstCompletedAt,
@@ -128,6 +136,7 @@ function executeRecurringMarkDone(
     occurrence_at: nextOccurrenceAt,
     original_due_at: nextDueAt,
     deadline_at: nextDeadlineAt,
+    lead_from: nextLeadFrom,
     target_set_at: nowStr,
     progress_current: 0,
     completion_count: stats.completionCount,
@@ -160,6 +169,7 @@ function executeRecurringMarkDone(
       occurrence_at: task.occurrence_at,
       original_due_at: task.original_due_at,
       deadline_at: task.deadline_at,
+      lead_from: task.lead_from,
       target_set_at: task.target_set_at,
       progress_current: task.progress_current,
       completion_count: task.completion_count,

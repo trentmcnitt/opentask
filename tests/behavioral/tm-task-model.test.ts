@@ -522,7 +522,7 @@ describe('Task model', () => {
       const next = occurrenceDates(schedule, at('2026-11-01T18:00'), tz)
       const local = (iso: string) => DateTime.fromISO(iso).setZone(tz).toFormat('yyyy-LL-dd HH:mm')
       expect(local(next.deadlineAt!)).toBe('2026-11-01 18:00')
-      expect(local(next.targetAt)).toBe('2026-11-01 08:00')
+      expect(local(next.targetAt!)).toBe('2026-11-01 08:00')
     })
 
     test('TM-035: a repeating deadline moves with the occurrence on done and on skip', () => {

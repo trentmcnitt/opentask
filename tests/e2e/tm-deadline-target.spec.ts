@@ -1,15 +1,20 @@
 /**
- * A deadline always has a visible target (spec §8, 2026-10-12;
- * docs/TASK-MODEL.md § Deadline):
+ * A deadline and its target, with the deadlines page (2026-10-22,
+ * docs/TASK-MODEL.md § The deadlines page — it replaced the automatic target
+ * of spec §8):
  *
- * - the row's snooze menu offers "Deadline day" (ruling Q8) and, on a picked
- *   target with a deadline, "Back to auto" — never "Remove target";
+ * - the row's defer menu offers "Deadline day" (ruling Q8) and, on a picked
+ *   target with a deadline, "Remove target" (there is no "Back to auto");
  * - every move stops AT the deadline, and the toast says so;
- * - the editor labels a stored automatic target "auto", and its … menu puts a
- *   picked one back to auto.
+ * - the editor: a deadline task with no target reads "No target" and a Lead
+ *   row — "On the deadlines page from … (N days before)" — whose stepper
+ *   saves `lead_days`; Remove target on a picked one brings the Lead row in.
  *
- * Isolation: every task is created here under a unique title and deleted in
- * `finally`; the dashboard grouping is put back by `withPreferences`.
+ * With the task-queue switch on (the page rides it), as the queue's own user
+ * (`queue@opentask.local`, see tq-queue-panels): with the switch on the
+ * rollover would strip the shared user's past-target one-offs. Every task is
+ * created here under a unique title and deleted in `finally`; the dashboard
+ * grouping is put back by `withPreferences`; the switch goes off after.
  */
 import { DateTime } from 'luxon'
 import { test, expect, holdUntil, uniqueTitle, withPreferences } from './fixtures'
@@ -19,7 +24,24 @@ const TZ = process.env.E2E_TZ || 'America/Chicago'
 // The pickers work in the browser's local days; run the browser in the user's zone.
 test.use({ timezoneId: TZ })
 const MIN = 60_000
-const DAY = 24 * 60 * MIN
+
+async function signIn(page: Page) {
+  await page.goto('/login')
+  await page.getByLabel('Username').fill('queue@opentask.local')
+  await page.getByLabel('Password').fill('testpass123')
+  await page.getByRole('button', { name: /sign in/i }).click()
+  await page.waitForURL('/', { timeout: 10_000 })
+}
+
+test.describe.configure({ mode: 'serial' })
+test.beforeEach(async ({ page }) => {
+  await signIn(page)
+  const res = await page.request.post('/api/test/task-queue', { data: { enabled: true } })
+  expect(res.ok()).toBeTruthy()
+})
+test.afterAll(async ({ request }) => {
+  await request.post('/api/test/task-queue', { data: { enabled: false } })
+})
 
 async function create(page: Page, data: Record<string, unknown>): Promise<number> {
   const res = await page.request.post('/api/tasks', { data })
@@ -48,8 +70,8 @@ async function snoozeButton(page: Page, id: number, title: string): Promise<Loca
 }
 
 test.describe('Deadline: the snooze menu', () => {
-  test('"Deadline day" moves the target to the deadline\'s morning; a picked target offers Back to auto, not Remove target', async ({
-    authenticatedPage: page,
+  test('"Deadline day" moves the target to the deadline\'s morning; a picked target offers Remove target', async ({
+    page,
   }) => {
     const title = uniqueTitle('TM8 deadline day')
     const deadline = DateTime.now().setZone(TZ).plus({ days: 3 }).set({ hour: 17, minute: 0 })
@@ -65,8 +87,8 @@ test.describe('Deadline: the snooze menu', () => {
         await (await snoozeButton(page, id, title)).click()
         const menu = page.getByRole('menu', { name: 'Defer options' })
         await expect(menu).toBeVisible()
-        await expect(menu.getByRole('menuitem', { name: 'Back to auto' })).toBeVisible()
-        await expect(menu.getByRole('menuitem', { name: 'Remove target' })).toHaveCount(0)
+        await expect(menu.getByRole('menuitem', { name: 'Remove target' })).toBeVisible()
+        await expect(menu.getByRole('menuitem', { name: 'Back to auto' })).toHaveCount(0)
         await menu.getByRole('menuitem', { name: /^Deadline day · / }).click()
         await expect
           .poll(async () => localDay((await stateOf(page, id)).target_at))
@@ -82,9 +104,7 @@ test.describe('Deadline: the snooze menu', () => {
     }
   })
 
-  test('a snooze past the deadline stops AT it, and the toast says so', async ({
-    authenticatedPage: page,
-  }) => {
+  test('a snooze past the deadline stops AT it, and the toast says so', async ({ page }) => {
     const title = uniqueTitle('TM8 capped')
     // "1 hour" lands on the nearest whole hour, so at least 30 minutes out:
     // a deadline 10 minutes out is always crossed, whatever the minute.
@@ -115,7 +135,7 @@ test.describe('Deadline: the snooze menu', () => {
   })
 
   test('once the deadline has passed a snooze moves past it, and the row still says so in red', async ({
-    authenticatedPage: page,
+    page,
   }) => {
     // Trent's ruling, 2026-10-12: a passed deadline caps nothing.
     const title = uniqueTitle('TM8 passed')
@@ -140,7 +160,10 @@ test.describe('Deadline: the snooze menu', () => {
           // Past the deadline and still ahead: "1 hour" rounds to the nearest
           // hour, so "now + 1h" itself is not the floor.
           .toBeGreaterThan(Date.now())
-        await expect(page.locator(`#task-row-${id}`)).toContainText('past deadline')
+        // The deadline chip leads the row's second line, red (2026-10-22).
+        const chip = page.locator(`#task-row-${id} [data-deadline-chip]`)
+        await expect(chip).toHaveAttribute('data-deadline-chip', 'passed')
+        await expect(chip).toContainText('Past deadline')
       })
     } finally {
       await remove(page, [id])
@@ -164,45 +187,56 @@ test.describe('Deadline: the editor', () => {
     return sheet
   }
 
-  test('an automatic target is labelled "auto" and offers no reset; Back to auto puts a picked one back', async ({
-    authenticatedPage: page,
+  test('no target reads "No target" and a Lead row; its stepper saves lead_days; Remove target brings the row in', async ({
+    page,
   }) => {
-    const deadline = new Date(Date.now() + 20 * DAY).toISOString()
-    const auto = await create(page, { title: uniqueTitle('TM8 auto'), deadline_at: deadline })
+    // Ten days out: the 3-day lead (a wait of 8–15 days).
+    const deadline = DateTime.now().setZone(TZ).plus({ days: 10 }).set({ hour: 17, minute: 0 })
+    const bare = await create(page, {
+      title: uniqueTitle('TM8 lead'),
+      deadline_at: deadline.toUTC().toISO(),
+    })
     const picked = await create(page, {
       title: uniqueTitle('TM8 picked'),
       target_at: DateTime.now().setZone(TZ).plus({ days: 2 }).set({ hour: 10 }).toUTC().toISO(),
-      deadline_at: deadline,
+      deadline_at: deadline.toUTC().toISO(),
     })
     try {
-      expect((await stateOf(page, auto)).target_auto).toBe(true)
-      await withPreferences(page, { default_grouping: 'unified' }, async () => {
-        // The automatic target: "auto", the lead, and nothing to reset.
-        let sheet = await openEditor(page, auto)
-        const autoLine = sheet.locator('[data-quick-panel-date]')
-        await expect(autoLine.locator('[data-quick-panel-auto-target]')).toHaveText('auto')
-        await expect(autoLine).toContainText('(4 days before deadline)')
-        await sheet.getByRole('button', { name: 'More options' }).tap()
-        await expect(page.locator('[data-target-reset]')).toHaveCount(0)
-        await page.keyboard.press('Escape')
+      const stored = await stateOf(page, bare)
+      expect(stored.target_at).toBeNull()
+      expect(stored.target_auto).toBe(false)
+      await withPreferences(page, { default_grouping: 'new' }, async () => {
+        let sheet = await openEditor(page, bare)
+        await expect(sheet.locator('[data-quick-panel-no-target]')).toHaveText('No target')
+        await expect(sheet.locator('[data-quick-panel-auto-target]')).toHaveCount(0)
+        const lead = sheet.locator('[data-quick-panel-lead]')
+        const from = DateTime.fromISO(String(stored.lead_from), { zone: TZ }).toFormat('ccc LLL d')
+        await expect(lead.locator('[data-lead-words]')).toHaveText(
+          `On the deadlines page from ${from} (3 days before)`,
+        )
+        // The stepper: one more day, previewed, then saved as the override.
+        await lead.getByRole('button', { name: 'One day more' }).tap()
+        await expect(lead.locator('[data-lead-days]')).toHaveText('4 days')
+        await expect(lead.locator('[data-lead-words]')).toContainText('(4 days before)')
+        await sheet.getByRole('button', { name: 'Save' }).tap()
+        await expect.poll(async () => (await stateOf(page, bare)).lead_days).toBe(4)
         await page.keyboard.press('Escape')
 
-        // A picked target: … → Back to auto → the line previews "auto" → Save.
+        // A picked target: … → Remove target → the Lead row → Save.
         sheet = await openEditor(page, picked)
-        const line = sheet.locator('[data-quick-panel-date]')
-        await expect(line.locator('[data-quick-panel-auto-target]')).toHaveCount(0)
+        await expect(sheet.locator('[data-quick-panel-lead]')).toHaveCount(0)
         await sheet.getByRole('button', { name: 'More options' }).tap()
-        const reset = page.locator('[data-target-reset="auto"]')
-        await expect(reset).toHaveText('Back to auto')
+        const reset = page.locator('[data-target-reset="remove"]')
+        await expect(reset).toHaveText('Remove target')
         await reset.tap()
-        await expect(line.locator('[data-quick-panel-auto-target]')).toHaveText('auto')
+        await expect(sheet.locator('[data-quick-panel-no-target]')).toBeVisible()
+        await expect(sheet.locator('[data-quick-panel-lead]')).toBeVisible()
         await sheet.getByRole('button', { name: 'Save' }).tap()
-        await expect.poll(async () => (await stateOf(page, picked)).target_auto).toBe(true)
-        const after = await stateOf(page, picked)
-        expect(Date.parse(String(after.target_at))).toBeLessThan(Date.parse(deadline))
+        await expect.poll(async () => (await stateOf(page, picked)).target_at).toBeNull()
+        expect((await stateOf(page, picked)).target_auto).toBe(false)
       })
     } finally {
-      await remove(page, [auto, picked])
+      await remove(page, [bare, picked])
     }
   })
 })

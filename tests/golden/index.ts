@@ -11,6 +11,7 @@ import { onDeckScenarios } from './on-deck'
 import { onDeckRepeatingScenarios } from './on-deck-repeating'
 import { repeatAnchorScenarios } from './repeat-anchor'
 import { repeatEndsScenarios } from './repeat-ends'
+import { deadlinesScenarios } from './deadlines'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -25,4 +26,5 @@ export const goldenScenarios = [
   ...onDeckRepeatingScenarios,
   ...repeatAnchorScenarios,
   ...repeatEndsScenarios,
+  ...deadlinesScenarios,
 ]

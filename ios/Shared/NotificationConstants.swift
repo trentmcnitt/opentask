@@ -236,7 +236,7 @@ extension NotificationActionRunner {
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
         case .openDashboard where isSlot:
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
-        case .openDashboard, .openTask:
+        case .openDashboard, .openTask, .openDeadlines:
             center.removeAllDeliveredNotifications()
         default:
             break

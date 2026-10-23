@@ -42,6 +42,8 @@
       "rolled_over_at": null,
       "on_deck_day": null,
       "queued_from_deck_day": null,
+      "lead_days": null,
+      "lead_from": null,
       "last_notified_at": null,
       "last_critical_alert_at": null,
       "auto_snooze_minutes": null,
@@ -119,6 +121,8 @@
       "rolled_over_at": null,
       "on_deck_day": null,
       "queued_from_deck_day": null,
+      "lead_days": null,
+      "lead_from": null,
       "last_notified_at": null,
       "last_critical_alert_at": null,
       "auto_snooze_minutes": null,
@@ -196,6 +200,8 @@
       "rolled_over_at": null,
       "on_deck_day": null,
       "queued_from_deck_day": null,
+      "lead_days": null,
+      "lead_from": "2026-01-15",
       "last_notified_at": null,
       "last_critical_alert_at": null,
       "auto_snooze_minutes": null,
@@ -226,7 +232,7 @@
       "repeat_remaining": null,
       "deadline_nag_off": false,
       "attempts_label": "3×",
-      "attempts_offer": "auto",
+      "attempts_offer": "remove",
       "age_label": null
     }
   }

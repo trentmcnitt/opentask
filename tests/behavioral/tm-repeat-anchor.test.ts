@@ -83,6 +83,7 @@ describe('TM-RA: occurrenceDates and its helpers (pure)', () => {
       occurrenceAt: at('2026-10-18T12:00'),
       targetAt: at('2026-10-18T12:00'),
       deadlineAt: null,
+      leadFrom: null,
     })
   })
 
@@ -93,6 +94,7 @@ describe('TM-RA: occurrenceDates and its helpers (pure)', () => {
       occurrenceAt: at('2027-05-01T08:00'),
       targetAt: at('2027-04-30T18:00'),
       deadlineAt: at('2027-05-01T08:00'),
+      leadFrom: null,
     })
   })
 
@@ -655,7 +657,7 @@ describe('TM-RA: PATCH and bulk edit — the refusals', () => {
   })
 })
 
-describe('TM-G01: every SQL writer of occurrence_at / deadline_at derives through occurrenceDates', () => {
+describe('TM-G01: every SQL writer of occurrence_at / deadline_at / lead_from derives through occurrenceDates', () => {
   function files(dir: string): string[] {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
       const p = path.join(dir, e.name)
@@ -682,9 +684,18 @@ describe('TM-G01: every SQL writer of occurrence_at / deadline_at derives throug
     // rule's deadline), and it never writes the occurrence of one (guarded on
     // `repeat_anchor`). Teaching it to make one is PR 5.
     'src/core/ai/enrichment.ts': 'never on a deadline-anchored row (PR 5)',
+    // The deadlines page (2026-10-22): `lead_from` rides the same derivation
+    // (`occurrenceDates`' `leadFrom`, `leadFor`). The migration writes it
+    // once; Defer moves THIS instance's day by hand — never a derivation.
+    'src/core/db/migrate-deadline-leads.ts': 'migrations',
+    // A pre-migration automatic target converted on reopen / restore (the
+    // deadlines page): its SQL fragment runs inside mark-done.ts and delete.ts,
+    // which stamp and snapshot it; it never writes a target, only clears one.
+    'src/core/tasks/auto-target-lead.ts': 'clears an automatic target (autoTargetToLead)',
+    'src/core/tasks/task-segments.ts': 'Defer moves the lead day itself (deferLeads)',
   }
   const writer =
-    /\b(occurrence_at|deadline_at)\s*=\s*(\?|NULL|deadline_at|due_at|COALESCE)|INSERT INTO tasks|trackField\(\s*data,\s*'(occurrence_at|deadline_at)'/
+    /\b(occurrence_at|deadline_at|lead_from)\s*=\s*(\?|NULL|deadline_at|due_at|COALESCE)|INSERT INTO tasks|trackField\(\s*data,\s*'(occurrence_at|deadline_at|lead_from)'/
   const derives =
     /import\s*\{[^}]*\boccurrenceDates\b[^}]*\}\s*from '@\/lib\/task-segments'|from '\.\.?\/repeat-schedule'/
 

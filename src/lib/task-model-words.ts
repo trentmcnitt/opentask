@@ -11,10 +11,14 @@ import type { CheckInDay, HorizonValue } from '@/lib/task-segments'
 /** A task whose target has arrived (ruled 2026-10-21; "Over target" from 2026-10-10). */
 export const OVERDUE_WORD = 'Overdue'
 
-/** The editor's word for the deadline's stored automatic target (§8.1). */
-export const AUTO_TARGET_WORD = 'auto'
-/** The action that puts a picked target back to the automatic one (§8.3). */
-export const BACK_TO_AUTO = 'Back to auto'
+/**
+ * A target's removal (2026-10-22: it replaced "Back to auto" — a deadline
+ * task with no target goes on the deadlines page instead of getting an
+ * automatic target).
+ */
+export const REMOVE_TARGET = 'Remove target'
+/** The editor's target line with no target (2026-10-22). */
+export const NO_TARGET = 'No target'
 /** The picker's choice for the deadline's own day (ruling Q8). */
 export const DEADLINE_DAY = 'Deadline day'
 /** Lower-case, mid-sentence form ("3 overdue"). */
@@ -76,6 +80,9 @@ export const UPCOMING_LABEL = 'Upcoming'
  * things that were taken off and that potentially will stay off." Display
  * text only: the kind strings the API sends do not change.
  */
+/** The deadlines page's title word (2026-10-22): "Task queue · Deadlines". */
+export const DEADLINES_PAGE_TITLE = 'Deadlines'
+
 export const QUEUE_PANEL_TITLES = {
   queue_today: "Today's pulls",
   queue_previous: 'Previous pulls',

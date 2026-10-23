@@ -17,12 +17,11 @@
  * outranks the deck (A1, below). A PATCH sending a rule AND a deck day is
  * refused outright (`prepareDeck`).
  *
- * What does NOT clear it: a deadline added or changed, or "Back to auto" — the
- * target they leave is the deadline's AUTOMATIC one, which a deck lives beside
- * ("the deadline protects regardless") — UNLESS that automatic target has
- * arrived, or falls on or before the deck's day (A1, strict, review 10-20):
- * then the deadline wins and the deck goes in the same write, because a deck
- * never nags. That is why this can't ride on
+ * What does NOT clear it: a deadline added or changed — the task it leaves has
+ * no target (the deadlines page, 2026-10-22: its safety net holds it, deck or
+ * not) — UNLESS that deadline has passed or now falls BEFORE the deck's day
+ * (A1, `deckRefusal`): then the deadline wins and the deck goes in the same
+ * write. (With the switch off there are no decks at all.) That is why this can't ride on
  * `stampTargetSet` (target-set.ts), which fires on ANY `due_at` or
  * `deadline_at` write, automatic targets included.
  *
@@ -40,7 +39,7 @@
  */
 
 import type { Task } from '@/types'
-import { deckRefusal, type TargetContext } from '@/lib/task-segments'
+import { deadlinePlace, deckRefusal, type TargetContext } from '@/lib/task-segments'
 import type { CollectedWrite } from './target-set'
 import { rolloverTimeForUser } from './rollover-time'
 
@@ -95,13 +94,34 @@ function deadlineOutranksDeck(day: string, after: DeckClearAfter): boolean {
 }
 
 /**
- * The owner's rollover time a REPEATING task's deck check needs
- * (`repeatingDeadlineDay`: a deadline before the rollover counts as the
- * evening before), or null for a one-off (whose check reads its automatic
- * target, not the deadline's day).
+ * The owner's rollover time the deck check needs (`repeatingDeadlineDay`: a
+ * deadline before the rollover counts as the evening before). Since the
+ * deadlines page (2026-10-22) a one-off is judged by its deadline's OpenTask
+ * day too, so every task reads it.
  */
-export function deckRolloverTime(task: Pick<Task, 'rrule' | 'user_id'>): string | null {
-  return task.rrule ? rolloverTimeForUser(task.user_id) : null
+export function deckRolloverTime(task: Pick<Task, 'user_id'>): string | null {
+  return rolloverTimeForUser(task.user_id)
+}
+
+/**
+ * Whether the DEADLINES PAGE holds the task once a deck write leaves it — no
+ * target (a deck drops a picked one), the deck day, the resulting deadline —
+ * `deadlinePlace` on that row (Trent, 2026-10-22: a decked page row STAYS on
+ * the page, waiting, showing its deck day). Then the deck does not stamp it
+ * considered (A7's stamp, `collect-field-changes`): seeing it is still its own
+ * tap. A deck for today outside the safety net is the On deck section's, and
+ * one before the lead day its Upcoming row's — both stamp as before.
+ */
+export function deckKeepsPageRow(
+  task: Task,
+  day: string,
+  deadlineAt: string | null,
+  timezone: string,
+  now: Date,
+): boolean {
+  if (!deadlineAt || (task.rrule && task.repeat_anchor !== 'deadline')) return false
+  const after = { ...task, deadline_at: deadlineAt, due_at: null, on_deck_day: day }
+  return deadlinePlace(after, timezone, now, deckRolloverTime(task))?.kind === 'page'
 }
 
 /**
