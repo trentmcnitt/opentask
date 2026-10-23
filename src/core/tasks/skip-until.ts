@@ -345,10 +345,7 @@ export function planSkipUntil(
     // The target the retarget would write: the occurrence's derived one (none
     // on a target-less occurrence). A re-run with no deck to clear would
     // rewrite the same target — nothing to do.
-    const sameTarget =
-      target === null
-        ? task.due_at === null
-        : task.due_at !== null && Date.parse(task.due_at) === Date.parse(target)
+    const sameTarget = isTargetAlready(task.due_at, target)
     // A deck before the date goes, and the target comes back on the occurrence.
     if (deckEarly || (targetEarly && !sameTarget)) {
       return { kind: 'retarget', landing: occurrence }
@@ -366,6 +363,12 @@ export function planSkipUntil(
     keepDeck,
     now,
   )
+}
+
+/** Whether the task's target already is `target` (none when `target` is null). */
+function isTargetAlready(dueAt: string | null, target: string | null): boolean {
+  if (target === null) return dueAt === null
+  return dueAt !== null && Date.parse(dueAt) === Date.parse(target)
 }
 
 /**

@@ -288,6 +288,26 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
     // MARK: Task segments (2026-10-10)
 
+    /// THE PLAIN FORM a shipped build sends (`?queue=1&deck=1`, no
+    /// `deadlines=1`), switch on: no `deadlines` kind, and the three
+    /// target-less deadline tasks — the repeat included — in their horizon
+    /// segment (Days), never nowhere: the truthful degrade.
+    func testRemindersDeadlinesPlainFormKeepsTheRowsInTheirSegment() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-deadlines-plain")
+        XCTAssertFalse(payload.taskSegments.map(\.horizon).contains("deadlines"))
+        let days = try XCTUnwrap(payload.taskSegments.first { $0.horizon == "days" })
+        XCTAssertEqual(days.horizonValue, .days)
+        let ids = Set(days.tasks.map(\.id))
+        for id in [Fixtures.deadlineWindow, Fixtures.deadlinePassed, Fixtures.deadlineRepeatTargetless] {
+            XCTAssertTrue(ids.contains(id), "task \(id) listed in Days")
+        }
+        let repeatRow = try XCTUnwrap(days.tasks.first { $0.id == Fixtures.deadlineRepeatTargetless })
+        XCTAssertTrue(repeatRow.recurring)
+        XCTAssertNil(repeatRow.task.dueAt, "no target of its own")
+        XCTAssertEqual(repeatRow.task.deadlineAt, Fixtures.pinnedTimestamp)
+        XCTAssertTrue(days.isListed)
+    }
+
     /// THE DEADLINES PAGE (2026-10-22), `GET /api/reminders?…&deadlines=1`:
     /// a build that predates it still decodes the payload — the unknown
     /// `deadlines` kind decodes (no `SegmentKind`), which is why the server
@@ -320,7 +340,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // The other segments are unchanged by the opt-in.
         XCTAssertEqual(
             payload.taskSegments.dropFirst().map(\.horizon),
-            ["queue_today", "queue_previous", "days", "upcoming", "weeks"]
+            ["queue_today", "queue_previous", "upcoming", "weeks"]
         )
     }
 
@@ -344,12 +364,13 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(row.title, "Fix the squeaky door")
         XCTAssertEqual(row.horizon, "days")
         XCTAssertEqual(row.horizonLabel, "Days")
-        // Since 2026-10-12 (§8) a deadline always carries a stored target —
-        // the AUTOMATIC one (`target_auto`) — so the row has a due date. Its
-        // automatic target keeps it in its horizon segment.
-        XCTAssertEqual(row.dueAt, Fixtures.pinnedTimestamp)
+        // With the task queue on (production, 2026-10-22) a deadline with no
+        // picked target has NO target at all (the deadlines page) — and this
+        // plain request (no `?deadlines=1`) lists it in its horizon segment,
+        // the deadline pulling it in.
+        XCTAssertNil(row.dueAt)
         XCTAssertEqual(row.deadlineAt, Fixtures.pinnedTimestamp)
-        XCTAssertTrue(row.targetAuto)
+        XCTAssertFalse(row.targetAuto)
         XCTAssertEqual(row.attempts, 0)
         XCTAssertNil(row.attemptsLabel)
         XCTAssertNil(row.ageLabel)
@@ -366,8 +387,9 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(rawTask["segment_state"] as? String, "considered")
         XCTAssertEqual(rawTask["horizon"] as? String, row.horizon)
         XCTAssertEqual(rawTask["deadline_at"] as? String, row.deadlineAt)
-        XCTAssertEqual(rawTask["target_at"] as? String, row.dueAt, "target_at mirrors due_at")
-        XCTAssertEqual(rawTask["target_auto"] as? Bool, row.targetAuto, "the deadline's automatic target")
+        XCTAssertTrue(rawTask["target_at"] is NSNull, "target_at mirrors due_at: none")
+        XCTAssertEqual(rawTask["target_auto"] as? Bool, row.targetAuto, "no automatic target")
+        XCTAssertEqual(rawTask["deadline_nag_off"] as? Bool, true, "older builds imply no target")
         XCTAssertEqual(rawTask["attempts"] as? Int, row.attempts)
 
         // Segments stay out of every group, and out of every reminders count.
