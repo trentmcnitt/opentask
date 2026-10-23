@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState, type MutableRefObject } from 'react'
+import { useMemo, useState, type MutableRefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,6 +17,7 @@ import {
 } from '@/lib/track'
 import { QuotaPromptSection, usePromptDraft } from '@/components/QuotaPromptField'
 import { QuotaRecord } from '@/components/QuotaRecord'
+import { PriorityChips } from '@/components/PriorityChips'
 import {
   QuotaPromptBulkField,
   useBulkPromptDraft,
@@ -83,6 +84,8 @@ export interface QuotaChanges {
   create_label?: true
   /** Quota reminders (2026-09-24): the "Remind me daily" section. Sent only when touched. */
   quota_prompt_config?: QuotaPromptConfig | null
+  /** Paces the period's nag while its prompt waits (2026-10-22). Sent only when touched. */
+  priority?: number
 }
 
 export interface QuotaDetailProps {
@@ -132,6 +135,7 @@ export function QuotaDetail({
   const [interval, setPeriodInterval] = useState<number | null>(base.interval)
   const [label, setLabel] = useState<QuotaLabelChoice>(base.label)
   const [notes, setNotes] = useState(base.notes)
+  const [priority, setPriority] = useState<number | null>(base.priority)
   const { prompt, section } = useEditorPrompt(single, tasks, oneQuota, {
     period,
     interval,
@@ -151,90 +155,19 @@ export function QuotaDetail({
   // a new name, so the next quota edited in the same session is offered it.
   const { labels: registeredLabels, reload: reloadLabels } = useDomainLabels()
 
-  const {
-    targetNumber,
-    titleTouched,
-    notesTouched,
-    targetTouched,
-    periodTouched,
-    labelTouched,
-    dirty,
-    targetOk,
-    canSave,
-  } = describeDraft({ creating, base, title, target, period, interval, label, notes, prompt })
-
-  const buildChanges = useCallback((): QuotaChanges => {
-    const changes: QuotaChanges = {}
-    if (creating || titleTouched) changes.title = title.trim()
-    if (creating || notesTouched) changes.notes = notes.trim() || null
-    if (creating || targetTouched) {
-      changes.progress_target = targetNumber
-      changes.is_tracked = true
-    }
-    // The rule goes ONLY when the period was actually changed.
-    //
-    // Sending it on any schedule edit flattened whatever else the rule carried:
-    // a quota on FREQ=WEEKLY;INTERVAL=2 silently became every week, and a BYDAY
-    // was dropped. (It also made the server re-derive anchors and recompute a
-    // `due_at` behind the editor's back — that half is now fixed at the source:
-    // a tracked row never gets a computed date.)
-    //
-    // It also means a quota with NO period, and a selection that disagrees
-    // about its period, can both have their target edited while each keeps its
-    // own rule. `is_tracked` alone satisfies the server's rule for a bare FREQ,
-    // so nothing has to be invented to make the request legal.
-    //
-    // INTERVAL QUOTAS (2026-10-16): the rule is canonical — `FREQ=X`, plus
-    // `;INTERVAL=N` above 1 (`quotaRule`; the server refuses the other
-    // order). A touched period always has an interval: choosing a chip sets
-    // it to 1, and the stepper sets it directly. A selection whose intervals
-    // disagree shows "—" and sends nothing until one of the two is touched.
-    if (creating || periodTouched) {
-      changes.is_tracked = true
-      if (period !== null) changes.rrule = quotaRule(period, interval ?? 1)
-    }
-    // The label goes ONLY when it was actually chosen, for the same reason the
-    // rule does: six quotas on this corpus still carry TWO labels from before
-    // one-label-per-quota, and the migration deliberately left them alone.
-    // Editing such a quota's target must not quietly drop its second label —
-    // but choosing a label does, which is the point of the rule.
-    if (labelTouched && label !== undefined) {
-      changes.labels = label ? [label] : []
-      // §7.2: an unknown label is refused unless the write says to create it.
-      // This is the flag the API documents for exactly this case, rather than
-      // a separate round-trip to the registry endpoint.
-      if (label && !registeredLabels.includes(label)) changes.create_label = true
-    }
-    // Only a touched section is sent: an untouched quota keeps a NULL config
-    // ("follow the defaults"), so a later change of the default period in
-    // Settings still moves it.
-    if (prompt.touched) changes.quota_prompt_config = prompt.config
-    return changes
-  }, [
-    prompt.touched,
-    prompt.config,
-    creating,
-    titleTouched,
-    notesTouched,
-    targetTouched,
-    periodTouched,
-    labelTouched,
-    title,
-    notes,
-    targetNumber,
-    period,
-    interval,
-    label,
-    registeredLabels,
-  ])
+  // The staged fields, and what they amount to (`describeDraft`).
+  const draft = { title, target, period, interval, label, notes, priority }
+  const draftState = describeDraft({ creating, base, draft, prompt })
+  const { targetNumber, targetTouched, dirty, targetOk, canSave } = draftState
 
   // The in-flight guard (a second tap while saving does nothing), the dirty
   // and unmount-clean reports, beforeunload and the saveRef registration all
   // come from useStagedEditor.
-  const save = useCallback(async () => {
+  // Not memoized: useStagedEditor holds the latest `save` in a ref.
+  async function save() {
     if (!canSave) return
     try {
-      const changes = buildChanges()
+      const changes = quotaChangesFor({ creating, draft, draftState, prompt, registeredLabels })
       if (creating) await onCreate?.(changes)
       else await onSave?.(changes)
       // The write just minted a label; the option list is now one short.
@@ -251,7 +184,7 @@ export function QuotaDetail({
       // this left that dialog up forever with an unhandled rejection behind
       // it. The staged edits are deliberately kept so the save can be retried.
     }
-  }, [canSave, buildChanges, creating, onCreate, onSave, reloadLabels])
+  }
 
   const { saving, runSave: handleSave } = useStagedEditor({
     dirty,
@@ -267,6 +200,7 @@ export function QuotaDetail({
     setPeriodInterval(base.interval)
     setLabel(base.label)
     setNotes(base.notes)
+    setPriority(base.priority)
     prompt.reset()
   }
 
@@ -301,6 +235,8 @@ export function QuotaDetail({
       <LabelField value={label} onChange={setLabel} registered={registeredLabels} />
 
       <EditorPromptSection {...section} target={targetNumber} />
+
+      <PriorityField value={priority} onChange={setPriority} />
 
       {oneQuota && <NotesField value={notes} onChange={setNotes} />}
 
@@ -663,6 +599,29 @@ function LabelChip({
   )
 }
 
+/**
+ * The reminder editor's priority row (`PriorityChips`, shared): a quota's
+ * priority paces its period's nag while its prompt waits (`slot-nags.ts`, a
+ * prompt counts at its quota's priority). Headed by a `<legend>` like every
+ * other field here, not the reminder's uppercase heading and dirty dot —
+ * this editor's dirtiness is the card's stripe. Pressing the chip already
+ * pressed changes nothing (the base again is not a change).
+ */
+function PriorityField({
+  value,
+  onChange,
+}: {
+  value: number | null
+  onChange: (value: number) => void
+}) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium">Priority</legend>
+      <PriorityChips value={value} onSelect={onChange} />
+    </fieldset>
+  )
+}
+
 /** The read-only history. "Never yet" is a real answer, and usually the useful one. */
 function QuotaStats({ task }: { task: Task }) {
   const state = trackState(task)
@@ -772,6 +731,7 @@ function describeBase({
       // disagreement, the answer is simply "none".
       label: null as QuotaLabelChoice,
       notes: '',
+      priority: 0 as number | null,
       allPeriodless: false,
     }
   const targets = new Set(tasks.map((t) => String(Math.max(1, t.progress_target ?? 1))))
@@ -781,6 +741,7 @@ function describeBase({
   // "Every week" with "—" in the stepper.
   const intervals = new Set(tasks.map((t) => quotaPeriodOf(t.rrule)?.interval ?? 1))
   const labels = new Set(tasks.map(quotaLabelOf))
+  const priorities = new Set(tasks.map((t) => t.priority ?? 0))
   return {
     title: single?.title ?? '',
     target: targets.size === 1 ? [...targets][0] : '',
@@ -790,10 +751,90 @@ function describeBase({
     // picking "None" on a mixed selection still reads as a change.
     label: (labels.size === 1 ? [...labels][0] : undefined) as QuotaLabelChoice,
     notes: single?.notes ?? '',
+    // One agreed priority, or null when they differ: no chip pressed.
+    priority: priorities.size === 1 ? ([...priorities][0] as number | null) : null,
     // Every selected quota genuinely has no period, as opposed to the selection
     // disagreeing about which one it is.
     allPeriodless: periods.size === 1 && [...periods][0] === null,
   }
+}
+
+/** The fields one editing session stages. */
+interface QuotaDraft {
+  title: string
+  target: string
+  period: QuotaPeriod | null
+  interval: number | null
+  label: QuotaLabelChoice
+  notes: string
+  priority: number | null
+}
+
+/**
+ * What a save sends: only what was touched (and, creating, everything).
+ * Module-level and pure, beside `describeDraft`, whose answer it reads.
+ */
+function quotaChangesFor({
+  creating,
+  draft,
+  draftState,
+  prompt,
+  registeredLabels,
+}: {
+  creating: boolean
+  draft: QuotaDraft
+  draftState: ReturnType<typeof describeDraft>
+  prompt: { touched: boolean; config: QuotaPromptConfig | null }
+  registeredLabels: string[]
+}): QuotaChanges {
+  const changes: QuotaChanges = {}
+  if (creating || draftState.titleTouched) changes.title = draft.title.trim()
+  if (creating || draftState.notesTouched) changes.notes = draft.notes.trim() || null
+  if (creating || draftState.targetTouched) {
+    changes.progress_target = draftState.targetNumber
+    changes.is_tracked = true
+  }
+  // The rule goes ONLY when the period was actually changed.
+  //
+  // Sending it on any schedule edit flattened whatever else the rule carried:
+  // a quota on FREQ=WEEKLY;INTERVAL=2 silently became every week, and a BYDAY
+  // was dropped. (It also made the server re-derive anchors and recompute a
+  // `due_at` behind the editor's back — that half is now fixed at the source:
+  // a tracked row never gets a computed date.)
+  //
+  // It also means a quota with NO period, and a selection that disagrees
+  // about its period, can both have their target edited while each keeps its
+  // own rule. `is_tracked` alone satisfies the server's rule for a bare FREQ,
+  // so nothing has to be invented to make the request legal.
+  //
+  // INTERVAL QUOTAS (2026-10-16): the rule is canonical — `FREQ=X`, plus
+  // `;INTERVAL=N` above 1 (`quotaRule`; the server refuses the other
+  // order). A touched period always has an interval: choosing a chip sets
+  // it to 1, and the stepper sets it directly. A selection whose intervals
+  // disagree shows "—" and sends nothing until one of the two is touched.
+  if (creating || draftState.periodTouched) {
+    changes.is_tracked = true
+    if (draft.period !== null) changes.rrule = quotaRule(draft.period, draft.interval ?? 1)
+  }
+  // The label goes ONLY when it was actually chosen, for the same reason the
+  // rule does: six quotas on this corpus still carry TWO labels from before
+  // one-label-per-quota, and the migration deliberately left them alone.
+  // Editing such a quota's target must not quietly drop its second label —
+  // but choosing a label does, which is the point of the rule.
+  if (draftState.labelTouched && draft.label !== undefined) {
+    changes.labels = draft.label ? [draft.label] : []
+    // §7.2: an unknown label is refused unless the write says to create it.
+    // This is the flag the API documents for exactly this case, rather than
+    // a separate round-trip to the registry endpoint.
+    if (draft.label && !registeredLabels.includes(draft.label)) changes.create_label = true
+  }
+  // Only a touched section is sent: an untouched quota keeps a NULL config
+  // ("follow the defaults"), so a later change of the default period in
+  // Settings still moves it.
+  if (prompt.touched) changes.quota_prompt_config = prompt.config
+  // Only when chosen: a selection that disagrees keeps each quota's own.
+  if (draftState.priorityTouched && draft.priority !== null) changes.priority = draft.priority
+  return changes
 }
 
 /**
@@ -809,33 +850,16 @@ function describeBase({
 function describeDraft({
   creating,
   base,
-  title,
-  target,
-  period,
-  interval,
-  label,
-  notes,
+  draft,
   prompt,
 }: {
   creating: boolean
-  base: {
-    title: string
-    target: string
-    period: QuotaPeriod | null
-    interval: number | null
-    label: QuotaLabelChoice
-    notes: string
-    allPeriodless: boolean
-  }
-  title: string
-  target: string
-  period: QuotaPeriod | null
-  interval: number | null
-  label: QuotaLabelChoice
-  notes: string
+  base: ReturnType<typeof describeBase>
+  draft: QuotaDraft
   /** The "Remind me daily" section changed (compared by the component). */
   prompt?: { touched: boolean }
 }) {
+  const { title, target, period, interval, label, notes, priority } = draft
   const targetNumber = Number.parseInt(target, 10)
   const targetTouched = target !== base.target
   // The period is the FREQ and the interval together: changing only the
@@ -844,12 +868,14 @@ function describeDraft({
   const titleTouched = title !== base.title
   const notesTouched = notes !== base.notes
   const labelTouched = label !== base.label
+  const priorityTouched = priority !== base.priority
   const dirty =
     titleTouched ||
     notesTouched ||
     targetTouched ||
     periodTouched ||
     labelTouched ||
+    priorityTouched ||
     !!prompt?.touched
   const targetOk = target.length > 0 && targetNumber >= 1 && targetNumber <= 1000
   // Creating needs a title, a valid target and a period. Editing needs only
@@ -866,6 +892,7 @@ function describeDraft({
     targetTouched,
     periodTouched,
     labelTouched,
+    priorityTouched,
     dirty,
     targetOk,
     canSave,
