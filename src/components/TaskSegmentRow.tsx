@@ -950,7 +950,7 @@ function DeferLeadSlot({
   const days =
     row.safetyNet || !task.deadline_at
       ? []
-      : deferLeadDays(task.deadline_at, timezone, new Date(), attemptsRolloverTime)
+      : deferLeadDays(task.deadline_at, timezone, new Date(), attemptsRolloverTime, task.lead_from)
   if (days.length === 0) {
     return <span aria-hidden data-defer-lead-empty className={SLOT_HIT} />
   }

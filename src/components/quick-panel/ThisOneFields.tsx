@@ -13,12 +13,7 @@ import {
   targetQuietUntil,
 } from '@/lib/task-model-words'
 import { isPastDeadline } from '@/lib/task-segments'
-import {
-  LEAD_DAYS_MAX,
-  LEAD_DAYS_MIN,
-  leadLineWords,
-  type LeadLine,
-} from '@/lib/editor-target-labels'
+import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target-labels'
 
 /**
  * THE QUICK PANEL'S "THIS ONE" ROWS (2026-10-22, editor plan §3, mock E;
@@ -364,7 +359,7 @@ function LeadRow({
     ? DateTime.fromISO(line.deferredTo, { zone: timezone }).toFormat('ccc')
     : null
   const step = (delta: number) =>
-    onLeadDays(Math.min(LEAD_DAYS_MAX, Math.max(LEAD_DAYS_MIN, line.leadDays + delta)))
+    onLeadDays(Math.min(line.max, Math.max(LEAD_DAYS_MIN, line.leadDays + delta)))
   const stepClass =
     'text-muted-foreground hover:text-foreground hover:bg-foreground/5 inline-flex size-7 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:size-9'
   return (
@@ -400,7 +395,7 @@ function LeadRow({
         <button
           type="button"
           className={stepClass}
-          disabled={disabled || line.leadDays >= LEAD_DAYS_MAX}
+          disabled={disabled || line.leadDays >= line.max}
           onClick={() => step(1)}
           aria-label="One day more"
         >

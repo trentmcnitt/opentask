@@ -245,6 +245,8 @@ export function deferLeadDays(
   timezone: string,
   now: Date,
   rolloverTime: string | null,
+  /** The row's current lead day: a Defer only moves it later (`leadDeferRefusal`). */
+  leadFrom: string | null = null,
 ): DeferLeadDay[] {
   const last = lastDeferDay(deadlineAt, timezone, rolloverTime)
   const today = DateTime.fromISO(openTaskToday(timezone, now, rolloverTime), { zone: timezone })
@@ -253,10 +255,12 @@ export function deferLeadDays(
     const d = today.plus({ days: n })
     const day = d.toFormat(DECK_DAY_FORMAT)
     if (day > last) return markLast(days, last)
+    if (leadFrom && day <= leadFrom) continue
     days.push({ label: n === 1 ? 'Tomorrow' : d.toFormat('cccc'), day })
   }
   const lastDay = DateTime.fromISO(last, { zone: timezone })
-  if (last > days[days.length - 1].day) {
+  const latest = days.length > 0 ? days[days.length - 1].day : (leadFrom ?? '')
+  if (last > latest) {
     days.push({ label: lastDay.toFormat('ccc LLL d'), day: last })
   }
   return markLast(days, last)

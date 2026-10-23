@@ -13,6 +13,7 @@ import {
   deadlineDayTarget,
   leadFor,
   occurrenceDates,
+  ruleWait,
   scheduleBase,
   targetMoved,
   type LeadFields,
@@ -32,6 +33,11 @@ export interface LeadLine {
   leadDays: number
   /** The user's override (`lead_days`), staged or stored; null = the default table. */
   override: number | null
+  /**
+   * The stepper's top: 90, or on a repeat one less than its rule's wait (the
+   * server refuses a lead as long as the gap between deadlines, `leadDaysProblem`).
+   */
+  max: number
   /** THIS instance was deferred to a later day (yyyy-MM-dd), or null. */
   deferredTo: string | null
   /** A staged deadline or lead change produced it (drawn blue): a preview of Save. */
@@ -92,8 +98,32 @@ export function leadLine(
     0,
     Math.round(d.diff(DateTime.fromISO(from, { zone: timezone }), 'days').days),
   )
-  const shown = Math.min(LEAD_DAYS_MAX, Math.max(LEAD_DAYS_MIN, daysBefore))
-  return { from, daysBefore, leadDays: override ?? shown, override, deferredTo, staged: isStaged }
+  const max = leadDaysMax(task, deadline, timezone)
+  const shown = Math.min(max, Math.max(LEAD_DAYS_MIN, daysBefore))
+  return {
+    from,
+    daysBefore,
+    leadDays: override ?? shown,
+    override,
+    deferredTo,
+    staged: isStaged,
+    max,
+  }
+}
+
+/** The lead stepper's top for this task (`LeadLine.max`). */
+function leadDaysMax(task: LeadFields, deadline: string, timezone: string): number {
+  if (!task.rrule) return LEAD_DAYS_MAX
+  const wait = ruleWait(
+    {
+      rrule: task.rrule,
+      recurrence_mode: task.recurrence_mode ?? 'from_due',
+      anchor_time: task.anchor_time ?? null,
+    },
+    deadline,
+    timezone,
+  )
+  return Math.max(LEAD_DAYS_MIN, Math.min(LEAD_DAYS_MAX, wait - 1))
 }
 
 /** Whether a staged deadline or lead override differs from the stored one. */
