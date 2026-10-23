@@ -59,6 +59,7 @@ import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTas
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
 import { DeadlineChip } from '@/components/DeadlineChip'
+import { useTimezone } from '@/hooks/useTimezone'
 
 /**
  * A TASK SEGMENT's rows (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -1353,6 +1354,7 @@ export function ConsideredSegmentRow({
   onPutBack: (task: Task) => void
 }) {
   const { task, state, left } = row
+  const timezone = useTimezone()
   const circle = cn(
     'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
     panel ? 'size-[19px]' : 'mt-[3px] size-6',
@@ -1392,6 +1394,13 @@ export function ConsideredSegmentRow({
       >
         {task.title}
         {state === 'deferred' && <span className="ml-1.5 text-xs">· deferred</span>}
+        {/* A deadlines-page row decked for a later day: considered today,
+            still on the page — it says its deck day (2026-10-22). */}
+        {!left && task.on_deck_day && (
+          <span data-considered-deck className="ml-1.5 text-xs">
+            · {deckChipWords(task.on_deck_day, timezone).replace('On deck', 'on deck')}
+          </span>
+        )}
         {left && left !== 'considered' && (
           <span className="ml-1.5 text-xs">· {leftWords(left, task)}</span>
         )}

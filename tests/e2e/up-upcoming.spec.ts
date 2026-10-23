@@ -6,6 +6,12 @@
  * in the E2E database: targeted 10 days ago for tomorrow is a wait of 11, so
  * today (T−1) is a heads-up day at any hour.
  *
+ * The deadline (2026-10-22, the deadlines page) is the DeadlineChip that
+ * leads every row's second line; "Back to auto" is gone — a deadline row's
+ * target menu offers Remove target, like any one-off. (The page's own
+ * Upcoming hand-off — a target-less deadline task's heads-up counted to its
+ * lead day — is in deadlines-page.spec.ts, with the task queue on.)
+ *
  * Isolation: every task is created here under a unique title and trashed in
  * `finally`; the check-in day is put back to Saturday.
  */
@@ -104,10 +110,11 @@ test.describe('Upcoming', () => {
         t.plain,
         t.repeating,
       ])
-      // The gap text.
-      await expect(row(page, t.withDeadline).locator('[data-upcoming-gap]')).toContainText(
-        /Target \w{3} \w{3} \d+\s*·\s*deadline \w{3} \w{3} \d+$/,
-      )
+      // The gap text: the deadline chip first, then the target.
+      const gap = row(page, t.withDeadline).locator('[data-upcoming-gap]')
+      await expect(gap.locator('> *').first()).toHaveAttribute('data-deadline-chip', 'ahead')
+      await expect(gap.locator('[data-deadline-chip]')).toHaveText(/^Deadline \w+/)
+      await expect(gap).toContainText(/Target \w{3} \w{3} \d+/)
       // The repeating row names its schedule, never a bare "repeats".
       await expect(row(page, t.repeating).locator('[data-upcoming-gap]')).not.toContainText(
         'repeats',
@@ -126,7 +133,7 @@ test.describe('Upcoming', () => {
       await expect(row(page, t.repeating).getByRole('button', { name: /^Done:/ })).toHaveCount(1)
       // No horizon chip on any Upcoming row.
       await expect(section.locator('[data-horizon-chip]')).toHaveCount(0)
-      // The one-offs' target chips open a menu (Remove target / Back to auto);
+      // The one-offs' target chips open a menu (Remove target);
       // the repeating row's doesn't.
       await expect(row(page, t.withDeadline).getByRole('button', { name: /Options$/ })).toHaveCount(
         1,
@@ -163,7 +170,7 @@ test.describe('Upcoming', () => {
     }
   })
 
-  test("Back to auto puts a deadline row's automatic target back (it leaves Upcoming); Undo restores the pick", async ({
+  test('a deadline row offers Remove target too (no Back to auto); it leaves Upcoming; Undo restores the pick', async ({
     authenticatedPage: page,
   }) => {
     const t = await upcomingTrio(page)
@@ -174,12 +181,14 @@ test.describe('Upcoming', () => {
       await row(page, t.withDeadline)
         .getByRole('button', { name: /Options$/ })
         .click()
-      await expect(page.locator('[data-remove-target]')).toHaveCount(0)
-      await page.locator('[data-back-to-auto]').click()
+      await expect(page.locator('[data-back-to-auto]')).toHaveCount(0)
+      await page.locator('[data-remove-target]').click()
       await expect(row(page, t.withDeadline)).toHaveCount(0)
-      await expect.poll(async () => (await stateOf(page, t.withDeadline)).target_auto).toBe(true)
-      const auto = await stateOf(page, t.withDeadline)
-      expect(Date.parse(String(auto.target_at))).toBeLessThan(Date.parse(String(auto.deadline_at)))
+      // With the task queue off the server still keeps an automatic target
+      // (A1, one release); with it on there is none (deadlines-page.spec.ts).
+      await expect
+        .poll(async () => (await stateOf(page, t.withDeadline)).target_at)
+        .not.toBe(before.target_at)
       await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
       await expect
         .poll(async () => (await stateOf(page, t.withDeadline)).target_at)

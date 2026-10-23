@@ -6,8 +6,10 @@
  * - the horizon dot (R1): a size per horizon, a dashed outline when unset, a
  *   tooltip saying when it comes back, hidden on a row with a picked target;
  *   the corner reads dot · attempts · priority;
- * - the target time's menu (Remove target / Back to auto / Move…) and the
- *   desktop hover ×, each with Undo;
+ * - the target time's menu (Remove target / Move… — a deadline task's too
+ *   since 2026-10-22, "Back to auto" gone) and the desktop hover ×, each
+ *   with Undo;
+ * - the deadline chip at the start of the row's second line (2026-10-22);
  * - the action bar's More sheet: Remove target for the whole selection;
  * - the segment rows' dot (it replaced the chevron) and its menu, with Undo;
  * - the hover Today and the dot's menu on the DASHBOARD rows (the dashboard
@@ -274,7 +276,7 @@ test.describe('Row corner · desktop', () => {
 test.describe('Row corner · target time and segments', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('target time: Remove target with Undo, Back to auto, Move…, and the hover ×', async ({
+  test('target time: Remove target with Undo (a deadline task too), Move…, and the hover ×', async ({
     authenticatedPage: page,
   }) => {
     const plain = await create(page, {
@@ -307,11 +309,17 @@ test.describe('Row corner · target time and segments', () => {
       await undoFromToast(page, /.+/)
       await expect.poll(async () => (await stateOf(page, plain)).target_at).toBe(before)
 
-      // A deadline task: "Back to auto" puts the automatic target back.
+      // A deadline task: Remove target too, never "Back to auto" (2026-10-22).
+      // (With the task queue off, as here, the server still keeps an
+      // automatic target, A1; with it on the deadlines page holds the task.)
       await (await timeOf(page, withDeadline)).click()
-      await expect(page.getByRole('menuitem', { name: 'Remove target' })).toHaveCount(0)
-      await page.getByRole('menuitem', { name: 'Back to auto' }).click()
+      await expect(page.getByRole('menuitem', { name: 'Back to auto' })).toHaveCount(0)
+      await page.getByRole('menuitem', { name: 'Remove target' }).click()
       await expect.poll(async () => (await stateOf(page, withDeadline)).target_auto).toBe(true)
+      // Its row's second line opens with the deadline chip.
+      const chip = taskRow(page, withDeadline).locator('[data-deadline-chip]')
+      await expect(chip).toHaveAttribute('data-deadline-chip', 'ahead')
+      await expect(chip).toHaveText(/^Deadline /)
 
       // The hover ×: invisible until the row is hovered; one click removes.
       const x = taskRow(page, hover).locator('[data-remove-target-x]')

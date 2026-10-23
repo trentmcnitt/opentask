@@ -348,8 +348,8 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     await expect(r.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     // An Upcoming row reads like every segment row (2026-10-21).
     expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
-    // A one-off with a picked target has no On deck: both deck places are
-    // kept empty, in the same order, so the columns line up.
+    // A one-off with a picked target (2026-10-22, plan §5): On deck and On
+    // deck tomorrow are there, FADED — a deck would replace the target.
     const picked = await create(page, {
       title: uniqueTitle('OD picked'),
       target_at: DateTime.now()
@@ -364,8 +364,13 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     await page.reload()
     const p = segRow(segment(page, 'upcoming'), picked)
     await expect(p).toBeVisible()
-    expect(await controlOrder(p)).toEqual(['deck-empty', 'deck-tomorrow-empty', 'today', 'done'])
+    expect(await controlOrder(p)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    await expect(p.locator('[data-on-deck]')).toHaveAttribute('data-replaces', '')
+    await expect(p.locator('[data-deck-tomorrow]')).toHaveAttribute('data-replaces', '')
+    // Today on the decked row is faded too, and asks first (it takes it off deck).
     await r.locator('[data-target-today]').click()
+    await expect(page.locator('[data-replace-confirm]')).toContainText(`Replaces On deck`)
+    await page.locator('[data-replace-confirm] [data-replace-ok]').click()
     await expect(toast(page, /Targeted/)).toBeVisible()
     await expect.poll(() => deckOf(page, id)).toBeNull()
     expect((await stateOf(page, id)).target_at).not.toBeNull()
@@ -467,7 +472,10 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
     const id = await create(page, {
       title: uniqueTitle('OD a long enough title to wrap on a phone screen'),
       horizon: 'days',
+      // With a deadline and no target the deadlines page holds it (2026-10-22):
+      // a 30-day lead puts it there today, the deadline chip on its row.
       deadline_at: daysFromNow(20),
+      lead_days: 30,
     })
     ids.push(id)
     madeYesterday(id)
@@ -477,7 +485,7 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
     ]) {
       await page.setViewportSize(size)
       await page.goto('/reminders')
-      const r = segRow(segment(page, 'days'), id)
+      const r = segRow(segment(page, 'deadlines'), id)
       await expect(r).toBeVisible()
       const box = r.locator('[data-on-deck-box]')
       await box.hover()
