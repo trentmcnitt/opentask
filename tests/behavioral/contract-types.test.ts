@@ -562,6 +562,16 @@ describe('contract fixtures: the deadlines page (2026-10-22)', () => {
   })
 })
 
+describe('contract fixtures: "Day starts at" (2026-10-23)', () => {
+  test('user preferences carry the day start, unset by default: the first period, = rollover_time', () => {
+    const prefs = data('user-preferences')
+    expect(prefs.day_start_first_period).toBe(true)
+    expect(prefs.day_start_slot_id).toBeNull()
+    expect(prefs.day_start_time).toMatch(/^\d{2}:\d{2}$/)
+    expect(prefs.day_start_time).toBe(prefs.rollover_time)
+  })
+})
+
 describe('contract fixtures: anchor times (2026-10-21)', () => {
   test('user preferences carry the resolved anchor times, their links and the pad (2026-10-21)', () => {
     // Every time is resolved (a linked period's start); the slot id says which

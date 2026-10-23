@@ -41,6 +41,9 @@
       { "slot_id": null, "time": "16:00" },
       { "slot_id": null, "time": "20:30" }
     ],
+    "day_start_time": "07:00",
+    "day_start_slot_id": null,
+    "day_start_first_period": true,
     "notifications_enabled": true,
     "enrichment_notifications_enabled": true,
     "sweep_feedback_notifications_enabled": true,
