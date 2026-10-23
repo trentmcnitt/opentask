@@ -2,6 +2,7 @@
  * Task deletion (soft delete to trash)
  */
 
+import { autoTargetToLead } from './auto-target-lead'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -90,23 +91,29 @@ export function restoreTask(options: RestoreTaskOptions): Task {
   const now = nowUtc()
 
   // Execute restore and undo log in a transaction
+  // A pre-migration automatic target restored (the deadlines page, switch on):
+  // converted in the same write (`autoTargetToLead`).
+  const conv = task.done ? null : autoTargetToLead(task)
+  const fields = ['deleted_at', ...(conv?.fields ?? [])]
   const restoredTask = withTransaction((db) => {
     // Restore from trash
-    db.prepare('UPDATE tasks SET deleted_at = NULL, updated_at = ? WHERE id = ?').run(now, taskId)
+    db.prepare(
+      `UPDATE tasks SET deleted_at = NULL, ${conv ? `${conv.sql},` : ''} updated_at = ? WHERE id = ?`,
+    ).run(...(conv ? conv.values : []), now, taskId)
 
     // Log to undo
     const snapshot = createTaskSnapshot(
-      { id: taskId, title: task.title, deleted_at: task.deleted_at },
-      { id: taskId, title: task.title, deleted_at: null },
-      ['deleted_at'],
+      { ...conv?.before, id: taskId, title: task.title, deleted_at: task.deleted_at },
+      { ...conv?.after, id: taskId, title: task.title, deleted_at: null },
+      fields,
     )
-    logAction(userId, 'restore', `Restored "${task.title}"`, ['deleted_at'], [snapshot])
+    logAction(userId, 'restore', `Restored "${task.title}"`, fields, [snapshot])
 
     logActivity({
       userId,
       taskId,
       action: 'restore',
-      fields: ['deleted_at'],
+      fields,
       before: snapshot.before_state,
       after: snapshot.after_state,
     })

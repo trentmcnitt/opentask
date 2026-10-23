@@ -26,7 +26,18 @@ vi.mock('@/core/notifications/dismiss', () => ({
 vi.mock('@/core/webhooks/dispatch', () => ({ dispatchWebhookEvent: vi.fn() }))
 
 import { getDb } from '@/core/db'
-import { bulkEdit, createTask, markDone, updateTask } from '@/core/tasks'
+import {
+  bulkEdit,
+  createTask,
+  deleteTask,
+  markDone,
+  markUndone,
+  restoreTask,
+  updateTask,
+} from '@/core/tasks'
+import { skipUntil } from '@/core/tasks/skip-until'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { migrateDeadlineTargets } from '@/core/db/migrate-deadline-targets'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { getTaskById } from '@/core/tasks/read'
 import { deckTasks } from '@/core/tasks/deck'
@@ -42,6 +53,7 @@ import { executeUndo } from '@/core/undo'
 import { formatTaskResponse } from '@/lib/format-task'
 import { isRelevantNow } from '@/lib/now-view'
 import {
+  LEAD_DAYS_TOO_LONG_MESSAGE,
   deadlineDay,
   deadlinePlace,
   defaultLeadDays,
@@ -427,8 +439,9 @@ describe('DL-D: defer-lead', () => {
   hooks()
 
   test('DL-D01: the answer, the default day, one undo entry, per-task refusals', () => {
-    const a = make({ deadline_at: at('2026-10-30T23:59') })
-    const b = make({ deadline_at: at('2026-10-31T23:59') })
+    // On the page today (lead_days 10 clamps the lead day to today).
+    const a = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 10 })
+    const b = make({ deadline_at: at('2026-10-31T23:59'), lead_days: 20 })
     const close = make({ deadline_at: at('2026-10-21T23:59') }) // the net already
     const targeted = make({ deadline_at: at('2026-10-30T23:59'), due_at: at('2026-10-22T09:00') })
     const before = undoCount()
@@ -453,7 +466,7 @@ describe('DL-D: defer-lead', () => {
     expect(undoCount()).toBe(before + 1)
     expect([task(a.id).lead_from, task(b.id).lead_from]).toEqual(['2026-10-21', '2026-10-21'])
     executeUndo(TEST_USER_ID)
-    expect([task(a.id).lead_from, task(b.id).lead_from]).toEqual(['2026-10-27', '2026-10-28'])
+    expect([task(a.id).lead_from, task(b.id).lead_from]).toEqual(['2026-10-20', '2026-10-20'])
   })
 
   test('DL-D03: a deferred row counts as handled in the day roster ("· deferred to Wed")', () => {
@@ -657,6 +670,7 @@ describe('DL-M: migrateDeadlineLeads', () => {
       autoToLead: 0,
       oneOffLead: 0,
       repeatLead: 0,
+      unqueued: 0,
       fenced: 0,
     })
     expect(task(auto.id).rolled_over_at).toBe(at('2026-10-22T10:00'))
@@ -697,6 +711,182 @@ describe('DL-M: migrateDeadlineLeads', () => {
     migrateDeadlineLeads(getDb())
     expect(task(t.id)).toMatchObject({ due_at: null, attempts: 2, lead_from: '2026-10-20' })
     expect(placesOf(t.id)).toEqual(['deadlines'])
+  })
+})
+
+// ===========================================================================
+// DL-F: the fresh-eyes review's fixes (2026-10-22)
+// ===========================================================================
+
+describe('DL-F: review fixes', () => {
+  hooks()
+  const weekly = (deadline: string, extra: Record<string, unknown> = {}) =>
+    make({ rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0', deadline_at: at(deadline), ...extra })
+
+  test('DL-F01: Skip until leaves a target-less repeat already after the date; a deck before it goes', () => {
+    const monthly = make({
+      rrule: 'FREQ=MONTHLY;BYMONTHDAY=30;BYHOUR=17;BYMINUTE=0',
+      deadline_at: at('2026-11-30T17:00'),
+    })
+    const r = skipUntil({ ...u, taskIds: [monthly.id], until: '2026-11-10' })
+    expect(r.alreadyClear).toBe(1)
+    expect(task(monthly.id)).toMatchObject({ occurrence_at: at('2026-11-30T17:00'), skip_count: 0 })
+    // Decked before the date: the deck goes, and no target comes back (none to).
+    const w = weekly('2026-10-24T08:00')
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [w.id], day: '2026-10-21' })
+    skipUntil({ ...u, taskIds: [w.id], until: '2026-10-23' })
+    expect(task(w.id)).toMatchObject({ on_deck_day: null, due_at: null, skip_count: 0 })
+    executeUndo(TEST_USER_ID)
+    expect(task(w.id).on_deck_day).toBe('2026-10-21')
+  })
+
+  test('DL-F02: without ?deadlines=1 a target-less repeat is in its horizon segment, never nowhere', () => {
+    const w = weekly('2026-10-24T08:00')
+    const plain = { queuePanels: true, deckRows: true }
+    expect(placesOf(w.id, plain)).toEqual(['days'])
+    setClock('2026-10-24T10:00')
+    expect(placesOf(w.id, plain)).toEqual(['days'])
+    expect(placesOf(w.id)).toEqual(['deadlines'])
+  })
+
+  test('DL-F03: the roster never sends a `deadlines` kind to a caller without the opt-in', () => {
+    const t = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 10 })
+    const handled = { queuePanels: true, deckRows: true, handledRows: true }
+    getTaskSegments(TEST_USER_ID, tz, new Date(), { ...handled, deadlineRows: true })
+    deferLeads(TEST_USER_ID, tz, [t.id], '2026-10-23')
+    const kinds = getTaskSegments(TEST_USER_ID, tz, new Date(), handled).map((s) => s.horizon)
+    expect(kinds).not.toContain('deadlines')
+  })
+
+  test('DL-F04: "deferred" comes only from a Defer — a deadline change is not one', () => {
+    const t = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 10 })
+    const read = () =>
+      getTaskSegments(TEST_USER_ID, tz, new Date(), { ...ALL, handledRows: true }).find(
+        (s) => s.horizon === 'deadlines',
+      )
+    read()
+    // A deadline moved out: off the page, unhandled — out of M, not "deferred".
+    updateTask({
+      ...u,
+      taskId: t.id,
+      input: { deadline_at: at('2026-12-30T23:59'), lead_days: null },
+    })
+    expect(read()).toBeUndefined()
+  })
+
+  test('DL-F05: a lead_days override must be shorter than the rule’s wait (a 400)', () => {
+    expect(() => weekly('2026-10-31T08:00', { lead_days: 7 })).toThrow(LEAD_DAYS_TOO_LONG_MESSAGE)
+    const w = weekly('2026-10-31T08:00', { lead_days: 6 })
+    expect(task(w.id).lead_days).toBe(6)
+    expect(() => updateTask({ ...u, taskId: w.id, input: { lead_days: 10 } })).toThrow(
+      LEAD_DAYS_TOO_LONG_MESSAGE,
+    )
+    // A one-off has no rule: any override 1–90.
+    expect(make({ deadline_at: at('2026-10-30T23:59'), lead_days: 30 }).lead_days).toBe(30)
+  })
+
+  test('DL-F06: defer — later than the current lead day; activity and a webhook', () => {
+    const t = make({ deadline_at: at('2026-10-30T23:59') }) // lead day Tue Oct 27
+    expect(deferLeads(TEST_USER_ID, tz, [t.id], '2026-10-26').refused[0].reason).toBe('not_later')
+    vi.mocked(dispatchWebhookEvent).mockClear()
+    expect(deferLeads(TEST_USER_ID, tz, [t.id], '2026-10-28').deferred).toBe(1)
+    expect(vi.mocked(dispatchWebhookEvent).mock.calls.map((c) => c[1])).toEqual(['task.updated'])
+    const activity = getDb()
+      .prepare('SELECT action, fields FROM activity_log WHERE task_id = ? ORDER BY id DESC LIMIT 1')
+      .get(t.id) as { action: string; fields: string }
+    expect(activity.action).toBe('edit')
+    expect(JSON.parse(activity.fields)).toEqual(['lead_from', 'target_set_at'])
+  })
+
+  test('DL-F07: a row with no stored lead day reads the derived one', () => {
+    // lead_days 10: the derived lead day is always today (clamped), outside the net.
+    const t = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 10 })
+    getDb().prepare('UPDATE tasks SET lead_from = NULL WHERE id = ?').run(t.id)
+    expect(deadlinePlace(task(t.id), tz, new Date(at('2026-10-22T10:00')), ROLLOVER)).toMatchObject(
+      {
+        kind: 'page',
+        safetyNet: false,
+      },
+    )
+    expect(placesOf(t.id)).toEqual(['deadlines'])
+  })
+})
+
+describe('DL-F: migration and rollback (switch off at build time)', () => {
+  hooks({ queue: false })
+
+  test('DL-F08: queued auto-target and target-less deadline one-offs are unqueued and counted', () => {
+    const queuedAuto = make({ deadline_at: at('2026-10-30T17:00') })
+    const queuedBare = make({ deadline_at: at('2026-10-31T17:00') })
+    const db = getDb()
+    db.prepare(
+      "UPDATE tasks SET queued_at = ?, queued_from_deck_day = '2026-10-19' WHERE id = ?",
+    ).run(at('2026-10-20T06:30'), queuedAuto.id)
+    db.prepare(
+      'UPDATE tasks SET due_at = NULL, target_auto = 0, queued_at = ?, try_tomorrow = 1 WHERE id = ?',
+    ).run(at('2026-10-20T06:30'), queuedBare.id)
+    expect(planDeadlineLeadMigration(db).unqueued).toEqual([queuedAuto.id, queuedBare.id])
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    expect(migrateDeadlineLeads(db)).toMatchObject({ autoToLead: 1, unqueued: 2 })
+    for (const id of [queuedAuto.id, queuedBare.id]) {
+      expect(task(id)).toMatchObject({ queued_at: null, try_tomorrow: false, due_at: null })
+    }
+    setClock('2026-10-29T10:00')
+    expect(placesOf(queuedAuto.id)).toEqual(['deadlines'])
+  })
+
+  test('DL-F09: a done or trashed auto-target task is converted when reopened or restored; later starts fence only what they write', () => {
+    const doneAuto = make({ deadline_at: at('2026-10-24T17:00') })
+    markDone({ ...u, taskId: doneAuto.id })
+    const trashedAuto = make({ deadline_at: at('2026-10-25T17:00') })
+    deleteTask({ userId: TEST_USER_ID, taskId: trashedAuto.id })
+    const openAuto = make({ deadline_at: at('2026-10-30T17:00') })
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    const db = getDb()
+    migrateDeadlineLeads(db) // the first start: converts openAuto, fences the closed ones too
+    const fencedAt = task(doneAuto.id).rolled_over_at
+    expect(fencedAt).toBe(at('2026-10-20T10:00'))
+
+    setClock('2026-10-21T10:00')
+    markUndone({ ...u, taskId: doneAuto.id })
+    expect(task(doneAuto.id)).toMatchObject({ done: false, due_at: null, target_auto: false })
+    expect(task(doneAuto.id).lead_from).toBe('2026-10-23')
+    restoreTask({ userId: TEST_USER_ID, taskId: trashedAuto.id })
+    expect(task(trashedAuto.id)).toMatchObject({ due_at: null, target_auto: false })
+    expect(task(trashedAuto.id).lead_from).not.toBeNull()
+    // One undo puts the reopen back whole (done, the automatic target).
+    executeUndo(TEST_USER_ID)
+    expect(task(trashedAuto.id)).toMatchObject({ target_auto: true })
+
+    // A later start writes a row with no lead day: it fences that row only.
+    const late = make({ deadline_at: at('2026-11-30T17:00') })
+    db.prepare('UPDATE tasks SET lead_from = NULL WHERE id = ?').run(late.id)
+    setClock('2026-10-22T10:00')
+    expect(migrateDeadlineLeads(db)).toMatchObject({ autoToLead: 0, oneOffLead: 1, fenced: 1 })
+    expect(task(late.id).rolled_over_at).toBe(at('2026-10-22T10:00'))
+    expect(task(openAuto.id).rolled_over_at).toBe(at('2026-10-20T10:00'))
+  })
+
+  test('DL-F10: switch off — a target-less deadline repeat gets the default offsets back at start', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    const w = make({
+      rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0',
+      deadline_at: at('2026-10-24T08:00'),
+    })
+    expect(task(w.id)).toMatchObject({ target_days_before: null, due_at: null })
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    const counts = migrateDeadlineTargets(getDb(), new Date(), { leads: false })
+    expect(counts.targetlessRepeatToDefault).toBe(1)
+    // The old default: weekly → the day before, at the morning.
+    expect(task(w.id)).toMatchObject({
+      target_days_before: 1,
+      target_time: '08:30',
+      due_at: at('2026-10-23T08:30'),
+    })
+    // With the switch on, the step leaves them alone.
+    expect(
+      migrateDeadlineTargets(getDb(), new Date(), { leads: true }).targetlessRepeatToDefault,
+    ).toBe(0)
   })
 })
 

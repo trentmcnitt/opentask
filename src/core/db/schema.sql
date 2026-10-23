@@ -680,5 +680,8 @@ CREATE TABLE IF NOT EXISTS segment_roster (
   day      TEXT NOT NULL,
   kind     TEXT NOT NULL,
   task_id  INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  -- How the row left, when the writer says so itself (2026-10-22): 'deferred'
+  -- from the deadlines page's Defer (`deferLeads`). NULL = judged from the task.
+  left_how TEXT DEFAULT NULL,
   PRIMARY KEY (user_id, day, kind, task_id)
 );

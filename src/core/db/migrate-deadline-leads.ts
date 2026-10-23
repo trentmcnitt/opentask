@@ -22,13 +22,16 @@
  *     WITH offsets are left exactly as they are (A6: possibly defaulted
  *     offsets are LISTED for Trent — `planDeadlineLeadMigration`'s
  *     `repeatOffsets` — never changed).
+ *     Step 1 also takes the row out of the task queue, and any target-less
+ *     deadline one-off still queued is unqueued (`QUEUED_WHERE`).
  *  4. THE UNDO FENCE (`rolledOverSince`) — `rolled_over_at` := now on every
- *     row steps 1–3 wrote, every task with `target_auto = 1` in any state,
- *     and every task an undo entry's snapshot holds with a truthy
- *     `target_auto` (`"target_auto":true` or `1`): undo and redo then skip
- *     those snapshots, so no automatic target comes back. Run only when steps
- *     1–3 wrote something — the first start with the switch on — so a later
- *     start never fences a fresh undo entry.
+ *     row this run wrote; and, only on a run that converted automatic targets
+ *     (step 1), also on every task with `target_auto = 1` in any state and
+ *     every task an undo entry's snapshot holds with a truthy `target_auto`
+ *     (`"target_auto":true` or `1`): undo and redo then skip those snapshots,
+ *     so no automatic target comes back. A later start fences only what it
+ *     wrote. A done or trashed automatic-target task is converted when it is
+ *     reopened or restored (`autoTargetToLead`).
  *
  * IDEMPOTENT: step 1 matches `target_auto = 1` (open) only, steps 2–3
  * `lead_from IS NULL` only; once run, nothing matches and step 4 is skipped.
@@ -58,6 +61,13 @@ const OPEN_ORDINARY = `t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS 
 const AUTO_WHERE = `t.target_auto = 1 AND t.rrule IS NULL AND ${OPEN_ORDINARY}`
 const ONE_OFF_WHERE = `t.deadline_at IS NOT NULL AND t.rrule IS NULL AND t.lead_from IS NULL
   AND ${OPEN_ORDINARY}`
+/**
+ * A deadline one-off with no target still in the task queue (only the old
+ * `stripDecks` could queue one; prod had none on 10-22): unqueued, as
+ * clear-decks does, so the deadlines page — not the queue — holds it.
+ */
+const QUEUED_WHERE = `t.deadline_at IS NOT NULL AND t.rrule IS NULL AND t.due_at IS NULL
+  AND (t.queued_at IS NOT NULL OR t.try_tomorrow = 1 OR t.queue_mark = 1) AND ${OPEN_ORDINARY}`
 const REPEAT_WHERE = `t.deadline_at IS NOT NULL AND t.rrule IS NOT NULL
   AND t.repeat_anchor = 'deadline' AND (t.target_days_before IS NULL OR t.target_time IS NULL)
   AND t.lead_from IS NULL AND ${OPEN_ORDINARY}`
@@ -170,6 +180,11 @@ export interface DeadlineLeadPlan {
   autoToLead: number[]
   oneOffLead: number[]
   repeatLead: number[]
+  /**
+   * Deadline one-offs taken out of the task queue: the auto-target rows that
+   * are queued, and any target-less one already queued (`QUEUED_WHERE`).
+   */
+  unqueued: number[]
   /** Counts only, for the report (plan §6 "still to count"). */
   closedAuto: number[]
   undoEntriesWithAuto: number
@@ -234,8 +249,12 @@ export function planDeadlineLeadMigration(db: Database.Database): DeadlineLeadPl
     ).map((r) => r.id)
   const undo = undoAutoIds(db)
   const auto = ids(AUTO_WHERE)
+  const queued = `(t.queued_at IS NOT NULL OR t.try_tomorrow = 1 OR t.queue_mark = 1)`
   return {
     autoToLead: auto,
+    unqueued: [...new Set([...ids(`${AUTO_WHERE} AND ${queued}`), ...ids(QUEUED_WHERE)])].sort(
+      (a, b) => a - b,
+    ),
     oneOffLead: ids(noLead(ONE_OFF_WHERE)).filter((id) => !auto.includes(id)),
     repeatLead: columns.includes('repeat_anchor') ? ids(noLead(REPEAT_WHERE)) : [],
     closedAuto: ids(
@@ -251,6 +270,7 @@ export interface DeadlineLeadCounts {
   autoToLead: number
   oneOffLead: number
   repeatLead: number
+  unqueued: number
   fenced: number
 }
 
@@ -266,9 +286,20 @@ export function migrateDeadlineLeads(
 
     const toLead = db.prepare(
       `UPDATE tasks SET due_at = NULL, original_due_at = NULL, target_auto = 0, lead_from = ?,
-              attempts = ?, attempts_counted_through = ? WHERE id = ?`,
+              attempts = ?, attempts_counted_through = ?,
+              queued_at = NULL, try_tomorrow = 0, queue_mark = 0 WHERE id = ?`,
     )
     const autoRows = rows(db, AUTO_WHERE)
+    const queuedAuto = new Set(
+      (
+        db
+          .prepare(
+            `SELECT t.id FROM tasks t WHERE ${AUTO_WHERE}
+               AND (t.queued_at IS NOT NULL OR t.try_tomorrow = 1 OR t.queue_mark = 1)`,
+          )
+          .all() as { id: number }[]
+      ).map((r) => r.id),
+    )
     for (const row of autoRows) {
       const { tz, rollover } = clock(row)
       if (!row.due_at) {
@@ -300,21 +331,38 @@ export function migrateDeadlineLeads(
       }
       return n
     }
+    // Deadline one-offs out of the queue (`QUEUED_WHERE`).
+    const queuedIds = (
+      db.prepare(`SELECT t.id FROM tasks t WHERE ${QUEUED_WHERE}`).all() as { id: number }[]
+    ).map((r) => r.id)
+    const unqueue = db.prepare(
+      'UPDATE tasks SET queued_at = NULL, try_tomorrow = 0, queue_mark = 0 WHERE id = ?',
+    )
+    for (const id of queuedIds) {
+      unqueue.run(id)
+      touched.push(id)
+    }
     const oneOffLead = lead(ONE_OFF_WHERE)
     const repeatLead = lead(REPEAT_WHERE)
 
-    let fenced = 0
-    if (touched.length > 0) {
-      const fence = new Set<number>(touched)
+    // THE FENCE. Every row this run wrote. Only a run that converted
+    // automatic targets (the first start with the switch on, or one after the
+    // switch was off and they came back) also fences every `target_auto` row
+    // and every task an undo entry holds with one — a later start never
+    // re-stamps those, so it never fences a fresh undo entry of theirs.
+    const fence = new Set<number>(touched)
+    if (autoRows.length > 0) {
       for (const r of db.prepare('SELECT id FROM tasks WHERE target_auto = 1').all() as {
         id: number
       }[]) {
         fence.add(r.id)
       }
       for (const id of undoAutoIds(db).ids) fence.add(id)
-      const stamp = db.prepare('UPDATE tasks SET rolled_over_at = ? WHERE id = ?')
-      for (const id of fence) fenced += stamp.run(nowStr, id).changes
     }
-    return { autoToLead: autoRows.length, oneOffLead, repeatLead, fenced }
+    const stamp = db.prepare('UPDATE tasks SET rolled_over_at = ? WHERE id = ?')
+    let fenced = 0
+    for (const id of fence) fenced += stamp.run(nowStr, id).changes
+    const unqueued = new Set([...queuedAuto, ...queuedIds]).size
+    return { autoToLead: autoRows.length, oneOffLead, repeatLead, unqueued, fenced }
   })()
 }

@@ -6,6 +6,8 @@
  *   autoToLead           open one-offs on an automatic target → no target, lead day = the old auto day
  *   oneOffLead           other open one-offs with a deadline → a lead day (dormant while targeted)
  *   repeatLead           open deadline-anchored repeats with no relative target → a lead day
+ *   unqueued             deadline one-offs taken out of the task queue (queued auto rows, or
+ *                        target-less ones already queued)
  *   closedAuto           done / trashed / archived rows still flagged target_auto (fenced, not changed)
  *   undoEntriesWithAuto  undo entries whose snapshot holds target_auto (their tasks are fenced)
  *   repeatOffsets        A6: open deadline-anchored repeats WITH stored offsets — kept as they are;
@@ -32,12 +34,13 @@ const counts = {
   autoToLead: plan.autoToLead.length,
   oneOffLead: plan.oneOffLead.length,
   repeatLead: plan.repeatLead.length,
+  unqueued: plan.unqueued.length,
   closedAuto: plan.closedAuto.length,
   undoEntriesWithAuto: plan.undoEntriesWithAuto,
   undoTasksWithAuto: plan.undoTaskIdsWithAuto.length,
   repeatOffsets: plan.repeatOffsets.length,
   repeatOffsetsMatchingDefault: plan.repeatOffsets.filter((r) => r.matchesDefault).length,
 }
-const wouldMigrate = counts.autoToLead + counts.oneOffLead + counts.repeatLead > 0
+const wouldMigrate = counts.autoToLead + counts.oneOffLead + counts.repeatLead + counts.unqueued > 0
 console.log(JSON.stringify({ counts, wouldMigrate, ids: plan }, null, 2))
 db.close()

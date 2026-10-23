@@ -439,6 +439,10 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // The day roster's explicit "how it left" (2026-10-22, the deadlines page's Defer).
+  if (!hasColumn(database, 'segment_roster', 'left_how')) {
+    database.exec('ALTER TABLE segment_roster ADD COLUMN left_how TEXT DEFAULT NULL')
+  }
   // The deadlines page (2026-10-22). Backfilled by `migrateDeadlineLeads`
   // (task-queue switch on).
   if (!hasColumn(database, 'tasks', 'lead_days')) {

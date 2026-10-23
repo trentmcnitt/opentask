@@ -5,6 +5,7 @@
  */
 
 import { attemptsRolloverTime, leadContextFor, rolloverTimeForUser } from './rollover-time'
+import { autoTargetToLead } from './auto-target-lead'
 import {
   occurrenceDates,
   putBackCountedThrough,
@@ -246,6 +247,10 @@ export function markUndone(options: MarkDoneOptions): Task {
     'attempts_counted_through',
     ...(recurring ? ['repeat_count_used'] : []),
   ]
+  // A pre-migration automatic target reopened (the deadlines page, switch
+  // on): converted in the same write (`autoTargetToLead`).
+  const conv = autoTargetToLead(task)
+  if (conv) fieldsChanged.push(...conv.fields)
 
   // §7: the attempts come back from the completion row it deletes (done
   // reset them), checkpointed so the days it sat done don't count.
@@ -269,7 +274,7 @@ export function markUndone(options: MarkDoneOptions): Task {
       SET done = 0, done_at = NULL, archived_at = NULL,
           completion_count = ?, first_completed_at = ?, last_completed_at = ?,
           attempts = ?, attempts_counted_through = ?, repeat_count_used = ?,
-          updated_at = ?
+          ${conv ? `${conv.sql},` : ''} updated_at = ?
       WHERE id = ?
     `,
     ).run(
@@ -279,6 +284,7 @@ export function markUndone(options: MarkDoneOptions): Task {
       restoredAttempts,
       restoredThrough,
       restoredUsed,
+      ...(conv ? conv.values : []),
       nowStr,
       taskId,
     )
@@ -299,8 +305,10 @@ export function markUndone(options: MarkDoneOptions): Task {
         attempts: task.attempts,
         attempts_counted_through: task.attempts_counted_through,
         repeat_count_used: task.repeat_count_used,
+        ...conv?.before,
       },
       {
+        ...conv?.after,
         id: taskId,
         title: task.title,
         done: false,

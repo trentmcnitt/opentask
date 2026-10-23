@@ -91,7 +91,7 @@ import { canUserAccessTask } from './access'
 import { getTaskById } from './read'
 import { seriesEndSkipWords, writeRecurringSkip, writeSeriesEndSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
-import { collectDeckClear } from './deck-clear'
+import { DECK_CLEAR_SQL, collectDeckClear } from './deck-clear'
 import {
   isDeadlineAnchored,
   nextLanding,
@@ -335,13 +335,20 @@ export function planSkipUntil(
   // A decked repeating task has `due_at` NULL: its occurrence is the truth —
   // judged by the target it derives (a deadline-anchored one's lies before it).
   const occurrence = task.occurrence_at ?? task.due_at
-  const derived = occurrence ? occurrenceDates(task, occurrence, timezone).targetAt : null
+  // The occurrence's own target — or, with none (a deadline-anchored repeat
+  // with no relative target, the deadlines page), the occurrence itself.
+  const target = occurrence ? occurrenceDates(task, occurrence, timezone).targetAt : null
+  const derived = target ?? occurrence
   if (occurrence && derived && Date.parse(derived) >= untilStart.getTime()) {
     const targetEarly = task.due_at !== null && Date.parse(task.due_at) < untilStart.getTime()
     const deckEarly = !!task.on_deck_day && !keepDeck
-    // The target the retarget would write: the occurrence's derived one. A re-run
-    // with no deck to clear would rewrite the same target — nothing to do.
-    const sameTarget = task.due_at !== null && Date.parse(task.due_at) === Date.parse(derived)
+    // The target the retarget would write: the occurrence's derived one (none
+    // on a target-less occurrence). A re-run with no deck to clear would
+    // rewrite the same target — nothing to do.
+    const sameTarget =
+      target === null
+        ? task.due_at === null
+        : task.due_at !== null && Date.parse(task.due_at) === Date.parse(target)
     // A deck before the date goes, and the target comes back on the occurrence.
     if (deckEarly || (targetEarly && !sameTarget)) {
       return { kind: 'retarget', landing: occurrence }
@@ -653,6 +660,15 @@ function writeRetarget(
     isReminder: false,
     isTracked: false,
   })
+  // A target-less occurrence (the deadlines page) gets no target back, so the
+  // pick-only clear above leaves its deck: a deck before the date goes all the
+  // same — never a row left with neither (its deadline's page holds it).
+  if (dueAt === null && task.on_deck_day && !write.fieldsChanged.includes('on_deck_day')) {
+    write.setClauses.push(DECK_CLEAR_SQL)
+    write.fieldsChanged.push('on_deck_day')
+    write.beforeState!.on_deck_day = task.on_deck_day
+    write.afterState!.on_deck_day = null
+  }
   tx.prepare(`UPDATE tasks SET ${write.setClauses.join(', ')}, updated_at = ? WHERE id = ?`).run(
     ...write.values,
     nowStr,

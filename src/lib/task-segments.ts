@@ -1520,7 +1520,7 @@ export function defaultRelativeTarget(
  * twice-weekly rule (gaps of 3 and 4) waits 3, a monthly one 28. A rule with
  * no second occurrence within the walk (yearly) reads as the longest wait.
  */
-function ruleWait(
+export function ruleWait(
   rule: RepeatRule,
   firstDeadline: string,
   timezone: string,
@@ -1650,6 +1650,25 @@ function repeatLeadFrom(
   return leadFrom(occurrenceAt, days, timezone, lead.rolloverTime, lead.now)
 }
 
+/**
+ * A repeat's lead override must be SHORTER than its rule's wait (the smallest
+ * gap between deadlines): a weekly rule with a lead of 10 would put every
+ * occurrence on the page from the moment the last one was done. Refused like
+ * `overlaps_previous` (a 400, never a clamp). Null when it is fine.
+ */
+export const LEAD_DAYS_TOO_LONG_MESSAGE =
+  'lead_days must be fewer than the days between this rule’s deadlines'
+
+export function leadDaysProblem(
+  leadDays: number | null,
+  rule: RepeatRule,
+  firstDeadline: string,
+  timezone: string,
+): string | null {
+  if (leadDays === null) return null
+  return leadDays >= ruleWait(rule, firstDeadline, timezone) ? LEAD_DAYS_TOO_LONG_MESSAGE : null
+}
+
 /** The fields `leadFor` reads (a task, or the row a write leaves). */
 export interface LeadFields extends RepeatSchedule {
   deadline_at: string | null
@@ -1684,6 +1703,14 @@ export interface DeadlinePageFields {
   due_at: string | null
   deadline_at: string | null
   lead_from?: string | null
+  /** For a row with no stored lead day (`lead_from` NULL): derived now (`leadFor`). */
+  lead_days?: number | null
+  repeat_anchor?: RepeatAnchor | null
+  target_days_before?: number | null
+  target_time?: string | null
+  recurrence_mode?: 'from_due' | 'from_completion' | null
+  anchor_time?: string | null
+  occurrence_at?: string | null
   on_deck_day?: string | null
   last_considered_at: string | null
   target_set_at: string | null
@@ -1754,7 +1781,9 @@ export function deadlinePlace(
   const dayOf = (iso: string) => openTaskToday(timezone, new Date(iso), rolloverTime)
   const safetyNet = inSafetyNet(task.deadline_at!, timezone, now, rolloverTime)
   const seen = !!task.last_considered_at && dayOf(task.last_considered_at) === today
-  const leadDay = task.lead_from ?? null
+  // A row with no stored lead day (from before the column; a write that
+  // missed it) reads the one `leadFor` derives now.
+  const leadDay = task.lead_from ?? derivedLeadDay(task, timezone, now, rolloverTime)
   if (safetyNet || (leadDay !== null && leadDay <= today)) {
     if (!safetyNet && deckIsToday(task, timezone, now)) return null
     const state: SegmentState = !safetyNet && seen ? 'considered' : 'waiting'
@@ -1763,6 +1792,29 @@ export function deadlinePlace(
   if (task.on_deck_day) return { kind: 'deck' }
   if (leadDay === null) return null
   return leadHeadsUp(task, leadDay, today, seen, timezone, dayOf)
+}
+
+function derivedLeadDay(
+  task: DeadlinePageFields,
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): string | null {
+  return leadFor(
+    {
+      rrule: task.rrule ?? null,
+      repeat_anchor: task.repeat_anchor ?? null,
+      target_days_before: task.target_days_before ?? null,
+      target_time: task.target_time ?? null,
+      lead_days: task.lead_days ?? null,
+      recurrence_mode: task.recurrence_mode ?? null,
+      anchor_time: task.anchor_time ?? null,
+      deadline_at: task.deadline_at,
+      occurrence_at: task.occurrence_at ?? null,
+    },
+    timezone,
+    { rolloverTime, now },
+  )
 }
 
 /** The Upcoming heads-up counted to the lead day (`deadlinePlace`, before the window). */
@@ -1806,17 +1858,17 @@ export type LeadDeferRefusal = 'safety_net' | 'after_safety_net' | 'not_later' |
 export const LEAD_DEFER_MESSAGES: Record<LeadDeferRefusal, string> = {
   safety_net: 'The deadline is close: only a target or done takes it off the deadlines page',
   after_safety_net: 'That day is too close to the deadline: defer at most to two days before it',
-  not_later: 'Defer to a day after today',
+  not_later: 'Defer to a day after today and after its current lead day',
   not_on_page: 'Only a deadline task with no target is on the deadlines page',
 }
 
 /**
  * DEFER (plan §3): moves THIS instance's lead day to `day` — later than
- * today, and at most D−2 (the safety net's start minus one). Refused once
+ * today and than its current lead day, and at most D−2 (the safety net's start minus one). Refused once
  * the safety net holds the task (today ≥ D−1). Null when allowed.
  */
 export function leadDeferRefusal(
-  task: { due_at: string | null; deadline_at: string | null },
+  task: { due_at: string | null; deadline_at: string | null; lead_from?: string | null },
   day: string,
   timezone: string,
   now: Date,
@@ -1825,6 +1877,8 @@ export function leadDeferRefusal(
   if (!isDeadlinePageTask(task)) return 'not_on_page'
   if (inSafetyNet(task.deadline_at!, timezone, now, rolloverTime)) return 'safety_net'
   if (day <= openTaskToday(timezone, now, rolloverTime)) return 'not_later'
+  // A Defer only ever moves the lead day LATER (a day before it is no defer).
+  if (task.lead_from && day <= task.lead_from) return 'not_later'
   return day > lastDeferDay(task.deadline_at!, timezone, rolloverTime) ? 'after_safety_net' : null
 }
 

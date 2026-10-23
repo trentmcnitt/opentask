@@ -10,6 +10,7 @@ import {
   deckDayProblem,
   deckRefusal,
   deckSkip,
+  leadDaysProblem,
   leadFor,
   occurrenceDates,
   resolveTarget,
@@ -174,6 +175,16 @@ function deadlineAnchoredDates(
     leads: taskQueueEnabled(),
   })
   const recurrenceMode = input.recurrence_mode ?? 'from_due'
+  // A lead override must be shorter than the rule's wait (`leadDaysProblem`).
+  const leadProblem = relative
+    ? null
+    : leadDaysProblem(
+        input.lead_days ?? null,
+        { rrule, recurrence_mode: recurrenceMode, anchor_time: null },
+        first,
+        timezone,
+      )
+  if (leadProblem) throw new ValidationError(leadProblem)
   const dates = occurrenceDates(
     {
       rrule,

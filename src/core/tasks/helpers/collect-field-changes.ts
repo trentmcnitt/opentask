@@ -34,8 +34,10 @@ import {
   hasPickedTarget,
   hasRelativeTarget,
   isDeadlineAnchored,
+  leadDaysProblem,
   leadFor,
   occurrenceDates,
+  type LeadFields,
   openTaskToday,
   occurrenceDayAtRuleTime,
   occurrenceIsPersonal,
@@ -681,12 +683,32 @@ function collectLead(
   const targetLess = row.deadline_at !== null && after('due_at') === null
   const removedRepeatTarget = ordinary && targetLess && removesRepeatTarget(data, task, input, row)
   if (!changed && !removedRepeatTarget && !(targetLess && task.lead_from === null)) return
+  if (changed) assertLeadDays(row, left.timezone)
   const rolloverTime = rolloverTimeForUser(task.user_id)
   const lead = { rolloverTime, now: left.now }
   const next = removedRepeatTarget
     ? openTaskToday(left.timezone, left.now, rolloverTime)
     : leadFor(row, left.timezone, lead)
   if (next !== task.lead_from) trackField(data, 'lead_from', task.lead_from, next)
+}
+
+/**
+ * A repeat's lead override must be shorter than its rule's wait (a 400, like
+ * `overlaps_previous` — `leadDaysProblem`). Judged on the row the write leaves.
+ */
+function assertLeadDays(row: LeadFields, timezone: string): void {
+  if (!row.rrule || !isDeadlineAnchored(row) || hasRelativeTarget(row)) return
+  const problem = leadDaysProblem(
+    row.lead_days ?? null,
+    {
+      rrule: row.rrule,
+      recurrence_mode: row.recurrence_mode ?? 'from_due',
+      anchor_time: row.anchor_time ?? null,
+    },
+    row.occurrence_at ?? row.deadline_at!,
+    timezone,
+  )
+  if (problem) throw new ValidationError(problem)
 }
 
 /**

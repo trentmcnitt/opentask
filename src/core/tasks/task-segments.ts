@@ -87,7 +87,10 @@ import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
 import { latestRollover, rolloverMoment } from '@/lib/opentask-day'
-import { rosterLeftRows, type SegmentLeft } from './segment-roster'
+import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-roster'
+import { logActivity } from '@/core/activity'
+import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
+import { formatTaskResponse } from '@/lib/format-task'
 
 export interface SegmentTask {
   task: Task
@@ -285,15 +288,26 @@ export function getTaskSegments(
     const placed = segmentState(task, timezone, now, checkInDay)
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
-  for (const task of repeatingTasks(userId)) {
-    if (placeFirst(task)) continue
+  const placeRepeating = (task: Task): void => {
     // A decked repeating task (2026-10-20), as a one-off's deck above: a
     // future deck's Upcoming row only for a caller that draws deck rows.
     if (task.on_deck_day) {
       if (deckRows) addUpcoming(task)
-      continue
+      return
+    }
+    // A deadline-anchored repeat with NO target (the deadlines page) for a
+    // caller that does not draw the page (a shipped native build): its
+    // horizon segment, the deadline pulling it in — the same truthful, dated
+    // degrade as a target-less one-off. Never nowhere.
+    if (task.due_at === null && task.deadline_at !== null) {
+      const placed = segmentState(task, timezone, now, checkInDay)
+      if (placed) add(placed.horizon, { task, state: placed.state })
+      return
     }
     addUpcoming(task)
+  }
+  for (const task of repeatingTasks(userId)) {
+    if (!placeFirst(task)) placeRepeating(task)
   }
   if (upcoming.length > 0) {
     upcoming.sort((a, b) => Date.parse(a.target) - Date.parse(b.target) || a.task.id - b.task.id)
@@ -302,7 +316,12 @@ export function getTaskSegments(
       upcoming.map(({ task, state }) => ({ task, state })),
     )
   }
-  if (handledRows) addLeftRows(userId, timezone, now, byKind, queuePanels)
+  if (handledRows) {
+    addLeftRows(userId, timezone, now, byKind, {
+      queuePanels,
+      deadlines: deadlineRows && taskQueueEnabled(),
+    })
+  }
   return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
     const tasks = byKind.get(kind)!
     if (kind === 'queue_today' || kind === 'queue_previous') {
@@ -328,14 +347,18 @@ function addLeftRows(
   timezone: string,
   now: Date,
   byKind: Map<SegmentKind, SegmentTask[]>,
-  /** The caller draws the queue's panels (`queuePanels`). */
-  queuePanels: boolean,
+  /**
+   * What the caller draws: the queue's panels (`queuePanels`), the deadlines
+   * page (`deadlineRows`, switch on) — never a left row of a kind it can't.
+   */
+  shown: { queuePanels: boolean; deadlines: boolean },
 ): void {
   // Never add a queue panel of left rows that would not otherwise be drawn.
-  const queueShown = queuePanels && taskQueueEnabled()
+  const queueShown = shown.queuePanels && taskQueueEnabled()
   const listed = new Map([...byKind].map(([kind, rows]) => [kind, rows.map((r) => r.task)]))
   for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
     if (isQueueKind(kind) && !queueShown) continue
+    if (kind === 'deadlines' && !shown.deadlines) continue
     const list = byKind.get(kind) ?? []
     for (const { task, left } of rows) list.push({ task, state: 'considered', left })
     byKind.set(kind, list)
@@ -551,8 +574,30 @@ export function deferLeads(
         )
       })
       logAction(userId, 'task_segment', summary, fields, snapshots)
+      for (const snap of snapshots) {
+        logActivity({
+          userId,
+          taskId: snap.task_id,
+          action: 'edit',
+          fields,
+          before: snap.before_state,
+          after: snap.after_state,
+          metadata: { deadlines_page: 'defer_lead' },
+        })
+      }
+      // The day roster: an actual Defer, so the row reads "· deferred to …".
+      markRosterDeferred(
+        userId,
+        openTaskToday(timezone, now, rolloverTime),
+        moving.map((t) => t.id),
+      )
     })
     emitSyncEvent(userId)
+    for (const task of moving) {
+      dispatchWebhookEvent(userId, 'task.updated', {
+        task: formatTaskResponse({ ...task, lead_from: target, target_set_at: stamp }, timezone),
+      })
+    }
   }
   return { day: target, deferred: moving.length, refused, summary }
 }
