@@ -25,6 +25,10 @@
  *    ruling 3).
  *  - A DECKED row counts only in the safety net: a deck says "I'll look at it
  *    that day", which answers the nag until the deadline is a day away.
+ *  - A row whose own Nag is OFF (`auto_snooze_minutes = 0`) never counts, in
+ *    the safety net too: "off" means off (coordinator ruling, 2026-10-22). It
+ *    stays on the page; only the push leaves it out. Any other per-task
+ *    value is the overdue nag's and does not change this nag's pace.
  *
  * NO QUIET HOURS (ruling 2). There is no Wake–Sleep gate: like the overdue
  * nag, this one sends whenever it is due. A page row starts waiting at the
@@ -74,7 +78,11 @@ export const DEADLINES_PAGE_PATH = tasksPanelPath('deadlines')
 /** The page rows that keep the nag going (see the header). Pure. */
 export function countedDeadlineRows(rows: SegmentTask[]): SegmentTask[] {
   return rows.filter(
-    (r) => r.state === 'waiting' && !r.left && (!r.task.on_deck_day || r.safetyNet === true),
+    (r) =>
+      r.state === 'waiting' &&
+      !r.left &&
+      r.task.auto_snooze_minutes !== 0 &&
+      (!r.task.on_deck_day || r.safetyNet === true),
   )
 }
 

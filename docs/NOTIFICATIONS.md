@@ -361,6 +361,7 @@ When the user later clears every overdue task some other way (one at a time, in 
 
 - `waiting` only. Seeing a row (its circle, or Considered all) silences it for the rest of the **OpenTask day** (resets at the rollover time, not midnight). In the **safety net** — from the day before the deadline's OpenTask day on, past the deadline included — seeing does not silence it: only a target or done takes it off the page (ruling 3).
 - A **decked** row counts only in the safety net.
+- A row whose own **Nag is off** (`auto_snooze_minutes = 0`) never counts, in the safety net too: off means off. It stays on the page.
 
 **How often: the nag ladder.** Each counted row has an interval from the ladder's considering rung; the shortest sets the pace:
 
@@ -372,7 +373,7 @@ When the user later clears every overdue task some other way (one at a time, in 
 | Low      | 240                       | none                | 60                |
 | Unset    | 30                        | none                | 60                |
 
-Minutes. The deadlines column is the user's own overdue tier ×2, so it follows Settings → Notifications; the safety net brings any slower rung (or none) up to hourly (A2). The table is `NAG_LADDER` in `src/core/notifications/nag-ladder.ts`, keyed (kind, priority). It also LISTS the reminder slot nag and quota prompts at the considering pace, but nothing reads those rows yet: the slot nag keeps its own schedule (below), and quota prompts have no push of their own. The per-task `auto_snooze_minutes` override is not read: the nag is about the page, not one task.
+Minutes. The deadlines column is the user's own overdue tier ×2, so it follows Settings → Notifications; the safety net brings any slower rung (or none) up to hourly (A2). The table is `NAG_LADDER` in `src/core/notifications/nag-ladder.ts`, keyed (kind, priority). It also LISTS the reminder slot nag and quota prompts at the considering pace, but nothing reads those rows yet: the slot nag keeps its own schedule (below), and quota prompts have no push of their own. Of the per-task `auto_snooze_minutes`, only Off (0) is read (the row leaves the count); any other value is the overdue nag's interval and does not change this nag's pace.
 
 **No quiet hours** (ruling 2). Like the overdue nag, it sends whenever it is due — at 3 AM too. A page row starts waiting at the OpenTask day's start (the rollover time) or the moment a deadline is set inside its lead time, so the first nag of a day goes then.
 

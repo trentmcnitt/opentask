@@ -40,7 +40,7 @@ vi.mock('@/core/notifications/apns', async (importOriginal) => ({
 import { getDb } from '@/core/db'
 import { createTask } from '@/core/tasks'
 import { deckTasks } from '@/core/tasks/deck'
-import { considerTasks } from '@/core/tasks/task-segments'
+import { considerTasks, getTaskSegments } from '@/core/tasks/task-segments'
 import {
   NAG_LADDER,
   SAFETY_NET_FLOOR_MINUTES,
@@ -199,6 +199,21 @@ describe('DN-003 what silences it', () => {
     expect(pending()).toEqual([])
     const netDecked = inNet(2)
     deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [netDecked.id], day: '2026-10-21' })
+    expect(pending()).toMatchObject([{ intervalMinutes: 60, count: 1 }])
+  })
+
+  test('a row with its Nag off never counts, in the safety net too', () => {
+    onPage(4, { auto_snooze_minutes: 0 })
+    inNet(3, { auto_snooze_minutes: 0 })
+    expect(pending()).toEqual([])
+    // Still on the page: only the push leaves it out.
+    const page = getTaskSegments(TEST_USER_ID, tz, new Date(), {
+      queuePanels: true,
+      deadlineRows: true,
+    }).find((s) => s.horizon === 'deadlines')
+    expect(page?.tasks).toHaveLength(2)
+    // A per-task interval that isn't off leaves the pace to the ladder.
+    inNet(2, { auto_snooze_minutes: 5 })
     expect(pending()).toMatchObject([{ intervalMinutes: 60, count: 1 }])
   })
 
