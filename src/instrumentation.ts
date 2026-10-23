@@ -8,6 +8,8 @@
  * - Every 1 min: notification check (overdue tasks, all priorities)
  * - Every 1 min: time-slot reminder check (§6 — the slot notifies, not the item)
  * - Every 1 min: unfinished-slot nag (hourly in effect; see slot-nags.ts)
+ * - Every 1 min: deadlines-page nag (paced by the nag ladder, sent when
+ *   `nag_sends` says it is due; see deadline-nags.ts)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - Every 1 min: persist attempts (§7 — reads are already exact; this keeps
  *   the stored columns current, see src/core/tasks/attempts.ts)
@@ -155,6 +157,7 @@ export async function register() {
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
     const { checkSlotReminders } = await import('@/core/notifications/slot-reminders')
     const { checkSlotNags, purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
+    const { checkDeadlineNags } = await import('@/core/notifications/deadline-nags')
     const { initWidgetPushSync } = await import('@/core/notifications/widget-push')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
@@ -218,6 +221,9 @@ export async function register() {
         // minute sends its own push, and the nag stands down for that minute
         // rather than putting a second banner beside it.
         await checkSlotNags()
+        // The deadlines page's nag (deadline-nags.ts): one push per user, paced
+        // by the nag ladder, sent when `nag_sends` says it is due.
+        await checkDeadlineNags()
       } catch (err) {
         log.error('notifications', 'Notification check error:', err)
         notifyError(

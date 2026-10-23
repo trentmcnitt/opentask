@@ -630,6 +630,18 @@ CREATE TABLE IF NOT EXISTS slot_nags (
   PRIMARY KEY (user_id, local_date)
 );
 
+-- When a nag was last sent, per user and source (nag-map fix #5, 2026-10-22).
+-- A nag sends when now − last_sent_at ≥ its interval, in whole minutes, so a
+-- restart, a double tick or downtime can neither repeat nor lose a send.
+-- Keys: 'deadlines-page' (src/core/notifications/deadline-nags.ts). The other
+-- senders keep their own schemes for now (docs/NOTIFICATIONS.md § nag_sends).
+CREATE TABLE IF NOT EXISTS nag_sends (
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  key          TEXT NOT NULL,
+  last_sent_at TEXT NOT NULL,              -- ISO 8601 UTC
+  PRIMARY KEY (user_id, key)
+);
+
 -- Progress events (REDESIGN-V03 §5)
 --
 -- One row per +1 increment on a tracked task.
