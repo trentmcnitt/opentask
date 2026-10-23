@@ -1,6 +1,8 @@
 /**
  * THE DEADLINE CHIP's words and tone (the deadlines page, 2026-10-22, plan
- * §9): one chip, at the START of every task row's second line — the horizon
+ * §9): one chip on every task row's second line — right after the project
+ * (Trent's 10-20 rule: every project starts at the same x), first where the
+ * line has no project (the dashboard row) — the horizon
  * and queue segments, Upcoming, the deadlines page, Now's On deck section and
  * the dashboard row — in place of the trailing "deadline …" text each used to
  * write its own way. Pure, so the rows and the tests share one copy

@@ -48,7 +48,7 @@ import {
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
-import { collectDeckClear, deckRolloverTime } from '../deck-clear'
+import { collectDeckClear, deckKeepsPageRow, deckRolloverTime } from '../deck-clear'
 import { taskQueueEnabled } from '../task-queue'
 import { rolloverTimeForUser } from '../rollover-time'
 import {
@@ -533,10 +533,16 @@ function prepareDeck(
   // A7 on every deck write (D2 review): a new deck day marks the task
   // considered and stamps the Just now card, as the deck endpoint does (it
   // passes its own stamps, kept here). Re-decking for the same day stamps
-  // nothing new.
+  // nothing new. NOT the consider on a row the deadlines page keeps
+  // (2026-10-22, Trent: it stays there, waiting, with its deck day).
   if (task.on_deck_day !== day) {
     const stamp = opts.now.toISOString()
-    out.last_considered_at ??= stamp
+    if (
+      !taskQueueEnabled() ||
+      !deckKeepsPageRow(task, day, judged.deadline_at, opts.ctx.timezone, opts.now)
+    ) {
+      out.last_considered_at ??= stamp
+    }
     out.segment_targeted_at ??= stamp
   }
   return out

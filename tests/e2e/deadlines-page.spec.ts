@@ -214,21 +214,24 @@ for (const viewport of VIEWPORTS) {
         ids.push(later, net)
         await page.goto('/reminders')
         const s = section(page)
-        // A later day (hold On deck for its menu): a deck sees the task, so it
-        // is considered for today — still on the page, with its deck day.
+        // A later day (hold On deck for its menu): the row STAYS on the page,
+        // waiting, with its deck day — a deck is not a consider here (Trent,
+        // 10-22), and survives a reload.
         await row(s, later).locator('[data-on-deck]').click({ button: 'right' })
         const day = DateTime.now().setZone(TZ).plus({ days: 2 })
         await choice(page, new RegExp(`^${day.toFormat('cccc')}`)).click()
         await expect
           .poll(async () => (await stateOf(page, later)).on_deck_day)
           .toBe(day.toISODate())
-        await s.locator('[data-segment-considered-toggle]').click()
-        await expect(s.locator(`[data-considered-task-id="${later}"]`)).toContainText(
-          `on deck ${day.toFormat('ccc')}`,
-        )
+        expect((await stateOf(page, later)).last_considered_at).toBeNull()
+        await page.reload()
+        const l = row(section(page), later)
+        await expect(l).toHaveAttribute('data-segment-state', 'waiting')
+        await expect(l.locator('[data-deck-day-chip]')).toHaveText(`On deck ${day.toFormat('ccc')}`)
+        await expect(l.locator('[data-target-today]')).toHaveAttribute('data-replaces', '')
 
         // In the safety net a deck for today keeps the row waiting, its chip.
-        const r = row(s, net)
+        const r = row(section(page), net)
         await r.locator('[data-on-deck]').click()
         await expect(r.locator('[data-deck-day-chip]')).toHaveText('On deck today')
         await expect(r).toHaveAttribute('data-segment-state', 'waiting')
@@ -250,7 +253,9 @@ for (const viewport of VIEWPORTS) {
       }
     })
 
-    test('the deadline chip leads the row: the page and the dashboard', async ({ page }) => {
+    test('the deadline chip: after the project on the page, leading the dashboard row', async ({
+      page,
+    }) => {
       const ids: number[] = []
       try {
         const ahead = await onPage(page, 'DL chip ahead')
@@ -266,9 +271,11 @@ for (const viewport of VIEWPORTS) {
         await expect(chip(ahead)).toContainText('Deadline')
         await expect(chip(past)).toHaveAttribute('data-deadline-chip', 'passed')
         await expect(chip(past)).toContainText('Past deadline')
-        // First on the meta line.
-        const firstMeta = row(s, ahead).locator('p + div > *').first()
-        await expect(firstMeta).toHaveAttribute('data-deadline-chip', 'ahead')
+        // Right after the project (Trent's 10-20 rule: every row's project
+        // starts at the same x).
+        const meta = row(s, ahead).locator('p + div > *')
+        await expect(meta.nth(0)).toHaveAttribute('data-segment-project', '')
+        await expect(meta.nth(1)).toHaveAttribute('data-deadline-chip', 'ahead')
 
         // The dashboard row: the past-deadline task is relevant in Now (its
         // safety net), and its chip leads the second line.

@@ -575,6 +575,44 @@ describe('DL-S: the page', () => {
       lead_from: '2026-10-27',
     })
   })
+
+  test('DL-S06: a deck keeps a page row on the page, WAITING with its deck day — never stamped considered (Trent, 10-22)', () => {
+    // On the page today (a 20-day lead clamps to today), outside the net.
+    const later = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 20 })
+    expect(task(later.id).lead_from).toBe('2026-10-20')
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [later.id], day: '2026-10-24' })
+    expect(task(later.id)).toMatchObject({ on_deck_day: '2026-10-24', last_considered_at: null })
+    const row = page().find((r) => r.task.id === later.id)!
+    expect(row).toMatchObject({ state: 'waiting', seen: false })
+    // The same through PATCH (the Quick panel's deck).
+    const patched = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 20 })
+    updateTask({ ...u, taskId: patched.id, input: { on_deck_day: '2026-10-23' } })
+    expect(task(patched.id).last_considered_at).toBeNull()
+    expect(page().find((r) => r.task.id === patched.id)?.state).toBe('waiting')
+    // In the safety net a deck for today stays on the page too, unseen.
+    const net = make({ deadline_at: at('2026-10-21T17:00') })
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [net.id] })
+    expect(task(net.id).last_considered_at).toBeNull()
+    expect(page().find((r) => r.task.id === net.id)).toMatchObject({
+      state: 'waiting',
+      safetyNet: true,
+      seen: false,
+    })
+    // Seeing it is still its own tap.
+    considerTasks(TEST_USER_ID, [later.id])
+    expect(page().find((r) => r.task.id === later.id)?.state).toBe('considered')
+  })
+
+  test('DL-S07: a deck for today outside the net is the On deck section’s, and stamps considered as before', () => {
+    const t = make({ deadline_at: at('2026-10-30T23:59'), lead_days: 20 })
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id] })
+    expect(task(t.id).last_considered_at).not.toBeNull()
+    expect(page().some((r) => r.task.id === t.id)).toBe(false)
+    // A plain task's deck stamps it as ever (A7).
+    const plain = make({ horizon: 'days' })
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [plain.id], day: '2026-10-22' })
+    expect(task(plain.id).last_considered_at).not.toBeNull()
+  })
 })
 
 // ===========================================================================

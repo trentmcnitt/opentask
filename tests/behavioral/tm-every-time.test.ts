@@ -1025,3 +1025,32 @@ describe('TM-EVERY-11: a save never loses what the draft can not say', () => {
     expect(thisOneHint(ONE_OFF_DEADLINE, d, ctx)).toBe('The deadline (Fri Oct 30) will be removed.')
   })
 })
+
+describe('the lead override of a target-less deadline repeat (the deadlines page, 2026-10-22)', () => {
+  const TARGETLESS: EveryTimeTask = {
+    ...HOME_DEPOT,
+    due_at: null,
+    target_days_before: null,
+    target_time: null,
+    lead_days: null,
+  }
+
+  test('opens with no target and the stored lead; a step saves lead_days alone', () => {
+    const d = draftFromTask(TARGETLESS, ctx)
+    expect(d).toMatchObject({ noTarget: true, leadDays: null })
+    expect(draftToPatch(TARGETLESS, d, ctx)).toEqual({})
+    const stepped = draftReducer(d, { type: 'leadDays', days: 5 })
+    expect(draftsEqual(d, stepped)).toBe(false)
+    expect(draftToPatch(TARGETLESS, stepped, ctx)).toEqual({ lead_days: 5 })
+    // Back to the default: null, sent only when the stored one differs.
+    const stored = { ...TARGETLESS, lead_days: 5 }
+    const back = draftReducer(draftFromTask(stored, ctx), { type: 'leadDays', days: null })
+    expect(draftToPatch(stored, back, ctx)).toEqual({ lead_days: null })
+  })
+
+  test('a draft WITH a target has no lead to step', () => {
+    const d = draftFromTask(HOME_DEPOT, ctx)
+    expect(d.leadDays).toBeUndefined()
+    expect(draftReducer(d, { type: 'leadDays', days: 5 })).toEqual(d)
+  })
+})

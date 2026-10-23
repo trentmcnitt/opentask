@@ -333,6 +333,12 @@ function deadlineWords(iso: string, timezone: string): string {
 
 export interface LeadRowProps {
   line: LeadLine
+  /**
+   * The stepper: a one-off's own lead. A REPEAT's lead is series-wide, so
+   * this-one mode shows only the words (Trent, 10-22) — the stepper is in
+   * every-time mode, beside the deadline (`NoTargetRow`).
+   */
+  editable: boolean
   /** Today, the OpenTask day (yyyy-MM-dd): "from today" / "since …". */
   today: string
   /** Stage an override (1–90), or null for the default table. */
@@ -351,6 +357,7 @@ function LeadRow({
   line,
   today,
   onLeadDays,
+  editable,
   disabled = false,
   timezone,
 }: LeadRowProps & { timezone: string }) {
@@ -373,48 +380,55 @@ function LeadRow({
           </span>
         )}
       </span>
-      <span className="inline-flex items-center" role="group" aria-label="Lead days">
-        <button
-          type="button"
-          className={stepClass}
-          disabled={disabled || line.leadDays <= LEAD_DAYS_MIN}
-          onClick={() => step(-1)}
-          aria-label="One day less"
-        >
-          <Minus className="size-3.5" />
-        </button>
-        <span
-          data-lead-days={line.leadDays}
-          aria-live="polite"
-          className={cn(
-            'min-w-[3.5rem] text-center tabular-nums',
-            line.staged ? 'font-medium text-blue-500' : 'text-foreground',
-          )}
-        >
-          {line.leadDays} {line.leadDays === 1 ? 'day' : 'days'}
-        </span>
-        <button
-          type="button"
-          className={stepClass}
-          disabled={disabled || line.leadDays >= line.max}
-          onClick={() => step(1)}
-          aria-label="One day more"
-        >
-          <Plus className="size-3.5" />
-        </button>
-        {line.override !== null && (
+      {editable && (
+        <span className="inline-flex items-center" role="group" aria-label="Lead days">
           <button
             type="button"
-            data-lead-default
-            aria-label="Default lead"
-            disabled={disabled}
-            onClick={() => onLeadDays(null)}
-            className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 ml-1 rounded px-1.5 py-1 text-xs"
+            className={stepClass}
+            disabled={disabled || line.leadDays <= LEAD_DAYS_MIN}
+            onClick={() => step(-1)}
+            aria-label="One day less"
           >
-            Default
+            <Minus className="size-3.5" />
           </button>
-        )}
-      </span>
+          <span
+            data-lead-days={line.leadDays}
+            aria-live="polite"
+            className={cn(
+              'min-w-[3.5rem] px-1 text-center tabular-nums',
+              line.staged ? 'font-medium text-blue-500' : 'text-foreground',
+            )}
+          >
+            {line.leadDays} {line.leadDays === 1 ? 'day' : 'days'}
+            {line.clamped && (
+              <span data-lead-clamped className="text-muted-foreground ml-1 font-normal">
+                (as early as it can be)
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            className={stepClass}
+            disabled={disabled || line.clamped || line.leadDays >= line.max}
+            onClick={() => step(1)}
+            aria-label="One day more"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          {line.override !== null && (
+            <button
+              type="button"
+              data-lead-default
+              aria-label="Default lead"
+              disabled={disabled}
+              onClick={() => onLeadDays(null)}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 ml-1 rounded px-1.5 py-1 text-xs"
+            >
+              Default
+            </button>
+          )}
+        </span>
+      )}
     </div>
   )
 }

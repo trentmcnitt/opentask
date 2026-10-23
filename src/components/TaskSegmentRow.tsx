@@ -1053,8 +1053,9 @@ function DeckSlotSpacer({ panel, empty = false }: { panel: boolean; empty?: bool
 }
 
 /**
- * The second line, only when there is something to say: the DEADLINE first
- * (`DeadlineChip`, 2026-10-22 — red passed, amber in the safety net), a
+ * The second line, only when there is something to say: the project, the
+ * DEADLINE right after it (`DeadlineChip`, 2026-10-22 — red passed, amber in
+ * the safety net; after, so every row's project starts at the same x), a
  * future target date ("Nov 1") — a waiting repeating task's occurrence
  * instead (`queuedRepeatOccurrence`). Without either the row is one line, a
  * reminder row's height — the segment stays bite-size.
@@ -1090,17 +1091,19 @@ function TaskSegmentMeta({
   const queuedOccurrence = queueOn ? queuedRepeatOccurrence(task) : null
   const shownAt = queuedOccurrence ?? task.due_at
   const target = shownAt ? DateTime.fromISO(shownAt).setZone(timezone) : null
-  // The dashboard row's context, compactly (Trent, 10-11): the deadline (first,
-  // 2026-10-22), the project, the priority and a future target.
+  // The dashboard row's context, compactly (Trent, 10-11): the project, the
+  // deadline chip (2026-10-22), the priority and a future target.
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
           {project.name}
         </span>
       )}
+      {/* The deadline chip right AFTER the project (Trent's 10-20 rule: every
+          row's project starts at the same x), 2026-10-22. */}
+      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {/* The horizon dot AFTER the project (Trent, 2026-10-20), not before
           it: only one-offs wear it, so in front it pushed their project names
           right of the repeating rows'. Now every row's project starts at the
@@ -1211,8 +1214,8 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
 }
 
 /**
- * An UPCOMING row's second line (2026-10-12, spec §2): the deadline chip
- * first (2026-10-22), the project and priority, then "Target Tue Nov 3" —
+ * An UPCOMING row's second line (2026-10-12, spec §2): the project, the
+ * deadline chip (2026-10-22), the priority, then "Target Tue Nov 3" —
  * or, for a target-less deadline task before its lead day (the deadlines
  * page's hand-off, plan §4), "on the deadlines page from Tue Oct 20". The "Target …" part is a chip that opens a one-item menu
  * (`targetReset`): "Remove target" — back to its horizon segment, or, with a
@@ -1248,13 +1251,15 @@ function UpcomingMeta({
       data-upcoming-gap
       className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
     >
-      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {project && (
         <span data-segment-project className="inline-flex items-center gap-1">
           <FolderOpen className="size-3" aria-hidden />
           {project.name}
         </span>
       )}
+      {/* The deadline chip right AFTER the project (Trent's 10-20 rule: every
+          row's project starts at the same x), 2026-10-22. */}
+      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
       {priority && (
         <span data-segment-priority className={priority.color}>
           {priority.label}

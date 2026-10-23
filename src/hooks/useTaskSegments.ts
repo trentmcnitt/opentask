@@ -88,7 +88,7 @@ type Overlay =
    * but still waiting. `patch`: fields the tap changed on a row that stays
    * (a deck day on the deadlines page; the lead day a Defer moved).
    */
-  | { left?: SegmentLeft; seen?: boolean; patch?: Partial<Task>; state?: SegmentState }
+  | { left?: SegmentLeft; seen?: boolean; patch?: Partial<Task> }
 
 export interface SegmentRow {
   task: Task
@@ -322,11 +322,7 @@ function segmentViews(
           const o = overlay.get(t.id)
           const obj = typeof o === 'object' ? o : null
           const left = obj ? obj.left : o === undefined ? t.segment_left : undefined
-          const state = obj
-            ? obj.left
-              ? 'considered'
-              : (obj.state ?? t.segment_state)
-            : (o ?? t.segment_state)
+          const state = obj ? (obj.left ? 'considered' : t.segment_state) : (o ?? t.segment_state)
           return {
             task: (obj?.patch ? { ...t, ...obj.patch } : t) as Task,
             state,
@@ -519,13 +515,12 @@ function useDeck(
 }
 
 /**
- * What a deck does to its row until the refresh. A deck also SEES the task
- * (it stamps the consider), so on the DEADLINES page (plan §4): a later day's
- * deck leaves the row considered for today, still on the page with its deck
- * day; in the safety net the row stays waiting, seen; today's deck outside the
- * safety net leaves it for the On deck section (handled, the day roster).
- * Taking a deck off keeps the row as it is. Elsewhere: decked → handled;
- * taken off → handled too.
+ * What a deck does to its row until the refresh. On the DEADLINES page
+ * (Trent, 2026-10-22) a decked row STAYS, waiting, showing its deck day — the
+ * server does not stamp it considered (`deckKeepsPageRow`) — except a deck for
+ * today outside the safety net, which the On deck section holds (it leaves,
+ * handled). Taking a deck off keeps the row as it is. Elsewhere: decked →
+ * handled; taken off → handled too.
  */
 function deckOverlay(
   task: Task,
@@ -537,10 +532,8 @@ function deckOverlay(
   if (!page) return { left: day === null ? 'considered' : 'deck' }
   const today = calendarToday(timezone, new Date())
   const deckDay = day === undefined ? today : day
-  const patch = { on_deck_day: deckDay }
-  if (deckDay === null) return { patch }
-  if (page.safetyNet) return { patch, seen: true }
-  return deckDay === today ? { left: 'deck' } : { patch, state: 'considered' }
+  if (deckDay === today && !page.safetyNet) return { left: 'deck' }
+  return { patch: { on_deck_day: deckDay } }
 }
 
 /**

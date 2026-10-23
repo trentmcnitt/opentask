@@ -29,8 +29,18 @@ export interface LeadLine {
   from: string
   /** Local days from `from` to the deadline's OpenTask day (0 = that day). */
   daysBefore: number
-  /** The stepper's value: the override, or the lead the line shows. 1–90. */
+  /**
+   * The stepper's value: the EFFECTIVE lead — the days before the deadline the
+   * line shows (an override asking for more than is left is clamped to today:
+   * `clamped`). 1–`max`.
+   */
   leadDays: number
+  /**
+   * An override longer than the days left (Trent, 10-22): the lead day is
+   * already today, "as early as it can be" — the stepper shows the effective
+   * value and can't go higher.
+   */
+  clamped: boolean
   /** The user's override (`lead_days`), staged or stored; null = the default table. */
   override: number | null
   /**
@@ -103,7 +113,8 @@ export function leadLine(
   return {
     from,
     daysBefore,
-    leadDays: override ?? shown,
+    leadDays: shown,
+    clamped: override !== null && override > shown,
     override,
     deferredTo,
     staged: isStaged,

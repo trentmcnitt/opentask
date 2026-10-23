@@ -39,7 +39,7 @@
  */
 
 import type { Task } from '@/types'
-import { deckRefusal, type TargetContext } from '@/lib/task-segments'
+import { deadlinePlace, deckRefusal, type TargetContext } from '@/lib/task-segments'
 import type { CollectedWrite } from './target-set'
 import { rolloverTimeForUser } from './rollover-time'
 
@@ -101,6 +101,27 @@ function deadlineOutranksDeck(day: string, after: DeckClearAfter): boolean {
  */
 export function deckRolloverTime(task: Pick<Task, 'user_id'>): string | null {
   return rolloverTimeForUser(task.user_id)
+}
+
+/**
+ * Whether the DEADLINES PAGE holds the task once a deck write leaves it — no
+ * target (a deck drops a picked one), the deck day, the resulting deadline —
+ * `deadlinePlace` on that row (Trent, 2026-10-22: a decked page row STAYS on
+ * the page, waiting, showing its deck day). Then the deck does not stamp it
+ * considered (A7's stamp, `collect-field-changes`): seeing it is still its own
+ * tap. A deck for today outside the safety net is the On deck section's, and
+ * one before the lead day its Upcoming row's — both stamp as before.
+ */
+export function deckKeepsPageRow(
+  task: Task,
+  day: string,
+  deadlineAt: string | null,
+  timezone: string,
+  now: Date,
+): boolean {
+  if (!deadlineAt || (task.rrule && task.repeat_anchor !== 'deadline')) return false
+  const after = { ...task, deadline_at: deadlineAt, due_at: null, on_deck_day: day }
+  return deadlinePlace(after, timezone, now, deckRolloverTime(task))?.kind === 'page'
 }
 
 /**

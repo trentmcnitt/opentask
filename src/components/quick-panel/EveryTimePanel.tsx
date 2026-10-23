@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { ChevronLeft, ChevronRight, Repeat } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Minus, Plus, Repeat } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -26,7 +26,12 @@ import {
   type EveryTimeTask,
 } from '@/lib/every-time'
 import { leadDaysWords, relativeDaysWords, repeatWords } from '@/lib/editor-target-labels'
-import { RELATIVE_TARGET_MESSAGES, defaultLeadDays, repeatEndOf } from '@/lib/task-segments'
+import {
+  RELATIVE_TARGET_MESSAGES,
+  defaultLeadDays,
+  repeatEndOf,
+  ruleWait,
+} from '@/lib/task-segments'
 import { DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { HowOftenField } from '@/components/quick-panel/HowOftenField'
 import { EndsField } from '@/components/quick-panel/EndsField'
@@ -321,7 +326,7 @@ function ScheduleRows({
       </Row>
       {deadline ? (
         draft.noTarget ? (
-          <NoTargetRow task={task} draft={draft} ctx={ctx} dispatch={dispatch} />
+          <NoTargetRow task={task} draft={draft} initial={initial} ctx={ctx} dispatch={dispatch} />
         ) : (
           <RelativeTargetRow
             draft={draft}
@@ -596,42 +601,100 @@ function RelativeTargetRow({
 
 /**
  * A deadline-anchored draft with NO relative target (the deadlines page,
- * 2026-10-22, L1: no fake targets): "None · on the deadlines page 3 days
- * before" — each occurrence goes on the page from its lead day (the override,
- * else the rule's default, `defaultLeadDays`) — and "+ Add", which gives it
- * a target at the picker's starting point (the day before, the deadline's
- * time — `scheduleAction` turns `noTarget` off on any target pick).
+ * 2026-10-22, L1: no fake targets): "None · on the deadlines page" — each
+ * occurrence goes on the page from its lead day — the LEAD STEPPER, beside the
+ * deadline ("3 days before"; series-wide, so it lives here, never in this-one
+ * mode — Trent, 10-22), "Default" while an override is staged, and "+ Add",
+ * which gives it a target at the picker's starting point (the day before, the
+ * deadline's time — `scheduleAction` turns `noTarget` off on any target pick).
+ * The stepper stops below the rule's wait (the server refuses a lead as long
+ * as the gap between deadlines, `leadDaysProblem`).
  */
 function NoTargetRow({
   task,
   draft,
+  initial,
   ctx,
   dispatch,
 }: {
   task: EveryTimeTask
   draft: EveryTimeDraft
+  initial: EveryTimeDraft
   ctx: EveryTimeContext
   dispatch: (action: DraftAction) => void
 }) {
-  const lead = useMemo(() => {
-    if (task.lead_days != null) return task.lead_days
+  const { fallback, max } = useMemo(() => {
     try {
-      return defaultLeadDays(
-        { rrule: draftRule(draft), recurrence_mode: draft.mode, anchor_time: draft.deadlineTime },
-        task.deadline_at ?? ctx.now.toISOString(),
-        ctx.timezone,
-      )
+      const rule = {
+        rrule: draftRule(draft),
+        recurrence_mode: draft.mode,
+        anchor_time: draft.deadlineTime,
+      }
+      const first = task.deadline_at ?? ctx.now.toISOString()
+      return {
+        // `leadFrom` never puts it later than the day before.
+        fallback: Math.max(1, defaultLeadDays(rule, first, ctx.timezone)),
+        max: Math.max(1, Math.min(90, ruleWait(rule, first, ctx.timezone) - 1)),
+      }
     } catch {
-      return null
+      return { fallback: 1, max: 90 }
     }
   }, [task, draft, ctx])
+  const lead = Math.min(max, draft.leadDays ?? fallback)
+  const dirty = (draft.leadDays ?? null) !== (initial.leadDays ?? null)
+  const step = (delta: number) =>
+    dispatch({ type: 'leadDays', days: Math.min(max, Math.max(1, lead + delta)) })
+  const stepClass =
+    'text-muted-foreground hover:text-foreground hover:bg-foreground/5 inline-flex size-8 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40'
   return (
     <Row label={TARGET_WORD}>
       <div className="flex flex-wrap items-center gap-2" data-every-time-no-target>
-        <span className="text-muted-foreground text-sm">
-          None
-          {/* `leadFrom` never puts it later than the day before. */}
-          {lead !== null && <> · on the deadlines page {leadDaysWords(Math.max(lead, 1))}</>}
+        <span className="text-muted-foreground text-sm">None · on the deadlines page</span>
+        <span
+          className="inline-flex items-center"
+          role="group"
+          aria-label="Lead days"
+          data-every-time-lead
+        >
+          <button
+            type="button"
+            className={stepClass}
+            disabled={draft.stop || lead <= 1}
+            onClick={() => step(-1)}
+            aria-label="One day less"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <span
+            data-every-time-lead-days={lead}
+            aria-live="polite"
+            className={cn(
+              'min-w-[7.5rem] text-center text-sm',
+              dirty && 'font-medium text-blue-500',
+            )}
+          >
+            {leadDaysWords(lead)}
+          </span>
+          <button
+            type="button"
+            className={stepClass}
+            disabled={draft.stop || lead >= max}
+            onClick={() => step(1)}
+            aria-label="One day more"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          {draft.leadDays != null && (
+            <button
+              type="button"
+              aria-label="Default lead"
+              disabled={draft.stop}
+              onClick={() => dispatch({ type: 'leadDays', days: null })}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 ml-1 rounded px-1.5 py-1 text-xs"
+            >
+              Default
+            </button>
+          )}
         </span>
         <button
           type="button"
@@ -640,7 +703,7 @@ function NoTargetRow({
           onClick={() => dispatch({ type: 'daysBefore', days: draft.daysBefore || 1 })}
           className="h-8 rounded-md border px-3 text-sm font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
         >
-          + Add
+          + Add target
         </button>
       </div>
     </Row>

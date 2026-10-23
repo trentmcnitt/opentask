@@ -97,7 +97,8 @@ describe("leadLine — the editor's Lead row (the deadlines page, 2026-10-22)", 
       NOW,
     )!
     expect(clamped.from).toBe('2026-10-20')
-    expect(clamped.leadDays).toBe(30)
+    // The stepper shows the effective lead (Trent, 10-22): as early as it can be.
+    expect(clamped).toMatchObject({ leadDays: 10, clamped: true, override: 30 })
   })
 
   test('L9: a deadline before the rollover counts on the evening before', () => {

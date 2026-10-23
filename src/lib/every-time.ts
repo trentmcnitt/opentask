@@ -155,6 +155,13 @@ export interface EveryTimeDraft {
    * picker's starting point and are not sent. Picking either sets a target.
    */
   noTarget?: boolean
+  /**
+   * The lead override of a deadline-anchored draft with no target (the
+   * deadlines page, 2026-10-22: series-wide, so it is edited here, never in
+   * this-one mode): local days before each deadline its occurrence goes on
+   * the page; null = the default. Present only on such a draft.
+   */
+  leadDays?: number | null
   mode: Mode
   /** "Stop repeating" is staged. */
   stop: boolean
@@ -180,6 +187,8 @@ export interface EveryTimePatch {
   repeat_count?: number | null
   /** "On date": the last local day, yyyy-MM-dd (null: no date). */
   repeat_until?: string | null
+  /** The deadlines page's lead override (a target-less deadline repeat); null = the default. */
+  lead_days?: number | null
 }
 
 // ===========================================================================
@@ -274,7 +283,7 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
         targetTime: task.target_time ?? ruleTime,
         daysBefore: task.target_days_before ?? 0,
         ...(task.target_days_before === null || task.target_time === null
-          ? { noTarget: true }
+          ? { noTarget: true, leadDays: task.lead_days ?? null }
           : {}),
       }
     }
@@ -394,6 +403,8 @@ export type DraftAction =
   | { type: 'targetTime'; time: string }
   | { type: 'deadlineTime'; time: string }
   | { type: 'daysBefore'; days: number }
+  /** A target-less deadline draft's lead override (null: the default). */
+  | { type: 'leadDays'; days: number | null }
   /** "Repeats on" — to Deadline it is "+ Add" at the target's own time. */
   | { type: 'anchor'; anchor: RepeatAnchor; ctx: EveryTimeContext }
   /** "+ Add" a deadline at `time` to a target-anchored draft (A2). */
@@ -462,6 +473,8 @@ function scheduleAction(d: EveryTimeDraft, action: DraftAction): EveryTimeDraft 
       return { ...d, targetTime: action.time, ...(d.noTarget ? { noTarget: false } : {}) }
     case 'deadlineTime':
       return deadline ? { ...d, deadlineTime: action.time } : d
+    case 'leadDays':
+      return deadline && d.noTarget ? { ...d, leadDays: action.days } : d
     case 'daysBefore':
       return deadline
         ? {
@@ -666,6 +679,15 @@ function deadlinePatch(
   if (offsetsChanged) {
     patch.target_days_before = draft.daysBefore
     patch.target_time = draft.targetTime
+  }
+  // The lead override, series-wide (the deadlines page): only while the
+  // draft has no target, only when it changed.
+  if (
+    draft.noTarget &&
+    draft.leadDays !== undefined &&
+    draft.leadDays !== (task.lead_days ?? null)
+  ) {
+    patch.lead_days = draft.leadDays
   }
   if (wasDeadline) return patch
   patch.repeat_anchor = 'deadline'

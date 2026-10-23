@@ -6,7 +6,8 @@ import { useTaskQueue } from '@/components/PreferencesProvider'
 
 /**
  * THE DEADLINE CHIP (the deadlines page, 2026-10-22, plan §9): the one way a
- * task row shows its deadline — at the START of its second line, on every
+ * task row shows its deadline — on its second line right after the project
+ * (first on the dashboard row, whose line has none), on every
  * row type (task segments, Upcoming, the deadlines page, Now's On deck
  * section, the dashboard row). Words and tone are `deadlineChip`'s: red once
  * passed, amber in the safety net (from the day before the deadline's

@@ -236,6 +236,8 @@ export function leadRowFor(s: {
   return {
     line,
     today: openTaskToday(s.timezone, now, s.rolloverTime),
+    // A repeat's lead is series-wide: every-time mode's (Trent, 10-22).
+    editable: !s.task.rrule,
     onLeadDays: s.onLeadDays,
     disabled: s.disabled,
   }
