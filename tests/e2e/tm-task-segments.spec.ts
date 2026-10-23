@@ -319,6 +319,29 @@ test.describe('Task segments on the dashboard', () => {
     }
   })
 
+  test('/?tasks=<kind> opens the Tasks card on that page and leaves the URL clean', async ({
+    authenticatedPage: page,
+  }) => {
+    // The deadlines nag's tap (`/?tasks=deadlines`, src/lib/tasks-panel-link.ts);
+    // any kind works, so Weeks stands in while Days would be the natural page.
+    const days = await create(page, { title: uniqueTitle('TM link days'), horizon: 'days' })
+    const weeks = await create(page, { title: uniqueTitle('TM link weeks'), horizon: 'weeks' })
+    backdateCreated([days], { inSegments: true })
+    createdLongAgo([weeks])
+    try {
+      await page.goto('/?tasks=weeks')
+      await expect(tasksCard(page)).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      await expect(cardRow(page, weeks)).toBeVisible()
+      await expect.poll(() => new URL(page.url()).search).toBe('')
+      // A kind not shown today is consumed and ignored: the natural page.
+      await page.goto('/?tasks=deadlines')
+      await expect(tasksCard(page)).toHaveAttribute('data-tasks-page', 'tasks:days')
+      await expect.poll(() => new URL(page.url()).search).toBe('')
+    } finally {
+      await trash(page, [days, weeks])
+    }
+  })
+
   test('the /reminders day bar shows task segments after the slots, uncounted', async ({
     authenticatedPage: page,
   }) => {

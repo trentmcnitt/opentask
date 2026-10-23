@@ -60,6 +60,7 @@ import { sendPushNotification } from '@/core/notifications/web-push'
 import { buildDeadlinesNagNotification, sendApnsDeadlinesNag } from '@/core/notifications/apns'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 import type { Task } from '@/types'
+import { tasksPanelLinkIndex, tasksPanelPath, withoutTasksPanelParam } from '@/lib/tasks-panel-link'
 
 const tz = TEST_TIMEZONE
 const u = { userId: TEST_USER_ID, userTimezone: tz }
@@ -364,5 +365,23 @@ describe('DN-007 overdue Web Push tag = APNs collapse id (#6)', () => {
       TEST_USER_ID,
       expect.objectContaining({ tag: 'overdue-summary', renotify: true }),
     )
+  })
+})
+
+describe('DN-008 the /?tasks=<kind> link (tasks-panel-link.ts)', () => {
+  const keys = ['tasks:deadlines', 'tasks:days', 'tasks:weeks']
+  test('names a page by its kind', () => {
+    expect(tasksPanelPath('deadlines')).toBe('/?tasks=deadlines')
+    expect(tasksPanelLinkIndex('?tasks=deadlines', keys)).toBe(0)
+    expect(tasksPanelLinkIndex('?tasks=weeks&x=1', keys)).toBe(2)
+  })
+  test('a kind not shown, or no link, is null', () => {
+    expect(tasksPanelLinkIndex('?tasks=months', keys)).toBeNull()
+    expect(tasksPanelLinkIndex('', keys)).toBeNull()
+    expect(tasksPanelLinkIndex('?task=3', keys)).toBeNull()
+  })
+  test('stripping keeps the rest of the query', () => {
+    expect(withoutTasksPanelParam('?tasks=deadlines')).toBe('')
+    expect(withoutTasksPanelParam('?tasks=deadlines&filter=overdue')).toBe('?filter=overdue')
   })
 })
