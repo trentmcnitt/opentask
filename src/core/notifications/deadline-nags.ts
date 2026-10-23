@@ -217,6 +217,14 @@ function userTiers(userId: number): NagTiers {
   return tiersOf(row)
 }
 
+/** The shortest interval any page row could set for these tiers (the safety net's rungs). */
+export function fastestDeadlineInterval(tiers: NagTiers): number {
+  const rungs = [0, 1, 2, 3, 4].map(
+    (p) => nagIntervalMinutes('deadlines', p, tiers, { safetyNet: true }) ?? Infinity,
+  )
+  return Math.max(1, Math.min(...rungs))
+}
+
 export interface PendingDeadlineNag {
   userId: number
   intervalMinutes: number
@@ -231,13 +239,17 @@ export function pendingDeadlineNags(now: Date = new Date()): PendingDeadlineNag[
   const pending: PendingDeadlineNag[] = []
   for (const user of notifiableUsers()) {
     if (!hasDeadlineCandidate(user.id)) continue
+    const tiers = userTiers(user.id)
+    // Not due even at the fastest pace any row could set: skip building the
+    // page (every open task, Upcoming's rrule walks) this minute.
+    if (!nagSendDue(user.id, DEADLINES_NAG_KEY, fastestDeadlineInterval(tiers), now)) continue
     const page =
       getTaskSegments(user.id, user.timezone, now, {
         queuePanels: true,
         deadlineRows: true,
       }).find((s) => s.horizon === 'deadlines')?.tasks ?? []
     const rows = countedDeadlineRows(page)
-    const interval = deadlineNagInterval(rows, userTiers(user.id))
+    const interval = deadlineNagInterval(rows, tiers)
     if (interval === null) continue
     if (!nagSendDue(user.id, DEADLINES_NAG_KEY, interval, now)) continue
     const content = deadlineNagContent(rows, user.timezone, now, rolloverTimeForUser(user.id))

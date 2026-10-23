@@ -2,7 +2,7 @@
 
 Reference for OpenTask's notification system: architecture, platform capabilities, and constraints.
 
-**Overdue** (2026-10-21). From 2026-10-10 to 2026-10-21 the UI said "over target"; Trent ruled it back to "overdue". Either way it means a task whose target (`due_at`) has arrived. The notifier, the badge and the sweeps always used the code names (`checkOverdueTasks`, `getOverdueCount`, `snooze-overdue`). What reaches the user reads from the `OVERDUE_WORD` / `OVERDUE_LOWER` constants (`src/lib/task-model-words.ts`): "Overdue task", "N more tasks overdue", "2 High still overdue". Two things changed beyond the word, both below: a deadline with no target nags from its stored automatic target (since 2026-10-12; until then an implied one), and task segments never notify. See `docs/TASK-MODEL.md` § Deadline, target, horizon.
+**Overdue** (2026-10-21). From 2026-10-10 to 2026-10-21 the UI said "over target"; Trent ruled it back to "overdue". Either way it means a task whose target (`due_at`) has arrived. The notifier, the badge and the sweeps always used the code names (`checkOverdueTasks`, `getOverdueCount`, `snooze-overdue`). What reaches the user reads from the `OVERDUE_WORD` / `OVERDUE_LOWER` constants (`src/lib/task-model-words.ts`): "Overdue task", "N more tasks overdue", "2 High still overdue". Two things changed beyond the word, both below: a deadline with no target nags from its stored automatic target (since 2026-10-12; until then an implied one) — with the task-queue switch on (2026-10-22) it has none and the deadlines page's own nag speaks for it instead (§ The deadlines-page nag), and task segments never notify. See `docs/TASK-MODEL.md` § Deadline, target, horizon.
 
 ## Architecture
 

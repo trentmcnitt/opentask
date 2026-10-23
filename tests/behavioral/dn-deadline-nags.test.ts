@@ -52,6 +52,7 @@ import {
   DEADLINES_PAGE_PATH,
   checkDeadlineNags,
   claimNagSend,
+  fastestDeadlineInterval,
   pendingDeadlineNags,
 } from '@/core/notifications/deadline-nags'
 import { notifiableUsers, notifiableUserSql } from '@/core/notifications/notifiable-users'
@@ -244,6 +245,18 @@ describe('DN-004 nag_sends', () => {
   test('a shorter interval (priority rose) sends as soon as it has passed', () => {
     expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0)).toBe(true)
     expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(30))).toBe(true)
+  })
+
+  test('the page is not built while no row could be due yet', () => {
+    expect(fastestDeadlineInterval(DEFAULT_TIERS)).toBe(10)
+    expect(fastestDeadlineInterval({ ...DEFAULT_TIERS, urgent: 60, high: 60 })).toBe(60)
+    inNet(4)
+    expect(pending()).toMatchObject([{ intervalMinutes: 10 }])
+    claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 10, new Date())
+    setClock('2026-10-20T10:09')
+    expect(pending()).toEqual([])
+    setClock('2026-10-20T10:10')
+    expect(pending()).toMatchObject([{ intervalMinutes: 10 }])
   })
 
   test('keys and users are independent', () => {
