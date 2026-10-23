@@ -82,6 +82,8 @@ export function OnDeckButton({
   const [menuOpen, setMenuOpen] = useState(false)
   // The day a replacing deck waits on the confirm with (`replaces`).
   const [pending, setPending] = useState<{ day: string | null | undefined } | null>(null)
+  // Nothing to replace any more (the row changed under an open confirm): drop it.
+  if (!replaces && pending) setPending(null)
   const act = (day: string | null | undefined) => {
     if (replaces) setPending({ day })
     else onDeck(task, day)

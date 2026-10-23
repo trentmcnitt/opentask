@@ -894,7 +894,9 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     await expect(u.locator('[data-target-chip]')).toHaveText(new RegExp(`^On deck ${day} · every `))
     await expect(u.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     await page.screenshot({ path: '.tmp/od-repeating-upcoming-1280.png' })
+    // Faded on a decked row, it asks first (2026-10-22, plan §5).
     await u.locator('[data-target-today]').click()
+    await page.locator('[data-replace-confirm] [data-replace-ok]').click()
     await expect(toast(page, /Targeted/)).toBeVisible()
     await expect.poll(() => deckOf(page, id)).toBeNull()
     expect((await stateOf(page, id)).target_at).not.toBeNull()

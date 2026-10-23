@@ -59,6 +59,12 @@ describe('deadlineChip', () => {
       text: 'Deadline tomorrow night',
       tone: 'close',
     })
+    // Just passed, before the rollover: its own evening-before day, by name.
+    const after = new Date(at('2026-10-23T01:00'))
+    expect(deadlineChip(midnight, TZ, after, '04:00')).toMatchObject({
+      text: 'Past deadline Thu night',
+      tone: 'passed',
+    })
     // With no rollover (calendar days) it is plain Friday.
     expect(deadlineChip(midnight, TZ, NOW, null).text).toBe('Deadline Fri')
   })

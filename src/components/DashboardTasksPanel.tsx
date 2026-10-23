@@ -25,7 +25,7 @@ import {
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import { usePanelPager } from '@/hooks/usePanelPager'
-import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
 import {
@@ -162,7 +162,7 @@ export function DashboardTasksPanel({
               {/* "Considered all" (task queue PR 3, spec rule 9): the slot
                   page's sweep, beside Defer all, with the queue on. The
                   queue's panels have no Defer all (spec rule 8). */}
-              {queueOn && (
+              {queueOn && toConsider(segment).length > 0 && (
                 <PagerSweep
                   kind="consider"
                   ariaLabel={`Mark all in ${page.label} as considered`}

@@ -258,6 +258,8 @@ export function TaskSegmentRow({
     onPeek: (viaKeyboard) => actions.openPeek(task, viaKeyboard),
     onConsider: consider,
     enabled: !considered,
+    // A seen safety-net row: a tap changes nothing, so it doesn't say "tap".
+    considerable: !seenInNet,
   })
   const peekOpen = actions.peek?.id === task.id
   // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
@@ -308,7 +310,10 @@ export function TaskSegmentRow({
           panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
           considered
             ? 'opacity-60'
-            : cn('cursor-pointer', panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'),
+            : cn(
+                !seenInNet && 'cursor-pointer',
+                panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]',
+              ),
         )}
       >
         {tryTomorrow && (
@@ -496,6 +501,10 @@ function SegmentRowCircle({
   )
 }
 
+/** A seen safety-net row's (a tap changes nothing there). */
+export const ROW_PEEK_ONLY_DESCRIPTION =
+  'Seen today; the deadline is close. Hold, right-click or press Command-Enter for details.'
+
 /** Read to assistive tech on every waiting row: the peek's ways in. */
 export const ROW_PEEK_DESCRIPTION =
   'Tap to mark considered. Hold, right-click or press Command-Enter for details.'
@@ -527,10 +536,13 @@ function useSegmentRowPress({
   onPeek,
   onConsider,
   enabled,
+  considerable = true,
 }: {
   onPeek: (viaKeyboard: boolean) => void
   onConsider: () => void
   enabled: boolean
+  /** A tap still considers (not a seen safety-net row): the description says so. */
+  considerable?: boolean
 }) {
   const press = useLongPress({ onLongPress: enabled ? () => onPeek(false) : undefined })
   const isOwn = (e: React.SyntheticEvent<HTMLElement>) => {
@@ -539,7 +551,11 @@ function useSegmentRowPress({
   }
   return {
     'aria-keyshortcuts': enabled ? 'Meta+Enter Control+Enter' : undefined,
-    'aria-description': enabled ? ROW_PEEK_DESCRIPTION : undefined,
+    'aria-description': enabled
+      ? considerable
+        ? ROW_PEEK_DESCRIPTION
+        : ROW_PEEK_ONLY_DESCRIPTION
+      : undefined,
     onClick: (e: React.MouseEvent<HTMLLIElement>) => {
       if (press.didFire()) {
         e.preventDefault()
@@ -729,8 +745,8 @@ function TaskSegmentRowActions({
 /**
  * ON DECK (D2, spec rule 8) on a segment row: the first of the row's
  * controls, before On deck tomorrow and Today (2026-10-21), with the task
- * queue on — never on a one-off beside a target the
- * user picked (rule 1). Repeating rows (queue waiting rows, Upcoming) have it
+ * queue on — on a one-off with a target the user picked FADED, asking before
+ * it replaces that target (rule 1; plan §5, 2026-10-22). Repeating rows (queue waiting rows, Upcoming) have it
  * too since 2026-10-20: it decks the current occurrence (`offersDeck`). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that
  * dead space belongs between Today and the done square only. While the
  * preferences load, its place is kept empty only if the switch was on last
@@ -786,9 +802,10 @@ const SLOT_HIT = '-my-2 size-8 shrink-0 pointer-coarse:-my-3 pointer-coarse:size
  * `deckMenuDays`, so the two can never disagree), through the same
  * `actions.deck`: the same A1 refusals and toasts, the same Undo, and the row
  * leaves its panel like any action. Repeating rows too: it decks the current
- * occurrence for tomorrow, as On deck's Tomorrow does. A row On deck isn't
- * offered on (a one-off with a target the user picked, `offersDeck`) keeps
- * the place empty, so the controls line up down the column.
+ * occurrence for tomorrow, as On deck's Tomorrow does. On a one-off with a
+ * target the user picked it is FADED and asks first (`deckReplaces`, plan §5,
+ * 2026-10-22); a row it isn't offered on (`offersDeck`) keeps the place empty,
+ * so the controls line up down the column.
  *
  * HOLD or RIGHT-CLICK (Trent, 2026-10-21): On deck's own day menu
  * (`DeckMenu` — Tomorrow, the next days, the check-in day, Pick a date…,
@@ -833,6 +850,8 @@ function DeckTomorrowButton({
   // A picked target this would replace (plan §5): faded, and it asks first.
   const replaces = deckReplaces(task, timezone)
   const [pending, setPending] = useState<string | null>(null)
+  // Nothing to replace any more (the row changed under an open confirm): drop it.
+  if (!replaces && pending) setPending(null)
   const act = (day: string | null) => {
     if (replaces && day !== null) setPending(day)
     else void actions.deck(task, day)
@@ -986,7 +1005,6 @@ function DeferLeadSlot({
             setOpen(true)
           }}
           aria-label={`Defer “${task.title}” to a later day`}
-          aria-haspopup="menu"
           title="Defer · pick a day (up to two days before the deadline)"
           className={cn(
             'group/defer-lead text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',

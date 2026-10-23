@@ -385,6 +385,7 @@ function LeadRow({
         </button>
         <span
           data-lead-days={line.leadDays}
+          aria-live="polite"
           className={cn(
             'min-w-[3.5rem] text-center tabular-nums',
             line.staged ? 'font-medium text-blue-500' : 'text-foreground',
@@ -405,6 +406,7 @@ function LeadRow({
           <button
             type="button"
             data-lead-default
+            aria-label="Default lead"
             disabled={disabled}
             onClick={() => onLeadDays(null)}
             className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 ml-1 rounded px-1.5 py-1 text-xs"

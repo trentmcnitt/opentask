@@ -24,7 +24,7 @@ import type { Task } from '@/types'
  * here (red-team A9: never on the queue row): "was on deck Tue Oct 20".
  *
  * A PICKED TARGET (the deadlines page, 2026-10-22, plan §5): the button is
- * faded and the line says what a deck would replace — "Not on deck ·
+ * faded and the line says what a deck would replace — "Not on deck · a deck
  * replaces target Fri 6 PM". No confirm here: the panel stages, and Reset or
  * Cancel undoes a stage (the rows' faded buttons ask, `ReplaceConfirm`).
  */

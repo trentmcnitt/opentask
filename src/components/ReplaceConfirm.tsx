@@ -15,8 +15,8 @@ import { Button } from '@/components/ui/button'
  * Controlled: the caller holds what is pending (`open`) and acts on
  * `onConfirm`. The trigger is rendered as-is inside an anchoring span — the
  * caller's own tap/hold keeps working. Callers wrap only a FADED button, so
- * the ordinary rows' layout never changes. Clicks and keys inside are stopped, so they
- * never reach the row (whose click considers or opens it).
+ * the ordinary rows' layout never changes. Clicks and keys inside are stopped,
+ * so they never reach the row (whose click considers or opens it).
  */
 export function ReplaceConfirm({
   open,
@@ -44,11 +44,14 @@ export function ReplaceConfirm({
         align="end"
         className="w-auto max-w-[16rem] p-3"
         data-replace-confirm
+        // Never the row's press (the dashboard row's long-press selection
+        // skips it). Its pointerdown is NOT stopped: the dashboard row's swipe
+        // swallows a click whose pointerdown it never saw (`TargetTimeText`).
+        data-no-row-press
         role="alertdialog"
         aria-label={message}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
       >
         <p className="text-sm">{message}</p>
         <div className="mt-2.5 flex justify-end gap-2">

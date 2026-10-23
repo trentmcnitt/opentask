@@ -24,7 +24,7 @@ import {
   useQueueOn,
   waitingRows,
 } from '@/components/TaskSegmentRow'
-import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 
 /**
  * One task segment on /reminders, as a SECTION shaped exactly like a slot's
@@ -74,6 +74,8 @@ export function TaskSegmentGroup({
   const waiting = waitingRows(segment)
   const handled = handledRows(segment)
   const { handled: handledCount, total } = segmentCounts(segment)
+  // What "Considered all" would still change (not a seen safety-net row).
+  const considerable = toConsider(segment).length
   const headerRow = (
     <SlotHeaderRow
       label={label}
@@ -111,12 +113,12 @@ export function TaskSegmentGroup({
             all beside it has none; the toast's Undo is the recovery). Only
             with the task queue on. The queue's panels have no Defer all: their
             gestures are consider, Today and done (spec rule 8). */}
-        {open && queueOn && waiting.length > 0 && (
+        {open && queueOn && considerable > 0 && (
           <button
             type="button"
             data-segment-consider-all
             onClick={() => void actions.considerAll(segment)}
-            aria-label={`Mark all ${waiting.length} in ${label} as considered`}
+            aria-label={`Mark all ${considerable} in ${label} as considered`}
             className={SLOT_SWEEP_CLASS}
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />

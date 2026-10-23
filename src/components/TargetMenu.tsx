@@ -149,6 +149,8 @@ export function TargetTodayButton({
   const [menuOpen, setMenuOpen] = useState(false)
   // What a replacing target waits on the confirm with: today (no `at`) or a time.
   const [pending, setPending] = useState<{ at?: string } | null>(null)
+  // Nothing to replace any more (the row changed under an open confirm): drop it.
+  if (!replaces && pending) setPending(null)
   const today = () => (replaces ? setPending({}) : onTargetToday(task))
   const pick = (at: string) => (replaces ? setPending({ at }) : onTargetAt(task, at))
   const press = useSimpleLongPress({

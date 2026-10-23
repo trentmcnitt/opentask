@@ -57,10 +57,12 @@ export function deadlineChip(
   const todayIso = openTaskToday(timezone, now, rolloverTime)
   const today = DateTime.fromISO(todayIso, { zone: timezone })
   const gap = Math.round(day.diff(today, 'days').days)
-  const words = dayWords(day, gap, night)
   if (isPastDeadline(deadlineAt, now)) {
-    return { text: `Past deadline ${words}`, tone: 'passed', title }
+    // Just passed, on its own (evening-before) day: "Thu night", never "tonight".
+    const past = night && gap === 0 ? `${day.toFormat('ccc')} night` : dayWords(day, gap, night)
+    return { text: `Past deadline ${past}`, tone: 'passed', title }
   }
+  const words = dayWords(day, gap, night)
   const tone: DeadlineTone = inSafetyNet(deadlineAt, timezone, now, rolloverTime)
     ? 'close'
     : 'ahead'

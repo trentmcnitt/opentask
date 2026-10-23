@@ -59,7 +59,7 @@ export const LEAD_DAYS_MAX = 90
  * "DEFERRED": the page's Defer moves this instance's `lead_from` later. A
  * lead derived now is the LATEST day the rule could give without a defer — a
  * one-off's default lead only shrinks as its deadline nears (the lead table
- * is non-increasing in the wait), an override's day is fixed, and both clamp
+ * never shrinks as the wait grows), an override's day is fixed, and both clamp
  * up to today — so a stored day AFTER the one derived now can only be a
  * defer: then the line reads from the derived day and adds "deferred to Thu".
  * (A defer to a day still before the derived one is not told apart: the line

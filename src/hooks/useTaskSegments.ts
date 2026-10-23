@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
 import {
@@ -161,8 +161,12 @@ export function useTaskSegments({
   // Which rows are the deadlines page's, and which of those its safety net
   // holds — what a consider or a deck does to a row depends on it. Read
   // through a ref, so the actions keep one identity across refreshes.
+  // (Updated after each commit: a tap only ever comes after one.)
   const pageRows = useRef(new Map<number, { safetyNet: boolean }>())
-  pageRows.current = deadlinePageRows(segments)
+  const pageRowMap = useMemo(() => deadlinePageRows(segments), [segments])
+  useEffect(() => {
+    pageRows.current = pageRowMap
+  }, [pageRowMap])
 
   const run = useCallback(
     async (
@@ -346,6 +350,16 @@ function segmentViews(
     .filter((seg) => seg.rows.length > 0)
 }
 
+/**
+ * The rows a consider still changes: waiting ones — but not a deadlines-page
+ * row its safety net holds that was already seen today (it stays waiting
+ * whatever is done to it but a target or done). "Considered all" offers
+ * itself, counts and acts on these.
+ */
+export function toConsider(segment: SegmentView): SegmentRow[] {
+  return segment.rows.filter((r) => r.state === 'waiting' && !(r.safetyNet && r.seen))
+}
+
 /** The deadlines page's rows, by id, with whether its safety net holds each. */
 function deadlinePageRows(segments: TaskSegmentPayload[]): Map<number, { safetyNet: boolean }> {
   const rows = new Map<number, { safetyNet: boolean }>()
@@ -432,10 +446,7 @@ function useSetHorizon(
 function useConsiderAll(run: RunSegmentAction, considered: (id: number) => Overlay) {
   return useCallback(
     (segment: SegmentView) => {
-      // A safety-net row already seen stays waiting: nothing more to do.
-      const ids = segment.rows
-        .filter((r) => r.state === 'waiting' && !(r.safetyNet && r.seen))
-        .map((r) => r.task.id)
+      const ids = toConsider(segment).map((r) => r.task.id)
       if (ids.length === 0) return
       return run(
         ids,
@@ -569,7 +580,7 @@ function useDeferLead(
         } else {
           putBack()
           showToast({
-            message: result?.refused[0]?.message ?? 'Could not defer this task',
+            message: result?.refused?.[0]?.message ?? 'Could not defer this task',
             type: 'error',
           })
         }

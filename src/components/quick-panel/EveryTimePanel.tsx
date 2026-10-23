@@ -630,7 +630,8 @@ function NoTargetRow({
       <div className="flex flex-wrap items-center gap-2" data-every-time-no-target>
         <span className="text-muted-foreground text-sm">
           None
-          {lead !== null && <> · on the deadlines page {leadDaysWords(lead)}</>}
+          {/* `leadFrom` never puts it later than the day before. */}
+          {lead !== null && <> · on the deadlines page {leadDaysWords(Math.max(lead, 1))}</>}
         </span>
         <button
           type="button"

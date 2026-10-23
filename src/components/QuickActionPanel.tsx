@@ -1175,6 +1175,11 @@ export function QuickActionPanel({
     onLeadDays: setPendingLeadDays,
     disabled: !canEdit,
   })
+  // A lead staged while the row was shown, then hidden (a target, a cleared
+  // deadline or the Reminder toggle staged after it): the lead goes too —
+  // never sent for a row the panel no longer shows (adjusted during render,
+  // as the deck's is).
+  if (!leadRow && pendingLeadDays !== undefined) setPendingLeadDays(undefined)
   // Create mode with a staged deadline-anchored repeat: the offsets set the
   // target (`draftToCreateFields` sends no `due_at`) — said in words, no pad.
   const targetText =
@@ -1536,7 +1541,7 @@ export function QuickActionPanel({
             // date (spec §1/§8.5, 2026-10-12): its horizon decides nothing
             // until the target is removed, and the rows say so. An automatic
             // deadline target keeps the horizon working. Read from the target
-            // row's own (staged) value, so Remove target or Back to auto
+            // row's own (staged) value, so Remove target
             // staged brings the horizon back at once. Only a REAL target:
             // `workingDate` is the picker's working value and is set even
             // with no target, so it counts only once a date is staged
