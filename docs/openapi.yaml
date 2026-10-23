@@ -5779,11 +5779,13 @@ components:
           enum: [remove, auto, null]
           description: >
             At 3 attempts or more, what the row offers (never does on its own): `remove` ("Remove
-            target?" — a one-off with no deadline), `auto` ("Back to auto?" — a deadline still ahead
-            and a target the user picked; send `target_at: null`). Null below 3×, on an automatic
-            target, on a repeating task, and once the deadline has passed. With the server's task
-            queue on, also null on a one-off below High with no deadline (the rollover takes its
-            target off on its own).
+            target?" — a one-off with a target the user picked; send `target_at: null`). Since
+            2026-10-22 (the deadlines page) a deadline task offers `remove` too: removed, it goes
+            on the deadlines page from its lead day. `auto` ("Back to auto?") is no longer sent; it
+            stays in the enum for older builds. Null below 3×, on an automatic target, on a
+            repeating task, and — task queue off — once the deadline has passed. With the server's
+            task queue on, also null on a one-off below High with no deadline (the rollover takes
+            its target off on its own).
         age_label:
           type: [string, 'null']
           description: >

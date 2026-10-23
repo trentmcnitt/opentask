@@ -15,6 +15,7 @@ import {
 import {
   ENDS_BEFORE_NEXT,
   daysBeforeChoices,
+  draftRule,
   nextDateWords,
   nextDates,
   targetTimeRefused,
@@ -24,8 +25,8 @@ import {
   type EveryTimeDraft,
   type EveryTimeTask,
 } from '@/lib/every-time'
-import { relativeDaysWords, repeatWords } from '@/lib/editor-target-labels'
-import { RELATIVE_TARGET_MESSAGES, repeatEndOf } from '@/lib/task-segments'
+import { leadDaysWords, relativeDaysWords, repeatWords } from '@/lib/editor-target-labels'
+import { RELATIVE_TARGET_MESSAGES, defaultLeadDays, repeatEndOf } from '@/lib/task-segments'
 import { DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { HowOftenField } from '@/components/quick-panel/HowOftenField'
 import { EndsField } from '@/components/quick-panel/EndsField'
@@ -319,7 +320,16 @@ function ScheduleRows({
         />
       </Row>
       {deadline ? (
-        <RelativeTargetRow draft={draft} initial={initial} choices={choices} dispatch={dispatch} />
+        draft.noTarget ? (
+          <NoTargetRow task={task} draft={draft} ctx={ctx} dispatch={dispatch} />
+        ) : (
+          <RelativeTargetRow
+            draft={draft}
+            initial={initial}
+            choices={choices}
+            dispatch={dispatch}
+          />
+        )
       ) : variant === 'bulk' ? null : (
         <Row label={DEADLINE_WORD}>
           <AddDeadline
@@ -579,6 +589,58 @@ function RelativeTargetRow({
           refusedReason="after the deadline"
           onChange={(time) => dispatch({ type: 'targetTime', time })}
         />
+      </div>
+    </Row>
+  )
+}
+
+/**
+ * A deadline-anchored draft with NO relative target (the deadlines page,
+ * 2026-10-22, L1: no fake targets): "None · on the deadlines page 3 days
+ * before" — each occurrence goes on the page from its lead day (the override,
+ * else the rule's default, `defaultLeadDays`) — and "+ Add", which gives it
+ * a target at the picker's starting point (the day before, the deadline's
+ * time — `scheduleAction` turns `noTarget` off on any target pick).
+ */
+function NoTargetRow({
+  task,
+  draft,
+  ctx,
+  dispatch,
+}: {
+  task: EveryTimeTask
+  draft: EveryTimeDraft
+  ctx: EveryTimeContext
+  dispatch: (action: DraftAction) => void
+}) {
+  const lead = useMemo(() => {
+    if (task.lead_days != null) return task.lead_days
+    try {
+      return defaultLeadDays(
+        { rrule: draftRule(draft), recurrence_mode: draft.mode, anchor_time: draft.deadlineTime },
+        task.deadline_at ?? ctx.now.toISOString(),
+        ctx.timezone,
+      )
+    } catch {
+      return null
+    }
+  }, [task, draft, ctx])
+  return (
+    <Row label={TARGET_WORD}>
+      <div className="flex flex-wrap items-center gap-2" data-every-time-no-target>
+        <span className="text-muted-foreground text-sm">
+          None
+          {lead !== null && <> · on the deadlines page {leadDaysWords(lead)}</>}
+        </span>
+        <button
+          type="button"
+          data-every-time-add-target
+          disabled={draft.stop}
+          onClick={() => dispatch({ type: 'daysBefore', days: draft.daysBefore || 1 })}
+          className="h-8 rounded-md border px-3 text-sm font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+        >
+          + Add
+        </button>
       </div>
     </Row>
   )

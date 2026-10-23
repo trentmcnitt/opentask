@@ -65,9 +65,12 @@ export interface FormattedTask extends Task {
    *   `attempts`), shown only while it has a target and at least one attempt;
    *   else null.
    * - `attempts_offer`: at 3× (`ATTEMPTS_OFFER_REMOVE`), what the row offers —
-   *   "remove" (Remove target?), "auto" (Back to auto?), or null (none yet,
-   *   an automatic target, a repeating task, or — task queue on — a
-   *   strippable one-off, whose target the rollover takes off on its own).
+   *   "remove" (Remove target?), or null (none yet, an automatic target, a
+   *   repeating task, or — task queue on — a strippable one-off, whose
+   *   target the rollover takes off on its own). "auto" (Back to auto?) is
+   *   no longer sent (2026-10-22, the deadlines page: a deadline task's
+   *   target is removed like any other); it stays in the type for builds
+   *   that decode it.
    *   The web row computes the same answer live (TaskRow: `attemptsOffer`
    *   with the switch from GET /api/user/preferences), so it never waits for
    *   a refetch.

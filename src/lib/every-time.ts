@@ -118,6 +118,8 @@ export type EveryTimeTask = Pick<
   repeat_count?: number | null
   repeat_count_used?: number | null
   repeat_until?: string | null
+  /** The deadlines page's lead override (2026-10-22); absent reads as the default. */
+  lead_days?: number | null
 }
 
 /** What the module needs besides the task. `now` is injectable for tests. */

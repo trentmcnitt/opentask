@@ -1,15 +1,16 @@
 /**
- * The editor's task-model labels (2026-10-12): the auto target of a
- * deadline-only task, and — 2026-10-21 — a deadline-anchored repeat's target
- * words on its deadline line. Read off the model's own rules (`autoTargetAt`,
- * the stored relative target), so these tests pin that the words follow the
- * rules (§8.1, 2026-10-12: a stored automatic target, lead 3 days
- * for a wait under 16 days, else 4).
+ * The editor's task-model labels: the Lead row of a deadline task with no
+ * target (the deadlines page, 2026-10-22 — it replaced the automatic target's
+ * "auto" line), and — 2026-10-21 — a deadline-anchored repeat's target words
+ * on its deadline line. Read off the model's own rules (`leadFor`, the stored
+ * relative target), so these tests pin that the words follow the rules.
  */
 import { describe, expect, test } from 'vitest'
 import {
   deadlineRepeatLabel,
-  describeAutoTarget,
+  leadDaysWords,
+  leadLine,
+  leadLineWords,
   occurrenceDiffers,
   relativeDaysWords,
   relativeTargetWords,
@@ -23,70 +24,122 @@ const CTX = { timezone: TZ, morningTime: '09:00' }
 const DEADLINE = '2026-10-21T04:00:00.000Z'
 const BEFORE = new Date('2026-10-12T15:00:00Z')
 
-describe('describeAutoTarget', () => {
-  const base = { due_at: null, deadline_at: DEADLINE, rrule: null }
+describe("leadLine — the editor's Lead row (the deadlines page, 2026-10-22)", () => {
+  // Fri Oct 30 2026, 11:59 PM Chicago (CDT).
+  const D = '2026-10-31T04:59:00.000Z'
+  // Tue Oct 20, noon CDT: a 10-day wait → the 3-day lead → Tue Oct 27.
+  const NOW = new Date('2026-10-20T17:00:00Z')
+  const base = {
+    due_at: null,
+    deadline_at: D,
+    rrule: null,
+    repeat_anchor: null,
+    target_days_before: null,
+    target_time: null,
+    lead_days: null,
+    lead_from: '2026-10-27',
+  }
+  const none = { deadline: undefined, leadDays: undefined }
 
-  test('a deadline with no target yet: the automatic target, said as such', () => {
-    // Set Mon Oct 12 → an 8-day wait, lead 3 → Sat Oct 17, 9:00 AM CDT.
-    expect(describeAutoTarget(base, TZ, CTX, BEFORE)).toEqual({
-      at: '2026-10-17T14:00:00.000Z',
-      lead: '3 days before deadline',
-      started: false,
-    })
-  })
-
-  test('a wait of 16 days or more takes a 4-day lead', () => {
-    // Set Sun Sep 27 (Chicago) → a 23-day wait → Fri Oct 16, 9:00 AM CDT.
-    expect(describeAutoTarget(base, TZ, CTX, new Date('2026-09-27T15:00:00Z'))).toEqual({
-      at: '2026-10-16T14:00:00.000Z',
-      lead: '4 days before deadline',
-      started: false,
-    })
-  })
-
-  test('a STORED auto target is read as it is, not recomputed', () => {
-    const stored = { ...base, due_at: '2026-10-16T14:00:00.000Z', target_auto: true }
-    expect(describeAutoTarget(stored, TZ, CTX, BEFORE)).toEqual({
-      at: '2026-10-16T14:00:00.000Z',
-      lead: '4 days before deadline',
-      started: false,
-    })
-  })
-
-  test('preview: a picked target staged back to auto shows what Save would store', () => {
-    const picked = { ...base, due_at: '2026-10-13T14:00:00.000Z', target_auto: false }
-    expect(describeAutoTarget(picked, TZ, CTX, BEFORE)).toBe(null)
-    expect(describeAutoTarget(picked, TZ, CTX, BEFORE, true)).toEqual({
-      at: '2026-10-17T14:00:00.000Z',
-      lead: '3 days before deadline',
-      started: false,
-    })
-  })
-
-  test('a deadline already passed: the deadline itself, "deadline day", started', () => {
-    const after = new Date('2026-10-21T15:00:00Z')
-    expect(describeAutoTarget(base, TZ, CTX, after)).toEqual({
-      at: DEADLINE,
-      lead: 'deadline day',
-      started: true,
-    })
-  })
-
-  test('started once the automatic target has arrived', () => {
-    // The deadline's own day (wait 0) after its morning: the target is now.
-    const label = describeAutoTarget(base, TZ, CTX, new Date('2026-10-20T15:00:00Z'))
-    expect(label?.started).toBe(true)
-  })
-
-  test('none for a picked target, no deadline, or a recurrence', () => {
-    expect(describeAutoTarget({ ...base, due_at: '2026-10-15T14:00:00Z' }, TZ, CTX, BEFORE)).toBe(
-      null,
+  test('the stored lead day, and its words', () => {
+    const line = leadLine(base, none, TZ, null, NOW)!
+    expect(line).toMatchObject({ from: '2026-10-27', daysBefore: 3, leadDays: 3, override: null })
+    expect(line.deferredTo).toBeNull()
+    expect(line.staged).toBe(false)
+    expect(leadLineWords(line, TZ, '2026-10-20')).toBe(
+      'On the deadlines page from Tue Oct 27 (3 days before)',
     )
-    expect(describeAutoTarget({ ...base, deadline_at: null }, TZ, CTX, BEFORE)).toBe(null)
-    // Recurring tasks never get an automatic target.
-    expect(describeAutoTarget({ ...base, rrule: 'FREQ=WEEKLY;BYDAY=SU' }, TZ, CTX, BEFORE)).toBe(
-      null,
+    expect(leadLineWords(line, TZ, '2026-10-27')).toBe(
+      'On the deadlines page from today (3 days before)',
     )
+    expect(leadLineWords(line, TZ, '2026-10-28')).toBe(
+      'On the deadlines page since Tue Oct 27 (3 days before)',
+    )
+  })
+
+  test('deferred: a stored day after the one derived now is a defer, "deferred to Thu"', () => {
+    const line = leadLine({ ...base, lead_from: '2026-10-28' }, none, TZ, null, NOW)!
+    expect(line.from).toBe('2026-10-27')
+    expect(line.deferredTo).toBe('2026-10-28')
+  })
+
+  test('a stored day before the derived one (set from further out) is not a defer', () => {
+    // Set 20 days out (4-day lead → Mon Oct 26); now the table gives 3.
+    const line = leadLine({ ...base, lead_from: '2026-10-26' }, none, TZ, null, NOW)!
+    expect(line).toMatchObject({ from: '2026-10-26', daysBefore: 4, deferredTo: null })
+  })
+
+  test('a staged override previews the new day (blue) and drops a deferral', () => {
+    const line = leadLine(
+      { ...base, lead_from: '2026-10-28' },
+      { deadline: undefined, leadDays: 7 },
+      TZ,
+      null,
+      NOW,
+    )!
+    expect(line).toMatchObject({ from: '2026-10-23', daysBefore: 7, leadDays: 7, override: 7 })
+    expect(line.staged).toBe(true)
+    expect(line.deferredTo).toBeNull()
+  })
+
+  test('a staged deadline re-derives from now; the lead never lands before today', () => {
+    // Sat Oct 24 23:59: a 4-day wait → the day before, Fri Oct 23.
+    const near = leadLine(
+      base,
+      { deadline: '2026-10-25T04:59:00.000Z', leadDays: undefined },
+      TZ,
+      null,
+      NOW,
+    )!
+    expect(near).toMatchObject({ from: '2026-10-23', daysBefore: 1, staged: true })
+    // A 30-day override on a deadline 10 days out: from today.
+    const clamped = leadLine(
+      { ...base, lead_days: 30 },
+      { deadline: D, leadDays: 30 },
+      TZ,
+      null,
+      NOW,
+    )!
+    expect(clamped.from).toBe('2026-10-20')
+    expect(clamped.leadDays).toBe(30)
+  })
+
+  test('L9: a deadline before the rollover counts on the evening before', () => {
+    // Fri Oct 30 00:30 CDT with a 04:00 rollover: its OpenTask day is Thu Oct 29.
+    const early = '2026-10-30T05:30:00.000Z'
+    const line = leadLine(
+      { ...base, deadline_at: early, lead_from: '2026-10-26' },
+      none,
+      TZ,
+      '04:00',
+      NOW,
+    )!
+    expect(line.daysBefore).toBe(3)
+  })
+
+  test('none without a deadline, or for a repeat with a relative target', () => {
+    expect(leadLine({ ...base, deadline_at: null }, none, TZ, null, NOW)).toBeNull()
+    expect(
+      leadLine(
+        {
+          ...base,
+          rrule: 'FREQ=WEEKLY;BYDAY=FR',
+          repeat_anchor: 'deadline',
+          target_days_before: 1,
+          target_time: '18:00',
+        },
+        none,
+        TZ,
+        null,
+        NOW,
+      ),
+    ).toBeNull()
+  })
+
+  test('leadDaysWords', () => {
+    expect(leadDaysWords(0)).toBe('the deadline day')
+    expect(leadDaysWords(1)).toBe('the day before')
+    expect(leadDaysWords(4)).toBe('4 days before')
   })
 })
 

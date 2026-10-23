@@ -6,14 +6,15 @@
  */
 
 import { DateTime } from 'luxon'
-import { capAtDeadline, capsAt } from '@/lib/task-segments'
+import { capAtDeadline, capsAt, openTaskToday } from '@/lib/task-segments'
 import { planRepeatSchedule } from '@/core/tasks/repeat-schedule'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
-import { deadlineRepeatLabel, repeatWords, type AutoTargetLabel } from '@/lib/editor-target-labels'
+import { deadlineRepeatLabel, leadLine, repeatWords } from '@/lib/editor-target-labels'
 import { bulkEveryTimeGate, draftEnd, draftRule } from '@/lib/every-time'
 import type { StagedSchedule } from '@/hooks/useEveryTime'
 import type {
   DeadlineRowProps,
+  LeadRowProps,
   RepeatLinkProps,
   TargetValueProps,
 } from '@/components/quick-panel/ThisOneFields'
@@ -152,8 +153,9 @@ export function deadlineRowFor({
 }
 
 /**
- * The Target row's value (§3): the staged target, the automatic one, "No
- * target" — or, a staged target after a deadline still ahead, the
+ * The Target row's value (§3): the staged target, "No target" (since
+ * 2026-10-22 never an automatic one — a deadline task with no target goes on
+ * the deadlines page, the Lead row) — or, a staged target after a deadline still ahead, the
  * deadline-cap preview "Sat Nov 7, 8:00 AM · stops at deadline": the
  * server's own cap (`capAtDeadline`), so the preview is the saved value.
  */
@@ -161,7 +163,6 @@ export function targetValueFor(s: {
   timezone: string
   queued: boolean
   dateDirty: boolean
-  auto: { label: AutoTargetLabel; dirty: boolean } | null
   none: { dirty: boolean } | null
   header: string
   relative: string
@@ -176,8 +177,6 @@ export function targetValueFor(s: {
   // A waiting repeating task has no live target (its occurrence is named on
   // the "This is the … one" line); the controls start from now.
   if (s.queued && !s.dateDirty) return { kind: 'none', dirty: false }
-  if (s.auto)
-    return { kind: 'auto', label: s.auto.label, dirty: s.auto.dirty, timezone: s.timezone }
   if (s.none) return { kind: 'none', dirty: s.none.dirty }
   if (s.derived && !s.dateDirty) {
     const at = DateTime.fromISO(s.derived, { zone: 'utc' }).setZone(s.timezone)
@@ -205,6 +204,40 @@ export function targetValueFor(s: {
     past: s.past,
     delta: s.delta,
     capped,
+  }
+}
+
+/**
+ * THE LEAD ROW's props (the deadlines page, 2026-10-22; `ThisOneFields`):
+ * shown with the task queue on, for one task with no target (staged) and a
+ * deadline (staged) that has a lead (`leadLine` — not a reminder or quota, not
+ * a repeat with a relative target). Null otherwise.
+ */
+export function leadRowFor(s: {
+  show: boolean
+  task: Task | null
+  pendingDeadline: string | null | undefined
+  pendingLeadDays: number | null | undefined
+  timezone: string
+  rolloverTime: string | null
+  onLeadDays: (days: number | null) => void
+  disabled: boolean
+}): LeadRowProps | null {
+  if (!s.show || !s.task) return null
+  const now = new Date()
+  const line = leadLine(
+    s.task,
+    { deadline: s.pendingDeadline, leadDays: s.pendingLeadDays },
+    s.timezone,
+    s.rolloverTime,
+    now,
+  )
+  if (!line) return null
+  return {
+    line,
+    today: openTaskToday(s.timezone, now, s.rolloverTime),
+    onLeadDays: s.onLeadDays,
+    disabled: s.disabled,
   }
 }
 

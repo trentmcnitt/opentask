@@ -25,12 +25,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  BACK_TO_AUTO,
   HORIZON_LABELS,
   HORIZON_UNSET_LABEL,
   HORIZON_WORD,
   QUEUE_PANEL_TITLES,
   DEADLINES_PAGE_TITLE,
+  REMOVE_TARGET,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
   taskQueueTitle,
@@ -1023,10 +1023,9 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
  * An UPCOMING row's second line (2026-10-12, spec §2): the gap text —
  * "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" — after the project and
  * priority. The "Target …" part is a chip that opens a one-item menu
- * (`targetReset`, §8.3): on a one-off with no deadline, "Remove target"
- * (back to its horizon segment); on one with a deadline, "Back to auto" (the
- * deadline's automatic target again — which leaves Upcoming). Undo on the
- * toast either way. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
+ * (`targetReset`): "Remove target" — back to its horizon segment, or, with a
+ * deadline (2026-10-22, it replaced "Back to auto"), onto the deadlines page
+ * from its lead day. Undo on the toast. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
  * `readOnly` (the row's peek bubble): the same words, the chip a plain label.
  */
 function UpcomingMeta({
@@ -1077,12 +1076,8 @@ function UpcomingMeta({
               <ChevronDown className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem
-                data-remove-target={reset === 'remove' ? '' : undefined}
-                data-back-to-auto={reset === 'auto' ? '' : undefined}
-                onSelect={() => void actions.removeTarget(task)}
-              >
-                {reset === 'auto' ? BACK_TO_AUTO : 'Remove target'}
+              <DropdownMenuItem data-remove-target onSelect={() => void actions.removeTarget(task)}>
+                {REMOVE_TARGET}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -78,7 +78,7 @@ export interface SimTaskDay {
   queued: boolean
   attempts: number
   age: string | null
-  offer: 'remove' | 'auto' | null
+  offer: 'remove' | null
 }
 
 export interface SimDay {

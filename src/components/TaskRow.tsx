@@ -34,7 +34,7 @@ import {
   targetReset,
   type HorizonValue,
 } from '@/lib/task-segments'
-import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/lib/row-corner'
 import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
@@ -408,8 +408,8 @@ export function TaskRow({
   // ATTEMPTS (spec §7): local days over target, read here with the same rule
   // the server uses, so the row shows "1×" the moment the target passes
   // without a refetch. At 3× the row OFFERS to drop the target (never does it
-  // on its own): "Remove target?", or "Back to auto?" on a deadline task whose
-  // target the user picked; nothing on an automatic target or a repeating task.
+  // on its own): "Remove target?" — a deadline task too since 2026-10-22 (it
+  // goes on the deadlines page); nothing on a repeating task.
   //
   // The task queue (resolution 1, PR 3): with the SERVER's switch on
   // (`useTaskQueue`, from GET /api/user/preferences) "Remove target?" is
@@ -798,8 +798,7 @@ export function TaskRow({
             open={snoozeMenuOpen}
             onOpenChange={setSnoozeMenuOpen}
             onSnooze={(until) => onSnooze(task.id, until)}
-            // Remove target, or "Back to auto" on a deadline task whose target
-            // the user picked; nothing on an automatic target (§8.3, Q9).
+            // Remove target (`targetReset`): never on a repeating task.
             targetReset={onRemoveTarget ? targetReset(task) : null}
             onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
             deadlineAt={task.deadline_at}
@@ -884,7 +883,7 @@ function TaskRowMeta({
   timezone: string
   segments: MetaSegment[]
   timeControl: boolean
-  offer: 'auto' | 'remove' | null
+  offer: 'remove' | null
   onSnooze: (taskId: number, until: string) => void
   onRemoveTarget?: (task: Task) => void
 }) {
@@ -928,7 +927,7 @@ function TaskRowMeta({
           }}
           className="text-over-target hover:bg-over-target/10 -my-0.5 rounded px-1 py-0.5 text-xs font-medium whitespace-nowrap underline-offset-2 hover:underline"
         >
-          {offer === 'auto' ? `${BACK_TO_AUTO}?` : 'Remove target?'}
+          {REMOVE_TARGET}?
         </button>
       )}
     </div>

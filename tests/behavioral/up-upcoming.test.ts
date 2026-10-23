@@ -418,14 +418,15 @@ describe('Upcoming', () => {
   })
 
   describe('row actions', () => {
-    test('UP-043: Today on every row; Remove target with no deadline, Back to auto with one', () => {
+    test('UP-043: Today on every row; Remove target, with a deadline or without', () => {
       const target = at('2026-11-03T09:00')
       const deadline = at('2026-11-07T23:59')
       const row = (recurring: boolean, deadline_at: string | null, target_auto = false) =>
         upcomingRowActions({ recurring, task: { due_at: target, deadline_at, target_auto } })
       expect(row(false, null)).toEqual({ today: true, reset: 'remove' })
-      expect(row(false, deadline)).toEqual({ today: true, reset: 'auto' })
-      // An automatic target has nothing to go back to.
+      // "Back to auto" went 2026-10-22: a deadline task goes on the deadlines page.
+      expect(row(false, deadline)).toEqual({ today: true, reset: 'remove' })
+      // An automatic target (task queue off) offers nothing.
       expect(row(false, deadline, true)).toEqual({ today: true, reset: null })
       // A repeating task's target goes with its recurrence: no reset here.
       expect(row(true, null)).toEqual({ today: true, reset: null })

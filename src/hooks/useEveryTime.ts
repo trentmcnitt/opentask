@@ -66,6 +66,7 @@ export function useEveryTime({
   createStaged,
   timezone,
   morningTime,
+  leads = false,
 }: {
   variant: EveryTimeVariant
   task: Task | null
@@ -73,6 +74,12 @@ export function useEveryTime({
   createStaged: { dueAt: string | null; deadlineAt: string | null }
   timezone: string
   morningTime: string
+  /**
+   * The deadlines page is on (the task-queue switch, 2026-10-22, L1): a
+   * deadline-anchored repeat made from a one-off with no target gets no
+   * default relative target (`EveryTimeContext.leads`).
+   */
+  leads?: boolean
 }) {
   const [session, setSession] = useState<Session | null>(null)
   // The discard question (A6), and what a yes leads to: back to this one,
@@ -84,7 +91,7 @@ export function useEveryTime({
 
   const enter = useCallback(
     (opts?: { focusDeadline?: boolean }) => {
-      const ctx: EveryTimeContext = { timezone, morningTime, now: new Date() }
+      const ctx: EveryTimeContext = { timezone, morningTime, now: new Date(), leads }
       let checkTask: EveryTimeTask
       let initial: EveryTimeDraft
       let mixed = false
@@ -115,7 +122,7 @@ export function useEveryTime({
       })
       setLeft(false)
     },
-    [variant, task, selectedTasks, createStaged, timezone, morningTime, staged],
+    [variant, task, selectedTasks, createStaged, timezone, morningTime, leads, staged],
   )
 
   const dispatch = useCallback((action: DraftAction) => {

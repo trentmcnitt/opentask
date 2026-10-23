@@ -759,12 +759,14 @@ export function attemptsTone(attempts: number): AttemptsTone {
 
 /**
  * At ATTEMPTS_OFFER_REMOVE (3×) the row and Process OFFER to drop the target
- * — never automatically: "Remove target?" on a one-off with no deadline,
- * "Back to auto?" on a deadline task whose target the user picked. An
- * automatic target offers nothing (ruling Q9), and a repeating task's target
- * goes only with its recurrence (`targetReset` decides all three). Nor once
- * the deadline has passed: "back to auto" would be the passed deadline, still
- * over target — the deadline itself is what to change.
+ * — never automatically: "Remove target?" on a one-off whose target the user
+ * picked, deadline or not (2026-10-22, the deadlines page: a deadline task
+ * with no target goes on the page from its lead day — there is no automatic
+ * target to go back to). A repeating task's target goes only with its
+ * recurrence (`targetReset`). With the task queue OFF the server still keeps
+ * an automatic target (A1, one release), so a deadline task whose deadline
+ * has passed offers nothing there: removing the target would only bring back
+ * the passed deadline, still overdue.
  */
 export function attemptsOffer(
   task: {
@@ -784,11 +786,12 @@ export function attemptsOffer(
    * so the queue does the offer's job. High and deadline tasks keep theirs.
    */
   opts: { queue?: boolean } = {},
-): 'auto' | 'remove' | null {
+): 'remove' | null {
   if ((task.attempts ?? 0) < ATTEMPTS_OFFER_REMOVE) return null
   const reset = targetReset(task)
-  if (reset === 'remove' && opts.queue && queueStrippable(task)) return null
-  return reset === 'auto' && isPastDeadline(task.deadline_at, now) ? null : reset
+  if (reset === null) return null
+  if (opts.queue) return queueStrippable(task) ? null : reset
+  return task.deadline_at !== null && isPastDeadline(task.deadline_at, now) ? null : reset
 }
 
 /** Priority from which the rollover never strips (High = 3, Urgent = 4). */
@@ -2079,25 +2082,24 @@ export function upcomingGap(
 }
 
 /**
- * What a target can be sent back to (§8.3, ruling Q9, 2026-10-12):
- * - 'auto': "Back to auto" — a one-off with a deadline whose target the user
- *   picked. A deadline task never has Remove target; its target goes back to
- *   the deadline's automatic one. An auto target offers neither.
- * - 'remove': "Remove target" — a one-off with a target and no deadline (back
- *   to its horizon segment).
- * - null: nothing to offer (no target, an auto target, or a repeating task —
- *   whose target goes with its recurrence, in the editor's own menu).
- * Every surface that offers either reads it here: the row menus, the snooze
- * menu, the editor and Upcoming's target chip.
+ * Whether a target can be removed ("Remove target", 2026-10-22 — it replaced
+ * "Back to auto"): a one-off with a target the user picked, deadline or not.
+ * Removed, a task with no deadline goes back to its horizon segment, and one
+ * with a deadline onto the deadlines page from its lead day (Upcoming before
+ * it). Null: nothing to offer — no target, a repeating task (its target goes
+ * with its recurrence, in the editor's own menu), or, with the task queue
+ * off, the deadline's automatic target (`target_auto`, still written there
+ * for one release, A1). Every surface that offers it reads it here: the row
+ * menus, the defer menu, the editor and Upcoming's target chip.
  */
 export function targetReset(task: {
   due_at: string | null
   deadline_at: string | null
   target_auto?: boolean
   rrule?: string | null
-}): 'auto' | 'remove' | null {
+}): 'remove' | null {
   if (task.rrule || task.due_at === null || task.target_auto) return null
-  return task.deadline_at !== null ? 'auto' : 'remove'
+  return 'remove'
 }
 
 /**
@@ -2105,13 +2107,12 @@ export function targetReset(task: {
  * EVERY row — since the occurrence is kept apart from the target (§6), moving
  * a repeating task's target no longer resets its schedule, so Today on one is
  * safe (done that day advances to the next scheduled occurrence; the deadline
- * still measures from the occurrence). Back to auto / Remove target per
- * `targetReset`.
+ * still measures from the occurrence). Remove target per `targetReset`.
  */
 export function upcomingRowActions(row: {
   recurring: boolean
   task: { due_at: string | null; deadline_at: string | null; target_auto?: boolean }
-}): { today: boolean; reset: 'auto' | 'remove' | null } {
+}): { today: boolean; reset: 'remove' | null } {
   return { today: true, reset: row.recurring ? null : targetReset(row.task) }
 }
 

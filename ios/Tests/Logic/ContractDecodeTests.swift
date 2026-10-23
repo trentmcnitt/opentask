@@ -585,7 +585,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
     /// `GET /api/tasks/{id}` for three tasks: undated and a month old (age),
     /// over target on three days with no deadline (offer "remove"), and the
-    /// same with a deadline (offer "auto"). Values, then each against its raw
+    /// same with a deadline (offer "remove" since 2026-10-22). Values, then each against its raw
     /// key — the DTO defaults every one of these, so a renamed key would
     /// otherwise decode as nil/0 and the badge would silently vanish.
     func testTaskBadges() throws {
@@ -620,7 +620,8 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(deadline.title, "Book the inspection")
         XCTAssertEqual(deadline.deadlineAt, Fixtures.pinnedTimestamp)
         XCTAssertEqual(deadline.attemptsLabel, "3×")
-        XCTAssertEqual(deadline.attemptsOffer, "auto")
+        // "Back to auto" went 2026-10-22 (the deadlines page): Remove target.
+        XCTAssertEqual(deadline.attemptsOffer, "remove")
 
         let raw = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: [String: Any]])
         for (name, task) in [("age", age), ("attempts", attempts), ("attempts_deadline", deadline)] {

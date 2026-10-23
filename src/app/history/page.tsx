@@ -511,6 +511,19 @@ function formatEditDetails(
       case 'target_time':
         if (!parts.includes('changed target lead')) parts.push('changed target lead')
         break
+      // The deadlines page (2026-10-22): the lead override, and this
+      // instance's lead day (moved by the page's Defer, re-derived on a
+      // deadline write — said only when it is the whole change).
+      case 'lead_days':
+        parts.push(
+          after_state.lead_days == null ? 'default lead' : `lead ${after_state.lead_days}d`,
+        )
+        break
+      case 'lead_from':
+        if (fields.length <= 2 && typeof after_state.lead_from === 'string') {
+          parts.push(`on the deadlines page from ${after_state.lead_from}`)
+        }
+        break
       // Skip internal fields that don't need display
       case 'anchor_time':
       case 'anchor_dow':

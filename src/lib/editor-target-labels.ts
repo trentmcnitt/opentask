@@ -1,107 +1,125 @@
 /**
  * The editor's words for what the task model decides (2026-10-12, Trent's
- * morning QA; §8): a deadline's automatic target, and whether a recurring
- * task's deadline moves with each occurrence. Pure, so both are tested in
+ * morning QA; §8): a deadline task's lead day on the deadlines page (it
+ * replaced the automatic target, 2026-10-22), and whether a recurring task's
+ * deadline moves with each occurrence. Pure, so both are tested in
  * `tests/behavioral/tm-editor-labels.test.ts`; the rules themselves live in
  * `src/lib/task-segments.ts` and are only READ here, never restated.
  */
 
 import { DateTime } from 'luxon'
 import {
-  autoTargetAt,
+  deadlineDay,
   deadlineDayTarget,
+  leadFor,
   occurrenceDates,
   scheduleBase,
   targetMoved,
+  type LeadFields,
   type TargetContext,
-  type TargetFields,
 } from '@/lib/task-segments'
 import { DEADLINE_DAY } from '@/lib/task-model-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import type { RepeatAnchor } from '@/types'
 
-export interface AutoTargetLabel {
-  /** The automatic target itself (UTC ISO). */
-  at: string
-  /** Where it sits relative to the deadline: "3 days before deadline", "deadline day". */
-  lead: string
-  /** It has arrived: the task is nagging from it (over target). */
-  started: boolean
+/** The Lead line's facts (`leadLine`). */
+export interface LeadLine {
+  /** The day the task goes on the deadlines page (yyyy-MM-dd, the OpenTask day). */
+  from: string
+  /** Local days from `from` to the deadline's OpenTask day (0 = that day). */
+  daysBefore: number
+  /** The stepper's value: the override, or the lead the line shows. 1–90. */
+  leadDays: number
+  /** The user's override (`lead_days`), staged or stored; null = the default table. */
+  override: number | null
+  /** THIS instance was deferred to a later day (yyyy-MM-dd), or null. */
+  deferredTo: string | null
+  /** A staged deadline or lead change produced it (drawn blue): a preview of Save. */
+  staged: boolean
 }
 
-/**
- * A deadline task whose target is the AUTOMATIC one (§8.1, `target_auto`)
- * shows it on the target line as "auto · Fri, Oct 16, 9:00 AM (3 days before
- * deadline)". The target is stored, so this reads it; the lead is whole LOCAL
- * days between it and the deadline, in the user's zone.
- *
- * `preview`: what Save would produce when the target is staged away — "Back
- * to auto" on a picked target, or a new deadline on an auto one. The server
- * re-derives it the same way (`autoTargetAt`, from now).
- *
- * Null for a task with a target the user picked, or no deadline.
- */
-export function describeAutoTarget(
-  task: TargetFields,
-  timezone: string,
-  ctx?: TargetContext | null,
-  now: Date = new Date(),
-  preview = false,
-): AutoTargetLabel | null {
-  if (task.deadline_at === null || task.rrule) return null
-  let at: string
-  if (preview || task.due_at === null) at = autoTargetAt(task.deadline_at, ctx, now)
-  else if (task.target_auto) at = task.due_at
-  else return null
-  const zone = ctx?.timezone ?? timezone
-  const atDay = DateTime.fromISO(at, { zone: 'utc' }).setZone(zone).startOf('day')
-  const deadlineDay = DateTime.fromISO(task.deadline_at, { zone: 'utc' })
-    .setZone(zone)
-    .startOf('day')
-  const days = Math.round(deadlineDay.diff(atDay, 'days').days)
-  const lead = days <= 0 ? 'deadline day' : `${days} ${days === 1 ? 'day' : 'days'} before deadline`
-  return { at, lead, started: Date.parse(at) <= now.getTime() }
-}
+/** The lead stepper's bounds (the API's `lead_days`, 1–90). */
+export const LEAD_DAYS_MIN = 1
+export const LEAD_DAYS_MAX = 90
 
 /**
- * The editor's target line for a one-off ordinary task, read with the STAGED
- * values (§8, 2026-10-12): the automatic target to show, and whether a staged
- * change produced it (drawn blue). Shown when the stored target is automatic
- * and nothing is staged on it, or as a PREVIEW of what Save would produce —
- * "Back to auto" staged on a picked target, a new deadline on an automatic
- * target (it moves with the deadline), or a deadline added to a task with no
- * target. A picked date staged wins: that is a picked target. Null `label`:
- * the line shows the target as usual.
+ * THE EDITOR'S LEAD LINE (the deadlines page, 2026-10-22, plan §2): a
+ * deadline task with no target goes on the deadlines page from its lead day
+ * (`lead_from`) — "On the deadlines page from Tue Oct 20 (3 days before)" —
+ * read with the STAGED deadline and lead override, so it previews what Save
+ * would store (the server re-derives `lead_from` on either, `leadFor`, which
+ * drops a deferral). Nothing staged: the STORED lead day, the truth.
+ *
+ * "DEFERRED": the page's Defer moves this instance's `lead_from` later. A
+ * lead derived now is the LATEST day the rule could give without a defer — a
+ * one-off's default lead only shrinks as its deadline nears (the lead table
+ * is non-increasing in the wait), an override's day is fixed, and both clamp
+ * up to today — so a stored day AFTER the one derived now can only be a
+ * defer: then the line reads from the derived day and adds "deferred to Thu".
+ * (A defer to a day still before the derived one is not told apart: the line
+ * shows that stored day, which is when it goes on the page.)
+ *
+ * Null: no deadline, or no lead at all (a reminder or a quota, a repeat with
+ * a relative target, a target-anchored repeat — `leadFor`). The caller shows
+ * it only with the task queue on and no target.
  */
-export function stagedAutoTarget(
-  task: Pick<TargetFields, 'due_at' | 'deadline_at' | 'target_auto'> | null | undefined,
-  staged: {
-    pendingDeadline: string | null | undefined
-    targetCleared: boolean
-    datePicked: boolean
-  },
+export function leadLine(
+  task: LeadFields & { lead_from?: string | null },
+  staged: { deadline: string | null | undefined; leadDays: number | null | undefined },
   timezone: string,
-  ctx?: TargetContext | null,
+  rolloverTime: string | null,
   now: Date = new Date(),
-): { label: AutoTargetLabel | null; staged: boolean } {
-  const stored = task?.deadline_at ?? null
-  const deadline = staged.pendingDeadline !== undefined ? staged.pendingDeadline : stored
-  const deadlineChanged = staged.pendingDeadline !== undefined && staged.pendingDeadline !== stored
-  const isStaged = staged.targetCleared || deadlineChanged
-  const none = { label: null, staged: isStaged }
-  if (!deadline || (staged.datePicked && !staged.targetCleared)) return none
-  const storedAuto = task?.target_auto ?? false
-  const storedDue = task?.due_at ?? null
-  const preview = staged.targetCleared || (deadlineChanged && (storedAuto || storedDue === null))
-  if (!preview && !storedAuto) return none
-  const label = describeAutoTarget(
-    { due_at: storedDue, deadline_at: deadline, target_auto: storedAuto, rrule: null },
-    timezone,
-    ctx,
-    now,
-    preview,
+): LeadLine | null {
+  const deadline = staged.deadline !== undefined ? staged.deadline : task.deadline_at
+  if (!deadline) return null
+  const override = staged.leadDays !== undefined ? staged.leadDays : (task.lead_days ?? null)
+  const isStaged = leadStaged(task, staged)
+  const fields: LeadFields = {
+    ...task,
+    deadline_at: deadline,
+    lead_days: override,
+    // A deadline-anchored repeat's occurrence IS its deadline: a staged one
+    // reschedules this occurrence (`leadFor` reads `occurrence_at`).
+    ...(task.rrule && staged.deadline !== undefined ? { occurrence_at: deadline } : {}),
+  }
+  const derived = leadFor(fields, timezone, { rolloverTime, now })
+  if (!derived) return null
+  const stored = task.lead_from ?? null
+  const deferredTo = !isStaged && stored && stored > derived ? stored : null
+  const from = isStaged || !stored || deferredTo ? derived : stored
+  const d = DateTime.fromISO(deadlineDay(deadline, timezone, rolloverTime), { zone: timezone })
+  const daysBefore = Math.max(
+    0,
+    Math.round(d.diff(DateTime.fromISO(from, { zone: timezone }), 'days').days),
   )
-  return { label, staged: isStaged }
+  const shown = Math.min(LEAD_DAYS_MAX, Math.max(LEAD_DAYS_MIN, daysBefore))
+  return { from, daysBefore, leadDays: override ?? shown, override, deferredTo, staged: isStaged }
+}
+
+/** Whether a staged deadline or lead override differs from the stored one. */
+function leadStaged(
+  task: { deadline_at: string | null; lead_days?: number | null },
+  staged: { deadline: string | null | undefined; leadDays: number | null | undefined },
+): boolean {
+  if (staged.deadline !== undefined && staged.deadline !== task.deadline_at) return true
+  return staged.leadDays !== undefined && staged.leadDays !== (task.lead_days ?? null)
+}
+
+/** "3 days before", "the day before", "the deadline day". */
+export function leadDaysWords(daysBefore: number): string {
+  if (daysBefore <= 0) return 'the deadline day'
+  return daysBefore === 1 ? 'the day before' : `${daysBefore} days before`
+}
+
+/**
+ * The Lead line's words: "On the deadlines page from Tue Oct 20 (3 days
+ * before)" — "from today", or "since Mon Oct 19" once the day has passed.
+ */
+export function leadLineWords(line: LeadLine, timezone: string, today: string): string {
+  const day = DateTime.fromISO(line.from, { zone: timezone }).toFormat('ccc LLL d')
+  const when =
+    line.from === today ? 'from today' : line.from < today ? `since ${day}` : `from ${day}`
+  return `On the deadlines page ${when} (${leadDaysWords(line.daysBefore)})`
 }
 
 /**

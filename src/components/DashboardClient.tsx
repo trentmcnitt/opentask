@@ -2317,9 +2317,9 @@ function DashboardView({
       revealRef={revealTaskRef}
       onDone={actions.handleDone}
       onSnooze={actions.handleSnooze}
-      // Remove target (2026-10-10): back to its horizon's task segment.
-      // On a deadline task the same clear is "Back to auto" (§8.3): the
-      // server puts the deadline's automatic target back.
+      // Remove target (2026-10-10): back to its horizon's task segment — or,
+      // a deadline task (2026-10-22, when "Back to auto" went), onto the
+      // deadlines page from its lead day.
       onRemoveTarget={(task) =>
         void actions.handleSaveAllChanges(task.id, { due_at: null }).catch(() => undefined)
       }

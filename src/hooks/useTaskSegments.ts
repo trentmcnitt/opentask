@@ -32,11 +32,10 @@ import type { Task } from '@/types'
  *   is over target, a later day makes it quiet until then (spec §1 — a
  *   targeted one-off is in no horizon segment, and set today it has no
  *   heads-up today)
- * - Remove target (Upcoming's one-off rows with no deadline, 2026-10-12) →
- *   `PATCH { target_at: null }`; the task goes back to its horizon segment.
- *   "Back to auto" (a one-off with a deadline, §8.3) is the same PATCH: the
- *   server puts the deadline's automatic target back, and the row leaves
- *   Upcoming (an automatic target has no heads-ups)
+ * - Remove target (Upcoming's one-off rows, 2026-10-12) →
+ *   `PATCH { target_at: null }`; the task goes back to its horizon segment —
+ *   or, with a deadline (2026-10-22, it replaced "Back to auto"), onto the
+ *   deadlines page from its lead day (Upcoming before it)
  * - Repeating Upcoming rows have Today and its picker too (§6: moving the
  *   target leaves the occurrence where it was), but no target reset
  * - Defer All → everything still waiting in that segment, back tomorrow
@@ -443,11 +442,10 @@ function useDeck(
 }
 
 /**
- * Remove target / Back to auto (2026-10-12, `targetReset`): the same PATCH
- * the dashboard's row menu sends. With no deadline the task goes back to its
- * horizon segment; with one, the server puts the deadline's automatic target
- * back (§8.3). Either way the row leaves Upcoming; Undo restores the target
- * and `target_set_at`.
+ * Remove target (2026-10-12, `targetReset`): the same PATCH the dashboard's
+ * row menu sends. With no deadline the task goes back to its horizon segment;
+ * with one (2026-10-22) onto the deadlines page from its lead day. Either way
+ * the row leaves Upcoming; Undo restores the target and `target_set_at`.
  */
 function useRemoveTarget(run: RunSegmentAction) {
   return useCallback(
@@ -456,9 +454,7 @@ function useRemoveTarget(run: RunSegmentAction) {
         [task.id],
         'gone',
         () => patchTask(task.id, { target_at: null }),
-        task.deadline_at
-          ? `Back to the automatic target: “${task.title}”`
-          : `Target removed: “${task.title}”`,
+        `Target removed: “${task.title}”`,
       ),
     [run],
   )

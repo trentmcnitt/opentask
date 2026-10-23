@@ -39,7 +39,7 @@ import { taskWord } from '@/lib/utils'
 import { DirtyCard } from '@/components/DirtyCard'
 import { SelectionBarShell } from '@/components/SelectionBarShell'
 import { removableTargetIds } from '@/lib/row-corner'
-import { BACK_TO_AUTO } from '@/lib/task-model-words'
+import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { canSkipUntil } from '@/lib/skip-until'
 import { SkipUntilDialog } from '@/components/SkipUntilDialog'
 import type { Task, Project } from '@/types'
@@ -610,14 +610,14 @@ export function SelectionActionSheet({
 
 /**
  * REMOVE TARGET for the whole selection (2026-10-14), at the top of the More
- * sheet: the bulk form of the row's own "Remove target" / "Back to auto".
+ * sheet: the bulk form of the row's own "Remove target".
  *
  * It applies to the selected tasks whose row would offer it
- * (`removableTargetIds`): a one-off with a target the user picked. With no
- * deadline the target goes; with one, the server puts the deadline's automatic
- * target back (§8.3). Repeating tasks, reminders, quotas, automatic targets
- * and undated tasks are left as they are, and the button says how many it will
- * change when that is not all of them.
+ * (`removableTargetIds`): a one-off with a target the user picked. The target
+ * goes; a task with a deadline then goes on the deadlines page from its lead
+ * day (2026-10-22, when "Back to auto" went). Repeating tasks, reminders,
+ * quotas and undated tasks are left as they are, and the button says how many
+ * it will change when that is not all of them.
  *
  * It rides the sheet's one save path (`onSaveAll` → `saveQuickPanelChanges`):
  * `{ due_at: null }` scoped to those ids, which for several tasks is ONE
@@ -639,8 +639,6 @@ function BulkRemoveTarget({
 }) {
   const ids = removableTargetIds(selectedTasks)
   if (ids.length === 0) return null
-  const allAuto = selectedTasks.filter((t) => ids.includes(t.id)).every((t) => t.deadline_at)
-  const word = allAuto ? BACK_TO_AUTO : 'Remove target'
   const count = ids.length < selectedTasks.length ? ` (${ids.length})` : ''
   return (
     <Button
@@ -652,7 +650,7 @@ function BulkRemoveTarget({
       title={
         disabled
           ? 'Save or reset your changes first'
-          : 'Tasks with a deadline go back to their automatic target'
+          : 'Tasks with a deadline go on the deadlines page'
       }
       onClick={async () => {
         try {
@@ -666,7 +664,7 @@ function BulkRemoveTarget({
       className="w-full justify-start"
     >
       <XCircle className="mr-1 size-4" />
-      {word}
+      {REMOVE_TARGET}
       {count}
     </Button>
   )

@@ -232,7 +232,7 @@
       "repeat_remaining": null,
       "deadline_nag_off": false,
       "attempts_label": "3×",
-      "attempts_offer": "auto",
+      "attempts_offer": "remove",
       "age_label": null
     }
   }
