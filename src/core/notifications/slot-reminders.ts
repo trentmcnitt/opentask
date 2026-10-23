@@ -28,7 +28,7 @@
  * ON DECK RIDES ALONG (2026-10-20, red-team B10/A12). A push that already
  * fires appends today's undone deck count ("3 reminders waiting · 5 on
  * deck"). Decks never make a slot notify (an empty slot stays silent), never
- * join the hourly nag or its "unfinished" test (`waitingBySlot` does not
+ * join the slot nag or its "unfinished" test (`waitingBySlot` does not
  * count them), and never count toward `reminder_count`; the payload carries
  * them as `deck_count`. Slot pushes are APNs-only, so a user with no periods
  * or with Web Push only gets no count — accepted.

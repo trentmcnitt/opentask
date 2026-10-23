@@ -337,7 +337,7 @@ export interface ApnsSlotReminderPayload {
   /**
    * Alert body override. Defaults to `slotWaitingBody(count, promptCount)`.
    *
-   * The hourly nag (`slot-nags.ts`) sends through this same function so it
+   * The slot nag (`slot-nags.ts`) sends through this same function so it
    * inherits the category, the checklist and the action buttons, but its body
    * has to say more — it speaks for the other unfinished slots too.
    */
@@ -347,7 +347,7 @@ export interface ApnsSlotReminderPayload {
 /**
  * What a slot says is waiting: "3 reminders waiting", "2 quotas waiting", or
  * both, "3 reminders · 2 quotas waiting". One phrase for the slot-open push
- * and the hourly nag (`slotNagBody` builds on it), so the two never word the
+ * and the slot nag (`slotNagBody` builds on it), so the two never word the
  * same slot differently. A zero side is left out rather than said — "0 quotas"
  * is chrome for something that isn't there. The prompt side says "quotas":
  * a period shows at most one prompt per quota, so the two counts agree.
