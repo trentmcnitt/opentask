@@ -688,6 +688,10 @@ describe('TM-G01: every SQL writer of occurrence_at / deadline_at / lead_from de
     // (`occurrenceDates`' `leadFrom`, `leadFor`). The migration writes it
     // once; Defer moves THIS instance's day by hand — never a derivation.
     'src/core/db/migrate-deadline-leads.ts': 'migrations',
+    // A pre-migration automatic target converted on reopen / restore (the
+    // deadlines page): its SQL fragment runs inside mark-done.ts and delete.ts,
+    // which stamp and snapshot it; it never writes a target, only clears one.
+    'src/core/tasks/auto-target-lead.ts': 'clears an automatic target (autoTargetToLead)',
     'src/core/tasks/task-segments.ts': 'Defer moves the lead day itself (deferLeads)',
   }
   const writer =

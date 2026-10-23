@@ -94,6 +94,7 @@ describe('TM8-M: the target-model migration', () => {
       nagOffKeptTarget: [nagOffPast, nagOffPassed],
       deadlineNoTargetToAuto: [bare],
       pullBackToDeadline: [nagOffPast, after],
+      targetlessRepeatToDefault: [],
     })
     expect(migrateDeadlineTargets(db, NOW)).toEqual(countsOf(plan))
 
@@ -129,6 +130,7 @@ describe('TM8-M: the target-model migration', () => {
       nagOffKeptTarget: 0,
       deadlineNoTargetToAuto: 0,
       pullBackToDeadline: 0,
+      targetlessRepeatToDefault: 0,
     }
     expect(countsOf(planDeadlineTargetMigration(db, NOW))).toEqual(zero)
     expect(migrateDeadlineTargets(db, NOW)).toEqual(zero)

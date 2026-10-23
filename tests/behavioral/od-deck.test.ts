@@ -706,6 +706,10 @@ describe('OD-G: every writer of a target applies the deck clear', () => {
     'src/core/db/migrate-deadline-targets.ts': 'migrations',
     // The deadlines page (2026-10-22): only clears automatic targets.
     'src/core/db/migrate-deadline-leads.ts': 'migrations',
+    // A pre-migration automatic target converted on reopen / restore (the
+    // deadlines page): its SQL fragment runs inside mark-done.ts and delete.ts,
+    // which stamp and snapshot it; it never writes a target, only clears one.
+    'src/core/tasks/auto-target-lead.ts': 'clears an automatic target (autoTargetToLead)',
     // A new row starts with `on_deck_day` NULL.
     'src/core/tasks/create.ts': 'new row',
     // The module that defines the stamp; no target of its own.
