@@ -166,18 +166,22 @@ export function TargetTodayButton({
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <TargetMenu
-        task={task}
-        timezone={timezone}
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-        onPick={pick}
+      {/* The confirm wraps the WHOLE menu, never sits between it and the
+          button: the Custom picker anchors on its child (`PopoverAnchor
+          asChild`), which must be the button itself — a wrapper component
+          there left the picker unanchored, off screen (CI, 2026-10-22). */}
+      <MaybeReplaceTarget
+        replaces={replaces}
+        pending={pending}
+        onCancel={() => setPending(null)}
+        onConfirm={(p) => (p.at ? onTargetAt(task, p.at) : onTargetToday(task))}
       >
-        <MaybeReplaceTarget
-          replaces={replaces}
-          pending={pending}
-          onCancel={() => setPending(null)}
-          onConfirm={(p) => (p.at ? onTargetAt(task, p.at) : onTargetToday(task))}
+        <TargetMenu
+          task={task}
+          timezone={timezone}
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+          onPick={pick}
         >
           <button
             type="button"
@@ -227,8 +231,8 @@ export function TargetTodayButton({
               <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
             )}
           </button>
-        </MaybeReplaceTarget>
-      </TargetMenu>
+        </TargetMenu>
+      </MaybeReplaceTarget>
     </span>
   )
 }
