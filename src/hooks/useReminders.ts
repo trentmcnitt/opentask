@@ -6,6 +6,7 @@ import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
+import { useReminderDayStart } from '@/components/PreferencesProvider'
 import {
   applyPromptMoves,
   groupWaiting,
@@ -1140,13 +1141,14 @@ export function useRemindersSummary(timezone: string): RemindersSummary<Reminder
   // snapshot it is a real render input, so the summary recomputes when it
   // changes and only then.
   const cache = useSyncExternalStore(subscribeToCache, readCache, readServerCache)
+  const dayStart = useReminderDayStart()
   useEffect(() => {
     if (remindersCache === null) void loadRemindersCache()
     const onFocus = () => void loadRemindersCache()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
-  return cache ? summarizeReminders(cache.groups, timezone) : null
+  return cache ? summarizeReminders(cache.groups, timezone, new Date(), dayStart) : null
 }
 
 /** The nav badge number: reminders waiting in slots that have started, plus Anytime. */

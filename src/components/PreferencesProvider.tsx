@@ -12,6 +12,7 @@ import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo } from '@/core/ai/models'
 import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { CHECK_IN_DAY_DEFAULT, type CheckInDay } from '@/lib/task-segments'
 import {
   DEFAULT_PREFS,
@@ -641,6 +642,17 @@ export function useTaskQueue(): {
     enabled: taskQueue,
     attemptsRolloverTime: taskQueue ? rolloverTime : null,
   }
+}
+
+/**
+ * Where the Reminders screen's day starts (2026-10-23, "Day starts at"): the
+ * user's day start with the task queue's switch on, else midnight — the
+ * server's `dayBoundaryForUser`, so "has this slot started" on the web
+ * (`slotHasStarted`, `naturalSlotIndex`) reads the day the roster is for.
+ */
+export function useReminderDayStart(): string {
+  const { taskQueue, rolloverTime } = useContext(PreferencesContext)
+  return taskQueue && rolloverTime ? rolloverTime : CALENDAR_DAY_START
 }
 
 /**

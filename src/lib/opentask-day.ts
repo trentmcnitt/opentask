@@ -122,6 +122,19 @@ export function openTaskDaySpan(
 }
 
 /**
+ * Wall-clock minutes from the day start (`dayStart`, HH:MM) to `minuteOfDay`
+ * (0..1439), 0..1439: where a time of day falls within an OpenTask day. A
+ * period that starts before the day start sorts at the END of the day. With
+ * `CALENDAR_DAY_START` it is the minute of the day itself. For the clients'
+ * "has this slot started" (`slotHasStarted`, `naturalSlotIndex`); the
+ * server's slot nag asks the same question in instants (`periodOpensAt`).
+ */
+export function minutesIntoDay(minuteOfDay: number, dayStart: string): number {
+  const start = parseHHMM(dayStart) ?? 0
+  return (((minuteOfDay - start) % 1440) + 1440) % 1440
+}
+
+/**
  * When a reminder period (`start`, HH:MM) opens within the OpenTask day
  * `date`: on that date when it starts at or after the rollover, else on the
  * next date — a 1:00 AM period, with the day starting at 3:00, is the END of

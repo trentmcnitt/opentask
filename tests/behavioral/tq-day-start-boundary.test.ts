@@ -45,6 +45,8 @@ import { considerTasks, getTaskSegments } from '@/core/tasks/task-segments'
 import { createTimeSlot } from '@/core/time-slots'
 import { pendingSlotNags } from '@/core/notifications/slot-nags'
 import { updatePreferences } from '@/core/users/preferences'
+import { slotHasStarted, summarizeReminders } from '@/lib/reminders-summary'
+import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -311,5 +313,45 @@ describe('TQ-D: "Day starts at" 03:00 — one boundary everywhere', () => {
     expect(queueToday('2026-01-17T00:30')).toBe('1 of 1')
     expect(queueToday('2026-01-17T02:59')).toBe('1 of 1')
     expect(queueToday('2026-01-17T03:00')).toBe('none')
+  })
+})
+
+describe('TQ-D: the web reads the same day (pure)', () => {
+  const slot = (id: number, start_time: string): TimeSlot => ({
+    id,
+    user_id: 1,
+    label: `Slot ${start_time}`,
+    start_time,
+    sort_order: 0,
+    created_at: '2026-01-01T00:00:00Z',
+  })
+  const early = slot(1, '07:00')
+  const eveningSlot = slot(2, '20:30')
+  const late = slot(3, '01:00')
+  const local = (iso: string) => new Date(at(iso))
+
+  test('TQ-D12: slotHasStarted / naturalSlotIndex / the badge count from the day start', () => {
+    // 00:30, the day starting at 03:00: the evening's day — every slot of it
+    // has started except a 1:00 AM one, which ends it.
+    const t0030 = local('2026-01-16T00:30')
+    expect(slotHasStarted(eveningSlot, tz, t0030, '03:00')).toBe(true)
+    expect(slotHasStarted(early, tz, t0030, '03:00')).toBe(true)
+    expect(slotHasStarted(late, tz, t0030, '03:00')).toBe(false)
+    expect(slotHasStarted(late, tz, local('2026-01-16T02:59'), '03:00')).toBe(true)
+    // 03:00: a new day, nothing started before its 07:00 slot.
+    expect(slotHasStarted(eveningSlot, tz, local('2026-01-16T03:00'), '03:00')).toBe(false)
+    // Midnight (the switch off): as it always was.
+    expect(slotHasStarted(eveningSlot, tz, t0030)).toBe(false)
+
+    const groups = [
+      { slot: late, reminders: [{ id: 1 }], considered: 0 },
+      { slot: early, reminders: [], considered: 0 },
+      { slot: eveningSlot, reminders: [{ id: 2 }], considered: 0 },
+    ]
+    expect(naturalSlotIndex(groups, tz, t0030, '03:00')).toBe(2) // the evening
+    expect(naturalSlotIndex(groups, tz, local('2026-01-16T01:30'), '03:00')).toBe(0) // late night
+    expect(naturalSlotIndex(groups, tz, t0030)).toBe(0) // midnight: the 1:00 one ahead → first
+    expect(summarizeReminders(groups, tz, t0030, '03:00').waitingSoFar).toBe(1)
+    expect(summarizeReminders(groups, tz, t0030).waitingSoFar).toBe(0)
   })
 })

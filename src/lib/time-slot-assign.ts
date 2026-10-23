@@ -217,16 +217,25 @@ export function naturalSlotIndex(
   groups: SlotIndexed[],
   timezone: string,
   now: Date = new Date(),
+  dayStart: string = '00:00',
 ): number {
   if (groups.length === 0) return 0
 
+  // Within the roster's day (2026-10-23): from `dayStart`, so at 00:30 with
+  // the day starting at 3:00 the evening's slot is still the latest started.
+  // `minutesIntoDay`'s rule, inline: src/lib/opentask-day.ts imports this file.
+  const into = (minute: number) => {
+    const ds = parseHHMM(dayStart) ?? 0
+    return (((minute - ds) % 1440) + 1440) % 1440
+  }
   const local = DateTime.fromJSDate(now).setZone(timezone)
-  const minutes = local.hour * 60 + local.minute
+  const minutes = into(local.hour * 60 + local.minute)
 
   let best = -1
   let bestStart = -1
   groups.forEach((group, index) => {
-    const start = group.slot ? parseHHMM(group.slot.start_time) : null
+    const raw = group.slot ? parseHHMM(group.slot.start_time) : null
+    const start = raw === null ? null : into(raw)
     if (start === null || start > minutes) return
     if (start > bestStart) {
       bestStart = start

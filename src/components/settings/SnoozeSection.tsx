@@ -79,7 +79,7 @@ export function SnoozeSection({
   return (
     <SettingsSection
       title="Defer"
-      description="Configure the default defer duration and morning start time."
+      description="Configure the default defer duration, the morning start time and when the day starts."
     >
       <div className="space-y-4">
         <DefaultSnoozeRow />
