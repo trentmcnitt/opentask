@@ -296,11 +296,12 @@ export function withDeckSection(
   groups: SortedTaskGroup[],
   timezone: string,
   now: Date,
+  opts: NowOptions = {},
 ): SortedTaskGroup[] {
   const decks: Task[] = []
   const projects: SortedTaskGroup[] = []
   for (const g of groups) {
-    const keep = (t: Task) => !inDeckSection(t, timezone, now)
+    const keep = (t: Task) => !inDeckSection(t, timezone, now, opts)
     const rest = g.tasks.filter(keep)
     decks.push(...g.tasks.filter((t) => !keep(t)))
     if (rest.length === g.tasks.length) projects.push(g)

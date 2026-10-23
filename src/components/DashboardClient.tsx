@@ -1050,6 +1050,12 @@ function HomeContent({
   const nowAvailable = grouping === 'project' && !listNarrowed
   // The task queue switch: with it on, a queued undated High folds (A8).
   const queueOn = taskQueue.enabled
+  // Now's options: the switch, and the rollover time the deadlines page's
+  // safety net is counted on (2026-10-22) — one object for every Now rule.
+  const nowOpts = useMemo(
+    () => ({ queue: queueOn, rolloverTime: taskQueue.attemptsRolloverTime }),
+    [queueOn, taskQueue.attemptsRolloverTime],
+  )
   // Now's On deck section (D2, `withDeckSection`): today's decks, with the
   // task queue on — part of what Now shows, so part of its count.
   const deckSection = nowAvailable && queueOn
@@ -1059,11 +1065,11 @@ function HomeContent({
       nowAvailable
         ? tasks_.filter(
             (t) =>
-              (deckSection && inDeckSection(t, timezone, now)) ||
-              isRelevantNow(t, timezone, now, { queue: queueOn }),
+              (deckSection && inDeckSection(t, timezone, now, nowOpts)) ||
+              isRelevantNow(t, timezone, now, nowOpts),
           ).length
         : 0,
-    [nowAvailable, deckSection, tasks_, timezone, now, queueOn],
+    [nowAvailable, deckSection, tasks_, timezone, now, nowOpts],
   )
   // Something is folded. When nothing is (every row relevant, or no rows),
   // there is no fold to lift: the strip hides, and Show all — which would
@@ -1080,8 +1086,8 @@ function HomeContent({
   const sortedGroups = useMemo(() => {
     const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
     if (!nowFolds) return sorted
-    const withDecks = deckSection ? withDeckSection(sorted, timezone, now) : sorted
-    return applyNowFolds(withDecks, timezone, now, { queue: queueOn })
+    const withDecks = deckSection ? withDeckSection(sorted, timezone, now, nowOpts) : sorted
+    return applyNowFolds(withDecks, timezone, now, nowOpts)
   }, [
     taskGroups,
     listSort,
@@ -1091,7 +1097,7 @@ function HomeContent({
     deckSection,
     timezone,
     now,
-    queueOn,
+    nowOpts,
   ])
   const orderedIds = useMemo(
     () => orderedTaskIds(sortedGroups, isCollapsed, isFoldOpen),

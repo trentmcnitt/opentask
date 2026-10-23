@@ -39,6 +39,7 @@ import {
 import {
   SEGMENT_NUDGE_THRESHOLD,
   isQueueKind,
+  onlyWithQueue,
   type HorizonValue,
   type SegmentKind,
   type SegmentLeft,
@@ -118,8 +119,8 @@ export function segmentCounts(segment: SegmentView): { handled: number; total: n
 
 /**
  * Whether the task queue's UI applies (PR 3): the switch from GET
- * /api/user/preferences (`useTaskQueue`) — or a queue panel itself, which the
- * server sends only with the switch on, so its rows never wear the
+ * /api/user/preferences (`useTaskQueue`) — or a queue panel (or the deadlines
+ * page) itself, which the server sends only with the switch on, so its rows never wear the
  * switch-off controls in the moment before the preferences load.
  */
 export function useQueueOn(kind: SegmentKind): boolean {
@@ -134,7 +135,7 @@ export function useQueueOn(kind: SegmentKind): boolean {
  */
 export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
   const { loaded, enabled } = useTaskQueue()
-  if (isQueueKind(kind)) return 'on'
+  if (onlyWithQueue(kind)) return 'on'
   if (!loaded) return 'pending'
   return enabled ? 'on' : 'off'
 }
@@ -149,6 +150,16 @@ export function segmentTitle(kind: SegmentKind): string {
   if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
   if (kind === 'deadlines') return taskQueueTitle(DEADLINES_PAGE_TITLE)
   return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
+}
+
+/**
+ * Whether a segment has "Defer all" (off today's list, back tomorrow —
+ * `segment_deferred_at`). Not the queue's two panels (spec rule 8: consider,
+ * Today and done), and not the DEADLINES page (2026-10-22): its Defer moves a
+ * row's lead day (`/api/task-segments/defer-lead`), one row at a time.
+ */
+export function offersDeferAll(kind: SegmentKind): boolean {
+  return !isQueueKind(kind) && kind !== 'deadlines'
 }
 
 /** `segmentTitle` for a segment: its header, section and list names. */

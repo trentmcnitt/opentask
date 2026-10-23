@@ -150,10 +150,24 @@ export function splitNow(
  * rows, as the server's `onDeckToday` leaves it out. At the top of Now (D2
  * review), sorted priority then id (`deckSectionOrder`). Only while Now's folds are on
  * (with Show all, a search or a filter, decks are ordinary rows in their
- * project), and only with the task queue on.
+ * project), and only with the task queue on. Pass the same `opts` as
+ * `isRelevantNow` (the queue switch, the rollover time).
  */
-export function inDeckSection(task: Task, timezone: string, now: Date): boolean {
-  return deckIsToday(task, timezone, now) && !isOverdue(task, now)
+export function inDeckSection(
+  task: Task,
+  timezone: string,
+  now: Date,
+  opts: NowOptions = {},
+): boolean {
+  if (!deckIsToday(task, timezone, now) || isOverdue(task, now)) return false
+  // THE DEADLINES PAGE (2026-10-22, plan §4): in its safety net a target-less
+  // deadline task is the page's — on deck or not — and relevant in its
+  // project (`isRelevantNow`), never in the On deck section too. The server's
+  // `onDeckToday` leaves it out the same way.
+  if (opts.queue && isDeadlinePageTask(task)) {
+    return !inSafetyNet(task.deadline_at!, timezone, now, opts.rolloverTime ?? null)
+  }
+  return true
 }
 
 /** The On deck section's order: priority, highest first, then id (A13). */

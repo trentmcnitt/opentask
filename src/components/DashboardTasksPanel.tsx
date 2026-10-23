@@ -16,6 +16,7 @@ import {
   SegmentNudge,
   TaskSegmentRow,
   handledRows,
+  offersDeferAll,
   segmentColor,
   segmentCounts,
   segmentKey,
@@ -26,7 +27,7 @@ import {
 import { usePanelPager } from '@/hooks/usePanelPager'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useTaskQueue } from '@/components/PreferencesProvider'
-import { isQueueKind } from '@/lib/task-segments'
+import { onlyWithQueue } from '@/lib/task-segments'
 
 /**
  * The dashboard's TASKS card, directly beneath the Reminders card (2026-10-11).
@@ -87,10 +88,11 @@ export function DashboardTasksPanel({
     actions.closePeek()
     pager.goTo(next)
   }
-  // A queue panel is only ever sent with the switch on (`useQueueOn`).
+  // A queue panel (or the deadlines page) is only ever sent with the switch
+  // on (`useQueueOn`).
   // Before the preferences load (`queue.loaded`) a non-queue page draws no
   // "Considered all" yet, so nothing appears or vanishes when they land.
-  const queueOn = isQueueKind(segment.horizon) || (queue.loaded && queue.enabled)
+  const queueOn = onlyWithQueue(segment.horizon) || (queue.loaded && queue.enabled)
   return (
     <section
       aria-label="Tasks"
@@ -125,7 +127,7 @@ export function DashboardTasksPanel({
                   onClick={() => void actions.considerAll(segment)}
                 />
               )}
-              {!isQueueKind(segment.horizon) && (
+              {offersDeferAll(segment.horizon) && (
                 <PagerSweep
                   kind="defer"
                   ariaLabel={`Defer all ${page.waiting} in ${page.label}`}

@@ -174,8 +174,12 @@ export interface UseRemindersReturn {
  * And it keeps each segment's "N of M" fixed for the day (`?handled=1`, the
  * day roster, 2026-10-22): rows decked, targeted or done today come back as
  * considered rows with `segment_left` (src/core/tasks/segment-roster.ts).
+ * And it draws the DEADLINES page (`?deadlines=1`, 2026-10-22): a deadline
+ * task with no target from its lead day, with `safety_net` and `seen` on each
+ * row, and the lead day's Upcoming heads-ups — without it (and with the task
+ * queue on) such a task would fall back into its horizon segment.
  */
-const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1'
+const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1&deadlines=1'
 
 export interface ReminderCreateInput {
   title: string
@@ -218,8 +222,17 @@ export interface TaskSegmentPayload {
   /** A horizon, or `upcoming` (2026-10-12, the heads-up segment). */
   horizon: SegmentKind
   /** `recurring`: a repeating task's occurrence (Upcoming only) — no Today, no Remove target.
-   *  `segment_left`: how a row that left the segment today was handled (`?handled=1`). */
-  tasks: (Task & { segment_state: SegmentState; recurring?: boolean; segment_left?: SegmentLeft })[]
+   *  `segment_left`: how a row that left the segment today was handled (`?handled=1`).
+   *  `safety_net` / `seen` (the deadlines page only, `?deadlines=1`): from the day before the
+   *  deadline seeing the row does not silence it — it stays `waiting`, `seen` says it was seen
+   *  this OpenTask day. */
+  tasks: (Task & {
+    segment_state: SegmentState
+    recurring?: boolean
+    segment_left?: SegmentLeft
+    safety_net?: boolean
+    seen?: boolean
+  })[]
   waiting: number
   considered: number
   deferred: number

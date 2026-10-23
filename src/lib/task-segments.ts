@@ -74,6 +74,15 @@ export function isQueueKind(kind: SegmentKind): kind is QueueKind {
 }
 
 /**
+ * Whether the server sends this segment only with the task-queue switch on:
+ * the queue's two panels and the deadlines page (2026-10-22). A client that
+ * receives one knows the switch is on before its preferences load.
+ */
+export function onlyWithQueue(kind: SegmentKind): boolean {
+  return isQueueKind(kind) || kind === 'deadlines'
+}
+
+/**
  * The order the screens walk the segments: the DEADLINES page first (Trent,
  * 10-22: "the deadlines page is FIRST in the queue carousel" — it is the only
  * queue page that nags), then the queue's two panels (spec rule 6: "the first

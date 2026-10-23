@@ -15,6 +15,7 @@ import {
   SegmentNudge,
   TaskSegmentRow,
   handledRows,
+  offersDeferAll,
   segmentCounts,
   segmentColor,
   segmentKey,
@@ -24,7 +25,6 @@ import {
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { isQueueKind } from '@/lib/task-segments'
 
 /**
  * One task segment on /reminders, as a SECTION shaped exactly like a slot's
@@ -123,7 +123,7 @@ export function TaskSegmentGroup({
             <span className="hidden sm:inline">Considered all</span>
           </button>
         )}
-        {open && waiting.length > 0 && !isQueueKind(segment.horizon) && (
+        {open && waiting.length > 0 && offersDeferAll(segment.horizon) && (
           <button
             type="button"
             onClick={() => void actions.deferAll(segment)}
