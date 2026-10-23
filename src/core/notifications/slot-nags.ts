@@ -16,6 +16,8 @@
  *  - no Wake–Sleep window and no top-of-the-hour alignment — OpenTask has no
  *    time-of-day behaviour; the phone's sleep mode handles nights. The nag
  *    comes one interval after the slot's own push or the last nag.
+ *  - no sound — a silent banner (ruling 5: sound only on overdue). The
+ *    slot-open push keeps its sound for now.
  * Do not add them back without Trent.
  *
  * WHY IT LOOKS LIKE A BUG: REDESIGN-V03 §6 says a reminder carries no debt,
@@ -210,6 +212,8 @@ export async function checkSlotNags(nowOverride?: Date): Promise<void> {
         count: nag.count,
         promptCount: nag.promptCount,
         body: slotNagBody(nag.count, nag.promptCount, nag.otherSlots),
+        // A silent banner (ruling 5: sound only on overdue).
+        silent: true,
       })
     }
   } catch (err) {

@@ -21,6 +21,7 @@ import { getDb } from '@/core/db'
 import { createTask, markDone } from '@/core/tasks'
 import { pendingSlotNags, purgeOldSlotNags, slotNagBody } from '@/core/notifications/slot-nags'
 import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
+import { buildSlotReminderNotification } from '@/core/notifications/apns'
 import { claimNagSend, stampNagSend, SLOT_NAG_KEY } from '@/core/notifications/nag-sends'
 import {
   setupTestDb,
@@ -248,6 +249,60 @@ describe('Unfinished-slot nag — what it sends', () => {
     expect(slotNagBody(3, 0, 0)).toBe('3 reminders waiting')
     expect(slotNagBody(3, 0, 1)).toBe('3 reminders waiting, and 1 earlier slot')
     expect(slotNagBody(3, 0, 2)).toBe('3 reminders waiting, and 2 earlier slots')
+  })
+
+  /**
+   * RN-013b: the nag is a SILENT banner (ruling 5: sound only on overdue); the
+   * slot-open push keeps its sound. Same category, thread, collapse id and
+   * userInfo either way, so the nag still replaces the slot's banner.
+   */
+  test('RN-013b: the nag payload has no sound; the slot-open payload is unchanged', () => {
+    const open = buildSlotReminderNotification('tok', 'io.mcnitt.opentask', {
+      slotId: 7,
+      slotLabel: 'Morning',
+      count: 3,
+      promptCount: 1,
+    })
+    expect(open.buildApnsOptions()).toEqual({
+      aps: {
+        alert: { title: 'Morning', body: '3 reminders · 1 quota waiting' },
+        category: 'SLOT_REMINDER',
+        'thread-id': 'ot-reminders',
+        sound: 'default',
+        'interruption-level': 'active',
+      },
+      slot_id: 7,
+      slot_label: 'Morning',
+      reminder_count: 4,
+      prompt_count: 1,
+      deck_count: 0,
+    })
+    expect(open.options.collapseId).toBe('slot-7')
+
+    const nag = buildSlotReminderNotification('tok', 'io.mcnitt.opentask', {
+      slotId: 7,
+      slotLabel: 'Morning',
+      count: 3,
+      promptCount: 1,
+      body: slotNagBody(3, 1, 1),
+      silent: true,
+    })
+    const { aps, ...data } = nag.buildApnsOptions() as { aps: Record<string, unknown> }
+    expect(aps).not.toHaveProperty('sound')
+    expect(aps).toEqual({
+      alert: { title: 'Morning', body: '3 reminders · 1 quota waiting, and 1 earlier slot' },
+      category: 'SLOT_REMINDER',
+      'thread-id': 'ot-reminders',
+      'interruption-level': 'active',
+    })
+    expect(data).toEqual({
+      slot_id: 7,
+      slot_label: 'Morning',
+      reminder_count: 4,
+      prompt_count: 1,
+      deck_count: 0,
+    })
+    expect(nag.options.collapseId).toBe('slot-7')
   })
 
   /** RN-014: nothing waiting, nothing said. */
