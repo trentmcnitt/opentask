@@ -68,6 +68,8 @@ interface PreferencesContextValue {
   sleepTime: string
   sleepSlotId: number | null
   padPresets: TimeSetting[]
+  /** "Day starts at": a setting, or null when unset (the first period). */
+  dayStart: TimeSetting | null
   setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) => void
   /**
    * Re-read the anchor times from the server (a reminder period changed, an
@@ -170,6 +172,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   sleepTime: '22:00',
   sleepSlotId: null,
   padPresets: DEFAULT_PREFS.padPresets,
+  dayStart: null,
   setAnchorPrefs: () => {},
   reloadPreferences: async () => false,
   defaultGrouping: 'project',
@@ -430,7 +433,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // without the user touching them. They are therefore never marked dirty —
   // Settings writes them with the server's answer (or the same resolver,
   // optimistically) — and a reload takes the server's values for those seven
-  // fields only, leaving every other field and the dirty set alone. Reloaded
+  // fields (and "Day starts at") only, leaving every other field and the dirty set alone. Reloaded
   // after a period edit or undo in Settings (`TimeSlotSettings`), and when
   // Settings opens or its window regains focus (`SnoozeSection`). Deliberately
   // NOT on sync events: every page already holds its own stream, and a second
@@ -581,6 +584,7 @@ export function useAnchorTimes() {
     wake: { time: ctx.wakeTime, slot_id: ctx.wakeSlotId },
     sleep: { time: ctx.sleepTime, slot_id: ctx.sleepSlotId },
     pad: ctx.padPresets,
+    dayStart: ctx.dayStart,
     setAnchorPrefs: ctx.setAnchorPrefs,
     reloadPreferences: ctx.reloadPreferences,
   }
