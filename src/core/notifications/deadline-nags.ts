@@ -59,7 +59,8 @@ import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { APP_URL } from '@/core/notifications/format'
-import { nagIntervalMinutes, tiersOf, type NagTiers, type UserTierRow } from './nag-ladder'
+import { nagIntervalMinutes, userNagTiers, type NagTiers } from './nag-ladder'
+import { claimNagSend, nagSendDue } from './nag-sends'
 import { notifiableUsers } from './notifiable-users'
 import { isWebPushConfigured, sendPushNotification } from './web-push'
 import { DEADLINES_NAG_COLLAPSE_ID, isApnsConfigured, sendApnsDeadlinesNag } from './apns'
@@ -86,14 +87,14 @@ export function countedDeadlineRows(rows: SegmentTask[]): SegmentTask[] {
   )
 }
 
-/** Minutes between nags for these rows — the shortest row's — or null (none nags). Pure. */
+/** Minutes between nags for these rows — the shortest row's — or null (no rows). Pure. */
 export function deadlineNagInterval(rows: SegmentTask[], tiers: NagTiers): number | null {
   let best: number | null = null
   for (const row of rows) {
     const minutes = nagIntervalMinutes('deadlines', row.task.priority, tiers, {
       safetyNet: row.safetyNet === true,
     })
-    if (minutes !== null && minutes > 0 && (best === null || minutes < best)) best = minutes
+    if (minutes > 0 && (best === null || minutes < best)) best = minutes
   }
   return best
 }
@@ -149,55 +150,6 @@ export function deadlineNagContent(
   }
 }
 
-/** Whole minutes from `from` to `to` (ISO / Date), on the minute grid the cron runs on. */
-function minutesBetween(from: string, to: Date): number {
-  return Math.floor(to.getTime() / 60000) - Math.floor(Date.parse(from) / 60000)
-}
-
-function lastSent(userId: number, key: string): string | null {
-  const row = getDb()
-    .prepare('SELECT last_sent_at FROM nag_sends WHERE user_id = ? AND key = ?')
-    .get(userId, key) as { last_sent_at: string } | undefined
-  return row?.last_sent_at ?? null
-}
-
-/** Whether `key` may send for `userId` at `now`, `intervalMinutes` after its last send. */
-export function nagSendDue(userId: number, key: string, intervalMinutes: number, now: Date) {
-  const last = lastSent(userId, key)
-  return last === null || minutesBetween(last, now) >= intervalMinutes
-}
-
-/**
- * CLAIM a send (nag-map fix #5): true when this call may send, recording
- * `now` as the last send. A compare-and-swap on the value it read, so a
- * second claim for the same moment — a double tick — loses.
- */
-export function claimNagSend(
-  userId: number,
-  key: string,
-  intervalMinutes: number,
-  now: Date,
-): boolean {
-  const db = getDb()
-  const last = lastSent(userId, key)
-  const at = now.toISOString()
-  if (last === null) {
-    return (
-      db
-        .prepare('INSERT OR IGNORE INTO nag_sends (user_id, key, last_sent_at) VALUES (?, ?, ?)')
-        .run(userId, key, at).changes === 1
-    )
-  }
-  if (minutesBetween(last, now) < intervalMinutes) return false
-  return (
-    db
-      .prepare(
-        'UPDATE nag_sends SET last_sent_at = ? WHERE user_id = ? AND key = ? AND last_sent_at = ?',
-      )
-      .run(at, userId, key, last).changes === 1
-  )
-}
-
 /**
  * Whether the user has any task the page could hold — one statement, so the
  * page itself is only built for a user with a target-less deadline task.
@@ -214,21 +166,10 @@ function hasDeadlineCandidate(userId: number): boolean {
     .get(userId)
 }
 
-function userTiers(userId: number): NagTiers {
-  const row = getDb()
-    .prepare(
-      `SELECT auto_snooze_minutes, auto_snooze_low_minutes, auto_snooze_medium_minutes,
-              auto_snooze_high_minutes, auto_snooze_urgent_minutes
-       FROM users WHERE id = ?`,
-    )
-    .get(userId) as UserTierRow
-  return tiersOf(row)
-}
-
 /** The shortest interval any page row could set for these tiers (the safety net's rungs). */
 export function fastestDeadlineInterval(tiers: NagTiers): number {
-  const rungs = [0, 1, 2, 3, 4].map(
-    (p) => nagIntervalMinutes('deadlines', p, tiers, { safetyNet: true }) ?? Infinity,
+  const rungs = [0, 1, 2, 3, 4].map((p) =>
+    nagIntervalMinutes('deadlines', p, tiers, { safetyNet: true }),
   )
   return Math.max(1, Math.min(...rungs))
 }
@@ -247,7 +188,7 @@ export function pendingDeadlineNags(now: Date = new Date()): PendingDeadlineNag[
   const pending: PendingDeadlineNag[] = []
   for (const user of notifiableUsers()) {
     if (!hasDeadlineCandidate(user.id)) continue
-    const tiers = userTiers(user.id)
+    const tiers = userNagTiers(user.id)
     // Not due even at the fastest pace any row could set: skip building the
     // page (every open task, Upcoming's rrule walks) this minute.
     if (!nagSendDue(user.id, DEADLINES_NAG_KEY, fastestDeadlineInterval(tiers), now)) continue

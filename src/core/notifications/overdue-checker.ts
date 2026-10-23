@@ -117,7 +117,7 @@ interface NotificationBucket {
 function getEffectiveInterval(task: OverdueTask): number {
   if (task.auto_snooze_minutes !== null) return task.auto_snooze_minutes
   // The tier rung comes from the one ladder (nag-ladder.ts, ruling 1) — the
-  // overdue rows are the user's tiers as set, never null.
+  // overdue row is the user's tiers as set.
   const tiers = {
     unset: task.user_auto_snooze_minutes,
     low: task.user_auto_snooze_low_minutes,
@@ -125,7 +125,7 @@ function getEffectiveInterval(task: OverdueTask): number {
     high: task.user_auto_snooze_high_minutes,
     urgent: task.user_auto_snooze_urgent_minutes,
   }
-  return nagIntervalMinutes('overdue', task.priority, tiers) ?? 0
+  return nagIntervalMinutes('overdue', task.priority, tiers)
 }
 
 /** Check whether this cron cycle is a notification boundary for the task. */

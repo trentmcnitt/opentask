@@ -51,10 +51,10 @@ import {
   DEADLINES_NAG_KEY,
   DEADLINES_PAGE_PATH,
   checkDeadlineNags,
-  claimNagSend,
   fastestDeadlineInterval,
   pendingDeadlineNags,
 } from '@/core/notifications/deadline-nags'
+import { claimNagSend } from '@/core/notifications/nag-sends'
 import { notifiableUsers, notifiableUserSql } from '@/core/notifications/notifiable-users'
 import { checkOverdueTasks } from '@/core/notifications/overdue-checker'
 import { sendPushNotification } from '@/core/notifications/web-push'
@@ -109,12 +109,13 @@ afterEach(() => {
 afterAll(() => teardownTestDb())
 
 describe('DN-001 the ladder table', () => {
-  test('overdue reads the tiers as set; considering is ×2 with Low and Unset silent', () => {
+  test('overdue reads the tiers as set; considering is ×2 at every priority', () => {
     const row = (kind: 'overdue' | 'deadlines', net = false) =>
       [0, 1, 2, 3, 4].map((p) => nagIntervalMinutes(kind, p, DEFAULT_TIERS, { safetyNet: net }))
     expect(row('overdue')).toEqual([30, 240, 60, 15, 5])
-    expect(row('deadlines')).toEqual([null, null, 120, 30, 10])
-    // The safety net nags at least hourly: Low/Unset 60, Medium brought up to 60.
+    // Trent, 10-22: one considering ladder, no special cases — Low 480, Unset 60.
+    expect(row('deadlines')).toEqual([60, 480, 120, 30, 10])
+    // The safety net nags at least hourly: Low and Medium brought up to 60.
     expect(row('deadlines', true)).toEqual([60, 60, 60, 30, 10])
     expect(SAFETY_NET_FLOOR_MINUTES).toBe(60)
   })
@@ -127,7 +128,7 @@ describe('DN-001 the ladder table', () => {
     expect(nagIntervalMinutes('deadlines', 2, tiers, { safetyNet: true })).toBe(40)
   })
 
-  test('slot nag and quota prompts are listed at the considering pace (not wired)', () => {
+  test('the slot nag and quota prompts are on the same considering rungs', () => {
     expect(NAG_LADDER.slot_nag).toEqual(NAG_LADDER.deadlines)
     expect(NAG_LADDER.quota_prompt).toEqual(NAG_LADDER.deadlines)
   })
@@ -148,10 +149,17 @@ describe('DN-002 pacing by the most demanding waiting row', () => {
     expect(pending()).toMatchObject([{ intervalMinutes: 10 }])
   })
 
-  test('Low and Unset never nag outside the safety net', () => {
+  test('Low nags every 480 min, Unset every 60, outside the safety net', () => {
     onPage(1)
+    expect(pending()).toMatchObject([{ intervalMinutes: 480, count: 1 }])
     onPage(0)
-    expect(pending()).toEqual([])
+    expect(pending()).toMatchObject([{ intervalMinutes: 60, count: 2 }])
+  })
+
+  test('a Low tier the user changed moves the Low rung (×2)', () => {
+    onPage(1)
+    getDb().prepare('UPDATE users SET auto_snooze_low_minutes = 100 WHERE id = ?').run(TEST_USER_ID)
+    expect(pending()).toMatchObject([{ intervalMinutes: 200 }])
   })
 
   test('a Low row in the safety net nags hourly, and sets the pace beside a Medium', () => {

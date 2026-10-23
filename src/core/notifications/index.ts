@@ -23,12 +23,8 @@ export {
   slotNagBody,
   MAX_NAGS_PER_DAY,
 } from './slot-nags'
-export {
-  checkDeadlineNags,
-  pendingDeadlineNags,
-  claimNagSend,
-  DEADLINES_NAG_KEY,
-} from './deadline-nags'
+export { checkDeadlineNags, pendingDeadlineNags, DEADLINES_NAG_KEY } from './deadline-nags'
+export { claimNagSend, nagSendDue, stampNagSend } from './nag-sends'
 export { notifiableUsers } from './notifiable-users'
 export { NAG_LADDER, nagIntervalMinutes } from './nag-ladder'
 export { dismissNotificationsForTasks } from './dismiss'
