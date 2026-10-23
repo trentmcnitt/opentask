@@ -18,7 +18,7 @@ import {
 } from '@/lib/editor-target-labels'
 import { DateTime } from 'luxon'
 
-const BEFORE = new Date('2026-10-12T15:00:00Z')
+const TZ = 'America/Chicago'
 
 describe("leadLine — the editor's Lead row (the deadlines page, 2026-10-22)", () => {
   // Fri Oct 30 2026, 11:59 PM Chicago (CDT).
