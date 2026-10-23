@@ -24,12 +24,15 @@
  *    override (`tasks.auto_snooze_minutes`).
  *  - `deadlines` — the deadlines-page nag (deadline-nags.ts), per row, the
  *    shortest wins.
- *  - `slot_nag` — the unfinished-slot nag (slot-nags.ts). Reminders are paced
- *    at the Unset rung for now (the slot is the unit, and a reminder's
- *    priority is prominence, not interruption — REDESIGN-V03 §6).
+ *  - `slot_nag` — the unfinished-slot nag (slot-nags.ts), per waiting item:
+ *    each reminder at its own priority, each quota prompt at its quota's; the
+ *    shortest wins (Trent, 2026-10-22 — a reminder's priority is prominence
+ *    AND how often its slot nags, REDESIGN-V03 §6). The slot stays the unit:
+ *    one nag per user, never one per item.
  *  - `quota_prompt` — DOCUMENTED ONLY. A quota prompt has no push of its own:
- *    it rides the slot push and the slot nag, so the `slot_nag` row paces it.
- *    The row says where a prompt's own nag would sit if it ever had one.
+ *    it rides the slot push and the slot nag, so the `slot_nag` row paces it
+ *    (at the quota's priority). The row says where a prompt's own nag would
+ *    sit if it ever had one — the same rungs.
  *
  * A page-level nag has no single task to read a per-task override from; the
  * deadlines nag only honours a task's Nag OFF (0), by leaving the row out.

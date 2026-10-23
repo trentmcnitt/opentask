@@ -5,9 +5,17 @@
  * reminders (or quota prompts) waiting, send ONE notification — not one per
  * slot — naming the most recent unfinished slot and counting the rest ("N
  * earlier slots"). It repeats at the nag ladder's considering pace
- * (nag-ladder.ts, `slot_nag`): the user's Unset tier ×2, 60 minutes by
- * default. Reminders carry no priority of their own here yet, so every slot
- * nag is paced at the Unset rung.
+ * (nag-ladder.ts, `slot_nag`: the user's overdue tier ×2 — Urgent 10, High
+ * 30, Medium 120, Low 480, Unset 60 by default).
+ *
+ * PRIORITY PACES IT (Trent, 2026-10-22). Every waiting item the nag covers —
+ * each reminder, and each quota prompt at its quota's priority, in EVERY
+ * unfinished opened slot, not just the one it names — has its own rung; the
+ * SHORTEST interval wins. Shortest interval, not highest priority: the
+ * ladder is not monotonic (an Unset item, 60, outpaces a Medium one, 120,
+ * with the shipped tiers, and the tiers are the user's to set). Finishing
+ * the fast item drops the pace back to the next rung, counted from the last
+ * send. Still ONE nag per user: priority sets how often, never how many.
  *
  * THE 2026-10-22 RULING (Trent): one considering ladder, no special cases.
  * The rules this module used to carry are gone, on purpose:
@@ -42,7 +50,10 @@
  * PACING: `nag_sends` (key `slot-nag`). The slot-open push stamps it too
  * (`checkSlotReminders`), so the nag waits a full interval after a slot's own
  * banner instead of following it a minute later; a slot opening this exact
- * minute also stands the nag down (`usersNotifiedThisMinute`).
+ * minute also stands the nag down (`usersNotifiedThisMinute`). The interval
+ * depends on what is waiting, so the cheap gate asks first whether even the
+ * FASTEST rung is due; only then is the roster read and the real interval
+ * checked.
  *
  * DESIGN: a pure, read-only decision function (`pendingSlotNags`) split from
  * the sender (`checkSlotNags`), so the decision is testable without APNs.
@@ -58,19 +69,26 @@ import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
 import { notifiableUsers, type NotifiableUser } from '@/core/notifications/notifiable-users'
-import { nagIntervalMinutes, userNagTiers } from '@/core/notifications/nag-ladder'
+import { nagIntervalMinutes, userNagTiers, type NagTiers } from '@/core/notifications/nag-ladder'
 import { claimNagSend, nagSendDue, SLOT_NAG_KEY } from '@/core/notifications/nag-sends'
 
 const DEFAULT_RETENTION_DAYS = 30
 
-/** Reminders have no priority of their own on the ladder yet: the Unset rung. */
-const SLOT_NAG_PRIORITY = 0
+/** Every priority the ladder has a rung for (Unset … Urgent). */
+const PRIORITIES = [0, 1, 2, 3, 4]
 
 interface UnfinishedSlot {
   slot: TimeSlot
   count: number
   promptCount: number
+  /** The priority of each waiting item (`SlotWaiting.priorities`). */
+  priorities: number[]
   start: number
+}
+
+/** The slot nag's interval for these waiting items: the shortest rung. */
+function slotNagInterval(priorities: number[], tiers: NagTiers): number {
+  return Math.min(...priorities.map((p) => nagIntervalMinutes('slot_nag', p, tiers)))
 }
 
 /**
@@ -100,7 +118,13 @@ function unfinishedOpenedSlots(
     const inSlot = waiting.get(slot.id)
     if (!inSlot || inSlot.reminders + inSlot.prompts === 0) continue
 
-    unfinished.push({ slot, count: inSlot.reminders, promptCount: inSlot.prompts, start })
+    unfinished.push({
+      slot,
+      count: inSlot.reminders,
+      promptCount: inSlot.prompts,
+      priorities: inSlot.priorities,
+      start,
+    })
   }
 
   return unfinished.sort((a, b) => b.start - a.start)
@@ -153,10 +177,11 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
   const alreadyNotified = usersNotifiedThisMinute(now)
 
   for (const user of notifiableUsers()) {
-    // The cheap gates first: the clock against `nag_sends`, then the
+    // The cheap gates first: the clock against `nag_sends` at the FASTEST
+    // rung (if even that isn't due, nothing waiting could be), then the
     // same-minute slot push. Only then the slots and their contents.
-    const interval = nagIntervalMinutes('slot_nag', SLOT_NAG_PRIORITY, userNagTiers(user.id))
-    if (!nagSendDue(user.id, SLOT_NAG_KEY, interval, now)) continue
+    const tiers = userNagTiers(user.id)
+    if (!nagSendDue(user.id, SLOT_NAG_KEY, slotNagInterval(PRIORITIES, tiers), now)) continue
     if (alreadyNotified.has(user.id)) continue
 
     const slots = listTimeSlots(user.id)
@@ -165,6 +190,13 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
 
     const unfinished = unfinishedOpenedSlots(user, slots, now, minuteOfDay)
     if (unfinished.length === 0) continue
+
+    // The real pace: the shortest rung among everything this nag covers.
+    const interval = slotNagInterval(
+      unfinished.flatMap((u) => u.priorities),
+      tiers,
+    )
+    if (!nagSendDue(user.id, SLOT_NAG_KEY, interval, now)) continue
 
     const [target] = unfinished
     pending.push({
