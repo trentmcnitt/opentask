@@ -50,6 +50,7 @@ import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { onDeckToday } from '@/core/tasks/deck'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
+import { SLOT_NAG_KEY, stampNagSend } from '@/core/notifications/nag-sends'
 
 /** The slots whose start time is the current local minute for this user. */
 export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): TimeSlot[] {
@@ -75,8 +76,8 @@ export interface SlotWaiting {
  * A prompt is waiting while it is neither considered nor done (`promptWaiting`,
  * the same test every client uses). Prompts come from the phase-1 computation
  * as-is — one quota query per call. Called only for a user whose slot opens
- * this minute, or who is awake at the top of the hour with nags left to spend
- * today; never once a minute for every user.
+ * this minute, or whose slot nag is due by `nag_sends`; never once a minute
+ * for every user.
  */
 export function waitingBySlot(
   userId: number,
@@ -167,7 +168,12 @@ export async function checkSlotReminders(nowOverride?: Date): Promise<void> {
   if (!isApnsConfigured()) return
 
   try {
-    for (const item of pendingSlotNotifications(nowOverride ?? new Date())) {
+    const now = nowOverride ?? new Date()
+    for (const item of pendingSlotNotifications(now)) {
+      // The slot's own banner counts as the nag's last send (nag-sends.ts):
+      // the nag then waits a full interval after it, instead of following it
+      // a minute later.
+      stampNagSend(item.userId, SLOT_NAG_KEY, now)
       await sendApnsSlotReminder(item.userId, {
         slotId: item.slotId,
         slotLabel: item.slotLabel,

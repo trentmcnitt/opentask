@@ -76,7 +76,6 @@ import { getAnchorTimes } from '@/core/users/anchor-times'
 import { log } from '@/lib/logger'
 import { onSyncEvent, offSyncEvent, type SyncEventInfo, type SyncListener } from '@/lib/sync-events'
 import { parseHHMM } from '@/lib/time-slot-assign'
-import { isAwake } from './slot-nags'
 import { sendApnsWidgetReload } from './apns'
 
 /** Settle delay before the first push after a quiet spell (merges a bulk action's events). */
@@ -210,11 +209,30 @@ export function createWidgetPushCoalescer<Key>(options: WidgetPushCoalescerOptio
 }
 
 /**
+ * Is `minutes` (minutes past local midnight) inside the user's waking window?
+ * At or after wake, strictly before sleep. A sleep at or before wake wraps
+ * past midnight ([wake, 24:00) ∪ [00:00, sleep)), so wake == sleep reads as
+ * awake all day. A malformed HH:MM is never awake.
+ *
+ * Widget push's quiet hours are the only reader since 2026-10-22: the slot
+ * nag lost its Wake–Sleep window (Trent: OpenTask has no time-of-day
+ * behaviour; the phone's sleep mode handles nights). This window protects
+ * the iOS widget-push budget, not anyone's sleep.
+ */
+export function isAwake(minutes: number, wakeTime: string, sleepTime: string): boolean {
+  const wake = parseHHMM(wakeTime)
+  const sleep = parseHHMM(sleepTime)
+  if (wake === null || sleep === null) return false
+
+  if (sleep > wake) return minutes >= wake && minutes < sleep
+  return minutes >= wake || minutes < sleep
+}
+
+/**
  * When the user's quiet hours end, if `now` is inside them; otherwise null.
  *
- * Quiet hours are the complement of `isAwake` (slot-nags.ts) — the same
- * waking window the hourly nag uses, including its wrap-past-midnight rule and
- * "wake == sleep means awake all day". Unlike the nag, a malformed time or
+ * Quiet hours are the complement of `isAwake` (above), including its
+ * wrap-past-midnight rule and "wake == sleep means awake all day". Unlike the nag, a malformed time or
  * timezone here means NO quiet hours: failing open costs a push, failing
  * closed would leave a widget stale all night.
  */

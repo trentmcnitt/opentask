@@ -611,8 +611,9 @@ CREATE TABLE IF NOT EXISTS time_slots (
 );
 CREATE INDEX IF NOT EXISTS idx_time_slots_user ON time_slots(user_id, start_time);
 
--- Slot nags — the ONLY state behind the hourly nag (see
--- src/core/notifications/slot-nags.ts for why the nag exists at all).
+-- Slot nags — RETIRED 2026-10-22: the slot nag paces through `nag_sends`
+-- (key 'slot-nag') and nothing writes this table any more; the weekly purge
+-- drains old rows, after which it can be dropped. Historical notes follow.
 --
 -- Notification plumbing, deliberately NOT in `user_daily_stats`: that table is
 -- user-facing (completions, tasks created, snoozes) and a delivery counter is
@@ -633,8 +634,8 @@ CREATE TABLE IF NOT EXISTS slot_nags (
 -- When a nag was last sent, per user and source (nag-map fix #5, 2026-10-22).
 -- A nag sends when now − last_sent_at ≥ its interval, in whole minutes, so a
 -- restart, a double tick or downtime can neither repeat nor lose a send.
--- Keys: 'deadlines-page' (src/core/notifications/deadline-nags.ts). The other
--- senders keep their own schemes for now (docs/NOTIFICATIONS.md § nag_sends).
+-- Keys: 'deadlines-page' (src/core/notifications/deadline-nags.ts), 'slot-nag'
+-- (slot-nags.ts; the slot-open push stamps it too). See nag-sends.ts.
 CREATE TABLE IF NOT EXISTS nag_sends (
   user_id      INTEGER NOT NULL REFERENCES users(id),
   key          TEXT NOT NULL,

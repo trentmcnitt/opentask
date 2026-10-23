@@ -9,12 +9,13 @@
  * one per task — at the pace of the most demanding row waiting:
  *
  *  - the CONSIDERING rung of the nag ladder (nag-ladder.ts): the user's
- *    overdue tier ×2 for Medium, High and Urgent; Low and Unset never nag;
+ *    overdue tier ×2 at every priority — Urgent 10, High 30, Medium 120,
+ *    Low 480, Unset 60 with the shipped tiers;
  *  - in the SAFETY NET (from the day before the deadline on, past it too) at
- *    least hourly, Low and Unset included (A2).
- *  Each counted row has its interval; the shortest sets the pace. With the
- *  shipped tiers (Medium 60, High 15, Urgent 5) that is the highest
- *  priority's: Medium 120, High 30, Urgent 10, the net 60 at most.
+ *    least hourly (A2).
+ *  Each counted row has its interval; the SHORTEST sets the pace, so adding a
+ *  row can only make the nag come sooner. With the shipped tiers that is not
+ *  always the highest priority's: an Unset row (60) outpaces a Medium (120).
  *
  * WHICH ROWS COUNT. The page's own rows (`getTaskSegments(…, { deadlineRows })`,
  * so membership, the switch, queue precedence and "seen" are the page's,

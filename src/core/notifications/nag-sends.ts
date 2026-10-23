@@ -12,6 +12,9 @@
 
 import { getDb } from '@/core/db'
 
+/** The slot nag's key (slot-nags.ts; stamped by the slot-open push in slot-reminders.ts). */
+export const SLOT_NAG_KEY = 'slot-nag'
+
 /** Whole minutes from `from` (ISO) to `to`, on the minute grid the cron runs on. */
 function minutesBetween(from: string, to: Date): number {
   return Math.floor(to.getTime() / 60000) - Math.floor(Date.parse(from) / 60000)

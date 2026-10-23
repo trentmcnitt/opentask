@@ -1,7 +1,7 @@
 /**
  * THE DEADLINES NAG (2026-10-22; src/core/notifications/deadline-nags.ts,
  * nag-ladder.ts, notifiable-users.ts). `dn-` tests:
- *  - the ladder table (overdue as set; considering ×2, Low/Unset silent; the
+ *  - the ladder table (overdue as set; considering ×2 at every priority; the
  *    safety net's hourly floor);
  *  - pacing by the most demanding waiting row, and what leaves the count
  *    (seen, decks) — seen never silences the safety net;
@@ -147,6 +147,13 @@ describe('DN-002 pacing by the most demanding waiting row', () => {
   test('Urgent paces at its tier ×2', () => {
     onPage(4)
     expect(pending()).toMatchObject([{ intervalMinutes: 10 }])
+  })
+
+  test('the shortest row sets the pace: an Unset row (60) outpaces a Medium (120)', () => {
+    onPage(2)
+    expect(pending()).toMatchObject([{ intervalMinutes: 120 }])
+    onPage(0)
+    expect(pending()).toMatchObject([{ intervalMinutes: 60, count: 2 }])
   })
 
   test('Low nags every 480 min, Unset every 60, outside the safety net', () => {

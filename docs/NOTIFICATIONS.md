@@ -198,7 +198,7 @@ The last value sent per user is kept in memory (`badge-state.ts`, on `globalThis
 
 ### Time-slot notifications (reminders and quota prompts)
 
-Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and an hourly nag re-surfaces unfinished slots, at most three a day (`slot-nags.ts`). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. The long-press checklist fetches the slot's live group from `GET /api/reminders`.
+Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and a nag re-surfaces unfinished slots (`slot-nags.ts`, § The slot nag below). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. The long-press checklist fetches the slot's live group from `GET /api/reminders`.
 
 **Quota prompts count exactly like reminders** (2026-09-24, phase 3 of quota reminders). A slot's waiting items are its reminders plus its quota prompts that are neither considered nor done (`waitingBySlot`, reading `getQuotaPromptsBySlot`). So:
 
@@ -217,7 +217,7 @@ Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push 
 - Never in the badge: `countCurrentlyDue` excludes quotas (`is_tracked` / `progress_target > 1`) and reminders.
 - Task segments (2026-10-10) are not slot items: `waitingBySlot` never reads them, so they never keep a slot unfinished, never add to a body's count and never trigger a push.
 - On deck (2026-10-20, docs/TASK-MODEL.md § On deck): a slot-open push that already fires appends today's undone on-deck count — `3 reminders waiting · 5 on deck` — and carries it as `deck_count` in userInfo. Decks never make a slot fire (a slot with nothing but decks waiting stays silent), never keep a slot unfinished, never reach the hourly nag or its body, and never count toward `reminder_count`. Task queue switch on only. Slot pushes are APNs-only, so a user with no periods, or with Web Push only, gets no count (accepted).
-- Cost: prompts are computed only for a user whose slot opens this minute, or who is awake at the top of the hour with nags left to spend today. That is one quota query per call, never one per minute for every user.
+- Cost: prompts are computed only for a user whose slot opens this minute, or whose slot nag is due by `nag_sends`. That is one quota query per call, never one per minute for every user.
 - The native checklist shows at most 8 rows (`maxVisibleRows`), reminders first, then prompts, then "+N more". "Complete all" covers every row, including hidden ones. It considers waiting prompts without logging progress, except prompts staged as "did it", which keep their +1.
 
 ## "AI finished" notification (just-added tasks)
@@ -363,21 +363,21 @@ When the user later clears every overdue task some other way (one at a time, in 
 - A **decked** row counts only in the safety net.
 - A row whose own **Nag is off** (`auto_snooze_minutes = 0`) never counts, in the safety net too: off means off. It stays on the page.
 
-**How often: the nag ladder.** Each counted row has an interval from the ladder's considering rung; the shortest sets the pace:
+**How often: the nag ladder.** Each counted row has an interval from the ladder's considering rung; the shortest sets the pace (so adding a row only ever brings the nag sooner — with the shipped tiers an Unset row, 60, outpaces a Medium one, 120):
 
-| Priority | Overdue (as set, default) | Deadlines page (×2) | In the safety net |
-| -------- | ------------------------- | ------------------- | ----------------- |
-| Urgent   | 5                         | 10                  | 10                |
-| High     | 15                        | 30                  | 30                |
-| Medium   | 60                        | 120                 | 60                |
-| Low      | 240                       | none                | 60                |
-| Unset    | 30                        | none                | 60                |
+| Priority | Overdue (as set, default) | Considering (×2): deadlines page, slot nag | Deadlines safety net |
+| -------- | ------------------------- | ------------------------------------------ | -------------------- |
+| Urgent   | 5                         | 10                                         | 10                   |
+| High     | 15                        | 30                                         | 30                   |
+| Medium   | 60                        | 120                                        | 60                   |
+| Low      | 240                       | 480                                        | 60                   |
+| Unset    | 30                        | 60                                         | 60                   |
 
-Minutes. The deadlines column is the user's own overdue tier ×2, so it follows Settings → Notifications; the safety net brings any slower rung (or none) up to hourly (A2). The table is `NAG_LADDER` in `src/core/notifications/nag-ladder.ts`, keyed (kind, priority). It also LISTS the reminder slot nag and quota prompts at the considering pace, but nothing reads those rows yet: the slot nag keeps its own schedule (below), and quota prompts have no push of their own. Of the per-task `auto_snooze_minutes`, only Off (0) is read (the row leaves the count); any other value is the overdue nag's interval and does not change this nag's pace.
+Minutes. ONE considering ladder, no special cases (Trent, 2026-10-22): the user's own overdue tier ×2 at every priority, so it follows Settings → Notifications; the safety net brings any slower rung up to hourly (A2). The table is `NAG_LADDER` in `src/core/notifications/nag-ladder.ts`, keyed (kind, priority): `overdue`, `deadlines`, `slot_nag` (paced at the Unset rung — reminders have no priority on the ladder yet) and `quota_prompt`, a documented row only (prompts have no push of their own; they ride the slot nag). Of the per-task `auto_snooze_minutes`, only Off (0) is read (the row leaves the count); any other value is the overdue nag's interval and does not change this nag's pace.
 
 **No quiet hours** (ruling 2). Like the overdue nag, it sends whenever it is due — at 3 AM too. A page row starts waiting at the OpenTask day's start (the rollover time) or the moment a deadline is set inside its lead time, so the first nag of a day goes then.
 
-**When exactly: `nag_sends`.** A row per (user, `deadlines-page`) holds `last_sent_at`. A tick sends when the whole minutes since the last send reach the interval (`claimNagSend`, a compare-and-swap, claimed before sending). That makes it restart-safe (the state is the row, not memory), a double tick sends once, after downtime the first tick sends once, and a priority rising mid-interval sends as soon as the new, shorter interval has passed since the last send. Nothing else uses `nag_sends` yet; the overdue checker would move by keying `task-<id>` with the per-task interval (its stateless `minutesSinceDue % interval` boundary loses sends across downtime and repeats on a double tick), and the slot nag by keying `slot-nag` with the gap rule — its `slot_nags` row also counts sends per day, which a `last_sent_at` alone can't.
+**When exactly: `nag_sends`.** A row per (user, `deadlines-page`) holds `last_sent_at`. A tick sends when the whole minutes since the last send reach the interval (`claimNagSend`, a compare-and-swap, claimed before sending). That makes it restart-safe (the state is the row, not memory), a double tick sends once, after downtime the first tick sends once, and a priority rising mid-interval sends as soon as the new, shorter interval has passed since the last send. The slot nag uses it too (key `slot-nag`, below). The overdue checker would move by keying `task-<id>` with the per-task interval (its stateless `minutesSinceDue % interval` boundary loses sends across downtime and repeats on a double tick).
 
 **What it says.** Counts only, never titles (ruling 5): title "Deadlines", body "2 deadlines to plan · nearest Fri" (the nearest deadline's OpenTask day: a weekday within the week ahead, else "Oct 30"), or in the safety net "Deadline tomorrow: 1 unplanned" / "Deadlines today: 2 unplanned" / "Deadline passed: 1 unplanned", plus " · N more to plan" for the other counted rows.
 
@@ -386,6 +386,16 @@ Minutes. The deadlines column is the user's own overdue tier ×2, so it follows 
 **Tapping it** opens the dashboard with the Tasks card on the deadlines page: `/?tasks=deadlines` (`src/lib/tasks-panel-link.ts`; any segment kind works, `/?tasks=days`). Web Push carries it as `data.url`; the iOS and Mac apps map `kind: "deadlines"` to `NotificationActionRunner.Outcome.openDeadlines` and load `DeepLinkRouter.notificationDeadlinesPath`. The card reads the param once the reminders fetch has landed, pages to it and scrolls the card into view, then strips it; a kind the card isn't showing today is consumed and ignored. The web asks for the page with `?deadlines=1` from the web-UI PR (C); until then the link lands on the card's natural page. An installed native build from before this change has no case for the kind and ends at `.missingTaskId`: the app comes forward where it was, with no navigation.
 
 **Off:** the task-queue switch off (no page), `notifications_enabled` off, the demo user.
+
+## The slot nag (on the ladder since 2026-10-22)
+
+`src/core/notifications/slot-nags.ts`. While any slot that has opened today still has reminders or quota prompts waiting, ONE push per user names the latest unfinished slot and counts the rest ("3 reminders waiting, and 2 earlier slots"), through the slot's own `SLOT_REMINDER` push (same collapse id, so it replaces that slot's banner; APNs only).
+
+- **Pace: the ladder's `slot_nag` row** — the user's Unset tier ×2, 60 minutes by default (reminders have no priority on the ladder yet). Paced by `nag_sends` (key `slot-nag`); the slot-open push stamps it too, so the nag comes one interval after a slot's own banner or the last nag, at any minute — not on the hour.
+- **Gone (Trent, 2026-10-22):** the 3-a-day cap, the derived gap, the evening reserve, the Wake–Sleep window and the top-of-the-hour alignment. OpenTask has no time-of-day behaviour; the phone's sleep mode handles nights. An unfinished slot nags until midnight.
+- **The day: the OpenTask day.** Slots count as opened on the OpenTask day, which starts at the rollover (the earliest period's start), so the nag is silent from local midnight to the rollover. Which reminders are waiting is the Reminders surface's own roster at that moment (the calendar day it shows). Finishing a slot — every reminder and prompt considered or done — silences it until the slot reopens the next day (silencing = acting).
+- Still: never a slot that hasn't opened, never in the badge, never a reminder on its own. A slot opening with items this exact minute stands the nag down (its own banner is up); an empty one doesn't.
+- `slot_nags` (the old per-day claim rows) is no longer written; the weekly purge drains it.
 
 ## Who the cron senders notify
 
@@ -490,5 +500,5 @@ Configured in Settings > Notifications:
 - Browser Push toggle (subscribe/unsubscribe per device)
 - Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available). The "AI couldn't process" push for a failed enrichment has no switch of its own: it follows only the master switch
 - Bulk defer results (the quiet push after a sweep from outside the app left High or Urgent overdue)
-- Nag intervals (tiered by priority). The deadlines-page nag runs at twice these (Medium and up; Low and Unset only in the safety net, hourly) — § The deadlines-page nag
+- Nag intervals (tiered by priority). The considering nags — the deadlines page and the slot nag — run at twice these, every priority (§ The deadlines-page nag, § The slot nag)
 - Test notification buttons (individual, high, bulk, critical)

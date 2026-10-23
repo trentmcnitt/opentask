@@ -160,7 +160,7 @@ describe('Quota prompts — local day', () => {
   })
 })
 
-describe('Quota prompts — hourly nags', () => {
+describe('Quota prompts — the slot nag (they ride it)', () => {
   test('QN-010: nags continue while only prompts remain', () => {
     const reminder = reminderAt(7)
     const q = weeklyQuota()

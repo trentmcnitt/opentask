@@ -241,7 +241,9 @@ describe('wake and sleep in the push readers', () => {
     teardownTestDb()
   })
 
-  test('TAT-020: the hourly nag waits for a Wake linked to a 10:30 period', () => {
+  // Since 2026-10-22 the slot nag has no Wake–Sleep window (Trent: no
+  // time-of-day behaviour), so a linked Wake no longer holds it back.
+  test('TAT-020: the slot nag ignores Wake, linked or not', () => {
     createTask({
       userId: TEST_USER_ID,
       userTimezone: TEST_TIMEZONE,
@@ -255,8 +257,7 @@ describe('wake and sleep in the push readers', () => {
     // The snapshot says 07:00; the link says 10:30 — the link wins.
     setRow({ wake_slot_id: brunch.id, wake_time: '07:00' })
 
-    expect(pendingSlotNags(at(10))).toHaveLength(0)
-    expect(pendingSlotNags(at(11))).toHaveLength(1)
+    expect(pendingSlotNags(at(10))).toHaveLength(1)
   })
 
   test('TAT-021: widget-push quiet hours end at a linked Wake, not its snapshot', async () => {
