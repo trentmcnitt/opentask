@@ -845,7 +845,7 @@ function quotaChangesFor({
  * valid, and a schedule edit needs BOTH halves: validation refuses a bare
  * `FREQ=` rule that does not also say the task is tracked — which `is_tracked`
  * on its own satisfies, so a target and a period do NOT have to travel
- * together, and deliberately don't: see buildChanges.
+ * together, and deliberately don't: see quotaChangesFor.
  */
 function describeDraft({
   creating,
