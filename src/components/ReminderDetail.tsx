@@ -925,6 +925,8 @@ function PrioritySection({
           )
         })}
       </div>
+      {/* The slot section's hint, copied: priority's one non-obvious effect. */}
+      <p className="text-muted-foreground text-xs">Also sets how often its period nags.</p>
     </section>
   )
 }

@@ -1475,6 +1475,8 @@ test.describe('Reminder details', () => {
         'aria-pressed',
         'true',
       )
+      // Priority also paces the period's nag (Trent, 2026-10-22), and says so.
+      await expect(dialog.getByText('Also sets how often its period nags.')).toBeVisible()
       await dialog.locator('[data-priority-chip="3"]').click()
       await dialog.getByRole('button', { name: 'Save', exact: true }).click()
       await expect(dialog).toHaveCount(0)
