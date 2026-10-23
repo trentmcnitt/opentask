@@ -830,10 +830,15 @@ test.describe('touch', () => {
       await expect(toast(page, 'Taken off deck')).toBeVisible()
       await expect.poll(() => deckOf(page, decked)).toBeNull()
 
-      // …and Today on a section row targets it (the deck goes).
+      // …and Today on a section row targets it (the deck goes) — faded, it
+      // asks first (2026-10-22, plan §5: a target replaces the deck).
       await deck(page, [decked])
       await page.reload()
-      await page.locator(`[data-deck-list] #task-row-${decked} [data-target-today]`).tap()
+      const today = page.locator(`[data-deck-list] #task-row-${decked} [data-target-today]`)
+      await expect(today).toHaveAttribute('data-replaces', '')
+      await today.tap()
+      await expect(page.locator('[data-replace-confirm]')).toContainText('Replaces On deck today')
+      await page.locator('[data-replace-confirm] [data-replace-ok]').tap()
       await expect(toast(page, /Targeted/)).toBeVisible()
       await expect.poll(() => deckOf(page, decked)).toBeNull()
       expect((await stateOf(page, decked)).target_at).not.toBeNull()
