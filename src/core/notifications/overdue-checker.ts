@@ -37,7 +37,15 @@ import {
 import { getOverdueCount } from '@/core/notifications/dismiss'
 import { lastBadgeSent, usersWithNonZeroBadge } from '@/core/notifications/badge-state'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
-import { APP_URL, interruptionLevelFor, notificationTitlePrefix } from '@/core/notifications/format'
+import {
+  APP_URL,
+  OVERDUE_SUMMARY_COLLAPSE_ID,
+  interruptionLevelFor,
+  notificationTitlePrefix,
+  taskCollapseId,
+} from '@/core/notifications/format'
+import { nagIntervalMinutes } from '@/core/notifications/nag-ladder'
+import { notifiableUserSql } from '@/core/notifications/notifiable-users'
 
 /** Consolidation caps per bucket */
 const REGULAR_CAP = 4 // P0-P2
@@ -108,11 +116,16 @@ interface NotificationBucket {
  */
 function getEffectiveInterval(task: OverdueTask): number {
   if (task.auto_snooze_minutes !== null) return task.auto_snooze_minutes
-  if (task.priority >= URGENT_PRIORITY) return task.user_auto_snooze_urgent_minutes
-  if (task.priority >= HIGH_PRIORITY_THRESHOLD) return task.user_auto_snooze_high_minutes
-  if (task.priority === 2) return task.user_auto_snooze_medium_minutes
-  if (task.priority === 1) return task.user_auto_snooze_low_minutes
-  return task.user_auto_snooze_minutes
+  // The tier rung comes from the one ladder (nag-ladder.ts, ruling 1) — the
+  // overdue rows are the user's tiers as set, never null.
+  const tiers = {
+    unset: task.user_auto_snooze_minutes,
+    low: task.user_auto_snooze_low_minutes,
+    medium: task.user_auto_snooze_medium_minutes,
+    high: task.user_auto_snooze_high_minutes,
+    urgent: task.user_auto_snooze_urgent_minutes,
+  }
+  return nagIntervalMinutes('overdue', task.priority, tiers) ?? 0
 }
 
 /** Check whether this cron cycle is a notification boundary for the task. */
@@ -171,6 +184,11 @@ async function sendIndividualWebPush(task: OverdueTask): Promise<void> {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
     body: `${OVERDUE_WORD} task`,
     data: { url: `${APP_URL}/?task=${task.id}`, taskId: task.id },
+    // The APNs collapse id (fix #6): a repeat REPLACES this task's banner,
+    // and `renotify` makes the replacement alert again — without it a tagged
+    // repeat would land silently and the nag would stop nagging on the web.
+    tag: taskCollapseId(task.id),
+    renotify: true,
   })
 }
 
@@ -180,6 +198,8 @@ async function sendSummaryWebPush(userId: number, count: number, label: string):
     title: `${count} more ${label}`,
     body: `Open app to see all ${OVERDUE_LOWER} tasks`,
     data: { url: `${APP_URL}/?filter=overdue` },
+    tag: OVERDUE_SUMMARY_COLLAPSE_ID,
+    renotify: true,
   })
 }
 
@@ -324,7 +344,7 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
         WHERE t.done = 0
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
-          AND u.notifications_enabled = 1
+          AND ${notifiableUserSql('u')}
           -- §5: tracked items are exempt from the cadence loop (see
           -- currently-due.ts for the rationale).
           AND t.progress_target <= 1

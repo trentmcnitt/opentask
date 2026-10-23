@@ -40,7 +40,6 @@
  * before concluding the "no catch-up" claim above has been violated.
  */
 
-import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { DateTime } from 'luxon'
 import { sendApnsSlotReminder, isApnsConfigured } from '@/core/notifications/apns'
@@ -50,11 +49,7 @@ import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { onDeckToday } from '@/core/tasks/deck'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
-
-interface NotifiableUser {
-  id: number
-  timezone: string
-}
+import { notifiableUsers } from '@/core/notifications/notifiable-users'
 
 /** The slots whose start time is the current local minute for this user. */
 export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): TimeSlot[] {
@@ -133,9 +128,7 @@ export interface PendingSlotNotification {
  * keeps its boundary math in a pure function.
  */
 export function pendingSlotNotifications(now: Date = new Date()): PendingSlotNotification[] {
-  const users = getDb()
-    .prepare('SELECT id, timezone FROM users WHERE notifications_enabled = 1')
-    .all() as NotifiableUser[]
+  const users = notifiableUsers()
 
   const pending: PendingSlotNotification[] = []
 

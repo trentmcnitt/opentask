@@ -51,6 +51,7 @@ import { isApnsConfigured, sendApnsSlotReminder, slotWaitingBody } from '@/core/
 import { pendingSlotNotifications, waitingBySlot } from '@/core/notifications/slot-reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
+import { notifiableUsers } from '@/core/notifications/notifiable-users'
 
 /** At most three a day. Past that it is noise, and noise is what §6 avoids. */
 export const MAX_NAGS_PER_DAY = 3
@@ -261,9 +262,7 @@ export interface PendingSlotNag {
  * Read-only. `checkSlotNags` is what claims the day's allowance and sends.
  */
 export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
-  const users = getDb()
-    .prepare('SELECT id, timezone FROM users WHERE notifications_enabled = 1')
-    .all() as { id: number; timezone: string }[]
+  const users = notifiableUsers()
 
   const pending: PendingSlotNag[] = []
   // Computed once rather than per user: it answers for every user at once, and

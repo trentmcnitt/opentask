@@ -85,6 +85,10 @@ self.addEventListener('push', (event) => {
         // Quiet pushes (the "AI finished" notification) ask for no sound or
         // vibration. Everything else keeps the platform default.
         silent: data.silent === true,
+        // A repeat that REPLACES a tagged banner (an overdue nag, tag = its
+        // APNs collapse id) alerts again only with `renotify`. The browser
+        // throws a TypeError for renotify without a tag, or with silent.
+        renotify: Boolean(data.tag) && data.renotify === true && data.silent !== true,
       })
     }),
   )
