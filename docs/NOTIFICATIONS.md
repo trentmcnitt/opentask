@@ -47,7 +47,7 @@ When a task is deferred, completed, skipped, deleted or has its date moved, from
 
 ### Notification coalescing
 
-APNs notifications include `collapseId: "task-{id}"`. iOS replaces (not stacks) notifications for the same task across cooldown cycles.
+APNs notifications include `collapseId: "task-{id}"` (the overflow summary: `overdue-summary`). iOS replaces (not stacks) notifications for the same task across cooldown cycles. Since 2026-10-22 (nag-map fix #6) the overdue Web Push carries the same string as its `tag`, so the browser replaces too instead of stacking a banner per repeat, with `renotify: true` so the replacement still alerts (a tagged replacement is otherwise shown silently). `public/sw.js` passes `renotify` only with a tag and never with `silent` — the browser throws a TypeError for either. Every other push already had a tag equal to its collapse id.
 
 ### Repeat intervals (nag)
 
@@ -59,9 +59,11 @@ APNs notifications include `collapseId: "task-{id}"`. iOS replaces (not stacks) 
 | P1 (Low)    | 240 min          | `auto_snooze_low_minutes`    |
 | P0 (Unset)  | 30 min           | `auto_snooze_minutes`        |
 
-Per-task `auto_snooze_minutes` overrides the user default.
+Per-task `auto_snooze_minutes` overrides the user default. The tier rung comes from the one nag ladder (`src/core/notifications/nag-ladder.ts`, below), whose `overdue` row is these columns as set.
 
 Intervals count from each task's due time, not from the clock: a P3 task due at 8:07 notifies at 8:07, 8:22, 8:37. The first notification goes out on the checker's tick at the due minute (the query takes `due_at <= now`), and only once — see `isNotificationBoundary()` in `overdue-checker.ts`.
+
+**With the task-queue switch on (2026-10-22) a deadline with no target has no automatic target any more**: it sits on the deadlines page from its lead day and the page's own nag speaks for it (§ The deadlines-page nag, below); it is never overdue and never in the badge until a target is picked. The paragraph that follows is the switch-off behaviour, kept for one release (plan A1).
 
 **A deadline's target is stored, so it nags like any target** (spec §8, 2026-10-12; `docs/TASK-MODEL.md` § Deadline). A one-off with a deadline and no target the user picked carries a real **automatic target** (`target_auto`): the user's `morning_time` 3 days before the deadline's local day (4 when the deadline was set 16 or more days out; now, if that moment has already passed — overdue at once). The checker reads `due_at` alone (`getCurrentlyDueTaskIds`, `src/core/tasks/currently-due.ts`), so a deadline task starts nagging at that target at its priority's interval, exactly like a picked one. There is no read-time implied target, no `deadline_nag_off` and no deadline-day re-arm any more: an automatic target moves with its deadline, and Remove target on a deadline task is "Back to auto" (the automatic target again), never silence. **Every snooze stops at a deadline that is still ahead** — a single snooze, a notification button, a quick snooze, a sweep (`capAtDeadline`) — so no snooze can carry a task past its cutoff; to go later, change or remove the deadline. Once the deadline has passed the cap is off (any target can be picked), nagging continues at the same cadence, the row carries a past-deadline marker in the app, and a sweep treats the task like High. The badge (`getOverdueCount` → `countCurrentlyDue`) counts the same tasks.
 
@@ -82,6 +84,9 @@ Intervals count from each task's due time, not from the clock: a P3 task due at 
 | `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)                       |
 | `src/core/notifications/sweep-feedback.ts`           | Quiet bulk defer feedback push (`planSweepFeedback`, `sendSweepFeedback`)                                        |
 | `src/core/notifications/deadline-cap-feedback.ts`    | Quiet "Deferred to deadline 6:00 PM" push when a notification button's defer stopped at the deadline (ruling A3) |
+| `src/core/notifications/deadline-nags.ts`            | The deadlines-page nag (`pendingDeadlineNags`, `checkDeadlineNags`, `claimNagSend`)                              |
+| `src/core/notifications/nag-ladder.ts`               | The nag ladder: every nag's interval, keyed (kind, priority) (`NAG_LADDER`, `nagIntervalMinutes`)                |
+| `src/core/notifications/notifiable-users.ts`         | Who the cron senders notify: notifications on and not demo (`notifiableUsers`, `notifiableUserSql`)              |
 | `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                                    |
 | `src/app/api/push/subscribe/route.ts`                | Push subscription storage endpoint                                                                               |
 | `src/app/api/push/test/route.ts`                     | Quick push test (sends to current user)                                                                          |
@@ -348,6 +353,43 @@ When the user later clears every overdue task some other way (one at a time, in 
 
 **Deadline cap (2026-10-11, `deadline-cap-feedback.ts`).** A quick defer from a notification button (or the content extension's custom time) never carries a task past a deadline still ahead: it stops AT the deadline (ruling A3, docs/TASK-MODEL.md § Deadline). The button runs in the background, so a capped one sends a quiet banner, "Snoozed to deadline 6:00 PM" / "A quick snooze stops at the deadline", under the same "Bulk snooze results" switch and demo/notifications gates. Collapse id `deadline-cap` (a newer one replaces the older), no category, and deliberately no `taskId`: the capped snooze sends that task's `dismiss` push itself, which would clear a banner carrying its id.
 
+## The deadlines-page nag (2026-10-22)
+
+`src/core/notifications/deadline-nags.ts`, run every minute after the slot nag. With the task-queue switch on, a deadline task with no target sits on the task queue's **deadlines page** from its lead day (`docs/TASK-MODEL.md` § The deadlines page). While anything there waits, **one** push per user — never one per task — says so.
+
+**Which rows count.** The page's own rows (`getTaskSegments(…, { deadlineRows: true })`, so membership, the switch, queue precedence and "seen" are the page's), then:
+
+- `waiting` only. Seeing a row (its circle, or Considered all) silences it for the rest of the **OpenTask day** (resets at the rollover time, not midnight). In the **safety net** — from the day before the deadline's OpenTask day on, past the deadline included — seeing does not silence it: only a target or done takes it off the page (ruling 3).
+- A **decked** row counts only in the safety net.
+
+**How often: the nag ladder.** Each counted row has an interval from the ladder's considering rung; the shortest sets the pace:
+
+| Priority | Overdue (as set, default) | Deadlines page (×2) | In the safety net |
+| -------- | ------------------------- | ------------------- | ----------------- |
+| Urgent   | 5                         | 10                  | 10                |
+| High     | 15                        | 30                  | 30                |
+| Medium   | 60                        | 120                 | 60                |
+| Low      | 240                       | none                | 60                |
+| Unset    | 30                        | none                | 60                |
+
+Minutes. The deadlines column is the user's own overdue tier ×2, so it follows Settings → Notifications; the safety net brings any slower rung (or none) up to hourly (A2). The table is `NAG_LADDER` in `src/core/notifications/nag-ladder.ts`, keyed (kind, priority). It also LISTS the reminder slot nag and quota prompts at the considering pace, but nothing reads those rows yet: the slot nag keeps its own schedule (below), and quota prompts have no push of their own. The per-task `auto_snooze_minutes` override is not read: the nag is about the page, not one task.
+
+**No quiet hours** (ruling 2). Like the overdue nag, it sends whenever it is due — at 3 AM too. A page row starts waiting at the OpenTask day's start (the rollover time) or the moment a deadline is set inside its lead time, so the first nag of a day goes then.
+
+**When exactly: `nag_sends`.** A row per (user, `deadlines-page`) holds `last_sent_at`. A tick sends when the whole minutes since the last send reach the interval (`claimNagSend`, a compare-and-swap, claimed before sending). That makes it restart-safe (the state is the row, not memory), a double tick sends once, after downtime the first tick sends once, and a priority rising mid-interval sends as soon as the new, shorter interval has passed since the last send. Nothing else uses `nag_sends` yet; the overdue checker would move by keying `task-<id>` with the per-task interval (its stateless `minutesSinceDue % interval` boundary loses sends across downtime and repeats on a double tick), and the slot nag by keying `slot-nag` with the gap rule — its `slot_nags` row also counts sends per day, which a `last_sent_at` alone can't.
+
+**What it says.** Counts only, never titles (ruling 5): title "Deadlines", body "2 deadlines to plan · nearest Fri" (the nearest deadline's OpenTask day: a weekday within the week ahead, else "Oct 30"), or in the safety net "Deadline tomorrow: 1 unplanned" / "Deadlines today: 2 unplanned" / "Deadline passed: 1 unplanned", plus " · N more to plan" for the other counted rows.
+
+**How it is sent.** A silent banner on both channels: APNs with no `sound`, `interruption-level: active` at every priority (never critical, never time-sensitive — ruling 4: only Urgent overdue is critical), no `badge`, no category, no `taskId`, thread `ot-tasks`, collapse id `deadlines-page`, `data.kind: "deadlines"`; Web Push with `silent`, tag `deadlines-page`, `urgency: normal`. Never in the badge.
+
+**Tapping it** opens the dashboard with the Tasks card on the deadlines page: `/?tasks=deadlines` (`src/lib/tasks-panel-link.ts`; any segment kind works, `/?tasks=days`). Web Push carries it as `data.url`; the iOS and Mac apps map `kind: "deadlines"` to `NotificationActionRunner.Outcome.openDeadlines` and load `DeepLinkRouter.notificationDeadlinesPath`. The card reads the param once the reminders fetch has landed, pages to it and scrolls the card into view, then strips it; a kind the card isn't showing today is consumed and ignored. The web asks for the page with `?deadlines=1` from the web-UI PR (C); until then the link lands on the card's natural page. An installed native build from before this change has no case for the kind and ends at `.missingTaskId`: the app comes forward where it was, with no navigation.
+
+**Off:** the task-queue switch off (no page), `notifications_enabled` off, the demo user.
+
+## Who the cron senders notify
+
+Every minute-cron sender — overdue, slot opens, the slot nag, the deadlines nag — asks `notifiableUsers()` / `notifiableUserSql()` (`src/core/notifications/notifiable-users.ts`, nag-map fix #10): `notifications_enabled = 1 AND is_demo = 0`. The event-driven pushes (sweep and cap feedback, "AI finished", widget push) already left the demo user out.
+
 ## iOS platform constraints
 
 These apply regardless of which notification service is used.
@@ -361,7 +403,7 @@ These apply regardless of which notification service is used.
 | Time Sensitive | Immediate, breaks through Focus and Scheduled Summary | Yes (if user allows) | No           |
 | Critical       | Bypasses mute, DND, all Focus modes                   | Yes (always)         | Yes (always) |
 
-Time Sensitive requires the `com.apple.developer.usernotifications.time-sensitive` capability (no Apple review needed). Critical requires `com.apple.developer.usernotifications.critical-alerts` (Apple must approve for App Store apps; works without approval for personal/ad-hoc builds). OpenTask uses Critical for P4 (Urgent) overdue notifications with the user's `critical_alert_volume` preference (0.0-1.0, default 1.0).
+Time Sensitive requires the `com.apple.developer.usernotifications.time-sensitive` capability (no Apple review needed). Critical requires `com.apple.developer.usernotifications.critical-alerts` (Apple must approve for App Store apps; works without approval for personal/ad-hoc builds). OpenTask uses Critical for P4 (Urgent) overdue notifications with the user's `critical_alert_volume` preference (0.0-1.0, default 1.0) — and for nothing else (ruling 4, 2026-10-22): the deadlines nag is Active at every priority.
 
 ### Notification grouping
 
@@ -447,5 +489,5 @@ Configured in Settings > Notifications:
 - Browser Push toggle (subscribe/unsubscribe per device)
 - Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available). The "AI couldn't process" push for a failed enrichment has no switch of its own: it follows only the master switch
 - Bulk defer results (the quiet push after a sweep from outside the app left High or Urgent overdue)
-- Nag intervals (tiered by priority)
+- Nag intervals (tiered by priority). The deadlines-page nag runs at twice these (Medium and up; Low and Unset only in the safety net, hourly) — § The deadlines-page nag
 - Test notification buttons (individual, high, bulk, critical)
