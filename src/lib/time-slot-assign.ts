@@ -213,6 +213,40 @@ export interface SlotIndexed {
  * first boundary; this always resolves to an index because a pager has to
  * land on something.
  */
+/**
+ * Wall-clock minutes from `dayStart` (HH:MM) to `minuteOfDay` — where a time
+ * falls in the OpenTask day. `minutesIntoDay` in src/lib/opentask-day.ts is
+ * the same rule; it lives here too because that file imports this one.
+ */
+function minutesFromDayStart(minuteOfDay: number, dayStart: string): number {
+  const ds = parseHHMM(dayStart) ?? 0
+  return (((minuteOfDay - ds) % 1440) + 1440) % 1440
+}
+
+/**
+ * The groups in the order their slots come round in the day that starts at
+ * `dayStart` (2026-10-23): a 1:00 AM slot, with the day starting at 3:00,
+ * comes LAST — after the evening — not first. Stable; the un-slotted group
+ * (and a slot whose start won't parse) keeps its place after the slotted
+ * ones. At midnight, groups already in start order come back unchanged. The
+ * dashboard's pager walks its pages in this order, so "the earliest slot up
+ * to now still waiting" (`pageAfterFinishing`) never jumps to a slot that
+ * ends the day.
+ */
+export function orderGroupsByDay<G extends SlotIndexed>(
+  groups: readonly G[],
+  dayStart: string,
+): G[] {
+  const key = (g: G) => {
+    const start = g.slot ? parseHHMM(g.slot.start_time) : null
+    return start === null ? Number.MAX_SAFE_INTEGER : minutesFromDayStart(start, dayStart)
+  }
+  return groups
+    .map((group, index) => ({ group, index, key: key(group) }))
+    .sort((a, b) => a.key - b.key || a.index - b.index)
+    .map((entry) => entry.group)
+}
+
 export function naturalSlotIndex(
   groups: SlotIndexed[],
   timezone: string,
@@ -223,11 +257,7 @@ export function naturalSlotIndex(
 
   // Within the roster's day (2026-10-23): from `dayStart`, so at 00:30 with
   // the day starting at 3:00 the evening's slot is still the latest started.
-  // `minutesIntoDay`'s rule, inline: src/lib/opentask-day.ts imports this file.
-  const into = (minute: number) => {
-    const ds = parseHHMM(dayStart) ?? 0
-    return (((minute - ds) % 1440) + 1440) % 1440
-  }
+  const into = (minute: number) => minutesFromDayStart(minute, dayStart)
   const local = DateTime.fromJSDate(now).setZone(timezone)
   const minutes = into(local.hour * 60 + local.minute)
 

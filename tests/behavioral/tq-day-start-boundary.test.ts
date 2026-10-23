@@ -46,7 +46,13 @@ import { createTimeSlot } from '@/core/time-slots'
 import { pendingSlotNags } from '@/core/notifications/slot-nags'
 import { updatePreferences } from '@/core/users/preferences'
 import { slotHasStarted, summarizeReminders } from '@/lib/reminders-summary'
-import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
+import {
+  naturalSlotIndex,
+  orderGroupsByDay,
+  pageAfterFinishing,
+  type TimeSlot,
+} from '@/lib/time-slot-assign'
+import { offSyncEvent, onSyncEvent, type SyncEventInfo } from '@/lib/sync-events'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -87,7 +93,8 @@ function setDayStart(time: string | null) {
   updatePreferences(TEST_USER_ID, { day_start_time: time, day_start_slot_id: null })
 }
 
-describe('TQ-D: "Day starts at" 03:00 — one boundary everywhere', () => {
+/** Thursday 2026-01-15 08:00, the switch on, the day starting at 03:00, Thursday's rollover run. */
+function dayStartsAtThree() {
   beforeEach(() => {
     clock('2026-01-15T08:00')
     setupTestDb()
@@ -102,6 +109,10 @@ describe('TQ-D: "Day starts at" 03:00 — one boundary everywhere', () => {
     vi.useRealTimers()
     teardownTestDb()
   })
+}
+
+describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () => {
+  dayStartsAtThree()
 
   test('TQ-D01: a reminder checked off at 00:30 is Thursday’s; at 03:00 it waits again', () => {
     const r = makeAt('2026-01-15T08:00', {
@@ -211,6 +222,10 @@ describe('TQ-D: "Day starts at" 03:00 — one boundary everywhere', () => {
     expect(rolloverTrackedPeriods(new Date(), TEST_USER_ID).rolled).toBe(1)
     expect(task(q.id).progress_period_start).toBe(new Date(at('2026-01-15T03:00')).toISOString())
   })
+})
+
+describe('TQ-D: "Day starts at" 03:00 — the nag, the rollover and the task side', () => {
+  dayStartsAtThree()
 
   test("TQ-D06: Thursday's unfinished Evening keeps nagging until 03:00, then the day starts clean", () => {
     makeAt('2026-01-15T08:00', {
@@ -258,6 +273,23 @@ describe('TQ-D: "Day starts at" 03:00 — one boundary everywhere', () => {
     expect(task(t.id).due_at).toBe(at('2026-01-15T16:00'))
     expect(roll('2026-01-16T03:00')).toMatchObject({ ran: 1, stripped: 1 })
     expect(task(t.id).due_at).toBeNull()
+  })
+
+  test('TQ-D08b: the day turning at 03:00 sends one sync event (widgets too), even with nothing to strip', () => {
+    const events: [number, SyncEventInfo][] = []
+    const listener = (userId: number, info: SyncEventInfo) => events.push([userId, info])
+    onSyncEvent(listener)
+    try {
+      runTaskRollover({ now: clock('2026-01-16T02:59'), userId: TEST_USER_ID })
+      expect(events).toEqual([])
+      runTaskRollover({ now: clock('2026-01-16T03:00'), userId: TEST_USER_ID })
+      expect(events).toEqual([[TEST_USER_ID, {}]])
+      // Once a day: the next tick sends nothing.
+      runTaskRollover({ now: clock('2026-01-16T03:01'), userId: TEST_USER_ID })
+      expect(events).toHaveLength(1)
+    } finally {
+      offSyncEvent(listener)
+    }
   })
 
   test('TQ-D09: attempts count OpenTask days from 03:00', () => {
@@ -353,5 +385,29 @@ describe('TQ-D: the web reads the same day (pure)', () => {
     expect(naturalSlotIndex(groups, tz, t0030)).toBe(0) // midnight: the 1:00 one ahead → first
     expect(summarizeReminders(groups, tz, t0030, '03:00').waitingSoFar).toBe(1)
     expect(summarizeReminders(groups, tz, t0030).waitingSoFar).toBe(0)
+  })
+
+  test("TQ-D13: the dashboard pager walks the day's order — finishing the evening at 00:30 goes to a started slot, not the 1:00 AM one", () => {
+    const t0030 = local('2026-01-16T00:30')
+    const anytime = { slot: null, reminders: [{ id: 9 }], considered: 0 }
+    const groups = [
+      { slot: late, reminders: [{ id: 1 }], considered: 0 },
+      { slot: early, reminders: [{ id: 3 }], considered: 0 },
+      { slot: eveningSlot, reminders: [], considered: 0 },
+      anytime,
+    ]
+    const day = orderGroupsByDay(groups, '03:00')
+    expect(day.map((g) => g.slot?.start_time ?? null)).toEqual(['07:00', '20:30', '01:00', null])
+    // Midnight: start order, unchanged.
+    expect(orderGroupsByDay(groups, '00:00')).toEqual(groups)
+
+    const natural = naturalSlotIndex(day, tz, t0030, '03:00')
+    expect(day[natural].slot).toBe(eveningSlot)
+    // The evening just finished: the earliest started slot still waiting is
+    // the 07:00 one — never the 1:00 AM slot, which hasn't come round yet.
+    const waiting = day.map((g) => g.reminders.length)
+    const to = pageAfterFinishing(waiting, 3, natural, natural)
+    expect(to).not.toBeNull()
+    expect(day[to!].slot).toBe(early)
   })
 })

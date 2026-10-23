@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
 import { slotHasStarted } from '@/lib/reminders-summary'
-import { naturalSlotIndex, type TimeSlot } from '@/lib/time-slot-assign'
+import { naturalSlotIndex, orderGroupsByDay, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup, type UseRemindersReturn } from '@/hooks/useReminders'
 import { useTaskSegments } from '@/hooks/useTaskSegments'
 import { useReminderDayStart } from '@/components/PreferencesProvider'
@@ -229,14 +229,16 @@ export function DashboardRemindersPanel({
   // because the wall clock moved — see the module docblock's "component state
   // that recomputes... on each render is sufficient" assumption.
   const now = new Date()
-  const pages = buildSlotPages(groups, timezone, now, dayStart)
+  // In the day's order, so a slot before the day start is the last page.
+  const dayGroups = orderGroupsByDay(groups, dayStart)
+  const pages = buildSlotPages(dayGroups, timezone, now, dayStart)
   // The slots alone: the natural page is the clock's slot, and finishing one
   // goes to the earliest slot up to now still waiting (`pageAfterFinishing`
   // with every page a slot is `slotAfterFinishing`).
   const pager = usePanelPager(
     pages,
     pages.length,
-    pages.length > 0 ? naturalSlotIndex(groups, timezone, now, dayStart) : 0,
+    pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0,
   )
   const tasksCard = (
     <>

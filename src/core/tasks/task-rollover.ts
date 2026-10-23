@@ -209,7 +209,20 @@ function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): voi
     const nextM = nextRollover(m, user.timezone, rolloverTime)
     return applyRollover(user, rolloverTime, m, nextM, now, result, CRON_CTX)
   })
-  if (!run || !run.changed) return
+  if (!run) return
+  if (!run.changed) {
+    // THE DAY TURNED (2026-10-23, "Day starts at"; coordinator ruling): with
+    // the switch on, the Reminders screen's roster, its quota prompts' keys
+    // and the queue's panels belong to a new day now even when no task moved.
+    // One sync event — exactly one per user per day, the stamp's winner only
+    // — so open tabs and the Reminders widget (`widgets` on) refetch the new
+    // day instead of acting on yesterday's keys and taking a 400. A run that
+    // changed something emits it in `afterRolloverCommit`; the first sight of
+    // a user (a NULL stamp) is no day turning, and with the switch off the
+    // Reminders day is midnight, not this moment.
+    if (taskQueueEnabled() && user.last_rollover_date !== null) emitSyncEvent(user.id)
+    return
+  }
   afterRolloverCommit(user, run)
 }
 

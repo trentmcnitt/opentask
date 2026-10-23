@@ -341,13 +341,32 @@ describe('TQ-F: the undo fence, the events, the activity rows', () => {
     expect(syncBadgeCount).toHaveBeenCalledWith(TEST_USER_ID)
     expect(emitSyncEvent).toHaveBeenCalledWith(TEST_USER_ID)
 
-    // Nothing to do (the released weekly gone): no events.
+    // Nothing to do (the released weekly gone): no badge resync, no
+    // dismissals — but the DAY TURNED (2026-10-23, "Day starts at"): the
+    // Reminders roster and its prompt keys are a new day's, so exactly one
+    // sync event goes out (widgets included), and a second tick the same day
+    // sends nothing.
     getDb()
       .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
       .run(at('2026-10-21T07:00'), weekly.id)
     vi.mocked(emitSyncEvent).mockClear()
+    vi.mocked(syncBadgeCount).mockClear()
+    vi.mocked(dismissNotificationsForTasks).mockClear()
     roll('2026-10-22T06:30')
+    expect(vi.mocked(emitSyncEvent).mock.calls).toEqual([[TEST_USER_ID]])
+    expect(syncBadgeCount).not.toHaveBeenCalled()
+    expect(dismissNotificationsForTasks).not.toHaveBeenCalled()
+    vi.mocked(emitSyncEvent).mockClear()
+    roll('2026-10-22T06:31')
+    roll('2026-10-22T23:59')
     expect(emitSyncEvent).not.toHaveBeenCalled()
+
+    // The switch off: the day stamp still advances, but the Reminders day is
+    // midnight, so the rollover's moment sends nothing.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    roll('2026-10-23T06:30')
+    expect(emitSyncEvent).not.toHaveBeenCalled()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
   })
 
   test('TQ-R12: the activity rows carry source "rollover"', () => {
