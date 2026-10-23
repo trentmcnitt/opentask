@@ -296,8 +296,9 @@ struct ReminderChecklistView: View {
 
                 Text(item.title)
                     .font(.caption)
-                    // §6: priority is prominence, not interruption — a high
-                    // priority reminder renders heavier, it never nags.
+                    // §6: priority is prominence — a high priority reminder
+                    // renders heavier. It never nags on its own (it only
+                    // paces its slot's one nag, server-side, since 10-22).
                     .fontWeight(item.priority >= 3 ? .semibold : .regular)
                     .foregroundColor(checked ? .secondary : .primary)
                     .strikethrough(checked, color: .secondary)

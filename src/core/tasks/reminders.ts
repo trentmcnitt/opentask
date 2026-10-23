@@ -85,11 +85,13 @@ export function getTodaysReminders(
 /**
  * Today's reminders grouped into their time slots.
  *
- * Within a slot, higher priority sorts first — §6's "priority is prominence,
- * not interruption". The canonical high-priority reminder (morning
- * supplements: "you don't have to, but consistency matters") is important
- * without being an interrupt, so importance is expressed by position and
- * weight rather than by nagging.
+ * Within a slot, higher priority sorts first — §6's "priority is prominence".
+ * The canonical high-priority reminder (morning supplements: "you don't have
+ * to, but consistency matters") is important without being an interrupt of
+ * its own, so importance is expressed by position and weight. Since
+ * 2026-10-22 (Trent) priority also sets how often its slot's ONE nag repeats
+ * while it waits — the shortest rung among the waiting items
+ * (`slot-nags.ts`) — but a reminder still never notifies on its own.
  */
 export function getRemindersBySlot(
   userId: number,

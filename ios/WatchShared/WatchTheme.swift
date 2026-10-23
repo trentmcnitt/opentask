@@ -83,7 +83,8 @@ enum WatchTheme {
     /// Mirrors `PRIORITY_OPTIONS` in `src/lib/priority.ts`: the title's weight.
     /// Since 2026-10-16 a Tasks page row also wears the corner strip's
     /// "!"/"!!" for High/Urgent (`RowCornerStrip`); Reminders rows stay
-    /// weight-only — "priority is prominence, not interruption".
+    /// weight-only — "priority is prominence" (§6; it also paces the slot's
+    /// one nag, server-side, but never marks a row).
     static func priorityWeight(_ priority: Int) -> Font.Weight {
         priority >= 3 ? .semibold : .regular
     }

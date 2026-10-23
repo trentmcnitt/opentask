@@ -52,11 +52,12 @@ import type { Task } from '@/types'
  * which mean anything for a thought, and the server refuses to snooze a
  * reminder anyway. A reminder has two settings worth a screen: WHICH DAYS it
  * comes up and WHEN in the day (its slot). Plus its wording, notes, and its
- * priority — which on this surface is prominence, not interruption: it sets
- * where a thought sits in its slot and how heavy it reads, never whether it
- * nags. Labels and projects stay on the row, untouched, and reappear the
- * moment the thought is made a task (none of Trent's 38 reminders carries a
- * label; 34 sit in one project).
+ * priority — which on this surface is prominence and pace: it sets where a
+ * thought sits in its slot and how heavy it reads, and (Trent, 2026-10-22)
+ * how often its period's one nag repeats while it waits — never a nag of its
+ * own (§6, `slot-nags.ts`). Labels and projects stay on the row, untouched,
+ * and reappear the moment the thought is made a task (none of Trent's 38
+ * reminders carries a label; 34 sit in one project).
  *
  * SEVERAL AT ONCE: with more than one reminder selected the same editor edits
  * their schedule and priority together. Wording and notes are one reminder's
@@ -882,7 +883,10 @@ function TimeOfDaySection({
 
 /**
  * The same five values and colours as a task's priority. On this surface it
- * is prominence: order within the slot and weight of the row, never a nag.
+ * is prominence — order within the slot and weight of the row — and, since
+ * 2026-10-22 (Trent), how often the period's one nag repeats while this
+ * waits (the shortest rung among the waiting items, `slot-nags.ts`). Never a
+ * nag of its own.
  */
 function PrioritySection({
   taskId,

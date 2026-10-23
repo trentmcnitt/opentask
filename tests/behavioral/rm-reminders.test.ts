@@ -233,9 +233,9 @@ describe('Reminders surface', () => {
   })
 
   /**
-   * RM-012: Priority is PROMINENCE, not interruption — within a slot, higher
-   * priority sorts first. The canonical high-priority reminder is important
-   * without being an interrupt.
+   * RM-012: Priority is PROMINENCE — within a slot, higher priority sorts
+   * first. (Since 2026-10-22 it also paces the slot's one nag — RN-021..027 —
+   * but never notifies a reminder on its own.)
    */
   test('RM-012: higher priority sorts first within a slot', () => {
     makeReminder({ title: 'Low thought', anchor_time: '07:00', priority: 0 })
