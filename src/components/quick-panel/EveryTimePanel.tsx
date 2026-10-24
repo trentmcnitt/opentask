@@ -46,9 +46,9 @@ export type EveryTimeVariant = 'single' | 'create' | 'bulk'
  * THE QUICK PANEL'S "EVERY TIME" MODE (2026-10-22, editor plan §4, mock E;
  * PR 4c). The panel edits a repeating task in two modes: THIS ONE (the
  * default — this occurrence's target, deadline, deck) and EVERY TIME (the
- * schedule). This is the second: a framed card with a teal banner
- * ("EDITING EVERY TIME ‹ Back to this one" — teal is the MODE, blue stays
- * "unsaved"), then
+ * schedule). This is the second: a teal banner ("EDITING EVERY TIME ‹ Back
+ * to this one" — teal is the MODE, blue stays "unsaved") across the top of
+ * the surface the panel is in, then
  *   Repeats on [Target | Deadline] · How often · the anchor's time, then the
  *   other date (deadline-anchored: Deadline [8:00 AM] then Target [the day
  *   before ▾] at [6:00 PM ▾]; target-anchored: Target [4:00 PM] then
@@ -61,6 +61,11 @@ export type EveryTimeVariant = 'single' | 'create' | 'bulk'
  * the reducer, the patch, the problem (the SERVER'S planner and end check,
  * so a 400 can only come from a race), Next, the greyed choices and the hint.
  * This component only lays them out.
+ *
+ * NO FRAME OF ITS OWN (2026-10-24, Trent: "a rectangle inside a rectangle"):
+ * it sits straight on its host's surface — the dialog, the sheet, or the
+ * page's card (`DirtyCard`) — like this-one mode. The banner alone marks the
+ * mode; a teal border around the rows made a third nested box.
  *
  * Variants: `create` (the task doesn't exist yet: the button is Done — it
  * stages the draft and goes back, A7); `bulk` (several tasks, A11: Repeats on
@@ -140,10 +145,10 @@ export function EveryTimePanel({
       role="region"
       aria-labelledby={headingId}
       data-every-time
-      className="border-every-time rounded-lg border-2"
+      className="space-y-3"
     >
       <Banner headingId={headingId} headingRef={headingRef} onBack={onBack} />
-      <div className="space-y-3 p-3">
+      <div className="space-y-3">
         {title}
         {locked ? (
           <LockedRule task={task} stopped={stopped} />
@@ -217,7 +222,7 @@ function Banner({
   onBack: () => void
 }) {
   return (
-    <div className="bg-every-time text-every-time-foreground sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-[0.3rem] pl-3">
+    <div className="bg-every-time text-every-time-foreground sticky top-0 z-10 flex items-center justify-between gap-2 rounded-md pl-3">
       <h2
         id={headingId}
         ref={headingRef}

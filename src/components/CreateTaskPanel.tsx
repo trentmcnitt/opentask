@@ -227,7 +227,7 @@ export function CreateTaskPanel({
   const router = useRouter()
   const timezone = useTimezone()
   const isMobile = useIsMobile()
-  // `isDirty` paints the stripe and locks the sheet's drag; the dismiss guard
+  // `isDirty` locks the sheet's drag (no stripe here: DirtyCard); the dismiss guard
   // reads `dirtyRef`, current the moment the panel reports (see useEditorHost).
   const { isDirty: isPanelDirty, dirtyRef, onDirtyChange } = useEditorHost()
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
@@ -276,7 +276,7 @@ export function CreateTaskPanel({
   )
 
   const panel = (
-    <DirtyCard ref={panelRef} dirty={isPanelDirty}>
+    <DirtyCard ref={panelRef} dirty={isPanelDirty} flat>
       <QuickActionPanel
         task={null}
         timezone={timezone}
