@@ -62,6 +62,13 @@ interface DateTimePickerProps {
    * itself if earlier). A tap picks it and closes, like Set Date.
    */
   quickPick?: { label: string; at: string } | null
+  /**
+   * A block of choices above the calendar, given the picker's close — the
+   * editor's "Before the deadline" block (relative targets, 2026-10-24,
+   * `BeforeDeadlineBlock`): its picks are staged by the block itself, not
+   * through `onChange`, then it closes the picker. Mounted on each open.
+   */
+  beforeCalendar?: ((close: () => void) => React.ReactNode) | null
 }
 
 /**
@@ -152,6 +159,7 @@ export function DateTimePicker({
   submitLabel = 'Set Date',
   clearLabel = 'Clear',
   quickPick = null,
+  beforeCalendar = null,
 }: DateTimePickerProps) {
   const { morningTime } = useSnoozePreferences()
   const dayStart = useDayStart()
@@ -257,6 +265,7 @@ export function DateTimePicker({
             }}
           />
         )}
+        {beforeCalendar?.(() => setOpen(false))}
         <Calendar
           mode="single"
           selected={selectedDate}

@@ -25,7 +25,7 @@ import {
   type EveryTimeDraft,
   type EveryTimeTask,
 } from '@/lib/every-time'
-import { leadDaysWords, relativeDaysWords, repeatWords } from '@/lib/editor-target-labels'
+import { leadDaysWords, repeatWords } from '@/lib/editor-target-labels'
 import {
   RELATIVE_TARGET_MESSAGES,
   defaultLeadDays,
@@ -36,6 +36,8 @@ import { DEADLINE_WORD, LEAD_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { HowOftenField } from '@/components/quick-panel/HowOftenField'
 import { EndsField } from '@/components/quick-panel/EndsField'
 import { TimeSelect } from '@/components/quick-panel/TimeSelect'
+import { RelativeTargetControl } from '@/components/quick-panel/RelativeTargetControl'
+import type { SlotChoice } from '@/lib/relative-target-ui'
 
 /** The id the this-one link points `aria-controls` at. */
 export const EVERY_TIME_REGION_ID = 'quick-panel-every-time'
@@ -87,6 +89,7 @@ export function EveryTimePanel({
   problem,
   saveable,
   saving,
+  slots = [],
   headingRef,
   onBack,
   onSave,
@@ -118,6 +121,11 @@ export function EveryTimePanel({
   /** The Save would send something (create: always — Done stages the draft). */
   saveable: boolean
   saving: boolean
+  /**
+   * The periods a deadline-anchored target may follow (relative targets,
+   * 2026-10-24): the user's own, or none on a task someone else owns.
+   */
+  slots?: readonly SlotChoice[]
   headingRef: RefObject<HTMLHeadingElement | null>
   onBack: () => void
   onSave: () => void
@@ -161,6 +169,7 @@ export function EveryTimePanel({
             dispatch={dispatch}
             ctx={ctx}
             focusDeadline={focusDeadline}
+            slots={slots}
           />
         )}
         {next && <NextLine next={next} timezone={ctx.timezone} hidden={stopped || !!problem} />}
@@ -265,6 +274,7 @@ function ScheduleRows({
   dispatch,
   ctx,
   focusDeadline,
+  slots,
 }: {
   variant: EveryTimeVariant
   task: EveryTimeTask
@@ -273,6 +283,7 @@ function ScheduleRows({
   dispatch: (action: DraftAction) => void
   ctx: EveryTimeContext
   focusDeadline: boolean
+  slots: readonly SlotChoice[]
 }) {
   const [moreOpen, setMoreOpen] = useState(initial.mode === 'from_completion')
   const choices = useMemo(() => daysBeforeChoices(task, draft, ctx), [task, draft, ctx])
@@ -337,6 +348,7 @@ function ScheduleRows({
             draft={draft}
             initial={initial}
             choices={choices}
+            slots={slots}
             dispatch={dispatch}
           />
         )
@@ -533,71 +545,51 @@ function AddDeadline({
 }
 
 /**
- * A deadline-anchored draft's Target: "[the day before ▾] at [6:00 PM ▾]".
- * A days-before choice the server would refuse is greyed with its reason
- * (`daysBeforeChoices`, one walk of the rule); on the deadline day itself a
- * time later than the deadline is greyed (`targetTimeRefused`).
+ * A deadline-anchored draft's Target: "[the day before ▾] at [Evening · 8:30
+ * PM ▾]" — the one relative-target control (`RelativeTargetControl`), shared
+ * with the one-off target picker. A days-before choice the server would
+ * refuse is greyed with its reason (`daysBeforeChoices`, one walk of the
+ * rule); on the deadline day itself a period or time later than the deadline
+ * is greyed (`targetTimeRefused`).
  */
 function RelativeTargetRow({
   draft,
   initial,
   choices,
+  slots,
   dispatch,
 }: {
   draft: EveryTimeDraft
   initial: EveryTimeDraft
   choices: ReturnType<typeof daysBeforeChoices>
+  slots: readonly SlotChoice[]
   dispatch: (action: DraftAction) => void
 }) {
-  const all = choices.some((c) => c.days === draft.daysBefore)
-    ? choices
-    : [...choices, { days: draft.daysBefore, refused: null }]
   const daysDirty = draft.daysBefore !== initial.daysBefore || initial.anchor !== 'deadline'
-  const timeDirty = draft.targetTime !== initial.targetTime
+  const timeDirty =
+    draft.targetTime !== initial.targetTime ||
+    (draft.targetSlotId ?? null) !== (initial.targetSlotId ?? null)
   return (
     <Row label={TARGET_WORD}>
-      <div className="flex flex-wrap items-center gap-2" data-every-time-relative-target>
-        <Select
-          value={String(draft.daysBefore)}
+      <div data-every-time-relative-target>
+        <RelativeTargetControl
+          pick={{
+            days: draft.daysBefore,
+            time: draft.targetTime,
+            slot_id: draft.targetSlotId ?? null,
+          }}
+          daysChoices={choices.map((c) => ({
+            days: c.days,
+            refused: c.refused ? refusedWords(c.refused) : null,
+          }))}
+          slots={slots}
+          timeRefused={(t) => targetTimeRefused(draft, t)}
+          daysDirty={daysDirty}
+          timeDirty={timeDirty}
           disabled={draft.stop}
-          onValueChange={(v) => dispatch({ type: 'daysBefore', days: parseInt(v) })}
-        >
-          <SelectTrigger
-            size="sm"
-            aria-label="Days before the deadline"
-            className={cn('min-w-[8rem]', daysDirty && 'font-medium text-blue-500')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {all.map((c) => (
-              <SelectItem
-                key={c.days}
-                value={String(c.days)}
-                disabled={c.refused !== null && c.days !== draft.daysBefore}
-                aria-disabled={c.refused !== null || undefined}
-                data-refused={c.refused ?? undefined}
-              >
-                {relativeDaysWords(c.days)}
-                {c.refused && (
-                  <span className="text-muted-foreground ml-1 text-xs">
-                    — {refusedWords(c.refused)}
-                  </span>
-                )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-muted-foreground text-sm">at</span>
-        <TimeSelect
-          label="Target time"
-          value={draft.targetTime}
-          dirty={timeDirty}
-          disabled={draft.stop}
-          testId="every-time-target-time"
-          refused={(t) => targetTimeRefused(draft, t)}
-          refusedReason="after the deadline"
-          onChange={(time) => dispatch({ type: 'targetTime', time })}
+          timeTestId="every-time-target-time"
+          onDays={(days) => dispatch({ type: 'daysBefore', days })}
+          onTime={(time, slotId) => dispatch({ type: 'targetTime', time, slotId })}
         />
       </div>
     </Row>

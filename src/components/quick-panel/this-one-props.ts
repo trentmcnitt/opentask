@@ -105,6 +105,7 @@ export function deadlineRowFor({
   dirty,
   onChange,
   onOpenEveryTime,
+  targetSlotLabel = null,
 }: {
   /** Bulk, a reminder or a quota: no Deadline row. */
   hidden: boolean
@@ -122,6 +123,8 @@ export function deadlineRowFor({
   dirty: boolean
   onChange: (value: string | null) => void
   onOpenEveryTime: () => void
+  /** The label of the period a deadline-anchored target follows (null: custom). */
+  targetSlotLabel?: string | null
 }): DeadlineRowProps | null {
   if (hidden) return null
   if (stagedAnchor === 'deadline') return { kind: 'text', value: stagedFirstDeadline }
@@ -143,12 +146,15 @@ export function deadlineRowFor({
     // A deadline-anchored repeat's deadline IS its schedule: no Clear
     // (DEADLINE_CLEAR_MESSAGE) — "Repeats on: Target" removes it.
     allowClear: !deadlineAnchored,
-    repeatLabel: deadlineRepeatLabel({
-      rrule: rule,
-      repeat_anchor: task?.repeat_anchor ?? null,
-      target_days_before: task?.target_days_before ?? null,
-      target_time: task?.target_time ?? null,
-    }),
+    repeatLabel: deadlineRepeatLabel(
+      {
+        rrule: rule,
+        repeat_anchor: task?.repeat_anchor ?? null,
+        target_days_before: task?.target_days_before ?? null,
+        target_time: task?.target_time ?? null,
+      },
+      targetSlotLabel,
+    ),
   }
 }
 
@@ -173,11 +179,36 @@ export function targetValueFor(s: {
   deadline: string | null
   /** A deadline-anchored repeat's target, re-derived from a staged deadline (`derivedTargetFor`). */
   derived?: string | null
+  /**
+   * A one-off's RELATIVE target (2026-10-24, `relativePreview`): its date in
+   * the row's words, where it sits ("the day before, Evening"), and whether
+   * it is staged (a pick, or a deadline that moves it) — blue.
+   */
+  relativeTarget?: {
+    header: string
+    relative: string
+    words: string
+    dirty: boolean
+    past: boolean
+  } | null
 }): TargetValueProps {
   // A waiting repeating task has no live target (its occurrence is named on
   // the "This is the … one" line); the controls start from now.
   if (s.queued && !s.dateDirty) return { kind: 'none', dirty: false }
   if (s.none) return { kind: 'none', dirty: s.none.dirty }
+  if (s.relativeTarget) {
+    const r = s.relativeTarget
+    return {
+      kind: 'date',
+      header: r.header,
+      relative: r.relative,
+      dirty: r.dirty,
+      past: r.past,
+      delta: null,
+      capped: null,
+      relativeWords: r.words,
+    }
+  }
   if (s.derived && !s.dateDirty) {
     const at = DateTime.fromISO(s.derived, { zone: 'utc' }).setZone(s.timezone)
     return {

@@ -18,7 +18,9 @@
  * - Removing has no confirmation dialog (Projects has one). Removal is
  *   undoable — the server restores the period AND the reminders it moved in
  *   one undo — so the toast's Undo replaces the dialog, per Trent's "undo over
- *   confirm".
+ *   confirm". The toast names what the removal changed, the relative targets
+ *   that followed the period included ("5 targets keep 8:30 PM"); a retime's
+ *   toast names the ones that follow it ("5 targets follow").
  * - The X is absent on the last remaining period rather than disabled: the
  *   server refuses to remove it, and chrome for an action that cannot happen
  *   is noise.
@@ -66,6 +68,15 @@ interface SlotChange {
   quotas_moved: number
   /** Settings linked to a removed period, now custom at its start (anchor times). */
   settings_converted: string[]
+  /**
+   * Relative targets (2026-10-24) linked to the period: a retime's that
+   * followed it (`targets_moved`) and that kept their old time — the new one
+   * would have been after their deadline (`targets_kept`); a removal's, now
+   * custom at its start (`targets_converted`).
+   */
+  targets_moved?: number
+  targets_kept?: number
+  targets_converted?: number
   undo_id: number | null
 }
 
@@ -77,10 +88,36 @@ function remindersMoved(n: number): string {
   return n === 0 ? '' : ` · moved ${plural(n, 'reminder')}`
 }
 
+/** "5 targets follow" / "1 target follows". */
+function targetsFollow(n: number): string {
+  return `${plural(n, 'target')} ${n === 1 ? 'follows' : 'follow'}`
+}
+
+/** "5 targets keep 8:30 PM" / "1 target keeps 8:30 PM". */
+function targetsKeep(n: number, time: string): string {
+  return `${plural(n, 'target')} ${n === 1 ? 'keeps' : 'keep'} ${formatClockTime(time)}`
+}
+
+/**
+ * What a RETIME did to the relative targets that follow the period
+ * (2026-10-24): " · 5 targets follow" and, for the ones the new time would
+ * have put after their deadline (unlinked, at their old time), " · 1 target
+ * keeps 8:30 PM". `oldStart` is the period's start before the change.
+ */
+function retimeTargets(result: SlotChange, oldStart: string): string {
+  const moved = result.targets_moved ?? 0
+  const kept = result.targets_kept ?? 0
+  return (
+    (moved > 0 ? ` · ${targetsFollow(moved)}` : '') +
+    (kept > 0 ? ` · ${targetsKeep(kept, oldStart)}` : '')
+  )
+}
+
 /**
  * What a removal did besides removing: the reminders and quotas it moved to
  * the nearest period, and the settings that followed it (Default task time, a pad
- * button…), which keep its start as their own time.
+ * button…), which keep its start as their own time — and the relative
+ * targets that followed it, which keep it too (" · 5 targets keep 8:30 PM").
  */
 function removalSummary(result: SlotChange): string {
   const moved = [
@@ -88,11 +125,13 @@ function removalSummary(result: SlotChange): string {
     result.quotas_moved > 0 ? plural(result.quotas_moved, 'quota') : null,
   ].filter((p): p is string => p !== null)
   const kept = result.settings_converted
+  const targets = result.targets_converted ?? 0
   return (
     (moved.length > 0 ? ` · moved ${moved.join(', ')}` : '') +
     (kept.length > 0
       ? ` · ${kept.join(', ')} ${kept.length === 1 ? 'stays' : 'stay'} at ${formatClockTime(result.slot.start_time)}`
-      : '')
+      : '') +
+    (targets > 0 ? ` · ${targetsKeep(targets, result.slot.start_time)}` : '')
   )
 }
 
@@ -170,7 +209,8 @@ export function TimeSlotSettings({
         if (changes.start_time !== undefined) {
           toastWithUndo(
             `${result.slot.label} now starts at ${formatClockTime(result.slot.start_time)}` +
-              remindersMoved(result.reminders_moved),
+              remindersMoved(result.reminders_moved) +
+              retimeTargets(result, slot.start_time),
             result.undo_id,
           )
         } else {

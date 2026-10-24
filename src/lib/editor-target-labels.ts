@@ -211,14 +211,26 @@ export function deadlineDayPick(
  * before at 9:00 AM", "target the same day at 12:00 PM". Null for anything
  * else: a target-anchored repeat has no deadline, a one-off no rule.
  */
-export function deadlineRepeatLabel(task: {
-  rrule: string | null | undefined
-  repeat_anchor?: RepeatAnchor | null
-  target_days_before?: number | null
-  target_time?: string | null
-}): string | null {
+export function deadlineRepeatLabel(
+  task: {
+    rrule: string | null | undefined
+    repeat_anchor?: RepeatAnchor | null
+    target_days_before?: number | null
+    target_time?: string | null
+  },
+  /**
+   * The period the target follows, when it is linked (relative targets,
+   * 2026-10-24): "target the day before at Evening (8:30 PM)" — the activity
+   * log's words.
+   */
+  slotLabel: string | null = null,
+): string | null {
   if (!task.rrule || task.repeat_anchor !== 'deadline') return null
   if (task.target_days_before == null || !task.target_time) return null
+  if (slotLabel) {
+    const at = DateTime.fromFormat(task.target_time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
+    return `target ${relativeDaysWords(task.target_days_before)} at ${slotLabel} (${at})`
+  }
   return `target ${relativeTargetWords(task.target_days_before, task.target_time)}`
 }
 

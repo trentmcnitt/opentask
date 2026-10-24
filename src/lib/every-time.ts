@@ -63,6 +63,7 @@ import {
   type ScheduleInput,
 } from '@/core/tasks/repeat-schedule'
 import { formatTime } from '@/lib/format-rrule'
+import { relativeDaysWords } from '@/lib/editor-target-labels'
 import { localMoment } from '@/lib/opentask-day'
 import {
   RULE_DAYS,
@@ -82,9 +83,11 @@ import {
   defaultRelativeTarget,
   isDeadlineAnchored,
   occurrenceDates,
+  relativeOf,
   relativeTargetOf,
   relativeTargetProblem,
   occurrenceIsPersonal,
+  targetMoved,
   repeatEndOf,
   repeatStep,
   type RelativeTarget,
@@ -121,6 +124,11 @@ export type EveryTimeTask = Pick<
   repeat_until?: string | null
   /** The deadlines page's lead override (2026-10-22); absent reads as the default. */
   lead_days?: number | null
+  /**
+   * The reminder period the relative target's time follows (relative targets,
+   * 2026-10-24); absent reads as none (a custom time).
+   */
+  target_slot_id?: number | null
 }
 
 /** What the module needs besides the task. `now` is injectable for tests. */
@@ -136,6 +144,13 @@ export interface EveryTimeContext {
    * on the deadlines page from their lead day instead.
    */
   leads?: boolean
+  /**
+   * The period "Default task time" follows (ruling 10, relative targets
+   * 2026-10-24): a default relative target at that time copies the link, as
+   * the setting has it. Null (or absent) for a custom time — and on a task
+   * the user doesn't own, whose periods are the owner's.
+   */
+  morningSlotId?: number | null
 }
 
 /** The schedule being edited (plan §4.2). */
@@ -150,6 +165,12 @@ export interface EveryTimeDraft {
   deadlineTime: string | null
   /** Local days from the deadline back to the target (deadline-anchored only). */
   daysBefore: number
+  /**
+   * The reminder period `targetTime` follows (relative targets, 2026-10-24),
+   * or null for a custom time — deadline-anchored only; `targetTime` is then
+   * the period's start. Absent reads as null.
+   */
+  targetSlotId?: number | null
   /**
    * Deadline-anchored with NO relative target (2026-10-22, L1: the deadlines
    * page holds each occurrence): `targetTime` / `daysBefore` are only the
@@ -184,6 +205,12 @@ export interface EveryTimePatch {
   deadline_at?: string | null
   target_days_before?: number
   target_time?: string
+  /**
+   * The period the target's time follows: sent INSTEAD of `target_time` (the
+   * server sets the time to the period's start); a `target_time` alone is a
+   * custom time and drops the link.
+   */
+  target_slot_id?: number
   /** "After N times" (null: no count). Sent only when the end changed. */
   repeat_count?: number | null
   /** "On date": the last local day, yyyy-MM-dd (null: no date). */
@@ -283,12 +310,20 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
         deadlineTime: ruleTime,
         targetTime: task.target_time ?? ruleTime,
         daysBefore: task.target_days_before ?? 0,
+        targetSlotId: relativeOf(task) ? (task.target_slot_id ?? null) : null,
         ...(task.target_days_before === null || task.target_time === null
           ? { noTarget: true, leadDays: task.lead_days ?? null }
           : {}),
       }
     }
-    return { ...base, anchor: 'target', targetTime: ruleTime, deadlineTime: null, daysBefore: 0 }
+    return {
+      ...base,
+      anchor: 'target',
+      targetTime: ruleTime,
+      deadlineTime: null,
+      daysBefore: 0,
+      targetSlotId: null,
+    }
   }
   return oneOffDraft(task, ctx)
 }
@@ -319,16 +354,27 @@ function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft
   const rule: RuleDraft = { ...parseRule(`FREQ=WEEKLY;BYDAY=${defaultDay}`)! }
   const base = { rule, mode: 'from_due' as Mode, stop: false, refusal: null, defaultDay }
   if (!task.deadline_at) {
-    return { ...base, anchor: 'target', targetTime: time, deadlineTime: null, daysBefore: 0 }
+    return {
+      ...base,
+      anchor: 'target',
+      targetTime: time,
+      deadlineTime: null,
+      daysBefore: 0,
+      targetSlotId: null,
+    }
   }
   const deadlineTime = localHHMM(task.deadline_at, timezone)
   const fields = ruleFields(buildRule(rule, deadlineTime), 'from_due')
   const walk = memoWalk(fields, task.deadline_at, timezone)
-  let offset: RelativeTarget | null = task.due_at
-    ? relativeTargetOf(task.due_at, task.deadline_at, timezone)
-    : null
+  // A RELATIVE one-off (2026-10-24) keeps its own offsets and link — never
+  // read back from its target, which the deadline may have clamped.
+  const stored = relativeOf(task)
+  let offset: RelativeTarget | null =
+    stored ?? (task.due_at ? relativeTargetOf(task.due_at, task.deadline_at, timezone) : null)
+  let slotId = stored ? (task.target_slot_id ?? null) : null
   if (offset && relativeTargetProblem(offset, fields, task.deadline_at, timezone, walk)) {
     offset = null
+    slotId = null
   }
   // L1 (2026-10-22): with the deadlines page, no default — no fake target.
   if (!offset && ctx.leads) {
@@ -338,16 +384,22 @@ function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft
       deadlineTime,
       targetTime: deadlineTime,
       daysBefore: 0,
+      targetSlotId: null,
       noTarget: true,
     }
   }
-  offset ??= defaultRelativeTarget(fields, task.deadline_at, timezone, ctx.morningTime, walk)
+  if (!offset) {
+    offset = defaultRelativeTarget(fields, task.deadline_at, timezone, ctx.morningTime, walk)
+    // Ruling 10: a default at "Default task time" copies its link.
+    slotId = offset.time === ctx.morningTime ? (ctx.morningSlotId ?? null) : null
+  }
   return {
     ...base,
     anchor: 'deadline',
     deadlineTime,
     targetTime: offset.time,
     daysBefore: offset.days_before,
+    targetSlotId: slotId,
   }
 }
 
@@ -359,7 +411,10 @@ function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft
 export function createModeTask(staged: {
   dueAt?: string | null
   deadlineAt?: string | null
+  /** A relative target staged with the deadline (2026-10-24): kept by "Make it repeat". */
+  relative?: { days: number; time: string; slot_id: number | null } | null
 }): EveryTimeTask {
+  const relative = staged.deadlineAt ? (staged.relative ?? null) : null
   return {
     rrule: null,
     recurrence_mode: 'from_due',
@@ -368,8 +423,9 @@ export function createModeTask(staged: {
     due_at: staged.dueAt ?? null,
     occurrence_at: null,
     repeat_anchor: null,
-    target_days_before: null,
-    target_time: null,
+    target_days_before: relative?.days ?? null,
+    target_time: relative?.time ?? null,
+    target_slot_id: relative?.slot_id ?? null,
     on_deck_day: null,
   }
 }
@@ -386,7 +442,8 @@ export function scheduleEditable(task: Pick<EveryTimeTask, 'rrule'>): boolean {
 
 /** Two drafts that save the same thing (the panel's dirty test). `refusal` is not compared. */
 export function draftsEqual(a: EveryTimeDraft, b: EveryTimeDraft): boolean {
-  const key = (d: EveryTimeDraft) => JSON.stringify({ ...d, refusal: null })
+  const key = (d: EveryTimeDraft) =>
+    JSON.stringify({ ...d, refusal: null, targetSlotId: d.targetSlotId ?? null })
   return key(a) === key(b)
 }
 
@@ -401,7 +458,8 @@ export type DraftAction =
   | { type: 'monthDay'; day: number | 'last' }
   | { type: 'ends'; endType: RuleDraft['endType']; endCount?: number; endDate?: string }
   | { type: 'mode'; mode: Mode }
-  | { type: 'targetTime'; time: string }
+  /** The target's time — a period's start with `slotId` (linked), else a custom time. */
+  | { type: 'targetTime'; time: string; slotId?: number | null }
   | { type: 'deadlineTime'; time: string }
   | { type: 'daysBefore'; days: number }
   /** A target-less deadline draft's lead override (null: the default). */
@@ -471,7 +529,13 @@ function scheduleAction(d: EveryTimeDraft, action: DraftAction): EveryTimeDraft 
   switch (action.type) {
     case 'targetTime':
       // Picking a time sets a target (only a draft that had none changes key).
-      return { ...d, targetTime: action.time, ...(d.noTarget ? { noTarget: false } : {}) }
+      // A link only on a deadline-anchored draft (a rule's own time has none).
+      return {
+        ...d,
+        targetTime: action.time,
+        targetSlotId: deadline ? (action.slotId ?? null) : null,
+        ...(d.noTarget ? { noTarget: false } : {}),
+      }
     case 'deadlineTime':
       return deadline ? { ...d, deadlineTime: action.time } : d
     case 'leadDays':
@@ -541,11 +605,11 @@ function shiftedRuleDraft(
  */
 function addDeadline(d: EveryTimeDraft, time: string, ctx: EveryTimeContext): EveryTimeDraft {
   if (time >= d.targetTime) {
-    return { ...d, anchor: 'deadline', deadlineTime: time, daysBefore: 0 }
+    return { ...d, anchor: 'deadline', deadlineTime: time, daysBefore: 0, targetSlotId: null }
   }
   const rule = shiftedRuleDraft(d, d.targetTime, 1, time, ctx)
   if (!rule) return { ...d, refusal: ADD_DEADLINE_REFUSAL(d.targetTime) }
-  return { ...d, rule, anchor: 'deadline', deadlineTime: time, daysBefore: 1 }
+  return { ...d, rule, anchor: 'deadline', deadlineTime: time, daysBefore: 1, targetSlotId: null }
 }
 
 /**
@@ -554,7 +618,13 @@ function addDeadline(d: EveryTimeDraft, time: string, ctx: EveryTimeContext): Ev
  * (shifted back by `daysBefore`). Refused when that can't be written.
  */
 function leaveDeadline(d: EveryTimeDraft, ctx: EveryTimeContext): EveryTimeDraft {
-  const target = { ...d, anchor: 'target' as const, deadlineTime: null, daysBefore: 0 }
+  const target = {
+    ...d,
+    anchor: 'target' as const,
+    deadlineTime: null,
+    daysBefore: 0,
+    targetSlotId: null,
+  }
   if (d.daysBefore === 0) return target
   const rule = shiftedRuleDraft(d, d.deadlineTime ?? d.targetTime, -d.daysBefore, d.targetTime, ctx)
   if (!rule) return { ...d, refusal: LEAVE_DEADLINE_REFUSAL }
@@ -672,14 +742,19 @@ function deadlinePatch(
 ): EveryTimePatch {
   const patch: EveryTimePatch = {}
   const wasDeadline = isDeadlineAnchored(task)
+  const slotId = draft.targetSlotId ?? null
   const offsetsChanged =
     !draft.noTarget &&
     (!wasDeadline ||
       draft.daysBefore !== task.target_days_before ||
-      draft.targetTime !== task.target_time)
+      draft.targetTime !== task.target_time ||
+      slotId !== (task.target_slot_id ?? null))
   if (offsetsChanged) {
     patch.target_days_before = draft.daysBefore
-    patch.target_time = draft.targetTime
+    // Linked: the period alone (the server sets the time to its start);
+    // custom: the time alone, which drops a stored link.
+    if (slotId !== null) patch.target_slot_id = slotId
+    else patch.target_time = draft.targetTime
   }
   // The lead override, series-wide (the deadlines page): only while the
   // draft has no target, only when it changed.
@@ -712,7 +787,7 @@ function deadlinePatch(
  * deck (a repeating create on deck is refused).
  */
 export function draftToCreateFields(
-  staged: { dueAt?: string | null; deadlineAt?: string | null },
+  staged: Parameters<typeof createModeTask>[0],
   draft: EveryTimeDraft,
   ctx: EveryTimeContext,
 ): EveryTimePatch {
@@ -1237,7 +1312,13 @@ export function thisOneHint(
         ? 'on deck'
         : 'no target'
     const deadline = task.deadline_at ? `, deadline ${whenWords(task.deadline_at, tz)}` : ''
-    return `This one stays as a one-time task: ${what}${deadline}.`
+    // Ruling 6 (2026-10-24): an unmoved relative target is kept — it goes on
+    // moving with the deadline (the server's `stopKeepsRelative`).
+    const relative = stopKeepsRelativeTarget(task, tz)
+    const keeps = relative
+      ? ` The target stays ${relativeDaysWords(relative.days_before)} and moves with the deadline.`
+      : ''
+    return `This one stays as a one-time task: ${what}${deadline}.${keeps}`
   }
   // A one-off with a deadline made target-anchored: a target-anchored repeat
   // has no deadline (L9), so the Save removes it — said before Save.
@@ -1258,6 +1339,23 @@ export function thisOneHint(
   // The same words as a Next line (`nextDateWords`).
   const words = nextDateWords({ targetAt: at, deadlineAt, last: false }, tz)
   return `Changes apply to every occurrence, starting with this one: ${words}.`
+}
+
+/**
+ * STOP REPEATING keeps the relative target (ruling 6, 2026-10-24) — the
+ * server's `stopKeepsRelative` (src/core/tasks/relative-target.ts), read on
+ * the stored row: a deadline-anchored repeat with a relative target and a
+ * target, not on deck, whose target wasn't moved this occurrence. The offsets
+ * it keeps, else null.
+ */
+export function stopKeepsRelativeTarget(
+  task: EveryTimeTask,
+  timezone: string,
+): RelativeTarget | null {
+  if (!task.rrule || !isDeadlineAnchored(task) || !task.due_at || task.on_deck_day) return null
+  const relative = relativeOf(task)
+  if (!relative || !task.deadline_at) return null
+  return targetMoved(task, timezone) ? null : relative
 }
 
 /**

@@ -51,6 +51,8 @@ import { useBulkQuickSelectDate } from '@/hooks/useBulkQuickSelectDate'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { useStagedEditor } from '@/hooks/useStagedEditor'
 import { useEveryTime } from '@/hooks/useEveryTime'
+import { useLinkableSlots, useRelativeTarget } from '@/hooks/useRelativeTarget'
+import { pickAt, pickFields, type RelativePick } from '@/lib/relative-target-ui'
 import { formatClockTime } from '@/lib/time-utils'
 import {
   INCREMENTS,
@@ -91,7 +93,6 @@ import {
 import { SkipUntilDialog } from '@/components/SkipUntilDialog'
 import { canSkipUntil } from '@/lib/skip-until'
 import {
-  deadlineDayPick,
   occurrenceDiffers,
   pickerBaseDueAt,
   queuedRepeatOccurrence,
@@ -155,6 +156,12 @@ export interface QuickActionPanelChanges {
   repeat_anchor?: RepeatAnchor
   target_days_before?: number
   target_time?: string
+  /**
+   * The period the target's time follows (relative targets, 2026-10-24),
+   * sent instead of `target_time`. With `target_days_before` it is also a
+   * ONE-OFF's relative target (the target picker's "Before the deadline").
+   */
+  target_slot_id?: number
   /** Repeat ends (every-time mode's Ends row): "After N times" / "On date". Single-task only. */
   repeat_count?: number | null
   repeat_until?: string | null
@@ -239,6 +246,7 @@ type DirtyField =
   | 'leadDays'
   | 'horizon'
   | 'deck'
+  | 'relative'
 
 /**
  * The fields that make create mode dirty (besides the title, which is compared
@@ -256,6 +264,7 @@ const CREATE_MODE_DIRTY_FIELDS: readonly DirtyField[] = [
   'date',
   'autoSnooze',
   'notes',
+  'relative',
 ]
 
 /**
@@ -415,6 +424,11 @@ export function QuickActionPanel({
   const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
   // On deck (D2, `OnDeckLine`): undefined = no change, null = off deck, else a day.
   const [pendingDeck, setPendingDeck] = useState<string | null | undefined>(undefined)
+  // A RELATIVE target picked in the target picker's "Before the deadline"
+  // block (2026-10-24, `useRelativeTarget`): null = none staged.
+  const [pendingRelative, setPendingRelative] = useState<RelativePick | null>(null)
+  // The periods a target may follow (the user's own, on their own task).
+  const linkable = useLinkableSlots(effectiveTask, isCreateMode)
 
   // Single task mode hook. A repeating task waiting in the task queue
   // (2026-10-20, `queuedRepeatOccurrence`, with the queue switch on) has no
@@ -495,11 +509,16 @@ export function QuickActionPanel({
     task: effectiveTask,
     selectedTasks: selectedTasks ?? [],
     createStaged: {
-      dueAt: pendingDueAt ?? (singleHook.isDirty ? singleHook.workingDate : null),
+      dueAt:
+        pendingRelative && pendingDeadline
+          ? pickAt(pendingRelative, pendingDeadline, timezone)
+          : (pendingDueAt ?? (singleHook.isDirty ? singleHook.workingDate : null)),
       deadlineAt: pendingDeadline ?? null,
+      relative: pendingRelative,
     },
     timezone,
     morningTime,
+    morningSlotId: linkable.morningSlotId,
     leads: queueEnabled,
   })
   // Create mode: the schedule Done staged in every-time mode, and what Create
@@ -570,6 +589,7 @@ export function QuickActionPanel({
     leadDays: pendingLeadDays !== undefined,
     horizon: pendingHorizon !== undefined,
     deck: pendingDeck !== undefined,
+    relative: pendingRelative !== null,
   }
   // Edit mode: any staged field at all.
   const hasPendingChanges = Object.values(fieldDirty).some(Boolean)
@@ -625,15 +645,10 @@ export function QuickActionPanel({
   const deckShadowed = isDateDirty || pendingDueAtCleared
   const deckStaged = typeof pendingDeck === 'string' && !deckShadowed
   const showsNoTarget =
-    pendingDueAtCleared || deckStaged || (allNoDueDate && !isDateDirty && pendingDueAt === null)
+    pendingDueAtCleared ||
+    deckStaged ||
+    (allNoDueDate && !isDateDirty && pendingDueAt === null && pendingRelative === null)
 
-  // The target picker's "Morning of the deadline" (ruling Q8): single task, deadline ahead.
-  const pickerDeadlineDay = isBulkMode
-    ? null
-    : deadlineDayPick(
-        pendingDeadline !== undefined ? pendingDeadline : effectiveTask?.deadline_at,
-        { timezone, morningTime },
-      )
   // "THIS IS THE FRI OCT 16 ONE" (§7, A4): which occurrence the rows edit,
   // when it differs from what its rule alone says (decked, moved, queued,
   // rescheduled off its rule).
@@ -690,10 +705,20 @@ export function QuickActionPanel({
         setPendingDatePicked(false)
         reset()
       }
+      // A deck has no target: a staged relative one goes (a 400 together).
+      if (typeof day === 'string') setPendingRelative(null)
       setPendingDeck(day)
     },
     [reset],
   )
+  // A relative pick replaces a staged date and deck (`useRelativeTarget`).
+  const dropStagedDate = useCallback(() => {
+    setPendingDueAt(null)
+    setPendingDueAtCleared(false)
+    setPendingDatePicked(false)
+    setPendingDeck(undefined)
+    reset()
+  }, [reset])
   // The hold menu's A1 limit from a STAGED deadline (`deckLimit`); with none
   // staged, the button works it out from the task.
   const stagedDeckLimit =
@@ -724,30 +749,40 @@ export function QuickActionPanel({
   // Without this, clicking "Clear due date" then a preset/increment button leaves
   // pendingDueAtCleared=true, causing collectPendingChanges() to short-circuit and
   // ignore the new date selection.
+  // RULING 1 (relative targets, 2026-10-24): every pad tap, Set Date, Now and
+  // Next Hour makes the target FIXED — a staged relative pick goes, and the
+  // server drops a stored one when the date is sent.
   const handlePresetClick = useCallback(
     (hour: number, minute: number) => {
       setPendingDueAtCleared(false)
       setPendingDueAt(null)
       setPendingDatePicked(false)
+      setPendingRelative(null)
       applyPreset(hour, minute)
     },
     [applyPreset],
   )
 
+  // An increment counts from what the Target row shows: a relative target's
+  // (staged, or re-derived from a staged deadline) moment, where it has one.
+  const relativeBaseRef = useRef<string | null>(null)
   const handleIncrementClick = useCallback(
     (inc: { minutes: number | null; days?: number }) => {
       setPendingDueAtCleared(false)
       setPendingDueAt(null)
       setPendingDatePicked(false)
+      setPendingRelative(null)
+      if (!isBulkMode && relativeBaseRef.current) singleHook.setWorkingDate(relativeBaseRef.current)
       applyIncrement(inc)
     },
-    [applyIncrement],
+    [applyIncrement, isBulkMode, singleHook],
   )
 
   const handleSmartButtonClick = useCallback(
     (type: 'now' | 'nextHour') => {
       setPendingDueAtCleared(false)
       setPendingDatePicked(false)
+      setPendingRelative(null)
       // In create mode, "Now" can produce the same value as initWorkingDate(null)
       // (both call snapToNearestFiveMinutes), so the hook's isDirty stays false.
       // Explicitly set pendingDueAt to ensure the date is staged and displayed.
@@ -766,6 +801,7 @@ export function QuickActionPanel({
   // repeating task's picker has no Clear at all.
   const handleSinglePickerChange = useCallback(
     (isoUtc: string | null) => {
+      setPendingRelative(null)
       if (isoUtc === null) {
         setPendingDueAtCleared(true)
         setPendingDueAt(null)
@@ -911,6 +947,10 @@ export function QuickActionPanel({
     if (showDeckLine && pendingDeck !== undefined && !isDateDirty && !pendingDueAtCleared) {
       changes.on_deck_day = pendingDeck
     }
+    // A relative target (2026-10-24): the offsets and the period, never with
+    // a date (the handlers drop the pick when one is staged; ruling 7).
+    if (pendingRelative && changes.due_at === undefined)
+      Object.assign(changes, pickFields(pendingRelative))
     // A cleared target on a task with a deadline puts it on the deadlines page
     // from its lead day (2026-10-22). Nothing extra to send.
     return changes
@@ -919,6 +959,7 @@ export function QuickActionPanel({
     pendingLeadDays,
     pendingHorizon,
     pendingDeck,
+    pendingRelative,
     showDeckLine,
     isDateDirty,
     pendingTitle,
@@ -961,6 +1002,7 @@ export function QuickActionPanel({
     setPendingLeadDays(undefined)
     setPendingHorizon(undefined)
     setPendingDeck(undefined)
+    setPendingRelative(null)
   }, [])
 
   // Create mode handler: collects all staged fields + title, calls onCreate, then resets.
@@ -1149,6 +1191,38 @@ export function QuickActionPanel({
     dirty: pendingDeadline !== undefined,
     onChange: setPendingDeadline,
     onOpenEveryTime: () => everyTime.enter({ focusDeadline: true }),
+    targetSlotLabel:
+      linkable.slots.find((slot) => slot.id === effectiveTask?.target_slot_id)?.label ?? null,
+  })
+  // A ONE-OFF'S RELATIVE TARGET (2026-10-24): see `useRelativeTarget`.
+  const relativeOneOff = !isBulkMode && !isReminderLike && !displayRrule
+  const relativeOffered =
+    canEdit &&
+    relativeOneOff &&
+    !stagedSchedule &&
+    (isCreateMode || (!!effectiveTask && !effectiveTask.done))
+  // A pick staged, then no longer possible (the deadline removed — ruling 5 —
+  // or the Reminder toggle staged after it): it goes, never sent (adjusted
+  // during render, as the deck's and the lead's are).
+  if (pendingRelative && (!relativeOffered || !stagedDeadlineValue)) setPendingRelative(null)
+  const relativeTarget = useRelativeTarget({
+    task: effectiveTask,
+    pending: pendingRelative,
+    setPending: setPendingRelative,
+    onStage: dropStagedDate,
+    offered: relativeOffered,
+    oneOff: relativeOneOff,
+    deadline: stagedDeadlineValue,
+    deadlineStaged: pendingDeadline !== undefined,
+    fixedStaged: isDateDirty || pendingDueAtCleared || deckStaged,
+    slots: linkable.slots,
+    morning: linkable.morning,
+    timezone,
+    dayStart,
+  })
+  const relativeAt = relativeTarget.preview?.at ?? null
+  useEffect(() => {
+    relativeBaseRef.current = relativeAt
   })
   const targetValue = targetValueFor({
     timezone,
@@ -1164,6 +1238,7 @@ export function QuickActionPanel({
     derived: deadlineAnchored
       ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime })
       : null,
+    relativeTarget: relativeTarget.targetValue,
   })
   // THE LEAD ROW (the deadlines page, 2026-10-22): see `leadRowFor`.
   const leadRow = leadRowFor({
@@ -1354,6 +1429,7 @@ export function QuickActionPanel({
           onCancel={isCreateMode ? everyTime.leave : () => everyTime.cancel(handleCancel)}
           locked={everyTime.locked}
           problem={everyTime.problem}
+          slots={linkable.slots}
         />
         <AlertDialog
           open={everyTime.confirm !== null}
@@ -1528,7 +1604,7 @@ export function QuickActionPanel({
               picker: {
                 value: isBulkMode
                   ? (bulkHook.presetTime ?? bulkHook.earliestDueAt)
-                  : (pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null),
+                  : (relativeAt ?? pendingDueAt ?? workingDate ?? effectiveTask?.due_at ?? null),
                 timezone,
                 // Clear is "Remove target", on a deadline task too
                 // (2026-10-22). A repeating task's target has no Clear at
@@ -1537,7 +1613,9 @@ export function QuickActionPanel({
                   ? canBulkClearDueDate
                   : !displayRrule && !effectiveTask?.target_auto,
                 clearLabel: isBulkMode ? undefined : REMOVE_TARGET,
-                quickPick: pickerDeadlineDay,
+                // "Before the deadline" (relative targets, 2026-10-24): it
+                // replaces the old "Morning of the deadline" pick (ruling 4).
+                beforeCalendar: relativeTarget.beforeCalendar,
                 emptyDefault: isBulkMode ? 'now' : 'tomorrow',
                 onChange: isBulkMode ? handleBulkPickerChange : handleSinglePickerChange,
               },
@@ -1558,7 +1636,8 @@ export function QuickActionPanel({
             quietUntil={
               isBulkMode || isReminderLike || displayRrule || showsNoTarget
                 ? null
-                : (pendingDueAt ??
+                : (relativeAt ??
+                  pendingDueAt ??
                   (isDateDirty ? workingDate : null) ??
                   effectiveTask?.due_at ??
                   null)
