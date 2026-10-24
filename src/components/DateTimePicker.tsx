@@ -57,7 +57,7 @@ interface DateTimePickerProps {
   /** The Clear button's text (default "Clear"): "Remove target" on the Quick panel's target. */
   clearLabel?: string
   /**
-   * One ready choice above the calendar — the target picker's "Deadline day"
+   * One ready choice above the calendar — the target picker's "Morning of the deadline"
    * (ruling Q8, 2026-10-12: the morning of the deadline's day, or the deadline
    * itself if earlier). A tap picks it and closes, like Set Date.
    */
@@ -82,17 +82,22 @@ function emptyDefaultAt(
 /** The picker's one ready choice above the calendar (`quickPick`). */
 function QuickPickRow({ label, onPick }: { label: string; onPick: () => void }) {
   return (
-    <div className="border-b px-3 py-2">
+    // `w-0 min-w-full`: the row takes the popover's width (the calendar's)
+    // and adds none of its own, so a long label wraps instead of widening
+    // the popover past a phone's edge.
+    <div className="w-0 min-w-full border-b px-3 py-2">
       <Button
         type="button"
         size="sm"
         variant="outline"
-        className="w-full justify-start"
+        // A long label ("Morning of the deadline · Tue 8:30 AM (Deadline
+        // time)") wraps inside the button on a phone instead of widening it.
+        className="h-auto min-h-8 w-full justify-start py-1.5 text-left whitespace-normal"
         data-quick-pick
         onClick={onPick}
       >
-        <CalendarDays className="mr-1 size-3.5" />
-        {label}
+        <CalendarDays className="mr-1 size-3.5 shrink-0" />
+        <span>{label}</span>
       </Button>
     </div>
   )

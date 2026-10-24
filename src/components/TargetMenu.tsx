@@ -48,7 +48,7 @@ export function TargetMenu({
   const [anchor, setAnchor] = useState<string | null>(null)
   const { morningTime } = useSnoozePreferences()
   const dayStart = useDayStart()
-  // "Deadline day" (ruling Q8), read as the picker opens.
+  // "Morning of the deadline" (ruling Q8), read as the picker opens.
   const [deadlineDay, setDeadlineDay] = useState<{ label: string; at: string } | null>(null)
   const openPicker = () => {
     setAnchor(computeSnoozeTime('tomorrow', timezone, morningTime, dayStart))

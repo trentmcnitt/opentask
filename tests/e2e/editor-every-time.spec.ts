@@ -1,7 +1,7 @@
 /**
  * THE TASK EDITOR'S "EVERY TIME" MODE (2026-10-22, editor plan §14.3; PR 4c):
  * the Quick panel's this-one rows, the "↻ Repeats — … · edit every time ›"
- * link, and the framed every-time mode — each Save one PATCH and one undo
+ * link, and the every-time mode — each Save one PATCH and one undo
  * entry, checked against the server.
  *
  * Seeds its own Home Depot-like tasks (never anyone's real ones); every task
@@ -53,14 +53,14 @@ function nextWeekday(weekday: number, hour: number): DateTime {
   return d.set({ hour })
 }
 
-/** The next month's 1st Saturday at 8 AM whose eve (6 PM) is still ahead. */
-function nextFirstSaturday(): DateTime {
+/** The next month's 1st Saturday at 8 AM whose eve (6 PM, or `eveHour`) is still ahead. */
+function nextFirstSaturday(eveHour = 18): DateTime {
   let month = DateTime.now().setZone(TZ).startOf('month')
   for (;;) {
     let d = month
     while (d.weekday !== 6) d = d.plus({ days: 1 })
     const at = d.set({ hour: 8 })
-    if (at.minus({ days: 1 }).set({ hour: 18 }) > DateTime.now()) return at
+    if (at.minus({ days: 1 }).set({ hour: eveHour }) > DateTime.now()) return at
     month = month.plus({ months: 1 })
   }
 }
@@ -100,7 +100,7 @@ async function openPanel(page: Page, id: number): Promise<Locator> {
   return dialog
 }
 
-/** The link into every-time mode, then the framed mode itself. */
+/** The link into every-time mode, then the mode itself. */
 async function enterEveryTime(dialog: Locator): Promise<Locator> {
   await dialog.locator('[data-quick-panel-repeat-link]').click()
   const region = dialog.getByRole('region', { name: 'Editing every time' })
@@ -127,7 +127,7 @@ function nextDates(region: Locator) {
   return region.locator('[data-every-time-next] [data-next-date]')
 }
 
-test('Home Depot: Next shows three target → deadline pairs; "2 days before" saves in one PATCH, and Undo restores', async ({
+test('Home Depot: Next shows three occurrences, one per line; "2 days before" saves in one PATCH, and Undo restores', async ({
   authenticatedPage: page,
 }) => {
   const id = await homeDepot(page)
@@ -147,7 +147,9 @@ test('Home Depot: Next shows three target → deadline pairs; "2 days before" sa
         'true',
       )
       await expect(nextDates(region)).toHaveCount(3)
-      await expect(nextDates(region).first()).toContainText(' → ')
+      await expect(nextDates(region).first()).toHaveText(
+        /^Sat [A-Z][a-z]{2} \d+ · deadline 8:00 AM · target Fri( [A-Z][a-z]{2} \d+)? 6:00 PM$/,
+      )
       // Opening changes nothing.
       await expect(region.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
 
@@ -208,7 +210,9 @@ test('"+ Add" an 8 AM deadline to a 4 PM target: the day before, one PATCH that 
         'the day before',
       )
       await expect(region.getByRole('combobox', { name: 'Target time' })).toHaveText('4:00 PM')
-      await expect(nextDates(region).first()).toContainText(/^Fri .* → Sat /)
+      await expect(nextDates(region).first()).toHaveText(
+        /^Sat [A-Z][a-z]{2} \d+ · deadline 8:00 AM · target Fri( [A-Z][a-z]{2} \d+)? 4:00 PM$/,
+      )
 
       const sent = patches(page, id)
       await region.getByRole('button', { name: 'Save', exact: true }).click()
@@ -775,6 +779,233 @@ test.describe('Every-time mode on a decked repeat (the queue user)', () => {
           .poll(async () => (await stateOf(page, id)).rrule)
           .toBe('FREQ=WEEKLY;BYDAY=FR,SA;BYHOUR=16;BYMINUTE=0')
         expect((await stateOf(page, id)).on_deck_day).toBe(deck)
+      })
+    } finally {
+      await trash(page, [id])
+    }
+  })
+})
+
+// ===========================================================================
+// One surface, never two nested (2026-10-24); Next one occurrence per line
+// ===========================================================================
+
+/** A monthly 1st-Saturday repeat, deadline 8 AM, the target the day before at noon. */
+function firstSaturdayNoon(page: Page) {
+  return create(page, {
+    title: uniqueTitle('Monthly first-Saturday workshop'),
+    rrule: 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=8;BYMINUTE=0',
+    repeat_anchor: 'deadline',
+    deadline_at: nextFirstSaturday(12).toUTC().toISO(),
+    target_days_before: 1,
+    target_time: '12:00',
+  })
+}
+
+/** "Sat Nov 7 · deadline 8:00 AM · target Fri 12:00 PM" (the target's date too when it is in the month before). */
+const NOON_LINE =
+  /^Sat [A-Z][a-z]{2} \d+ · deadline 8:00 AM · target Fri( [A-Z][a-z]{2} \d+)? 12:00 PM$/
+
+/** The element's own frame: its four border widths and its padding. */
+function frameOf(el: Locator) {
+  return el.evaluate((n) => {
+    const s = getComputedStyle(n)
+    return {
+      border: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth],
+      padding: s.padding,
+    }
+  })
+}
+const NO_FRAME = { border: ['0px', '0px', '0px', '0px'], padding: '0px' }
+
+/** No frame inside the host: the editor's surface draws none of its own. */
+async function expectFlat(host: Locator) {
+  const surface = host.locator('[data-editor-surface]')
+  await expect(surface).toHaveAttribute('data-editor-surface', 'flat')
+  expect(await frameOf(surface)).toEqual(NO_FRAME)
+}
+
+/** Next: one occurrence per line, each labelled and timed; the hint in the same words. */
+async function expectNoonNext(region: Locator) {
+  await expect(nextDates(region)).toHaveCount(3)
+  for (const line of await nextDates(region).all()) await expect(line).toHaveText(NOON_LINE)
+  // One per line: each starts below the one before.
+  const tops = await nextDates(region).evaluateAll((els) =>
+    els.map((e) => e.getBoundingClientRect().top),
+  )
+  expect(tops[1]).toBeGreaterThan(tops[0])
+  expect(tops[2]).toBeGreaterThan(tops[1])
+  await expect(region.locator('[data-every-time-hint]')).toHaveText(
+    /^Changes apply to every occurrence, starting with this one: Sat [A-Z][a-z]{2} \d+ · deadline 8:00 AM · target Fri( [A-Z][a-z]{2} \d+)? 12:00 PM\.$/,
+  )
+}
+
+/** Every running animation (a dialog or sheet sliding in) has finished: the screenshot shows where it lands. */
+async function settle(page: Page) {
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)))
+}
+
+/** The repeat link has no "since" beside it, and (`oneLine`) fits on one line. */
+async function expectRepeatLink(host: Locator, oneLine: boolean) {
+  const link = host.locator('[data-quick-panel-repeat-link]')
+  await expect(link).toBeVisible()
+  await expect(link.locator('xpath=..')).not.toContainText('since')
+  if (oneLine) expect((await link.boundingBox())!.height).toBeLessThan(26)
+}
+
+/** The latest 1st Saturday at 9 AM that has gone by. */
+function lastFirstSaturday(): DateTime {
+  let month = DateTime.now().setZone(TZ).startOf('month')
+  for (;;) {
+    let d = month
+    while (d.weekday !== 6) d = d.plus({ days: 1 })
+    const at = d.set({ hour: 9 })
+    if (at < DateTime.now()) return at
+    month = month.minus({ months: 1 })
+  }
+}
+
+test.describe('The editor is one surface (desktop, light)', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' })
+
+  test('dashboard dialog: no card inside it, no teal box in every-time; Next one per line', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await firstSaturdayNoon(page)
+    // A target-anchored monthly repeat whose occurrence has arrived: its link
+    // used to wrap, leaving "· since …" alone on a second line.
+    const arrived = await create(page, {
+      title: uniqueTitle('Monthly first-Saturday class'),
+      rrule: 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=9;BYMINUTE=0',
+      due_at: lastFirstSaturday().toUTC().toISO(),
+    })
+    try {
+      await withPreferences(page, unified, async () => {
+        const first = await openPanel(page, arrived)
+        await expect(first.locator('[data-quick-panel-repeat-link]')).toContainText(
+          'Monthly on the 1st Sat at 9:00 AM',
+        )
+        await expectRepeatLink(first, true)
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-dialog-link-1280.png' })
+        await first.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await expect(first).toHaveCount(0)
+
+        const dialog = await openPanel(page, id)
+        await expectFlat(dialog)
+        await expectRepeatLink(dialog, false)
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-dialog-this-one-1280.png' })
+
+        // Unsaved edits: Save turns solid, and no stripe is painted on the flat surface.
+        await dialog.getByRole('button', { name: '+1 day' }).click()
+        await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
+        const shadow = await dialog
+          .locator('[data-editor-surface]')
+          .evaluate((n) => getComputedStyle(n).boxShadow)
+        expect(shadow).toBe('none')
+        await dialog.getByRole('button', { name: 'Reset', exact: true }).click()
+
+        const region = await enterEveryTime(dialog)
+        expect(await frameOf(region)).toEqual(NO_FRAME)
+        await expectNoonNext(region)
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-dialog-every-time-1280.png' })
+      })
+    } finally {
+      await trash(page, [id, arrived])
+    }
+  })
+
+  test('the task page keeps one card; every-time inside it draws no second frame', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await firstSaturdayNoon(page)
+    try {
+      await page.goto(`/tasks/${id}`)
+      const surface = page.locator('[data-editor-surface]')
+      await expect(surface).toHaveAttribute('data-editor-surface', 'card')
+      expect((await frameOf(surface)).border).toEqual(['1px', '1px', '1px', '1px'])
+      await expectRepeatLink(surface, true)
+      await settle(page)
+      await page.screenshot({ path: '.tmp/screens/flat-page-this-one-1280.png' })
+      const region = await enterEveryTime(surface)
+      expect(await frameOf(region)).toEqual(NO_FRAME)
+      await expectNoonNext(region)
+      await settle(page)
+      await page.screenshot({ path: '.tmp/screens/flat-page-every-time-1280.png' })
+    } finally {
+      await trash(page, [id])
+    }
+  })
+
+  test('the selection bar’s More dialog and the create dialog: no card inside them', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await firstSaturdayNoon(page)
+    try {
+      await withPreferences(page, unified, async () => {
+        const row = page.locator(`#task-row-${id}`)
+        await waitForPrefsLoaded(page, () => page.goto('/'), row)
+        await cmdClickRow(row)
+        await page.getByRole('button', { name: 'More', exact: true }).click()
+        const more = page.getByRole('dialog')
+        await expectFlat(more)
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-more-1280.png' })
+        await more.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await expect(more).toHaveCount(0)
+        await page.keyboard.press('Escape')
+
+        await page.getByRole('complementary').getByRole('button', { name: 'Add Task' }).click()
+        const form = page.getByRole('dialog', { name: 'New Task' })
+        await expectFlat(form)
+        await form.locator('[data-quick-panel-repeat-link]').click()
+        const region = form.getByRole('region', { name: 'Editing every time' })
+        expect(await frameOf(region)).toEqual(NO_FRAME)
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-create-every-time-1280.png' })
+      })
+    } finally {
+      await trash(page, [id])
+    }
+  })
+})
+
+test.describe('The editor is one surface (phone, dark)', () => {
+  test.use({
+    viewport: { width: 375, height: 812 },
+    hasTouch: true,
+    isMobile: true,
+    colorScheme: 'dark',
+  })
+
+  test('the sheet: no card inside it, no teal box in every-time; Next one per line', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await firstSaturdayNoon(page)
+    try {
+      await withPreferences(page, unified, async () => {
+        const row = page.locator(`#task-row-${id}`)
+        await waitForPrefsLoaded(page, () => page.goto('/'), row)
+        await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+        const box = await row.boundingBox()
+        await row.tap({ position: { x: 56, y: box!.height - 6 } })
+        const sheet = page.locator('[data-slot="sheet-content"]')
+        await expect(sheet.locator('[data-this-one]')).toBeVisible()
+        await expectFlat(sheet)
+        const link = sheet.locator('[data-quick-panel-repeat-link]')
+        await expect(link.locator('xpath=..')).not.toContainText('since')
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-sheet-this-one-375-dark.png' })
+        await link.tap()
+        const region = sheet.getByRole('region', { name: 'Editing every time' })
+        expect(await frameOf(region)).toEqual(NO_FRAME)
+        await expectNoonNext(region)
+        await region.locator('[data-every-time-next]').scrollIntoViewIfNeeded()
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/flat-sheet-every-time-375-dark.png' })
+        expect(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
       })
     } finally {
       await trash(page, [id])

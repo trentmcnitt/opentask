@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
+import { filterByLabels } from '@/lib/label-filter'
 import type { Task } from '@/types'
 import { useDayStart } from '@/components/PreferencesProvider'
 
@@ -68,17 +69,6 @@ interface ApplyTaskFiltersOptions {
    * filter even though none of Work's tasks were due today).
    */
   skipGroup?: FilterGroup
-}
-
-function filterByLabels(tasks: Task[], c: TaskFilterCriteria): Task[] {
-  let filtered = tasks
-  if (c.selectedLabels.length > 0) {
-    filtered = filtered.filter((t) => t.labels.some((l) => c.selectedLabels.includes(l)))
-  }
-  if (c.excludedLabels.length > 0) {
-    filtered = filtered.filter((t) => !t.labels.some((l) => c.excludedLabels.includes(l)))
-  }
-  return filtered
 }
 
 function filterByPriorities(tasks: Task[], c: TaskFilterCriteria): Task[] {
@@ -165,6 +155,7 @@ export function applyTaskFilters(
 ): Task[] {
   const { timezone, dayStart, now, skipGroup } = options
   let filtered = tasks
+  // The label rules are shared with the Quotas page's label chips: src/lib/label-filter.ts.
   if (skipGroup !== 'labels') filtered = filterByLabels(filtered, criteria)
   if (skipGroup !== 'priorities') filtered = filterByPriorities(filtered, criteria)
   if (skipGroup !== 'dateFilters')

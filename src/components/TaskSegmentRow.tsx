@@ -1167,23 +1167,19 @@ function deckChipWords(day: string, timezone: string, dayStart: string): string 
 /**
  * The task's labels on a segment row's meta line (Trent's phone review,
  * 2026-10-22), with the dashboard row's chips (`LabelBadges`: two, then
- * "+N"). LAST on the line and never on a line of their own: a zero basis that
- * grows into what the line has left, clipped there with a short fade — so a
- * row's height never changes because of its labels, and a long label can't
- * push the row past the screen's edge on a phone. Nothing when the task has
- * none to show. `-my-px`: a chip is 18px (its 1px border), the line 16px —
- * the chips overhang by a pixel each side rather than grow the row.
+ * "+N"), LAST on the line. A chip is never cut (Trent, 2026-10-24 — this
+ * replaces 10-22's "clipped into what the line has left, so the row never
+ * grows"): the meta line is `flex-wrap`, so the chips move whole to a second
+ * meta line when they don't fit, exactly as on the dashboard's `TaskRow`
+ * (its indicators line). The row's controls are top-aligned (`items-start`),
+ * so a taller row leaves them where they are. Nothing when the task has none
+ * to show. `-my-px`: a chip is 18px (its 1px border), the line 16px — the
+ * chips overhang by a pixel each side rather than grow a one-line row.
  */
 function SegmentLabels({ task }: { task: Task }) {
   const { labelConfig } = useLabelConfig()
   if (!task.labels.some((l) => l !== 'ai-to-process')) return null
-  return (
-    <LabelBadges
-      labels={task.labels}
-      labelConfig={labelConfig}
-      className="-my-px min-w-0 shrink grow basis-0 overflow-hidden [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)]"
-    />
-  )
+  return <LabelBadges labels={task.labels} labelConfig={labelConfig} className="-my-px" />
 }
 
 /**
