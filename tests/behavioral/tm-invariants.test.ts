@@ -1133,11 +1133,15 @@ describe('TM-INV: relative targets (seeded random)', () => {
 
   /**
    * TM-INV-12 (relative targets, 2026-10-24; docs/TASK-MODEL.md § Relative
-   * targets): random one-offs with deadlines through random relative targets
-   * (custom or linked to a period), deadline moves and removals, picks,
-   * defers, Remove target, decks, done and put-back, undo — and random period
-   * RETIMES and DELETES (the generator's period writes). After every write,
-   * for every task:
+   * targets): random one-offs with deadlines (two on a shared project, with a
+   * collaborator) and a linked deadline-anchored repeat, through random
+   * relative targets (custom or linked to a period), deadline moves and
+   * removals, picks, defers, Remove target, decks, done and put-back, undo,
+   * rollovers — random period RETIMES and DELETES — and the interleavings
+   * that restore a snapshot older than the period: a collaborator's undo
+   * after the owner's period write, and the undo of a retime the rollover's
+   * fence skips (a decked repeat taken off deck). After every write, for
+   * every task:
    *  1. an OPEN one-off with offsets has a deadline, no deck, `target_auto`
    *     0, and `due_at` = `relativeTargetAt(deadline, offsets)`;
    *  2. a LINKED row (any state) has both offsets, and `target_time` equals
@@ -1145,198 +1149,219 @@ describe('TM-INV: relative targets (seeded random)', () => {
    *  3. the offsets come in pairs, and a link never sits without them.
    */
   test('TM-INV-12: one derivation and a true link, whatever the writes', () => {
-    const SEED12 = SEED + 12
-    const r = rng(SEED12)
-    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    const env = rtEnv(SEED + 12)
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
-    const label = (c: number, s: string) => `seed ${SEED12} case ${c} ${s}`
-    const hhmm = () =>
-      `${String(6 + Math.floor(r() * 16)).padStart(2, '0')}:${pick(['00', '15', '30', '45'])}`
-    let relativeSeen = 0
-    let linkedSeen = 0
-    let periodWrites = 0
-    let collaboratorUndos = 0
-    let deckRetimes = 0
-    const c2 = { userId: 2, userTimezone: tz }
-    const check = (ids: number[], l: string) => {
-      const slots = new Map(listTimeSlots(TEST_USER_ID).map((s) => [s.id, s.start_time]))
-      for (const id of ids) {
-        const task = getTaskById(id)!
-        const tl = `${l} task ${id}`
-        expect(task.target_days_before === null, `${tl}: half a pair`).toBe(
-          task.target_time === null,
-        )
-        if (task.target_slot_id !== null) {
-          linkedSeen++
-          expect(task.target_time, `${tl}: a link without offsets`).not.toBeNull()
-          expect(slots.has(task.target_slot_id), `${tl}: a link to a period that is gone`).toBe(
-            true,
-          )
-          expect(task.target_time, `${tl}: a linked time that is not the period's`).toBe(
-            slots.get(task.target_slot_id),
-          )
-        }
-        const open = !task.done && !task.deleted_at && !task.archived_at
-        if (open && !task.rrule && task.target_days_before !== null) {
-          relativeSeen++
-          expect(task.deadline_at, `${tl}: relative with no deadline`).not.toBeNull()
-          expect(task.on_deck_day, `${tl}: relative AND on deck`).toBeNull()
-          expect(task.target_auto, `${tl}: relative AND automatic`).toBe(false)
-          expect(task.due_at, `${tl}: not the derivation`).toBe(
-            relativeTargetAt(
-              task.deadline_at!,
-              { days_before: task.target_days_before, time: task.target_time! },
-              tz,
-            ),
-          )
-        }
-      }
-    }
     for (let c = 0; c < 30; c++) {
-      setupTestDb()
-      let clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
-        minutes: Math.floor(r() * 5 * 24 * 60),
-      })
-      vi.setSystemTime(clock.toJSDate())
-      getDb()
-        .prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?')
-        .run(clock.minus({ days: 1 }).toISODate(), TEST_USER_ID)
-      const deadline = () =>
-        clock
-          .plus({ days: 1 + Math.floor(r() * 12) })
-          .set({ hour: 6 + Math.floor(r() * 16), minute: 0 })
-          .toUTC()
-          .toISO()!
-      // A collaborator (user 2) on a shared project: their undo stack is
-      // their own, so their undo restores snapshots from before the owner's
-      // period retimes and deletes (the heal's case).
-      seedTestUser(2, 'collaborator@example.com')
-      seedTestProject(2, 'Shared', TEST_USER_ID, true)
-      const ids = [0, 1, 2].map(
-        (i) =>
-          createTask({
-            ...u,
-            input: { title: `rt ${c}.${i}`, deadline_at: deadline(), project_id: i ? 2 : 1 },
-          }).id,
-      )
-      // And a deadline-anchored repeat linked to a period, for decks and
-      // rollovers (the rollover's fence skips an undo's snapshot of it).
-      const weekly = clock.plus({ days: 3 }).set({ hour: 8, minute: 30 })
-      const day = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][weekly.weekday - 1]
-      ids.push(
-        createTask({
-          ...u,
-          input: {
-            title: `rt ${c}.repeat`,
-            project_id: 2,
-            rrule: `FREQ=WEEKLY;BYDAY=${day};BYHOUR=8;BYMINUTE=30`,
-            deadline_at: weekly.toUTC().toISO()!,
-            target_days_before: 1,
-            target_slot_id: pick(listTimeSlots(TEST_USER_ID)).id,
-          },
-        }).id,
-      )
-      check(ids, label(c, 'create'))
+      const ids = rtSetup(env, c)
+      rtCheck(env, ids, env.label(c, 'create'))
       for (let s = 0; s < 16; s++) {
-        clock = clock.plus({ minutes: Math.floor(r() * 30 * 60) })
-        vi.setSystemTime(clock.toJSDate())
-        const id = pick(ids)
-        const op = Math.floor(r() * 17)
-        const step = label(c, `op ${s}:${op}`)
+        env.setClock(env.clock.plus({ minutes: Math.floor(env.r() * 30 * 60) }))
+        const op = Math.floor(env.r() * 17)
         try {
-          if (op <= 2) {
-            // A relative target: custom, or linked to a random period.
-            const days = Math.floor(r() * 4)
-            const input =
-              r() < 0.5
-                ? { target_days_before: days, target_time: hhmm() }
-                : { target_days_before: days, target_slot_id: pick(listTimeSlots(TEST_USER_ID)).id }
-            updateTask({ ...u, taskId: id, input })
-          } else if (op === 3) {
-            updateTask({ ...u, taskId: id, input: { deadline_at: deadline() } })
-          } else if (op === 4) {
-            const to = clock.plus({ minutes: Math.floor(r() * 4 * 24 * 60) })
-            snoozeTask({ ...u, taskId: id, until: to.toUTC().toISO()! })
-          } else if (op === 5) {
-            updateTask({ ...u, taskId: id, input: pick([{ due_at: null }, { deadline_at: null }]) })
-          } else if (op === 6) {
-            deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day: clock.toISODate()! })
-          } else if (op === 7) {
-            const task = getTaskById(id)!
-            if (task.done) markUndone({ ...u, taskId: id })
-            else markDone({ ...u, taskId: id })
-          } else if (op === 8) {
-            executeUndo(TEST_USER_ID)
-          } else if (op === 12) {
-            // A collaborator interleaving: the collaborator defers (or
-            // re-times) a shared linked task, the OWNER then retimes or
-            // deletes that period, and the collaborator undoes — a snapshot
-            // from before the period write, restored after it.
-            const shared = getTaskById(pick(ids.slice(1, 3)))!
-            const linked = shared.target_slot_id
-            const to = clock.plus({ minutes: Math.floor(r() * 4 * 24 * 60) })
-            if (r() < 0.6) snoozeTask({ ...c2, taskId: shared.id, until: to.toUTC().toISO()! })
-            else updateTask({ ...c2, taskId: shared.id, input: { target_time: hhmm() } })
-            if (linked !== null) {
-              if (r() < 0.6) {
-                updateTimeSlot({ ...u, slotId: linked, input: { start_time: hhmm() } })
-              } else if (listTimeSlots(TEST_USER_ID).length > 2) {
-                deleteTimeSlot({ ...u, slotId: linked })
-                createTimeSlot(TEST_USER_ID, `C${c}.${s}`, hhmm())
-              }
-            }
-            executeUndo(2)
-            collaboratorUndos++
-          } else if (op === 13) {
-            executeRedo(2)
-          } else if (op === 14 || op === 15) {
-            // A decked repeat: on deck today, its period retimed, the next
-            // day's rollover ends the deck (its fence then skips the retime's
-            // snapshot of it), and the retime is undone — then maybe redone.
-            const repeat = getTaskById(ids[3])!
-            deckTasks({
-              userId: TEST_USER_ID,
-              timezone: tz,
-              ids: [repeat.id],
-              day: clock.toISODate()!,
-            })
-            const slotId = getTaskById(repeat.id)!.target_slot_id
-            if (slotId !== null) {
-              updateTimeSlot({ ...u, slotId, input: { start_time: hhmm() } })
-              periodWrites++
-            }
-            clock = clock.plus({ days: 1 }).set({ hour: 4, minute: 0 })
-            vi.setSystemTime(clock.toJSDate())
-            runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
-            executeUndo(TEST_USER_ID)
-            if (op === 15) executeRedo(TEST_USER_ID)
-            deckRetimes++
-          } else if (op === 16) {
-            runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
-          } else if (op <= 10) {
-            // A period RETIME: any period, to a free random time.
-            const slot = pick(listTimeSlots(TEST_USER_ID))
-            updateTimeSlot({ ...u, slotId: slot.id, input: { start_time: hhmm() } })
-            periodWrites++
-          } else {
-            // A period DELETE, and a fresh one so the pool never runs dry.
-            const slots = listTimeSlots(TEST_USER_ID)
-            if (slots.length > 2) deleteTimeSlot({ ...u, slotId: pick(slots).id })
-            createTimeSlot(TEST_USER_ID, `P${c}.${s}`, hhmm())
-            periodWrites++
-          }
+          rtOp(env, op, ids, `${c}.${s}`)
         } catch (err) {
           // A refusal (400 / 409) is part of the contract; nothing half-written.
           if (!(err instanceof ValidationError) && !(err instanceof AppError)) throw err
         }
-        check(ids, step)
+        rtCheck(env, ids, env.label(c, `op ${s}:${op}`))
       }
     }
     // The seed exercises every part.
-    expect(relativeSeen).toBeGreaterThan(30)
-    expect(linkedSeen).toBeGreaterThan(30)
-    expect(periodWrites).toBeGreaterThan(30)
-    expect(collaboratorUndos).toBeGreaterThan(20)
-    expect(deckRetimes).toBeGreaterThan(20)
+    expect(env.n.relative).toBeGreaterThan(30)
+    expect(env.n.linked).toBeGreaterThan(30)
+    expect(env.n.periodWrites).toBeGreaterThan(30)
+    expect(env.n.collaboratorUndos).toBeGreaterThan(20)
+    expect(env.n.deckRetimes).toBeGreaterThan(20)
   }, 60_000)
 })
+
+/** TM-INV-12's seeded state: the PRNG, the clock and the counters. */
+function rtEnv(seed: number) {
+  const r = rng(seed)
+  const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+  const env = {
+    r,
+    pick,
+    hhmm: () =>
+      `${String(6 + Math.floor(r() * 16)).padStart(2, '0')}:${pick(['00', '15', '30', '45'])}`,
+    label: (c: number, s: string) => `seed ${seed} case ${c} ${s}`,
+    clock: DateTime.now(),
+    setClock: (d: DateTime) => {
+      env.clock = d
+      vi.setSystemTime(d.toJSDate())
+    },
+    deadline: () =>
+      env.clock
+        .plus({ days: 1 + Math.floor(r() * 12) })
+        .set({ hour: 6 + Math.floor(r() * 16), minute: 0 })
+        .toUTC()
+        .toISO()!,
+    n: { relative: 0, linked: 0, periodWrites: 0, collaboratorUndos: 0, deckRetimes: 0 },
+  }
+  return env
+}
+type RtEnv = ReturnType<typeof rtEnv>
+const RT_COLLABORATOR = { userId: 2, userTimezone: TEST_TIMEZONE }
+
+/**
+ * A fresh case: three one-offs (two on a project shared with a collaborator,
+ * user 2, whose undo stack is their own) and a deadline-anchored weekly
+ * repeat linked to a period.
+ */
+function rtSetup(env: RtEnv, c: number): number[] {
+  setupTestDb()
+  env.setClock(
+    DateTime.fromISO(env.pick(WINDOWS), { zone: tz }).plus({
+      minutes: Math.floor(env.r() * 5 * 24 * 60),
+    }),
+  )
+  getDb()
+    .prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?')
+    .run(env.clock.minus({ days: 1 }).toISODate(), TEST_USER_ID)
+  seedTestUser(2, 'collaborator@example.com')
+  seedTestProject(2, 'Shared', TEST_USER_ID, true)
+  const ids = [0, 1, 2].map(
+    (i) =>
+      createTask({
+        ...u,
+        input: { title: `rt ${c}.${i}`, deadline_at: env.deadline(), project_id: i ? 2 : 1 },
+      }).id,
+  )
+  const weekly = env.clock.plus({ days: 3 }).set({ hour: 8, minute: 30 })
+  const day = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][weekly.weekday - 1]
+  const repeat = createTask({
+    ...u,
+    input: {
+      title: `rt ${c}.repeat`,
+      project_id: 2,
+      rrule: `FREQ=WEEKLY;BYDAY=${day};BYHOUR=8;BYMINUTE=30`,
+      deadline_at: weekly.toUTC().toISO()!,
+      target_days_before: 1,
+      target_slot_id: env.pick(listTimeSlots(TEST_USER_ID)).id,
+    },
+  })
+  return [...ids, repeat.id]
+}
+
+/** TM-INV-12's three invariants over every task. */
+function rtCheck(env: RtEnv, ids: number[], l: string): void {
+  const slots = new Map(listTimeSlots(TEST_USER_ID).map((s) => [s.id, s.start_time]))
+  for (const id of ids) {
+    const task = getTaskById(id)!
+    const tl = `${l} task ${id}`
+    expect(task.target_days_before === null, `${tl}: half a pair`).toBe(task.target_time === null)
+    if (task.target_slot_id !== null) {
+      env.n.linked++
+      expect(task.target_time, `${tl}: a link without offsets`).not.toBeNull()
+      expect(slots.has(task.target_slot_id), `${tl}: a link to a period that is gone`).toBe(true)
+      expect(task.target_time, `${tl}: a linked time that is not the period's`).toBe(
+        slots.get(task.target_slot_id),
+      )
+    }
+    const open = !task.done && !task.deleted_at && !task.archived_at
+    if (open && !task.rrule && task.target_days_before !== null) {
+      env.n.relative++
+      expect(task.deadline_at, `${tl}: relative with no deadline`).not.toBeNull()
+      expect(task.on_deck_day, `${tl}: relative AND on deck`).toBeNull()
+      expect(task.target_auto, `${tl}: relative AND automatic`).toBe(false)
+      const relative = { days_before: task.target_days_before, time: task.target_time! }
+      expect(task.due_at, `${tl}: not the derivation`).toBe(
+        relativeTargetAt(task.deadline_at!, relative, tz),
+      )
+    }
+  }
+}
+
+/** One random write (`op` 0–16) over the case's tasks. */
+function rtOp(env: RtEnv, op: number, ids: number[], tag: string): void {
+  if (op <= 8) return rtTaskOp(env, op, env.pick(ids))
+  if (op <= 11) return rtPeriodOp(env, op, tag)
+  if (op === 12) return rtCollaboratorUndo(env, ids, tag)
+  if (op === 13) return void executeRedo(2)
+  if (op <= 15) return rtDeckedRetime(env, ids[3], op === 15)
+  runTaskRollover({ now: env.clock.toJSDate(), userId: TEST_USER_ID })
+}
+
+/** The task writes: offsets, deadline moves, defers, clears, decks, done, undo. */
+function rtTaskOp(env: RtEnv, op: number, id: number): void {
+  const { r, pick } = env
+  if (op <= 2) {
+    // A relative target: custom, or linked to a random period.
+    const days = Math.floor(r() * 4)
+    const input =
+      r() < 0.5
+        ? { target_days_before: days, target_time: env.hhmm() }
+        : { target_days_before: days, target_slot_id: pick(listTimeSlots(TEST_USER_ID)).id }
+    updateTask({ ...u, taskId: id, input })
+  } else if (op === 3) {
+    updateTask({ ...u, taskId: id, input: { deadline_at: env.deadline() } })
+  } else if (op === 4) {
+    const to = env.clock.plus({ minutes: Math.floor(r() * 4 * 24 * 60) })
+    snoozeTask({ ...u, taskId: id, until: to.toUTC().toISO()! })
+  } else if (op === 5) {
+    updateTask({ ...u, taskId: id, input: pick([{ due_at: null }, { deadline_at: null }]) })
+  } else if (op === 6) {
+    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day: env.clock.toISODate()! })
+  } else if (op === 7) {
+    if (getTaskById(id)!.done) markUndone({ ...u, taskId: id })
+    else markDone({ ...u, taskId: id })
+  } else {
+    executeUndo(TEST_USER_ID)
+  }
+}
+
+/** A period RETIME (9, 10), or a DELETE and a fresh period so the pool never runs dry (11). */
+function rtPeriodOp(env: RtEnv, op: number, tag: string): void {
+  const slots = listTimeSlots(TEST_USER_ID)
+  if (op <= 10) {
+    updateTimeSlot({ ...u, slotId: env.pick(slots).id, input: { start_time: env.hhmm() } })
+  } else {
+    if (slots.length > 2) deleteTimeSlot({ ...u, slotId: env.pick(slots).id })
+    createTimeSlot(TEST_USER_ID, `P${tag}`, env.hhmm())
+  }
+  env.n.periodWrites++
+}
+
+/**
+ * A collaborator interleaving: the collaborator defers (or re-times) a shared
+ * linked task, the OWNER then retimes or deletes that period, and the
+ * collaborator undoes — a snapshot from before the period write, restored
+ * after it.
+ */
+function rtCollaboratorUndo(env: RtEnv, ids: number[], tag: string): void {
+  const shared = getTaskById(env.pick(ids.slice(1, 3)))!
+  const linked = shared.target_slot_id
+  const to = env.clock.plus({ minutes: Math.floor(env.r() * 4 * 24 * 60) })
+  if (env.r() < 0.6) {
+    snoozeTask({ ...RT_COLLABORATOR, taskId: shared.id, until: to.toUTC().toISO()! })
+  } else {
+    updateTask({ ...RT_COLLABORATOR, taskId: shared.id, input: { target_time: env.hhmm() } })
+  }
+  if (linked !== null && env.r() < 0.6) {
+    updateTimeSlot({ ...u, slotId: linked, input: { start_time: env.hhmm() } })
+  } else if (linked !== null && listTimeSlots(TEST_USER_ID).length > 2) {
+    deleteTimeSlot({ ...u, slotId: linked })
+    createTimeSlot(TEST_USER_ID, `C${tag}`, env.hhmm())
+  }
+  executeUndo(2)
+  env.n.collaboratorUndos++
+}
+
+/**
+ * A decked repeat: on deck today, its period retimed, the next day's rollover
+ * ends the deck (its fence then skips the retime's snapshot of it), and the
+ * retime is undone — then maybe redone.
+ */
+function rtDeckedRetime(env: RtEnv, repeatId: number, redo: boolean): void {
+  deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [repeatId], day: env.clock.toISODate()! })
+  const slotId = getTaskById(repeatId)!.target_slot_id
+  if (slotId !== null) {
+    updateTimeSlot({ ...u, slotId, input: { start_time: env.hhmm() } })
+    env.n.periodWrites++
+  }
+  env.setClock(env.clock.plus({ days: 1 }).set({ hour: 4, minute: 0 }))
+  runTaskRollover({ now: env.clock.toJSDate(), userId: TEST_USER_ID })
+  executeUndo(TEST_USER_ID)
+  if (redo) executeRedo(TEST_USER_ID)
+  env.n.deckRetimes++
+}
