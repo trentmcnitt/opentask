@@ -121,6 +121,8 @@ export function sweepFeedbackContent(
   counts: SweepCounts,
   until: string,
   timezone: string,
+  /** The user's day boundary: "tomorrow 9:00 AM" by OpenTask day. */
+  dayStart: string,
   /** The task queue's one High per press (B8): the next press moves one, not all. */
   { onePerPress = false }: { onePerPress?: boolean } = {},
 ): SweepFeedbackContent | null {
@@ -135,7 +137,7 @@ export function sweepFeedbackContent(
     // the second press of a double snooze, and saying so explains it.
     const what =
       highAffected === affected ? `high-priority ${taskWord(affected)}` : taskWord(affected)
-    title = `Deferred ${affected} ${what} until ${formatSnoozeTarget(until, timezone)}`
+    title = `Deferred ${affected} ${what} until ${formatSnoozeTarget(until, timezone, dayStart)}`
   } else {
     title = 'Nothing deferred'
   }
@@ -180,6 +182,8 @@ export interface SweepFeedbackInput {
   /** The resolved snooze target (ISO). */
   until: string
   timezone: string
+  /** The user's day boundary (`dayBoundaryForUser`): the title's "tomorrow". */
+  dayStart: string
   /** Overdue tasks left after the sweep — the bulk grid's header count. */
   totalOverdueCount: number
   /**
@@ -205,7 +209,7 @@ export function decideSweepFeedback(
   if (!user || user.is_demo || !user.notifications_enabled) return null
   if (!user.sweep_feedback_notifications_enabled) return null
 
-  const content = sweepFeedbackContent(input.counts, input.until, input.timezone, {
+  const content = sweepFeedbackContent(input.counts, input.until, input.timezone, input.dayStart, {
     onePerPress: input.countSummary !== undefined,
   })
   if (!content) return null

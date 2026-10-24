@@ -12,6 +12,8 @@
  *
  * Chicago, Sunday week start (the default). Tue 2026-10-13 is "today".
  */
+import { WEEK_START_DEFAULT } from '@/lib/week-start'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
@@ -86,6 +88,8 @@ describe('The served period (quotaWindow / quotaPeriodFields)', () => {
       { rrule, progress_period_start: anchor, progress_target: 1, is_tracked: true },
       TEST_TIMEZONE,
       NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )
 
   test('TR-080: every 2 weeks from Sun Oct 11 ends Oct 25 — last day Oct 24, "by Oct 24"', () => {
@@ -117,6 +121,8 @@ describe('The served period (quotaWindow / quotaPeriodFields)', () => {
       { rrule: 'FREQ=WEEKLY;INTERVAL=2', progress_period_start: midnight('2026-09-27') },
       TEST_TIMEZONE,
       NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )!
     expect(w.start.toUTC().toISO()).toBe(midnight('2026-10-11'))
     expect(w.end.toUTC().toISO()).toBe(midnight('2026-10-25'))
@@ -142,6 +148,8 @@ describe('The served period (quotaWindow / quotaPeriodFields)', () => {
         },
         TEST_TIMEZONE,
         NOW,
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
       ),
     ).toEqual({
       progress_period_end: null,
@@ -422,6 +430,8 @@ describe('The web helpers: grouping, sections and words key on (FREQ, INTERVAL)'
       [q('FREQ=WEEKLY', null, 1, 2), q('FREQ=WEEKLY;INTERVAL=2', 'by Oct 24', 1, 1)],
       TEST_TIMEZONE,
       at('2026-10-13'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )
     expect(week.timeLeft).not.toBeNull()
     expect(week.elapsedFraction).not.toBeNull()

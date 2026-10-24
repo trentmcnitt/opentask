@@ -8,6 +8,7 @@ import { DateTimePicker } from '@/components/DateTimePicker'
 import {
   DEADLINE_WORD,
   HORIZON_WORD,
+  LEAD_WORD,
   NO_TARGET,
   TARGET_WORD,
   targetQuietUntil,
@@ -23,9 +24,9 @@ import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target
  *   This is the Fri Oct 16 one           (amber; only when it differs, §7)
  *   Target    Fri Nov 6, 6:00 PM · in 16 days
  *   Deadline  Sat Nov 7, 8:00 AM
- *   Lead      On the deadlines page from Tue Nov 3 (4 days before)  − 4 days +
+ *   Lead time On the deadlines page from Tue Nov 3 (4 days before)  − 4 days +
  *   On deck   —
- *   ↻ Repeats — Fridays at 4:00 PM · edit every time ›     · since …
+ *   ↻ Repeats — Fridays at 4:00 PM · edit every time ›   (one line: no "since")
  *
  * TRUE LABELS: in this mode the rule's time is never called "Target" — the
  * rule shows only in the link's words. The link is the ONE way into every-
@@ -43,7 +44,8 @@ import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target
  *    "+ Add" focused, the deadline's proper home (this replaces the #313
  *    stopgap that hid the row).
  *
- * THE LEAD ROW (the deadlines page, 2026-10-22, plan §2): a deadline task
+ * THE LEAD TIME ROW ("Lead" until 2026-10-24; the deadlines page, 2026-10-22,
+ * plan §2): a deadline task
  * with NO target goes on the deadlines page from its lead day — the row says
  * when ("On the deadlines page from Tue Oct 20 (3 days before)", `leadLine`),
  * adds "· deferred to Thu" when the page's Defer moved THIS instance, and
@@ -108,7 +110,7 @@ export function ThisOneFields({
         )}
         {lead && (
           <>
-            <RowLabel>Lead</RowLabel>
+            <RowLabel>{LEAD_WORD}</RowLabel>
             <LeadRow {...lead} timezone={timezone} />
           </>
         )}
@@ -381,7 +383,7 @@ function LeadRow({
         )}
       </span>
       {editable && (
-        <span className="inline-flex items-center" role="group" aria-label="Lead days">
+        <span className="inline-flex items-center" role="group" aria-label={LEAD_WORD}>
           <button
             type="button"
             className={stepClass}
@@ -482,13 +484,20 @@ export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(functio
       {words ? (
         <>
           <span>Repeats — {words}</span>
-          <span aria-hidden>·</span>
-          <span className="text-foreground/80">{action}</span>
+          {/* "· edit every time ›" is one unit: if a long rule leaves no
+              room it moves down whole, never leaving "›" alone on a line. */}
+          <span className="inline-flex items-center gap-x-1 whitespace-nowrap">
+            <span aria-hidden>·</span>
+            <span className="text-foreground/80">{action}</span>
+            <ChevronRight className="size-3 shrink-0" aria-hidden />
+          </span>
         </>
       ) : (
-        <span>Make it repeat</span>
+        <>
+          <span>Make it repeat</span>
+          <ChevronRight className="size-3 shrink-0" aria-hidden />
+        </>
       )}
-      <ChevronRight className="size-3 shrink-0" aria-hidden />
     </button>
   )
 })

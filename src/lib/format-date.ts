@@ -7,59 +7,35 @@
  */
 
 import { DateTime } from 'luxon'
+import { openTaskDayBoundaries, openTaskDaysBetween, type DayBoundaries } from '@/lib/opentask-day'
 
 /**
- * Whole calendar days from `a` to `b` (negative when `b` is earlier), counted
- * midnight to midnight in `timezone`, or the process's zone when omitted.
- * Luxon's startOf('day') keeps DST's 23- and 25-hour days at one day each.
+ * Whole days from `a` to `b` (negative when `b` is earlier), counted on the
+ * user's OpenTask days ("Day starts at" PR 2, 2026-10-24: everything uses the
+ * OpenTask date — `openTaskDaysBetween`): with the day starting at 3:00 AM,
+ * 01:30 still belongs to the day before. `dayStart` is the user's day
+ * boundary (`useDayStart` in the browser, `dayBoundaryForUser` on the
+ * server); `CALENDAR_DAY_START` counts midnight to midnight. Calendar
+ * arithmetic on the dates, so DST's 23- and 25-hour days are one day each.
  */
-export function calendarDaysBetween(a: Date, b: Date, timezone?: string): number {
-  const opts = timezone ? { zone: timezone } : {}
-  const dayA = DateTime.fromJSDate(a, opts).startOf('day')
-  const dayB = DateTime.fromJSDate(b, opts).startOf('day')
-  return Math.round(dayB.diff(dayA, 'days').days)
+export function daysBetween(a: Date, b: Date, timezone: string, dayStart: string): number {
+  return openTaskDaysBetween(a, b, timezone, dayStart)
 }
 
-export interface DayBoundaries {
-  yesterdayStart: Date
-  todayStart: Date
-  tomorrowStart: Date
-  dayAfterTomorrowStart: Date
-  nextWeekStart: Date
-}
+export type { DayBoundaries }
 
 /**
- * Returns UTC Date objects representing day boundaries in the given timezone.
+ * The instants yesterday, today, tomorrow, the day after and a week on START
+ * at, as the user's OpenTask days (`openTaskDayBoundaries` — with a 3:00 AM
+ * day start, "today" at 01:30 began yesterday at 3:00). Every "Today" /
+ * "Tomorrow" label, the Today pill and the due-date filter chips read these.
  */
-export function getTimezoneDayBoundaries(timezone: string, now: Date = new Date()): DayBoundaries {
-  // Date parts of `now` in the user's timezone
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(now)
-
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
-  const year = parseInt(get('year'))
-  const month = parseInt(get('month'))
-  const day = parseInt(get('day'))
-
-  // Build a date string that represents midnight in the user's timezone,
-  // then parse it as that timezone to get the correct UTC instant.
-  // Uses parseInTimezone for each boundary so DST transitions (23h or 25h days)
-  // are handled correctly — ms arithmetic would be off by ±1 hour on DST days.
-  const yesterdayStart = parseInTimezone(year, month, day - 1, timezone)
-  const todayStart = parseInTimezone(year, month, day, timezone)
-  const tomorrowStart = parseInTimezone(year, month, day + 1, timezone)
-  const dayAfterTomorrowStart = parseInTimezone(year, month, day + 2, timezone)
-  const nextWeekStart = parseInTimezone(year, month, day + 7, timezone)
-
-  return { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart }
+export function getTimezoneDayBoundaries(
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): DayBoundaries {
+  return openTaskDayBoundaries(timezone, dayStart, now)
 }
 
 /**
@@ -147,17 +123,21 @@ export interface DueTimeParts {
  * Returns a relative string (always) and an optional absolute string
  * (only when relative is "in Xm" / "in Xh Ym").
  */
-export function formatDueTimeParts(isoUtc: string, timezone: string): DueTimeParts {
+export function formatDueTimeParts(
+  isoUtc: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): DueTimeParts {
   const due = new Date(isoUtc)
-  const now = new Date()
   const { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
-    getTimezoneDayBoundaries(timezone)
+    getTimezoneDayBoundaries(timezone, dayStart, now)
 
   const time = formatTimeInZone(due, timezone)
 
   // Overdue — due is in the past
   if (due < now) {
-    return formatOverdue(due, now, todayStart, yesterdayStart, timezone, time)
+    return formatOverdue(due, now, todayStart, yesterdayStart, timezone, dayStart, time)
   }
 
   // Today, future
@@ -203,6 +183,7 @@ function formatOverdue(
   todayStart: Date,
   yesterdayStart: Date,
   timezone: string,
+  dayStart: string,
   time: string,
 ): DueTimeParts {
   const diffMs = now.getTime() - due.getTime()
@@ -226,8 +207,8 @@ function formatOverdue(
     return { relative: 'yesterday', absolute: time }
   }
 
-  // Days/weeks/months ago (based on calendar days in timezone)
-  const calendarDays = calendarDaysBetween(due, now, timezone)
+  // Days/weeks/months ago (OpenTask days in timezone)
+  const calendarDays = daysBetween(due, now, timezone, dayStart)
 
   if (calendarDays < 7) {
     return { relative: `${calendarDays}d ago`, absolute: dateAndTime }
@@ -318,8 +299,13 @@ export function formatDurationDelta(fromMs: number, toMs: number): string {
  * last week ("Thu 7:42 AM"), and past that the date ("Oct 3, 7:42 AM") — a
  * bare weekday more than six days back would name the wrong Thursday.
  */
-export function formatLastLogged(isoUtc: string, timezone: string, now: Date = new Date()): string {
-  const days = calendarDaysBetween(new Date(isoUtc), now, timezone)
+export function formatLastLogged(
+  isoUtc: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): string {
+  const days = daysBetween(new Date(isoUtc), now, timezone, dayStart)
   const time = formatTimeInTimezone(isoUtc, timezone)
   if (days <= 0) return `today ${time}`
   if (days === 1) return `yesterday ${time}`
@@ -348,13 +334,17 @@ export function formatTimeInTimezone(isoUtc: string, timezone: string): string {
  *
  * Ranges: 1–6d → "Xd old", 7–29d → "Xw old", 30–364d → "Xmo old", 365+ → "Xy old"
  */
-export function formatTaskAge(anchorIsoUtc: string, timezone: string): string | null {
+export function formatTaskAge(
+  anchorIsoUtc: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): string | null {
   const anchor = new Date(anchorIsoUtc)
-  const now = new Date()
 
   if (anchor > now) return null
 
-  const calendarDays = calendarDaysBetween(anchor, now, timezone)
+  const calendarDays = daysBetween(anchor, now, timezone, dayStart)
 
   if (calendarDays < 1) return null
 
@@ -420,6 +410,7 @@ export function formatTaskSince(
     created_at: string
   },
   timezone: string,
+  dayStart: string,
   now: Date = new Date(),
 ): TaskSince | null {
   let anchorIso: string | null
@@ -437,10 +428,12 @@ export function formatTaskSince(
 
   const timeAgo = formatTimeAgo(anchor, nowDt)
 
+  // "today" / "yesterday" by OpenTask day (`daysBetween`).
+  const days = daysBetween(anchor.toJSDate(), now, timezone, dayStart)
   let label: string
-  if (anchor.hasSame(nowDt, 'day')) {
+  if (days === 0) {
     label = 'today'
-  } else if (anchor.hasSame(nowDt.minus({ days: 1 }), 'day')) {
+  } else if (days === 1) {
     label = 'yesterday'
   } else if (nowDt.diff(anchor, 'days').days < 7) {
     label = anchor.toFormat('ccc')

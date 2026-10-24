@@ -10,7 +10,7 @@ import { DateTime } from 'luxon'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { snapToNearestFiveMinutes } from '@/lib/quick-select-dates'
 import { computeSnoozeTime } from '@/lib/snooze'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
 
 interface DateTimePickerProps {
   /** Current value as UTC ISO string, or null if no date */
@@ -57,7 +57,7 @@ interface DateTimePickerProps {
   /** The Clear button's text (default "Clear"): "Remove target" on the Quick panel's target. */
   clearLabel?: string
   /**
-   * One ready choice above the calendar — the target picker's "Deadline day"
+   * One ready choice above the calendar — the target picker's "Morning of the deadline"
    * (ruling Q8, 2026-10-12: the morning of the deadline's day, or the deadline
    * itself if earlier). A tap picks it and closes, like Set Date.
    */
@@ -68,26 +68,36 @@ interface DateTimePickerProps {
  * Where an empty picker opens (`emptyDefault`): tomorrow at the user's Morning
  * time, or now snapped to five minutes. UTC ISO.
  */
-function emptyDefaultAt(kind: 'tomorrow' | 'now', timezone: string, morningTime: string): string {
+function emptyDefaultAt(
+  kind: 'tomorrow' | 'now',
+  timezone: string,
+  morningTime: string,
+  dayStart: string,
+): string {
   return kind === 'now'
     ? snapToNearestFiveMinutes()
-    : computeSnoozeTime('tomorrow', timezone, morningTime)
+    : computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
 }
 
 /** The picker's one ready choice above the calendar (`quickPick`). */
 function QuickPickRow({ label, onPick }: { label: string; onPick: () => void }) {
   return (
-    <div className="border-b px-3 py-2">
+    // `w-0 min-w-full`: the row takes the popover's width (the calendar's)
+    // and adds none of its own, so a long label wraps instead of widening
+    // the popover past a phone's edge.
+    <div className="w-0 min-w-full border-b px-3 py-2">
       <Button
         type="button"
         size="sm"
         variant="outline"
-        className="w-full justify-start"
+        // A long label ("Morning of the deadline · Tue 8:30 AM (Deadline
+        // time)") wraps inside the button on a phone instead of widening it.
+        className="h-auto min-h-8 w-full justify-start py-1.5 text-left whitespace-normal"
         data-quick-pick
         onClick={onPick}
       >
-        <CalendarDays className="mr-1 size-3.5" />
-        {label}
+        <CalendarDays className="mr-1 size-3.5 shrink-0" />
+        <span>{label}</span>
       </Button>
     </div>
   )
@@ -144,6 +154,7 @@ export function DateTimePicker({
   quickPick = null,
 }: DateTimePickerProps) {
   const { morningTime } = useSnoozePreferences()
+  const dayStart = useDayStart()
   const controlled = controlledOpen !== undefined
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlled ? controlledOpen : uncontrolledOpen
@@ -154,13 +165,14 @@ export function DateTimePicker({
 
   // Initialize internal state from external value when popover opens
   const initialize = useCallback(() => {
-    const initial = value ?? emptyAnchor ?? emptyDefaultAt(emptyDefault, timezone, morningTime)
+    const initial =
+      value ?? emptyAnchor ?? emptyDefaultAt(emptyDefault, timezone, morningTime, dayStart)
     const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
     setSelectedDate(dt.toJSDate())
     setHour12(to12Hour(dt.hour))
     setMinute(dt.minute)
     setPeriod(dt.hour >= 12 ? 'PM' : 'AM')
-  }, [value, timezone, emptyDefault, emptyAnchor, morningTime])
+  }, [value, timezone, emptyDefault, emptyAnchor, morningTime, dayStart])
 
   const setOpen = useCallback(
     (newOpen: boolean) => {

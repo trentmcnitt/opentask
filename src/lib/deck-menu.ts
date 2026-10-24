@@ -3,9 +3,10 @@
  * docs/TASK-MODEL.md § On deck). Pure, so the menu and the behavioural tests
  * share one copy.
  *
- * A tap on the On deck button decks the task for today (the calendar day —
- * red-team A2: between midnight and the rollover that is the coming day). A
- * HOLD picks the day instead:
+ * A tap on the On deck button decks the task for today — the OpenTask day
+ * ("Day starts at" PR 2, 2026-10-24; it was the calendar day under red-team
+ * A2): between midnight and a 3:00 AM day start, "today" is the day that is
+ * ending, and the late night's pick is Tomorrow. A HOLD picks the day instead:
  *
  *   Tomorrow
  *   Thursday, Friday, … — the next few days by name (2 to 6 days out)
@@ -26,7 +27,6 @@ import { DateTime } from 'luxon'
 import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
-  calendarToday,
   lastDeferDay,
   openTaskToday,
   repeatingDeadlineDay,
@@ -37,7 +37,7 @@ import {
 export interface DeckMenuDay {
   /** "Tomorrow", "Thursday", "Saturday · check-in", "Sat Oct 31 · check-in". */
   label: string
-  /** The local calendar date it decks for (yyyy-MM-dd). */
+  /** The OpenTask date it decks for (yyyy-MM-dd). */
   day: string
   /** On or after the deadline's automatic target day (A1): shown, not choosable. */
   disabled: boolean
@@ -62,12 +62,36 @@ const CHECK_IN_MARK = 'check-in'
  * "Tomorrow" as a deck day (yyyy-MM-dd) for the task-segment row's one-tap
  * "On deck tomorrow" button (2026-10-20): the hold menu's own Tomorrow item
  * (`deckMenuDays`' first day), read from it so the two can never disagree —
- * the calendar day after today (A2: between midnight and the rollover, the
- * day after the coming one). No limit here: a deadline task the server
+ * the OpenTask day after today. No limit here: a deadline task the server
  * refuses (A1) comes back with its reason, as from the menu.
  */
-export function deckTomorrowDay(timezone: string, now: Date): string {
-  return deckMenuDays(timezone, now)[0].day
+export function deckTomorrowDay(timezone: string, now: Date, dayStart: string): string {
+  return deckMenuDays(timezone, now, dayStart)[0].day
+}
+
+/**
+ * THE DAY START NOT KNOWN YET ("Day starts at" PR 2 review): before the
+ * preferences load, with nothing remembered (`useDayStartKnown`), the
+ * browser reads midnight — and between midnight and a 3:00 AM day start,
+ * midnight's "tomorrow" is a day late. A deck commits a DAY, so it waits:
+ * the one-tap "On deck tomorrow" does nothing (null) and the hold menu's
+ * days are shown but not choosable, as Snooze's Tomorrow.
+ */
+export const DAY_UNKNOWN_CAPTION = 'loading your day'
+
+/** The one-tap "On deck tomorrow" day, or null while the day start is unknown. */
+export function deckTomorrowIfKnown(
+  timezone: string,
+  now: Date,
+  dayStart: string,
+  dayKnown: boolean,
+): string | null {
+  return dayKnown ? deckTomorrowDay(timezone, now, dayStart) : null
+}
+
+/** The hold menu's days, disabled while the day start is unknown. */
+export function gateDeckDays(days: DeckMenuDay[], dayKnown: boolean): DeckMenuDay[] {
+  return dayKnown ? days : days.map((d) => ({ ...d, disabled: true, caption: DAY_UNKNOWN_CAPTION }))
 }
 
 /**
@@ -77,10 +101,12 @@ export function deckTomorrowDay(timezone: string, now: Date): string {
 export function deckMenuDays(
   timezone: string,
   now: Date,
+  /** The user's day boundary (`useDayStart`): the days are OpenTask days. */
+  dayStart: string,
   checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
   limit: DeckLimit | null = null,
 ): DeckMenuDay[] {
-  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
+  const today = DateTime.fromISO(openTaskToday(timezone, now, dayStart), { zone: timezone })
   const item = (d: DateTime, label: string): DeckMenuDay => {
     const day = d.toFormat(DECK_DAY_FORMAT)
     return limit && day > limit.latestDay
@@ -127,7 +153,7 @@ export function deckLimit(
   rolloverTime: string | null = null,
 ): DeckLimit | null {
   if (!task.deadline_at) return null
-  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
+  const today = DateTime.fromISO(openTaskToday(timezone, now, rolloverTime), { zone: timezone })
   if (Date.parse(task.deadline_at) <= now.getTime()) {
     return {
       latestDay: today.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),
@@ -155,8 +181,11 @@ export function deckTapDay(
   task: { on_deck_day?: string | null },
   timezone: string,
   now: Date,
+  dayStart: string,
 ): null | undefined {
-  return task.on_deck_day && task.on_deck_day <= calendarToday(timezone, now) ? null : undefined
+  return task.on_deck_day && task.on_deck_day <= openTaskToday(timezone, now, dayStart)
+    ? null
+    : undefined
 }
 
 /**
@@ -212,12 +241,14 @@ export function deckReplaces(
 export function todayReplaces(
   task: { on_deck_day?: string | null },
   timezone: string,
+  /** The user's day boundary (`useDayStart`): "today" is the OpenTask day. */
+  dayStart: string,
   now: Date = new Date(),
 ): string | null {
   if (!task.on_deck_day) return null
   const day = DateTime.fromISO(task.on_deck_day, { zone: timezone })
   if (!day.isValid) return 'On deck'
-  return task.on_deck_day === calendarToday(timezone, now)
+  return task.on_deck_day === openTaskToday(timezone, now, dayStart)
     ? 'On deck today'
     : `On deck ${day.toFormat('ccc')}`
 }

@@ -253,7 +253,10 @@ paths:
                         description: due_at in the past.
                       today:
                         type: integer
-                        description: due_at inside the user's local day.
+                        description: >
+                          due_at inside the user's OpenTask day — from their day start
+                          (`rollover_time`, 3:00 AM by default) to the next, with the task queue
+                          on ("Day starts at" PR 2); the local calendar day with it off.
         '401':
           $ref: '#/components/responses/Unauthorized'
   /api/tasks/{id}:
@@ -1138,9 +1141,10 @@ paths:
       tags: [Tasks]
       description: >
         ON DECK (2026-10-20): a target's DAY without its nag — "I'd like to get to this that
-        day". `day` is the caller's local CALENDAR date (yyyy-MM-dd), today or later; omitted =
-        today (between midnight and the rollover that is the coming calendar day, not the
-        OpenTask day); `null` takes the tasks off deck. Reminders, quotas, done and trashed
+        day". `day` is the caller's OpenTask date (yyyy-MM-dd; "Day starts at" PR 2, 2026-10-24 —
+        until then the local calendar date), today or later; omitted = today, the OpenTask
+        day (between midnight and a 3:00 AM day start that is the day that is ending — the
+        rollover queues it; the coming day is tomorrow's date); `null` takes the tasks off deck. Reminders, quotas, done and trashed
         tasks are skipped and counted, never refusing the batch (`skipped_recurring` stays in the
         answer and is always 0: repeating tasks can be decked since 2026-10-20). A task carries
         a picked target or a deck, never both: decking drops a picked target (time and all); a
@@ -1182,7 +1186,7 @@ paths:
                 day:
                   type: [string, 'null']
                   format: date
-                  description: The local calendar date; omitted = today; null = take off deck.
+                  description: The OpenTask date (the user's day, from their day start); omitted = today; null = take off deck.
       responses:
         '200':
           description: What was decked, skipped and refused
@@ -1605,7 +1609,7 @@ paths:
                     on_deck_day:
                       type: [string, 'null']
                       format: date
-                      description: On deck for this local calendar date, or off deck (`null`) — see TaskUpdate. Sent alone (no date fields in the same changes, and no `delta_minutes`).
+                      description: On deck for this OpenTask date, or off deck (`null`) — see TaskUpdate. Sent alone (no date fields in the same changes, and no `delta_minutes`).
                     deadline_nag_off:
                       type: boolean
                       deprecated: true
@@ -2515,8 +2519,8 @@ paths:
             enum: ['1']
           description: >
             `1` (the day roster, 2026-10-22): this client keeps each segment's "N of M" fixed for
-            the day. Every row a segment lists is remembered for that segment's day (the OpenTask
-            day for the queue's panels, the calendar day for the rest); a remembered row that has
+            the day. Every row a segment lists is remembered for the user's OpenTask day (every
+            panel, since "Day starts at" PR 2); a remembered row that has
             since left the segment HANDLED that day (done, decked, targeted with Today, or
             considered out of the queue) comes back as a `considered` row with `segment_left`,
             so it counts in both numbers. One that left unhandled (trashed, its heads-up over)
@@ -5873,7 +5877,8 @@ components:
           type: [string, 'null']
           format: date
           description: >
-            On deck (2026-10-20): the owner's local calendar date the task is on deck for — a
+            On deck (2026-10-20): the owner's OpenTask date the task is on deck for (their day,
+            from their day start — "Day starts at" PR 2; until then the calendar date) — a
             day with no nag. Never together with a picked target: a decked REPEATING task has
             `target_at` / `due_at` null (its `occurrence_at` is the occurrence on deck). Null =
             not on deck. Set with `POST /api/tasks/deck` or PATCH `on_deck_day`.
@@ -5948,7 +5953,13 @@ components:
             Interval quotas (2026-10-16), computed: the CURRENT period's end
             (UTC, exclusive) in the owner's clock - `progress_period_start`
             plus `period_interval` units, stepped past a period that has ended
-            but the rollover job has not closed yet. Use it rather than
+            but the rollover job has not closed yet. With the task queue on,
+            periods run on the owner's OpenTask dates ("Day starts at" PR 2): a
+            period is its first date, and ends at the owner's day start on the
+            next period's first date (with 3:00 AM, a Sunday week ends Sunday
+            03:00). A day-start change moves that end, never the phase; only an
+            anchor whose date is not its unit's first date ends early, at the
+            next unit. Use it rather than
             re-deriving the window from the rrule. Null on anything that is not
             a quota.
         period_interval:
@@ -5961,9 +5972,9 @@ components:
           type: [string, 'null']
           format: date
           description: >
-            Computed: the current period's last local day (`YYYY-MM-DD`) -
-            `progress_period_end` minus one day, since the end is the next
-            period's first midnight. For a client's own compact date. Null on
+            Computed: the current period's last day (`YYYY-MM-DD`) - the
+            owner's OpenTask day the window's last instant belongs to (with the
+            task queue off, `progress_period_end` minus one day). For a client's own compact date. Null on
             anything that is not a quota.
         period_label:
           type: [string, 'null']
@@ -6065,7 +6076,7 @@ components:
           type: [string, 'null']
           format: date
           description: >
-            On deck (2026-10-20): create the task on deck for this local calendar date — the
+            On deck (2026-10-20): create the task on deck for this OpenTask date — the
             same checks as `POST /api/tasks/deck`: a one-off only, today or later, and with a
             `deadline_at` in the same body only on a day before its automatic target's day
             (else 400). With `target_at` / `due_at` it is a 400 (a task is on deck or has a
@@ -6382,7 +6393,7 @@ components:
           type: [string, 'null']
           format: date
           description: >
-            On deck (2026-10-20): put the task on deck for this local calendar date (today or
+            On deck (2026-10-20): put the task on deck for this OpenTask date (today or
             later), or take it off (`null`) — the same rules as `POST /api/tasks/deck`, but an
             ineligible task (a reminder, a quota, done) or a refused deadline task is a 400. With
             `target_at` / `due_at` or `rrule` in the same body it is a 400 (a task is on deck or

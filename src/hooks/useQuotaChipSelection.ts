@@ -54,12 +54,15 @@ import { useSelectionMode } from '@/hooks/useSelectionMode'
 export function useQuotaChipSelection({
   enabled,
   query,
+  filterKey = '',
   panelRef,
 }: {
   /** Only the Quotas page selects (`TrackPanel`'s `standalone`). */
   enabled: boolean
   /** The search: a selection made before it no longer matches the screen. */
   query: string
+  /** The label filter's selection, as a string: changing it clears, like a new query. */
+  filterKey?: string
   panelRef: React.RefObject<HTMLElement | null>
 }) {
   const selection = useSelectionMode()
@@ -79,10 +82,11 @@ export function useQuotaChipSelection({
     return () => window.removeEventListener('keydown', onKey)
   }, [enabled, selectedIds, clear])
 
-  // A new query clears, exactly as on the Tasks and Reminders pages.
+  // A new query clears, exactly as on the Tasks and Reminders pages — and so
+  // does a new label filter, as a label chip clears the dashboard's selection.
   useEffect(() => {
     clear()
-  }, [query, clear])
+  }, [query, filterKey, clear])
 
   const visibleIds = useCallback((): number[] => {
     const panel = panelRef.current

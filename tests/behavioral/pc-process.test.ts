@@ -7,6 +7,7 @@
  * Clock: Saturday 2026-10-10, 10:00 Chicago (15:00Z). "Old" tasks have their
  * created_at / horizon_set_at rewritten — the growth clock reads those.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, updateTask, bulkEdit } from '@/core/tasks'
@@ -148,9 +149,13 @@ describe('Process: horizon growth asks', () => {
       original_due_at: null,
       deadline_at: null,
     }
-    expect(growthAsk(base, 'Pacific/Auckland', NOW)?.to).toBe('weeks')
-    expect(growthAsk({ ...base, horizon_set_at: daysAgo(7.1) }, 'UTC', NOW)?.to).toBe('weeks')
-    expect(growthAsk({ ...base, horizon_set_at: daysAgo(7) }, 'UTC', NOW)).toBeNull()
+    expect(growthAsk(base, 'Pacific/Auckland', NOW, CALENDAR_DAY_START)?.to).toBe('weeks')
+    expect(
+      growthAsk({ ...base, horizon_set_at: daysAgo(7.1) }, 'UTC', NOW, CALENDAR_DAY_START)?.to,
+    ).toBe('weeks')
+    expect(
+      growthAsk({ ...base, horizon_set_at: daysAgo(7) }, 'UTC', NOW, CALENDAR_DAY_START),
+    ).toBeNull()
   })
 })
 

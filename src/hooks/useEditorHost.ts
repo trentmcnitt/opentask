@@ -8,7 +8,7 @@ export type EditorSave = () => Promise<void> | void
 /**
  * The plumbing every host of a detail editor (QuotaDetail, ReminderDetail,
  * TaskDetail's QuickActionPanel) needs: the editor reports dirtiness through
- * `onDirtyChange` and publishes its save through `saveRef`; the host paints a
+ * `onDirtyChange` and publishes its save through `saveRef`; the host (on a page) paints a
  * dirty stripe, guards dismissal and navigation, and can commit the staged
  * edits from outside (an unsaved-changes dialog's Save).
  *
@@ -20,8 +20,8 @@ export type EditorSave = () => Promise<void> | void
  *   guard that still believed the editor was clean, and the edit was dropped
  *   without asking (seen in the full E2E run). Mirroring the state into a ref
  *   in an effect would bring that back, one render later.
- * - `isDirty` is state, and only drives rendering (the stripe, the sheet's
- *   drag-to-dismiss).
+ * - `isDirty` is state, and only drives rendering (the page card's stripe, the
+ *   sheet's drag-to-dismiss).
  *
  * `onChange`, when given, runs after both are written — the task page uses it
  * to tell the app-level navigation guard and to flush a deferred refresh. Pass

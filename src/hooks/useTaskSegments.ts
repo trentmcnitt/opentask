@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
 import {
-  calendarToday,
+  openTaskToday,
   effectiveHorizon,
   type HorizonValue,
   type SegmentKind,
@@ -15,6 +15,8 @@ import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
+import { openTaskDaysBetween } from '@/lib/opentask-day'
 
 /**
  * The task segments' actions (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -478,6 +480,7 @@ function useDeck(
   onCompleted: (() => void) | undefined,
   pageRows: { current: Map<number, { safetyNet: boolean }> },
 ) {
+  const dayStart = useDayStart()
   return useCallback(
     async (task: Task, day: string | null | undefined) => {
       const putBack = () =>
@@ -489,11 +492,13 @@ function useDeck(
       // Decked: handled today, counted (the day roster). Taken off deck (an
       // Upcoming deck row): the deck's consider stamp stays, so the server
       // keeps it here as handled (`segment_left: 'considered'`) — the same.
-      setOverlay((prev) => new Map(prev).set(task.id, deckOverlay(task, day, timezone, pageRows)))
+      setOverlay((prev) =>
+        new Map(prev).set(task.id, deckOverlay(task, day, timezone, dayStart, pageRows)),
+      )
       inFlight.current++
       try {
         const result = await sendDeck([task.id], day)
-        const message = deckToastMessage(result, task.title, timezone)
+        const message = deckToastMessage(result, task.title, timezone, dayStart)
         if (message) {
           toastResult(message, onUndo)
           onCompleted?.()
@@ -512,7 +517,7 @@ function useDeck(
         void refresh()
       }
     },
-    [setOverlay, inFlight, timezone, onUndo, refresh, onCompleted, pageRows],
+    [setOverlay, inFlight, timezone, dayStart, onUndo, refresh, onCompleted, pageRows],
   )
 }
 
@@ -528,11 +533,12 @@ function deckOverlay(
   task: Task,
   day: string | null | undefined,
   timezone: string,
+  dayStart: string,
   pageRows: { current: Map<number, { safetyNet: boolean }> },
 ): Overlay {
   const page = pageRows.current.get(task.id)
   if (!page) return { left: day === null ? 'considered' : 'deck' }
-  const today = calendarToday(timezone, new Date())
+  const today = openTaskToday(timezone, new Date(), dayStart)
   const deckDay = day === undefined ? today : day
   if (deckDay === today && !page.safetyNet) return { left: 'deck' }
   return { patch: { on_deck_day: deckDay } }
@@ -638,10 +644,9 @@ async function patchTask(id: number, body: unknown): Promise<unknown> {
  * targeting each choice sends (`at`), through the same optimistic `run`.
  */
 function useTargetPicker(run: RunSegmentAction, timezone: string) {
+  const dayStart = useDayStart()
   const targetAt = useCallback(
     (task: Task, at: string) => {
-      const when = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone)
-      const today = DateTime.now().setZone(timezone)
       return run(
         [task.id],
         // Any day: the row leaves. A targeted one-off is in no horizon
@@ -650,10 +655,10 @@ function useTargetPicker(run: RunSegmentAction, timezone: string) {
         // handled today (the day roster).
         { left: 'target' },
         () => post('/api/task-segments/target-today', { ids: [task.id], at }),
-        `Targeted ${targetWhen(when, today)}: “${task.title}”`,
+        `Targeted ${targetWhen(at, timezone, dayStart)}: “${task.title}”`,
       )
     },
-    [run, timezone],
+    [run, timezone, dayStart],
   )
   return { targetAt }
 }
@@ -661,11 +666,19 @@ function useTargetPicker(run: RunSegmentAction, timezone: string) {
 /**
  * "today 3:00 PM", "tomorrow 9:00 AM", "Tue, Oct 13 3:00 PM" — the picker's
  * toast. Also the dashboard rows' Today toast (`useTaskActions.handleTargetAt`).
+ * "today" / "tomorrow" are OpenTask days (`dayStart`, "Day starts at" PR 2).
  */
-export function targetWhen(when: DateTime, today: DateTime): string {
+export function targetWhen(
+  atIso: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): string {
+  const when = DateTime.fromISO(atIso, { zone: 'utc' }).setZone(timezone)
   const time = when.toFormat('h:mm a')
-  if (when.hasSame(today, 'day')) return `today ${time}`
-  if (when.hasSame(today.plus({ days: 1 }), 'day')) return `tomorrow ${time}`
+  const gap = openTaskDaysBetween(now, new Date(atIso), timezone, dayStart)
+  if (gap === 0) return `today ${time}`
+  if (gap === 1) return `tomorrow ${time}`
   return `${when.toFormat('ccc, LLL d')} ${time}`
 }
 

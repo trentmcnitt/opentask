@@ -37,6 +37,7 @@ import {
 import { getOverdueCount } from '@/core/notifications/dismiss'
 import { lastBadgeSent, usersWithNonZeroBadge } from '@/core/notifications/badge-state'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import {
   APP_URL,
   OVERDUE_SUMMARY_COLLAPSE_ID,
@@ -369,8 +370,15 @@ export async function checkOverdueTasks(nowOverride?: Date): Promise<void> {
       (a, b) =>
         b.priority - a.priority || (a.due_at ?? '\uffff').localeCompare(b.due_at ?? '\uffff'),
     )
+    // Each owner's day boundary, read once per owner: the no-target fallback's
+    // "today" is their OpenTask day.
+    const dayStarts = new Map<number, string>()
+    const dayStartOf = (userId: number) => {
+      if (!dayStarts.has(userId)) dayStarts.set(userId, dayBoundaryForUser(userId))
+      return dayStarts.get(userId)!
+    }
     const overdueTasks = targeted.flatMap((task) => {
-      const effective = effectiveDueAt(task, task.timezone, now)
+      const effective = effectiveDueAt(task, task.timezone, dayStartOf(task.user_id), now)
       if (!effective || effective.getTime() > now.getTime()) return []
       return [{ ...task, effective_due_at: effective.toISOString() }]
     })

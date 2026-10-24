@@ -8,7 +8,7 @@
  *
  * In order: the deadline pull-in (`DEADLINE_PULL_DAYS`); the deadline's stored
  * automatic target (`autoTargetAt`, §8), the target ≤ deadline cap
- * (`capAtDeadline`) and the picker's "Deadline day"; the effective horizon; the
+ * (`capAtDeadline`) and the picker's "Morning of the deadline"; the effective horizon; the
  * check-in day and the horizon segments' days (`latestSegmentDay`); segment
  * membership and carry-over (`segmentState`); the two badges (§7: the age
  * thresholds, `ageLabel`, and attempts, `effectiveAttempts`); a repeating
@@ -43,7 +43,14 @@
 import { DateTime } from 'luxon'
 import { computeNextOccurrence, ruleTimeOfDay } from '@/core/recurrence/compute-next'
 import { formatAnchorTime } from '@/core/recurrence/timezone'
-import { localMoment, openTaskDayOf, targetOpenTaskDay } from '@/lib/opentask-day'
+import {
+  CALENDAR_DAY_START,
+  calendarDateOf,
+  localMoment,
+  openTaskDayOf,
+  openTaskLocalDay,
+  targetOpenTaskDay,
+} from '@/lib/opentask-day'
 import type { RepeatAnchor } from '@/types'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
@@ -328,7 +335,7 @@ export function resolveTarget(
 }
 
 /**
- * The picker's "Deadline day" (ruling Q8): the user's morning on the
+ * The picker's "Morning of the deadline" (ruling Q8): the user's morning on the
  * deadline's own local day — or the deadline itself, if that is earlier.
  */
 export function deadlineDayTarget(
@@ -449,21 +456,35 @@ export type SegmentState = 'waiting' | 'considered' | 'deferred'
  */
 export type SegmentLeft = 'done' | 'deck' | 'target' | 'considered' | 'deferred'
 
-/** The local start of the day `iso` falls on, in `timezone`. */
-export function localDay(iso: string, timezone: string): DateTime {
-  return DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).startOf('day')
+/**
+ * The OPENTASK day `iso` falls on, as a local start-of-day DateTime in
+ * `timezone` ("Day starts at" PR 2, Trent 2026-10-24: everything uses the
+ * OpenTask date — `openTaskLocalDay`). `dayStart` is the user's day boundary:
+ * `dayBoundaryForUser` on the server, `useDayStart` in the browser —
+ * `CALENDAR_DAY_START` (the switch off) is the calendar day. With 3:00 AM,
+ * 01:30 belongs to the day before; every rule below does calendar maths on
+ * this date.
+ */
+export function localDay(iso: string, timezone: string, dayStart: string): DateTime {
+  return openTaskLocalDay(new Date(iso), timezone, dayStart)
 }
 
 /**
  * Whether the task's target has arrived for segment purposes: any target on
- * today or earlier. A target later TODAY already counts — "target today" is a
- * commitment for today, so the task leaves the segment the moment it is set
- * rather than showing in both places until the hour comes.
+ * today or earlier — OpenTask days (`localDay`), so with the day starting at
+ * 3:00 a 1:30 AM target is the evening's day. A target later TODAY already
+ * counts — "target today" is a commitment for today, so the task leaves the
+ * segment the moment it is set rather than showing in both places until the
+ * hour comes.
  */
-export function targetIsToday(dueAt: string | null, timezone: string, now: Date): boolean {
+export function targetIsToday(
+  dueAt: string | null,
+  timezone: string,
+  now: Date,
+  dayStart: string,
+): boolean {
   if (!dueAt) return false
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  return localDay(dueAt, timezone) <= today
+  return localDay(dueAt, timezone, dayStart) <= openTaskLocalDay(now, timezone, dayStart)
 }
 
 /**
@@ -490,29 +511,35 @@ export function segmentState(
   task: SegmentTaskFields,
   timezone: string,
   now: Date,
+  /** The user's day boundary (`localDay`): every "day" here is an OpenTask day. */
+  dayStart: string,
   checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
 ): { horizon: HorizonValue; state: SegmentState } | null {
   if (hasPickedTarget(task)) return null
   // ON DECK is quiet like a picked target (B6): no horizon segment. A future
   // deck shows in Upcoming on its heads-up days, today's in the On deck section.
   if (task.on_deck_day) return null
-  if (targetIsToday(task.due_at, timezone, now)) return null
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  if (targetIsToday(task.due_at, timezone, now, dayStart)) return null
+  // Today's OpenTask date: the check-in day is that date's weekday, so with
+  // the day starting at 3:00, Saturday's segments are still Saturday's at
+  // 01:30 on Sunday.
+  const today = openTaskLocalDay(now, timezone, dayStart)
+  const dayOf = (iso: string) => localDay(iso, timezone, dayStart)
   const horizon = effectiveHorizon(task, now)
 
-  if (task.last_considered_at && +localDay(task.last_considered_at, timezone) === +today) {
+  if (task.last_considered_at && +dayOf(task.last_considered_at) === +today) {
     return { horizon, state: 'considered' }
   }
   const shownDay = latestSegmentDay(horizon, today, checkInDay)
   // Considered on or after the segment's latest shown day: done with it.
-  if (task.last_considered_at && shownDay <= localDay(task.last_considered_at, timezone)) {
+  if (task.last_considered_at && shownDay <= dayOf(task.last_considered_at)) {
     return null
   }
   // Created AFTER that day: it waits for the next one. Created on it — a days
   // task today, a weeks task on a Saturday — it shows today (2026-10-11).
-  if (shownDay < localDay(task.created_at, timezone)) return null
+  if (shownDay < dayOf(task.created_at)) return null
 
-  if (task.segment_deferred_at && +localDay(task.segment_deferred_at, timezone) === +today) {
+  if (task.segment_deferred_at && +dayOf(task.segment_deferred_at) === +today) {
     return { horizon, state: 'deferred' }
   }
   return { horizon, state: 'waiting' }
@@ -686,17 +713,14 @@ export function effectiveAttempts(
   const dates = [task.due_at, setAt, task.created_at, stored.countedThrough ?? task.created_at]
   if (dates.some((d) => Number.isNaN(Date.parse(d)))) return stored
   const arrived = Date.parse(task.due_at) <= now.getTime()
-  const dayOf = (iso: string): DateTime =>
-    rolloverTime
-      ? DateTime.fromISO(openTaskDayOf(new Date(iso), timezone, rolloverTime), { zone: timezone })
-      : localDay(iso, timezone)
+  // Calendar days without a rollover time: midnight as a day start.
+  const dayStart = rolloverTime ?? CALENDAR_DAY_START
+  const dayOf = (iso: string): DateTime => localDay(iso, timezone, dayStart)
   // The target's day: an early-morning pick belongs to its calendar day, not
   // the evening's OpenTask day (`targetOpenTaskDay`, the rollover's spare rule).
-  const targetDay = rolloverTime
-    ? DateTime.fromISO(targetOpenTaskDay(task.due_at, setAt, timezone, rolloverTime), {
-        zone: timezone,
-      })
-    : localDay(task.due_at, timezone)
+  const targetDay = DateTime.fromISO(targetOpenTaskDay(task.due_at, setAt, timezone, dayStart), {
+    zone: timezone,
+  })
   const today = dayOf(now.toISOString())
   // Arrived, such a target counts at once — before that day's rollover too.
   const end = arrived ? DateTime.max(today, targetDay)! : today.minus({ days: 1 })
@@ -734,9 +758,7 @@ export function putBackCountedThrough(
   rolloverTime: string | null = null,
 ): string {
   const dayOf = (instant: Date): DateTime =>
-    rolloverTime
-      ? DateTime.fromISO(openTaskDayOf(instant, timezone, rolloverTime), { zone: timezone })
-      : DateTime.fromJSDate(instant).setZone(timezone).startOf('day')
+    openTaskLocalDay(instant, timezone, rolloverTime ?? CALENDAR_DAY_START)
   const completedDay = dayOf(new Date(completedAt))
   const arrived = targetWas !== null && Date.parse(targetWas) <= Date.parse(completedAt)
   const counted = arrived ? completedDay : completedDay.minus({ days: 1 })
@@ -849,8 +871,9 @@ export function queueKind(
  * "Today" is the OPENTASK day (`openTaskDayOf` with the user's rollover
  * time), the day the panels split on — so a repeating row considered at 23:30
  * stays considered at 00:30, inside the same "Today's pulls" panel, until the
- * rollover moves it to "Previous pulls", waiting again. Queue panels
- * only: horizon segments and Upcoming stay on midnight (resolution 4).
+ * rollover moves it to "Previous pulls", waiting again. Since "Day starts
+ * at" PR 2 (2026-10-24) the horizon segments and Upcoming read the same
+ * OpenTask day (`segmentState`, `upcomingState`).
  */
 export function queueRowState(
   task: { last_considered_at: string | null; segment_deferred_at: string | null },
@@ -1487,7 +1510,7 @@ export function deadlineLeadDays(wait: number): number {
  * default, `defaultRelativeTarget`) or after now (a one-off's automatic
  * target, `autoTargetAt`) — `deadlineLeadDays(wait)` days before, at the
  * user's morning; on the deadline day itself, at the morning or the
- * deadline's own time if that is earlier (the picker's "Deadline day",
+ * deadline's own time if that is earlier (the picker's "Morning of the deadline",
  * `deadlineDayTarget`). Pure, in relative form. Every automatic ("fake")
  * target goes through it, so replacing them is one change here.
  */
@@ -1593,7 +1616,7 @@ export function deadlineDay(
 
 /** Today as the owner's OpenTask day (the calendar day with no rollover time). */
 export function openTaskToday(timezone: string, now: Date, rolloverTime: string | null): string {
-  return rolloverTime ? openTaskDayOf(now, timezone, rolloverTime) : calendarToday(timezone, now)
+  return rolloverTime ? openTaskDayOf(now, timezone, rolloverTime) : calendarDateOf(now, timezone)
 }
 
 /** `day` (yyyy-MM-dd) moved by `days` calendar days. */
@@ -1797,7 +1820,9 @@ export function deadlinePlace(
   // missed it) reads the one `leadFor` derives now.
   const leadDay = task.lead_from ?? derivedLeadDay(task, timezone, now, rolloverTime)
   if (safetyNet || (leadDay !== null && leadDay <= today)) {
-    if (!safetyNet && deckIsToday(task, timezone, now)) return null
+    if (!safetyNet && deckIsToday(task, timezone, now, rolloverTime ?? CALENDAR_DAY_START)) {
+      return null
+    }
     const state: SegmentState = !safetyNet && seen ? 'considered' : 'waiting'
     return { kind: 'page', state, safetyNet, seen }
   }
@@ -2021,8 +2046,11 @@ export function upcomingState(
   task: UpcomingTaskFields,
   timezone: string,
   now: Date,
+  /** The user's day boundary (`localDay`): heads-up days are OpenTask days. */
+  dayStart: string,
 ): { state: SegmentState; target: string } | null {
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  const today = openTaskLocalDay(now, timezone, dayStart)
+  const dayOf = (iso: string) => localDay(iso, timezone, dayStart)
   let target: string
   let targetDay: DateTime
   if (task.on_deck_day) {
@@ -2038,18 +2066,18 @@ export function upcomingState(
   } else {
     if (!upcomingCandidate(task)) return null
     target = task.due_at!
-    targetDay = localDay(target, timezone)
+    targetDay = dayOf(target)
   }
   if (targetDay <= today) return null
 
-  const heads = headsUpDays(targetDay, localDay(targetSetAtOf(task), timezone))
+  const heads = headsUpDays(targetDay, dayOf(targetSetAtOf(task)))
   const latest = [...heads].reverse().find((d) => d <= today)
   if (!latest) return null
 
-  const considered = task.last_considered_at ? localDay(task.last_considered_at, timezone) : null
+  const considered = task.last_considered_at ? dayOf(task.last_considered_at) : null
   if (considered && +considered === +today) return { state: 'considered', target }
   if (considered && considered >= latest) return null
-  if (task.segment_deferred_at && +localDay(task.segment_deferred_at, timezone) === +today) {
+  if (task.segment_deferred_at && +dayOf(task.segment_deferred_at) === +today) {
     return { state: 'deferred', target }
   }
   return { state: 'waiting', target }
@@ -2122,9 +2150,12 @@ export function upcomingRowActions(row: {
 
 /**
  * ON DECK — a target's DAY without its nag: "I'd like to get to this on that
- * day; if it gets done it gets done." `tasks.on_deck_day` is the owner's local
- * CALENDAR date (yyyy-MM-dd; red-team A2 — "today" between midnight and the
- * rollover is the coming calendar day, not the OpenTask day). The rules:
+ * day; if it gets done it gets done." `tasks.on_deck_day` is the owner's
+ * OPENTASK date (yyyy-MM-dd) — since "Day starts at" PR 2 (2026-10-24,
+ * everything uses the OpenTask date; it was the calendar date under red-team
+ * A2): "today" between midnight and a 3:00 AM day start is the day that is
+ * ending, so a deck for "today" made then is stripped at 3:00 — the late
+ * night's pick is "Tomorrow". The rules:
  *
  *  1. A task carries a picked target OR a deck, never both. Decking drops a
  *     picked target (a deadline task keeps its AUTOMATIC one — the deadline
@@ -2158,11 +2189,6 @@ export type DeckRefusal = 'deadline_nagging' | 'after_auto_target'
 /** Why a task cannot be decked at all (the endpoint skips and counts it). */
 export type DeckSkip = 'recurring' | 'reminder' | 'quota' | 'done' | 'trashed'
 
-/** The local calendar date (yyyy-MM-dd) of `now` in `timezone`. */
-export function calendarToday(timezone: string, now: Date): string {
-  return DateTime.fromJSDate(now).setZone(timezone).toFormat(DECK_DAY_FORMAT)
-}
-
 const DECK_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 /**
@@ -2181,28 +2207,35 @@ export function parseDeckDay(day: string, timezone: string): DateTime | null {
 }
 
 /**
- * What is wrong with a deck day, or null: not a yyyy-MM-dd calendar date, or
- * a day before the calendar today (the earliest deck is today).
+ * What is wrong with a deck day, or null: not a yyyy-MM-dd date, or a day
+ * before today's OpenTask date (the earliest deck is today). `dayStart`: the
+ * owner's day boundary (`dayBoundaryForUser` / `useDayStart`).
  */
-export function deckDayProblem(day: string, timezone: string, now: Date): string | null {
+export function deckDayProblem(
+  day: string,
+  timezone: string,
+  now: Date,
+  dayStart: string,
+): string | null {
   if (!parseDeckDay(day, timezone)) {
     return 'The deck day must be a date (yyyy-MM-dd)'
   }
-  if (day < calendarToday(timezone, now)) return 'The deck day must be today or later'
+  if (day < openTaskDayOf(now, timezone, dayStart)) return 'The deck day must be today or later'
   return null
 }
 
 /**
- * Whether the task is on deck for TODAY (calendar day): its day, or an
- * earlier one not yet stripped — yesterday's leftovers between midnight and
- * the rollover still count (A2) until the rollover sends them to the queue.
+ * Whether the task is on deck for TODAY (the OpenTask day): its day, or an
+ * earlier one not yet stripped — a rollover that has not run yet leaves
+ * yesterday's leftovers counting until it sends them to the queue.
  */
 export function deckIsToday(
   task: { on_deck_day?: string | null },
   timezone: string,
   now: Date,
+  dayStart: string,
 ): boolean {
-  return !!task.on_deck_day && task.on_deck_day <= calendarToday(timezone, now)
+  return !!task.on_deck_day && task.on_deck_day <= openTaskDayOf(now, timezone, dayStart)
 }
 
 /**
@@ -2268,8 +2301,7 @@ export function repeatingDeadlineDay(
   timezone: string,
   rolloverTime: string | null,
 ): string {
-  if (rolloverTime) return openTaskDayOf(new Date(deadlineAt), timezone, rolloverTime)
-  return DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone).toFormat(DECK_DAY_FORMAT)
+  return openTaskDayOf(new Date(deadlineAt), timezone, rolloverTime ?? CALENDAR_DAY_START)
 }
 
 /** The refusal's words (the API's `refused[].message`; D2's toast reads the first). */
@@ -2298,9 +2330,9 @@ export interface DeckResultCounts {
   refused: { id: number; reason: DeckRefusal }[]
 }
 
-/** "today", "tomorrow", else "Sat Oct 24" — a deck day as words. */
-export function deckDayWords(day: string, timezone: string, now: Date): string {
-  const today = DateTime.fromISO(calendarToday(timezone, now), { zone: timezone })
+/** "today", "tomorrow", else "Sat Oct 24" — a deck day as words, by the OpenTask today. */
+export function deckDayWords(day: string, timezone: string, now: Date, dayStart: string): string {
+  const today = openTaskLocalDay(now, timezone, dayStart)
   const d = DateTime.fromISO(day, { zone: timezone })
   if (+d === +today) return 'today'
   if (+d === +today.plus({ days: 1 })) return 'tomorrow'
@@ -2316,7 +2348,12 @@ function countWord(k: number, one: string, many: string): string {
  * entry's description, D2's toast): "3 tasks on deck for tomorrow · 1
  * repeating skipped". A lone refusal says why, in the toast's words.
  */
-export function deckSummary(r: DeckResultCounts, timezone: string, now: Date): string {
+export function deckSummary(
+  r: DeckResultCounts,
+  timezone: string,
+  now: Date,
+  dayStart: string,
+): string {
   const parts: string[] = []
   if (r.day === null) {
     parts.push(
@@ -2325,7 +2362,7 @@ export function deckSummary(r: DeckResultCounts, timezone: string, now: Date): s
         : 'Nothing on deck',
     )
   } else if (r.decked > 0) {
-    const words = deckDayWords(r.day, timezone, now)
+    const words = deckDayWords(r.day, timezone, now, dayStart)
     parts.push(`${countWord(r.decked, 'task', 'tasks')} on deck for ${words}`)
   }
   const skipped = [

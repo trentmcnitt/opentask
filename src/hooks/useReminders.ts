@@ -6,7 +6,7 @@ import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
-import { useReminderDayStart } from '@/components/PreferencesProvider'
+import { useDayStart } from '@/components/PreferencesProvider'
 import {
   applyPromptMoves,
   groupWaiting,
@@ -1144,7 +1144,7 @@ export function useRemindersSummary(timezone: string): RemindersSummary<Reminder
   // snapshot it is a real render input, so the summary recomputes when it
   // changes and only then.
   const cache = useSyncExternalStore(subscribeToCache, readCache, readServerCache)
-  const dayStart = useReminderDayStart()
+  const dayStart = useDayStart()
   useEffect(() => {
     if (remindersCache === null) void loadRemindersCache()
     const onFocus = () => void loadRemindersCache()

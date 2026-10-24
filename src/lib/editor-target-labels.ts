@@ -19,8 +19,9 @@ import {
   type LeadFields,
   type TargetContext,
 } from '@/lib/task-segments'
-import { DEADLINE_DAY } from '@/lib/task-model-words'
+import { DEADLINE_MORNING } from '@/lib/task-model-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
+import { addDays, calendarDateOf } from '@/lib/opentask-day'
 import type { RepeatAnchor } from '@/types'
 
 /** The Lead line's facts (`leadLine`). */
@@ -164,12 +165,20 @@ export function leadLineWords(line: LeadLine, timezone: string, today: string): 
 }
 
 /**
- * The pickers' "Deadline day" choice (ruling Q8, 2026-10-12): the user's
- * morning on the deadline's local day, or the deadline itself if earlier
- * (`deadlineDayTarget`) — "Deadline day · Fri 9:00 AM". Offered only while
- * that moment is still ahead; null otherwise (no deadline, or its day's
- * morning has passed). Shared by the snooze menu, the editor's target picker
- * and a task segment's Today picker.
+ * The pickers' "Morning of the deadline" choice (ruling Q8, 2026-10-12; was
+ * "Deadline day"): the user's morning on the deadline's local day, or the
+ * deadline itself if earlier (`deadlineDayTarget`). Offered only while that
+ * moment is still ahead; null otherwise (no deadline, or its day's morning
+ * has passed). Shared by the snooze menu, the editor's target picker and a
+ * task segment's Today picker.
+ *
+ * The label says where its time comes from (2026-10-24, Trent: "Deadline
+ * day · Tue 8:30 AM" didn't say what 8:30 was): the user's Morning time, or
+ * — when the deadline is earlier in the day than that — the Deadline time.
+ * The weekday is dropped when the day is today or tomorrow (the words
+ * already say which day: the deadline's):
+ *   "Morning of the deadline · 9:00 AM (Morning time)"
+ *   "Morning of the deadline · Tue 8:30 AM (Deadline time)"
  */
 export function deadlineDayPick(
   deadlineAt: string | null | undefined,
@@ -180,8 +189,19 @@ export function deadlineDayPick(
   if (!deadlineAt || Date.parse(deadlineAt) <= now.getTime()) return null
   const at = deadlineDayTarget(deadlineAt, ctx)
   if (Date.parse(at) <= now.getTime()) return null
-  const when = DateTime.fromISO(at, { zone: 'utc' }).setZone(ctx.timezone).toFormat('ccc h:mm a')
-  return { label: `${DEADLINE_DAY} · ${when}`, at }
+  const target = DateTime.fromISO(at, { zone: 'utc' }).setZone(ctx.timezone)
+  // Calendar days (the deadline's own day, not the OpenTask day).
+  const today = calendarDateOf(now, ctx.timezone)
+  const day = calendarDateOf(new Date(at), ctx.timezone)
+  const near = day === today || day === addDays(today, 1)
+  const when = target.toFormat(near ? 'h:mm a' : 'ccc h:mm a')
+  // The deadline itself (earlier than the morning), unless the two coincide.
+  const fromDeadline = Date.parse(at) === Date.parse(deadlineAt)
+  const source = fromDeadline && target.toFormat('HH:mm') !== ctx.morningTime
+  return {
+    label: `${DEADLINE_MORNING} · ${when} (${source ? 'Deadline time' : 'Morning time'})`,
+    at,
+  }
 }
 
 /**

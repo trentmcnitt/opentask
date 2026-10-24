@@ -104,13 +104,19 @@ function setHorizon(value: string | null): HorizonValue | null {
  * (`deadlineHorizon`, within 90 days or past) is never asked — growing the set
  * horizon would change nothing it shows, and the deadline already decides.
  */
-export function growthAsk(task: ProcessTaskFields, timezone: string, now: Date): GrowthAsk | null {
+export function growthAsk(
+  task: ProcessTaskFields,
+  timezone: string,
+  now: Date,
+  /** The owner's day boundary (`dayBoundaryForUser`): "targeted today" is the OpenTask day. */
+  dayStart: string,
+): GrowthAsk | null {
   // A target the user picked: quiet until its date, its horizon shown nowhere
   // (spec §1, 2026-10-12) — "grow it?" would ask about a hidden setting.
   if (hasPickedTarget(task)) return null
   // On deck (2026-10-20, B7): the same — a plan for a day, horizon shown nowhere.
   if (task.on_deck_day) return null
-  if (targetIsToday(task.due_at, timezone, now)) return null
+  if (targetIsToday(task.due_at, timezone, now, dayStart)) return null
   if (deadlineHorizon(task.deadline_at, now) !== null) return null
   const from = setHorizon(task.horizon)
   const on = from ?? UNSET_HORIZON
@@ -157,6 +163,8 @@ export function planProcess<T extends ProcessTaskFields>(
   tasks: T[],
   timezone: string,
   now: Date,
+  /** The owner's day boundary (`dayBoundaryForUser`). */
+  dayStart: string,
 ): ProcessPlan<T> {
   const plan: ProcessPlan<T> = { growth: [], staleTargets: [], staleTargetsWithDeadline: [] }
   for (const task of tasks) {
@@ -171,7 +179,7 @@ export function planProcess<T extends ProcessTaskFields>(
       })
       continue
     }
-    const ask = growthAsk(task, timezone, now)
+    const ask = growthAsk(task, timezone, now, dayStart)
     if (ask) plan.growth.push({ task, ask })
   }
   plan.growth.sort((a, b) => b.ask.days_on_horizon - a.ask.days_on_horizon || a.task.id - b.task.id)

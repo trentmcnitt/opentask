@@ -10,7 +10,7 @@ import { slotHasStarted } from '@/lib/reminders-summary'
 import { naturalSlotIndex, orderGroupsByDay, type TimeSlot } from '@/lib/time-slot-assign'
 import { useReminders, type ReminderGroup, type UseRemindersReturn } from '@/hooks/useReminders'
 import { useTaskSegments } from '@/hooks/useTaskSegments'
-import { useReminderDayStart } from '@/components/PreferencesProvider'
+import { useDayStart } from '@/components/PreferencesProvider'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePanelPager } from '@/hooks/usePanelPager'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
@@ -189,7 +189,7 @@ export function DashboardRemindersPanel({
   timezone,
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
-  const dayStart = useReminderDayStart()
+  const dayStart = useDayStart()
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
   const segments = useTaskSegments({
     segments: reminders.taskSegments,

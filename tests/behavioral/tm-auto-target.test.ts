@@ -247,13 +247,32 @@ describe("TM8: the deadline's automatic target", () => {
       expect(after.target_auto).toBe(false)
     })
 
-    test('TM8-015: "Deadline day" — the deadline\'s morning, or the deadline itself if earlier', () => {
+    test('TM8-015: "Morning of the deadline" — the deadline\'s morning, or the deadline itself if earlier', () => {
       expect(local(deadlineDayTarget(at('2026-10-16T17:00'), ctx))).toBe('Fri Oct 16 09:00')
       expect(local(deadlineDayTarget(at('2026-10-16T07:30'), ctx))).toBe('Fri Oct 16 07:30')
+      // The label says where the time comes from; the weekday only past tomorrow.
       expect(deadlineDayPick(at('2026-10-16T17:00'), ctx)).toEqual({
-        label: 'Deadline day · Fri 9:00 AM',
+        label: 'Morning of the deadline · Fri 9:00 AM (Morning time)',
         at: at('2026-10-16T09:00'),
       })
+      expect(deadlineDayPick(at('2026-10-16T07:30'), ctx)).toEqual({
+        label: 'Morning of the deadline · Fri 7:30 AM (Deadline time)',
+        at: at('2026-10-16T07:30'),
+      })
+      expect(deadlineDayPick(at('2026-10-13T17:00'), ctx)?.label).toBe(
+        'Morning of the deadline · 9:00 AM (Morning time)',
+      )
+      expect(deadlineDayPick(at('2026-10-13T08:30'), ctx)?.label).toBe(
+        'Morning of the deadline · 8:30 AM (Deadline time)',
+      )
+      // A deadline at the morning time itself is the morning.
+      expect(deadlineDayPick(at('2026-10-13T09:00'), ctx)?.label).toBe(
+        'Morning of the deadline · 9:00 AM (Morning time)',
+      )
+      // Today, before its morning.
+      expect(
+        deadlineDayPick(at('2026-10-12T17:00'), ctx, new Date(at('2026-10-12T06:00')))?.label,
+      ).toBe('Morning of the deadline · 9:00 AM (Morning time)')
       // Its morning already gone: nothing to offer.
       expect(deadlineDayPick(at('2026-10-12T17:00'), ctx)).toBeNull()
       // The deadline passed: never offered (Trent's ruling, 2026-10-12).

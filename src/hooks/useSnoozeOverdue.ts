@@ -17,9 +17,10 @@ import { useCallback } from 'react'
 import { isOverdue } from '@/lib/task-counts'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
-import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
+import { bulkSnoozeMessage, computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import { nextPeriodStart, type TimeSlot } from '@/lib/time-slot-assign'
 import type { BulkSnoozeDefault } from '@/components/PreferencesProvider'
+import { useDayStart, useDayStartKnown } from '@/components/PreferencesProvider'
 
 interface UseSnoozeOverdueOptions {
   displayTasks: Task[]
@@ -53,6 +54,8 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
     timeSlots,
     morningTime,
   } = options
+  const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
 
   return useCallback(
     async (until?: string) => {
@@ -75,10 +78,21 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         bulkSnoozeDefault === 'next_period' ? nextPeriodStart(timeSlots, timezone, now) : null
       // The default option can be "next_period" too (2026-10-10), so it gets
       // the slots as well; with none it reads as +1h.
+      // "Tomorrow" / "next period" need the user's day: before it is known
+      // (the preferences still loading, nothing remembered) the press waits.
+      if (
+        !dayKnown &&
+        until === undefined &&
+        !nextPeriod &&
+        snoozeOptionNeedsDay(defaultSnoozeOption)
+      ) {
+        showToast({ message: 'One moment — loading your settings' })
+        return
+      }
       const snoozeUntil =
         until ??
         nextPeriod ??
-        computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots)
+        computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, dayStart, timeSlots)
 
       try {
         const res = await fetch('/api/tasks/bulk/snooze', {
@@ -121,6 +135,8 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       bulkSnoozeDefault,
       timeSlots,
       morningTime,
+      dayStart,
+      dayKnown,
     ],
   )
 }

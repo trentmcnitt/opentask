@@ -21,6 +21,7 @@ import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { markDone, snoozeTask, deleteTask } from '@/core/tasks'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import { log } from '@/lib/logger'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { withLogging } from '@/lib/with-logging'
@@ -70,7 +71,12 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       case 'snooze':
       case 'snooze2h': {
         // Only the minute options are passed, so the morning time is unused.
-        const until = computeSnoozeTime(String(SNOOZE_MINUTES[action]), user.timezone, '')
+        const until = computeSnoozeTime(
+          String(SNOOZE_MINUTES[action]),
+          user.timezone,
+          '',
+          dayBoundaryForUser(user.id),
+        )
         const result = snoozeTask({
           userId: user.id,
           userTimezone: user.timezone,

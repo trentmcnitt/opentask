@@ -7,6 +7,7 @@
  * queue state, beside `target_set_at`'s own guard (UP-090).
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import fs from 'fs'
 import path from 'path'
 import { describe, test, expect } from 'vitest'
@@ -126,6 +127,7 @@ describe('TQ-F: the sweep-feedback push uses the count-only summary', () => {
     counts: { affected: 3, highAffected: 0, high: 2, urgent: 0 },
     until: '2026-10-21T13:30:00.000Z',
     timezone: 'America/Chicago',
+    dayStart: CALENDAR_DAY_START,
     totalOverdueCount: 2,
   }
 

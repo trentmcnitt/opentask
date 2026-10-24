@@ -159,8 +159,8 @@ export function SelectionActionSheet({
     return formatBulkRecurrence(selectedTasks)
   }, [selectedTasks])
 
-  // Dirty state from QuickActionPanel: `isDirty` paints the stripe and locks
-  // the sheet's drag; the dismiss guard reads `dirtyRef`, which is current the
+  // Dirty state from QuickActionPanel: `isDirty` locks the sheet's drag (no
+  // stripe in a dialog or sheet: see DirtyCard); the dismiss guard reads `dirtyRef`, which is current the
   // moment the panel reports (see useEditorHost for why state is not enough).
   // `saveRef`/`commit` let the unsaved-changes dialog's Save run the panel's
   // own save without duplicating its change-collection logic.
@@ -384,7 +384,7 @@ export function SelectionActionSheet({
       : `${selectedCount} tasks selected`
 
   const panelContent = (
-    <DirtyCard dirty={isPanelDirty} className="space-y-3">
+    <DirtyCard dirty={isPanelDirty} flat className="space-y-3">
       <BulkRemoveTarget
         selectedTasks={selectedTasks}
         disabled={isPanelDirty}

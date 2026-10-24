@@ -5,6 +5,7 @@
  * formatTaskSince and formatRRuleCompact.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
 import {
   formatDueTimeParts,
@@ -21,84 +22,84 @@ describe('formatDueTimeParts', () => {
   test('overdue <1m ago shows "just now" with time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
     // 30 seconds ago — 5:59 AM CST
-    const result = formatDueTimeParts('2025-02-01T11:59:30Z', TZ)
+    const result = formatDueTimeParts('2025-02-01T11:59:30Z', TZ, CALENDAR_DAY_START)
     expect(result.relative).toBe('just now')
     expect(result.absolute).toBe('5:59 AM')
   })
 
   test('overdue 10m ago today shows "10m ago" with time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T11:50:00Z', TZ) // 5:50 AM CST
+    const result = formatDueTimeParts('2025-02-01T11:50:00Z', TZ, CALENDAR_DAY_START) // 5:50 AM CST
     expect(result.relative).toBe('10m ago')
     expect(result.absolute).toBe('5:50 AM')
   })
 
   test('overdue 3h ago today shows "3h ago" with time', () => {
     vi.setSystemTime(new Date('2025-02-01T15:00:00Z')) // 9:00 AM CST
-    const result = formatDueTimeParts('2025-02-01T12:00:00Z', TZ) // 6:00 AM CST
+    const result = formatDueTimeParts('2025-02-01T12:00:00Z', TZ, CALENDAR_DAY_START) // 6:00 AM CST
     expect(result.relative).toBe('3h ago')
     expect(result.absolute).toBe('6:00 AM')
   })
 
   test('overdue yesterday shows "yesterday" with time', () => {
     vi.setSystemTime(new Date('2025-02-02T12:00:00Z')) // Feb 2 6:00 AM CST
-    const result = formatDueTimeParts('2025-02-01T15:00:00Z', TZ) // Feb 1 9:00 AM CST
+    const result = formatDueTimeParts('2025-02-01T15:00:00Z', TZ, CALENDAR_DAY_START) // Feb 1 9:00 AM CST
     expect(result.relative).toBe('yesterday')
     expect(result.absolute).toBe('9:00 AM')
   })
 
   test('overdue 3 days ago shows "3d ago" with date and time', () => {
     vi.setSystemTime(new Date('2025-02-05T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-02T12:00:00Z', TZ) // Feb 2 6:00 AM CST
+    const result = formatDueTimeParts('2025-02-02T12:00:00Z', TZ, CALENDAR_DAY_START) // Feb 2 6:00 AM CST
     expect(result.relative).toBe('3d ago')
     expect(result.absolute).toBe('Feb 2 6:00 AM')
   })
 
   test('overdue 2 weeks ago shows "2w ago" with date and time', () => {
     vi.setSystemTime(new Date('2025-02-15T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T12:00:00Z', TZ) // Feb 1 6:00 AM CST
+    const result = formatDueTimeParts('2025-02-01T12:00:00Z', TZ, CALENDAR_DAY_START) // Feb 1 6:00 AM CST
     expect(result.relative).toBe('2w ago')
     expect(result.absolute).toBe('Feb 1 6:00 AM')
   })
 
   test('overdue 2 months ago shows "2mo ago" with date and time', () => {
     vi.setSystemTime(new Date('2025-04-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T12:00:00Z', TZ) // Feb 1 6:00 AM CST
+    const result = formatDueTimeParts('2025-02-01T12:00:00Z', TZ, CALENDAR_DAY_START) // Feb 1 6:00 AM CST
     expect(result.relative).toBe('2mo ago')
     expect(result.absolute).toBe('Feb 1 6:00 AM')
   })
 
   test('due in <1 minute shows "in <1m" with absolute time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T12:00:25Z', TZ) // 25s from now
+    const result = formatDueTimeParts('2025-02-01T12:00:25Z', TZ, CALENDAR_DAY_START) // 25s from now
     expect(result.relative).toBe('in <1m')
     expect(result.absolute).toBe('6:00 AM')
   })
 
   test('due in 10 minutes shows "in 10m" with absolute time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T12:10:00Z', TZ)
+    const result = formatDueTimeParts('2025-02-01T12:10:00Z', TZ, CALENDAR_DAY_START)
     expect(result.relative).toBe('in 10m')
     expect(result.absolute).toBe('6:10 AM')
   })
 
   test('due in 90 minutes shows "in 1h 30m" with absolute time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T13:30:00Z', TZ)
+    const result = formatDueTimeParts('2025-02-01T13:30:00Z', TZ, CALENDAR_DAY_START)
     expect(result.relative).toBe('in 1h 30m')
     expect(result.absolute).toBe('7:30 AM')
   })
 
   test('due in 120 minutes shows "in 2h" with absolute time', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T14:00:00Z', TZ)
+    const result = formatDueTimeParts('2025-02-01T14:00:00Z', TZ, CALENDAR_DAY_START)
     expect(result.relative).toBe('in 2h')
     expect(result.absolute).toBe('8:00 AM')
   })
 
   test('due in exactly 3h shows just the time (no "in X")', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T15:00:00Z', TZ) // exactly 180m
+    const result = formatDueTimeParts('2025-02-01T15:00:00Z', TZ, CALENDAR_DAY_START) // exactly 180m
     expect(result.relative).toBe('9:00 AM')
     expect(result.absolute).toBeUndefined()
   })
@@ -106,14 +107,14 @@ describe('formatDueTimeParts', () => {
   test('due today past 3h shows just the time', () => {
     // "now" = 6:00 AM CST, task due at 10:00 AM CST (4h away)
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-01T16:00:00Z', TZ)
+    const result = formatDueTimeParts('2025-02-01T16:00:00Z', TZ, CALENDAR_DAY_START)
     expect(result.relative).toBe('10:00 AM')
     expect(result.absolute).toBeUndefined()
   })
 
   test('due tomorrow shows "Tomorrow" prefix', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-02T15:00:00Z', TZ) // 9:00 AM CST on Feb 2
+    const result = formatDueTimeParts('2025-02-02T15:00:00Z', TZ, CALENDAR_DAY_START) // 9:00 AM CST on Feb 2
     expect(result.relative).toBe('Tomorrow 9:00 AM')
     expect(result.absolute).toBeUndefined()
   })
@@ -121,14 +122,14 @@ describe('formatDueTimeParts', () => {
   test('due within 7 days (after tomorrow) shows weekday', () => {
     // Feb 1 (Sat) → Feb 4 (Tue) is within 7 days and after tomorrow
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-04T15:00:00Z', TZ) // 9:00 AM CST on Tue Feb 4
+    const result = formatDueTimeParts('2025-02-04T15:00:00Z', TZ, CALENDAR_DAY_START) // 9:00 AM CST on Tue Feb 4
     expect(result.relative).toBe('Tue 9:00 AM')
   })
 
   test('due beyond 7 days shows month and day', () => {
     // Feb 1 → Feb 11 is beyond 7 days
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
-    const result = formatDueTimeParts('2025-02-11T15:00:00Z', TZ) // 9:00 AM CST on Feb 11
+    const result = formatDueTimeParts('2025-02-11T15:00:00Z', TZ, CALENDAR_DAY_START) // 9:00 AM CST on Feb 11
     expect(result.relative).toBe('Feb 11 9:00 AM')
   })
 
@@ -278,57 +279,57 @@ describe('formatTaskAge', () => {
 
   test('returns null for future anchor', () => {
     vi.setSystemTime(new Date('2026-02-01T12:00:00Z'))
-    expect(formatTaskAge('2026-02-02T12:00:00Z', TZ)).toBeNull()
+    expect(formatTaskAge('2026-02-02T12:00:00Z', TZ, CALENDAR_DAY_START)).toBeNull()
   })
 
   test('returns null for same-day anchor (less than 1 calendar day)', () => {
     vi.setSystemTime(new Date('2026-02-01T18:00:00Z')) // noon CST
-    expect(formatTaskAge('2026-02-01T12:00:00Z', TZ)).toBeNull() // earlier same day CST
+    expect(formatTaskAge('2026-02-01T12:00:00Z', TZ, CALENDAR_DAY_START)).toBeNull() // earlier same day CST
   })
 
   test('1 day old', () => {
     vi.setSystemTime(new Date('2026-02-02T18:00:00Z')) // Feb 2 noon CST
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1d old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('1d old')
   })
 
   test('6 days old (upper boundary of days range)', () => {
     vi.setSystemTime(new Date('2026-02-07T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('6d old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('6d old')
   })
 
   test('7 days old shows weeks', () => {
     vi.setSystemTime(new Date('2026-02-08T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1w old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('1w old')
   })
 
   test('14 days old shows 2w', () => {
     vi.setSystemTime(new Date('2026-02-15T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('2w old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('2w old')
   })
 
   test('29 days old shows 4w (upper boundary of weeks range)', () => {
     vi.setSystemTime(new Date('2026-03-02T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('4w old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('4w old')
   })
 
   test('30 days old shows months', () => {
     vi.setSystemTime(new Date('2026-03-03T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1mo old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('1mo old')
   })
 
   test('90 days old shows 3mo', () => {
     vi.setSystemTime(new Date('2026-05-02T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('3mo old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('3mo old')
   })
 
   test('365 days old shows years', () => {
     vi.setSystemTime(new Date('2027-02-01T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('1y old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('1y old')
   })
 
   test('730 days old shows 2y', () => {
     vi.setSystemTime(new Date('2028-02-01T18:00:00Z'))
-    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ)).toBe('2y old')
+    expect(formatTaskAge('2026-02-01T18:00:00Z', TZ, CALENDAR_DAY_START)).toBe('2y old')
   })
 
   test('timezone boundary: anchor is earlier in timezone than UTC', () => {
@@ -336,7 +337,7 @@ describe('formatTaskAge', () => {
     // now = Feb 2 at 7:00 UTC = Feb 2 at 1:00 AM CST.
     // Calendar days in CST: Feb 2 - Jan 30 = 3 days old.
     vi.setSystemTime(new Date('2026-02-02T07:00:00Z'))
-    expect(formatTaskAge('2026-01-31T05:30:00Z', TZ)).toBe('3d old')
+    expect(formatTaskAge('2026-01-31T05:30:00Z', TZ, CALENDAR_DAY_START)).toBe('3d old')
   })
 })
 
@@ -349,7 +350,7 @@ describe('getTimezoneDayBoundaries DST', () => {
     // March 9, 2025 is spring-forward in America/Chicago (CST → CDT).
     // Clocks spring forward at 2:00 AM CST → 3:00 AM CDT, so this day is 23 hours long.
     vi.setSystemTime(new Date('2025-03-09T12:00:00Z')) // 6 AM CST
-    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(TZ)
+    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START)
 
     // todayStart = midnight CST on March 9 = 06:00 UTC
     expect(todayStart.toISOString()).toBe('2025-03-09T06:00:00.000Z')
@@ -364,7 +365,7 @@ describe('getTimezoneDayBoundaries DST', () => {
     // Nov 2, 2025 is fall-back in America/Chicago (CDT → CST).
     // Clocks fall back at 2:00 AM CDT → 1:00 AM CST, so this day is 25 hours long.
     vi.setSystemTime(new Date('2025-11-02T12:00:00Z')) // 7 AM CDT
-    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(TZ)
+    const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START)
 
     // todayStart = midnight CDT on Nov 2 = 05:00 UTC
     expect(todayStart.toISOString()).toBe('2025-11-02T05:00:00.000Z')
@@ -378,7 +379,7 @@ describe('getTimezoneDayBoundaries DST', () => {
   test('yesterdayStart is DST-safe', () => {
     // March 10, 2025 (day after spring-forward)
     vi.setSystemTime(new Date('2025-03-10T12:00:00Z')) // 7 AM CDT
-    const { yesterdayStart, todayStart } = getTimezoneDayBoundaries(TZ)
+    const { yesterdayStart, todayStart } = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START)
 
     // yesterdayStart = midnight CST on March 9 = 06:00 UTC
     expect(yesterdayStart.toISOString()).toBe('2025-03-09T06:00:00.000Z')
@@ -392,7 +393,7 @@ describe('getTimezoneDayBoundaries DST', () => {
   test('nextWeekStart is DST-safe across spring-forward', () => {
     // March 5, 2025 — spring-forward happens March 9
     vi.setSystemTime(new Date('2025-03-05T12:00:00Z')) // 6 AM CST
-    const { todayStart, nextWeekStart } = getTimezoneDayBoundaries(TZ)
+    const { todayStart, nextWeekStart } = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START)
 
     // todayStart = midnight CST on March 5 = 06:00 UTC
     expect(todayStart.toISOString()).toBe('2025-03-05T06:00:00.000Z')
@@ -428,16 +429,22 @@ describe('formatTaskSince', () => {
   })
 
   test('recurring: null while the occurrence has not arrived yet', () => {
-    expect(formatTaskSince(recurring('2026-01-16T15:00:00Z'), TZ)).toBeNull()
+    expect(formatTaskSince(recurring('2026-01-16T15:00:00Z'), TZ, CALENDAR_DAY_START)).toBeNull()
   })
 
   test('recurring: null with no due date at all', () => {
-    expect(formatTaskSince(recurring(null), TZ)).toBeNull()
+    expect(formatTaskSince(recurring(null), TZ, CALENDAR_DAY_START)).toBeNull()
   })
 
   test('recurring: an overdue occurrence is aged from original_due_at', () => {
     // due_at was snoozed into the future; the occurrence was first due yesterday
-    expect(formatTaskSince(recurring('2026-01-16T15:00:00Z', '2026-01-14T15:00:00Z'), TZ)).toEqual({
+    expect(
+      formatTaskSince(
+        recurring('2026-01-16T15:00:00Z', '2026-01-14T15:00:00Z'),
+        TZ,
+        CALENDAR_DAY_START,
+      ),
+    ).toEqual({
       label: 'yesterday',
       timeAgo: '1 day ago',
       fullDate: 'Wed, Jan 14, 2026, 9:00 AM',
@@ -445,7 +452,7 @@ describe('formatTaskSince', () => {
   })
 
   test('recurring: falls back to due_at when never snoozed', () => {
-    expect(formatTaskSince(recurring('2026-01-15T15:00:00Z'), TZ)).toEqual({
+    expect(formatTaskSince(recurring('2026-01-15T15:00:00Z'), TZ, CALENDAR_DAY_START)).toEqual({
       label: 'today',
       timeAgo: '1 hour ago',
       fullDate: 'Thu, Jan 15, 2026, 9:00 AM',
@@ -453,22 +460,32 @@ describe('formatTaskSince', () => {
   })
 
   test('one-off: aged from created_at when never deferred', () => {
-    expect(formatTaskSince(oneOff('2026-01-15T13:00:00Z'), TZ)?.timeAgo).toBe('3 hours ago')
+    expect(formatTaskSince(oneOff('2026-01-15T13:00:00Z'), TZ, CALENDAR_DAY_START)?.timeAgo).toBe(
+      '3 hours ago',
+    )
   })
 
   test('one-off: original_due_at wins over created_at', () => {
-    const since = formatTaskSince(oneOff('2025-11-10T16:00:00Z', '2026-01-12T16:00:00Z'), TZ)
+    const since = formatTaskSince(
+      oneOff('2025-11-10T16:00:00Z', '2026-01-12T16:00:00Z'),
+      TZ,
+      CALENDAR_DAY_START,
+    )
     expect(since?.label).toBe('Mon')
     expect(since?.timeAgo).toBe('3 days ago')
   })
 
   test('minutes: at least "1 minute ago", singular and plural', () => {
-    expect(formatTaskSince(oneOff('2026-01-15T15:59:30Z'), TZ)?.timeAgo).toBe('1 minute ago')
-    expect(formatTaskSince(oneOff('2026-01-15T15:58:00Z'), TZ)?.timeAgo).toBe('2 minutes ago')
+    expect(formatTaskSince(oneOff('2026-01-15T15:59:30Z'), TZ, CALENDAR_DAY_START)?.timeAgo).toBe(
+      '1 minute ago',
+    )
+    expect(formatTaskSince(oneOff('2026-01-15T15:58:00Z'), TZ, CALENDAR_DAY_START)?.timeAgo).toBe(
+      '2 minutes ago',
+    )
   })
 
   test('a week or more this year: "Jan 2", weeks ago', () => {
-    expect(formatTaskSince(oneOff('2026-01-02T16:00:00Z'), TZ)).toEqual({
+    expect(formatTaskSince(oneOff('2026-01-02T16:00:00Z'), TZ, CALENDAR_DAY_START)).toEqual({
       label: 'Jan 2',
       timeAgo: '1 week ago',
       fullDate: 'Fri, Jan 2, 2026, 10:00 AM',
@@ -476,7 +493,7 @@ describe('formatTaskSince', () => {
   })
 
   test('an earlier year shows the year, months ago', () => {
-    const since = formatTaskSince(oneOff('2025-11-10T16:00:00Z'), TZ)
+    const since = formatTaskSince(oneOff('2025-11-10T16:00:00Z'), TZ, CALENDAR_DAY_START)
     expect(since?.label).toBe('Nov 10, 2025')
     expect(since?.timeAgo).toBe('2 months ago')
   })
@@ -484,12 +501,14 @@ describe('formatTaskSince', () => {
   test('the day boundary is the user timezone, not UTC', () => {
     // 05:00 UTC Jan 15 is 11:00 PM Jan 14 in Chicago
     const task = oneOff('2026-01-15T05:00:00Z')
-    expect(formatTaskSince(task, TZ)?.label).toBe('yesterday')
-    expect(formatTaskSince(task, 'UTC')?.label).toBe('today')
+    expect(formatTaskSince(task, TZ, CALENDAR_DAY_START)?.label).toBe('yesterday')
+    expect(formatTaskSince(task, 'UTC', CALENDAR_DAY_START)?.label).toBe('today')
   })
 
   test('an explicit now overrides the clock', () => {
     const now = new Date('2026-01-15T15:30:00Z')
-    expect(formatTaskSince(oneOff('2026-01-15T15:00:00Z'), TZ, now)?.timeAgo).toBe('30 minutes ago')
+    expect(
+      formatTaskSince(oneOff('2026-01-15T15:00:00Z'), TZ, CALENDAR_DAY_START, now)?.timeAgo,
+    ).toBe('30 minutes ago')
   })
 })

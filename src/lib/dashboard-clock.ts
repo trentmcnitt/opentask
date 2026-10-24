@@ -23,9 +23,10 @@
  *   scheduled instant, so this is not hypothetical.
  * - **`due_at - 2h + 1ms`**: the Soon chip (`classifyTaskDueDate`) counts a
  *   task once it is due within two hours, same strict comparison.
- * - **the next local midnight** (`tomorrowStart`, DST-safe): Today, Tomorrow,
- *   This Week and Later all roll over there — and next week's start is itself
- *   a midnight.
+ * - **the next day start** (`tomorrowStart` — the user's OpenTask day,
+ *   "Day starts at" PR 2: 3:00 AM by default, midnight with the task queue
+ *   off; DST-safe): Today, Tomorrow, This Week and Later all roll over there
+ *   — and next week's start is itself a day start.
  *
  * The result is always strictly after `now`, so a wake-up can never schedule
  * itself for the moment it is already at.
@@ -39,7 +40,7 @@ export const SOON_WINDOW_MS = 2 * 60 * 60 * 1000
 
 /**
  * `setTimeout` stores its delay as a signed 32-bit int; anything larger fires
- * IMMEDIATELY (a ~24.8-day delay overflows). The next midnight is always
+ * IMMEDIATELY (a ~24.8-day delay overflows). The next day start is always
  * within a day, so this clamp only guards the arithmetic, but it is cheap.
  */
 export const MAX_TIMEOUT_MS = 2 ** 31 - 1
@@ -47,9 +48,15 @@ export const MAX_TIMEOUT_MS = 2 ** 31 - 1
 type ClockTask = Pick<Task, 'due_at' | 'progress_target' | 'is_tracked'>
 
 /** The next instant, strictly after `now`, at which any dashboard date bucket can change. */
-export function nextClockTick(tasks: ClockTask[], now: Date, timezone: string): Date {
+export function nextClockTick(
+  tasks: ClockTask[],
+  now: Date,
+  timezone: string,
+  /** The user's day boundary: the dashboard's "today" turns at the next day start, not midnight. */
+  dayStart: string,
+): Date {
   const nowMs = now.getTime()
-  let next = getTimezoneDayBoundaries(timezone, now).tomorrowStart.getTime()
+  let next = getTimezoneDayBoundaries(timezone, dayStart, now).tomorrowStart.getTime()
   for (const task of tasks) {
     if (!hasDebtDueDate(task)) continue
     const due = new Date(task.due_at).getTime()
