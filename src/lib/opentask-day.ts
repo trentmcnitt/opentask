@@ -90,10 +90,44 @@ export function namesNextDate(dayStart: string): boolean {
 
 /** A local date (yyyy-MM-dd) `days` days on (or back): calendar arithmetic, no zone. */
 export function addDays(date: string, days: number): string {
-  const d = DateTime.fromISO(date, { zone: 'utc' })
-  if (!d.isValid) throw new Error(`Not a local date: ${date}`)
-  return d.plus({ days }).toISODate()!
+  // Plain UTC date arithmetic, no Luxon: it runs for every task on every
+  // read, so it stays cheap ("Day starts at" PR 2 perf).
+  const parts = parseLocalDate(date)
+  if (!parts) throw new Error(`Not a local date: ${date}`)
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)).toISOString().slice(0, 10)
 }
+
+const LOCAL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/** A yyyy-MM-dd date's [year, month, day], or null when it is not a real date. */
+function parseLocalDate(date: string): [number, number, number] | null {
+  const m = LOCAL_DATE.exec(date)
+  if (!m) return null
+  const [y, mo, d] = [+m[1], +m[2], +m[3]]
+  const t = new Date(Date.UTC(y, mo - 1, d))
+  return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d
+    ? [y, mo, d]
+    : null
+}
+
+/**
+ * MEMOS for the pure, hot helpers below ("Day starts at" PR 2 perf: every
+ * task's day is read on every list, segment and tick). Their inputs are the
+ * whole key — a date, a zone, a time — and their answers never change, so a
+ * memo can never be stale (a user's NEW day start is a new key). Bounded:
+ * cleared when full.
+ */
+const MEMO_MAX = 20_000
+function memo<V>(map: Map<string, V>, key: string, make: () => V): V {
+  const hit = map.get(key)
+  if (hit !== undefined) return hit
+  if (map.size >= MEMO_MAX) map.clear()
+  const value = make()
+  map.set(key, value)
+  return value
+}
+const momentMemo = new Map<string, number>()
+const localDayMemo = new Map<string, DateTime>()
 
 /**
  * The local CALENDAR date (yyyy-MM-dd) of an instant in `timezone` — the
@@ -143,8 +177,11 @@ export function localMoment(localDate: string, time: string, timezone: string): 
  * `localMoment`'s DST rule.
  */
 export function dayStartMoment(openTaskDate: string, timezone: string, dayStart: string): Date {
-  const onDate = namesNextDate(dayStart) ? addDays(openTaskDate, -1) : openTaskDate
-  return localMoment(onDate, dayStart, timezone)
+  const ms = memo(momentMemo, `${openTaskDate}|${timezone}|${dayStart}`, () => {
+    const onDate = namesNextDate(dayStart) ? addDays(openTaskDate, -1) : openTaskDate
+    return localMoment(onDate, dayStart, timezone).getTime()
+  })
+  return new Date(ms)
 }
 
 /**
@@ -304,7 +341,8 @@ export function targetOpenTaskDay(
  * it is the instant's own local midnight.
  */
 export function openTaskLocalDay(instant: Date, timezone: string, dayStart: string): DateTime {
-  return DateTime.fromISO(openTaskDayOf(instant, timezone, dayStart), { zone: timezone })
+  const date = openTaskDayOf(instant, timezone, dayStart)
+  return memo(localDayMemo, `${date}|${timezone}`, () => DateTime.fromISO(date, { zone: timezone }))
 }
 
 /** The instants the days around `now` start at: yesterday, today, tomorrow, the day after, a week on. */
