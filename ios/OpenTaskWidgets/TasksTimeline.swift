@@ -26,11 +26,11 @@ enum TasksTimeline {
         TaskLists.overdueSweepEligibleCount(tasks, now: now)
     }
 
-    /// Due or overdue as of the end of the local day — the "Today" unified
-    /// page (2026-09-23, item 4) and, unchanged, what every per-project page
-    /// still shows.
-    static func todaysTasks(from tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
-        TaskLists.dueToday(tasks, now: now)
+    /// Due or overdue as of the end of the OpenTask day (`TaskLists.dueToday`)
+    /// — the "Today" unified page (2026-09-23, item 4) and, unchanged, what
+    /// every per-project page still shows.
+    static func todaysTasks(from tasks: [TaskDTO], now: Date = Date(), day: OpenTaskDay) -> [TaskDTO] {
+        TaskLists.dueToday(tasks, now: now, day: day)
     }
 
     /// "Up next" (2026-09-23, item 4) — Trent: "Instead of Up Next I'd also
@@ -104,18 +104,20 @@ enum TasksTimeline {
     /// wash and "N of M" belong to Today alone: an empty Up next or project
     /// page says nothing about the day, and neither does an empty Over
     /// target page (it stays on screen at 0 since 2026-10-12).
-    static func isDayComplete(scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date) -> Bool {
+    static func isDayComplete(scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date, day: OpenTaskDay) -> Bool {
         scope == WidgetStore.allProjects
             && TaskDayProgress.isDayComplete(
-                openToday: openTasks.count, doneToday: TaskDayProgress.doneToday(done, now: now).count
+                openToday: openTasks.count, doneToday: TaskDayProgress.doneToday(done, now: now, day: day).count
             )
     }
 
     /// The Today page's "N of M", nil on every other page.
-    static func todayCount(scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date) -> TaskDayProgress.TodayCount? {
+    static func todayCount(
+        scope: Int, openTasks: [TaskDTO], done: [CompletionDTO], now: Date, day: OpenTaskDay
+    ) -> TaskDayProgress.TodayCount? {
         guard scope == WidgetStore.allProjects else { return nil }
         return TaskDayProgress.TodayCount(
-            doneToday: TaskDayProgress.doneToday(done, now: now).count, openToday: openTasks.count
+            doneToday: TaskDayProgress.doneToday(done, now: now, day: day).count, openToday: openTasks.count
         )
     }
 
@@ -123,9 +125,11 @@ enum TasksTimeline {
     /// today": the next few tasks due after today, and ONLY when that state
     /// can show (the Today page, nothing open on it) — every other entry
     /// carries none, since WidgetKit archives each one.
-    static func upcomingForEmptyToday(scope: Int, openOnPage: [TaskDTO], allTasks: [TaskDTO], now: Date) -> [TaskDTO] {
+    static func upcomingForEmptyToday(
+        scope: Int, openOnPage: [TaskDTO], allTasks: [TaskDTO], now: Date, day: OpenTaskDay
+    ) -> [TaskDTO] {
         guard scope == WidgetStore.allProjects, openOnPage.isEmpty else { return [] }
-        return TaskDayProgress.upcoming(allTasks, now: now)
+        return TaskDayProgress.upcoming(allTasks, now: now, day: day)
     }
 
     // MARK: Over target (2026-09-25)
@@ -173,8 +177,8 @@ enum TasksTimeline {
     /// leaving this list never moves the page on screen, and stepping on from
     /// a project that just emptied continues to the next one in sort order
     /// rather than starting over.
-    static func projectPages(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date()) -> [ProjectDTO] {
-        let present = Set(todaysTasks(from: tasks, now: now).map(\.projectId))
+    static func projectPages(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date(), day: OpenTaskDay) -> [ProjectDTO] {
+        let present = Set(todaysTasks(from: tasks, now: now, day: day).map(\.projectId))
         return projects.filter { present.contains($0.id) }
     }
 
@@ -224,16 +228,16 @@ enum TasksTimeline {
         let todayCount: Int
     }
 
-    static func scopeState(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date()) -> ScopeState {
+    static func scopeState(tasks: [TaskDTO], projects: [ProjectDTO], now: Date = Date(), day: OpenTaskDay) -> ScopeState {
         let scope = resolvePage(stored: WidgetStore.tasksStoredPage(), projects: projects)
-        let chipProjects = projectPages(tasks: tasks, projects: projects, now: now)
+        let chipProjects = projectPages(tasks: tasks, projects: projects, now: now, day: day)
         return ScopeState(
             scope: scope,
             pages: viewPages + projects.map(\.id),
             projectPages: chipProjects,
             nextProject: nextProject(after: scope, pages: chipProjects, allProjects: projects),
             overCount: overdueTasks(from: tasks, now: now).count,
-            todayCount: todaysTasks(from: tasks, now: now).count
+            todayCount: todaysTasks(from: tasks, now: now, day: day).count
         )
     }
 
@@ -244,7 +248,10 @@ enum TasksTimeline {
     /// filterPending`), so an intent and the render it triggers agree.
     static func currentScopeState(now: Date = Date()) -> ScopeState? {
         guard let cache = WidgetStore.loadTasks()?.value else { return nil }
-        return scopeState(tasks: WidgetStore.filterPending(cache.tasks, now: now), projects: cache.projects, now: now)
+        return scopeState(
+            tasks: WidgetStore.filterPending(cache.tasks, now: now), projects: cache.projects, now: now,
+            day: DayStartStore.current
+        )
     }
 
     /// `currentScopeState`'s scope; before any payload was cached, the

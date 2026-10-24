@@ -258,7 +258,9 @@ targets:
   # Mac is the installed app's widget cache.
   #
   # Resources: the server contract fixtures (tests/fixtures/contract/*.json),
-  # written by tests/integration/contract-fixtures.test.ts.
+  # written by tests/integration/contract-fixtures.test.ts, and the OpenTask
+  # day's shared cases (tests/fixtures/opentask-day/, written from
+  # src/lib/opentask-day.ts by tests/behavioral/tq-day-native-cases.test.ts).
   OpenTaskLogicTests:
     type: bundle.unit-test
     platform: macOS
@@ -274,8 +276,11 @@ targets:
       - path: ../ios/WatchShared/WatchQuotaLogic.swift
       - path: ../ios/WatchShared/WatchSlotLogic.swift
       - path: ../ios/WatchShared/WatchWidgetState.swift
+      - path: ../ios/WatchShared/WatchFormatting.swift
       - path: ../ios/Tests/Logic
       - path: ../tests/fixtures/contract
+        buildPhase: resources
+      - path: ../tests/fixtures/opentask-day
         buildPhase: resources
     settings:
       base:

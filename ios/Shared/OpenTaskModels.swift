@@ -944,6 +944,16 @@ struct RemindersPayload: Codable {
         groups = try c.decodeIfPresent([ReminderGroupDTO].self, forKey: .groups) ?? []
         taskSegments = try c.decodeIfPresent([TaskSegmentDTO].self, forKey: .taskSegments) ?? []
     }
+
+    /// The groups in the order their periods come round in the OpenTask day
+    /// ("Day starts at" PR 3, the web's `orderGroupsByDay`): the server sends
+    /// them by start time, so with the day starting at 3:00 a 1:00 AM period
+    /// would come first — it ends the day, so it goes last. Every native
+    /// reader's "earliest slot up to now" (`groups[0...natural]`) depends on
+    /// this order. Applied once, by `APIClient.fetchReminders`.
+    func orderedByDay(_ day: OpenTaskDay) -> RemindersPayload {
+        RemindersPayload(groups: day.orderedByDay(groups) { $0.slot?.startMinutes }, taskSegments: taskSegments)
+    }
 }
 
 // MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
@@ -1312,8 +1322,9 @@ struct PadPresetDTO: Codable, Hashable {
 
 /// `GET /api/user/preferences` → `{"data":{..., "label_config":[...], ...}}`
 /// (`src/app/api/user/preferences/route.ts`) — a ~60-field payload this
-/// decodes only the few keys native reads (`label_config`, `pad_presets`)
-/// or pins for the contract. `Decodable` already ignores keys it wasn't
+/// decodes only the few keys native reads (`label_config`, `pad_presets`,
+/// the day boundary's `task_queue` / `rollover_time` / `week_start`) or pins
+/// for the contract. `Decodable` already ignores keys it wasn't
 /// told about, so no custom `init(from:)` is needed to skip the rest; only
 /// `decodeIfPresent` is, so a server that predates a key (or a malformed
 /// one) still yields an empty cluster color set / nil presets instead of
@@ -1334,12 +1345,25 @@ struct UserPreferencesLabelConfigPage: Decodable {
     /// already resolved by the server. Nil from an older server, in which
     /// case `refreshSlotActions()` leaves `PadPresetStore`'s cache alone.
     let padPresets: [PadPresetDTO]?
+    /// `task_queue` (read-only, task-queue PR 3): the server's switch. Nil
+    /// from a server that predates it — no switch, so midnight. With the
+    /// switch on the day turns at `rolloverTime`, off at midnight
+    /// (`DayStartStore.resolvedDayStart`).
+    let taskQueue: Bool?
+    /// `rollover_time` ("HH:MM", read-only): the user's "Day starts at" —
+    /// 03:00 unless they changed it ("Day starts at", 2026-10-23).
+    let rolloverTime: String?
+    /// `week_start` ("sunday" / "monday"): the quota weeks' first day.
+    let weekStart: String?
 
     enum CodingKeys: String, CodingKey {
         case labelConfig = "label_config"
         case morningTime = "morning_time"
         case checkInDay = "check_in_day"
         case padPresets = "pad_presets"
+        case taskQueue = "task_queue"
+        case rolloverTime = "rollover_time"
+        case weekStart = "week_start"
     }
 
     init(from decoder: Decoder) throws {
@@ -1348,5 +1372,8 @@ struct UserPreferencesLabelConfigPage: Decodable {
         morningTime = try c.decodeIfPresent(String.self, forKey: .morningTime)
         checkInDay = try c.decodeIfPresent(Int.self, forKey: .checkInDay)
         padPresets = try? c.decodeIfPresent([PadPresetDTO].self, forKey: .padPresets)
+        taskQueue = try? c.decodeIfPresent(Bool.self, forKey: .taskQueue)
+        rolloverTime = try? c.decodeIfPresent(String.self, forKey: .rolloverTime)
+        weekStart = try? c.decodeIfPresent(String.self, forKey: .weekStart)
     }
 }
