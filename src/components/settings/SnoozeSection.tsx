@@ -136,10 +136,11 @@ export function SnoozeSection({
             {/* Trent, 2026-10-23: one day boundary everywhere, his at 3:00 AM.
                 "Day starts at" PR 2 (10-24): everything uses it — Today, Upcoming,
                 quota weeks and months, decks, History. The copy covers both
-                directions: an early-morning start keeps the late night with the
-                day before; an evening start begins the next day that evening. */}
+                directions (the naming convention, opentask-day.ts): before noon
+                the late night keeps the day before; after noon the next day
+                starts early. Midnight is the calendar day. */}
             <DayStartRow
-              description="When a new day begins — for Today, reminders, quotas, decks and the task rollover. An early-morning time keeps a late night with the day before; an evening time starts the next day that evening."
+              description="When a new day begins — for Today, reminders, quotas, decks and the task rollover. Before noon, a late night counts as the day before; after noon, the next day starts early (at 11 PM, Sunday 11:30 PM is Monday)."
               timeSlots={timeSlots}
             />
           </>
