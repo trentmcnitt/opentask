@@ -705,8 +705,10 @@ describe('TM-G01: every SQL writer of occurrence_at / deadline_at / lead_from de
   }
   const writer =
     /\b(occurrence_at|deadline_at|lead_from)\s*=\s*(\?|NULL|deadline_at|due_at|COALESCE)|INSERT INTO tasks|trackField\(\s*data,\s*'(occurrence_at|deadline_at|lead_from)'/
+  // Relative targets (2026-10-24): `relativeTargetAt`, the derivation
+  // `occurrenceDates` delegates to (and a relative one-off's), counts too.
   const derives =
-    /import\s*\{[^}]*\boccurrenceDates\b[^}]*\}\s*from '@\/lib\/task-segments'|from '\.\.?\/repeat-schedule'/
+    /import\s*\{[^}]*\b(occurrenceDates|relativeTargetAt)\b[^}]*\}\s*from '@\/lib\/task-segments'|from '\.\.?\/repeat-schedule'/
 
   test('TM-G01: no per-writer special cases — the writers import the one derivation (or are exempt, with a reason)', () => {
     const root = process.cwd()
