@@ -50,7 +50,7 @@ Be generous when interpreting garbled input — extract the intent rather than r
 
 When input is a long dictated paragraph, decompose it into structured parts:
 - **title** = concise core action (what the user needs to do)
-- **metadata** = due_at, deadline_at, horizon, priority, rrule, labels, auto_snooze_minutes, recurrence_mode (extracted into their dedicated fields)
+- **metadata** = due_at, deadline_at, target_days_before / target_time / target_period, horizon, priority, rrule, labels, auto_snooze_minutes, recurrence_mode (extracted into their dedicated fields)
 - **notes** = everything else — context, reasons, reference numbers, addresses, phone numbers, instructions, background info
 
 The user dictated everything in one breath because they couldn't structure it. Your job is to structure it for them without losing any information.
@@ -87,7 +87,9 @@ Write **reasoning** FIRST, then the fields in the order below. Work each field o
 
    The time of an event the task is about — an appointment, a flight, a meeting ("doctor appointment Thursday at 2:30", "flight leaves Saturday at 6:15 am") — is the target too, as it always has been: due_at is that date and time.
 
-   A date that only says when the task must be done BY ("by Friday", "due the 23rd", "before the 17th", "expires Oct 13") is a deadline, not a day to do it: put it in deadline_at and leave due_at null. Nothing is lost: the app gives a deadline with no target an automatic target of its own, a few days before the deadline, and starts reminding the user from there. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both (the day to do it as usual: "Wednesday" alone is the date alone). due_at never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
+   A date that only says when the task must be done BY ("by Friday", "due the 23rd", "before the 17th", "expires Oct 13") is a deadline, not a day to do it: put it in deadline_at and leave due_at null. Nothing is lost: the app brings a deadline back to the user ahead of it on its own. When the user gives both — a cutoff AND a day to do it ("cancel it by the 17th, do it Wednesday") — set both (the day to do it as usual: "Wednesday" alone is the date alone). due_at never falls after the deadline: if you would put due_at later than deadline_at, leave due_at null.
+
+   A day counted back from the deadline — "remind me the evening before", "the morning of", "2 days before" — is not due_at either: due_at stays null and target_days_before carries it (see under deadline_at).
 
    No day, no target: "do it", "get it done", "urgent" or "ASAP" with no day or time named leave due_at null (only "now" / "right now" / "immediately", "in an hour" and "tonight" name a time).
 
@@ -117,6 +119,17 @@ Write **reasoning** FIRST, then the fields in the order below. Work each field o
    - Schedule cues that resolve to a time of day ("before work", "before bed", "on my way home") are targets, not deadlines.
    - A cutoff with no date ("before the trip", "before spring", "the appeal deadline is coming up") gives deadline_at null — keep the phrase in the title or notes.
    - A recurring task (rrule set) gets deadline_at null: a cutoff on a repeating task goes in due_at, as its time ("every Friday by 5pm" → due_at Friday 5pm).
+
+   **A target counted back from the deadline — target_days_before, target_time, target_period.** When the user says when to be reminded COUNTING BACK from the deadline they state ("submit it by Tuesday 8:30am, remind me the evening before", "rent is due the 1st, nag me 2 days before", "due Friday, target the morning of"), the target moves with the deadline. Set:
+   - **target_days_before** — whole days before the deadline's day: "the day before", "the evening before", "the night before" → 1; "2 days before" → 2; "a week before" → 7; "the morning of", "the day of" → 0.
+   - **target_period** — the part of the day the user said, in their own word ("evening", "night", "morning", "afternoon"). When that word is the name of one of the user's reminder periods (listed in the user prompt), write the period's name exactly as listed ("the evening before" with a period named Evening → "Evening"). Never substitute a different period because the time falls in it: "the evening before" with periods AM, PM and Night → "evening". null when the user named no part of the day ("the day before", "2 days before").
+   - **target_time** — "HH:MM", 24-hour, ONLY when the user said a clock time for the reminder itself ("remind me at 6pm the day before" → "18:00"). Otherwise null — the deadline's own time is not it; the app picks the time from target_period.
+   Then due_at is null: the app works out the target from the deadline.
+
+   Set them ONLY from wording counted back from a deadline the same input states, so deadline_at is set. Otherwise all three are null:
+   - A named day is a target of its own, not a counted one: "by Monday, do it Sunday morning" → due_at Sunday at the morning time, the three null.
+   - No deadline, nothing to count from: "order flowers the day before her birthday on the 12th" names a day — the 11th (a birthday is an occasion, not a cutoff) → due_at the 11th, deadline_at null, the three null. "remind me the night before the trip" has no date at all → all null.
+   - A repeating task (rrule set) never has them: "every Friday by 5pm, remind me the day before" → the three null; read the repeat as usual and keep the reminder wording in notes.
 
 4. **horizon** — "days", "weeks", "months", "eventually", or null. The pace the user wants: how soon it should get done, when they did not name a day. Set it ONLY from explicit pace wording:
    - "days" — "today or tomorrow", "in the next few days", "in a day or two", "sometime this weekend"
@@ -210,6 +223,9 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "title": "Call the dentist",
   "due_at": "2026-02-10T09:00:00",
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -226,10 +242,13 @@ Input: "return the library books by Friday"
 Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago
 \`\`\`json
 {
-  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app sets the deadline's automatic target. No pace wording, priority, or label request.",
+  "reasoning": "'by Friday' is a cutoff → deadline_at Friday, end of day (no time given). The user named no day to do it, so due_at is null — the app brings the deadline up ahead of it on its own. No pace wording, priority, or label request.",
   "title": "Return the library books",
   "due_at": null,
   "deadline_at": "2026-02-13T23:59:00",
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -250,6 +269,32 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "title": "Renew the domain",
   "due_at": "2026-02-16",
   "deadline_at": "2026-02-20T23:59:00",
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
+  "horizon": null,
+  "priority": 0,
+  "labels": [],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null
+}
+\`\`\`
+
+### A target counted back from the deadline
+Input: "turn in the field trip form by Thursday, remind me the night before"
+Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicago | Reminder periods: Morning 7:00 AM, Midday 12:00 PM, Evening 8:30 PM
+\`\`\`json
+{
+  "reasoning": "'by Thursday' is the cutoff → deadline_at Thursday, end of day. 'remind me the night before' counts back from that deadline → target_days_before 1, target_period 'night' (the user's word: no period is named Night, and Evening is a different word), target_time null (no clock time said). due_at null: the app derives the target from the deadline, and it moves with it. No pace, priority, or label request.",
+  "title": "Turn in the field trip form",
+  "due_at": null,
+  "deadline_at": "2026-02-12T23:59:00",
+  "target_days_before": 1,
+  "target_time": null,
+  "target_period": "night",
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -270,6 +315,9 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "title": "Grab winter gloves",
   "due_at": "2026-02-14",
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -290,6 +338,9 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "title": "Clean out the garage",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": "months",
   "priority": 0,
   "labels": [],
@@ -310,6 +361,9 @@ Current date: Mon, Feb 9 | Timezone: America/Chicago
   "title": "Take my vitamins",
   "due_at": "2026-02-10T08:00:00",
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -331,6 +385,9 @@ Available projects: Inbox, Family
   "title": "Call mom",
   "due_at": "2026-02-17",
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 3,
   "labels": [],
@@ -352,6 +409,9 @@ Available projects: Inbox, Work, Job Search
   "title": "Test task for job search",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -373,6 +433,9 @@ Available projects: Inbox, Home
   "title": "Clean the gutters before it rains",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -393,6 +456,9 @@ Timezone: America/Chicago
   "title": "Fix the door hinge",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -413,6 +479,9 @@ Current date: Mon, Feb 9 | Default task time: 9:00 AM | Timezone: America/Chicag
   "title": "Call insurance company about denied ER claim",
   "due_at": "2026-02-10T09:00:00",
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 3,
   "labels": [],
@@ -433,6 +502,9 @@ Timezone: America/Chicago
   "title": "Water the plants",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -453,6 +525,9 @@ Timezone: America/Chicago
   "title": "Weekly standup",
   "due_at": "2026-02-16T09:00:00",
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": [],
@@ -473,6 +548,9 @@ Timezone: America/Chicago
   "title": "Pick up dry cleaning",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 0,
   "labels": ["errands"],
@@ -493,6 +571,9 @@ Timezone: America/Chicago
   "title": "Pick up the prescription",
   "due_at": null,
   "deadline_at": null,
+  "target_days_before": null,
+  "target_time": null,
+  "target_period": null,
   "horizon": null,
   "priority": 4,
   "labels": [],
@@ -895,6 +976,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - The nag is NOT recurrence — "nag me every hour", "auto-snooze every hour" or "snooze every hour" sets auto_snooze_minutes, not rrule. A bare "nag" or "defer" with no interval sets nothing
 - due_at is the day the user said to do it: a day with no time ("tomorrow", "Saturday", "today") → the date alone ("YYYY-MM-DD"), and the app puts the task on deck; a stated time or part of day ("at 3pm", "tomorrow morning", "tonight", "this afternoon") → a full local datetime. deadline_at is a cutoff the wording states ("by", "before", "due", "expires", "deadline"). A cutoff-only date leaves due_at null; a cutoff day with no time is T23:59:00 local
 - Never infer deadline_at — no cutoff wording, no deadline (urgency and topic are not cutoffs)
+- target_days_before / target_period / target_time only for a target counted back from a stated deadline ("the evening before", "the morning of", "2 days before") — then due_at is null. target_period is the user's own word, or a listed period's exact name when their word is that name; target_time only for a clock time they said. A named day ("do it Sunday morning") is due_at; no deadline, or a repeat → all three null
 - Urgency is priority, not a date: "urgent X" / "critical alert X" with no day or time named → due_at null
 - Soon today: "now" / "right now" → ~15 min out, rounded UP to the quarter hour; "in an hour" → now + 1h, rounded up to the quarter hour; "in an hour or two" / "in 2 or 3 hours" → a whole hour (hh:00) inside the range
 - horizon only from explicit pace wording ("this week", "sometime this month", "in the next few days", "eventually", "someday") — never from topic, priority words, or a date. Otherwise null. Low-priority words ("no rush", "can wait", "whenever") still set priority 1; horizon never replaces priority. Recurring tasks: deadline_at and horizon null
@@ -920,6 +1002,12 @@ export interface EnrichmentPromptParams {
   wakeTime: string
   /** HH:MM format, e.g. '22:00' */
   sleepTime: string
+  /**
+   * The user's reminder periods (time slots), in order (2026-10-24): listed
+   * so a target counted back from a deadline can name one ("the evening
+   * before" → Evening). Absent or empty: no list.
+   */
+  periods?: ReadonlyArray<{ label: string; start_time: string }>
   /** `description` (what belongs there, ≤280 chars) is shown after the name when set */
   projects: Array<{
     id: number
@@ -981,6 +1069,16 @@ export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): strin
 
   const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
 
+  // The periods, for target_period only (a relative target's part of the
+  // day). Not the reminder prompt's list: no BYHOUR, no default marker.
+  const periods = params.periods ?? []
+  const periodsBlock =
+    periods.length > 0
+      ? `\nUser's reminder periods (for target_period — a period's name only when the user's own word is that name):\n${periods
+          .map((p) => `- ${p.label} — ${formatMorningTime(p.start_time)}`)
+          .join('\n')}\n`
+      : ''
+
   return `## Context
 
 User's timezone: ${timezone}
@@ -997,7 +1095,7 @@ When resolving time-of-day language:
 - "afternoon" → use your judgment, typically early afternoon
 - "evening" → use your judgment, typically early evening
 - "tonight" / "bedtime" / "before bed" → sleep time (${formattedSleep})
-
+${periodsBlock}
 ${projectsHeading}
 ${projectList}${userContextBlock}
 
@@ -1118,6 +1216,7 @@ ${taskText}
   BYMINUTE — the opposite of the task examples above, where the time sits in
   due_at and the rule stays bare. Here due_at is null.
 - labels is [], project_name is null, deadline_at and horizon are null,
+  target_days_before, target_time and target_period are null,
   auto_snooze_minutes is null, and recurrence_mode is null. A reminder does
   not use them.
 - priority follows the same signals as a task: a stated one lands, otherwise 0.

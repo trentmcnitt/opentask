@@ -61,6 +61,26 @@ const nextDayWord = (hour: number, minute = 0) =>
     ? 'today'
     : 'tomorrow'
 
+/**
+ * RELATIVE TARGETS (2026-10-24, plan §5): a user whose periods are Morning
+ * 6:30, Afternoon and Evening 8:30 PM — and one whose period names match no
+ * part-of-day word (no "Evening"). `target_slot_id` in the output is the
+ * 1-based position in the scenario's `slots`.
+ */
+const RELATIVE_SLOTS = [
+  { label: 'Morning', start_time: '06:30' },
+  { label: 'Afternoon', start_time: '13:00' },
+  { label: 'Evening', start_time: '20:30' },
+]
+const AM_PM_NIGHT_SLOTS = [
+  { label: 'AM', start_time: '07:00' },
+  { label: 'PM', start_time: '13:00' },
+  { label: 'Night', start_time: '21:00' },
+]
+/** The next 1st of a month ("rent due the 1st"). */
+const nextFirst = today.day === 1 ? today : today.plus({ months: 1 }).startOf('month')
+const dayIso = (n: number) => day(n).toFormat('yyyy-MM-dd')
+
 export const enrichmentTaskModelScenarios: AITestScenario[] = [
   // ---------------------------------------------------------------------------
   // Explicit deadlines
@@ -756,6 +776,235 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
       },
       quality_notes:
         'Now is 12:30 PM. "at noon" names no day and noon today has passed: due_at = TOMORROW at 12:00 PM local. "urgent priority" → priority 4 and is removed from the title. Title like "Order replacement books". No deadline.',
+    },
+  },
+  // ---------------------------------------------------------------------------
+  // Relative targets (2026-10-24): a target counted back from the deadline
+  // ---------------------------------------------------------------------------
+  {
+    id: 'enrich-tm-relative-evening-linked',
+    feature: 'enrichment',
+    description:
+      '"remind me the evening before" with a period named Evening → 1 day, linked to Evening',
+    input: {
+      text: `submit the permit renewal by ${weekday(4)} 8:30am, remind me the evening before`,
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: `~datetime:${dayIso(4)}T08:30`,
+        target_days_before: 1,
+        target_time: '20:30',
+        target_slot_id: 3,
+        due_at: null,
+        on_deck_day: null,
+        rrule: null,
+        horizon: null,
+      },
+      quality_notes:
+        `deadline_at = the coming ${weekday(4)} (${monthDay(4)}) at 8:30 AM. "remind me the evening before" counts back from it → ` +
+        'target_days_before 1, target_period "Evening" (the user\'s word IS a listed period name), so the target is linked to the Evening period ' +
+        "(target_slot_id 3, target_time 20:30 — the period's start, not a guessed evening time). The model's own target_time should be null (no clock time " +
+        'was said for the reminder; 8:30am is the deadline\'s). due_at null (the app derives it). Title like "Submit the permit renewal".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-evening-custom',
+    feature: 'enrichment',
+    description: '"the evening before" with periods AM / PM / Night → 1 day, a custom evening time',
+    input: {
+      text: `submit the permit renewal by ${weekday(4)} 8:30am, remind me the evening before`,
+      timezone: TZ,
+      projects: INBOX,
+      slots: AM_PM_NIGHT_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: `~datetime:${dayIso(4)}T08:30`,
+        target_days_before: 1,
+        target_time: '18:00',
+        target_slot_id: null,
+        due_at: null,
+        on_deck_day: null,
+      },
+      quality_notes:
+        `deadline_at = ${monthDay(4)} at 8:30 AM. "the evening before" → target_days_before 1. No period is named Evening, so it is NOT linked ` +
+        '(target_slot_id null): the model\'s target_period should be the user\'s word "evening" — never "Night" or "PM" because the time falls there. ' +
+        'The code gives "evening" its custom time, 18:00. due_at null. Title like "Submit the permit renewal".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-morning-of',
+    feature: 'enrichment',
+    description:
+      '"due Friday, target the morning of" → 0 days, the Default task time (not the Morning period)',
+    input: {
+      text: `pay the registration fee, due ${weekday(5)}, target the morning of`,
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: `~date:${dayIso(5)}`,
+        target_days_before: 0,
+        target_time: '09:00',
+        target_slot_id: null,
+        due_at: null,
+        on_deck_day: null,
+      },
+      quality_notes:
+        `"due ${weekday(5)}" is the cutoff → deadline_at ${monthDay(5)}, end of day (T23:59). "target the morning of" → target_days_before 0. ` +
+        '"Morning" means the Default task time (9:00 AM, custom here) — not the 6:30 Morning period — so target_time 09:00, target_slot_id null. ' +
+        'due_at null, no deck. Title like "Pay the registration fee".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-rent-two-days',
+    feature: 'enrichment',
+    description: '"rent due the 1st, nag me 2 days before" → 2 days, the Default task time',
+    input: {
+      text: 'rent due the 1st, nag me 2 days before',
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: `~date:${nextFirst.toFormat('yyyy-MM-dd')}`,
+        target_days_before: 2,
+        target_time: '09:00',
+        target_slot_id: null,
+        due_at: null,
+        on_deck_day: null,
+        auto_snooze_minutes: null,
+        rrule: null,
+      },
+      quality_notes:
+        `"due the 1st" → deadline_at ${nextFirst.toFormat('LLL d')}, end of day. "nag me 2 days before" counts back → target_days_before 2, ` +
+        'no part of the day → the Default task time (09:00, custom). "nag me" here asks for a reminder, not an interval: auto_snooze_minutes null. ' +
+        'No rule (one rent payment was named, not "every month"). Title like "Rent" or "Pay rent".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-clock-time',
+    feature: 'enrichment',
+    description: '"remind me at 6pm the day before" → 1 day at 18:00, custom',
+    input: {
+      text: `send the signed lease back by ${weekday(3)}, remind me at 6pm the day before`,
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: `~date:${dayIso(3)}`,
+        target_days_before: 1,
+        target_time: '18:00',
+        target_slot_id: null,
+        due_at: null,
+      },
+      quality_notes:
+        `deadline_at ${monthDay(3)}, end of day. "remind me at 6pm the day before" → target_days_before 1, target_time "18:00" (a clock time ` +
+        'the user said for the reminder), custom (target_slot_id null). due_at null. Title like "Send the signed lease back".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-named-day-fixed',
+    feature: 'enrichment',
+    description:
+      'Negative: "by Monday, do it Sunday morning" names a day → a fixed target, no offsets',
+    input: {
+      text: `book the movers by ${weekday(4)}, do it ${weekday(3)} morning`,
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: `~date:${dayIso(4)}`,
+        due_at: `~datetime:${dayIso(3)}T09:00`,
+        target_days_before: null,
+        target_time: null,
+        on_deck_day: null,
+      },
+      quality_notes:
+        `deadline_at ${monthDay(4)}, end of day. "do it ${weekday(3)} morning" names a day and a part of the day → a FIXED target: due_at ` +
+        `${monthDay(3)} at the default task time (9:00 AM). It is not counted back from the deadline, so target_days_before / target_time / ` +
+        'target_period are all null. Title like "Book the movers".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-no-deadline-birthday',
+    feature: 'enrichment',
+    description:
+      'Negative: "the day before her birthday on the 12th" — an occasion, not a cutoff → no deadline, no offsets',
+    input: {
+      text: `order flowers the day before her birthday on the ${ordinal(6)}`,
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: null,
+        target_days_before: null,
+        target_time: null,
+      },
+      quality_notes:
+        `A birthday is an occasion, not a cutoff: deadline_at null, and with no deadline there is nothing to count back from (the three target_* ` +
+        `fields null). "the day before her birthday on the ${ordinal(6)}" names a day: ${monthDay(5)} — the date alone, so on_deck_day ${dayIso(5)} ` +
+        `(or due_at that day) is right; a target on the ${ordinal(6)} itself, or no date at all, is wrong. Title like "Order flowers" (the birthday may stay ` +
+        'in the title or notes).',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-repeat-none',
+    feature: 'enrichment',
+    description:
+      'Negative: "every Friday by 5pm, remind me the day before" is a repeat → no offsets',
+    input: {
+      text: 'every Friday by 5pm submit my timesheet, remind me the day before',
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        rrule: '~notnull',
+        deadline_at: null,
+        target_days_before: null,
+        target_time: null,
+      },
+      quality_notes:
+        'A repeating task: rrule weekly. A repeat never gets the relative fields (all three target_* null) or a deadline (deadline_at null). ' +
+        'Either reading of the repeat is acceptable — FREQ=WEEKLY;BYDAY=FR with due_at Friday 5:00 PM and the "remind me the day before" ' +
+        'wording kept in notes, or a Thursday reminder — but the reminder wording must not be silently lost. Title like "Submit my timesheet".',
+    },
+  },
+  {
+    id: 'enrich-tm-relative-no-date-trip',
+    feature: 'enrichment',
+    description: 'Negative: "the night before the trip" has no date → no deadline, no offsets',
+    input: {
+      text: 'pack the chargers, remind me the night before the trip',
+      timezone: TZ,
+      projects: INBOX,
+      slots: RELATIVE_SLOTS,
+    },
+    requirements: {
+      must_include: {
+        deadline_at: null,
+        target_days_before: null,
+        target_time: null,
+        due_at: null,
+        on_deck_day: null,
+      },
+      quality_notes:
+        'The trip has no date, so there is no deadline and nothing to count back from: deadline_at, due_at, on_deck_day and the three target_* ' +
+        'fields all null. "the night before the trip" should stay in the title or the notes. Title like "Pack the chargers".',
     },
   },
 ]
