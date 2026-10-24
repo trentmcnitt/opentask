@@ -104,7 +104,7 @@ export function BeforeDeadlineBlock({
                   <button
                     key={chip.slot.id}
                     type="button"
-                    data-deadline-chip
+                    data-before-deadline-chip
                     disabled={chip.afterDeadline}
                     aria-pressed={pressed}
                     aria-label={`${row.title}, ${periodChoiceLabel(chip.slot)}${chip.afterDeadline ? `, ${AFTER_THE_DEADLINE}` : ''}`}

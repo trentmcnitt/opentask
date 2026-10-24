@@ -395,4 +395,54 @@ test.describe('Relative targets — phone, dark', () => {
       await removePeriod(page)
     }
   })
+  test('create mode: a deadline staged, then a chip — Create Task sends the offsets and the period, no target_at', async ({
+    authenticatedPage: page,
+  }) => {
+    const period = await addPeriod(page, '19:15')
+    const title = uniqueTitle('Pay the water bill')
+    let ids: number[] = []
+    try {
+      await page.goto('/')
+      await page.waitForSelector('[id^="task-row-"], .text-4xl, [data-now-summary]')
+      await page.getByRole('button', { name: 'Add', exact: true }).click()
+      await page.getByRole('textbox', { name: 'Quick add task' }).fill(title)
+      await page.getByRole('button', { name: 'Open full add form' }).click()
+      const form = page.getByRole('dialog', { name: 'New Task' })
+      // The deadline (the picker opens on the user's morning time).
+      await form.locator('[data-quick-panel-deadline]').tap()
+      await pickDay(page, deadlineIn(6))
+      await page.getByRole('button', { name: 'Set Date', exact: true }).tap()
+      // Then the target, relative to it.
+      await form.getByRole('button', { name: 'Target: change' }).tap()
+      await page
+        .locator('[data-before-deadline]')
+        .getByRole('button', { name: `The day before, ${PERIOD} · 7:15 PM`, exact: true })
+        .tap()
+      await expect(form.locator('[data-target-relative]')).toHaveText(
+        `· the day before, ${PERIOD} · moves with the deadline`,
+      )
+      const posted = page.waitForRequest(
+        (r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/tasks',
+      )
+      await form.getByRole('button', { name: 'Create Task' }).tap()
+      const body = (await posted).postDataJSON()
+      expect(body).toMatchObject({ target_days_before: 1, target_slot_id: period.id })
+      expect(body.due_at).toBeUndefined()
+      expect(body.target_time).toBeUndefined()
+      expect(typeof body.deadline_at).toBe('string')
+      await expect(form).toHaveCount(0)
+      const found = await page.request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
+      const tasks = (await found.json()).data.tasks as TaskState[]
+      ids = tasks.map((t) => t.id as number)
+      expect(tasks).toHaveLength(1)
+      const deadline = DateTime.fromISO(tasks[0].deadline_at!).setZone(TZ)
+      expect(Date.parse(tasks[0].target_at!)).toBe(
+        deadline.minus({ days: 1 }).set({ hour: 19, minute: 15 }).toMillis(),
+      )
+      expect(tasks[0].target_slot_id).toBe(period.id)
+    } finally {
+      await trash(page, ids)
+      await removePeriod(page)
+    }
+  })
 })
