@@ -50,7 +50,7 @@ import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
 import { collectDeckClear, deckKeepsPageRow, deckRolloverTime } from '../deck-clear'
 import { taskQueueEnabled } from '../task-queue'
-import { rolloverTimeForUser } from '../rollover-time'
+import { dayBoundaryForUser, rolloverTimeForUser } from '../rollover-time'
 import {
   REPEAT_END_MESSAGES,
   planRepeatSchedule,
@@ -514,7 +514,8 @@ function prepareDeck(
       `Only an open task that is not a reminder or quota can go on deck (this is ${skip})`,
     )
   }
-  const problem = deckDayProblem(day, opts.ctx.timezone, opts.now)
+  // Today is the owner's OpenTask day (a deck day is theirs).
+  const problem = deckDayProblem(day, opts.ctx.timezone, opts.now, dayBoundaryForUser(task.user_id))
   if (problem) throw new ValidationError(problem)
   // A1 (2026-10-22) against the RESULTING deadline: the deck day at most its
   // OpenTask day, while it is ahead.

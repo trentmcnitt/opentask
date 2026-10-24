@@ -46,7 +46,7 @@ export interface RemindersSummary<G extends SummaryGroup = SummaryGroup> {
  * Has this slot's window begun today, by the user's local clock?
  *
  * "Today" is the day the server's roster is for: from `dayStart` (2026-10-23
- * — the user's "Day starts at" with the task queue on, `useReminderDayStart`;
+ * — the user's "Day starts at" with the task queue on, `useDayStart`;
  * midnight otherwise). With the day starting at 3:00, at 00:30 every slot of
  * the evening's day has started — the roster is still that day's — and a
  * 1:00 AM slot starts at the end of its day (`minutesIntoDay`).

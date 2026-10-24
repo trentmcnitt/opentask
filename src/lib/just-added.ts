@@ -47,7 +47,7 @@
  * still in, and still ages out fifteen minutes after it. Entries leave without
  * a reload — see `useJustAddedClock`.
  */
-import { DateTime } from 'luxon'
+import { openTaskLocalDay } from '@/lib/opentask-day'
 import { parseDeckDay } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
@@ -199,10 +199,15 @@ export function formatJustAddedLabel(entry: JustAddedEntry, now: number): string
  * targeting, and for a deck its day — "On deck" today, "On deck tomorrow",
  * else "On deck Nov 15" (`deckTagLabel`).
  */
-export function justAddedTag(task: Task, now: number, timezone?: string): string | undefined {
+export function justAddedTag(
+  task: Task,
+  now: number,
+  timezone: string | undefined,
+  dayStart: string,
+): string | undefined {
   const event = justAddedEvent(task, now)
   if (!event) return undefined
-  if (event.kind === 'decked') return deckTagLabel(task.on_deck_day, timezone, now)
+  if (event.kind === 'decked') return deckTagLabel(task.on_deck_day, timezone, now, dayStart)
   return { targeted: 'Targeted', added: 'New' }[event.kind]
 }
 
@@ -220,11 +225,13 @@ export function deckTagLabel(
   day: string | null | undefined,
   timezone: string | undefined,
   now: number,
+  /** The user's day boundary (`useDayStart`): "tomorrow" is the next OpenTask day. */
+  dayStart: string,
 ): string {
   if (!day || !timezone) return 'On deck'
   const deck = parseDeckDay(day, timezone)
   if (!deck) return 'On deck'
-  const today = DateTime.fromMillis(now).setZone(timezone).startOf('day')
+  const today = openTaskLocalDay(new Date(now), timezone, dayStart)
   if (deck <= today) return 'On deck'
   if (+deck === +today.plus({ days: 1 })) return 'On deck tomorrow'
   return `On deck ${deck.toFormat('LLL d')}`

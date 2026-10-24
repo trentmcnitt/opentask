@@ -15,6 +15,7 @@ import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
+import { dayBoundaryForUser } from './rollover-time'
 import { NotFoundError, ForbiddenError, ValidationError } from '@/core/errors'
 import { formatEditDescription } from '@/lib/field-labels'
 import { getTaskById } from './read'
@@ -135,6 +136,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       beforeState: data.beforeState,
       afterState: data.afterState,
       userTimezone,
+      dayStart: dayBoundaryForUser(userId),
       projectName,
       cappedAtDeadline: data.cappedAtDeadline,
     })

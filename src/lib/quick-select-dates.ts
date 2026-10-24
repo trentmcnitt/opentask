@@ -11,7 +11,7 @@ import {
   parseLocalDatetimeInput,
   parseInTimezone,
   getTimezoneDayBoundaries,
-  calendarDaysBetween,
+  daysBetween,
 } from '@/lib/format-date'
 import { snapToHour } from '@/lib/snooze'
 
@@ -146,12 +146,19 @@ export function initWorkingDate(dueAt: string | null, now?: Date): string {
 }
 
 /**
- * Get the day label for a date: "Today", "Tomorrow", "Yesterday", or short weekday (e.g., "Mon").
+ * Get the day label for a date: "Today", "Tomorrow", "Yesterday", or short
+ * weekday (e.g., "Mon") — by the user's OpenTask days (`dayStart`, "Day
+ * starts at" PR 2): with a 3:00 AM start, at 01:30 a 9:00 AM time is "Tomorrow".
  */
-export function getDayLabel(isoUtc: string, timezone: string): string {
+export function getDayLabel(
+  isoUtc: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): string {
   const date = new Date(isoUtc)
   const { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart } =
-    getTimezoneDayBoundaries(timezone)
+    getTimezoneDayBoundaries(timezone, dayStart, now)
 
   if (date >= yesterdayStart && date < todayStart) return 'Yesterday'
   if (date >= todayStart && date < tomorrowStart) return 'Today'
@@ -164,9 +171,14 @@ export function getDayLabel(isoUtc: string, timezone: string): string {
  * Format the header line for the Quick Action Panel.
  * Returns: "Today, Feb 3, 10:00 AM" or "Tomorrow, Feb 4, 9:00 AM" or "Mon, Feb 10, 6:50 PM"
  */
-export function formatQuickSelectHeader(isoUtc: string, timezone: string): string {
+export function formatQuickSelectHeader(
+  isoUtc: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): string {
   const date = new Date(isoUtc)
-  const dayLabel = getDayLabel(isoUtc, timezone)
+  const dayLabel = getDayLabel(isoUtc, timezone, dayStart, now)
 
   const timePart = date.toLocaleString('en-US', {
     timeZone: timezone,
@@ -193,13 +205,18 @@ export function formatQuickSelectHeader(isoUtc: string, timezone: string): strin
  * - Tomorrow & 12+ hours away: Show "in 1 day"
  * - Beyond tomorrow: Count calendar days ("in 2 days", "in 5 days")
  *
- * Calendar days are counted in `timezone` (the account's) when given, so the
- * text agrees with the Today/Tomorrow header even when the device clock is set
- * to another zone. Without one, the process's own zone is used.
+ * Days are counted in `timezone` (the account's) on the user's OpenTask days
+ * (`dayStart`), so the text agrees with the Today/Tomorrow header even when
+ * the device clock is set to another zone.
  */
-export function formatRelativeTime(isoUtc: string, now?: Date, timezone?: string): string {
+export function formatRelativeTime(
+  isoUtc: string,
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): string {
   const target = new Date(isoUtc)
-  const reference = now ?? new Date()
+  const reference = now
   const diffMs = target.getTime() - reference.getTime()
   const absDiffMs = Math.abs(diffMs)
   const isPast = diffMs < 0
@@ -208,7 +225,7 @@ export function formatRelativeTime(isoUtc: string, now?: Date, timezone?: string
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
 
-  const calendarDays = Math.abs(calendarDaysBetween(reference, target, timezone))
+  const calendarDays = Math.abs(daysBetween(reference, target, timezone, dayStart))
 
   let text: string
 

@@ -20,6 +20,7 @@ import { showToast } from '@/lib/toast'
 import { bulkSnoozeMessage, computeSnoozeTime } from '@/lib/snooze'
 import { nextPeriodStart, type TimeSlot } from '@/lib/time-slot-assign'
 import type { BulkSnoozeDefault } from '@/components/PreferencesProvider'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface UseSnoozeOverdueOptions {
   displayTasks: Task[]
@@ -53,6 +54,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
     timeSlots,
     morningTime,
   } = options
+  const dayStart = useDayStart()
 
   return useCallback(
     async (until?: string) => {
@@ -78,7 +80,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       const snoozeUntil =
         until ??
         nextPeriod ??
-        computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots)
+        computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, dayStart, timeSlots)
 
       try {
         const res = await fetch('/api/tasks/bulk/snooze', {
@@ -121,6 +123,7 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       bulkSnoozeDefault,
       timeSlots,
       morningTime,
+      dayStart,
     ],
   )
 }

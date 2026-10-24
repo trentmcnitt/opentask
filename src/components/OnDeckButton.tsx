@@ -15,10 +15,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { OptionMenu, type OptionMenuItem } from '@/components/OptionMenu'
-import { useCheckInDay, useTaskQueue } from '@/components/PreferencesProvider'
+import { useCheckInDay, useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { deckLimit, deckMenuDays, deckTapDay, type DeckLimit } from '@/lib/deck-menu'
-import { DECK_DAY_FORMAT, calendarToday, deckIsToday } from '@/lib/task-segments'
+import { DECK_DAY_FORMAT, deckIsToday, openTaskToday } from '@/lib/task-segments'
 import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import type { Task } from '@/types'
 
@@ -79,6 +79,8 @@ export function OnDeckButton({
   /** The inner HOVER BOX (segment rows), as on `TargetTodayButton`. */
   boxClassName?: string
 }) {
+  // "Today" for a deck is the OpenTask day ("Day starts at" PR 2).
+  const dayStart = useDayStart()
   const [menuOpen, setMenuOpen] = useState(false)
   // The day a replacing deck waits on the confirm with (`replaces`).
   const [pending, setPending] = useState<{ day: string | null | undefined } | null>(null)
@@ -90,14 +92,14 @@ export function OnDeckButton({
   }
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => act(deckTapDay(task, timezone, new Date())),
+    onShortPress: () => act(deckTapDay(task, timezone, new Date(), dayStart)),
     // The tap can take the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
   const active = !!task.on_deck_day
   // What a tap toggles: on deck for TODAY. A later deck wears the filled icon (the
   // row's only sign of it) but is not "pressed" — a tap moves it to today.
-  const forToday = active && deckIsToday(task, timezone, new Date())
+  const forToday = active && deckIsToday(task, timezone, new Date(), dayStart)
   const title = replaces
     ? `On deck — replaces ${replaces} · hold for a day`
     : forToday
@@ -257,6 +259,7 @@ export function DeckMenu({
   children: React.ReactNode
 }) {
   const { checkInDay } = useCheckInDay()
+  const dayStart = useDayStart()
   // The rollover time (with the switch on, as decks need): a repeating
   // deadline before the rollover counts as the evening before (`deckLimit`).
   const { attemptsRolloverTime: rolloverTime } = useTaskQueue()
@@ -266,7 +269,7 @@ export function DeckMenu({
   const [pickerOpen, setPickerOpen] = useState(false)
   const now = new Date()
   const bound = limit === undefined ? deckLimit(task, timezone, now, null, rolloverTime) : limit
-  const days = deckMenuDays(timezone, now, checkInDay, bound)
+  const days = deckMenuDays(timezone, now, dayStart, checkInDay, bound)
   const options: OptionMenuItem[] = [
     ...days.map((d) => ({
       label: d.label,
@@ -352,14 +355,16 @@ function DeckDatePicker({
   onPick: (day: string) => void
 }) {
   // The calendar works in the browser's local dates; a deck day is the
-  // user's. Convert through the date's parts, never through an instant.
+  // user's OpenTask date. Convert through the date's parts, never through an
+  // instant.
+  const dayStart = useDayStart()
   const toLocal = (day: string) => {
     const d = DateTime.fromISO(day)
     return new Date(d.year, d.month - 1, d.day)
   }
   const fromLocal = (d: Date) =>
     DateTime.local(d.getFullYear(), d.getMonth() + 1, d.getDate()).toFormat(DECK_DAY_FORMAT)
-  const today = calendarToday(timezone, new Date())
+  const today = openTaskToday(timezone, new Date(), dayStart)
   const [selected, setSelected] = useState<string | null>(() =>
     deckPickerDefault(today, current, latest),
   )

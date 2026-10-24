@@ -15,9 +15,9 @@ import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { saveTaskChanges } from '@/lib/save-task-changes'
 import { targetWhen } from '@/hooks/useTaskSegments'
 import { useTimezone } from '@/hooks/useTimezone'
-import { DateTime } from 'luxon'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
-import { calendarToday, occurrenceDates } from '@/lib/task-segments'
+import { occurrenceDates, openTaskToday } from '@/lib/task-segments'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 /**
  * Shared task action handlers used by the dashboard and the task detail page.
@@ -75,8 +75,11 @@ function useHandleTargetAt(
 ) {
   const timezone = useTimezone()
   const timezoneRef = useRef(timezone)
+  const dayStart = useDayStart()
+  const dayStartRef = useRef(dayStart)
   useEffect(() => {
     timezoneRef.current = timezone
+    dayStartRef.current = dayStart
   })
   return useCallback(
     async (task: Task, at?: string) => {
@@ -97,9 +100,7 @@ function useHandleTargetAt(
         bumpUndoCount()
         const until = json?.data?.until ?? at
         const zone = timezoneRef.current
-        const when = until
-          ? targetWhen(DateTime.fromISO(until).setZone(zone), DateTime.now().setZone(zone))
-          : 'today'
+        const when = until ? targetWhen(until, zone, dayStartRef.current) : 'today'
         showToast({
           message: `Targeted ${when}: “${task.title}”`,
           type: 'success',
@@ -148,21 +149,25 @@ function useHandleDeck(
 ) {
   const timezone = useTimezone()
   const timezoneRef = useRef(timezone)
+  // A deck day is an OpenTask date ("Day starts at" PR 2).
+  const dayStart = useDayStart()
+  const dayStartRef = useRef(dayStart)
   useEffect(() => {
     timezoneRef.current = timezone
+    dayStartRef.current = dayStart
   })
   return useCallback(
     async (task: Task, day: string | null | undefined) => {
       const cfg = configRef.current
       if (cfg.mode !== 'list') return
       const zone = timezoneRef.current
-      const next = day === undefined ? calendarToday(zone, new Date()) : day
+      const next = day === undefined ? openTaskToday(zone, new Date(), dayStartRef.current) : day
       cfg.setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? optimisticDeck(t, next, zone) : t)),
       )
       try {
         const result = await sendDeck([task.id], day)
-        const message = deckToastMessage(result, task.title, zone)
+        const message = deckToastMessage(result, task.title, zone, dayStartRef.current)
         if (!message) {
           showToast({ message: deckErrorMessage(result, task), type: 'error' })
           return

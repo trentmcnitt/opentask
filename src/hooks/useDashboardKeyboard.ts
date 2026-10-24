@@ -8,6 +8,7 @@ import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import { showToast } from '@/lib/toast'
 import { taskWord, isMacPlatform } from '@/lib/utils'
 import { nextFocusAfterRemoval } from '@/lib/keyboard-nav'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface UseDashboardKeyboardOptions {
   keyboard: {
@@ -72,6 +73,7 @@ export function useDashboardKeyboard({
   onDeleteTask,
   onBulkDelete,
 }: UseDashboardKeyboardOptions) {
+  const dayStart = useDayStart()
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const isMac = isMacPlatform()
@@ -116,7 +118,13 @@ export function useDashboardKeyboard({
         if (clipboardGroups.length > 0) {
           const projMap = new Map(projects.map((p) => [p.id, p.name]))
           const annotations = showAnnotations ? annotationMap : undefined
-          const text = formatTasksForClipboard(clipboardGroups, timezone, projMap, annotations)
+          const text = formatTasksForClipboard(
+            clipboardGroups,
+            timezone,
+            dayStart,
+            projMap,
+            annotations,
+          )
           const n = clipboardGroups.reduce((sum, g) => sum + g.tasks.length, 0)
           navigator.clipboard.writeText(text).then(
             () => showToast({ message: `Copied ${n} ${taskWord(n)}`, type: 'success' }),
@@ -285,6 +293,7 @@ export function useDashboardKeyboard({
     sortOption,
     reversed,
     timezone,
+    dayStart,
     showAnnotations,
     annotationMap,
     projects,

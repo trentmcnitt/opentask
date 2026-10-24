@@ -3,6 +3,7 @@ import { taskWord } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import type { BulkSnoozeDefault } from '@/lib/preferences-state'
 import { nextPeriodStart } from '@/lib/time-slot-assign'
+import { addDays, openTaskDayOf, openTaskDaySpan, periodOpensAt } from '@/lib/opentask-day'
 
 const HOUR_ROUND_THRESHOLD = 35
 
@@ -24,6 +25,9 @@ export function snapToHour(date: Date): Date {
  *   of minutes (e.g., '60', '120')
  * @param timezone - User's IANA timezone (e.g., 'America/Chicago')
  * @param morningTime - User's configured morning time in HH:MM format (e.g., '09:00')
+ * @param dayStart - The user's day boundary (`useDayStart` / `dayBoundaryForUser`):
+ *   "tomorrow" is the next OPENTASK day ("Day starts at" PR 2) — with a 3:00 AM
+ *   start, at 01:30 tomorrow morning is this morning, the calendar today.
  * @param slots - The user's periods, for 'next_period' (2026-10-10: the single-tap
  *   default can be the next period too). With none, 'next_period' reads as an hour.
  * @returns UTC ISO string for the snooze target
@@ -32,34 +36,40 @@ export function computeSnoozeTime(
   option: string,
   timezone: string,
   morningTime: string,
+  dayStart: string,
   slots: { start_time: string }[] = [],
+  now: Date = new Date(),
 ): string {
   if (option === 'tomorrow') {
-    const [hour, minute] = morningTime.split(':').map(Number)
-    return DateTime.now()
-      .setZone(timezone)
-      .plus({ days: 1 })
-      .set({ hour, minute, second: 0, millisecond: 0 })
-      .toUTC()
-      .toISO()!
+    // The morning of the next OpenTask day: the one instant at the morning's
+    // wall-clock time inside that day (`periodOpensAt`).
+    const tomorrow = addDays(openTaskDayOf(now, timezone, dayStart), 1)
+    return periodOpensAt(tomorrow, morningTime, timezone, dayStart).toISOString()
   }
   if (option === NEXT_PERIOD_OPTION) {
-    // The next period still TODAY; with none left today, the top of the next
-    // hour (spec amendment 17), not tomorrow's first period. The sweep's own
-    // `slot: "next"` (Shortcuts) is resolved elsewhere and is unchanged.
-    const next = nextPeriodStart(slots, timezone)
-    const now = DateTime.now().setZone(timezone)
-    if (next && DateTime.fromISO(next).setZone(timezone).hasSame(now, 'day')) return next
-    return now.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!
+    // The next period still TODAY (before the day turns); with none left
+    // today, the top of the next hour (spec amendment 17), not tomorrow's
+    // first period. The sweep's own `slot: "next"` (Shortcuts) is resolved
+    // elsewhere and is unchanged.
+    const next = nextPeriodStart(slots, timezone, now)
+    if (next && Date.parse(next) < openTaskDaySpan(now, timezone, dayStart).end.getTime()) {
+      return next
+    }
+    return DateTime.fromJSDate(now)
+      .setZone(timezone)
+      .startOf('hour')
+      .plus({ hours: 1 })
+      .toUTC()
+      .toISO()!
   }
 
   const minutes = parseInt(option, 10)
   if (minutes >= 60) {
-    return snapToHour(new Date(Date.now() + minutes * 60 * 1000)).toISOString()
+    return snapToHour(new Date(now.getTime() + minutes * 60 * 1000)).toISOString()
   }
 
   // Sub-hour: exact minutes from now
-  return new Date(Date.now() + minutes * 60 * 1000).toISOString()
+  return new Date(now.getTime() + minutes * 60 * 1000).toISOString()
 }
 
 /**
@@ -68,7 +78,8 @@ export function computeSnoozeTime(
  * client can open the Today button's time picker on the very moment a tap
  * would use (2026-10-12). Where the Snooze-all button goes
  * (`bulk_snooze_default` — the next period, or the default snooze option), as
- * long as that is still today; otherwise the top of the next hour.
+ * long as that is still today (before the day start, `dayStart`); otherwise
+ * the top of the next hour.
  */
 export function targetTodayTimeFor(
   prefs: {
@@ -78,18 +89,27 @@ export function targetTodayTimeFor(
   },
   slots: { start_time: string }[],
   timezone: string,
+  dayStart: string,
   now: Date = new Date(),
 ): string {
   const local = DateTime.fromJSDate(now).setZone(timezone)
   let candidate: string | null = null
   if (prefs.bulkSnoozeDefault === 'default_option') {
     if (prefs.defaultSnoozeOption !== 'tomorrow') {
-      candidate = computeSnoozeTime(prefs.defaultSnoozeOption, timezone, prefs.morningTime, slots)
+      candidate = computeSnoozeTime(
+        prefs.defaultSnoozeOption,
+        timezone,
+        prefs.morningTime,
+        dayStart,
+        slots,
+        now,
+      )
     }
   } else {
     candidate = nextPeriodStart(slots, timezone, now)
   }
-  if (candidate && DateTime.fromISO(candidate).setZone(timezone).hasSame(local, 'day')) {
+  const dayEnd = openTaskDaySpan(now, timezone, dayStart).end.getTime()
+  if (candidate && Date.parse(candidate) < dayEnd) {
     return candidate
   }
   return local.startOf('hour').plus({ hours: 1 }).toUTC().toISO()!

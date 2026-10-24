@@ -54,7 +54,7 @@ import {
 } from '@/lib/task-segments'
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
-import { useTaskQueue } from '@/components/PreferencesProvider'
+import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -648,6 +648,7 @@ function TaskSegmentRowActions({
 }) {
   const { task } = row
   const queueUi = useQueueUi(segmentHorizon)
+  const dayStart = useDayStart()
   const showToday = segmentHorizon !== 'upcoming' || upcomingRowActions(row).today
   return (
     <div
@@ -697,7 +698,7 @@ function TaskSegmentRowActions({
           onTargetToday={(t) => void actions.targetToday(t)}
           onTargetAt={(t, at) => void actions.targetAt(t, at)}
           // Faded on a decked row: a target takes it off deck (plan §5).
-          replaces={todayReplaces(task, timezone)}
+          replaces={todayReplaces(task, timezone, dayStart)}
           showLabel
           // A full 44px hit target around a glyph the size of the circle and
           // the done square; the negative margin keeps the row's height. The
@@ -847,6 +848,7 @@ function DeckTomorrowButton({
   panel: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const dayStart = useDayStart()
   // A picked target this would replace (plan §5): faded, and it asks first.
   const replaces = deckReplaces(task, timezone)
   const [pending, setPending] = useState<string | null>(null)
@@ -858,7 +860,7 @@ function DeckTomorrowButton({
   }
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => act(deckTomorrowDay(timezone, new Date())),
+    onShortPress: () => act(deckTomorrowDay(timezone, new Date(), dayStart)),
     // The tap takes the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
@@ -1084,6 +1086,7 @@ function TaskSegmentMeta({
 }) {
   const { projects } = useProjects()
   const queueOn = useQueueOn(segmentHorizon)
+  const dayStart = useDayStart()
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   // A repeating task waiting in the queue shows the occurrence it stands
@@ -1138,7 +1141,7 @@ function TaskSegmentMeta({
           it says its deck day. */}
       {segmentHorizon === 'deadlines' && task.on_deck_day && (
         <span data-deck-day-chip className="text-foreground/70 font-medium">
-          {deckChipWords(task.on_deck_day, timezone)}
+          {deckChipWords(task.on_deck_day, timezone, dayStart)}
         </span>
       )}
       {/* No badges on a queue row (designer, 10-19) — neither attempts nor
@@ -1151,8 +1154,8 @@ function TaskSegmentMeta({
 }
 
 /** "On deck Sat" / "On deck today" for a deck day (yyyy-MM-dd). */
-function deckChipWords(day: string, timezone: string): string {
-  return todayReplaces({ on_deck_day: day }, timezone) ?? 'On deck'
+function deckChipWords(day: string, timezone: string, dayStart: string): string {
+  return todayReplaces({ on_deck_day: day }, timezone, dayStart) ?? 'On deck'
 }
 
 /**
@@ -1378,6 +1381,7 @@ export function ConsideredSegmentRow({
 }) {
   const { task, state, left } = row
   const timezone = useTimezone()
+  const dayStart = useDayStart()
   const circle = cn(
     'flex shrink-0 items-center justify-center rounded-full bg-green-600 text-white',
     panel ? 'size-[19px]' : 'mt-[3px] size-6',
@@ -1421,7 +1425,7 @@ export function ConsideredSegmentRow({
             still on the page — it says its deck day (2026-10-22). */}
         {!left && task.on_deck_day && (
           <span data-considered-deck className="ml-1.5 text-xs">
-            · {deckChipWords(task.on_deck_day, timezone).replace('On deck', 'on deck')}
+            · {deckChipWords(task.on_deck_day, timezone, dayStart).replace('On deck', 'on deck')}
           </span>
         )}
         {left && left !== 'considered' && (

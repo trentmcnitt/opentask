@@ -645,12 +645,20 @@ export function useTaskQueue(): {
 }
 
 /**
- * Where the Reminders screen's day starts (2026-10-23, "Day starts at"): the
- * user's day start with the task queue's switch on, else midnight — the
- * server's `dayBoundaryForUser`, so "has this slot started" on the web
- * (`slotHasStarted`, `naturalSlotIndex`) reads the day the roster is for.
+ * THE BROWSER'S DAY BOUNDARY ("Day starts at" PR 2, Trent 2026-10-24:
+ * everything uses the OpenTask date): the user's day start with the task
+ * queue's switch on, else midnight — the server's `dayBoundaryForUser`, the
+ * one rule. Every client "today" goes through it, into the pure helpers of
+ * `src/lib/opentask-day.ts` (and the functions built on them —
+ * `getTimezoneDayBoundaries`, `targetIsToday`, `segmentState`,
+ * `upcomingState`, `isRelevantNow`, `deckIsToday`, the quota periods): the
+ * Now view, the Today pill and the header counts, the date labels, the
+ * filter chips, decks, the Quotas page, History, and the Reminders screen's
+ * "has this slot started". Until the preferences load, midnight. The guard
+ * (TQ-G03, tests/behavioral/tq-day-guard.test.ts) keeps `CALENDAR_DAY_START`
+ * out of every other client file, so no surface picks its own day.
  */
-export function useReminderDayStart(): string {
+export function useDayStart(): string {
   const { taskQueue, rolloverTime } = useContext(PreferencesContext)
   return taskQueue && rolloverTime ? rolloverTime : CALENDAR_DAY_START
 }

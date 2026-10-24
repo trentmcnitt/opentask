@@ -66,6 +66,7 @@ import {
   useSnoozePreferences,
   usePadPresets,
   useTaskQueue,
+  useDayStart,
 } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
@@ -423,6 +424,7 @@ export function QuickActionPanel({
   // ("+1 day" would stage a past date) or the moved target. Any staged date
   // is a picked target, which takes the task out of the queue.
   const { enabled: queueEnabled, attemptsRolloverTime: rolloverTime } = useTaskQueue()
+  const dayStart = useDayStart()
   const queuedOccurrence =
     effectiveTask && !isCreateMode && queueEnabled ? queuedRepeatOccurrence(effectiveTask) : null
   const dueAt = effectiveTask ? pickerBaseDueAt(effectiveTask, queueEnabled) : null
@@ -1123,8 +1125,8 @@ export function QuickActionPanel({
   // computed when the task or timezone changes, not on a clock tick.
   const sinceInfo = useMemo(() => {
     if (!effectiveTask || isBulkMode || isSelectionSheetMode || isCreateMode) return null
-    return formatTaskSince(effectiveTask, timezone)
-  }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone])
+    return formatTaskSince(effectiveTask, timezone, dayStart)
+  }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone, dayStart])
 
   // THE DEADLINE ROW and THE TARGET ROW's value (§3) — see `ThisOneFields`.
   const stagedDeadlineValue =

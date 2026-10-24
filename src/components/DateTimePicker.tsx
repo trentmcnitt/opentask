@@ -10,7 +10,7 @@ import { DateTime } from 'luxon'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { snapToNearestFiveMinutes } from '@/lib/quick-select-dates'
 import { computeSnoozeTime } from '@/lib/snooze'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
 
 interface DateTimePickerProps {
   /** Current value as UTC ISO string, or null if no date */
@@ -68,10 +68,15 @@ interface DateTimePickerProps {
  * Where an empty picker opens (`emptyDefault`): tomorrow at the user's Morning
  * time, or now snapped to five minutes. UTC ISO.
  */
-function emptyDefaultAt(kind: 'tomorrow' | 'now', timezone: string, morningTime: string): string {
+function emptyDefaultAt(
+  kind: 'tomorrow' | 'now',
+  timezone: string,
+  morningTime: string,
+  dayStart: string,
+): string {
   return kind === 'now'
     ? snapToNearestFiveMinutes()
-    : computeSnoozeTime('tomorrow', timezone, morningTime)
+    : computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
 }
 
 /** The picker's one ready choice above the calendar (`quickPick`). */
@@ -144,6 +149,7 @@ export function DateTimePicker({
   quickPick = null,
 }: DateTimePickerProps) {
   const { morningTime } = useSnoozePreferences()
+  const dayStart = useDayStart()
   const controlled = controlledOpen !== undefined
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlled ? controlledOpen : uncontrolledOpen
@@ -154,13 +160,14 @@ export function DateTimePicker({
 
   // Initialize internal state from external value when popover opens
   const initialize = useCallback(() => {
-    const initial = value ?? emptyAnchor ?? emptyDefaultAt(emptyDefault, timezone, morningTime)
+    const initial =
+      value ?? emptyAnchor ?? emptyDefaultAt(emptyDefault, timezone, morningTime, dayStart)
     const dt = DateTime.fromISO(initial, { zone: 'utc' }).setZone(timezone)
     setSelectedDate(dt.toJSDate())
     setHour12(to12Hour(dt.hour))
     setMinute(dt.minute)
     setPeriod(dt.hour >= 12 ? 'PM' : 'AM')
-  }, [value, timezone, emptyDefault, emptyAnchor, morningTime])
+  }, [value, timezone, emptyDefault, emptyAnchor, morningTime, dayStart])
 
   const setOpen = useCallback(
     (newOpen: boolean) => {

@@ -4,8 +4,9 @@ import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { deckReplaces, type DeckLimit } from '@/lib/deck-menu'
-import { calendarToday, deckDayWords } from '@/lib/task-segments'
+import { deckDayWords, openTaskToday } from '@/lib/task-segments'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 /**
  * THE QUICK PANEL'S ON DECK LINE (D2, 2026-10-20; spec rule 8): the On deck
@@ -55,10 +56,12 @@ export function OnDeckLine({
   showLabel?: boolean
 }) {
   const now = new Date()
+  // A deck day is an OpenTask date ("Day starts at" PR 2).
+  const dayStart = useDayStart()
   const shown = shadowed ? null : staged !== undefined ? staged : task.on_deck_day
   const dirty = shadowed ? !!task.on_deck_day : staged !== undefined
   const stage = (day: string | null | undefined) => {
-    const next = day === undefined ? calendarToday(timezone, now) : day
+    const next = day === undefined ? openTaskToday(timezone, now, dayStart) : day
     // Back to what is stored: nothing staged — but a staged target still goes.
     onStage(next === task.on_deck_day ? undefined : next, shadowed || typeof next === 'string')
   }
@@ -86,7 +89,7 @@ export function OnDeckLine({
           dirty ? 'font-bold text-blue-500' : shown ? 'font-medium' : 'text-muted-foreground/60',
         )}
       >
-        {shown ? deckDayWords(shown, timezone, now) : 'Not on deck'}
+        {shown ? deckDayWords(shown, timezone, now, dayStart) : 'Not on deck'}
       </span>
       {replaces && (
         <span data-quick-panel-deck-replaces className="text-muted-foreground">

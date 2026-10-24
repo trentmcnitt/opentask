@@ -13,7 +13,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { OptionMenu } from '@/components/OptionMenu'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
@@ -21,6 +21,7 @@ import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
 import { REMOVE_TARGET as REMOVE_TARGET_LABEL } from '@/lib/task-model-words'
+import { openTaskDayOf } from '@/lib/opentask-day'
 
 const SLOT_PREFIX = 'slot:'
 
@@ -118,6 +119,8 @@ export function SnoozeMenu({
 }: SnoozeMenuProps) {
   const timezone = useTimezone()
   const { morningTime } = useSnoozePreferences()
+  // "Tomorrow" is the next OpenTask day ("Day starts at" PR 2).
+  const dayStart = useDayStart()
   const [customPickerOpen, setCustomPickerOpen] = useState(false)
 
   const slots = useSlotsWhenOpen(open)
@@ -131,9 +134,8 @@ export function SnoozeMenu({
   const now = new Date()
   const slotOptions = slots.map((slot) => {
     const until = nextSlotStart(slot.start_time, timezone, now)
-    const tomorrow = DateTime.fromISO(until)
-      .setZone(timezone)
-      .hasSame(DateTime.fromJSDate(now).setZone(timezone).plus({ days: 1 }), 'day')
+    const tomorrow =
+      openTaskDayOf(new Date(until), timezone, dayStart) > openTaskDayOf(now, timezone, dayStart)
     return {
       label: `${slot.label} \u00b7 ${tomorrow ? 'tomorrow ' : ''}${formatMorningTime(slot.start_time)}`,
       option: `${SLOT_PREFIX}${slot.start_time}`,
@@ -148,7 +150,7 @@ export function SnoozeMenu({
   // "Next period" (`nextPeriodStart`).
   slotOptions.sort((a, b) => a.until.localeCompare(b.until))
   const [nextPeriod, ...laterSlots] = slotOptions
-  const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime)
+  const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
   const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now)
   const resetLabel = onRemoveTarget && targetReset ? REMOVE_TARGET_LABEL : null
   const options = [
@@ -198,7 +200,7 @@ export function SnoozeMenu({
     onSnooze(
       option.startsWith(SLOT_PREFIX)
         ? nextSlotStart(option.slice(SLOT_PREFIX.length), timezone)
-        : computeSnoozeTime(option, timezone, morningTime),
+        : computeSnoozeTime(option, timezone, morningTime, dayStart),
     )
     onOpenChange(false)
   }
@@ -254,6 +256,7 @@ function CustomSnoozePicker({
   const [period, setPeriod] = useState<'AM' | 'PM'>('AM')
 
   const { morningTime } = useSnoozePreferences()
+  const dayStart = useDayStart()
 
   // Initialize to tomorrow at the Morning time when opening, via the
   // open-change handler (same pattern as DateTimePicker — avoids
@@ -261,9 +264,8 @@ function CustomSnoozePicker({
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
       if (newOpen) {
-        const tomorrow = DateTime.fromISO(computeSnoozeTime('tomorrow', timezone, morningTime), {
-          zone: 'utc',
-        }).setZone(timezone)
+        const at = computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
+        const tomorrow = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone)
         setSelectedDate(tomorrow.toJSDate())
         setHour12(to12Hour(tomorrow.hour))
         setMinute(tomorrow.minute)
@@ -271,7 +273,7 @@ function CustomSnoozePicker({
       }
       onOpenChange(newOpen)
     },
-    [timezone, morningTime, onOpenChange],
+    [timezone, morningTime, dayStart, onOpenChange],
   )
 
   const handleSnooze = () => {
