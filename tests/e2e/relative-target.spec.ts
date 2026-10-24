@@ -213,14 +213,14 @@ test.describe('Relative targets — desktop, light', () => {
 
         // A pad tap makes it fixed (ruling 1): from the date the row shows.
         dialog = await openPanel(page, id)
-        await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
+        await dialog.getByRole('button', { name: '-1 day', exact: true }).click()
         await expect(dialog.locator('[data-target-relative]')).toHaveCount(0)
         await dialog.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(dialog).toHaveCount(0)
         await expect.poll(async () => (await stateOf(page, id)).target_slot_id).toBeNull()
         after = await stateOf(page, id)
         expect(after.target_days_before).toBeNull()
-        expect(Date.parse(after.target_at!)).toBe(follows.plus({ days: 1 }).toMillis())
+        expect(Date.parse(after.target_at!)).toBe(follows.minus({ days: 1 }).toMillis())
       })
     } finally {
       await trash(page, [id])

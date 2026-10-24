@@ -275,7 +275,9 @@ test.describe('Deadline: the editor', () => {
         const block = page.locator('[data-before-deadline]')
         await expect(block).toBeVisible()
         const [h, m] = morning.split(':').map(Number)
-        const expected = deadline.minus({ days: 1 }).set({ hour: h, minute: m })
+        const expected = deadline
+          .minus({ days: 1 })
+          .set({ hour: h, minute: m, second: 0, millisecond: 0 })
         const set = block.locator('[data-relative-set]')
         await expect(set).toHaveText(`Set ${expected.toFormat('ccc LLL d, h:mm a')}`)
         // It wraps inside the picker rather than widening it past the screen.
