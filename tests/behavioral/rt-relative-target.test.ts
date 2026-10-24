@@ -27,6 +27,7 @@ import {
   updateTask,
 } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { deckTasks } from '@/core/tasks/deck'
 import { targetTasksToday } from '@/core/tasks/task-segments'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
@@ -183,8 +184,10 @@ describe('RT: create', () => {
     expect(isRelativeOneOff(t)).toBe(true)
     expect(hasPickedTarget(t)).toBe(true)
     // Wait 7 (Oct 26 → Nov 2): only the day before, Sun Nov 1.
-    expect(upcomingState(t, tz, new Date(at('2026-10-31T21:00')))).toBeNull()
-    expect(upcomingState(t, tz, new Date(at('2026-11-01T21:00')))).not.toBeNull()
+    expect(upcomingState(t, tz, new Date(at('2026-10-31T21:00')), CALENDAR_DAY_START)).toBeNull()
+    expect(
+      upcomingState(t, tz, new Date(at('2026-11-01T21:00')), CALENDAR_DAY_START),
+    ).not.toBeNull()
   })
 
   test('RT11: linked to a period — the time is its start (resolved at write time)', () => {
