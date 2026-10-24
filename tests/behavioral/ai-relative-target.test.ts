@@ -460,4 +460,23 @@ describe('the write (enrichSingleTask)', () => {
     expect(after.target_time).toBeNull()
     expect(after.due_at).toBe('2026-10-12T14:00:00.000Z')
   })
+
+  test('a relative target the AI sets takes a deck off (a pick, plan §3)', async () => {
+    const task = titleOnly('return the drill by Tuesday, remind me the day before')
+    getDb().prepare('UPDATE tasks SET on_deck_day = ? WHERE id = ?').run('2026-10-11', task.id)
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      modelAnswer({
+        title: 'Return the drill',
+        deadline_at: '2026-10-13T23:59:00',
+        target_days_before: 1,
+      }),
+    )
+
+    await enrichSingleTask(task.id, TEST_USER_ID)
+
+    const after = getTaskById(task.id)!
+    expect(after.target_days_before).toBe(1)
+    expect(after.due_at).not.toBeNull()
+    expect(after.on_deck_day).toBeNull()
+  })
 })
