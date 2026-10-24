@@ -76,7 +76,10 @@ enum Fixtures {
 
 /// Every test that touches `WidgetStore` subclasses this: a throwaway
 /// UserDefaults suite per test, never the App Group (on macOS that is the
-/// installed Mac app's real widget cache).
+/// installed Mac app's real widget cache). `DayStartStore` reads the same
+/// throwaway suite ("Day starts at" PR 3), so a surface that reads the
+/// remembered day boundary sees nothing known — midnight — unless the test
+/// saves one (`rememberDayStart`).
 class WidgetStoreTestCase: XCTestCase {
     private var suiteName = ""
 
@@ -84,11 +87,20 @@ class WidgetStoreTestCase: XCTestCase {
         super.setUp()
         suiteName = "test.\(UUID().uuidString)"
         WidgetStore.suiteOverride = UserDefaults(suiteName: suiteName)
+        DayStartStore.suiteOverride = WidgetStore.suiteOverride
     }
 
     override func tearDown() {
         WidgetStore.suiteOverride?.removePersistentDomain(forName: suiteName)
         WidgetStore.suiteOverride = nil
+        DayStartStore.suiteOverride = nil
         super.tearDown()
+    }
+
+    /// Remember a day boundary, as a preferences fetch with the task queue
+    /// on would.
+    func rememberDayStart(_ dayStart: String) throws {
+        let json = "{\"task_queue\":true,\"rollover_time\":\"\(dayStart)\"}"
+        DayStartStore.save(from: try JSONDecoder().decode(UserPreferencesLabelConfigPage.self, from: Data(json.utf8)))
     }
 }

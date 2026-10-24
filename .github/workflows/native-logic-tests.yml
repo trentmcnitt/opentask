@@ -24,6 +24,7 @@ on:
       - 'ios/**'
       - 'macos/**'
       - 'tests/fixtures/contract/**'
+      - 'tests/fixtures/opentask-day/**'
       - '.github/workflows/native-logic-tests.yml'
   push:
     branches: [main]
@@ -31,6 +32,7 @@ on:
       - 'ios/**'
       - 'macos/**'
       - 'tests/fixtures/contract/**'
+      - 'tests/fixtures/opentask-day/**'
       - '.github/workflows/native-logic-tests.yml'
 
 permissions:

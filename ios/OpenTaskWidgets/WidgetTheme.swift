@@ -614,10 +614,14 @@ enum WidgetTheme {
 
     typealias DueLabelParts = DueLabel.Parts
 
-    /// See `DueLabel.parts(for:now:isOverdue:)` — the one rule for which
-    /// words a due label says.
-    static func dueLabelParts(for due: Date, now: Date = Date(), isOverdue: Bool) -> DueLabelParts {
-        DueLabel.parts(for: due, now: now, isOverdue: isOverdue)
+    /// See `DueLabel.parts(for:now:isOverdue:day:)` — the one rule for which
+    /// words a due label says. The day is the remembered OpenTask day
+    /// (`DayStartStore`, "Day starts at" PR 3), read here at the view's edge
+    /// by both the render and the row measurement, so they always agree.
+    static func dueLabelParts(
+        for due: Date, now: Date = Date(), isOverdue: Bool, day: OpenTaskDay = DayStartStore.current
+    ) -> DueLabelParts {
+        DueLabel.parts(for: due, now: now, isOverdue: isOverdue, day: day)
     }
 
     /// Subtle indigo for the day word — built on `indigoAccent` (the same

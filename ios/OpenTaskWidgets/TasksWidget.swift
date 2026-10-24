@@ -140,6 +140,10 @@ struct TasksEntry: TimelineEntry {
     /// full cache like `overdueTotalCount` (the Over segment's count) — not
     /// `tasks`, which is whatever page is on screen.
     var todayTotalCount = 0
+    /// The OpenTask day this entry draws with ("Day starts at" PR 3) — the
+    /// day boundary remembered when the entry was built (`DayStartStore`), so
+    /// "done today" and the Today page agree with the provider's lists.
+    var day: OpenTaskDay = DayStartStore.current
 
     /// Every project, for lookups by id — `colorProjects`, else `projects`.
     private var allProjects: [ProjectDTO] { colorProjects.isEmpty ? projects : colorProjects }
@@ -160,19 +164,19 @@ struct TasksEntry: TimelineEntry {
     /// Today page only: nothing open on it and something done today. The
     /// card takes the green wash, and the body the seal + "Congratulations".
     var isDayComplete: Bool {
-        TasksTimeline.isDayComplete(scope: scope, openTasks: tasks, done: doneTasks, now: date)
+        TasksTimeline.isDayComplete(scope: scope, openTasks: tasks, done: doneTasks, now: date, day: day)
     }
 
-    /// Tasks completed on this entry's local day — `doneTasks` checked
-    /// against the date (a cache drawn after midnight still holds
+    /// Tasks completed in this entry's OpenTask day — `doneTasks` checked
+    /// against the date (a cache drawn after the day turns still holds
     /// yesterday's).
     var doneTodayCount: Int {
-        TaskDayProgress.doneToday(doneTasks, now: date).count
+        TaskDayProgress.doneToday(doneTasks, now: date, day: day).count
     }
 
     /// The Today page's bottom-left "N of M"; nil on every other page.
     var todayCount: TaskDayProgress.TodayCount? {
-        TasksTimeline.todayCount(scope: scope, openTasks: tasks, done: doneTasks, now: date)
+        TasksTimeline.todayCount(scope: scope, openTasks: tasks, done: doneTasks, now: date, day: day)
     }
 }
 
@@ -214,7 +218,7 @@ struct TasksProvider: TimelineProvider {
                     in: TasksTimeline.upNextTasks(from: snapshot.tasks), now: entry.date
                 )
                 for due in upcoming.prefix(6) {
-                    entries.append(makeEntry(snapshot, now: due))
+                    entries.append(makeEntry(snapshot, now: due, day: entry.day))
                 }
             }
             // The explicit "Undid: …" expiry (2026-09-23) — see
@@ -238,24 +242,28 @@ struct TasksProvider: TimelineProvider {
                         overdueSweepCount: entry.overdueSweepCount,
                         overdueTotalCount: entry.overdueTotalCount,
                         upcoming: entry.upcoming,
-                        todayTotalCount: entry.todayTotalCount
+                        todayTotalCount: entry.todayTotalCount,
+                        day: entry.day
                     )
                 )
             }
-            // Local midnight, rebuilt as of then (2026-09-29): tomorrow's
-            // tasks become Today's and yesterday's completions stop counting,
-            // so a "Day complete" card can't carry "5 done today" into the
-            // next day while it waits for a refresh.
-            if let snapshot,
-                let midnight = Calendar.current.date(
-                    byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: entry.date)
-                ),
-                !entries.contains(where: { $0.date == midnight }) {
-                entries.append(makeEntry(snapshot, now: midnight))
+            // The day start, rebuilt as of then (2026-09-29; the OpenTask
+            // day's start, not midnight, since "Day starts at" PR 3):
+            // tomorrow's tasks become Today's and yesterday's completions stop
+            // counting, so a "Day complete" card can't carry "5 done today"
+            // into the next day while it waits for a refresh. The server's
+            // rollover also sends a sync event (a widget push) at that moment.
+            if let snapshot {
+                let rollover = entry.day.nextRollover(after: entry.date)
+                if !entries.contains(where: { $0.date == rollover }) {
+                    entries.append(makeEntry(snapshot, now: rollover, day: entry.day))
+                }
             }
             entries.sort { $0.date < $1.date }
 
-            let next = Date().addingTimeInterval(Self.refreshInterval)
+            // Reload no later than the day start too: the new day's
+            // completions are a fetch away (`fetchTodaysCompletions`).
+            let next = min(Date().addingTimeInterval(Self.refreshInterval), entry.day.nextRollover(after: entry.date))
             completion(Timeline(entries: entries, policy: .after(next)))
             // Only AFTER the timeline is handed over — never between a tap and
             // its repaint. Every reload is a chance to send what a tap queued
@@ -295,9 +303,9 @@ struct TasksProvider: TimelineProvider {
     ///
     /// Internal, not private, so the screenshot renderer (`ios/Tests/Renders/`)
     /// builds its entries exactly as the widget does.
-    func makeEntry(_ snapshot: TaskFeed.Snapshot, now: Date) -> TasksEntry {
+    func makeEntry(_ snapshot: TaskFeed.Snapshot, now: Date, day: OpenTaskDay = DayStartStore.current) -> TasksEntry {
         let tasks = snapshot.tasks
-        let state = TasksTimeline.scopeState(tasks: tasks, projects: snapshot.projects, now: now)
+        let state = TasksTimeline.scopeState(tasks: tasks, projects: snapshot.projects, now: now, day: day)
         let scope = state.scope
 
         // Three unified pages — Overdue (2026-09-25, `overdueTasks`), Today
@@ -309,11 +317,11 @@ struct TasksProvider: TimelineProvider {
         case WidgetStore.overdueScope:
             displayedTasks = TasksTimeline.overdueTasks(from: tasks, now: now)
         case WidgetStore.allProjects:
-            displayedTasks = TasksTimeline.todaysTasks(from: tasks, now: now)
+            displayedTasks = TasksTimeline.todaysTasks(from: tasks, now: now, day: day)
         case WidgetStore.upNextScope:
             displayedTasks = TasksTimeline.upNextTasks(from: tasks)
         default:
-            displayedTasks = TasksTimeline.apply(scope: scope, to: TasksTimeline.todaysTasks(from: tasks, now: now))
+            displayedTasks = TasksTimeline.apply(scope: scope, to: TasksTimeline.todaysTasks(from: tasks, now: now, day: day))
         }
 
         return TasksEntry(
@@ -334,9 +342,10 @@ struct TasksProvider: TimelineProvider {
             overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: tasks, now: now),
             overdueTotalCount: TaskLists.overdue(tasks, now: now).count,
             upcoming: TasksTimeline.upcomingForEmptyToday(
-                scope: scope, openOnPage: displayedTasks, allTasks: tasks, now: now
+                scope: scope, openOnPage: displayedTasks, allTasks: tasks, now: now, day: day
             ),
-            todayTotalCount: state.todayCount
+            todayTotalCount: state.todayCount,
+            day: day
         )
     }
 }
@@ -577,7 +586,7 @@ private enum TasksPreviewData {
     static func personalEntry() -> TasksEntry {
         TasksEntry(
             date: now,
-            tasks: TasksTimeline.todaysTasks(from: tasks, now: now).filter { $0.projectId == 4434 },
+            tasks: TasksTimeline.todaysTasks(from: tasks, now: now, day: DayStartStore.current).filter { $0.projectId == 4434 },
             projects: projects,
             scope: 4434,
             staleSince: nil,
@@ -854,11 +863,12 @@ private enum DayCompletePreviewData {
 
     static func entry(open: [TaskDTO], done: [CompletionDTO]) -> TasksEntry {
         let scope = WidgetStore.allProjects
-        let today = TasksTimeline.todaysTasks(from: open, now: now)
+        let day = DayStartStore.current
+        let today = TasksTimeline.todaysTasks(from: open, now: now, day: day)
         return TasksEntry(
             date: now,
             tasks: today,
-            projects: TasksTimeline.projectPages(tasks: open, projects: projects, now: now),
+            projects: TasksTimeline.projectPages(tasks: open, projects: projects, now: now, day: day),
             scope: scope,
             staleSince: nil,
             isSignedOut: false,
@@ -869,7 +879,7 @@ private enum DayCompletePreviewData {
             doneTasks: TasksTimeline.doneTasks(from: done, scope: scope),
             overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: open, now: now),
             overdueTotalCount: TaskLists.overdue(open, now: now).count,
-            upcoming: TasksTimeline.upcomingForEmptyToday(scope: scope, openOnPage: today, allTasks: open, now: now)
+            upcoming: TasksTimeline.upcomingForEmptyToday(scope: scope, openOnPage: today, allTasks: open, now: now, day: day)
         )
     }
 

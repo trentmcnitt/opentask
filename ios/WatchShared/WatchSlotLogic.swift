@@ -13,26 +13,30 @@ import Foundation
 enum WatchSlotLogic {
 
     // MARK: - Reminders: current slot
-
-    private static func minutesSinceMidnight(_ date: Date, calendar: Calendar = .current) -> Int {
-        let comps = calendar.dateComponents([.hour, .minute], from: date)
-        return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-    }
+    //
+    // Every start is counted within the OpenTask day ("Day starts at" PR 3,
+    // `OpenTaskDay.minutesIntoDay`, the phone's `RemindersTimeline` and the
+    // web's rule): with the day starting at 3:00, at 00:30 the evening's
+    // slot is still the current one, and a 1:00 AM slot ends the day.
 
     /// The slot the clock is currently in: the LATEST slot whose start has
-    /// already passed today. Before the first slot starts (e.g. 3am), falls
-    /// back to the day's first real slot so there's always something sane to
-    /// land on rather than the un-slotted "Anytime" group. Empty `groups`
-    /// (fresh fetch, or an account with no reminders at all) returns 0 —
-    /// callers must check `groups.isEmpty` themselves before indexing.
-    static func naturalSlotIndex(in groups: [ReminderGroupDTO], now: Date = Date()) -> Int {
+    /// already passed in today's OpenTask day. From the day start until the
+    /// first slot starts, falls back to the day's first real slot so
+    /// there's always something sane to land on rather than the un-slotted
+    /// "Anytime" group. Empty `groups` (fresh fetch, or an account with no
+    /// reminders at all) returns 0 — callers must check `groups.isEmpty`
+    /// themselves before indexing.
+    static func naturalSlotIndex(
+        in groups: [ReminderGroupDTO], now: Date = Date(), day: OpenTaskDay = DayStartStore.current
+    ) -> Int {
         guard !groups.isEmpty else { return 0 }
-        let nowMinutes = minutesSinceMidnight(now)
+        let nowMinutes = day.minutesIntoDay(of: now)
 
         var best = -1
         var bestStart = -1
         for (index, group) in groups.enumerated() {
-            guard let start = group.slot?.startMinutes else { continue }
+            guard let raw = group.slot?.startMinutes else { continue }
+            let start = day.minutesIntoDay(raw)
             if start <= nowMinutes && start > bestStart {
                 bestStart = start
                 best = index
@@ -62,10 +66,12 @@ enum WatchSlotLogic {
         case finished
     }
 
-    static func state(for group: ReminderGroupDTO, now: Date = Date()) -> SlotState {
+    static func state(
+        for group: ReminderGroupDTO, now: Date = Date(), day: OpenTaskDay = DayStartStore.current
+    ) -> SlotState {
         // Waiting quota prompts count like reminders (2026-09-24).
         if group.hasNothingWaiting, group.consideredCount > 0 { return .finished }
-        if let start = group.slot?.startMinutes, start > minutesSinceMidnight(now) {
+        if !ReminderDayProgress.hasStarted(group, now: now, day: day) {
             return .notStarted
         }
         return group.hasNothingWaiting ? .finished : .waiting

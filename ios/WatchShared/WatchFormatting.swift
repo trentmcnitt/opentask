@@ -68,13 +68,15 @@ enum WatchFormatting {
     /// dates now get "Yesterday" for -1, then an explicit month/day (+ time)
     /// for anything older — never a bare weekday, which is exactly the
     /// ambiguity this fixes.
-    static func dueLine(for date: Date, now: Date = Date()) -> String {
+    ///
+    /// The days are OPENTASK days ("Day starts at" PR 3, `DayStartStore`):
+    /// with the day starting at 3:00 AM, a 1:30 AM target tonight is
+    /// today's ("1:30 AM"), and at 1:00 AM last evening's 8:00 PM is today's
+    /// too. The words are the date's own (its weekday, its month and day),
+    /// as on the web and the phone (`DueLabel.parts`).
+    static func dueLine(for date: Date, now: Date = Date(), day: OpenTaskDay = DayStartStore.current) -> String {
         let calendar = Calendar.current
-        let startOfToday = calendar.startOfDay(for: now)
-        guard let startOfDate = calendar.dateInterval(of: .day, for: date)?.start else {
-            return timeFormatter.string(from: date)
-        }
-        let dayDelta = calendar.dateComponents([.day], from: startOfToday, to: startOfDate).day ?? 0
+        let dayDelta = day.daysBetween(now, date)
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
 
         if dayDelta == 0 {

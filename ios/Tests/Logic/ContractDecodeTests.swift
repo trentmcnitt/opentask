@@ -241,6 +241,23 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(data["snoozed_high"] as? Int, 0)
     }
 
+    /// `POST /api/tasks/bulk/snooze-overdue` with the task queue on: one of
+    /// the two moved tasks went to the queue at the day start (`queued`,
+    /// `queued_until`), and the server's one line says so (`summary`) — what
+    /// the watch's "N to the queue at …" line and the Mac menu bar read.
+    func testBulkSnoozeOverdueQueued() throws {
+        let raw = try Fixtures.object("bulk-snooze-overdue")
+        XCTAssertEqual(raw["queued"] as? Int, 1)
+        XCTAssertEqual(raw["queued_until"] as? String, Fixtures.pinnedTimestamp)
+        let result = APIClient.parseBulkSnoozeResult(try Fixtures.data("bulk-snooze-overdue"))
+        XCTAssertEqual(result.tasksAffected, 2)
+        XCTAssertEqual(result.queued, 1)
+        XCTAssertEqual(result.queuedUntil, DateHelpers.parseISO(Fixtures.pinnedTimestamp))
+        XCTAssertEqual(result.summary, raw["summary"] as? String)
+        XCTAssertTrue(result.summary?.contains("Tasks queue") ?? false)
+        XCTAssertEqual(result.summaryLines.first, .queued(1, at: result.queuedUntil))
+    }
+
     // MARK: GET /api/tasks, /api/time-slots, /api/completions, /api/undo/status
 
     func testOpenTasks() throws {
@@ -534,6 +551,25 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let page = try Fixtures.decode(UserPreferencesLabelConfigPage.self, "user-preferences")
         XCTAssertEqual(page.checkInDay, 6)
         XCTAssertEqual(try Fixtures.object("user-preferences")["check_in_day"] as? Int, 6)
+    }
+
+    /// `GET /api/user/preferences` carries the day boundary ("Day starts at"
+    /// PR 3): `rollover_time` (the 03:00 default in the fixture's scenario)
+    /// and `week_start`. The writer strips `task_queue` (a server-environment
+    /// switch), so it decodes nil here — and nil reads as midnight, what a
+    /// server without the switch runs on.
+    func testPreferencesDayBoundary() throws {
+        let page = try Fixtures.decode(UserPreferencesLabelConfigPage.self, "user-preferences")
+        let raw = try Fixtures.object("user-preferences")
+        XCTAssertEqual(page.rolloverTime, "03:00")
+        XCTAssertEqual(raw["rollover_time"] as? String, "03:00")
+        XCTAssertEqual(page.weekStart, "sunday")
+        XCTAssertEqual(raw["week_start"] as? String, "sunday")
+        XCTAssertNil(page.taskQueue)
+        XCTAssertNil(raw["task_queue"])
+        XCTAssertEqual(DayStartStore.resolvedDayStart(taskQueue: page.taskQueue, rolloverTime: page.rolloverTime), "00:00")
+        XCTAssertEqual(DayStartStore.resolvedDayStart(taskQueue: true, rolloverTime: page.rolloverTime), "03:00")
+        XCTAssertEqual(DayStartStore.firstWeekday(for: page.weekStart), 1)
     }
 
     /// `GET /api/user/preferences` carries the snooze pad's four resolved

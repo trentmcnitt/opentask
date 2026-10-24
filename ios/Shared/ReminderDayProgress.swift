@@ -136,12 +136,16 @@ enum ReminderDayProgress {
 
     /// Has this period's time arrived? The un-slotted "Anytime" group has no
     /// start time and is always available, so it counts as started — the
-    /// web's `ReminderSlotBar.hasStarted` and the watch's `WatchSlotLogic.
-    /// state` agree. `RemindersTimeline.hasStarted` calls this.
-    static func hasStarted(_ group: ReminderGroupDTO, now: Date, calendar: Calendar = .current) -> Bool {
+    /// web's `slotHasStarted` (src/lib/reminders-summary.ts) and the watch's
+    /// `WatchSlotLogic.state` agree. `RemindersTimeline.hasStarted` calls this.
+    ///
+    /// Within the OpenTask day ("Day starts at" PR 3, `minutesIntoDay`): with
+    /// the day starting at 3:00, at 00:30 every period of the evening's day
+    /// has started — the roster is still that day's — and a 1:00 AM period
+    /// starts at the END of its day.
+    static func hasStarted(_ group: ReminderGroupDTO, now: Date, day: OpenTaskDay) -> Bool {
         guard let minutes = group.slot?.startMinutes else { return true }
-        let comps = calendar.dateComponents([.hour, .minute], from: now)
-        return (comps.hour ?? 0) * 60 + (comps.minute ?? 0) >= minutes
+        return day.minutesIntoDay(minutes) <= day.minutesIntoDay(of: now)
     }
 
     /// One bar of the Reminders widget's strip.
@@ -183,7 +187,7 @@ enum ReminderDayProgress {
     /// does. A period that was finished early reads done whatever the clock
     /// says (the web `ReminderSlotBar`'s rule).
     static func stripBars(
-        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date, calendar: Calendar = .current
+        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date, day: OpenTaskDay
     ) -> [StripBar] {
         let periods = groups.compactMap { group -> StripBar? in
             let count = PeriodCount(group)
@@ -192,7 +196,7 @@ enum ReminderDayProgress {
             if group.hasNothingWaiting {
                 state = .done
             } else {
-                state = hasStarted(group, now: now, calendar: calendar) ? .behind : .upcoming
+                state = hasStarted(group, now: now, day: day) ? .behind : .upcoming
             }
             return StripBar(
                 key: group.slotKey, kind: .period, label: group.label, state: state,

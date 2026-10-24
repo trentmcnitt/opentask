@@ -202,10 +202,10 @@ final class APIClient {
         var body = body
         if let notify { body["notify"] = notify }
         let data = try await post(path: "/api/tasks/bulk/snooze-overdue", body: body)
-        return parseBulkSnoozeResult(data)
+        return Self.parseBulkSnoozeResult(data)
     }
 
-    private func parseBulkSnoozeResult(_ data: Data) -> BulkSnoozeResult {
+    static func parseBulkSnoozeResult(_ data: Data) -> BulkSnoozeResult {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any] else {
             return BulkSnoozeResult(tasksAffected: 0, skippedOnPriority: 0, skippedHigh: 0, snoozedHigh: 0)
@@ -216,7 +216,10 @@ final class APIClient {
             skippedHigh: responseData["skipped_high"] as? Int ?? 0,
             snoozedHigh: responseData["snoozed_high"] as? Int ?? 0,
             skippedDeadline: responseData["skipped_deadline"] as? Int ?? 0,
-            cappedDeadline: responseData["capped_deadline"] as? Int ?? 0
+            cappedDeadline: responseData["capped_deadline"] as? Int ?? 0,
+            queued: responseData["queued"] as? Int ?? 0,
+            queuedUntil: (responseData["queued_until"] as? String).flatMap(DateHelpers.parseISO),
+            summary: (responseData["summary"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 
@@ -253,6 +256,21 @@ final class APIClient {
         /// server's `capped_deadline` for the ids in `cap_at_deadline_ids`;
         /// 0 from an older server).
         var cappedDeadline: Int = 0
+        /// Of `tasksAffected`, the ones the sweep sent to the Tasks queue at
+        /// the next day start instead of the period asked for (task queue,
+        /// docs/TASK-MODEL.md § Picks and defers: a below-High task whose
+        /// landing is at or after the next rollover gets the rollover, marked)
+        /// — so "Moved to Evening" would be false for them. 0 with the queue
+        /// switch off and from an older server.
+        var queued: Int = 0
+        /// The rollover the queued tasks were targeted at (`queued_until`);
+        /// nil when none were.
+        var queuedUntil: Date?
+        /// The server's one-line account of the press (`summary`,
+        /// `bulkSnoozeMessage`: "3 will move to the Tasks queue at 3:00 AM ·
+        /// Deferred 2 tasks (1 urgent skipped)") — the web toast's words.
+        /// Nil from an older server.
+        var summary: String?
     }
 
     /// Complete N tasks in ONE request (§6.1 batch checklist).
@@ -538,7 +556,7 @@ final class APIClient {
         // passes its own ids, a sweep never.
         if let capAtDeadlineIds { body["cap_at_deadline_ids"] = capAtDeadlineIds }
         let data = try await post(path: "/api/tasks/bulk/snooze", body: body)
-        return parseBulkSnoozeResult(data)
+        return Self.parseBulkSnoozeResult(data)
     }
 
     /// Pending reminders for one time slot (§6), newest server truth.
@@ -729,9 +747,11 @@ final class APIClient {
 
     // MARK: - Widget Data
 
-    /// Today's incomplete reminders grouped by time slot (§6).
-    func fetchReminders() async throws -> RemindersPayload {
-        try await get(path: "/api/reminders", as: RemindersPayload.self)
+    /// Today's incomplete reminders grouped by time slot (§6), the groups in
+    /// the OpenTask day's order (`RemindersPayload.orderedByDay` — the one
+    /// place every widget, watch and cache reader gets them from).
+    func fetchReminders(day: OpenTaskDay = DayStartStore.current) async throws -> RemindersPayload {
+        try await get(path: "/api/reminders", as: RemindersPayload.self).orderedByDay(day)
     }
 
     /// Open (not-done) tasks. The server has no "today" filter — the dashboard
@@ -761,8 +781,14 @@ final class APIClient {
     /// `GET /api/user/preferences`, decoded down to the keys native reads
     /// (`UserPreferencesLabelConfigPage`: `label_config`, `pad_presets`, …).
     /// One fetch for a caller that needs more than one of them.
+    ///
+    /// Every successful decode also remembers the day boundary
+    /// (`DayStartStore.save(from:)`, "Day starts at" PR 3): whichever process
+    /// fetched preferences, the next surface to draw reads the user's day.
     func fetchPreferencesPage() async throws -> UserPreferencesLabelConfigPage {
-        try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
+        let page = try await get(path: "/api/user/preferences", as: UserPreferencesLabelConfigPage.self)
+        DayStartStore.save(from: page)
+        return page
     }
 
     /// The user's time slots (§6.0), for the notification slot-snooze actions
@@ -788,16 +814,15 @@ final class APIClient {
         return try await get(path: "/api/completions?\(query)", as: CompletionsPage.self).completions
     }
 
-    /// Today's completions (the device's local calendar day) — a thin
-    /// convenience over `fetchCompletions(since:until:)` that computes the
-    /// local day boundary itself, so `TaskFeed` and the Undo/Redo intents'
-    /// full refetch (`UndoLastActionIntent`/`RedoLastActionIntent`) don't
-    /// each repeat the same `Calendar` arithmetic.
-    func fetchTodaysCompletions(now: Date = Date()) async throws -> [CompletionDTO] {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: now)
-        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? now
-        return try await fetchCompletions(since: startOfDay, until: startOfTomorrow)
+    /// Today's completions — the OpenTask day `now` is in ("Day starts at"
+    /// PR 3: `DayStartStore`'s day, so a 1:30 AM check-off with the day
+    /// starting at 3:00 is the evening's) — a thin convenience over
+    /// `fetchCompletions(since:until:)`, so `TaskFeed` and the Undo/Redo
+    /// intents' full refetch (`UndoLastActionIntent`/`RedoLastActionIntent`)
+    /// don't each work out the window.
+    func fetchTodaysCompletions(now: Date = Date(), day: OpenTaskDay = DayStartStore.current) async throws -> [CompletionDTO] {
+        let today = day.daySpan(containing: now)
+        return try await fetchCompletions(since: today.start, until: today.end)
     }
 
     /// The Tasks page's own counts — `{ total, overdue, today }` from
