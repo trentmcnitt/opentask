@@ -130,6 +130,25 @@ export function unitStartAt(
 }
 
 /**
+ * Whether `anchor` is the start of its period — on the user's boundary for
+ * the unit (`unitStartAt`). With a day start (the task queue on), every unit
+ * realigns: an anchor that is not on a period start ends at the next one, a
+ * short TRANSITION period (`quotaPeriodEnd`; the rollover marks its record,
+ * `progress_periods.transition`, so an unmet one breaks no streak). At
+ * midnight (the switch off) nothing is a transition: the old week rule's
+ * short period is recorded as it always was.
+ */
+export function anchorOnPeriodStart(
+  anchor: DateTime,
+  unit: PeriodUnit,
+  weekStart: WeekStart,
+  dayStart: string,
+): boolean {
+  if (dayStart === CALENDAR_DAY_START) return true
+  return unitStartAt(anchor, unit, weekStart, dayStart).toMillis() === anchor.toMillis()
+}
+
+/**
  * The instant a quota period that began at `anchor` ends (exclusive).
  *
  * With a day start (`dayStart`: the owner's "Day starts at" with the task
@@ -155,7 +174,7 @@ export function quotaPeriodEnd(
     // after 12:00 the day starts on the date before the one it is named by.
     const zone = anchor.zoneName ?? 'utc'
     const first = periodFirstDate(openTaskDayOf(anchor.toJSDate(), zone, dayStart), unit, weekStart)
-    const aligned = startOf(first, zone, dayStart).toMillis() === anchor.toMillis()
+    const aligned = anchorOnPeriodStart(anchor, unit, weekStart, dayStart)
     return startOf(addUnits(first, unit, aligned ? interval : 1), zone, dayStart)
   }
   if (unit !== 'weeks') return anchor.plus({ [unit]: interval })

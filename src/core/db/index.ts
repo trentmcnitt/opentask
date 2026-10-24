@@ -448,6 +448,11 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // A quota's transition period ("Day starts at" PR 2, 2026-10-24): closed
+  // early because its anchor was not on a period start. No backfill.
+  if (!hasColumn(database, 'progress_periods', 'transition')) {
+    database.exec('ALTER TABLE progress_periods ADD COLUMN transition INTEGER NOT NULL DEFAULT 0')
+  }
   // The day roster's explicit "how it left" (2026-10-22, the deadlines page's Defer).
   if (!hasColumn(database, 'segment_roster', 'left_how')) {
     database.exec('ALTER TABLE segment_roster ADD COLUMN left_how TEXT DEFAULT NULL')

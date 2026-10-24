@@ -19,18 +19,23 @@
  *      for a Track history view later.
  *
  * The anchor is `tasks.progress_period_start`: the UTC instant the current
- * period began, by the user's local calendar — 00:00 on the first day of the
- * user's week for a week (`users.week_start`: Sunday by default, or Monday;
- * see `@/lib/week-start`), the 1st for a month, midnight for a day, Jan 1 for
- * a year (`quotaUnitStart`). Since 2026-10-16 the anchor is stamped when a
+ * period began — the user's day start (3:00 AM by default with the task
+ * queue on, midnight off; "Day starts at" PR 2, 2026-10-24: periods run on
+ * OpenTask dates) on the first day of the user's week for a week
+ * (`users.week_start`: Sunday by default, or Monday; see `@/lib/week-start`),
+ * on the 1st for a month, on the day for a day, on Jan 1 for a year
+ * (`quotaUnitStart`). Since 2026-10-16 the anchor is stamped when a
  * row BECOMES a quota (create, or an edit that converts it) and re-stamped
  * when its period changes (`collectQuotaAnchor`, collect-field-changes.ts);
  * a quota the job finds without one (made before that) is anchored here to
  * the start of the period it is in, and nothing is recorded for it. INTERVAL is honoured by
- * advancing the anchor `interval` units at a time. A weekly anchor that is
- * not on the user's week-start boundary (anchored under the old Monday-only
- * rule, or the preference changed) closes at the NEXT boundary instead — a
- * short period — and is aligned from then on (`quotaPeriodEnd`).
+ * advancing the anchor `interval` units at a time. An anchor that is not on
+ * its period's start (a week anchored under the old Monday-only rule, the
+ * preference changed, or — with the task queue on — any midnight anchor once
+ * the day starts at 3:00, or a day-start change) closes at the NEXT period
+ * start instead — a short TRANSITION period, marked `transition` on its
+ * record (an unmet one breaks no streak, `getQuotaStats`) — and is aligned
+ * from then on (`quotaPeriodEnd`, `anchorOnPeriodStart`).
  *
  * Progress logged AFTER a period's end but before that period was closed
  * stays in the new period: the count carried forward is the sum of the
@@ -57,7 +62,7 @@ import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
 import { runAsSystem } from '@/core/request-context'
-import { coerceWeekStart, quotaPeriodEnd } from '@/lib/week-start'
+import { anchorOnPeriodStart, coerceWeekStart, quotaPeriodEnd } from '@/lib/week-start'
 import { dayBoundaryForUser } from './rollover-time'
 
 interface QuotaRow {
@@ -228,6 +233,9 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date, dayStart: string): QuotaR
     const carried = Math.min(logged, loggedSince(q.id, end))
     logged -= carried
     const met = logged >= q.progress_target
+    // A transition period: its anchor was not on a period start, so it ended
+    // early (`quotaPeriodEnd`). Recorded like any other, and marked.
+    const transition = !anchorOnPeriodStart(start, period.unit, weekStart, dayStart)
     const periodStart = start.toUTC().toISO() as string
     const periodEnd = end.toUTC().toISO() as string
     if (met) {
@@ -239,8 +247,8 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date, dayStart: string): QuotaR
     const nextFirst = firstCompletedAt
     withTransaction((tx) => {
       tx.prepare(
-        `INSERT INTO progress_periods (task_id, user_id, period_start, period_end, logged, target, met, closed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO progress_periods (task_id, user_id, period_start, period_end, logged, target, met, closed_at, transition)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         q.id,
         q.user_id,
@@ -250,6 +258,7 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date, dayStart: string): QuotaR
         q.progress_target,
         met ? 1 : 0,
         nowStr,
+        transition ? 1 : 0,
       )
       if (met) {
         tx.prepare(
@@ -280,6 +289,7 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date, dayStart: string): QuotaR
           met,
           unit: period.unit,
           carried_forward: carried,
+          ...(transition ? { transition: true } : {}),
         },
       })
     })

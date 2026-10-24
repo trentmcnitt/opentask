@@ -33,6 +33,10 @@ import { nextClockTick } from '@/lib/dashboard-clock'
 import { getDb } from '@/core/db'
 import { incrementDailyStat, getStatsSummary } from '@/core/stats'
 import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
+import { createTask, rolloverTrackedPeriods } from '@/core/tasks'
+import { incrementProgress } from '@/core/tasks/progress'
+import { getQuotaStats } from '@/core/tasks/quotas'
+import { getTaskById } from '@/core/tasks/read'
 import { setupTestDb, TEST_USER_ID } from '../helpers/setup'
 import type { Task } from '@/types'
 
@@ -399,6 +403,72 @@ describe('TQ-EV: the server reads the user’s day', () => {
     expect(getStatsSummary(TEST_USER_ID, TZ).today).toMatchObject({
       date: '2026-10-25',
       completions: 1,
+    })
+  })
+})
+
+describe('TQ-EV: the transition period breaks no streak', () => {
+  beforeAll(() => setupTestDb())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
+
+  test('TQ-EV41: a weekly quota with two met weeks keeps its streak across the 3-hour transition period when the day start moves off midnight', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    // Made Sun Oct 4 (midnight anchors, the switch off), met two weeks.
+    vi.setSystemTime(at('2026-10-04T12:00'))
+    const q = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TZ,
+      input: { title: 'Run', rrule: 'FREQ=WEEKLY', progress_target: 1, is_tracked: true },
+    })
+    expect(getTaskById(q.id)!.progress_period_start).toBe(iso('2026-10-04T00:00'))
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    vi.setSystemTime(at('2026-10-12T12:00'))
+    rolloverTrackedPeriods(at('2026-10-12T12:00'))
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    // The switch goes on Wednesday Oct 14 (the day starts at 3:00).
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    getDb()
+      .prepare("UPDATE users SET day_start_time = '03:00', day_start_slot_id = NULL WHERE id = ?")
+      .run(TEST_USER_ID)
+    // The week anchored Sun Oct 11 00:00 is Saturday's OpenTask date: it ends at
+    // Sun Oct 11 03:00 — already passed — a short period holding no taps, then
+    // Oct 11 03:00 → Oct 18 03:00 with Monday's tap carried into it.
+    vi.setSystemTime(at('2026-10-14T12:00'))
+    rolloverTrackedPeriods(at('2026-10-14T12:00'))
+    const rows = getDb()
+      .prepare(
+        'SELECT period_start, period_end, met, transition FROM progress_periods WHERE task_id = ? ORDER BY period_start',
+      )
+      .all(q.id)
+    expect(rows).toEqual([
+      {
+        period_start: iso('2026-10-04T00:00'),
+        period_end: iso('2026-10-11T00:00'),
+        met: 1,
+        transition: 0,
+      },
+      {
+        period_start: iso('2026-10-11T00:00'),
+        period_end: iso('2026-10-11T03:00'),
+        met: 0,
+        transition: 1,
+      },
+    ])
+    expect(getTaskById(q.id)).toMatchObject({
+      progress_period_start: iso('2026-10-11T03:00'),
+      progress_current: 1,
+    })
+    // Neither met nor missed, and the streak goes on: Oct 11's week met too.
+    vi.setSystemTime(at('2026-10-18T12:00'))
+    rolloverTrackedPeriods(at('2026-10-18T12:00'))
+    expect(getQuotaStats(TEST_USER_ID, q.id)).toMatchObject({
+      periods_met: 2,
+      periods_missed: 0,
+      current_streak: 2,
+      longest_streak: 2,
     })
   })
 })
