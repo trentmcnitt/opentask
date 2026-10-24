@@ -1118,6 +1118,20 @@ export function relativeTargetAt(
   return target.getTime() < deadline.toMillis() ? target.toISOString() : deadlineAt
 }
 
+/**
+ * The inverse direction (a helper, not a derivation): the local DATE
+ * (yyyy-MM-dd) `daysBefore` calendar days after the local day of `targetAt` —
+ * where a deadline goes for a target to sit `daysBefore` days before it (the
+ * every-time editor's first deadline). Here so the offsets' date maths stays
+ * in this module (guard RT-G01).
+ */
+export function deadlineDateFrom(targetAt: string, daysBefore: number, timezone: string): string {
+  return DateTime.fromISO(targetAt, { zone: 'utc' })
+    .setZone(timezone)
+    .plus({ days: daysBefore })
+    .toISODate()!
+}
+
 /** The fields that make a one-off's target relative (`isRelativeOneOff`). */
 export interface RelativeOneOffFields {
   rrule: string | null

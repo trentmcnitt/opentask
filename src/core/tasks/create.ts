@@ -27,7 +27,13 @@ import {
   resolveRelativeTarget,
 } from './repeat-schedule'
 import { taskQueueEnabled } from './task-queue'
-import { assertOneOffRelative, linkAfter, linkTargetTime } from './relative-target'
+import {
+  RELATIVE_KIND_MESSAGE,
+  assertOneOffRelative,
+  linkAfter,
+  linkTargetTime,
+  sendsRelative,
+} from './relative-target'
 import { getDb, withTransaction } from '@/core/db'
 import type { RepeatAnchor, Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -262,7 +268,7 @@ function targetAnchoredDates(
     : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, timezone)
   const deadlineAt = tracked ? null : (input.deadline_at ?? null)
   const autoEligible = !rrule && !tracked && !input.is_reminder
-  const relative = createRelative(input, rrule, autoEligible, deadlineAt, ctx)
+  const relative = createRelative(input, rrule, !tracked && !input.is_reminder, deadlineAt, ctx)
   const target = resolveTarget(
     {
       dueAt,
@@ -310,6 +316,9 @@ function createRelative(
   deadlineAt: string | null,
   ctx: TargetContext,
 ): RelativeTarget | null {
+  // A reminder (given its default period's rule) or a quota: refused, never
+  // dropped. A target-anchored repeat's are refused by `createAnchor`.
+  if (!ordinary && sendsRelative(input)) throw new ValidationError(RELATIVE_KIND_MESSAGE)
   if (rrule) return null
   const stored = { target_days_before: null, target_time: null }
   const w = { stored, ordinary, deadlineAt, timezone: ctx.timezone }

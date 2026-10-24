@@ -77,6 +77,7 @@ import {
 } from '@/lib/rrule-draft'
 import {
   RELATIVE_TARGET_MESSAGES,
+  deadlineDateFrom,
   deadlineWalk,
   defaultRelativeTarget,
   isDeadlineAnchored,
@@ -590,7 +591,7 @@ export function firstDeadlineFor(
   const rrule = draftRule(draft)
   const day = task.occurrence_at ?? task.due_at
   if (!day || !draft.deadlineTime) return firstFromNow(rrule, ctx)
-  const date = local(day, ctx.timezone).plus({ days: draft.daysBefore }).toISODate()!
+  const date = deadlineDateFrom(day, draft.daysBefore, ctx.timezone)
   const candidate = localMoment(date, draft.deadlineTime, ctx.timezone)
   if (draft.mode === 'from_completion') return candidate.toISOString()
   const justBefore = new Date(candidate.getTime() - 1)
