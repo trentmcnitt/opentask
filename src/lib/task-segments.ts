@@ -880,7 +880,7 @@ export function compareQueueRows(
    * On deck (2026-10-20, B5): a deck the rollover sent to the queue remembers
    * its DAY (`queued_from_deck_day`), not an instant. A row with no remembered
    * target sorts by the rollover moment that started that day — the server
-   * passes `rolloverMoment` with the owner's zone and rollover time. Without
+   * passes `dayStartMoment` with the owner's zone and day start. Without
    * it, the day's UTC midnight (enough to order days).
    */
   deckMoment: (day: string) => number = (day) => Date.parse(`${day}T00:00:00Z`),
