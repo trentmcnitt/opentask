@@ -214,11 +214,17 @@ export interface SlotIndexed {
  * land on something.
  */
 /**
- * Wall-clock minutes from `dayStart` (HH:MM) to `minuteOfDay` — where a time
- * falls in the OpenTask day. `minutesIntoDay` in src/lib/opentask-day.ts is
- * the same rule; it lives here too because that file imports this one.
+ * Wall-clock minutes from the day start (`dayStart`, HH:MM) to `minuteOfDay`
+ * (0..1439), 0..1439: where a time of day falls within an OpenTask day. A
+ * period that starts before the day start sorts at the END of the day. With
+ * midnight (`CALENDAR_DAY_START`) it is the minute of the day itself. The
+ * ONE rule for the clients' "has this slot started" (`slotHasStarted`,
+ * `naturalSlotIndex`) and the pager's order (`orderGroupsByDay`); the
+ * server's slot nag asks the same question in instants (`periodOpensAt`).
+ * Circular, so a start after noon (11 PM) reads the same way: a 07:00 slot is
+ * 480 minutes into its day. Re-exported by src/lib/opentask-day.ts.
  */
-function minutesFromDayStart(minuteOfDay: number, dayStart: string): number {
+export function minutesIntoDay(minuteOfDay: number, dayStart: string): number {
   const ds = parseHHMM(dayStart) ?? 0
   return (((minuteOfDay - ds) % 1440) + 1440) % 1440
 }
@@ -239,7 +245,7 @@ export function orderGroupsByDay<G extends SlotIndexed>(
 ): G[] {
   const key = (g: G) => {
     const start = g.slot ? parseHHMM(g.slot.start_time) : null
-    return start === null ? Number.MAX_SAFE_INTEGER : minutesFromDayStart(start, dayStart)
+    return start === null ? Number.MAX_SAFE_INTEGER : minutesIntoDay(start, dayStart)
   }
   return groups
     .map((group, index) => ({ group, index, key: key(group) }))
@@ -257,7 +263,7 @@ export function naturalSlotIndex(
 
   // Within the roster's day (2026-10-23): from `dayStart`, so at 00:30 with
   // the day starting at 3:00 the evening's slot is still the latest started.
-  const into = (minute: number) => minutesFromDayStart(minute, dayStart)
+  const into = (minute: number) => minutesIntoDay(minute, dayStart)
   const local = DateTime.fromJSDate(now).setZone(timezone)
   const minutes = into(local.hour * 60 + local.minute)
 

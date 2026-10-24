@@ -86,7 +86,7 @@ import { rowToTask, taskColumns, type TaskRow } from './read'
 import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
-import { latestRollover, rolloverMoment } from '@/lib/opentask-day'
+import { dayStartMoment, latestRollover } from '@/lib/opentask-day'
 import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-roster'
 import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
@@ -392,12 +392,13 @@ function deadlinePlacer(
 }
 
 /**
- * A deck day's place in the queue order (On deck, B5): the rollover moment
- * that started that day, in the owner's zone. Read once per call.
+ * A deck day's place in the queue order (On deck, B5): the day start that
+ * started that OpenTask day (`dayStartMoment`), in the owner's zone. Read
+ * once per call.
  */
 function deckMomentFor(userId: number, timezone: string): (day: string) => number {
   const rolloverTime = rolloverTimeForUser(userId)
-  return (day) => rolloverMoment(day, timezone, rolloverTime).getTime()
+  return (day) => dayStartMoment(day, timezone, rolloverTime).getTime()
 }
 
 /**

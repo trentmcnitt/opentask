@@ -28,7 +28,7 @@ import { onDeckToday } from '@/core/tasks/deck'
 import { ageLabel, attemptsOffer, type SegmentKind } from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser, runTaskRollover } from '@/core/tasks/task-rollover'
-import { rolloverMoment } from '@/lib/opentask-day'
+import { dayStartOnDate } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 
 /**
@@ -260,12 +260,16 @@ function defaultIds(userId: number, now: Date, timezone: string): number[] {
     .concat(onDeckToday(userId, timezone, now).map((t) => t.id))
 }
 
-/** When a day's rollover runs in the simulation: its moment, or the day's `late` time. */
+/**
+ * When a calendar day's rollover runs in the simulation: the day start that
+ * falls on that date (`dayStartOnDate` — with a start after 12:00 it starts
+ * the NEXT OpenTask day), or the day's `late` time.
+ */
 function rolloverTick(opts: SimOptions, userId: number, timezone: string, day: DateTime): DateTime {
   const date = day.toISODate()!
   const late = typeof opts.rollover === 'object' ? opts.rollover.late?.[date] : undefined
   if (late) return DateTime.fromISO(`${date}T${late}`, { zone: timezone })
-  return DateTime.fromJSDate(rolloverMoment(date, timezone, rolloverTimeForUser(userId))).setZone(
+  return DateTime.fromJSDate(dayStartOnDate(date, timezone, rolloverTimeForUser(userId))).setZone(
     timezone,
   )
 }
@@ -323,6 +327,14 @@ export function simulateDays(opts: SimOptions): SimDay[] {
         recorded = { date: day.toISODate()!, weekday: day.toFormat('ccc'), tasks, counts }
       }
       applyPolicy(policy, userId, timezone, now, ids)
+    }
+    // A rollover after the day's last tick (a day start after the record
+    // time — 23:00 with the 21:00 record) still runs on its own date.
+    if (!rolled) {
+      const at = rolloverTick(opts, userId, timezone, day)
+      runEventsUntil(at.toMillis())
+      opts.setClock(at.toJSDate())
+      runTaskRollover({ now: at.toJSDate(), userId })
     }
     out.push(recorded!)
     opts.onDay?.(recorded!)

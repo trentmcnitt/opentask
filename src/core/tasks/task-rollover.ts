@@ -84,8 +84,13 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
-import { DateTime } from 'luxon'
-import { isEarlyMorningPick, latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
+import {
+  calendarDateOf,
+  isEarlyMorningPick,
+  latestRollover,
+  nextRollover,
+  openTaskDayOf,
+} from '@/lib/opentask-day'
 import {
   effectiveAttempts,
   occurrenceDates,
@@ -492,10 +497,10 @@ function keptTarget(task: Task): string | null {
  * attempts read (`isEarlyMorningPick`): the pick's attempts count its day.
  */
 function earlyMorningPick(task: Task, timezone: string, rolloverTime: string, m: Date): boolean {
-  const dueDay = DateTime.fromISO(task.due_at!, { zone: 'utc' }).setZone(timezone).toISODate()
-  const mDay = DateTime.fromJSDate(m).setZone(timezone).toISODate()
+  // Its calendar day is the day M starts (with a start after 12:00 there is
+  // no early-morning pick at all — `isEarlyMorningPick`).
   return (
-    dueDay === mDay &&
+    calendarDateOf(new Date(task.due_at!), timezone) === openTaskDayOf(m, timezone, rolloverTime) &&
     isEarlyMorningPick(task.due_at!, task.target_set_at ?? task.created_at, timezone, rolloverTime)
   )
 }

@@ -68,7 +68,7 @@ import {
   resolveTarget,
   type CheckInDay,
 } from '@/lib/task-segments'
-import { rolloverMoment } from '@/lib/opentask-day'
+import { isLateNight } from '@/lib/opentask-day'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { log } from '@/lib/logger'
@@ -1271,8 +1271,10 @@ export function saidTomorrowBeforeRollover(
   now: Date,
 ): boolean {
   if (!rolloverTime || !saysTomorrow(inputText)) return false
-  const today = DateTime.fromJSDate(now).setZone(timezone).toFormat('yyyy-MM-dd')
-  return now.getTime() < rolloverMoment(today, timezone, rolloverTime).getTime()
+  // The stretch after midnight that is still the day before (`isLateNight`):
+  // a day start after 12:00 has none — before midnight it is already the
+  // next OpenTask day, and "tomorrow" means what it says.
+  return isLateNight(now, timezone, rolloverTime)
 }
 
 /**

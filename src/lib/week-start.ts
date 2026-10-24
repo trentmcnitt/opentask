@@ -28,7 +28,7 @@
  * counted from wherever its aligned anchor lands.
  */
 import { DateTime } from 'luxon'
-import { CALENDAR_DAY_START, openTaskDayOf, rolloverMoment } from '@/lib/opentask-day'
+import { CALENDAR_DAY_START, addDays, dayStartMoment, openTaskDaySpan } from '@/lib/opentask-day'
 
 export type WeekStart = 'sunday' | 'monday'
 
@@ -60,14 +60,12 @@ export type PeriodUnit = 'days' | 'weeks' | 'months' | 'years'
 
 /**
  * The start of the OpenTask day containing `dt`, in `dt`'s zone — a daily
- * quota's boundary (2026-10-23, "one day boundary everywhere"). With
- * `CALENDAR_DAY_START` it is local midnight (`startOf('day')`).
+ * quota's boundary (2026-10-23, "one day boundary everywhere";
+ * `openTaskDaySpan`). With `CALENDAR_DAY_START` it is local midnight.
  */
 export function startOfDayAt(dt: DateTime, dayStart: string): DateTime {
-  if (dayStart === CALENDAR_DAY_START) return dt.startOf('day')
   const zone = dt.zoneName ?? 'utc'
-  const date = openTaskDayOf(dt.toJSDate(), zone, dayStart)
-  return DateTime.fromJSDate(rolloverMoment(date, zone, dayStart)).setZone(zone)
+  return DateTime.fromJSDate(openTaskDaySpan(dt.toJSDate(), zone, dayStart).start).setZone(zone)
 }
 
 /**
@@ -91,11 +89,13 @@ export function quotaPeriodEnd(
   dayStart: string = CALENDAR_DAY_START,
 ): DateTime {
   if (unit === 'days' && dayStart !== CALENDAR_DAY_START) {
-    const boundary = startOfDayAt(anchor, dayStart)
+    // By OpenTask DATE, never the boundary's calendar date: with a start
+    // after 12:00 the day starts on the date before the one it is named by.
     const zone = anchor.zoneName ?? 'utc'
-    const days = boundary.toMillis() === anchor.toMillis() ? interval : 1
-    const endDate = DateTime.fromISO(boundary.toISODate()!, { zone }).plus({ days }).toISODate()!
-    return DateTime.fromJSDate(rolloverMoment(endDate, zone, dayStart)).setZone(zone)
+    const span = openTaskDaySpan(anchor.toJSDate(), zone, dayStart)
+    const days = span.start.getTime() === anchor.toMillis() ? interval : 1
+    const end = dayStartMoment(addDays(span.date, days), zone, dayStart)
+    return DateTime.fromJSDate(end).setZone(zone)
   }
   if (unit !== 'weeks') return anchor.plus({ [unit]: interval })
   const boundary = startOfWeek(anchor, weekStart)

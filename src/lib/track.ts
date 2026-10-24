@@ -8,7 +8,7 @@
 import { DateTime } from 'luxon'
 import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
-import { CALENDAR_DAY_START } from '@/lib/opentask-day'
+import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
 import {
   quotaPeriodEnd,
   startOfDayAt,
@@ -247,7 +247,10 @@ export function quotaWindow(
  * - `progress_period_end`: the current window's end, UTC, EXCLUSIVE.
  * - `period_interval`: the rule's INTERVAL (1 when it has none).
  * - `period_last_day`: the window's last local day, `YYYY-MM-DD` — the end
- *   minus one day, since the end itself is the next period's first midnight.
+ *   minus one day, since the end itself is the next period's first midnight;
+ *   for a daily quota on a day start (2026-10-23), the OpenTask day the
+ *   window's last instant belongs to (`openTaskDayOf` — with an 11 PM start
+ *   the window ends on the date it is named by, at 23:00).
  * - `period_label`: "by Oct 24" (that last day) for an interval above 1;
  *   NULL at interval 1, where every client keeps its own words ("this week",
  *   "wk", "today") — a fortnight cannot be called "this week", but a week can.
@@ -268,9 +271,25 @@ export const NO_QUOTA_PERIOD: QuotaPeriodFields = {
   period_label: null,
 }
 
-/** "by Oct 24": the inclusive last day of a window that ends (exclusively) at `end`. */
-export function periodByLabel(end: DateTime): string {
-  return `by ${end.minus({ days: 1 }).toFormat('LLL d')}`
+/** "by Oct 24": a window's inclusive last day (`period_last_day`, yyyy-MM-dd). */
+export function periodByLabel(lastDay: string): string {
+  return `by ${DateTime.fromISO(lastDay).toFormat('LLL d')}`
+}
+
+/**
+ * A window's inclusive last day: the OpenTask day of its last instant for a
+ * daily quota on a day start, else the calendar day before its end.
+ */
+function periodLastDay(
+  end: DateTime,
+  unit: PeriodUnit | undefined,
+  timezone: string,
+  dayStart: string,
+): string {
+  if (unit === 'days' && dayStart !== CALENDAR_DAY_START) {
+    return openTaskDayOf(new Date(end.toMillis() - 1), timezone, dayStart)
+  }
+  return end.minus({ days: 1 }).toISODate()!
 }
 
 export function quotaPeriodFields(
@@ -283,11 +302,12 @@ export function quotaPeriodFields(
   if (!isTracked(task)) return NO_QUOTA_PERIOD
   const window = quotaWindow(task, timezone, now, weekStart, dayStart)
   if (!window) return NO_QUOTA_PERIOD
+  const lastDay = periodLastDay(window.end, quotaPeriodUnit(task.rrule)?.unit, timezone, dayStart)
   return {
     progress_period_end: window.end.toUTC().toISO(),
     period_interval: window.interval,
-    period_last_day: window.end.minus({ days: 1 }).toISODate(),
-    period_label: window.interval > 1 ? periodByLabel(window.end) : null,
+    period_last_day: lastDay,
+    period_label: window.interval > 1 ? periodByLabel(lastDay) : null,
   }
 }
 
