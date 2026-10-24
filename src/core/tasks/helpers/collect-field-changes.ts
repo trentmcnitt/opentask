@@ -41,10 +41,19 @@ import {
   openTaskToday,
   occurrenceDayAtRuleTime,
   occurrenceIsPersonal,
+  relativeOf,
   resolveTarget,
   type PersonalOccurrence,
+  type RelativeTarget,
   type TargetContext,
 } from '@/lib/task-segments'
+import {
+  assertOneOffRelative,
+  linkAfter,
+  linkTargetTime,
+  stopKeepsRelative,
+  type SlotsFor,
+} from '../relative-target'
 import { getTargetContext } from '../target-context'
 import { assertPromptSlotsOwned } from '@/core/time-slots'
 import { stampTargetSet } from '../target-set'
@@ -93,6 +102,13 @@ export type FieldChangesInput = TaskUpdateInput & {
    * task, which keeps the value its first sweep wrote.
    */
   queued_from_due_at?: string | null
+  /**
+   * Server-internal (relative targets, 2026-10-24): the period RETIME's write
+   * (`src/core/time-slots/edit.ts`) — its `target_time` keeps the link, and
+   * the stamp keeps `target_set_at` (decision 11: a retime is not the user
+   * setting a target) while still checkpointing attempts.
+   */
+  retime?: boolean
 }
 
 export interface FieldChangeData {
@@ -126,6 +142,16 @@ export interface CollectFieldChangesOptions {
    * caller passes it once. Read from the task's owner when absent.
    */
   targetCtx?: TargetContext
+  /**
+   * The owners' reminder periods, for a sent `target_slot_id` (relative
+   * targets): a bulk caller passes a memoized lookup, one read per owner.
+   */
+  slotsFor?: SlotsFor
+  /**
+   * The owner's rollover time ("Day starts at"), for a re-derived lead day; a
+   * caller looping over one owner's rows passes it once. Read when absent.
+   */
+  rolloverTime?: string
 }
 
 /**
@@ -200,10 +226,15 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // rule, which lands on an arbitrary weekday. Clearing it here rather than in
   // updateTask means bulk edit retires correctly too.
   const ctx = options.targetCtx ?? getTargetContext(task.user_id)
+  // RELATIVE TARGETS (2026-10-24): a sent period sets the time first
+  // (`linkTargetTime`, the owner's periods), so every planner below sees the
+  // time it follows; `link` is what the write does to the link.
+  const linked = linkTargetTime(task.user_id, options.input, options.slotsFor)
+  const sentInput = linked.input
   // DEADLINE-ANCHORED REPEATS (2026-10-21): what this write does to the
   // schedule — the anchor, the deadline occurrence, the relative target —
   // decided up front on the RESULTING row (`planRepeatSchedule`, every 400).
-  const repeat = planRepeatSchedule(task, options.input, {
+  const repeat = planRepeatSchedule(task, sentInput, {
     isReminder: willBeReminder,
     isTracked: willBeTracked,
     timezone: userTimezone,
@@ -214,23 +245,28 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   const retired = withRuleTime(
     task,
     scheduleInput(
-      wasTracked && !willBeTracked && options.input.rrule === undefined
-        ? { ...options.input, rrule: null }
-        : options.input,
+      wasTracked && !willBeTracked && sentInput.rrule === undefined
+        ? { ...sentInput, rrule: null }
+        : sentInput,
       repeat,
     ),
     willBeTracked,
     { morningTime: ctx.morningTime, timezone: userTimezone },
   )
+  // RELATIVE TARGETS (2026-10-24): a row the write leaves a one-off — the
+  // offsets it carries (sent, kept, or kept by Stop repeating) and their 400s.
+  const oneOff = oneOffRelative(task, retired, { willBeTracked, willBeReminder, ctx })
   // ON DECK (2026-10-20): a deck write is judged here, up front, and drops a
   // picked target (rule 1) — before `resolveTargetInput`, so a deadline task
-  // gets its automatic target back exactly as "Back to auto" would.
+  // gets its automatic target back exactly as "Back to auto" would (and a
+  // relative one-off loses its offsets and link with it).
   const decking = prepareDeck(task, retired, { willBeTracked, willBeReminder, ctx, now })
   const target = resolveTargetInput(task, decking, {
     willBeTracked,
     willBeReminder,
     ctx,
     now,
+    oneOff,
   })
   const input = withRepeatDates(target.input, repeat)
 
@@ -271,6 +307,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // §6: a repeating task's scheduled occurrence, apart from its target.
   collectOccurrence(data, task, input, rrule, willBeTracked, willBeReminder, repeat)
   collectRepeatSchedule(data, task, repeat)
+  // The relative target the write leaves — one shape for both kinds of row.
+  collectRelativeTarget(data, task, relativeLeft(repeat, target.relative), linked.link)
   collectTargetBack(data, task, repeat)
   // Repeat ends (2026-10-22): judged once the occurrence is decided.
   collectRepeatEnds(data, task, input, {
@@ -289,6 +327,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     isTracked: willBeTracked,
     timezone: userTimezone,
     now,
+    rolloverTime: options.rolloverTime,
   })
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
@@ -351,6 +390,9 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     keepQueue: input.queue_mark !== undefined || input.try_tomorrow !== undefined,
     // Only a NEW deck day: re-decking for the same day keeps the heads-up anchor.
     deck: typeof input.on_deck_day === 'string' && input.on_deck_day !== task.on_deck_day,
+    // A period retime moves linked targets without the user setting one
+    // (decision 11): the heads-up anchor stays; attempts are checkpointed.
+    keepSetAt: !!input.retime,
   })
 
   return data
@@ -432,8 +474,19 @@ function withRuleTime(
 function resolveTargetInput(
   task: Task,
   input: FieldChangesInput,
-  opts: { willBeTracked: boolean; willBeReminder: boolean; ctx: TargetContext; now: Date },
-): { input: FieldChangesInput; auto: boolean; capped: boolean } {
+  opts: {
+    willBeTracked: boolean
+    willBeReminder: boolean
+    ctx: TargetContext
+    now: Date
+    oneOff: OneOffRelative
+  },
+): {
+  input: FieldChangesInput
+  auto: boolean
+  capped: boolean
+  relative: RelativeTarget | null | undefined
+} {
   const rrule = input.rrule !== undefined ? input.rrule : task.rrule
   const dueWritten = input.due_at !== undefined
   const left = dueWritten ? (input.due_at ?? null) : task.due_at
@@ -448,12 +501,62 @@ function resolveTargetInput(
       autoEligible: !rrule && !opts.willBeReminder && !opts.willBeTracked,
       // The deadlines page (switch on): no automatic target is written.
       leads: taskQueueEnabled(),
+      // Relative targets (2026-10-24): a one-off's offsets, judged first.
+      ...(opts.oneOff.relative !== undefined
+        ? { relative: opts.oneOff.relative, relativeWritten: opts.oneOff.written }
+        : {}),
     },
     opts.ctx,
     opts.now,
   )
   const out = resolved.dueAt === left ? input : { ...input, due_at: resolved.dueAt }
-  return { input: out, auto: resolved.auto, capped: resolved.capped && dueWritten }
+  return {
+    input: out,
+    auto: resolved.auto,
+    capped: resolved.capped && dueWritten,
+    relative: resolved.relative,
+  }
+}
+
+/** A row the write leaves a one-off: its offsets, and whether the write sent them. */
+interface OneOffRelative {
+  /** The offsets (possibly null); undefined when the row is not an ordinary one-off. */
+  relative: RelativeTarget | null | undefined
+  written: boolean
+}
+
+/**
+ * RELATIVE TARGETS (2026-10-24; docs/TASK-MODEL.md § Relative targets): when
+ * the row this write leaves is an ordinary ONE-OFF, the offsets it carries
+ * into `resolveTarget` — the ones sent (merged over the stored, every 400 in
+ * `assertOneOffRelative`), else the stored ones: a one-off's own, or a
+ * deadline-anchored repeat's when Stop repeating keeps them (ruling 6,
+ * `stopKeepsRelative`). `resolveTarget` then keeps, derives or clears them.
+ * Judged in the OWNER's zone.
+ */
+function oneOffRelative(
+  task: Task,
+  input: FieldChangesInput,
+  opts: { willBeTracked: boolean; willBeReminder: boolean; ctx: TargetContext },
+): OneOffRelative {
+  const rule = input.rrule !== undefined ? input.rrule : task.rrule
+  if (rule) return { relative: undefined, written: false }
+  const ordinary = !opts.willBeReminder && !opts.willBeTracked
+  const keeps =
+    !!task.rrule && stopKeepsRelative(task, input, { ordinary, timezone: opts.ctx.timezone })
+  const stored =
+    !task.rrule || keeps
+      ? { target_days_before: task.target_days_before, target_time: task.target_time }
+      : { target_days_before: null, target_time: null }
+  const sent = assertOneOffRelative(input, {
+    stored,
+    ordinary,
+    deadlineAt: input.deadline_at !== undefined ? input.deadline_at : task.deadline_at,
+    timezone: opts.ctx.timezone,
+  })
+  if (sent !== undefined) return { relative: sent, written: true }
+  if (!ordinary) return { relative: undefined, written: false }
+  return { relative: relativeOf(stored), written: false }
 }
 
 /**
@@ -661,7 +764,13 @@ function collectLead(
   data: FieldChangeData,
   task: Task,
   input: FieldChangesInput,
-  left: { isReminder: boolean; isTracked: boolean; timezone: string; now: Date },
+  left: {
+    isReminder: boolean
+    isTracked: boolean
+    timezone: string
+    now: Date
+    rolloverTime?: string
+  },
 ): void {
   const after = <K extends keyof Task>(field: K): Task[K] =>
     data.afterState[field] !== undefined ? (data.afterState[field] as Task[K]) : task[field]
@@ -690,7 +799,7 @@ function collectLead(
   const removedRepeatTarget = ordinary && targetLess && removesRepeatTarget(data, task, input, row)
   if (!changed && !removedRepeatTarget && !(targetLess && task.lead_from === null)) return
   if (changed) assertLeadDays(row, left.timezone)
-  const rolloverTime = rolloverTimeForUser(task.user_id)
+  const rolloverTime = left.rolloverTime ?? rolloverTimeForUser(task.user_id)
   const lead = { rolloverTime, now: left.now }
   const next = removedRepeatTarget
     ? openTaskToday(left.timezone, left.now, rolloverTime)
@@ -771,28 +880,51 @@ function repeatCapped(repeat: RepeatPlan): boolean {
 }
 
 /**
- * The anchor and the relative target (2026-10-21): written as the plan
- * leaves them — 'deadline' with its offsets, or back to 'target' with none.
+ * The anchor (2026-10-21): written as the plan leaves it — 'deadline', or
+ * back to 'target'. The offsets are `collectRelativeTarget`'s (2026-10-24):
+ * a repeat leaving its anchor may become a relative one-off (ruling 6).
  */
 function collectRepeatSchedule(data: FieldChangeData, task: Task, repeat: RepeatPlan): void {
   if (repeat.kind === 'none') return
-  const after =
-    repeat.kind === 'deadline'
-      ? {
-          repeat_anchor: 'deadline' as const,
-          target_days_before: repeat.relative?.days_before ?? null,
-          target_time: repeat.relative?.time ?? null,
-        }
-      : { repeat_anchor: 'target' as const, target_days_before: null, target_time: null }
-  if (after.repeat_anchor !== task.repeat_anchor) {
-    trackField(data, 'repeat_anchor', task.repeat_anchor, after.repeat_anchor)
+  const anchor = repeat.kind === 'deadline' ? ('deadline' as const) : ('target' as const)
+  if (anchor !== task.repeat_anchor) {
+    trackField(data, 'repeat_anchor', task.repeat_anchor, anchor)
   }
-  if (after.target_days_before !== task.target_days_before) {
-    trackField(data, 'target_days_before', task.target_days_before, after.target_days_before)
+}
+
+/** The offsets the write leaves: a deadline-anchored repeat's plan, else the one-off's. */
+function relativeLeft(
+  repeat: RepeatPlan,
+  oneOff: RelativeTarget | null | undefined,
+): RelativeTarget | null {
+  if (repeat.kind === 'deadline') return repeat.relative
+  return oneOff ?? null
+}
+
+/**
+ * THE RELATIVE TARGET A WRITE LEAVES (2026-10-24; one shape for a
+ * deadline-anchored repeat and a one-off): `target_days_before`,
+ * `target_time` and `target_slot_id` — the planner's offsets for a repeat,
+ * `resolveTarget`'s for a one-off, none for anything else (a target-anchored
+ * repeat, a reminder, a quota) — and the link (`linkAfter`: none without
+ * offsets, kept only at the linked time). When any of the three changes, all
+ * three go in the snapshot, beside `due_at`, so undo puts the whole relative
+ * target back together.
+ */
+function collectRelativeTarget(
+  data: FieldChangeData,
+  task: Task,
+  relative: RelativeTarget | null,
+  link: number | null | undefined,
+): void {
+  const after = {
+    target_days_before: relative?.days_before ?? null,
+    target_time: relative?.time ?? null,
+    target_slot_id: linkAfter(task, relative, link),
   }
-  if (after.target_time !== task.target_time) {
-    trackField(data, 'target_time', task.target_time, after.target_time)
-  }
+  const fields = ['target_days_before', 'target_time', 'target_slot_id'] as const
+  if (fields.every((f) => after[f] === task[f])) return
+  for (const f of fields) trackField(data, f, task[f], after[f])
 }
 
 /**

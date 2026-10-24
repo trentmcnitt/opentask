@@ -554,15 +554,19 @@ describe('TM-RA: PATCH and bulk edit (plan §3.2)', () => {
       due_at: at('2026-10-23T09:00'),
       occurrence_at: at('2026-10-23T09:00'),
     })
-    // Clearing the rule instead: a one-off that keeps its deadline.
+    // Clearing the rule instead: a one-off that keeps its deadline — and,
+    // since 2026-10-24 (relative targets, ruling 6), its unmoved relative
+    // target: a relative one-off, the day before at 6 PM.
     const s = friday()
     const one = patch(s.id, { rrule: null })
     expect(one.task).toMatchObject({
       rrule: null,
       repeat_anchor: 'target',
-      target_days_before: null,
+      target_days_before: 1,
+      target_time: '18:00',
       occurrence_at: null,
       deadline_at: at('2026-10-23T17:00'),
+      due_at: at('2026-10-22T18:00'),
     })
   })
 

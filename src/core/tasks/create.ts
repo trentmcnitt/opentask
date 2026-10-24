@@ -27,6 +27,7 @@ import {
   resolveRelativeTarget,
 } from './repeat-schedule'
 import { taskQueueEnabled } from './task-queue'
+import { assertOneOffRelative, linkAfter, linkTargetTime } from './relative-target'
 import { getDb, withTransaction } from '@/core/db'
 import type { RepeatAnchor, Task, TaskCreateInput } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -243,7 +244,10 @@ function firstDueAt(
  * A new task's dates when its rule (if any) walks the TARGET: the first date
  * (`firstDueAt`), its scheduled occurrence (§6: the first date), and — §8,
  * 2026-10-12 — a deadline with no target gets the stored automatic one; a
- * target is never after the deadline (`resolveTarget` decides both).
+ * target is never after the deadline (`resolveTarget` decides both). A
+ * ONE-OFF created with offsets (relative targets, 2026-10-24) gets its
+ * target DERIVED from its deadline (`relativeTargetAt`, through
+ * `resolveTarget`): judged first by `assertOneOffRelative` (every 400).
  */
 function targetAnchoredDates(
   input: TaskCreateInput,
@@ -257,16 +261,20 @@ function targetAnchoredDates(
     ? null
     : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, timezone)
   const deadlineAt = tracked ? null : (input.deadline_at ?? null)
+  const autoEligible = !rrule && !tracked && !input.is_reminder
+  const relative = createRelative(input, rrule, autoEligible, deadlineAt, ctx)
   const target = resolveTarget(
     {
       dueAt,
-      dueWritten: true,
+      // A relative target is derived, never sent (ruling 7 refuses both).
+      dueWritten: relative === null,
       wasAuto: false,
       deadlineAt,
       deadlineChanged: false,
-      autoEligible: !rrule && !tracked && !input.is_reminder,
+      autoEligible,
       // The deadlines page (switch on): no automatic target; a lead day.
       leads: taskQueueEnabled(),
+      ...(autoEligible ? { relative, relativeWritten: relative !== null } : {}),
     },
     ctx,
   )
@@ -285,11 +293,31 @@ function targetAnchoredDates(
     occurrenceAt: rrule && !tracked ? dueAt : null,
     deadlineAt: input.deadline_at ?? null,
     auto: target.auto,
-    relative: null,
+    relative: target.relative ?? null,
     leadFrom,
     leadDays: tracked || input.is_reminder ? null : (input.lead_days ?? null),
   }
 }
+
+/**
+ * A new ONE-OFF's relative target (2026-10-24): the offsets sent, after the
+ * 400s (`assertOneOffRelative`), or null. A repeat's are `deadlineAnchoredDates`'.
+ */
+function createRelative(
+  input: TaskCreateInput,
+  rrule: string | null | undefined,
+  ordinary: boolean,
+  deadlineAt: string | null,
+  ctx: TargetContext,
+): RelativeTarget | null {
+  if (rrule) return null
+  const stored = { target_days_before: null, target_time: null }
+  const w = { stored, ordinary, deadlineAt, timezone: ctx.timezone }
+  return assertOneOffRelative(input, w) ?? null
+}
+
+/** No relative target yet (a new row), for `linkAfter`. */
+const NO_LINK = { target_slot_id: null, target_time: null }
 
 /** A one-off's schedule fields, for `leadFor`. */
 const NO_SCHEDULE = {
@@ -305,8 +333,12 @@ const NO_SCHEDULE = {
  * @returns The created task
  */
 export function createTask(options: CreateTaskOptions): Task {
-  const { userId, userTimezone, input } = options
+  const { userId, userTimezone } = options
   const db = getDb()
+  // Relative targets (2026-10-24): a sent period sets the time first (the
+  // creator's own periods — the creator is the owner).
+  const linked = linkTargetTime(userId, options.input)
+  const input = linked.input
 
   // Get user's inbox project if no project_id specified
   let projectId = input.project_id
@@ -431,12 +463,12 @@ export function createTask(options: CreateTaskOptions): Task {
       INSERT INTO tasks (
         user_id, project_id, title, original_title, short_title, done, priority, due_at, original_due_at,
         rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
-        repeat_anchor, target_days_before, target_time, repeat_count, repeat_until,
+        repeat_anchor, target_days_before, target_time, target_slot_id, repeat_count, repeat_until,
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
         target_auto, occurrence_at, progress_period_start, on_deck_day, lead_days, lead_from,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -456,6 +488,7 @@ export function createTask(options: CreateTaskOptions): Task {
         anchor,
         relative.days_before,
         relative.time,
+        linkAfter(NO_LINK, first.relative, linked.link),
         input.repeat_count ?? null,
         input.repeat_until ?? null,
         input.auto_snooze_minutes ?? null,

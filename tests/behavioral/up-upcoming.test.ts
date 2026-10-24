@@ -715,6 +715,12 @@ describe('target_set_at guard', () => {
     // deadlines page): its SQL fragment runs inside mark-done.ts and delete.ts,
     // which stamp and snapshot it; it never writes a target, only clears one.
     'src/core/tasks/auto-target-lead.ts': 'clears an automatic target (autoTargetToLead)',
+    // Relative targets (2026-10-24): a reopened relative one-off's target
+    // re-derived from its offsets (`rederiveOnReopen`, run inside mark-done.ts
+    // and delete.ts) catches up with a period retime made while it was closed
+    // — like the retime itself it is not the user setting a target, so it
+    // keeps `target_set_at` (decision 11).
+    'src/core/tasks/relative-target.ts': 'a retime catch-up on reopen (rederiveOnReopen)',
   }
 
   function files(dir: string): string[] {

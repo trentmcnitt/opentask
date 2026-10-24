@@ -126,7 +126,13 @@ export function stampTargetSet(
    * not move (A6: `target_set_at` is the deck's heads-up anchor), and clears
    * the queue state (rule 3, B8: decking a queued task takes it out).
    */
-  opts: { keepQueue?: boolean; deck?: boolean } = {},
+  /**
+   * `keepSetAt` (relative targets, 2026-10-24): a period RETIME moves linked
+   * targets without the user setting one (decision 11) — the attempts
+   * checkpoint and the queue clear still run, but `target_set_at` (the
+   * heads-up anchor) stays as it was. Returns false (nothing stamped).
+   */
+  opts: { keepQueue?: boolean; deck?: boolean; keepSetAt?: boolean } = {},
 ): boolean {
   if (
     !(opts.deck || movesTarget(write.fieldsChanged)) ||
@@ -151,6 +157,7 @@ export function stampTargetSet(
     write.setClauses.push('attempts = ?', 'attempts_counted_through = ?')
     write.values.push(task.attempts, task.attempts_counted_through ?? null)
   }
+  if (opts.keepSetAt) return false
   write.setClauses.push(`${TARGET_SET_FIELD} = ?`)
   write.values.push(nowStr)
   write.fieldsChanged.push(TARGET_SET_FIELD)

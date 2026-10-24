@@ -5,6 +5,7 @@
  */
 
 import { getTargetContext } from './target-context'
+import { ownerSlots, type SlotsFor } from './relative-target'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoAction, UndoSnapshot } from '@/types'
@@ -1379,6 +1380,13 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const nowStr = nowUtc()
   const nowDate = new Date()
   const targetCtx = getTargetContext(tasks[0].user_id)
+  // Relative targets (2026-10-24): a sent `target_slot_id` is checked against
+  // each task's OWNER's periods — read once per owner, not once per task.
+  const slotCache = new Map<number, ReturnType<SlotsFor>>()
+  const slotsFor: SlotsFor = (ownerId) => {
+    if (!slotCache.has(ownerId)) slotCache.set(ownerId, ownerSlots(ownerId))
+    return slotCache.get(ownerId)!
+  }
   let deadlineCapped = 0
   const snapshots: UndoSnapshot[] = []
   const activityEntries: ActivityEntry[] = []
@@ -1412,6 +1420,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         now: nowDate,
         skipProjectValidation: true, // Already validated above
         targetCtx,
+        slotsFor,
       })
       // §8.2: a date stopped at a deadline still ahead.
       if (wasCapped(data)) deadlineCapped++
