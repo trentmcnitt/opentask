@@ -11,14 +11,19 @@
  * Two long labels on a Days row and on an Upcoming row ("Task queue ·
  * Upcoming"), each beside a bare twin with the same title, plus a Days row
  * with one label longer than any row (labels allow 100 characters): at 390,
- * 1280 and 1440, on the dashboard's Tasks card (and the Upcoming task's
+ * 1280, 1440 and 1600, on the dashboard's Tasks card (and the Upcoming task's
  * `TaskRow` in the Now list) and on /reminders, every chip shows its whole
  * label — no chip scrolls, no ancestor up to the page clips or fades it — and
  * sits inside its row's box; the controls sit at the same offset as the bare
  * twin's; nothing scrolls sideways.
  *
- * The queue's own user. The Days rows and the Upcoming rows are checked one
- * after the other, so each is the natural page of the dashboard's Tasks card.
+ * The queue's own user, with a quota for the file's length: a quota puts the
+ * dashboard in two columns at `xl` (`twoColumn` in `DashboardClient`; this
+ * app's `xl` is 1450px, so 1280 and 1440 are the single 640px column), and at
+ * 1600 the Tasks card is the right-hand column (`dashboard-layout.spec.ts`
+ * uses 1600 for the same reason: past the breakpoint whatever the scrollbar).
+ * The Days rows and the Upcoming rows are checked one after the other, so each
+ * is the natural page of that card.
  * Isolation: unique titles and label names; tasks trashed and labels deleted
  * in `finally`.
  */
@@ -34,6 +39,7 @@ const SIZES = [
   { width: 390, height: 844 },
   { width: 1280, height: 800 },
   { width: 1440, height: 900 },
+  { width: 1600, height: 900 },
 ]
 
 async function signIn(page: Page) {
@@ -126,6 +132,16 @@ async function controlsInPlace(row: Locator, twin: Locator) {
   expect(await row.evaluate(offset)).toEqual(await twin.evaluate(offset))
 }
 
+/** At 1600 the dashboard's Tasks card is the right-hand column. */
+async function twoColumnsAtXl(page: Page, url: string) {
+  if (url !== '/' || page.viewportSize()!.width < 1600) return
+  const card = page.locator('[data-tasks-page]')
+  await expect(card).toBeVisible()
+  const { width, x } = (await card.boundingBox())!
+  expect(width).toBeLessThan(page.viewportSize()!.width / 2)
+  expect(x).toBeGreaterThan(page.viewportSize()!.width / 2)
+}
+
 test.beforeEach(async ({ page }) => {
   await signIn(page)
 })
@@ -139,11 +155,17 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
   // Longer than any row is wide, even at 1440 (labels allow 100 characters).
   const huge = `one-very-long-label-that-is-longer-than-the-row-is-wide-at-any-size-${stamp}`
   const labels = [...two, huge]
+  let quota: number | null = null
   try {
     for (const name of labels) {
       const res = await page.request.post('/api/labels', { data: { name } })
       expect(res.ok(), `label ${name}`).toBeTruthy()
     }
+    quota = await create(page, {
+      title: uniqueTitle('SL quota'),
+      progress_target: 2,
+      rrule: 'FREQ=WEEKLY',
+    })
 
     // 1. Days rows (the dashboard card's natural page while they wait).
     const daysTitle = uniqueTitle('SL days row')
@@ -161,6 +183,7 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
       await page.setViewportSize(size)
       for (const url of ['/', '/reminders']) {
         await page.goto(url)
+        await twoColumnsAtXl(page, url)
         const row = page.locator(`[data-segment-task="${days}"]`)
         const bare = page.locator(`[data-segment-task="${daysBare}"]`)
         await expect(row).toBeVisible()
@@ -171,7 +194,7 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
         await controlsInPlace(row, bare)
       }
     }
-    await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [days, daysBare, daysHuge] } })
 
     // 2. Upcoming rows: "Inbox · Medium · Target <tomorrow> ⌄ · chip chip".
     const upTitle = uniqueTitle('SL upcoming row')
@@ -189,6 +212,7 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
       await page.setViewportSize(size)
       for (const url of ['/', '/reminders']) {
         await page.goto(url)
+        await twoColumnsAtXl(page, url)
         const section = page.locator('[data-task-segment="upcoming"]')
         const row = section.locator(`[data-segment-task="${up}"]`)
         const bare = section.locator(`[data-segment-task="${upBare}"]`)
@@ -205,6 +229,7 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
       }
     }
   } finally {
+    if (quota) ids.push(quota)
     if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
     for (const name of labels) await page.request.delete(`/api/labels/${encodeURIComponent(name)}`)
   }
