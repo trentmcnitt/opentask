@@ -37,6 +37,13 @@
  * only clears the retired flag (the task stays target-less: the deadlines
  * page holds it, `migrateDeadlineLeads`). Switch off: as before.
  *
+ * NOT THE SERVER (`switchSteps: false`, 2026-10-24; src/core/db/process-role.ts):
+ * a process that is not the server cannot know the switch — it is set in the
+ * server's environment only — so it runs neither version of any step that
+ * reads `leads`: step 2 (auto, or flag-only), step 4 and the switch-off
+ * rollback below are all skipped, and the server applies them at its next
+ * start. Steps 1, 3 and 5 do not depend on the switch and run everywhere.
+ *
  * COUNTING (Trent runs it on a read-only copy): `planDeadlineTargetMigration`
  * returns each step's task ids without writing anything, and
  * `scripts/count-target-migration.ts` prints them for any database file.
@@ -94,6 +101,18 @@ export interface TargetMigrationCounts {
 /** Each step's task ids (no titles), for checking a copy before it runs. */
 export type TargetMigrationPlan = { [K in keyof TargetMigrationCounts]: number[] }
 
+export interface TargetMigrationOptions {
+  /** The task-queue switch is on (the deadlines page): no automatic target is written. */
+  leads?: boolean
+  /**
+   * Run the steps that depend on `leads` (step 2, step 4, the switch-off
+   * rollback). Only the server knows the switch: `runMigrations` passes
+   * `isServerProcess()`, and anything else skips them (see the header).
+   * Default true, for a caller that states `leads` itself.
+   */
+  switchSteps?: boolean
+}
+
 interface AutoRow {
   id: number
   deadline_at: string
@@ -129,7 +148,7 @@ function ids(db: Database.Database, where: string, ...params: unknown[]): number
 export function planDeadlineTargetMigration(
   db: Database.Database,
   now: Date = new Date(),
-  { leads = false }: { leads?: boolean } = {},
+  { leads = false, switchSteps = true }: TargetMigrationOptions = {},
 ): TargetMigrationPlan {
   const columns = (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map(
     (c) => c.name,
@@ -139,12 +158,14 @@ export function planDeadlineTargetMigration(
       db,
       columns.includes('occurrence_at') ? OCCURRENCE_SEED_WHERE : REPEATING_DATED,
     ),
-    nagOffToAuto: ids(db, NAG_OFF_NO_TARGET_WHERE),
+    nagOffToAuto: switchSteps ? ids(db, NAG_OFF_NO_TARGET_WHERE) : [],
     nagOffKeptTarget: ids(db, NAG_OFF_KEEP_TARGET_WHERE),
-    deadlineNoTargetToAuto: leads ? [] : ids(db, NO_TARGET_WHERE),
+    deadlineNoTargetToAuto: leads || !switchSteps ? [] : ids(db, NO_TARGET_WHERE),
     pullBackToDeadline: ids(db, PULL_BACK_WHERE, now.toISOString()),
     targetlessRepeatToDefault:
-      leads || !columns.includes('repeat_anchor') ? [] : ids(db, TARGETLESS_REPEAT_WHERE),
+      leads || !switchSteps || !columns.includes('repeat_anchor')
+        ? []
+        : ids(db, TARGETLESS_REPEAT_WHERE),
   }
 }
 
@@ -175,7 +196,7 @@ function ctxOf(row: AutoRow): TargetContext {
 export function migrateDeadlineTargets(
   db: Database.Database,
   now: Date = new Date(),
-  { leads = false }: { leads?: boolean } = {},
+  { leads = false, switchSteps = true }: TargetMigrationOptions = {},
 ): TargetMigrationCounts {
   return db.transaction(() => {
     // UPDATE … AS t (SQLite 3.33+), so the WHEREs are shared with the plan.
@@ -199,18 +220,22 @@ export function migrateDeadlineTargets(
       }
       return rows.length
     }
-    const nagOffToAuto = leads
-      ? db
-          .prepare(`UPDATE tasks AS t SET deadline_nag_off = 0 WHERE ${NAG_OFF_NO_TARGET_WHERE}`)
-          .run().changes
-      : applyAuto(autoRows(db, NAG_OFF_NO_TARGET_WHERE))
+    // Steps 2 and 4 and the rollback read the switch: not the server, skipped.
+    const nagOffToAuto = !switchSteps
+      ? 0
+      : leads
+        ? db
+            .prepare(`UPDATE tasks AS t SET deadline_nag_off = 0 WHERE ${NAG_OFF_NO_TARGET_WHERE}`)
+            .run().changes
+        : applyAuto(autoRows(db, NAG_OFF_NO_TARGET_WHERE))
     const nagOffKeptTarget = db
       .prepare(
         `UPDATE tasks AS t SET deadline_nag_off = 0, target_auto = 0
           WHERE ${NAG_OFF_KEEP_TARGET_WHERE}`,
       )
       .run().changes
-    const deadlineNoTargetToAuto = leads ? 0 : applyAuto(autoRows(db, NO_TARGET_WHERE))
+    const deadlineNoTargetToAuto =
+      leads || !switchSteps ? 0 : applyAuto(autoRows(db, NO_TARGET_WHERE))
 
     const pullBackToDeadline = db
       .prepare(`UPDATE tasks AS t SET due_at = t.deadline_at WHERE ${PULL_BACK_WHERE}`)
@@ -222,7 +247,7 @@ export function migrateDeadlineTargets(
       nagOffKeptTarget,
       deadlineNoTargetToAuto,
       pullBackToDeadline,
-      targetlessRepeatToDefault: leads ? 0 : defaultTargetlessRepeats(db, now),
+      targetlessRepeatToDefault: leads || !switchSteps ? 0 : defaultTargetlessRepeats(db, now),
     }
   })()
 }
