@@ -136,8 +136,22 @@ for (const viewport of VIEWPORTS) {
       const ids: number[] = []
       try {
         ids.push(await create(page, { title: uniqueTitle('SA daily'), horizon: 'days' }))
-        // A reminder today, so the headline and its day bar show.
-        ids.push(await create(page, { title: uniqueTitle('SA reminder'), is_reminder: true }))
+        // A reminder in every period today, so the headline's day bar has
+        // every period's bar before the eight task segments' — the most a
+        // phone's bar has to fit.
+        const slots = (await (await page.request.get('/api/time-slots')).json()).data
+          .time_slots as { start_time: string }[]
+        expect(slots.length).toBeGreaterThan(0)
+        for (const slot of slots) {
+          const [h, m] = slot.start_time.split(':').map(Number)
+          ids.push(
+            await create(page, {
+              title: uniqueTitle('SA reminder'),
+              is_reminder: true,
+              rrule: `FREQ=DAILY;BYHOUR=${h};BYMINUTE=${m}`,
+            }),
+          )
+        }
         await page.goto('/reminders')
 
         const sections = page.locator('[data-task-segments] [data-task-segment]')

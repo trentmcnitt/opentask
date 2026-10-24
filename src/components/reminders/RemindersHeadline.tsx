@@ -170,6 +170,9 @@ export function RemindersHeadline({
   )
 }
 
+/** How narrow an empty task segment's bar may get when the day bar runs out of room. */
+const EMPTY_SEGMENT_MIN_PX = 12
+
 /**
  * One segment of the day bar: a slot, or a task segment in its teal. Blue (a
  * task segment: its teal) while still filling, green the moment it's done —
@@ -205,7 +208,22 @@ function DayBarButton({
       data-day-segment-done={done ? '' : undefined}
       aria-label={`Go to ${label}, ${considered} of ${total} considered`}
       title={`${label} · ${considered} of ${total} considered`}
-      style={{ flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
+      style={
+        total === 0 && emptyDone
+          ? // An EMPTY task segment (2026-10-24): every one is on the bar every
+            // day, so on a phone with several periods eight thumb-wide bars
+            // would push the bar past the screen. An empty one asks for the
+            // same width as any other, but alone may give way (to
+            // EMPTY_SEGMENT_MIN_PX) when the row runs out of room — it holds
+            // nothing to tap through to.
+            {
+              flexGrow: 0,
+              flexShrink: 1,
+              flexBasis: MIN_SEGMENT_PX,
+              minWidth: EMPTY_SEGMENT_MIN_PX,
+            }
+          : { flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }
+      }
       className="group rounded-full py-1.5 focus-visible:outline-none"
     >
       <span
