@@ -422,8 +422,11 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks(archived_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_active ON tasks(user_id, done, deleted_at, archived_at);
--- Relative targets (2026-10-24): a period retime or delete finds its linked rows.
-CREATE INDEX IF NOT EXISTS idx_tasks_target_slot ON tasks(target_slot_id) WHERE target_slot_id IS NOT NULL;
+-- Relative targets (2026-10-24): `idx_tasks_target_slot` is created in
+-- runMigrations, AFTER its ALTER TABLE. Never index a column here that an
+-- existing database only gets from runMigrations: this file runs first, so on
+-- an upgrade the index would fail on "no such column" and the migration would
+-- never run (prod, 10-24; guarded by DI-S01).
 
 CREATE INDEX IF NOT EXISTS idx_completions_task_id ON completions(task_id);
 CREATE INDEX IF NOT EXISTS idx_completions_user_id ON completions(user_id);
