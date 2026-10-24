@@ -26,6 +26,12 @@
  * Ids only by default; `--titles` prints titles too — for local use only, never
  * paste the output anywhere public.
  *
+ * It PLAYS THE SERVER on the copy (`markServerProcess`, before the database
+ * opens): the copy's start runs the task-queue switch's data steps for the
+ * switch this run chose (`--rollover` or not), as the server's next start
+ * would — a plain script skips them (src/core/db/process-role.ts). Only the
+ * copy is written.
+ *
  * The clock: the script installs a simulated `Date` (and so Luxon's clock)
  * and moves it tick by tick; nothing else in the process runs.
  */
@@ -33,6 +39,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import Database from 'better-sqlite3'
+import { markServerProcess } from '../src/core/db/process-role'
 import type { SimDay, SimPolicy } from '../src/core/sim/day-simulator'
 
 interface Args {
@@ -161,6 +168,7 @@ async function main() {
   if (args.rollover) process.env.OPENTASK_TASK_QUEUE = '1'
   try {
     const setClock = installClock()
+    markServerProcess()
     const { getDb } = await import('../src/core/db')
     const { simulateDays } = await import('../src/core/sim/day-simulator')
     const { DateTime } = await import('luxon')

@@ -33,6 +33,7 @@
  */
 
 import { log } from '@/lib/logger'
+import { markServerProcess } from '@/core/db/process-role'
 
 type NotifyError = (kind: 'cron-failure', title: string, detail: string) => unknown
 
@@ -152,6 +153,11 @@ async function scheduleWhatsNextAndInsights(
 export async function register() {
   // Only run on the server, not during build
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // FIRST, before any await: this process is the server, so its database
+    // runs the task-queue switch's data steps (src/core/db/process-role.ts).
+    // Next awaits register() before serving any request, and nothing above
+    // this line opens the database.
+    markServerProcess()
     const cron = (await import('node-cron')).default
     const { notifyError } = await import('@/lib/error-notify')
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
