@@ -129,7 +129,7 @@ final class WidgetRenderTests: XCTestCase {
         WidgetStore.setTasksStoredPage(WidgetStore.allProjects)
         let tasksToday = provider.makeEntry(snapshot, now: env.now)
         let endOfDay = Calendar.current.date(bySettingHour: 18, minute: 5, second: 0, of: env.now)!
-        let finishing = TasksTimeline.todaysTasks(from: tasks, now: endOfDay)
+        let finishing = TasksTimeline.todaysTasks(from: tasks, now: endOfDay, day: DayStartStore.current)
         let finishedIds = Set(finishing.map(\.id))
         let doneSnapshot = TaskFeed.Snapshot(
             tasks: tasks.filter { !finishedIds.contains($0.id) },

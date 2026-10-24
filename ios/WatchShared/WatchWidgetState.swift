@@ -54,11 +54,11 @@ enum WatchWidgetState {
     // MARK: - Skip (⏭)
 
     /// "Show me the next one without checking this one off." Stored as the
-    /// set of item keys (reminders and quota prompts) skipped within ONE slot on ONE local day — the
+    /// set of item keys (reminders and quota prompts) skipped within ONE slot on ONE OpenTask day — the
     /// pairing is what makes it self-resetting: `skippedKeys(slotKey:now:)`
     /// returns empty the moment either differs, so the clock crossing into a
-    /// new slot (or midnight) clears skips without anyone having to remember
-    /// a reset call. Same shape as the phone widget's `tasksPage(for:)`
+    /// new slot (or the day start — "Day starts at" PR 3, not midnight)
+    /// clears skips without anyone having to remember a reset call. Same shape as the phone widget's `tasksPage(for:)`
     /// paging-within-a-scope trick, re-derived here (that file is off limits
     /// to watch targets).
     ///
@@ -77,9 +77,9 @@ enum WatchWidgetState {
     /// prompt key (`q:…`).
     static func itemKey(reminderId: Int) -> String { "r:\(reminderId)" }
 
+    /// The OpenTask date `date` is in (`DayStartStore`), the skip list's day.
     private static func dayStamp(_ date: Date) -> String {
-        let comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
+        DayStartStore.current.openTaskDay(of: date).description
     }
 
     static func skippedKeys(slotKey: Int, now: Date = Date()) -> Set<String> {
@@ -222,10 +222,25 @@ enum WatchWidgetState {
         /// The period the sweep targeted, as the card labeled it at tap time
         /// ("Midday"), so the result can say where things went.
         let targetLabel: String?
+        /// Of `tasksAffected`, the ones sent to the Tasks queue at the day
+        /// start (`BulkSnoozeResult.queued`), and when. Optional so a result
+        /// stored by an older build still decodes.
+        var queued: Int?
+        var queuedUntil: Date?
 
-        /// The High/Urgent detail lines under the headline (`SweepLine`).
+        /// The detail lines under the headline (`SweepLine`).
         var summaryLines: [SweepLine] {
-            SweepLine.lines(snoozedHigh: snoozedHigh, skippedHigh: skippedHigh, skippedUrgent: skippedUrgent)
+            SweepLine.lines(
+                snoozedHigh: snoozedHigh, skippedHigh: skippedHigh, skippedUrgent: skippedUrgent,
+                queued: queued ?? 0, queuedAt: queuedUntil
+            )
+        }
+
+        /// The period line ("Moved to Midday") — nil when there is no label
+        /// or every moved task went to the queue instead.
+        var movedToLabel: String? {
+            guard tasksAffected > 0, (queued ?? 0) < tasksAffected, let targetLabel else { return nil }
+            return "Moved to \(targetLabel)"
         }
     }
 

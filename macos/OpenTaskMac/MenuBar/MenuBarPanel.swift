@@ -270,7 +270,7 @@ struct MenuBarPanel: View {
     }
 
     private func dueText(_ due: Date, isOverdue: Bool) -> String {
-        DueLabel.parts(for: due, now: model.now, isOverdue: isOverdue).plainString
+        DueLabel.parts(for: due, now: model.now, isOverdue: isOverdue, day: DayStartStore.current).plainString
     }
 
     private func nextPeriodHelp(for task: TaskDTO) -> String {

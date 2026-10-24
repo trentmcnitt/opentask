@@ -119,7 +119,7 @@ enum SampleData {
     static var tasksEntry: TasksEntry {
         TasksEntry(
             date: Date(),
-            tasks: TasksTimeline.todaysTasks(from: tasks),
+            tasks: TasksTimeline.todaysTasks(from: tasks, day: DayStartStore.current),
             projects: projects,
             scope: WidgetStore.allProjects,
             staleSince: nil,

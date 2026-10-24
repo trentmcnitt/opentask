@@ -31,7 +31,7 @@ final class DueLabelTests: XCTestCase {
     }
 
     private func parts(_ due: Date) -> DueLabel.Parts {
-        DueLabel.parts(for: due, now: now, isOverdue: due < now)
+        DueLabel.parts(for: due, now: now, isOverdue: due < now, day: .midnight(timeZone: .current))
     }
 
     // MARK: Overdue
