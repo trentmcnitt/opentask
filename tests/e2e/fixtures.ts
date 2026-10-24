@@ -153,6 +153,12 @@ export function waitForTaskCreate(page: Page) {
  * `last_considered_at`. Call it BEFORE creating the spec's own tasks.
  * Reminders and quotas are left alone: they are never in a segment, and a
  * reminder's consideration is its own state.
+ *
+ * It also empties `segment_roster` (#328, the stable "N of M"): a task that
+ * entered today's roster stays on it after it leaves, and a done one counts as
+ * considered — so another spec's completed task (search.spec's subject) made
+ * a Saturday Weeks segment read "1 of 1" and the card "4 of 4" (2026-10-24).
+ * The next read rebuilds the roster from what is waiting now, the spec's own.
  */
 export function hideStraySegmentTasks(): void {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
@@ -162,6 +168,7 @@ export function hideStraySegmentTasks(): void {
        WHERE done = 0 AND deleted_at IS NULL
          AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1`,
     ).run()
+    db.prepare('DELETE FROM segment_roster').run()
   } finally {
     db.close()
   }

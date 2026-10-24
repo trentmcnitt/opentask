@@ -103,7 +103,12 @@ function setup() {
     'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
   )
   ;['06:30', '12:00', '20:30'].forEach((s, i) => insert.run(TEST_USER_ID, `Period ${i}`, s, i))
-  db.prepare("UPDATE users SET morning_time = '08:30' WHERE id = ?").run(TEST_USER_ID)
+  // The day starts at 06:30, pinned (2026-10-24): this file's timelines were
+  // written against a 06:30 rollover (once the first period's start); the
+  // unset default is now 3:00 AM.
+  db.prepare("UPDATE users SET day_start_time = '06:30', morning_time = '08:30' WHERE id = ?").run(
+    TEST_USER_ID,
+  )
   vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
   setClock('2026-10-20T21:00')
   stamp('2026-10-20')

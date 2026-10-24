@@ -28,7 +28,7 @@ import { onDeckToday } from '@/core/tasks/deck'
 import { ageLabel, attemptsOffer, type SegmentKind } from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser, runTaskRollover } from '@/core/tasks/task-rollover'
-import { rolloverMoment } from '@/lib/opentask-day'
+import { dayStartOnDate } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 
 /**
@@ -260,14 +260,29 @@ function defaultIds(userId: number, now: Date, timezone: string): number[] {
     .concat(onDeckToday(userId, timezone, now).map((t) => t.id))
 }
 
-/** When a day's rollover runs in the simulation: its moment, or the day's `late` time. */
+/**
+ * When a calendar day's rollover runs in the simulation: the day start that
+ * falls on that date (`dayStartOnDate` — with a start after 12:00 it starts
+ * the NEXT OpenTask day), or the day's `late` time.
+ */
 function rolloverTick(opts: SimOptions, userId: number, timezone: string, day: DateTime): DateTime {
   const date = day.toISODate()!
   const late = typeof opts.rollover === 'object' ? opts.rollover.late?.[date] : undefined
   if (late) return DateTime.fromISO(`${date}T${late}`, { zone: timezone })
-  return DateTime.fromJSDate(rolloverMoment(date, timezone, rolloverTimeForUser(userId))).setZone(
+  return DateTime.fromJSDate(dayStartOnDate(date, timezone, rolloverTimeForUser(userId))).setZone(
     timezone,
   )
+}
+
+/** One day's record: its tasks and the per-place counts. */
+function recordDay(day: DateTime, tasks: SimDay['tasks']): SimDay {
+  const counts: Record<string, number> = {}
+  for (const t of tasks) {
+    for (const p of t.places) counts[p] = (counts[p] ?? 0) + 1
+    if (t.offer && t.place !== 'done') counts.offers = (counts.offers ?? 0) + 1
+    if (t.queued && t.place !== 'done') counts.queued = (counts.queued ?? 0) + 1
+  }
+  return { date: day.toISODate()!, weekday: day.toFormat('ccc'), tasks, counts }
 }
 
 /** Step the days. Events run at their times; each day records at its tick. */
@@ -297,33 +312,27 @@ export function simulateDays(opts: SimOptions): SimDay[] {
       ? Array.from({ length: 24 }, (_, h) => day.set({ hour: h, minute }))
       : [record]
     let recorded: SimDay | null = null
-    let rolled = !opts.rollover
+    // The day's rollover runs once, before the first tick at or after it — or
+    // after the last tick when it comes later (a day start after the record
+    // time: 23:00 with the 21:00 record), still on its own date.
+    let pending = opts.rollover ? rolloverTick(opts, userId, timezone, day) : null
+    const rollUntil = (until: DateTime | null) => {
+      if (!pending || (until && +pending > +until)) return
+      runEventsUntil(pending.toMillis())
+      opts.setClock(pending.toJSDate())
+      runTaskRollover({ now: pending.toJSDate(), userId })
+      pending = null
+    }
     for (const tick of ticks) {
-      if (!rolled) {
-        const at = rolloverTick(opts, userId, timezone, day)
-        if (+at <= +tick) {
-          runEventsUntil(at.toMillis())
-          opts.setClock(at.toJSDate())
-          runTaskRollover({ now: at.toJSDate(), userId })
-          rolled = true
-        }
-      }
+      rollUntil(tick)
       runEventsUntil(tick.toMillis())
       const now = tick.toJSDate()
       opts.setClock(now)
       const ids = opts.taskIds?.() ?? [...new Set(defaultIds(userId, now, timezone))]
-      if (+tick === +record) {
-        const tasks = readTick(userId, timezone, ids, now)
-        const counts: Record<string, number> = {}
-        for (const t of tasks) {
-          for (const p of t.places) counts[p] = (counts[p] ?? 0) + 1
-          if (t.offer && t.place !== 'done') counts.offers = (counts.offers ?? 0) + 1
-          if (t.queued && t.place !== 'done') counts.queued = (counts.queued ?? 0) + 1
-        }
-        recorded = { date: day.toISODate()!, weekday: day.toFormat('ccc'), tasks, counts }
-      }
+      if (+tick === +record) recorded = recordDay(day, readTick(userId, timezone, ids, now))
       applyPolicy(policy, userId, timezone, now, ids)
     }
+    rollUntil(null)
     out.push(recorded!)
     opts.onDay?.(recorded!)
   }

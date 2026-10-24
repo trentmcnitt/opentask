@@ -29,6 +29,20 @@
  * browser through the resolved values `GET /api/user/preferences` returns.
  * Nothing else looks the link up.
  *
+ * DAY STARTS AT (2026-10-23, Trent): an eighth setting of the same kind —
+ * when the OpenTask day turns (`src/lib/opentask-day.ts`). Custom or linked
+ * like the others, with ONE extra state: unset, the default, which is a
+ * fixed 3:00 AM (`DEFAULT_DAY_START`, Trent 2026-10-24) — never a period,
+ * never the Morning time. Every user who has not set it reads 3:00; nothing
+ * is written for them. Stored as `day_start_time` / `day_start_slot_id`,
+ * both NULL when unset. A period delete converts an explicit link to custom
+ * like any other; the unset default has nothing to convert. A custom time
+ * may be any time of day (11 PM, 1 AM, midnight) — the OpenTask day names
+ * itself either way (`dayStartMoment`). `resolveDayStart` is its rule;
+ * `dayStartTimeOf` the same rule over bare rows, for the readers below the
+ * resolver (`stampRolloverDates`, the deadline-leads migration), and
+ * `read.ts`'s owner_rollover_time SQL the same rule in SQL.
+ *
  * Pure and browser-safe: Settings uses it for the optimistic summary line.
  */
 
@@ -70,7 +84,7 @@ export interface AnchorTimes {
   pad: ResolvedTime[]
 }
 
-/** The `users` columns behind the seven settings. */
+/** The `users` columns behind the seven settings, and "Day starts at". */
 export interface AnchorRow {
   morning_time: string
   morning_slot_id: number | null
@@ -79,6 +93,9 @@ export interface AnchorRow {
   sleep_time: string
   sleep_slot_id: number | null
   pad_presets: string | null
+  /** "Day starts at": NULL (with a NULL slot id) = unset, the 3:00 AM default. */
+  day_start_time: string | null
+  day_start_slot_id: number | null
 }
 
 export const ANCHOR_COLUMNS: readonly (keyof AnchorRow)[] = [
@@ -89,6 +106,8 @@ export const ANCHOR_COLUMNS: readonly (keyof AnchorRow)[] = [
   'sleep_time',
   'sleep_slot_id',
   'pad_presets',
+  'day_start_time',
+  'day_start_slot_id',
 ]
 
 export const PAD_PRESET_COUNT = 4
@@ -110,6 +129,8 @@ export const DEFAULT_ANCHOR_ROW: AnchorRow = {
   sleep_time: '22:00',
   sleep_slot_id: null,
   pad_presets: null,
+  day_start_time: null,
+  day_start_slot_id: null,
 }
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/
@@ -181,6 +202,73 @@ export function resolveAnchorTimes(row: AnchorRow, slots: readonly TimeSlot[]): 
 }
 
 /**
+ * What the delete toast and undo call the day-start setting ("kept Day start
+ * time at 6:30 AM" — Settings' row itself reads "Day starts at").
+ */
+export const DAY_START_NAME = 'Day start time'
+
+/**
+ * "Day starts at" when the user has not set it (Trent, 2026-10-24): 3:00 AM
+ * for everyone — a fixed time, not the first period or the Morning time. The
+ * one literal: `read.ts`'s SQL and every resolver read it from here.
+ */
+export const DEFAULT_DAY_START = '03:00'
+
+/**
+ * "Day starts at" as stored: a setting, or null when unset (the 3:00 AM
+ * default). A row with a slot id but no time (never written) reads as unset.
+ */
+export function dayStartSetting(
+  row: Pick<AnchorRow, 'day_start_time' | 'day_start_slot_id'>,
+): TimeSetting | null {
+  if (row.day_start_time === null || row.day_start_time === undefined) return null
+  return { time: row.day_start_time, slot_id: row.day_start_slot_id ?? null }
+}
+
+/** "Day starts at" as read: a `ResolvedTime`, and whether it is the unset default. */
+export interface ResolvedDayStart extends ResolvedTime {
+  /** True when unset: the day starts at `DEFAULT_DAY_START` (slot id and label then null). */
+  default: boolean
+}
+
+/**
+ * THE DAY-START RULE: a setting resolves like any anchor (`resolveTime`);
+ * unset reads `DEFAULT_DAY_START`.
+ */
+export function resolveDayStart(
+  row: Pick<AnchorRow, 'day_start_time' | 'day_start_slot_id'>,
+  slots: readonly TimeSlot[],
+): ResolvedDayStart {
+  const setting = dayStartSetting(row)
+  if (setting) return { ...resolveTime(setting, slots), default: false }
+  return { time: DEFAULT_DAY_START, slot_id: null, slot_label: null, default: true }
+}
+
+/**
+ * `resolveDayStart`'s time over bare rows — for a reader below the resolver
+ * (`stampRolloverDates` at startup, the deadline-leads migration). The same
+ * rule; one place to keep it.
+ */
+export function dayStartTimeOf(
+  row: Pick<AnchorRow, 'day_start_time' | 'day_start_slot_id'>,
+  slots: readonly { id: number; start_time: string }[],
+): string {
+  const setting = dayStartSetting(row)
+  if (!setting) return DEFAULT_DAY_START
+  const linked = setting.slot_id !== null ? slots.find((s) => s.id === setting.slot_id) : null
+  return linked ? linked.start_time : setting.time
+}
+
+/**
+ * Settings' summary line for "Day starts at": "11:00 PM" custom, "6:30 AM ·
+ * Morning period" linked, "3:00 AM · default" unset.
+ */
+export function dayStartLabel(resolved: ResolvedDayStart): string {
+  if (!resolved.default) return anchorLabel(resolved)
+  return `${formatClockTime(resolved.time)} · default`
+}
+
+/**
  * What the user calls pad button `index` (0-based) — one name everywhere:
  * Settings' rows, the removal toast, the undo description.
  */
@@ -194,14 +282,16 @@ export function padButtonName(index: number): string {
  * setting it converts, in its undo entry (`SlotUndoState.user_settings`).
  */
 export interface SettingChange {
-  setting: AnchorKey | number
+  /** An anchor, 'day_start', or a pad button's 0-based index. */
+  setting: AnchorKey | 'day_start' | number
   before: TimeSetting
   after: TimeSetting
 }
 
-/** What the user calls a setting ("Morning time", "Number pad button 2"). */
-export function settingName(setting: AnchorKey | number): string {
-  return typeof setting === 'number' ? padButtonName(setting) : ANCHOR_NAMES[setting]
+/** What the user calls a setting ("Morning time", "Day starts at", "Number pad button 2"). */
+export function settingName(setting: SettingChange['setting']): string {
+  if (typeof setting === 'number') return padButtonName(setting)
+  return setting === 'day_start' ? DAY_START_NAME : ANCHOR_NAMES[setting]
 }
 
 function sameSetting(a: TimeSetting, b: TimeSetting): boolean {
@@ -228,6 +318,11 @@ export function unlinkSlot(
   parsePadPresets(row.pad_presets).forEach((before, index) => {
     if (before.slot_id === removed.id) changes.push({ setting: index, before, after })
   })
+  // Only an explicit link: an unset day start is the fixed default.
+  const dayStart = dayStartSetting(row)
+  if (dayStart && dayStart.slot_id === removed.id) {
+    changes.push({ setting: 'day_start', before: dayStart, after })
+  }
   return changes
 }
 
@@ -260,6 +355,11 @@ export function settingWrites(
       if (i < 0 || i >= pad.length || !sameSetting(pad[i], change[from])) continue
       pad[i] = { ...target }
       padChanged = true
+    } else if (change.setting === 'day_start') {
+      const stored = dayStartSetting(row)
+      if (!stored || !sameSetting(stored, change[from])) continue
+      writes.day_start_time = target.time
+      writes.day_start_slot_id = target.slot_id
     } else {
       const key = change.setting
       if (!sameSetting(anchorSetting(row, key), change[from])) continue

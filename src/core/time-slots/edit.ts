@@ -513,7 +513,7 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
       slotState.prompt_default = { before: slotId, after: promptTarget.id }
     }
 
-    // Settings linked to the period (Morning, Wake, Sleep, pad buttons) keep
+    // Settings linked to the period (Morning, Wake, Sleep, Day starts at, pad buttons) keep
     // its start as a custom time — not the nearest period, unlike the
     // reminders. The entry carries them so undo puts the links back with the
     // period (`applyUserSettings`).

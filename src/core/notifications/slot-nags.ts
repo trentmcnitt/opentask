@@ -36,16 +36,24 @@
  * delete it as a §6 violation. What still holds:
  * - The nag NEVER marks anything overdue. It writes nothing to any task.
  * - The nag NEVER enters the badge, and never changes an overdue count.
- * - The nag NEVER fires for a slot that has not yet opened today.
+ * - The nag NEVER fires for a slot that has not yet opened today (the
+ *   OpenTask day — see THE DAY).
  * - Nothing rolls forward: finishing a slot (considered or done) silences it,
- *   and the next day's roster starts clean (silencing = acting).
+ *   and the next day's roster starts clean at the day start (silencing =
+ *   acting).
  * - A reminder is still never notified individually. The SLOT is the unit.
  *
- * THE DAY. Slots are counted as opened on the OpenTask day (it starts at the
- * rollover time, which is the earliest period's start): between local
- * midnight and the rollover nothing of the new day has opened, so the nag is
- * silent there. Which reminders are waiting is the Reminders surface's own
- * roster (`waitingBySlot`), read at `now`.
+ * THE DAY (2026-10-23, "one day boundary everywhere"). Slots are counted as
+ * opened within the Reminders screen's own day (`reminderDay`: the user's
+ * "Day starts at" with the task queue's switch on, midnight with it off).
+ * Between local midnight and the day start it is still the evening's day:
+ * every slot of it has opened, and what is still waiting there keeps the nag
+ * going until the day starts (Trent: yesterday's unfinished evening slot
+ * keeps nagging until the day starts) — then the new day's roster starts
+ * clean and nothing of it has opened until its first slot. A slot that
+ * starts before the day start (1:00 AM, the day starting at 3:00) opens at
+ * the END of its day (`periodOpensAt`). Which reminders are waiting is the
+ * Reminders surface's own roster (`waitingBySlot`), read at `now`.
  *
  * PACING: `nag_sends` (key `slot-nag`). The slot-open push stamps it too
  * (`checkSlotReminders`), so the nag waits a full interval after a slot's own
@@ -61,13 +69,13 @@
 
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
-import { getAnchorTimes } from '@/core/users/anchor-times'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import { log } from '@/lib/logger'
 import { isApnsConfigured, sendApnsSlotReminder, slotWaitingBody } from '@/core/notifications/apns'
 import { pendingSlotNotifications, waitingBySlot } from '@/core/notifications/slot-reminders'
 import { listTimeSlots } from '@/core/time-slots'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
-import { openTaskDayOf, rolloverTimeOf } from '@/lib/opentask-day'
+import { openTaskDaySpan, periodOpensAt } from '@/lib/opentask-day'
 import { notifiableUsers, type NotifiableUser } from '@/core/notifications/notifiable-users'
 import { nagIntervalMinutes, userNagTiers, type NagTiers } from '@/core/notifications/nag-ladder'
 import { claimNagSend, nagSendDue, SLOT_NAG_KEY } from '@/core/notifications/nag-sends'
@@ -83,7 +91,8 @@ interface UnfinishedSlot {
   promptCount: number
   /** The priority of each waiting item (`SlotWaiting.priorities`). */
   priorities: number[]
-  start: number
+  /** When the slot opened in the day (ms). */
+  opened: number
 }
 
 /** The slot nag's interval for these waiting items: the shortest rung. */
@@ -104,16 +113,26 @@ function unfinishedOpenedSlots(
   user: NotifiableUser,
   slots: TimeSlot[],
   now: Date,
-  minuteOfDay: number,
 ): UnfinishedSlot[] {
   if (slots.length === 0) return []
+
+  const dayStart = dayBoundaryForUser(user.id)
+  const day = openTaskDaySpan(now, user.timezone, dayStart)
+  const opened = (slot: TimeSlot) =>
+    periodOpensAt(day.date, slot.start_time, user.timezone, dayStart).getTime()
+  // Nothing of the day has opened yet (its first slot is still ahead): the
+  // roster need not be read.
+  if (!slots.some((slot) => parseHHMM(slot.start_time) !== null && opened(slot) <= now.getTime())) {
+    return []
+  }
 
   const waiting = waitingBySlot(user.id, user.timezone, now)
   const unfinished: UnfinishedSlot[] = []
 
   for (const slot of slots) {
-    const start = parseHHMM(slot.start_time)
-    if (start === null || start > minuteOfDay) continue
+    if (parseHHMM(slot.start_time) === null) continue
+    const openedAt = opened(slot)
+    if (openedAt > now.getTime()) continue
 
     const inSlot = waiting.get(slot.id)
     if (!inSlot || inSlot.reminders + inSlot.prompts === 0) continue
@@ -123,11 +142,11 @@ function unfinishedOpenedSlots(
       count: inSlot.reminders,
       promptCount: inSlot.prompts,
       priorities: inSlot.priorities,
-      start,
+      opened: openedAt,
     })
   }
 
-  return unfinished.sort((a, b) => b.start - a.start)
+  return unfinished.sort((a, b) => b.opened - a.opened)
 }
 
 /**
@@ -137,18 +156,6 @@ function unfinishedOpenedSlots(
  */
 function usersNotifiedThisMinute(now: Date): Set<number> {
   return new Set(pendingSlotNotifications(now).map((n) => n.userId))
-}
-
-/**
- * Minutes into the OpenTask day's calendar date, or null before the rollover
- * (the new OpenTask day hasn't started, so none of its slots has opened).
- */
-function openedMinute(user: NotifiableUser, slots: TimeSlot[], now: Date): number | null {
-  const local = DateTime.fromJSDate(now).setZone(user.timezone)
-  if (!local.isValid) return null
-  const rollover = rolloverTimeOf(slots, getAnchorTimes(user.id, slots).morning.time)
-  if (openTaskDayOf(now, user.timezone, rollover) !== local.toISODate()) return null
-  return local.hour * 60 + local.minute
 }
 
 export interface PendingSlotNag {
@@ -185,10 +192,7 @@ export function pendingSlotNags(now: Date = new Date()): PendingSlotNag[] {
     if (alreadyNotified.has(user.id)) continue
 
     const slots = listTimeSlots(user.id)
-    const minuteOfDay = openedMinute(user, slots, now)
-    if (minuteOfDay === null) continue
-
-    const unfinished = unfinishedOpenedSlots(user, slots, now, minuteOfDay)
+    const unfinished = unfinishedOpenedSlots(user, slots, now)
     if (unfinished.length === 0) continue
 
     // The real pace: the shortest rung among everything this nag covers.

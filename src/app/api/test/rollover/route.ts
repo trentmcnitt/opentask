@@ -22,12 +22,11 @@
  */
 
 import { NextRequest } from 'next/server'
-import { DateTime } from 'luxon'
 import { notFound, success, badRequest } from '@/lib/api-response'
 import { getDb } from '@/core/db'
 import { runTaskRollover } from '@/core/tasks/task-rollover'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
-import { openTaskDayOf } from '@/lib/opentask-day'
+import { addDays, openTaskDayOf } from '@/lib/opentask-day'
 
 export async function POST(request: NextRequest) {
   if (process.env.OPENTASK_TEST_MODE !== '1') {
@@ -57,7 +56,7 @@ export async function POST(request: NextRequest) {
       | undefined
     if (!user) return badRequest('No such user')
     const day = openTaskDayOf(now ?? new Date(), user.timezone, rolloverTimeForUser(userId))
-    const before = DateTime.fromISO(day).minus({ days: 1 }).toISODate()
+    const before = addDays(day, -1)
     getDb().prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?').run(before, userId)
   }
   return success(runTaskRollover({ now, userId: userId as number | undefined }))

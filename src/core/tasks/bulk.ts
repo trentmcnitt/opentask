@@ -5,7 +5,6 @@
  */
 
 import { getTargetContext } from './target-context'
-import type { TargetContext } from '@/lib/task-segments'
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoAction, UndoSnapshot } from '@/types'
@@ -25,7 +24,7 @@ import { formatBulkEditDescription, formatSnoozeTarget } from '@/lib/field-label
 import { formatDurationDelta, formatTimeInTimezone } from '@/lib/format-date'
 import { bulkSnoozeMessage } from '@/lib/snooze'
 import { taskWord } from '@/lib/utils'
-import { nextRollover, rolloverTimeOf } from '@/lib/opentask-day'
+import { nextRollover } from '@/lib/opentask-day'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
 import { validateLabelsExist } from '@/core/labels'
@@ -592,19 +591,15 @@ function deferContext(
   timezone: string,
   source: BulkSnoozeSource | undefined,
   now: Date,
-  targetCtx: TargetContext,
 ): DeferContext {
   const defer = taskQueueEnabled() && source !== undefined
   if (!defer && source !== 'try_tomorrow') {
     return { defer, source, timezone, now, rollover: null }
   }
-  // The rollover is the first period's start, or morning_time with none.
-  // Read here rather than passed in, so every caller gets the same answer.
-  const slots = getDb()
-    .prepare('SELECT start_time FROM time_slots WHERE user_id = ?')
-    .all(userId) as { start_time: string }[]
-  const { morningTime } = targetCtx
-  const rollover = nextRollover(now, timezone, rolloverTimeOf(slots, morningTime))
+  // The rollover is the user's "Day starts at" (unset: 3:00 AM). Read here
+  // rather than passed in,
+  // so every caller gets the same answer.
+  const rollover = nextRollover(now, timezone, rolloverTimeForUser(userId))
   return { defer, source, timezone, now, rollover }
 }
 
@@ -860,7 +855,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
 
   const nowDate = new Date()
   const targetCtx = getTargetContext(userId)
-  const ctx = deferContext(userId, userTimezone, source, nowDate, targetCtx)
+  const ctx = deferContext(userId, userTimezone, source, nowDate)
   let deadlineCapped = 0
   let cappedOccurrence = 0
   const queuedTasks: Task[] = []

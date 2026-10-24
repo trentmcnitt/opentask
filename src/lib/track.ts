@@ -8,8 +8,10 @@
 import { DateTime } from 'luxon'
 import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
+import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
 import {
   quotaPeriodEnd,
+  startOfDayAt,
   startOfWeek,
   WEEK_START_DEFAULT,
   type PeriodUnit,
@@ -182,10 +184,16 @@ export function quotaRule(freq: QuotaFreq, interval: number): string {
  * edit and the rollover's first pass all anchor through here. INTERVAL plays
  * no part — a fortnight made this week starts on this week's first day.
  */
-export function quotaUnitStart(local: DateTime, unit: PeriodUnit, weekStart: WeekStart): DateTime {
+export function quotaUnitStart(
+  local: DateTime,
+  unit: PeriodUnit,
+  weekStart: WeekStart,
+  dayStart: string = CALENDAR_DAY_START,
+): DateTime {
   switch (unit) {
     case 'days':
-      return local.startOf('day')
+      // The OpenTask day's start (2026-10-23): midnight unless `dayStart` says.
+      return startOfDayAt(local, dayStart)
     case 'weeks':
       return startOfWeek(local, weekStart)
     case 'months':
@@ -211,6 +219,7 @@ export function quotaWindow(
   timezone: string,
   now: Date = new Date(),
   weekStart: WeekStart = WEEK_START_DEFAULT,
+  dayStart: string = CALENDAR_DAY_START,
 ): { start: DateTime; end: DateTime; interval: number } | null {
   const period = quotaPeriodUnit(task.rrule)
   if (!period) return null
@@ -220,11 +229,13 @@ export function quotaWindow(
     ? DateTime.fromISO(task.progress_period_start, { zone: 'utc' }).setZone(timezone)
     : null
   let start =
-    anchored && anchored.isValid ? anchored : quotaUnitStart(local, period.unit, weekStart)
-  let end = quotaPeriodEnd(start, period.unit, period.interval, weekStart)
+    anchored && anchored.isValid
+      ? anchored
+      : quotaUnitStart(local, period.unit, weekStart, dayStart)
+  let end = quotaPeriodEnd(start, period.unit, period.interval, weekStart, dayStart)
   while (local >= end) {
     start = end
-    end = quotaPeriodEnd(start, period.unit, period.interval, weekStart)
+    end = quotaPeriodEnd(start, period.unit, period.interval, weekStart, dayStart)
   }
   return { start, end, interval: period.interval }
 }
@@ -236,7 +247,10 @@ export function quotaWindow(
  * - `progress_period_end`: the current window's end, UTC, EXCLUSIVE.
  * - `period_interval`: the rule's INTERVAL (1 when it has none).
  * - `period_last_day`: the window's last local day, `YYYY-MM-DD` — the end
- *   minus one day, since the end itself is the next period's first midnight.
+ *   minus one day, since the end itself is the next period's first midnight;
+ *   for a daily quota on a day start (2026-10-23), the OpenTask day the
+ *   window's last instant belongs to (`openTaskDayOf` — with an 11 PM start
+ *   the window ends on the date it is named by, at 23:00).
  * - `period_label`: "by Oct 24" (that last day) for an interval above 1;
  *   NULL at interval 1, where every client keeps its own words ("this week",
  *   "wk", "today") — a fortnight cannot be called "this week", but a week can.
@@ -257,9 +271,25 @@ export const NO_QUOTA_PERIOD: QuotaPeriodFields = {
   period_label: null,
 }
 
-/** "by Oct 24": the inclusive last day of a window that ends (exclusively) at `end`. */
-export function periodByLabel(end: DateTime): string {
-  return `by ${end.minus({ days: 1 }).toFormat('LLL d')}`
+/** "by Oct 24": a window's inclusive last day (`period_last_day`, yyyy-MM-dd). */
+export function periodByLabel(lastDay: string): string {
+  return `by ${DateTime.fromISO(lastDay).toFormat('LLL d')}`
+}
+
+/**
+ * A window's inclusive last day: the OpenTask day of its last instant for a
+ * daily quota on a day start, else the calendar day before its end.
+ */
+function periodLastDay(
+  end: DateTime,
+  unit: PeriodUnit | undefined,
+  timezone: string,
+  dayStart: string,
+): string {
+  if (unit === 'days' && dayStart !== CALENDAR_DAY_START) {
+    return openTaskDayOf(new Date(end.toMillis() - 1), timezone, dayStart)
+  }
+  return end.minus({ days: 1 }).toISODate()!
 }
 
 export function quotaPeriodFields(
@@ -267,15 +297,17 @@ export function quotaPeriodFields(
   timezone: string,
   now: Date = new Date(),
   weekStart: WeekStart = WEEK_START_DEFAULT,
+  dayStart: string = CALENDAR_DAY_START,
 ): QuotaPeriodFields {
   if (!isTracked(task)) return NO_QUOTA_PERIOD
-  const window = quotaWindow(task, timezone, now, weekStart)
+  const window = quotaWindow(task, timezone, now, weekStart, dayStart)
   if (!window) return NO_QUOTA_PERIOD
+  const lastDay = periodLastDay(window.end, quotaPeriodUnit(task.rrule)?.unit, timezone, dayStart)
   return {
     progress_period_end: window.end.toUTC().toISO(),
     period_interval: window.interval,
-    period_last_day: window.end.minus({ days: 1 }).toISODate(),
-    period_label: window.interval > 1 ? periodByLabel(window.end) : null,
+    period_last_day: lastDay,
+    period_label: window.interval > 1 ? periodByLabel(lastDay) : null,
   }
 }
 
@@ -298,6 +330,7 @@ export function effectiveProgress(
   timezone: string,
   now: Date = new Date(),
   weekStart: WeekStart = WEEK_START_DEFAULT,
+  dayStart: string = CALENDAR_DAY_START,
 ): number {
   const current = Math.max(0, task.progress_current ?? 0)
   const period = quotaPeriodUnit(task.rrule)
@@ -306,7 +339,7 @@ export function effectiveProgress(
   if (!start.isValid) return current
   // The rollover's own end rule — a weekly anchor off the user's week-start
   // boundary ends at the next boundary, not a full week on.
-  const end = quotaPeriodEnd(start, period.unit, period.interval, weekStart)
+  const end = quotaPeriodEnd(start, period.unit, period.interval, weekStart, dayStart)
   return DateTime.fromJSDate(now) >= end ? 0 : current
 }
 

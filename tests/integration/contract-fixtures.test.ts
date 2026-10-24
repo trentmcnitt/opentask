@@ -574,12 +574,18 @@ async function deadlineRows(
 
 async function snoozeOverdueWithQueue(): Promise<Json> {
   await setTaskQueue(true)
+  // The default day start for this one (3:00 AM, 2026-10-24): its
+  // `summary` names the rollover moment ("…queue at 3:00 AM"). It carries no
+  // prompt state, so the midnight day start the rest of the scenario keeps
+  // (see the CLOCK note after the preferences capture) isn't needed here.
+  await call('/api/user/preferences', { day_start_time: null }, 'PATCH')
   try {
     return await call('/api/tasks/bulk/snooze-overdue', {
       until: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(),
       notify: false,
     })
   } finally {
+    await call('/api/user/preferences', { day_start_time: '00:00' }, 'PATCH')
     await setTaskQueue(false)
   }
 }
@@ -645,6 +651,14 @@ describe('contract fixtures (native clients)', () => {
       'PATCH',
     )
     captured['user-preferences'] = pinServerEnvironment(await call('/api/user/preferences'))
+    // CLOCK (2026-10-23, "Day starts at"): with the task queue switched on —
+    // steps 10, 14–16 and 19 — the Reminders day is the OpenTask day, which
+    // from midnight to the day start (3:00 by default) is the day before, so a
+    // prompt handled in a switch-off step (keyed by the calendar date) would
+    // read as waiting again at those hours. The day starts at midnight here,
+    // after the preferences capture (which shows the default), so every
+    // capture reads the same at any hour.
+    await call('/api/user/preferences', { day_start_time: '00:00' }, 'PATCH')
 
     await checkInYesterday()
 

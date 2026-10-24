@@ -13,14 +13,33 @@
  * not `due_at` freshness. A missed reminder therefore resets naturally at its
  * next occurrence — there is no roll-forward job and no accumulated
  * "overdue by N days" state, ever. That absence of debt is the whole point.
+ *
+ * WHICH DAY (2026-10-23, "one day boundary everywhere"): "today" here is the
+ * OpenTask day (`reminderDay`: `dayBoundaryForUser` — the user's "Day starts
+ * at" with the task queue's switch on, midnight with it off). With the day
+ * starting at 3:00, a reminder considered at 00:30 was considered on the day
+ * before, and the evening's unfinished ones are still waiting until 3:00 —
+ * the slot nag (`slot-nags.ts`) reads this same roster.
  */
 
-import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { todaysOccurrence } from '@/core/recurrence/occurrence'
 import { groupBySlot, listTimeSlots, type TimeSlot } from '@/core/time-slots'
+import { openTaskDaySpan, type OpenTaskDaySpan } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 import { getTasks, getTaskById } from './create'
+import { dayBoundaryForUser } from './rollover-time'
+
+/** The day the Reminders screen counts as "today" for this user, at `now`. */
+export function reminderDay(userId: number, timezone: string, now: Date): OpenTaskDaySpan {
+  return openTaskDaySpan(now, timezone, dayBoundaryForUser(userId))
+}
+
+const within = (iso: string | null | undefined, day: OpenTaskDaySpan): boolean => {
+  if (!iso) return false
+  const t = new Date(iso).getTime()
+  return !Number.isNaN(t) && t >= day.start.getTime() && t < day.end.getTime()
+}
 
 export interface ReminderGroup {
   slot: TimeSlot | null
@@ -53,7 +72,7 @@ export function getTodaysReminders(
   now: Date = new Date(),
 ): Task[] {
   const all = getTasks({ userId, done: false, kind: 'reminder', limit: 1000 })
-  const localToday = DateTime.fromJSDate(now).setZone(timezone)
+  const day = reminderDay(userId, timezone, now)
 
   return all.filter((task) => {
     // Non-recurring reminders show whenever they're undone — they have no
@@ -64,21 +83,18 @@ export function getTodaysReminders(
     // schedule but leaves it "scheduled today" by the rrule's lights, so
     // without this check a checked-off reminder would sit in its slot all day.
     // §6: completed ones drop out; the next occurrence resurrects it.
-    if (task.last_completed_at) {
-      const completed = DateTime.fromISO(task.last_completed_at, { zone: 'utc' }).setZone(timezone)
-      if (completed.isValid && completed.hasSame(localToday, 'day')) return false
-    }
+    if (within(task.last_completed_at, day)) return false
 
     // from_completion reminders have no derivable occurrence until they are
     // completed (§4.6) — their due_at IS the schedule, so show them once it
     // arrives (still no debt: nothing here renders overdue styling).
     if (task.recurrence_mode === 'from_completion') {
       if (!task.due_at) return false
-      const due = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
-      return due.isValid && due.startOf('day') <= localToday.startOf('day')
+      const due = new Date(task.due_at).getTime()
+      return !Number.isNaN(due) && due < day.end.getTime()
     }
 
-    return todaysOccurrence(task, timezone, now) !== null
+    return todaysOccurrence(task, timezone, now, day) !== null
   })
 }
 
@@ -131,23 +147,26 @@ export function getRemindersBySlot(
 
 /**
  * Reminders the user considered today: a recurring one whose last completion
- * fell on today's local date, or a one-off completed today. Read straight
- * from the table rather than through `getTasks`, which excludes done rows.
+ * fell in today's OpenTask day (`reminderDay`), or a one-off completed in it.
+ * Read straight from the table rather than through `getTasks`, which excludes
+ * done rows.
  */
 export function getConsideredToday(
   userId: number,
   timezone: string,
   now: Date = new Date(),
 ): Task[] {
-  const local = DateTime.fromJSDate(now).setZone(timezone)
-  const start = local.startOf('day').toUTC().toISO()
-  const end = local.endOf('day').toUTC().toISO()
+  const day = reminderDay(userId, timezone, now)
+  // Stored as ISO-8601 UTC with milliseconds ('…T…:…:….sssZ'), so string
+  // comparison is time order; the end is exclusive (the next day's start).
+  const start = day.start.toISOString()
+  const end = day.end.toISOString()
   const rows = getDb()
     .prepare(
       `SELECT id FROM tasks
         WHERE user_id = ? AND is_reminder = 1 AND deleted_at IS NULL
-          AND ((last_completed_at >= ? AND last_completed_at <= ?)
-            OR (done = 1 AND done_at >= ? AND done_at <= ?))`,
+          AND ((last_completed_at >= ? AND last_completed_at < ?)
+            OR (done = 1 AND done_at >= ? AND done_at < ?))`,
     )
     .all(userId, start, end, start, end) as { id: number }[]
   // Load through the ordinary row loader so labels etc. are parsed the same

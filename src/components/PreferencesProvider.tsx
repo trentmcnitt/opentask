@@ -12,6 +12,7 @@ import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo } from '@/core/ai/models'
 import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { CHECK_IN_DAY_DEFAULT, type CheckInDay } from '@/lib/task-segments'
 import {
   DEFAULT_PREFS,
@@ -68,6 +69,8 @@ interface PreferencesContextValue {
   sleepTime: string
   sleepSlotId: number | null
   padPresets: TimeSetting[]
+  /** "Day starts at": a setting, or null when unset (the 3:00 AM default). */
+  dayStart: TimeSetting | null
   setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) => void
   /**
    * Re-read the anchor times from the server (a reminder period changed, an
@@ -170,6 +173,7 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   sleepTime: '22:00',
   sleepSlotId: null,
   padPresets: DEFAULT_PREFS.padPresets,
+  dayStart: null,
   setAnchorPrefs: () => {},
   reloadPreferences: async () => false,
   defaultGrouping: 'project',
@@ -430,7 +434,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // without the user touching them. They are therefore never marked dirty —
   // Settings writes them with the server's answer (or the same resolver,
   // optimistically) — and a reload takes the server's values for those seven
-  // fields only, leaving every other field and the dirty set alone. Reloaded
+  // fields (and "Day starts at") only, leaving every other field and the dirty set alone. Reloaded
   // after a period edit or undo in Settings (`TimeSlotSettings`), and when
   // Settings opens or its window regains focus (`SnoozeSection`). Deliberately
   // NOT on sync events: every page already holds its own stream, and a second
@@ -581,6 +585,7 @@ export function useAnchorTimes() {
     wake: { time: ctx.wakeTime, slot_id: ctx.wakeSlotId },
     sleep: { time: ctx.sleepTime, slot_id: ctx.sleepSlotId },
     pad: ctx.padPresets,
+    dayStart: ctx.dayStart,
     setAnchorPrefs: ctx.setAnchorPrefs,
     reloadPreferences: ctx.reloadPreferences,
   }
@@ -637,6 +642,17 @@ export function useTaskQueue(): {
     enabled: taskQueue,
     attemptsRolloverTime: taskQueue ? rolloverTime : null,
   }
+}
+
+/**
+ * Where the Reminders screen's day starts (2026-10-23, "Day starts at"): the
+ * user's day start with the task queue's switch on, else midnight — the
+ * server's `dayBoundaryForUser`, so "has this slot started" on the web
+ * (`slotHasStarted`, `naturalSlotIndex`) reads the day the roster is for.
+ */
+export function useReminderDayStart(): string {
+  const { taskQueue, rolloverTime } = useContext(PreferencesContext)
+  return taskQueue && rolloverTime ? rolloverTime : CALENDAR_DAY_START
 }
 
 /**

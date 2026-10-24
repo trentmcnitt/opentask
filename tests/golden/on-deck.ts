@@ -389,7 +389,7 @@ export const onDeckScenarios: GoldenScenario[] = [
     from: '2027-03-13',
     to: '2027-03-16',
     policy: ['never'],
-    queue: { periods: ['02:30', '12:00', '20:30'] },
+    queue: { periods: ['02:30', '12:00', '20:30'], dayStart: '02:30' },
     tasks: [
       { name: 'sat', created: '2027-03-13T09:00', input: UNDATED },
       { name: 'sun', created: '2027-03-13T09:00', input: UNDATED },

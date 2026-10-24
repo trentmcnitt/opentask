@@ -45,7 +45,8 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { getTaskById } from './read'
 import { loadTaskForMutation } from './access'
 import { rolloverQuotaNow } from './period-rollover'
-import { localDate, withLogged } from '@/lib/quota-prompts'
+import { dayBoundaryForUser } from './rollover-time'
+import { promptDate, withLogged } from '@/lib/quota-prompts'
 // ONE definition of "is this a quota" — the client-safe one in lib/track. This
 // file used to carry its own copy, and two copies of a rule this central are
 // how the reminder/quota guard in updateTask ended up testing only half of it.
@@ -114,7 +115,7 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     // prompts are the owner's (a shared quota is never prompted to others).
     const dayState = withLogged(
       task.quota_day_state,
-      localDate(ownerTimezone(task.user_id)),
+      promptDate(ownerTimezone(task.user_id), dayBoundaryForUser(task.user_id)),
       applied,
       next,
     )

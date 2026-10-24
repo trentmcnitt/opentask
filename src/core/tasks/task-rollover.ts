@@ -3,9 +3,8 @@
  * rollover; design `task-queue-design.md` rules 1, 2, 5, B3, B5, B7 and the
  * build-plan resolutions).
  *
- * Once per OpenTask day, at the user's ROLLOVER — the start of their first
- * reminder period (Trent's 6:30), or `morning_time` with no periods
- * (`src/lib/opentask-day.ts`) — every below-High task with no deadline that
+ * Once per OpenTask day, at the user's ROLLOVER — their "Day starts at"
+ * (unset, 3:00 AM; `src/lib/opentask-day.ts`) — every below-High task with no deadline that
  * is still sitting on a previous day's target, or that a Snooze-all marked
  * for the queue (`queue_mark`, PR 1), is handed to the task queue:
  *
@@ -85,8 +84,13 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
-import { DateTime } from 'luxon'
-import { isEarlyMorningPick, latestRollover, nextRollover, openTaskDayOf } from '@/lib/opentask-day'
+import {
+  calendarDateOf,
+  isEarlyMorningPick,
+  latestRollover,
+  nextRollover,
+  openTaskDayOf,
+} from '@/lib/opentask-day'
 import {
   effectiveAttempts,
   occurrenceDates,
@@ -209,7 +213,20 @@ function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): voi
     const nextM = nextRollover(m, user.timezone, rolloverTime)
     return applyRollover(user, rolloverTime, m, nextM, now, result, CRON_CTX)
   })
-  if (!run || !run.changed) return
+  if (!run) return
+  if (!run.changed) {
+    // THE DAY TURNED (2026-10-23, "Day starts at"; coordinator ruling): with
+    // the switch on, the Reminders screen's roster, its quota prompts' keys
+    // and the queue's panels belong to a new day now even when no task moved.
+    // One sync event — exactly one per user per day, the stamp's winner only
+    // — so open tabs and the Reminders widget (`widgets` on) refetch the new
+    // day instead of acting on yesterday's keys and taking a 400. A run that
+    // changed something emits it in `afterRolloverCommit`; the first sight of
+    // a user (a NULL stamp) is no day turning, and with the switch off the
+    // Reminders day is midnight, not this moment.
+    if (taskQueueEnabled() && user.last_rollover_date !== null) emitSyncEvent(user.id)
+    return
+  }
   afterRolloverCommit(user, run)
 }
 
@@ -480,10 +497,10 @@ function keptTarget(task: Task): string | null {
  * attempts read (`isEarlyMorningPick`): the pick's attempts count its day.
  */
 function earlyMorningPick(task: Task, timezone: string, rolloverTime: string, m: Date): boolean {
-  const dueDay = DateTime.fromISO(task.due_at!, { zone: 'utc' }).setZone(timezone).toISODate()
-  const mDay = DateTime.fromJSDate(m).setZone(timezone).toISODate()
+  // Its calendar day is the day M starts (with a start after 12:00 there is
+  // no early-morning pick at all — `isEarlyMorningPick`).
   return (
-    dueDay === mDay &&
+    calendarDateOf(new Date(task.due_at!), timezone) === openTaskDayOf(m, timezone, rolloverTime) &&
     isEarlyMorningPick(task.due_at!, task.target_set_at ?? task.created_at, timezone, rolloverTime)
   )
 }

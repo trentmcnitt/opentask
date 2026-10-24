@@ -84,14 +84,25 @@ function roll(local: string) {
   return runTaskRollover({ now: new Date(at(local)), userId: TEST_USER_ID })
 }
 
-function seedPeriods(starts: string[] = ['06:30', '12:00', '20:30'], morning = '08:30') {
+function seedPeriods(
+  starts: string[] = ['06:30', '12:00', '20:30'],
+  morning = '08:30',
+  dayStart: string | null = '06:30',
+) {
   const db = getDb()
   db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
   const insert = db.prepare(
     'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
   )
   starts.forEach((s, i) => insert.run(TEST_USER_ID, `Period ${i}`, s, i))
-  db.prepare('UPDATE users SET morning_time = ? WHERE id = ?').run(morning, TEST_USER_ID)
+  // The day starts at 06:30, pinned (2026-10-24): this file's timelines were
+  // written against a 06:30 rollover (once the first period's start); the
+  // unset default is now 3:00 AM.
+  db.prepare('UPDATE users SET morning_time = ?, day_start_time = ? WHERE id = ?').run(
+    morning,
+    dayStart,
+    TEST_USER_ID,
+  )
 }
 
 /** Tue 2026-10-20 06:00, switch on, Monday's rollover already run. */
@@ -341,13 +352,32 @@ describe('TQ-F: the undo fence, the events, the activity rows', () => {
     expect(syncBadgeCount).toHaveBeenCalledWith(TEST_USER_ID)
     expect(emitSyncEvent).toHaveBeenCalledWith(TEST_USER_ID)
 
-    // Nothing to do (the released weekly gone): no events.
+    // Nothing to do (the released weekly gone): no badge resync, no
+    // dismissals — but the DAY TURNED (2026-10-23, "Day starts at"): the
+    // Reminders roster and its prompt keys are a new day's, so exactly one
+    // sync event goes out (widgets included), and a second tick the same day
+    // sends nothing.
     getDb()
       .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
       .run(at('2026-10-21T07:00'), weekly.id)
     vi.mocked(emitSyncEvent).mockClear()
+    vi.mocked(syncBadgeCount).mockClear()
+    vi.mocked(dismissNotificationsForTasks).mockClear()
     roll('2026-10-22T06:30')
+    expect(vi.mocked(emitSyncEvent).mock.calls).toEqual([[TEST_USER_ID]])
+    expect(syncBadgeCount).not.toHaveBeenCalled()
+    expect(dismissNotificationsForTasks).not.toHaveBeenCalled()
+    vi.mocked(emitSyncEvent).mockClear()
+    roll('2026-10-22T06:31')
+    roll('2026-10-22T23:59')
     expect(emitSyncEvent).not.toHaveBeenCalled()
+
+    // The switch off: the day stamp still advances, but the Reminders day is
+    // midnight, so the rollover's moment sends nothing.
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    roll('2026-10-23T06:30')
+    expect(emitSyncEvent).not.toHaveBeenCalled()
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
   })
 
   test('TQ-R12: the activity rows carry source "rollover"', () => {
@@ -558,11 +588,11 @@ describe('TQ-E: early-morning picks, and the put-back', () => {
     expect(task(t.id).attempts).toBe(2)
   })
 
-  test('TQ-S05: the rollover moment with no periods is morning_time', () => {
-    seedPeriods([], '08:30')
+  test('TQ-S05: day start unset, no periods → the rollover is the 3:00 AM default, not morning_time', () => {
+    seedPeriods([], '08:30', null)
     const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
-    expect(roll('2026-10-17T08:29').ran).toBe(0)
-    expect(roll('2026-10-17T08:30').stripped).toBe(1)
+    expect(roll('2026-10-17T02:59').ran).toBe(0)
+    expect(roll('2026-10-17T03:00').stripped).toBe(1)
     expect(task(t.id).due_at).toBeNull()
   })
 })

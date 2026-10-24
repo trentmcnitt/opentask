@@ -115,7 +115,11 @@ describe('taskColumns', () => {
     expect(aliased).toEqual(plain.map((c) => `tasks.${c}`))
     expect(taskColumns('t')).toContain('WHERE users.id = t.user_id) AS owner_timezone')
     expect(taskColumns('t')).toContain('WHERE users.id = t.user_id) AS owner_week_start')
-    expect(taskColumns('t')).toContain('WHERE users.id = t.user_id)) AS owner_rollover_time')
-    expect(taskColumns('t')).toContain('WHERE time_slots.user_id = t.user_id)')
+    expect(taskColumns('t')).toContain(
+      "WHERE users.id = t.user_id),'03:00') AS owner_rollover_time",
+    )
+    expect(taskColumns('t')).toContain(
+      'ON s.id = u.day_start_slot_id AND s.user_id = u.id WHERE u.id = t.user_id)',
+    )
   })
 })

@@ -6,7 +6,7 @@
  * prompts (`src/core/tasks/quota-prompts.ts`); this file holds what both sides
  * need to agree on: a prompt's identity, and how a day's record reads.
  */
-import { DateTime } from 'luxon'
+import { openTaskDayOf } from '@/lib/opentask-day'
 import { quotaPeriodOf } from '@/lib/track'
 import type { LabelColor, QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -99,12 +99,17 @@ export function groupConsidered(group: CountableGroup): number {
 }
 
 /**
- * The owner's local calendar date, YYYY-MM-DD. A quota's day record and every
- * prompt key are scoped to it, so "today" means the same thing to the prompt
- * list, the actions and the undo that restores them.
+ * The owner's prompt day, YYYY-MM-DD: the OpenTask day `now` falls in, from
+ * `dayStart` (2026-10-23 — `dayBoundaryForUser`: the owner's "Day starts at"
+ * with the task queue's switch on, midnight with it off, when this is the
+ * calendar date). A quota's day record and every prompt key are scoped to it,
+ * so "today" means the same thing to the prompt list, the actions and the
+ * undo that restores them — and a key made before the day turned is
+ * yesterday's, which the actions refuse, exactly at the boundary the list
+ * itself turns on.
  */
-export function localDate(timezone: string, now: Date = new Date()): string {
-  return DateTime.fromJSDate(now).setZone(timezone).toFormat('yyyy-LL-dd')
+export function promptDate(timezone: string, dayStart: string, now: Date = new Date()): string {
+  return openTaskDayOf(now, timezone, dayStart)
 }
 
 /**

@@ -58,6 +58,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { log } from '@/lib/logger'
 import { runAsSystem } from '@/core/request-context'
 import { coerceWeekStart, quotaPeriodEnd } from '@/lib/week-start'
+import { dayBoundaryForUser } from './rollover-time'
 
 interface QuotaRow {
   id: number
@@ -101,7 +102,14 @@ export function quotaAnchorNow(
   if (!owner) return null
   const local = DateTime.fromJSDate(now).setZone(owner.timezone)
   if (!local.isValid) return null
-  return quotaUnitStart(local, period.unit, coerceWeekStart(owner.week_start)).toUTC().toISO()
+  return quotaUnitStart(
+    local,
+    period.unit,
+    coerceWeekStart(owner.week_start),
+    dayBoundaryForUser(ownerId),
+  )
+    .toUTC()
+    .toISO()
 }
 
 const QUOTA_ROW_SQL = `SELECT t.id, t.user_id, t.title, t.rrule, t.progress_current, t.progress_target,
@@ -131,8 +139,12 @@ export function rolloverTrackedPeriods(now: Date = new Date(), userId?: number):
   const result: RolloverResult = { anchored: 0, rolled: 0 }
   const touchedUsers = new Set<number>()
 
+  // Each owner's day start, read once per owner per run (a daily quota's
+  // boundary, `quotaPeriodEnd`).
+  const dayStarts = new Map<number, string>()
   for (const q of fetchQuotas(userId)) {
-    const outcome = rolloverQuota(q, now)
+    if (!dayStarts.has(q.user_id)) dayStarts.set(q.user_id, dayBoundaryForUser(q.user_id))
+    const outcome = rolloverQuota(q, now, dayStarts.get(q.user_id)!)
     if (outcome.anchored) result.anchored++
     if (outcome.closed > 0) {
       result.rolled += outcome.closed
@@ -162,7 +174,7 @@ export function rolloverTrackedPeriods(now: Date = new Date(), userId?: number):
 export function rolloverQuotaNow(taskId: number, now: Date = new Date()): number {
   const row = getDb().prepare(`${QUOTA_ROW_SQL} AND t.id = ?`).get(taskId) as QuotaRow | undefined
   if (!row) return 0
-  return rolloverQuota(row, now).closed
+  return rolloverQuota(row, now, dayBoundaryForUser(row.user_id)).closed
 }
 
 /** What one quota's pass did: anchored for the first time, and/or closed N periods. */
@@ -180,11 +192,12 @@ interface QuotaRolloverOutcome {
  * progress write, a `week_start` change), so its `period_rollover` activity
  * rows say `system`, never the client of that request.
  */
-function rolloverQuota(q: QuotaRow, now: Date): QuotaRolloverOutcome {
-  return runAsSystem(() => rolloverQuotaAsSystem(q, now))
+function rolloverQuota(q: QuotaRow, now: Date, dayStart: string): QuotaRolloverOutcome {
+  return runAsSystem(() => rolloverQuotaAsSystem(q, now, dayStart))
 }
 
-function rolloverQuotaAsSystem(q: QuotaRow, now: Date): QuotaRolloverOutcome {
+/** `dayStart`: the owner's (`dayBoundaryForUser`) — where a daily quota's day ends. */
+function rolloverQuotaAsSystem(q: QuotaRow, now: Date, dayStart: string): QuotaRolloverOutcome {
   const none = { anchored: false, closed: 0 }
   const nowStr = now.toISOString()
   const period = quotaPeriodUnit(q.rrule)
@@ -194,7 +207,7 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   const weekStart = coerceWeekStart(q.week_start)
 
   if (!q.progress_period_start) {
-    const start = quotaUnitStart(local, period.unit, weekStart).toUTC().toISO()
+    const start = quotaUnitStart(local, period.unit, weekStart, dayStart).toUTC().toISO()
     getDb().prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?').run(start, q.id)
     return { anchored: true, closed: 0 }
   }
@@ -206,7 +219,8 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date): QuotaRolloverOutcome {
   let firstCompletedAt = q.first_completed_at
   let closed = 0
 
-  const endOf = (from: DateTime) => quotaPeriodEnd(from, period.unit, period.interval, weekStart)
+  const endOf = (from: DateTime) =>
+    quotaPeriodEnd(from, period.unit, period.interval, weekStart, dayStart)
 
   while (local >= endOf(start)) {
     const end = endOf(start)

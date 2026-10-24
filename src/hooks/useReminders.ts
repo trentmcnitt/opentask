@@ -6,6 +6,7 @@ import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { showToast } from '@/lib/toast'
 import { summarizeReminders, type RemindersSummary } from '@/lib/reminders-summary'
+import { useReminderDayStart } from '@/components/PreferencesProvider'
 import {
   applyPromptMoves,
   groupWaiting,
@@ -671,8 +672,9 @@ export function useReminders({
         // A refresh after a confirmed completion converges the cache with the
         // server (the recurring case: a considered reminder is gone until its next
         // occurrence, which only the server knows). After a FAILURE too when
-        // prompts were involved: the likeliest cause is a page left open over
-        // midnight, whose prompt keys are yesterday's and are refused — without
+        // prompts were involved: the likeliest cause is a page left open past
+        // the day's turn (midnight, or the user's "Day starts at" with the task
+        // queue on), whose prompt keys are yesterday's and are refused — without
         // a refresh every tap would fail the same way until something else
         // reloaded the list.
         if (settledOk || keys.length > 0) void refresh()
@@ -1047,7 +1049,8 @@ function usePutBack({
  * count is the server's to change (a did-it's progress comes off, exactly
  * what it added), so the refresh after the request brings the new count.
  * It refreshes after a failure too: the likeliest cause is a page left open
- * over midnight, whose keys are yesterday's and are refused, and only the
+ * past the day's turn (midnight, or the day start), whose keys are
+ * yesterday's and are refused, and only the
  * server has today's.
  */
 function usePutBackPrompt({
@@ -1138,13 +1141,14 @@ export function useRemindersSummary(timezone: string): RemindersSummary<Reminder
   // snapshot it is a real render input, so the summary recomputes when it
   // changes and only then.
   const cache = useSyncExternalStore(subscribeToCache, readCache, readServerCache)
+  const dayStart = useReminderDayStart()
   useEffect(() => {
     if (remindersCache === null) void loadRemindersCache()
     const onFocus = () => void loadRemindersCache()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
-  return cache ? summarizeReminders(cache.groups, timezone) : null
+  return cache ? summarizeReminders(cache.groups, timezone, new Date(), dayStart) : null
 }
 
 /** The nav badge number: reminders waiting in slots that have started, plus Anytime. */

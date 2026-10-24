@@ -77,6 +77,13 @@ export interface Prefs {
   sleepSlotId: number | null
   /** The number pad's four buttons, resolved, in button order. */
   padPresets: TimeSetting[]
+  /**
+   * "Day starts at" (2026-10-23) as the server reports it: a custom time or
+   * a link (`{ time, slot_id }`, resolved), or null when unset — the fixed
+   * 3:00 AM default (`DEFAULT_DAY_START`). The time it resolves to is
+   * `rolloverTime`.
+   */
+  dayStart: TimeSetting | null
   defaultGrouping: GroupingMode
   defaultSort: SortOption
   defaultSortReversed: boolean
@@ -109,8 +116,8 @@ export interface Prefs {
   aiFeatureInfo: FeatureInfoMap | null
   /**
    * The server's task-queue switch (`OPENTASK_TASK_QUEUE`, task queue PR 3)
-   * and the user's rollover time (HH:MM: the first period's start, else
-   * `morning_time`). Read-only, server facts. The switch gates the queue UI;
+   * and the user's rollover time (HH:MM: their "Day starts at" — unset, the
+   * 3:00 AM default). Read-only, server facts. The switch gates the queue UI;
    * with it on, attempts count OpenTask days from the rollover time, as the
    * server counts them (`useTaskQueue` in PreferencesProvider).
    */
@@ -139,6 +146,10 @@ export const ANCHOR_PREF_KEYS = [
   'sleepTime',
   'sleepSlotId',
   'padPresets',
+  // "Day starts at" (2026-10-23): a period edit moves it like the others,
+  // and the time it resolves to with it.
+  'dayStart',
+  'rolloverTime',
 ] as const satisfies readonly (keyof Prefs)[]
 
 export type AnchorPrefKey = (typeof ANCHOR_PREF_KEYS)[number]
@@ -174,6 +185,7 @@ export const DEFAULT_PREFS: Prefs = {
   sleepTime: '22:00',
   sleepSlotId: null,
   padPresets: DEFAULT_PAD_PRESETS.map((p) => ({ ...p })),
+  dayStart: null,
   defaultGrouping: 'project',
   defaultSort: 'horizon',
   defaultSortReversed: false,
@@ -262,6 +274,16 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   // Read as the stored form is (exactly four valid pairs, else the defaults).
   if (Array.isArray(data.pad_presets)) {
     out.padPresets = parsePadPresets(JSON.stringify(data.pad_presets))
+  }
+  // "Day starts at": null when unset (the 3:00 AM default), else as sent.
+  if (typeof data.day_start_default === 'boolean') {
+    out.dayStart =
+      data.day_start_default || typeof data.day_start_time !== 'string'
+        ? null
+        : {
+            time: data.day_start_time,
+            slot_id: typeof data.day_start_slot_id === 'number' ? data.day_start_slot_id : null,
+          }
   }
   if (data.default_grouping) out.defaultGrouping = coerceGrouping(data.default_grouping)
   take(out, 'defaultSort', data.default_sort, truthy)

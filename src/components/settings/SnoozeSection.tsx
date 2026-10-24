@@ -20,6 +20,7 @@ import { SettingsSection } from './SettingsSection'
 import { SettingRow } from './SettingRow'
 import { RolloverNowRow } from './RolloverNowRow'
 import { AnchorTimeRow } from './AnchorTimeRow'
+import { DayStartRow } from './DayStartRow'
 import { PAD_PRESET_COUNT, padButtonName, resolveTime } from '@/lib/anchor-times'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
@@ -78,7 +79,7 @@ export function SnoozeSection({
   return (
     <SettingsSection
       title="Defer"
-      description="Configure the default defer duration and morning start time."
+      description="Configure the default defer duration, the morning start time and when the day starts."
     >
       <div className="space-y-4">
         <DefaultSnoozeRow />
@@ -132,6 +133,11 @@ export function SnoozeSection({
                 widget updates run all day.
               </p>
             )}
+            {/* Trent, 2026-10-23: one day boundary everywhere, his at 3:00 AM. */}
+            <DayStartRow
+              description="When a new day begins: today’s reminders and quota prompts, daily quotas, and the task rollover. A time after midnight keeps a late night with the day before."
+              timeSlots={timeSlots}
+            />
           </>
         )}
         {/* Trent, 2026-09-27: Sunday, so Saturday is the last day to do a

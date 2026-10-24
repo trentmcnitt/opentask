@@ -441,7 +441,7 @@ export const taskQueueScenarios: GoldenScenario[] = [
     from: '2027-03-12',
     to: '2027-03-15',
     policy: ['tap'],
-    queue: { periods: ['02:30', '12:00'] },
+    queue: { periods: ['02:30', '12:00'], dayStart: '02:30' },
     tasks: [
       {
         name: 'task',
@@ -464,12 +464,12 @@ export const taskQueueScenarios: GoldenScenario[] = [
   },
   {
     id: 'tq-no-periods',
-    title: 'With no periods the rollover is morning_time (08:30)',
-    source: 'rule 1',
+    title: 'Day start unset, no periods: the rollover is the 3:00 AM default, not morning_time',
+    source: 'rule 1; "Day starts at" default 3:00 AM (Trent, 2026-10-24)',
     from: '2026-10-19',
     to: '2026-10-20',
     policy: ['tap'],
-    queue: { periods: [], morning: '08:30' },
+    queue: { periods: [], morning: '08:30', dayStart: null },
     tasks: [
       {
         name: 'task',
@@ -478,8 +478,8 @@ export const taskQueueScenarios: GoldenScenario[] = [
       },
     ],
     events: [
-      { at: '2026-10-20T08:29', run: check('task', { due_at: iso('2026-10-19T16:00') }) },
-      { at: '2026-10-20T08:31', run: check('task', { due_at: null }) },
+      { at: '2026-10-20T02:59', run: check('task', { due_at: iso('2026-10-19T16:00') }) },
+      { at: '2026-10-20T03:01', run: check('task', { due_at: null }) },
     ],
     expect: { task: { '2026-10-19': 'over 1×', '2026-10-20': 'queue_today queued 1×' } },
   },

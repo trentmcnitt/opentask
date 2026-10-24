@@ -3,9 +3,8 @@
  * switch (`task-queue.ts`), which must stay free of the database: the browser
  * bundle reaches the switch through `format-task.ts`.
  */
-import { listTimeSlots } from '@/core/time-slots'
-import { getAnchorTimes } from '@/core/users/anchor-times'
-import { rolloverTimeOf } from '@/lib/opentask-day'
+import { getDayStart } from '@/core/users/anchor-times'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import {
   hasRelativeTarget,
   isDeadlineAnchored,
@@ -15,13 +14,26 @@ import {
 import { taskQueueEnabled } from './task-queue'
 
 /**
- * A user's rollover time (HH:MM): the earliest period's start, else the
- * Morning time. Morning only counts with no periods, when nothing can link to
- * one, but it is still read through the resolver like every other reader.
+ * A user's rollover time (HH:MM): their "Day starts at" (2026-10-23,
+ * `getDayStart`) — a custom time, a linked period's start, or, unset, the
+ * fixed 3:00 AM default (`DEFAULT_DAY_START`, 2026-10-24). Every day-keyed
+ * server reader goes through here (or `dayBoundaryForUser`).
  */
 export function rolloverTimeForUser(userId: number): string {
-  const slots = listTimeSlots(userId)
-  return rolloverTimeOf(slots, getAnchorTimes(userId, slots).morning.time)
+  return getDayStart(userId).time
+}
+
+/**
+ * THE DAY BOUNDARY of the day-keyed surfaces (2026-10-23, "one day boundary
+ * everywhere"): the Reminders screen's roster and "considered today", quota
+ * prompts and their day keys, a daily quota's count, and the slot nag. With
+ * the task queue's switch on it is the user's day start
+ * (`rolloverTimeForUser`); off, midnight (`CALENDAR_DAY_START`) — the switch
+ * keeps a server without the queue exactly as it was, like attempts
+ * (`attemptsRolloverTime`).
+ */
+export function dayBoundaryForUser(userId: number): string {
+  return taskQueueEnabled() ? rolloverTimeForUser(userId) : CALENDAR_DAY_START
 }
 
 /**

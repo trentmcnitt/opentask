@@ -5,7 +5,7 @@
 
 import { describe, test, expect } from 'vitest'
 import { DateTime } from 'luxon'
-import { nextRollover, openTaskDayOf, rolloverMoment, rolloverTimeOf } from '@/lib/opentask-day'
+import { nextRollover, openTaskDayOf, dayStartMoment } from '@/lib/opentask-day'
 
 const TZ = 'America/Chicago'
 
@@ -19,47 +19,31 @@ function wall(d: Date, zone = TZ): string {
   return DateTime.fromJSDate(d).setZone(zone).toFormat("yyyy-MM-dd'T'HH:mm")
 }
 
-describe('TQ-D: rolloverTimeOf', () => {
-  test('TQ-D01: the earliest period start, whatever order the slots come in', () => {
-    const slots = [{ start_time: '12:00' }, { start_time: '06:30' }, { start_time: '20:30' }]
-    expect(rolloverTimeOf(slots, '08:30')).toBe('06:30')
-  })
-
-  test('TQ-D02: no periods → morning_time', () => {
-    expect(rolloverTimeOf([], '08:30')).toBe('08:30')
-  })
-
-  test('TQ-D03: an unparseable start is ignored', () => {
-    expect(rolloverTimeOf([{ start_time: 'nope' }, { start_time: '07:15' }], '09:00')).toBe('07:15')
-    expect(rolloverTimeOf([{ start_time: 'nope' }], '09:00')).toBe('09:00')
-  })
-})
-
-describe('TQ-D: rolloverMoment', () => {
+describe('TQ-D: dayStartMoment (a start at or before 12:00: on its own date)', () => {
   test('TQ-D10: an ordinary day', () => {
-    expect(wall(rolloverMoment('2026-10-20', TZ, '06:30'))).toBe('2026-10-20T06:30')
+    expect(wall(dayStartMoment('2026-10-20', TZ, '06:30'))).toBe('2026-10-20T06:30')
   })
 
   test('TQ-D11: spring forward with a 02:30 first period → the next valid minute (03:00)', () => {
     // 2027-03-14: Chicago jumps 2:00 → 3:00. 02:30 does not exist.
-    const at = rolloverMoment('2027-03-14', TZ, '02:30')
+    const at = dayStartMoment('2027-03-14', TZ, '02:30')
     expect(wall(at)).toBe('2027-03-14T03:00')
     expect(at.toISOString()).toBe('2027-03-14T08:00:00.000Z')
   })
 
   test('TQ-D12: spring forward does not touch a 06:30 rollover', () => {
-    expect(rolloverMoment('2027-03-14', TZ, '06:30').toISOString()).toBe('2027-03-14T11:30:00.000Z')
+    expect(dayStartMoment('2027-03-14', TZ, '06:30').toISOString()).toBe('2027-03-14T11:30:00.000Z')
   })
 
   test('TQ-D13: fall back with a 01:30 first period → the first 01:30 (CDT)', () => {
     // 2026-11-01: Chicago falls back 2:00 → 1:00, so 01:30 happens twice.
-    const at = rolloverMoment('2026-11-01', TZ, '01:30')
+    const at = dayStartMoment('2026-11-01', TZ, '01:30')
     expect(wall(at)).toBe('2026-11-01T01:30')
     expect(at.toISOString()).toBe('2026-11-01T06:30:00.000Z')
   })
 
   test('TQ-D14: fall back, a 06:30 rollover is CST', () => {
-    expect(rolloverMoment('2026-11-01', TZ, '06:30').toISOString()).toBe('2026-11-01T12:30:00.000Z')
+    expect(dayStartMoment('2026-11-01', TZ, '06:30').toISOString()).toBe('2026-11-01T12:30:00.000Z')
   })
 })
 
@@ -79,12 +63,6 @@ describe('TQ-D: openTaskDayOf', () => {
   test('TQ-D22: spring forward with a 02:30 rollover — the day starts at 03:00', () => {
     expect(openTaskDayOf(local('2027-03-14T01:59'), TZ, '02:30')).toBe('2027-03-13')
     expect(openTaskDayOf(local('2027-03-14T03:00'), TZ, '02:30')).toBe('2027-03-14')
-  })
-
-  test('TQ-D23: no periods → the morning_time rollover', () => {
-    const rollover = rolloverTimeOf([], '08:30')
-    expect(openTaskDayOf(local('2026-10-20T08:00'), TZ, rollover)).toBe('2026-10-19')
-    expect(openTaskDayOf(local('2026-10-20T08:30'), TZ, rollover)).toBe('2026-10-20')
   })
 })
 
@@ -108,11 +86,5 @@ describe('TQ-D: nextRollover', () => {
 
   test('TQ-D34: across fall back, the rollover stays at 06:30 local', () => {
     expect(wall(nextRollover(local('2026-10-31T22:00'), TZ, '06:30'))).toBe('2026-11-01T06:30')
-  })
-
-  test('TQ-D35: no periods → morning_time', () => {
-    expect(wall(nextRollover(local('2026-10-20T21:00'), TZ, rolloverTimeOf([], '08:30')))).toBe(
-      '2026-10-21T08:30',
-    )
   })
 })
