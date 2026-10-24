@@ -154,12 +154,11 @@ const ALLOWLIST: Record<string, [number, string, string]> = {
   ],
   "src/core/undo/apply-fields.ts: const FLAG_COLUMNS = new Set(['deadline_nag_off', 'target_auto', 'queue_mark', 'try_tomorrow'])":
     [1, `the undo/redo boolean columns: ${UNDO}`, 'target_auto'],
-  "src/core/undo/auto-target-fence.ts: const DROPPED = ['due_at', 'original_due_at', 'target_auto'] as const":
-    [
-      1,
-      "the undo fence's drop: these columns are written as NULL / 0 in place of a snapshot's automatic target — never 1",
-      'target_auto: false',
-    ],
+  "src/core/undo/auto-target-fence.ts: 'target_auto',": [
+    1,
+    "the undo fence's drop list: these columns are written as NULL / 0 in place of a snapshot's automatic target — never 1",
+    'target_auto: false',
+  ],
   "src/core/undo/auto-target-fence.ts: fieldsChanged.includes('target_auto') &&": [
     1,
     'not a write: the undo fence itself, reading whether a snapshot would write target_auto',

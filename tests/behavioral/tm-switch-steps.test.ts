@@ -229,9 +229,27 @@ describe('SW-U: undo and redo never write target_auto = 1 with the switch on', (
           WHERE id = (SELECT MAX(id) FROM undo_log)`,
       )
       .run()
+    // ...and holds queue state (a pre-page queued task): none of it comes back.
+    getDb()
+      .prepare(
+        `UPDATE undo_log SET snapshot = json_set(snapshot,
+                  '$[0].before_state.queued_at', '2026-10-19T11:30:00.000Z',
+                  '$[0].before_state.try_tomorrow', json('true'),
+                  '$[0].before_state.queue_mark', json('true')),
+                fields_changed = json_insert(fields_changed, '$[#]', 'queued_at',
+                  '$[#]', 'try_tomorrow', '$[#]', 'queue_mark')
+          WHERE id = (SELECT MAX(id) FROM undo_log)`,
+      )
+      .run()
     queue(true)
     executeUndo(TEST_USER_ID)
-    expect(task(t.id)).toMatchObject({ due_at: null, target_auto: false })
+    expect(task(t.id)).toMatchObject({
+      due_at: null,
+      target_auto: false,
+      queued_at: null,
+      try_tomorrow: false,
+      queue_mark: false,
+    })
     expect(task(t.id).lead_from).not.toBeNull()
   })
 })

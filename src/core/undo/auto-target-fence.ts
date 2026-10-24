@@ -14,7 +14,9 @@
  * So with the switch on, a snapshot that would write a truthy `target_auto`
  * (the field is in the entry's `fieldsChanged`) is applied WITHOUT the
  * automatic target (`withoutAutoTarget`): `due_at`, `original_due_at` → NULL
- * and `target_auto` → 0 are written in place of the snapshot's values, and
+ * and `target_auto` → 0 are written in place of the snapshot's values — and
+ * the queue state cleared (`queued_at` NULL, `try_tomorrow` / `queue_mark` 0,
+ * as `autoTargetToLead` does: a deadline task is never queued) — and
  * every other field is restored as usual — the task comes back done, trashed
  * or open, exactly as the undo means, with no target. Undo over a dead Undo
  * (Trent's rule): the user's Undo always does what it says. The dropped
@@ -43,7 +45,14 @@ export function restoresAutoTarget(state: object, fieldsChanged: string[]): bool
   )
 }
 
-const DROPPED = ['due_at', 'original_due_at', 'target_auto'] as const
+const DROPPED = [
+  'due_at',
+  'original_due_at',
+  'target_auto',
+  'queued_at',
+  'try_tomorrow',
+  'queue_mark',
+] as const
 
 /**
  * The state and fields to apply: as given, or — when it would restore an
@@ -57,7 +66,17 @@ export function withoutAutoTarget<S extends object>(
     return { state, fields: fieldsChanged, dropped: false }
   }
   return {
-    state: { ...state, due_at: null, original_due_at: null, target_auto: false },
+    state: {
+      ...state,
+      due_at: null,
+      original_due_at: null,
+      target_auto: false,
+      // A deadline task is never queued (as autoTargetToLead): no queue state
+      // comes back with it, or it would strand in the queue with no target.
+      queued_at: null,
+      try_tomorrow: false,
+      queue_mark: false,
+    },
     fields: [...new Set([...fieldsChanged, ...DROPPED])],
     dropped: true,
   }
