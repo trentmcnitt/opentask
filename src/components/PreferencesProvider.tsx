@@ -12,7 +12,12 @@ import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo } from '@/core/ai/models'
 import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
-import { CALENDAR_DAY_START } from '@/lib/opentask-day'
+import {
+  UNKNOWN_DAY_START,
+  browserDayStart,
+  rememberDayStart,
+  useLastKnownDayStart,
+} from '@/lib/browser-day-start'
 import { CHECK_IN_DAY_DEFAULT, type CheckInDay } from '@/lib/task-segments'
 import {
   DEFAULT_PREFS,
@@ -482,6 +487,18 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (preferencesLoaded) rememberQueueOn(prefs.taskQueue)
   }, [preferencesLoaded, prefs.taskQueue])
+  // And the day boundary, so the next load's first paint already reads the
+  // user's day (`browser-day-start.ts`).
+  useEffect(() => {
+    if (!preferencesLoaded) return
+    const known = browserDayStart({
+      loaded: true,
+      taskQueue: prefs.taskQueue,
+      rolloverTime: prefs.rolloverTime,
+      remembered: null,
+    })
+    if (known) rememberDayStart(known)
+  }, [preferencesLoaded, prefs.taskQueue, prefs.rolloverTime])
 
   return (
     <PreferencesContext.Provider
@@ -659,8 +676,25 @@ export function useTaskQueue(): {
  * out of every other client file, so no surface picks its own day.
  */
 export function useDayStart(): string {
-  const { taskQueue, rolloverTime } = useContext(PreferencesContext)
-  return taskQueue && rolloverTime ? rolloverTime : CALENDAR_DAY_START
+  return useKnownDayStart() ?? UNKNOWN_DAY_START
+}
+
+/** The boundary, or null before the preferences load with nothing remembered. */
+function useKnownDayStart(): string | null {
+  const { taskQueue, rolloverTime, preferencesLoaded } = useContext(PreferencesContext)
+  const remembered = useLastKnownDayStart()
+  return browserDayStart({ loaded: preferencesLoaded, taskQueue, rolloverTime, remembered })
+}
+
+/**
+ * Whether `useDayStart` is the user's real boundary yet — the preferences
+ * have loaded, or this browser remembers it. Until then it is midnight, and
+ * an action that commits a DAY (Defer's "tomorrow", "next period still
+ * today") waits, as `useTaskQueue`'s `loaded` gates the queue UI: between
+ * midnight and the day start, midnight's "tomorrow" is a day late.
+ */
+export function useDayStartKnown(): boolean {
+  return useKnownDayStart() !== null
 }
 
 /**

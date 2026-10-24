@@ -50,11 +50,12 @@ import {
   usePriorityDisplay,
   useTaskQueue,
   useDayStart,
+  useDayStartKnown,
   useSnoozePreferences,
 } from '@/components/PreferencesProvider'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { LabelBadges } from '@/components/LabelBadges'
-import { computeSnoozeTime } from '@/lib/snooze'
+import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
@@ -272,6 +273,7 @@ export function TaskRow({
   // The user's day boundary ("Day starts at" PR 2): "Today" / "Tomorrow" on
   // the row, and the defaults' "tomorrow", are OpenTask days.
   const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
   const { labelConfig } = useLabelConfig()
   const { priorityDisplay } = usePriorityDisplay()
   const queue = useTaskQueue()
@@ -291,7 +293,9 @@ export function TaskRow({
   // own pointer handlers select, open and long-press the task.
   const openSnoozeMenu = useCallback(() => setSnoozeMenuOpen(true), [])
   const snoozeNow = useCallback(() => {
-    if (!isOverdue) {
+    // Not due yet — or a day-dependent default ("tomorrow") before the
+    // browser knows the user's day start: the menu, not a guess.
+    if (!isOverdue || (!dayKnown && snoozeOptionNeedsDay(defaultSnoozeOption))) {
       setSnoozeMenuOpen(true)
       return
     }
@@ -305,6 +309,7 @@ export function TaskRow({
     timezone,
     morningTime,
     dayStart,
+    dayKnown,
     timeSlots,
     onSnooze,
     isOverdue,

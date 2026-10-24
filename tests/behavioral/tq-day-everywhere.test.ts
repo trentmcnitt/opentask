@@ -27,7 +27,7 @@ import { deckIsToday, segmentState, targetIsToday, upcomingState } from '@/lib/t
 import { deckMenuDays } from '@/lib/deck-menu'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { periodDaysLeft, periodElapsedFraction, quotaUnitStart } from '@/lib/track'
-import { quotaPeriodEnd } from '@/lib/week-start'
+import { anchorOnPeriodStart, quotaPeriodEnd } from '@/lib/week-start'
 import { effectiveDueAt } from '@/core/recurrence/occurrence'
 import { nextClockTick } from '@/lib/dashboard-clock'
 import { getDb } from '@/core/db'
@@ -252,34 +252,32 @@ describe('TQ-EV: the late night is the day before (3:00 AM)', () => {
     expect(periodElapsedFraction('WEEKLY', TZ, SUN_0130, 'sunday', MIDNIGHT)).toBeLessThan(0.01)
   })
 
-  test('TQ-EV10: a quota period ends at the day start of the next one; a midnight anchor closes one short period, then is aligned', () => {
+  test("TQ-EV10: a quota period is its first DATE — it ends at the day start of the next period's first date, a midnight anchor keeping its date (no short period); only a misaligned date is a transition", () => {
     const z = (local: string) => DateTime.fromISO(local, { zone: TZ })
-    // Aligned week: Sun 03:00 → Sun 03:00.
-    expect(quotaPeriodEnd(z('2026-10-18T03:00'), 'weeks', 1, 'sunday', '03:00').toJSDate()).toEqual(
-      at('2026-10-25T03:00'),
-    )
-    expect(quotaPeriodEnd(z('2026-10-18T03:00'), 'weeks', 2, 'sunday', '03:00').toJSDate()).toEqual(
-      at('2026-11-01T03:00'),
-    )
-    // A week anchored at midnight (before the day start moved): its OpenTask
-    // date is Saturday, so it ends three hours later, at Sunday's 03:00.
-    expect(quotaPeriodEnd(z('2026-10-18T00:00'), 'weeks', 1, 'sunday', '03:00').toJSDate()).toEqual(
-      at('2026-10-18T03:00'),
-    )
+    const end = (
+      local: string,
+      unit: 'days' | 'weeks' | 'months' | 'years',
+      n: number,
+      ds: string,
+    ) => quotaPeriodEnd(z(local), unit, n, 'sunday', ds).toJSDate()
+    // Aligned week: Sun 03:00 → Sun 03:00; a fortnight keeps its phase.
+    expect(end('2026-10-18T03:00', 'weeks', 1, '03:00')).toEqual(at('2026-10-25T03:00'))
+    expect(end('2026-10-18T03:00', 'weeks', 2, '03:00')).toEqual(at('2026-11-01T03:00'))
+    // A week anchored at midnight (before the day start moved) is still Sunday
+    // Oct 18's week: it runs to Oct 25's 03:00 — three hours long, once.
+    expect(end('2026-10-18T00:00', 'weeks', 1, '03:00')).toEqual(at('2026-10-25T03:00'))
+    expect(anchorOnPeriodStart(z('2026-10-18T00:00'), 'weeks', 'sunday')).toBe(true)
     // Months and years the same.
-    expect(
-      quotaPeriodEnd(z('2026-10-01T03:00'), 'months', 1, 'sunday', '03:00').toJSDate(),
-    ).toEqual(at('2026-11-01T03:00'))
-    expect(
-      quotaPeriodEnd(z('2026-10-01T00:00'), 'months', 1, 'sunday', '03:00').toJSDate(),
-    ).toEqual(at('2026-10-01T03:00'))
-    expect(quotaPeriodEnd(z('2026-01-01T03:00'), 'years', 1, 'sunday', '03:00').toJSDate()).toEqual(
-      at('2027-01-01T03:00'),
-    )
-    // Midnight: exactly as before (calendar addition).
-    expect(
-      quotaPeriodEnd(z('2026-10-01T00:00'), 'months', 1, 'sunday', MIDNIGHT).toJSDate(),
-    ).toEqual(at('2026-11-01T00:00'))
+    expect(end('2026-10-01T03:00', 'months', 1, '03:00')).toEqual(at('2026-11-01T03:00'))
+    expect(end('2026-10-01T00:00', 'months', 1, '03:00')).toEqual(at('2026-11-01T03:00'))
+    expect(end('2026-01-01T03:00', 'years', 1, '03:00')).toEqual(at('2027-01-01T03:00'))
+    // Midnight: exactly as before (local midnights).
+    expect(end('2026-10-01T00:00', 'months', 1, MIDNIGHT)).toEqual(at('2026-11-01T00:00'))
+    // A misaligned date (a Monday anchor in Sunday weeks) is the transition:
+    // it ends at the next week's start, whatever the day start.
+    expect(anchorOnPeriodStart(z('2026-10-19T00:00'), 'weeks', 'sunday')).toBe(false)
+    expect(end('2026-10-19T00:00', 'weeks', 2, '03:00')).toEqual(at('2026-10-25T03:00'))
+    expect(end('2026-10-19T00:00', 'weeks', 2, MIDNIGHT)).toEqual(at('2026-10-25T00:00'))
   })
 
   test("TQ-EV11: the overdue fallback — a repeat with no target is not due from tonight's 1:00 AM occurrence yet", () => {
@@ -407,16 +405,31 @@ describe('TQ-EV: the server reads the user’s day', () => {
   })
 })
 
-describe('TQ-EV: the transition period breaks no streak', () => {
+describe('TQ-EV: transition periods and streaks', () => {
   beforeAll(() => setupTestDb())
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllEnvs()
   })
+  const periods = (id: number) =>
+    getDb()
+      .prepare(
+        'SELECT period_start, period_end, met, transition FROM progress_periods WHERE task_id = ? ORDER BY period_start',
+      )
+      .all(id)
+  const setDayStart = (time: string) =>
+    getDb()
+      .prepare('UPDATE users SET day_start_time = ?, day_start_slot_id = NULL WHERE id = ?')
+      .run(time, TEST_USER_ID)
+  const roll = (local: string) => {
+    vi.setSystemTime(at(local))
+    rolloverTrackedPeriods(at(local))
+  }
 
-  test('TQ-EV41: a weekly quota with two met weeks keeps its streak across the 3-hour transition period when the day start moves off midnight', () => {
+  test('TQ-EV41: the switch going on (midnight → 03:00) keeps the week and the streak; a week-start change makes the one transition, which breaks no streak', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
-    // Made Sun Oct 4 (midnight anchors, the switch off), met two weeks.
+    getDb().prepare("UPDATE users SET week_start = 'sunday' WHERE id = ?").run(TEST_USER_ID)
+    // Made Sun Oct 4 (midnight anchors, the switch off), met each week.
     vi.setSystemTime(at('2026-10-04T12:00'))
     const q = createTask({
       userId: TEST_USER_ID,
@@ -425,25 +438,21 @@ describe('TQ-EV: the transition period breaks no streak', () => {
     })
     expect(getTaskById(q.id)!.progress_period_start).toBe(iso('2026-10-04T00:00'))
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
-    vi.setSystemTime(at('2026-10-12T12:00'))
-    rolloverTrackedPeriods(at('2026-10-12T12:00'))
+    roll('2026-10-12T12:00')
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
-    // The switch goes on Wednesday Oct 14 (the day starts at 3:00).
+    // The switch goes on Wednesday Oct 14 (the day starts at 3:00): the week
+    // anchored Sun Oct 11 00:00 is still Oct 11's week — it now ends at Oct
+    // 18's 03:00. Nothing closes early.
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
-    getDb()
-      .prepare("UPDATE users SET day_start_time = '03:00', day_start_slot_id = NULL WHERE id = ?")
-      .run(TEST_USER_ID)
-    // The week anchored Sun Oct 11 00:00 is Saturday's OpenTask date: it ends at
-    // Sun Oct 11 03:00 — already passed — a short period holding no taps, then
-    // Oct 11 03:00 → Oct 18 03:00 with Monday's tap carried into it.
-    vi.setSystemTime(at('2026-10-14T12:00'))
-    rolloverTrackedPeriods(at('2026-10-14T12:00'))
-    const rows = getDb()
-      .prepare(
-        'SELECT period_start, period_end, met, transition FROM progress_periods WHERE task_id = ? ORDER BY period_start',
-      )
-      .all(q.id)
-    expect(rows).toEqual([
+    setDayStart('03:00')
+    roll('2026-10-14T12:00')
+    expect(getTaskById(q.id)).toMatchObject({
+      progress_period_start: iso('2026-10-11T00:00'),
+      progress_period_end: iso('2026-10-18T03:00'),
+      progress_current: 1,
+    })
+    roll('2026-10-18T12:00')
+    expect(periods(q.id)).toEqual([
       {
         period_start: iso('2026-10-04T00:00'),
         period_end: iso('2026-10-11T00:00'),
@@ -452,23 +461,69 @@ describe('TQ-EV: the transition period breaks no streak', () => {
       },
       {
         period_start: iso('2026-10-11T00:00'),
-        period_end: iso('2026-10-11T03:00'),
-        met: 0,
-        transition: 1,
+        period_end: iso('2026-10-18T03:00'),
+        met: 1,
+        transition: 0,
       },
     ])
-    expect(getTaskById(q.id)).toMatchObject({
-      progress_period_start: iso('2026-10-11T03:00'),
-      progress_current: 1,
+    // Tue Oct 20: the week starts on Monday from now. Sunday Oct 18's week is
+    // not a Monday week: it closes at Mon Oct 19 03:00, a one-day TRANSITION.
+    getDb().prepare("UPDATE users SET week_start = 'monday' WHERE id = ?").run(TEST_USER_ID)
+    roll('2026-10-20T12:00')
+    expect(periods(q.id)[2]).toEqual({
+      period_start: iso('2026-10-18T03:00'),
+      period_end: iso('2026-10-19T03:00'),
+      met: 0,
+      transition: 1,
     })
-    // Neither met nor missed, and the streak goes on: Oct 11's week met too.
-    vi.setSystemTime(at('2026-10-18T12:00'))
-    rolloverTrackedPeriods(at('2026-10-18T12:00'))
+    // Unmet, it is neither met nor missed, and the streak goes on.
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    roll('2026-10-26T12:00')
     expect(getQuotaStats(TEST_USER_ID, q.id)).toMatchObject({
-      periods_met: 2,
+      periods_met: 3,
       periods_missed: 0,
-      current_streak: 2,
-      longest_streak: 2,
+      current_streak: 3,
+      longest_streak: 3,
+    })
+  })
+
+  test('TQ-EV42: a day-start change mid-week (03:00 → 23:00) is no transition — a week missed is still missed', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    getDb().prepare("UPDATE users SET week_start = 'sunday' WHERE id = ?").run(TEST_USER_ID)
+    setDayStart('03:00')
+    vi.setSystemTime(at('2026-11-02T12:00'))
+    const q = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TZ,
+      input: { title: 'Swim', rrule: 'FREQ=WEEKLY', progress_target: 1, is_tracked: true },
+    })
+    expect(getTaskById(q.id)!.progress_period_start).toBe(iso('2026-11-01T03:00'))
+    // Wednesday: the day now starts at 23:00. The week of Sun Nov 1 ends at
+    // the day start of Sun Nov 8 — Sat Nov 7 23:00 — a full week, never a
+    // transition; nothing logged, so it is MISSED.
+    setDayStart('23:00')
+    roll('2026-11-04T12:00')
+    roll('2026-11-08T12:00')
+    expect(periods(q.id)).toEqual([
+      {
+        period_start: iso('2026-11-01T03:00'),
+        period_end: iso('2026-11-07T23:00'),
+        met: 0,
+        transition: 0,
+      },
+    ])
+    expect(getQuotaStats(TEST_USER_ID, q.id)).toMatchObject({
+      periods_missed: 1,
+      current_streak: 0,
+    })
+    // And back (23:00 → 06:30): the week named Sun Nov 8 keeps its phase.
+    setDayStart('06:30')
+    roll('2026-11-15T12:00')
+    expect(periods(q.id)[1]).toEqual({
+      period_start: iso('2026-11-07T23:00'),
+      period_end: iso('2026-11-15T06:30'),
+      met: 0,
+      transition: 0,
     })
   })
 })

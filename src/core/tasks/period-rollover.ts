@@ -29,13 +29,16 @@
  * when its period changes (`collectQuotaAnchor`, collect-field-changes.ts);
  * a quota the job finds without one (made before that) is anchored here to
  * the start of the period it is in, and nothing is recorded for it. INTERVAL is honoured by
- * advancing the anchor `interval` units at a time. An anchor that is not on
- * its period's start (a week anchored under the old Monday-only rule, the
- * preference changed, or — with the task queue on — any midnight anchor once
- * the day starts at 3:00, or a day-start change) closes at the NEXT period
- * start instead — a short TRANSITION period, marked `transition` on its
- * record (an unmet one breaks no streak, `getQuotaStats`) — and is aligned
- * from then on (`quotaPeriodEnd`, `anchorOnPeriodStart`).
+ * advancing the anchor `interval` dates at a time (a period's identity is
+ * its first DATE, `anchorDate`; its bounds are the day start of that date
+ * and of the next period's). A day-start change — 3:00 → 23:00, the switch
+ * turned on or off — moves the bounds only, never the phase: the period in
+ * progress ends at the new day start of its next first date. An anchor
+ * whose date is not its unit's first date (a week anchored under the old
+ * Monday-only rule, the preference changed) closes at the NEXT unit start
+ * instead — a short TRANSITION period, marked `transition` on its record
+ * (an unmet one breaks no streak, `getQuotaStats`) — and is aligned from
+ * then on (`quotaPeriodEnd`, `anchorOnPeriodStart`).
  *
  * Progress logged AFTER a period's end but before that period was closed
  * stays in the new period: the count carried forward is the sum of the
@@ -233,9 +236,10 @@ function rolloverQuotaAsSystem(q: QuotaRow, now: Date, dayStart: string): QuotaR
     const carried = Math.min(logged, loggedSince(q.id, end))
     logged -= carried
     const met = logged >= q.progress_target
-    // A transition period: its anchor was not on a period start, so it ended
-    // early (`quotaPeriodEnd`). Recorded like any other, and marked.
-    const transition = !anchorOnPeriodStart(start, period.unit, weekStart, dayStart)
+    // A transition period: its anchor's date is not its unit's first date,
+    // so it ended early at the next unit (`quotaPeriodEnd`). Recorded like
+    // any other, and marked. A day-start change never makes one.
+    const transition = !anchorOnPeriodStart(start, period.unit, weekStart)
     const periodStart = start.toUTC().toISO() as string
     const periodEnd = end.toUTC().toISO() as string
     if (met) {

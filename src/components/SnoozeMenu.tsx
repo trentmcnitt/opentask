@@ -13,7 +13,11 @@ import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { OptionMenu } from '@/components/OptionMenu'
-import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
+import {
+  useDayStart,
+  useDayStartKnown,
+  useSnoozePreferences,
+} from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
@@ -119,8 +123,10 @@ export function SnoozeMenu({
 }: SnoozeMenuProps) {
   const timezone = useTimezone()
   const { morningTime } = useSnoozePreferences()
-  // "Tomorrow" is the next OpenTask day ("Day starts at" PR 2).
+  // "Tomorrow" is the next OpenTask day ("Day starts at" PR 2); until the
+  // browser knows the day start, Tomorrow is shown but not choosable.
   const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
   const [customPickerOpen, setCustomPickerOpen] = useState(false)
 
   const slots = useSlotsWhenOpen(open)
@@ -167,7 +173,13 @@ export function SnoozeMenu({
     ...laterSlots.map(({ label, option }) => ({ label, option })),
     ...(slotOptions.some((o) => o.until === tomorrowMorning)
       ? []
-      : [{ label: `Tomorrow at ${formatMorningTime(morningTime)}`, option: 'tomorrow' }]),
+      : [
+          {
+            label: `Tomorrow at ${formatMorningTime(morningTime)}`,
+            option: 'tomorrow',
+            disabled: !dayKnown,
+          },
+        ]),
     ...(deadlineDay ? [{ label: deadlineDay.label, option: DEADLINE_DAY_OPTION }] : []),
     { label: 'Custom...', option: 'custom' },
     ...(resetLabel

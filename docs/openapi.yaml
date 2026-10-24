@@ -5941,10 +5941,11 @@ components:
             plus `period_interval` units, stepped past a period that has ended
             but the rollover job has not closed yet. With the task queue on,
             periods run on the owner's OpenTask dates ("Day starts at" PR 2): a
-            week, month or year ends at the owner's day start on its next first
-            date (with 3:00 AM, a Sunday week ends Sunday 03:00), and an anchor
-            that is not on a period start ends at the next one - one short
-            period. Use it rather than
+            period is its first date, and ends at the owner's day start on the
+            next period's first date (with 3:00 AM, a Sunday week ends Sunday
+            03:00). A day-start change moves that end, never the phase; only an
+            anchor whose date is not its unit's first date ends early, at the
+            next unit. Use it rather than
             re-deriving the window from the rrule. Null on anything that is not
             a quota.
         period_interval:

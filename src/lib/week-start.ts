@@ -15,12 +15,14 @@
  *
  * A weekly quota's current period begins at `tasks.progress_period_start` (the
  * anchor) and normally ends `interval` weeks later. An anchor that is NOT on
- * one of the user's week-start boundaries — anchored under the old
- * Monday-only rule, or the user flipped the preference, or moved timezone so
- * the stored instant is no longer local midnight — ends instead at the NEXT
- * week-start boundary after it. That period is short (Mon → Sun is 6 days);
- * it closes like any other (met → completion, short → recorded only), and the
- * period after it starts on the boundary, so from then on the quota is aligned.
+ * one of the user's week-start days — anchored under the old Monday-only
+ * rule, or the user flipped the preference — ends instead at the NEXT
+ * week-start boundary after it. That period is short (Mon → Sun is 6 days):
+ * a TRANSITION period (`anchorOnPeriodStart`), met → a completion, unmet →
+ * recorded and marked, breaking no streak; the period after it starts on the
+ * boundary, so from then on the quota is aligned. (A timezone move or a
+ * day-start change is not a misalignment: the anchor's DATE is unchanged —
+ * `anchorDate`, below.)
  *
  * INTERVAL > 1: the short period still ends at the next boundary (one week at
  * most), and the next period then runs the full `interval` weeks from it.
@@ -28,7 +30,7 @@
  * counted from wherever its aligned anchor lands.
  */
 import { DateTime } from 'luxon'
-import { CALENDAR_DAY_START, addDays, dayStartMoment, openTaskDayOf } from '@/lib/opentask-day'
+import { addDays, dayStartMoment, openTaskDayOf } from '@/lib/opentask-day'
 
 export type WeekStart = 'sunday' | 'monday'
 
@@ -61,23 +63,37 @@ export type PeriodUnit = 'days' | 'weeks' | 'months' | 'years'
 /*
  * ── Quota periods on the OpenTask day ("Day starts at" PR 2, Trent 2026-10-24)
  *
- * EVERYTHING USES THE OPENTASK DATE: the period an instant is in is plain
- * calendar maths on its OpenTask date (`openTaskDayOf`) — the week of that
- * date (on the user's week-start day), its month, its year — and the
- * period's start and end instants are `dayStartMoment` of the period's first
- * date and of the next period's first date. With the 3:00 AM default, a
- * Sunday week runs Sunday 03:00 → Sunday 03:00, a month the 1st 03:00 → the
- * next 1st 03:00; Saturday 01:30 is still the old week. With an 11 PM start
- * the week named Sunday starts Saturday 23:00.
+ * EVERYTHING USES THE OPENTASK DATE. A period's IDENTITY is a DATE — its
+ * first OpenTask date (a Sunday for a Sunday week, the 1st for a month) —
+ * and every step from one period to the next is calendar maths on dates
+ * (`periodFirstDate`, `addUnits`). Its BOUNDS are instants: `dayStartMoment`
+ * of its first date and of the next period's first date. With the 3:00 AM
+ * default, a Sunday week runs Sunday 03:00 → Sunday 03:00, a month the 1st
+ * 03:00 → the next 1st 03:00; Saturday 01:30 is still the old week. With an
+ * 11 PM start the week named Sunday starts Saturday 23:00. Midnight
+ * (`CALENDAR_DAY_START`, the task queue's switch off) is just another day
+ * start, through the same path: local midnights, as they always were.
  *
- * A MISALIGNED anchor — one that is not its period's start, such as every
- * midnight anchor when the day start moves to 3:00 — ends at the start of the
- * NEXT period after it (the week rule above, for every unit): one short
- * period, and aligned from then on. The rollover carries any taps logged
- * after that end into the next period (`loggedSince` in
- * src/core/tasks/period-rollover.ts), so the short period holds only what was
- * logged inside it. At midnight (`CALENDAR_DAY_START` — the task queue's
- * switch off) every function below is exactly what it was before.
+ * A STORED ANCHOR'S DATE (`anchorDate`): the anchor was stamped at the day
+ * start in force then (or at midnight, before PR 2), so its date is the one
+ * the naming convention gives its own wall-clock time — at or before 12:00
+ * its local date, after 12:00 the next date (an anchor stamped at 23:00 by an
+ * 11 PM start begins the next date's period). That is why CHANGING THE DAY
+ * START, in either direction, only moves the bounds and never the phase: a
+ * fortnight anchored on Sunday Oct 11 stays on Oct 11, Oct 25, … whether the
+ * day starts at 00:00, 03:00, 06:30 or 23:00, and a quarter that began Oct 1
+ * ends on Jan 1's day start. The period in progress ends at the NEW day start
+ * of its next first date — a few hours longer or shorter, once.
+ *
+ * A MISALIGNED anchor — one whose date is not the first date of its unit (a
+ * week anchored under the old Monday-only rule, a week-start change, a
+ * timezone move) — ends at the start of the NEXT unit: a TRANSITION period,
+ * shorter than its unit by whole days, aligned from then on. The rollover
+ * marks its record (`progress_periods.transition`) so an unmet one breaks no
+ * streak, and carries any taps logged after its end into the next period
+ * (`loggedSince` in src/core/tasks/period-rollover.ts). A period whose date
+ * is its unit's first date is full-length by identity — never a transition,
+ * however far a day-start change moved its bounds.
  */
 
 /** The first OpenTask date (yyyy-MM-dd) of the `unit` containing the date `date`. */
@@ -107,6 +123,25 @@ function startOf(date: string, zone: string, dayStart: string): DateTime {
   return DateTime.fromJSDate(dayStartMoment(date, zone, dayStart)).setZone(zone)
 }
 
+/** 12:00 in milliseconds of the day: the naming convention's line (`namesNextDate`). */
+const NOON_MS = 12 * 60 * 60 * 1000
+
+/**
+ * The OpenTask DATE a stored period anchor stands for, whatever day start
+ * stamped it: its local date when its wall-clock time is at or before 12:00,
+ * else the next date — the naming convention (`namesNextDate`) applied to the
+ * anchor's own time, which is the day start that stamped it. An anchor at
+ * 00:00, 03:00 or 06:30 on Sunday and one at 23:00 on Saturday all stand for
+ * Sunday. Independent of the current day start, so changing it never shifts a
+ * period's phase.
+ */
+export function anchorDate(anchor: DateTime): string {
+  const msOfDay =
+    ((anchor.hour * 60 + anchor.minute) * 60 + anchor.second) * 1000 + anchor.millisecond
+  const date = anchor.toISODate()!
+  return msOfDay > NOON_MS ? addDays(date, 1) : date
+}
+
 /**
  * The start of the `unit` (day, week, month, year) containing `dt`, in
  * `dt`'s zone: `dayStartMoment` of the first OpenTask date of the unit its
@@ -119,48 +154,36 @@ export function unitStartAt(
   weekStart: WeekStart,
   dayStart: string,
 ): DateTime {
-  if (dayStart === CALENDAR_DAY_START) {
-    if (unit === 'days') return dt.startOf('day')
-    if (unit === 'weeks') return startOfWeek(dt, weekStart)
-    return dt.startOf(unit === 'months' ? 'month' : 'year')
-  }
   const zone = dt.zoneName ?? 'utc'
   const date = openTaskDayOf(dt.toJSDate(), zone, dayStart)
   return startOf(periodFirstDate(date, unit, weekStart), zone, dayStart)
 }
 
 /**
- * Whether `anchor` is the start of its period — on the user's boundary for
- * the unit (`unitStartAt`). With a day start (the task queue on), every unit
- * realigns: an anchor that is not on a period start ends at the next one, a
- * short TRANSITION period (`quotaPeriodEnd`; the rollover marks its record,
- * `progress_periods.transition`, so an unmet one breaks no streak). At
- * midnight (the switch off) nothing is a transition: the old week rule's
- * short period is recorded as it always was.
+ * Whether a period anchored at `anchor` is FULL-LENGTH: its date
+ * (`anchorDate`) is the first date of its unit. False is a TRANSITION
+ * period — a misaligned anchor, ending early at the next unit's start
+ * (`quotaPeriodEnd`); the rollover marks its record
+ * (`progress_periods.transition`), so an unmet one breaks no streak. A
+ * day-start change never makes one: it moves the bounds, not the date.
  */
 export function anchorOnPeriodStart(
   anchor: DateTime,
   unit: PeriodUnit,
   weekStart: WeekStart,
-  dayStart: string,
 ): boolean {
-  if (dayStart === CALENDAR_DAY_START) return true
-  return unitStartAt(anchor, unit, weekStart, dayStart).toMillis() === anchor.toMillis()
+  const date = anchorDate(anchor)
+  return periodFirstDate(date, unit, weekStart) === date
 }
 
 /**
- * The instant a quota period that began at `anchor` ends (exclusive).
- *
- * With a day start (`dayStart`: the owner's "Day starts at" with the task
- * queue's switch on — the module's "Quota periods on the OpenTask day"): an
- * anchor on its period's start runs `interval` units, to the day start of
- * the date `interval` units on; one that is not ends at the start of the
- * next period, a short period, and is aligned from then on.
- *
- * At midnight (`CALENDAR_DAY_START`, the switch off), as it always was:
- * days, months and years are plain calendar addition; a week whose anchor
- * sits on the user's boundary runs `interval` weeks, one that does not ends
- * at the next boundary (see the module doc).
+ * The instant a quota period that began at `anchor` ends (exclusive): the
+ * day start (`dayStart`: the owner's "Day starts at" with the task queue's
+ * switch on, midnight off — one path for both) of the first date of the
+ * period after it. A full-length period (`anchorOnPeriodStart`) runs
+ * `interval` units from its date; a misaligned one ends at the next unit's
+ * first date, and is aligned from then on. Dates, so a DST change or a
+ * day-start change inside the period never shifts the phase.
  */
 export function quotaPeriodEnd(
   anchor: DateTime,
@@ -169,16 +192,9 @@ export function quotaPeriodEnd(
   weekStart: WeekStart,
   dayStart: string,
 ): DateTime {
-  if (dayStart !== CALENDAR_DAY_START) {
-    // By OpenTask DATE, never the boundary's calendar date: with a start
-    // after 12:00 the day starts on the date before the one it is named by.
-    const zone = anchor.zoneName ?? 'utc'
-    const first = periodFirstDate(openTaskDayOf(anchor.toJSDate(), zone, dayStart), unit, weekStart)
-    const aligned = anchorOnPeriodStart(anchor, unit, weekStart, dayStart)
-    return startOf(addUnits(first, unit, aligned ? interval : 1), zone, dayStart)
-  }
-  if (unit !== 'weeks') return anchor.plus({ [unit]: interval })
-  const boundary = startOfWeek(anchor, weekStart)
-  if (boundary.toMillis() === anchor.toMillis()) return anchor.plus({ weeks: interval })
-  return boundary.plus({ weeks: 1 })
+  const zone = anchor.zoneName ?? 'utc'
+  const date = anchorDate(anchor)
+  const first = periodFirstDate(date, unit, weekStart)
+  const units = first === date ? interval : 1
+  return startOf(addUnits(first, unit, units), zone, dayStart)
 }

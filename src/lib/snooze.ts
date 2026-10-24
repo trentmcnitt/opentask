@@ -119,6 +119,17 @@ export function targetTodayTimeFor(
 export const NEXT_PERIOD_OPTION = 'next_period'
 
 /**
+ * Whether a snooze option's moment depends on the user's DAY — "tomorrow"
+ * (the next OpenTask day's morning) and "next period" (still today, before
+ * the day turns). Until the browser knows the day start (`useDayStartKnown`)
+ * such an option waits: midnight's "tomorrow" between midnight and a 3:00 AM
+ * day start is a day late.
+ */
+export function snoozeOptionNeedsDay(option: string): boolean {
+  return option === 'tomorrow' || option === NEXT_PERIOD_OPTION
+}
+
+/**
  * Format a morning time string for display.
  * '09:00' -> '9:00 AM', '14:30' -> '2:30 PM'
  * `formatClockTime` under the name the snooze and AI-prompt callers use.

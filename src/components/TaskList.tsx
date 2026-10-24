@@ -31,10 +31,11 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import {
   useDayStart,
+  useDayStartKnown,
   useProjectPreviewCount,
   useSnoozePreferences,
 } from '@/components/PreferencesProvider'
-import { computeSnoozeTime } from '@/lib/snooze'
+import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { HorizonValue } from '@/lib/task-segments'
 import { justAddedTag } from '@/lib/just-added'
@@ -288,6 +289,7 @@ export function TaskList({
   const selection = useSelection()
   const timezone = useTimezone()
   const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
   const isMobile = useIsMobile()
   const { projectPreviewCount } = useProjectPreviewCount()
   // Project groups preview the user's setting; no cap at all while
@@ -374,6 +376,8 @@ export function TaskList({
   const handleSwipeLeft = useCallback(
     (task: Task) => {
       if (isOverdue(task, now)) {
+        // A day-dependent default waits for the user's day start.
+        if (!dayKnown && snoozeOptionNeedsDay(defaultSnoozeOption)) return
         const until = computeSnoozeTime(
           defaultSnoozeOption,
           timezone,
@@ -391,6 +395,7 @@ export function TaskList({
       timezone,
       morningTime,
       dayStart,
+      dayKnown,
       timeSlots,
       requestSnooze,
       onDoubleClick,

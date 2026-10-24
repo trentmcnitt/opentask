@@ -207,7 +207,7 @@ describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () =
     expect(task(q.id)).toMatchObject({ progress_current: 0, completion_count: 1 })
   })
 
-  test('TQ-D05: a daily quota anchored at midnight closes one short period at 03:00, then aligns', () => {
+  test('TQ-D05: a daily quota anchored at midnight keeps its day — it ends at the next 03:00, no short period — then runs 03:00 → 03:00', () => {
     const q = makeAt('2026-01-15T08:00', {
       title: 'Read',
       rrule: 'FREQ=DAILY',
@@ -219,9 +219,25 @@ describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () =
       .prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?')
       .run(new Date(at('2026-01-15T00:00')).toISOString(), q.id)
     expect(task(q.id).progress_period_end).toBe(at('2026-01-16T03:00'))
+    // "Day starts at" PR 2 review: the anchor's DATE (Jan 15) is the period's
+    // identity, so the day in progress runs to the new day start of Jan 16 —
+    // nothing closes early, nothing is a transition.
     clock('2026-01-15T10:00')
+    expect(rolloverTrackedPeriods(new Date(), TEST_USER_ID).rolled).toBe(0)
+    clock('2026-01-16T10:00')
     expect(rolloverTrackedPeriods(new Date(), TEST_USER_ID).rolled).toBe(1)
-    expect(task(q.id).progress_period_start).toBe(new Date(at('2026-01-15T03:00')).toISOString())
+    expect(task(q.id).progress_period_start).toBe(new Date(at('2026-01-16T03:00')).toISOString())
+    expect(
+      getDb()
+        .prepare('SELECT period_start, period_end, transition FROM progress_periods WHERE task_id = ?')
+        .all(q.id),
+    ).toEqual([
+      {
+        period_start: new Date(at('2026-01-15T00:00')).toISOString(),
+        period_end: new Date(at('2026-01-16T03:00')).toISOString(),
+        transition: 0,
+      },
+    ])
   })
 })
 

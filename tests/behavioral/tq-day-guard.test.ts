@@ -134,10 +134,8 @@ const CALENDAR_DAY_START_FILES: Record<string, string> = {
   'src/lib/opentask-day.ts': 'its definition',
   'src/core/tasks/rollover-time.ts':
     '`dayBoundaryForUser`: the server’s one rule (the day start with the task queue on, midnight off)',
-  'src/components/PreferencesProvider.tsx':
-    '`useDayStart`: the browser’s one rule, the same as `dayBoundaryForUser`',
-  'src/lib/week-start.ts':
-    'the switch-off path of the quota period maths, kept exactly as it was (`unitStartAt`, `quotaPeriodEnd`)',
+  'src/lib/browser-day-start.ts':
+    '`browserDayStart`: the browser’s one rule (`useDayStart`), the same as `dayBoundaryForUser`, and what the page draws with while the day start is unknown',
   'src/lib/task-segments.ts':
     'a null rollover time (the switch off) read as calendar days: attempts, the put-back, the deadlines page’s day',
   'src/core/tasks/read.ts':

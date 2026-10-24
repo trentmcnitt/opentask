@@ -685,11 +685,12 @@ CREATE TABLE IF NOT EXISTS progress_periods (
   target       INTEGER NOT NULL,
   met          INTEGER NOT NULL DEFAULT 0,
   closed_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-  -- 1: a TRANSITION period ("Day starts at" PR 2, 2026-10-24) — its anchor
-  -- was not on a period start (a midnight anchor once the day starts at
-  -- 3:00, a week-start or day-start change), so it ended early at the next
-  -- one (`anchorOnPeriodStart`). Unmet, it is neither met nor missed and
-  -- does not break a streak (`getQuotaStats`).
+  -- 1: a TRANSITION period ("Day starts at" PR 2, 2026-10-24) — its
+  -- anchor's date was not its unit's first date (the old Monday-only week
+  -- rule, a week-start change), so it ended early at the next unit's start
+  -- (`anchorOnPeriodStart`). A day-start change never makes one: it moves
+  -- the bounds, not the date. Unmet, it is neither met nor missed and does
+  -- not break a streak (`getQuotaStats`).
   transition   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_progress_periods_task ON progress_periods(task_id, period_start);
