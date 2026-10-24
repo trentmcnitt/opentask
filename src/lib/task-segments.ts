@@ -279,6 +279,15 @@ export interface TargetWrite {
    * automatic target, as before (kept one release, then deleted).
    */
   leads?: boolean
+  /**
+   * RELATIVE TARGETS (2026-10-24): on a row that stays a one-off
+   * (`autoEligible`), the offsets the write leaves — the ones sent merged over
+   * the stored ones — or null for none. Omitted: not judged (a repeat; its
+   * offsets are the schedule's, `planRepeatSchedule`).
+   */
+  relative?: RelativeTarget | null
+  /** The write sends the offsets or their time (a period retime too): re-derive. */
+  relativeWritten?: boolean
 }
 
 export interface ResolvedTarget {
@@ -287,6 +296,35 @@ export interface ResolvedTarget {
   auto: boolean
   /** The target was pulled back to the deadline (§8.2). */
   capped: boolean
+  /**
+   * The one-off's relative target after the write (`TargetWrite.relative`):
+   * kept, or null — a pick, a clear or a removed deadline made it fixed.
+   * Undefined when the write did not ask.
+   */
+  relative?: RelativeTarget | null
+}
+
+/**
+ * RELATIVE TARGETS (2026-10-24; docs/TASK-MODEL.md § Relative targets): what a
+ * write does to a one-off's relative target, in order —
+ *  1. a non-null target written (a pick, any defer, Today) makes it FIXED: the
+ *     offsets and the link go, the target is the one sent;
+ *  2. `target_at: null` clears everything (Remove target, decking);
+ *  3. the deadline set to null makes it fixed where it is (ruling 5);
+ *  4. otherwise, when the deadline or the offsets change, the target is
+ *     DERIVED (`relativeTargetAt`) — already past is overdue at once (ruling 3).
+ * Null when the write leaves no relative target; else the (possibly derived)
+ * target.
+ */
+function resolveRelative(
+  w: TargetWrite,
+  timezone: string,
+): { relative: RelativeTarget | null; derived: string | null } {
+  const relative = w.relative ?? null
+  if (!relative || w.dueWritten || w.deadlineAt === null) return { relative: null, derived: null }
+  // A relative row always carries its target; one without (never written so) derives it.
+  const rederive = w.deadlineChanged || w.relativeWritten || w.dueAt === null
+  return { relative, derived: rederive ? relativeTargetAt(w.deadlineAt, relative, timezone) : null }
 }
 
 /**
@@ -316,6 +354,24 @@ export function resolveTarget(
   ctx: TargetContext | null = clientContext,
   now: Date = new Date(),
 ): ResolvedTarget {
+  // Relative targets (2026-10-24): judged first, before the automatic target.
+  if (w.relative !== undefined && w.autoEligible) {
+    const rel = resolveRelative(w, ctx?.timezone ?? 'utc')
+    if (rel.relative) {
+      return {
+        dueAt: rel.derived ?? w.dueAt,
+        auto: false,
+        capped: false,
+        relative: rel.relative,
+      }
+    }
+    return { ...resolveFixed(w, ctx, now), relative: null }
+  }
+  return resolveFixed(w, ctx, now)
+}
+
+/** `resolveTarget` for a target that is not relative: the automatic one, and the cap. */
+function resolveFixed(w: TargetWrite, ctx: TargetContext | null, now: Date): ResolvedTarget {
   let dueAt = w.dueAt
   let auto = w.wasAuto && !w.dueWritten && w.autoEligible
   if (auto && (w.deadlineChanged || w.deadlineAt === null)) {
@@ -1052,15 +1108,106 @@ export function occurrenceDates(
       leadFrom: lead ? repeatLeadFrom(schedule, occurrenceAt, timezone, lead) : null,
     }
   }
-  const deadline = DateTime.fromISO(occurrenceAt, { zone: 'utc' }).setZone(timezone)
-  const day = deadline.startOf('day').minus({ days: schedule.target_days_before ?? 0 })
-  const target = localMoment(
-    day.toISODate()!,
-    schedule.target_time ?? localHHMM(deadline),
+  const targetAt = relativeTargetAt(
+    occurrenceAt,
+    { days_before: schedule.target_days_before!, time: schedule.target_time! },
     timezone,
   )
-  const targetAt = target.getTime() < deadline.toMillis() ? target.toISOString() : occurrenceAt
   return { occurrenceAt, targetAt, deadlineAt: occurrenceAt, leadFrom: null }
+}
+
+/**
+ * THE RELATIVE TARGET'S ONE DERIVATION (2026-10-24, pulled out of
+ * `occurrenceDates`; docs/TASK-MODEL.md § Relative targets): the target that
+ * sits `days_before` local CALENDAR days before `deadlineAt` (0 = the same
+ * day) at `time` (HH:MM) — Luxon calendar days, so a DST change between them
+ * never shifts it — through `localMoment`'s DST rule (a time the clocks skip
+ * → the next valid minute; a repeated one → its first instant), and LAST
+ * clamped to the deadline: the target is never after it (§8.2). A
+ * deadline-anchored repeat's occurrence and a relative ONE-OFF's deadline
+ * both go through here, and nothing else does date maths on the offsets
+ * (guard RT-G01). Write-time validation refuses a same-day time after the
+ * deadline's, so the clamp absorbs only a DST hour or a later deadline move.
+ * Derived in the task OWNER's zone.
+ */
+export function relativeTargetAt(
+  deadlineAt: string,
+  relative: RelativeTarget,
+  timezone: string,
+): string {
+  const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone)
+  const day = deadline.startOf('day').minus({ days: relative.days_before })
+  const target = localMoment(day.toISODate()!, relative.time, timezone)
+  return target.getTime() < deadline.toMillis() ? target.toISOString() : deadlineAt
+}
+
+/**
+ * The inverse direction (a helper, not a derivation): the local DATE
+ * (yyyy-MM-dd) `daysBefore` calendar days after the local day of `targetAt` —
+ * where a deadline goes for a target to sit `daysBefore` days before it (the
+ * every-time editor's first deadline). Here so the offsets' date maths stays
+ * in this module (guard RT-G01).
+ */
+export function deadlineDateFrom(targetAt: string, daysBefore: number, timezone: string): string {
+  return DateTime.fromISO(targetAt, { zone: 'utc' })
+    .setZone(timezone)
+    .plus({ days: daysBefore })
+    .toISODate()!
+}
+
+/** The fields that make a one-off's target relative (`isRelativeOneOff`). */
+export interface RelativeOneOffFields {
+  rrule: string | null
+  deadline_at: string | null
+  target_days_before: number | null
+  target_time: string | null
+  is_reminder?: boolean
+  is_tracked?: boolean
+  progress_target?: number
+}
+
+/**
+ * RELATIVE TARGETS (2026-10-24): whether a ONE-OFF's target is relative — no
+ * rule, a deadline, both offsets, and not a reminder or a quota. Its target
+ * is then `relativeTargetAt(deadline, offsets)` and is a PICKED one
+ * (`target_auto` is never set, so `hasPickedTarget` holds): quiet until its
+ * day, never on the deadlines page.
+ */
+export function isRelativeOneOff(task: RelativeOneOffFields): boolean {
+  return (
+    !task.rrule &&
+    task.deadline_at !== null &&
+    task.target_days_before !== null &&
+    task.target_time !== null &&
+    !task.is_reminder &&
+    !task.is_tracked &&
+    (task.progress_target ?? 1) <= 1
+  )
+}
+
+/** The relative target a row carries (both offsets), or null. */
+export function relativeOf(task: {
+  target_days_before: number | null
+  target_time: string | null
+}): RelativeTarget | null {
+  return task.target_days_before !== null && task.target_time !== null
+    ? { days_before: task.target_days_before, time: task.target_time }
+    : null
+}
+
+/**
+ * A ONE-OFF's offsets against its deadline (a 400 at write time, never a
+ * clamp): the same day at a time after the deadline's local time is
+ * `after_deadline`. A one-off has no previous occurrence to overlap. A later
+ * deadline move alone is not judged — `relativeTargetAt` clamps instead.
+ */
+export function relativeOneOffProblem(
+  relative: RelativeTarget,
+  deadlineAt: string,
+  timezone: string,
+): RelativeTargetProblem | null {
+  const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone)
+  return relative.days_before === 0 && relative.time > localHHMM(deadline) ? 'after_deadline' : null
 }
 
 /**

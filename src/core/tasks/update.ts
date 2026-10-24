@@ -119,6 +119,16 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
     return { task, fieldsChanged: [], description: '', cappedAtDeadline: data.cappedAtDeadline }
   }
 
+  // Relative targets (2026-10-24): the period a linked target follows, named
+  // in the description ("Target the day before at Evening (8:30 PM)").
+  let targetSlotLabel: string | undefined
+  if (typeof data.afterState.target_slot_id === 'number') {
+    const slot = getDb()
+      .prepare('SELECT label FROM time_slots WHERE id = ?')
+      .get(data.afterState.target_slot_id) as { label: string } | undefined
+    targetSlotLabel = slot?.label
+  }
+
   // Look up project name if project_id changed
   let projectName: string | undefined
   if (data.fieldsChanged.includes('project_id') && data.afterState.project_id) {
@@ -139,6 +149,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
       dayStart: dayBoundaryForUser(userId),
       projectName,
       cappedAtDeadline: data.cappedAtDeadline,
+      targetSlotLabel,
     })
     logAction(userId, 'edit', description, data.fieldsChanged, [snapshot])
 

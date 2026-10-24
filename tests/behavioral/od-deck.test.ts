@@ -734,6 +734,10 @@ describe('OD-G: every writer of a target applies the deck clear', () => {
     // deadlines page): its SQL fragment runs inside mark-done.ts and delete.ts,
     // which stamp and snapshot it; it never writes a target, only clears one.
     'src/core/tasks/auto-target-lead.ts': 'clears an automatic target (autoTargetToLead)',
+    // Relative targets (2026-10-24): a reopened relative one-off's target
+    // re-derived (`rederiveOnReopen`) — a fragment mark-done.ts and delete.ts
+    // run; a relative one-off is never on deck (a deck drops its offsets).
+    'src/core/tasks/relative-target.ts': 'a relative one-off is never on deck (rederiveOnReopen)',
     // A new row starts with `on_deck_day` NULL.
     'src/core/tasks/create.ts': 'new row',
     // The module that defines the stamp; no target of its own.

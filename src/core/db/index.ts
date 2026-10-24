@@ -481,6 +481,14 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'target_time')) {
     database.exec('ALTER TABLE tasks ADD COLUMN target_time TEXT DEFAULT NULL')
   }
+  // Relative targets (2026-10-24): the period a relative target's time follows.
+  // No backfill: an existing row's time is custom (NULL).
+  if (!hasColumn(database, 'tasks', 'target_slot_id')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_slot_id INTEGER DEFAULT NULL')
+  }
+  database.exec(
+    'CREATE INDEX IF NOT EXISTS idx_tasks_target_slot ON tasks(target_slot_id) WHERE target_slot_id IS NOT NULL',
+  )
   // Repeat ends (2026-10-22, docs/TASK-MODEL.md § Repeat ends). No backfill
   // beyond `liftRuleEnds` below: a rule stored with COUNT/UNTIL (none on prod).
   if (!hasColumn(database, 'tasks', 'repeat_count')) {
