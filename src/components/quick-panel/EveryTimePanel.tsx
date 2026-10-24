@@ -753,7 +753,15 @@ function ScheduleFrom({
   )
 }
 
-/** "Next: Fri Nov 6 → Sat Nov 7 · Fri Dec 4 → Sat Dec 5 · …", the last marked. */
+/**
+ * "Next:" and the next occurrences, ONE PER LINE, each labelled and timed
+ * (`nextDateWords`, 2026-10-24):
+ *   Next:
+ *   Sat Nov 7 · deadline 8:00 AM · target Fri 12:00 PM
+ *   Sat Dec 5 · deadline 8:00 AM · target Fri 12:00 PM · last one
+ * The last one is marked; a rule that runs out with no last one in view
+ * ends with "Ends".
+ */
 function NextLine({
   next,
   timezone,
@@ -765,15 +773,14 @@ function NextLine({
 }) {
   if (hidden) return null
   return (
-    <p data-every-time-next aria-live="polite" className="text-muted-foreground text-xs">
-      <span className="text-foreground font-semibold">Next:</span>{' '}
+    <div data-every-time-next aria-live="polite" className="text-muted-foreground text-xs">
+      <p className="text-foreground font-semibold">Next:</p>
       {next.dates.length === 0 ? (
-        (next.problem ?? ENDS_BEFORE_NEXT)
+        <p>{next.problem ?? ENDS_BEFORE_NEXT}</p>
       ) : (
-        <>
-          {next.dates.map((d, i) => (
-            <span key={d.targetAt ?? d.deadlineAt ?? ''} data-next-date>
-              {i > 0 && <span aria-hidden> · </span>}
+        <ul>
+          {next.dates.map((d) => (
+            <li key={d.targetAt ?? d.deadlineAt ?? ''} data-next-date>
               {nextDateWords({ ...d, last: false }, timezone)}
               {d.last && (
                 <span data-next-last className="text-foreground font-medium">
@@ -781,12 +788,12 @@ function NextLine({
                   · last one
                 </span>
               )}
-            </span>
+            </li>
           ))}
-          {next.ends && !next.dates.some((d) => d.last) && <span> · ends</span>}
-        </>
+          {next.ends && !next.dates.some((d) => d.last) && <li>Ends</li>}
+        </ul>
       )}
-    </p>
+    </div>
   )
 }
 

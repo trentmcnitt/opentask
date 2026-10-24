@@ -646,23 +646,24 @@ describe('TM-EVERY-05: every valid draft’s patch passes planRepeatSchedule and
 // ===========================================================================
 
 describe('TM-EVERY-06: nextDates', () => {
-  test('Home Depot: three target → deadline pairs, as in the mock', () => {
+  test('Home Depot: one occurrence per line, the deadline then the target, both timed', () => {
     const next = nextDates(HOME_DEPOT, draftFromTask(HOME_DEPOT, ctx), ctx)
     expect(next.problem).toBeNull()
     expect(next.ends).toBe(false)
     expect(next.dates.map((d) => nextDateWords(d, TZ))).toEqual([
-      'Fri Nov 6 → Sat Nov 7',
-      'Fri Dec 4 → Sat Dec 5',
-      'Fri Jan 1 → Sat Jan 2',
+      'Sat Nov 7 · deadline 8:00 AM · target Fri 6:00 PM',
+      'Sat Dec 5 · deadline 8:00 AM · target Fri 6:00 PM',
+      'Sat Jan 2 · deadline 8:00 AM · target Fri 6:00 PM',
     ])
   })
 
   test('Fridays: the next three Fridays; a changed rule starts from now', () => {
     const next = nextDates(FRIDAYS, draftFromTask(FRIDAYS, ctx), ctx)
+    // Across the DST change (Sun Nov 1): still 4:00 PM local.
     expect(next.dates.map((d) => nextDateWords(d, TZ))).toEqual([
-      'Fri Oct 23',
-      'Fri Oct 30',
-      'Fri Nov 6',
+      'Fri Oct 23 · 4:00 PM',
+      'Fri Oct 30 · 4:00 PM',
+      'Fri Nov 6 · 4:00 PM',
     ])
     const thu = run(
       draftFromTask(FRIDAYS, ctx),
@@ -673,13 +674,13 @@ describe('TM-EVERY-06: nextDates', () => {
       },
     )
     // Thursday 4 PM is still ahead today.
-    expect(nextDateWords(nextDates(FRIDAYS, thu, ctx).dates[0], TZ)).toBe('Thu Oct 22')
+    expect(nextDateWords(nextDates(FRIDAYS, thu, ctx).dates[0], TZ)).toBe('Thu Oct 22 · 4:00 PM')
   })
 
-  test('one day: both times', () => {
+  test('one day: the deadline, then the target as a time alone', () => {
     const d = run(draftFromTask(FRIDAYS, ctx), { type: 'addDeadline', time: '17:00', ctx })
     expect(nextDateWords(nextDates(FRIDAYS, d, ctx).dates[0], TZ)).toBe(
-      'Fri Oct 23, 4:00 PM → 5:00 PM',
+      'Fri Oct 23 · deadline 5:00 PM · target 4:00 PM',
     )
   })
 
@@ -692,23 +693,23 @@ describe('TM-EVERY-06: nextDates', () => {
     const next = nextDates(FRIDAYS, three, ctx)
     expect(next.ends).toBe(true)
     expect(next.dates.map((d) => nextDateWords(d, TZ))).toEqual([
-      'Fri Oct 23',
-      'Fri Oct 30',
-      'Fri Nov 6 · last one',
+      'Fri Oct 23 · 4:00 PM',
+      'Fri Oct 30 · 4:00 PM',
+      'Fri Nov 6 · 4:00 PM · last one',
     ])
     const two = run(three, { type: 'ends', endType: 'count', endCount: 2 })
     expect(nextDates(FRIDAYS, two, ctx).dates.map((d) => nextDateWords(d, TZ))).toEqual([
-      'Fri Oct 23',
-      'Fri Oct 30 · last one',
+      'Fri Oct 23 · 4:00 PM',
+      'Fri Oct 30 · 4:00 PM · last one',
     ])
     // 2 of 6 used: the current one is the 3rd — four left.
     const counted = { ...FRIDAYS, repeat_count: 6, repeat_count_used: 2 }
     const left = nextDates(counted, draftFromTask(counted, ctx), ctx, 5)
     expect(left.dates.map((d) => nextDateWords(d, TZ))).toEqual([
-      'Fri Oct 23',
-      'Fri Oct 30',
-      'Fri Nov 6',
-      'Fri Nov 13 · last one',
+      'Fri Oct 23 · 4:00 PM',
+      'Fri Oct 30 · 4:00 PM',
+      'Fri Nov 6 · 4:00 PM',
+      'Fri Nov 13 · 4:00 PM · last one',
     ])
     const until = run(draftFromTask(FRIDAYS, ctx), {
       type: 'ends',
@@ -716,8 +717,8 @@ describe('TM-EVERY-06: nextDates', () => {
       endDate: '2026-10-30',
     })
     expect(nextDates(FRIDAYS, until, ctx).dates.map((d) => nextDateWords(d, TZ))).toEqual([
-      'Fri Oct 23',
-      'Fri Oct 30 · last one',
+      'Fri Oct 23 · 4:00 PM',
+      'Fri Oct 30 · 4:00 PM · last one',
     ])
     // A far end: no "last one" in the first three.
     const far = run(until, { type: 'ends', endType: 'date', endDate: '2027-06-01' })
@@ -734,8 +735,8 @@ describe('TM-EVERY-06: nextDates', () => {
       endDate: '2026-12-05',
     })
     expect(nextDates(HOME_DEPOT, d, ctx).dates.map((x) => nextDateWords(x, TZ))).toEqual([
-      'Fri Nov 6 → Sat Nov 7',
-      'Fri Dec 4 → Sat Dec 5 · last one',
+      'Sat Nov 7 · deadline 8:00 AM · target Fri 6:00 PM',
+      'Sat Dec 5 · deadline 8:00 AM · target Fri 6:00 PM · last one',
     ])
     const early = run(d, { type: 'ends', endType: 'date', endDate: '2026-11-06' })
     expect(draftProblem(HOME_DEPOT, early, ctx)).toBe(
@@ -749,6 +750,99 @@ describe('TM-EVERY-06: nextDates', () => {
     expect(choices[0]).toEqual({ days: 0, refused: 'after_deadline' })
     expect(choices.slice(1).every((c) => c.refused === null)).toBe(true)
     expect(daysBeforeChoices(FRIDAYS, draftFromTask(FRIDAYS, ctx), ctx)).toEqual([])
+  })
+})
+
+// ===========================================================================
+// Next's words (2026-10-24): one occurrence per line, labelled and timed
+// ===========================================================================
+
+describe('TM-EVERY-12: nextDateWords', () => {
+  const words = (targetAt: string | null, deadlineAt: string | null, last = false) =>
+    nextDateWords({ targetAt, deadlineAt, last }, TZ)
+
+  test('target-anchored: the date and its time', () => {
+    expect(words(at('2026-11-07T09:00'), null)).toBe('Sat Nov 7 · 9:00 AM')
+    expect(words(at('2026-11-07T09:00'), null, true)).toBe('Sat Nov 7 · 9:00 AM · last one')
+  })
+
+  test('deadline-anchored: the deadline’s day and time, then the target — its weekday within the week before', () => {
+    expect(words(at('2026-11-06T12:00'), at('2026-11-07T08:00'))).toBe(
+      'Sat Nov 7 · deadline 8:00 AM · target Fri 12:00 PM',
+    )
+    expect(words(at('2026-11-01T12:00'), at('2026-11-07T08:00'))).toBe(
+      'Sat Nov 7 · deadline 8:00 AM · target Sun 12:00 PM',
+    )
+    expect(words(at('2026-12-04T12:00'), at('2026-12-05T08:00'), true)).toBe(
+      'Sat Dec 5 · deadline 8:00 AM · target Fri 12:00 PM · last one',
+    )
+  })
+
+  test('the same day: the target’s time alone', () => {
+    expect(words(at('2026-11-07T07:00'), at('2026-11-07T17:00'))).toBe(
+      'Sat Nov 7 · deadline 5:00 PM · target 7:00 AM',
+    )
+  })
+
+  test('a week or more before, across a month, or after the deadline: the target’s full date', () => {
+    // Seven days before is the same weekday as the deadline: a weekday alone would mislead.
+    expect(words(at('2026-10-31T12:00'), at('2026-11-07T08:00'))).toBe(
+      'Sat Nov 7 · deadline 8:00 AM · target Sat Oct 31 12:00 PM',
+    )
+    expect(words(at('2026-10-29T12:00'), at('2026-11-07T08:00'))).toBe(
+      'Sat Nov 7 · deadline 8:00 AM · target Thu Oct 29 12:00 PM',
+    )
+    // Two days before, but in the month before.
+    expect(words(at('2026-10-30T12:00'), at('2026-11-01T08:00'))).toBe(
+      'Sun Nov 1 · deadline 8:00 AM · target Fri Oct 30 12:00 PM',
+    )
+    // A target moved past a deadline that has gone by.
+    expect(words(at('2026-11-09T09:00'), at('2026-11-07T08:00'))).toBe(
+      'Sat Nov 7 · deadline 8:00 AM · target Mon Nov 9 9:00 AM',
+    )
+  })
+
+  test('across a DST change: calendar days, local times', () => {
+    // Fall back (Sun Nov 1 2026, a 25-hour day): the eve stays "the day before".
+    expect(words(at('2026-10-31T18:00'), at('2026-11-01T08:00'))).toBe(
+      'Sun Nov 1 · deadline 8:00 AM · target Sat Oct 31 6:00 PM',
+    )
+    expect(words(at('2026-11-01T00:30'), at('2026-11-02T00:15'))).toBe(
+      'Mon Nov 2 · deadline 12:15 AM · target Sun 12:30 AM',
+    )
+    // Spring forward (Sun Mar 8 2026, a 23-hour day): two days before is still two.
+    expect(words(at('2026-03-07T23:30'), at('2026-03-09T00:30'))).toBe(
+      'Mon Mar 9 · deadline 12:30 AM · target Sat 11:30 PM',
+    )
+  })
+
+  test('no target of its own (the deadlines page): the deadline alone', () => {
+    expect(words(null, at('2026-11-07T08:00'))).toBe('Sat Nov 7 · deadline 8:00 AM')
+  })
+
+  test('nextDates: a target two days before a 1st-Sunday deadline: its date only when it falls in the month before', () => {
+    const firstSunday: EveryTimeTask = {
+      ...BASE,
+      rrule: 'FREQ=MONTHLY;BYDAY=1SU;BYHOUR=8;BYMINUTE=0',
+      anchor_time: '08:00',
+      deadline_at: at('2026-11-01T08:00'),
+      occurrence_at: at('2026-11-01T08:00'),
+      due_at: at('2026-10-30T12:00'),
+      repeat_anchor: 'deadline',
+      target_days_before: 2,
+      target_time: '12:00',
+    }
+    const draft = draftFromTask(firstSunday, ctx)
+    expect(nextDates(firstSunday, draft, ctx).dates.map((d) => nextDateWords(d, TZ))).toEqual([
+      'Sun Nov 1 · deadline 8:00 AM · target Fri Oct 30 12:00 PM',
+      'Sun Dec 6 · deadline 8:00 AM · target Fri 12:00 PM',
+      'Sun Jan 3 · deadline 8:00 AM · target Fri 12:00 PM',
+    ])
+    // The hint says this one the same way.
+    const later = run(draft, { type: 'targetTime', time: '13:00' })
+    expect(thisOneHint(firstSunday, later, ctx)).toBe(
+      'Changes apply to every occurrence, starting with this one: Sun Nov 1 · deadline 8:00 AM · target Fri Oct 30 1:00 PM.',
+    )
   })
 })
 
@@ -767,7 +861,7 @@ describe('TM-EVERY-07: thisOneHint', () => {
   test('on schedule: changes start with this one, at the target the Save gives it', () => {
     const d = run(draftFromTask(HOME_DEPOT, ctx), { type: 'daysBefore', days: 2 })
     expect(thisOneHint(HOME_DEPOT, d, ctx)).toBe(
-      'Changes apply to every occurrence, starting with this one: Thu Nov 5, 6:00 PM.',
+      'Changes apply to every occurrence, starting with this one: Sat Nov 7 · deadline 8:00 AM · target Thu 6:00 PM.',
     )
     const thu = run(
       draftFromTask(FRIDAYS, ctx),
@@ -778,7 +872,7 @@ describe('TM-EVERY-07: thisOneHint', () => {
       },
     )
     expect(thisOneHint(FRIDAYS, thu, ctx)).toBe(
-      'Changes apply to every occurrence, starting with this one: Thu Oct 22, 4:00 PM.',
+      'Changes apply to every occurrence, starting with this one: Thu Oct 22 · 4:00 PM.',
     )
   })
 
@@ -802,7 +896,7 @@ describe('TM-EVERY-07: thisOneHint', () => {
     const p = plan(OVER_HOME_DEPOT, draftToPatch(OVER_HOME_DEPOT, offsets, ctx))
     expect(p).toMatchObject({ kind: 'deadline', dueAt: at('2026-10-01T18:00') })
     expect(thisOneHint(OVER_HOME_DEPOT, offsets, ctx)).toBe(
-      'Changes apply to every occurrence, starting with this one: Thu Oct 1, 6:00 PM.',
+      'Changes apply to every occurrence, starting with this one: Sat Oct 3 · deadline 8:00 AM · target Thu 6:00 PM.',
     )
     // Deadline-anchored, a rule change: the debt is kept.
     const time = run(draftFromTask(OVER_HOME_DEPOT, ctx), { type: 'deadlineTime', time: '09:00' })
@@ -827,7 +921,7 @@ describe('TM-EVERY-07: thisOneHint', () => {
       },
     )
     expect(thisOneHint(queued, thu, ctx)).toBe(
-      'Changes apply to every occurrence, starting with this one: Thu Oct 22, 4:00 PM.',
+      'Changes apply to every occurrence, starting with this one: Thu Oct 22 · 4:00 PM.',
     )
   })
 

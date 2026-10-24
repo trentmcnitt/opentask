@@ -1002,9 +1002,10 @@ export interface NextDates {
 export const ENDS_BEFORE_NEXT = 'Ends before its next date'
 
 /**
- * NEXT: the schedule's next `count` occurrences (§6) — target → deadline on a
- * deadline-anchored draft. From_completion reads "if done on time": each
- * walked as done on its own date. This occurrence is the hint's, not Next's.
+ * NEXT: the schedule's next `count` occurrences (§6) — each its deadline and
+ * target on a deadline-anchored draft (`nextDateWords` says them).
+ * From_completion reads "if done on time": each walked as done on its own
+ * date. This occurrence is the hint's, not Next's.
  */
 export function nextDates(
   task: EveryTimeTask,
@@ -1083,24 +1084,45 @@ function walkInSeries(
 }
 
 /**
- * One Next line: "Fri Nov 6 → Sat Nov 7" (target → deadline), "Fri Nov 6,
- * 9:00 AM → 5:00 PM" when both fall on one day, "Fri Oct 23" with no deadline.
+ * One occurrence, in words, for a Next line and the hint (2026-10-24: one
+ * occurrence per line, every date labelled and timed — the old
+ * "Fri Nov 6 → Sat Nov 7" arrow meant nothing and had no times):
+ *  - deadline-anchored: the occurrence is its deadline's day —
+ *    "Sat Nov 7 · deadline 8:00 AM · target Fri 12:00 PM" (`targetWhen`
+ *    says the target's day only as plainly as is unambiguous);
+ *  - no target of its own (L1, the deadlines page): "Sat Nov 7 · deadline 8:00 AM";
+ *  - target-anchored: "Sat Nov 7 · 9:00 AM".
+ * "· last one" when the series ends with it.
  */
 export function nextDateWords(date: NextDate, timezone: string): string {
   const last = date.last ? ' · last one' : ''
-  // No target of its own (L1, the deadlines page): the deadline alone.
-  if (date.targetAt === null) {
-    return date.deadlineAt
-      ? `deadline ${local(date.deadlineAt, timezone).toFormat('ccc LLL d')}${last}`
-      : ''
+  if (date.deadlineAt) {
+    const deadline = local(date.deadlineAt, timezone)
+    const head = `${deadline.toFormat('ccc LLL d')} · deadline ${deadline.toFormat('h:mm a')}`
+    if (date.targetAt === null) return `${head}${last}`
+    return `${head} · target ${targetWhen(local(date.targetAt, timezone), deadline)}${last}`
   }
-  const target = local(date.targetAt, timezone)
-  if (!date.deadlineAt) return `${target.toFormat('ccc LLL d')}${last}`
-  const deadline = local(date.deadlineAt, timezone)
-  if (target.hasSame(deadline, 'day')) {
-    return `${target.toFormat('ccc LLL d, h:mm a')} → ${deadline.toFormat('h:mm a')}${last}`
+  if (date.targetAt === null) return ''
+  return `${local(date.targetAt, timezone).toFormat('ccc LLL d · h:mm a')}${last}`
+}
+
+/**
+ * A deadline-anchored occurrence's target, said against its deadline (the
+ * line already gives the deadline's date): the same day — the time alone;
+ * within the week before it, in the same month — the weekday ("Fri 12:00 PM",
+ * there is only one Friday it can be); further off, across a month, or after
+ * the deadline (a moved target) — the full date ("Thu Oct 29 12:00 PM").
+ * Calendar days in the zone, never 24-hour spans: a DST change makes a
+ * 23- or 25-hour day.
+ */
+function targetWhen(target: DateTime, deadline: DateTime): string {
+  const time = target.toFormat('h:mm a')
+  const days = Math.round(deadline.startOf('day').diff(target.startOf('day'), 'days').days)
+  if (days === 0) return time
+  if (days > 0 && days < 7 && target.hasSame(deadline, 'month')) {
+    return `${target.toFormat('ccc')} ${time}`
   }
-  return `${target.toFormat('ccc LLL d')} → ${deadline.toFormat('ccc LLL d')}${last}`
+  return `${target.toFormat('ccc LLL d')} ${time}`
 }
 
 export interface DaysBeforeChoice {
@@ -1196,8 +1218,8 @@ export const KEEPS_ITS_DECK = 'Changes apply to every future occurrence. This on
  *  - this occurrence has something of its own (`occurrenceKeepsItsOwn`):
  *    changes apply to future occurrences, this one keeps it — TRUE once the
  *    server keeps a moved target and a deck across a schedule change (PR 4a);
- *  - on schedule: changes apply starting with this one, at the target the
- *    Save gives it.
+ *  - on schedule: changes apply starting with this one, at the dates the
+ *    Save gives it, in a Next line's words (`nextDateWords`).
  * Null in create mode (nothing exists yet; Next says when it starts).
  */
 export function thisOneHint(
@@ -1226,12 +1248,32 @@ export function thisOneHint(
     return task.on_deck_day ? KEEPS_ITS_DECK : KEEPS_ITS_OWN_TARGET
   }
   const at = thisOneTarget(task, draft, ctx)
-  if (!at) return 'Changes apply to every occurrence.'
+  const deadlineAt = thisOneDeadline(task, draft, ctx)
+  if (!at && !deadlineAt) return 'Changes apply to every occurrence.'
   // Over target: the server keeps the arrived target on a rule change (the
   // debt) but re-derives it on, say, new offsets — say whichever it does.
   const arrived = task.due_at !== null && Date.parse(task.due_at) < ctx.now.getTime()
-  if (arrived && Date.parse(at) === Date.parse(task.due_at!)) return KEEPS_ITS_OWN_TARGET
-  return `Changes apply to every occurrence, starting with this one: ${whenWords(at, tz)}.`
+  if (arrived && at && Date.parse(at) === Date.parse(task.due_at!)) return KEEPS_ITS_OWN_TARGET
+  // The same words as a Next line (`nextDateWords`).
+  const words = nextDateWords({ targetAt: at, deadlineAt, last: false }, tz)
+  return `Changes apply to every occurrence, starting with this one: ${words}.`
+}
+
+/**
+ * The deadline THIS occurrence gets from the Save: a deadline-anchored
+ * result's planned occurrence (its deadline); none on a target-anchored one
+ * (L9). Unplanned (a refused draft), the stored one while the draft keeps
+ * the deadline anchor.
+ */
+function thisOneDeadline(
+  task: EveryTimeTask,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+): string | null {
+  if (draft.anchor !== 'deadline') return null
+  const planned = planDraft(task, draft, ctx)
+  if (!('error' in planned) && planned.plan.kind === 'deadline') return planned.plan.occurrenceAt
+  return task.deadline_at
 }
 
 // ===========================================================================
