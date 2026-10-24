@@ -14,10 +14,11 @@ import Foundation
 ///
 /// REMEMBERED, like the browser's: written whenever `GET /api/user/
 /// preferences` decodes (`APIClient.fetchPreferencesPage()` — every caller:
-/// `refreshSlotActions()` on launch and foreground in the iPhone, watch and
-/// Mac apps, the watch app's label-config fetch, the Quotas widget's and
-/// the Tasks widget feed's reloads), read by every surface until the next
-/// one. A change in Settings reaches a surface at its next preferences
+/// `refreshSlotActions()` on launch and foreground in the iPhone and Mac
+/// apps, the watch app's every load (its label-config fetch), the Quotas
+/// widget's reloads), read by every surface until the next one. The Tasks
+/// and Reminders widgets don't fetch preferences (budget): they read what
+/// the app or the Quotas widget last wrote. A change in Settings reaches a surface at its next preferences
 /// fetch — the same staleness as `PadPresetStore`. MIDNIGHT ONLY WHEN
 /// NOTHING IS KNOWN (a fresh install before its first fetch).
 ///

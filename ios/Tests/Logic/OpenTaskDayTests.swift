@@ -140,6 +140,24 @@ final class OpenTaskDayTests: XCTestCase {
         XCTAssertEqual(d.openTaskDay(of: instant("2026-11-01T07:30:00Z")), date("2026-11-01"))
     }
 
+    /// A far-east zone (Auckland, +13 in summer): its fall-back night's
+    /// repeated 02:30 is still the FIRST instant (NZDT), and the second (NZST)
+    /// is the same day; its spring-forward gap still takes the next valid minute.
+    func testFarEastZoneTransitions() {
+        let auckland = OpenTaskDay(dayStart: "02:30", timeZone: TimeZone(identifier: "Pacific/Auckland")!)
+        XCTAssertEqual(DateHelpers.formatISO(auckland.dayStart(of: date("2027-04-04"))), "2027-04-03T13:30:00Z")
+        XCTAssertEqual(auckland.openTaskDay(of: instant("2027-04-03T14:30:00Z")), date("2027-04-04"))
+        // Spring forward 2026-09-27, 02:00 NZST → 03:00 NZDT: 02:30 is 03:00 NZDT.
+        XCTAssertEqual(DateHelpers.formatISO(auckland.dayStart(of: date("2026-09-27"))), "2026-09-26T14:00:00Z")
+        // Chatham (+13:45 in summer) falls back 03:45 → 02:45: a 03:00 start
+        // is the first 03:00 (CHADT), so the day is 25 hours.
+        let chatham = OpenTaskDay(dayStart: "03:00", timeZone: TimeZone(identifier: "Pacific/Chatham")!)
+        let span = chatham.dateSpan(date("2027-04-04"))
+        XCTAssertEqual(DateHelpers.formatISO(span.start), "2027-04-03T13:15:00Z")
+        XCTAssertEqual(chatham.openTaskDay(of: span.start), date("2027-04-04"))
+        XCTAssertEqual(span.end.timeIntervalSince(span.start), 25 * 3600)
+    }
+
     func testEveryBoundaryJustBeforeAtAndAfter() {
         for start in starts {
             let d = day(start)

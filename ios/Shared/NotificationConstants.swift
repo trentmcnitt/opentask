@@ -287,17 +287,22 @@ func refreshBadgeFromServer() async {
 /// categories already registered (from the cache, or a previous successful
 /// fetch) are left exactly as they are.
 ///
-/// It also fetches the preferences alongside the slots (each half fails on
-/// its own), for two caches: the day boundary every native "today" runs on
-/// (`DayStartStore`, written by `fetchPreferencesPage()` itself — "Day
-/// starts at" PR 3, on every platform: the iPhone's and the Mac's widgets
-/// and the watch read it), and on iOS the snooze pad's preset times
+/// On the iPhone and the Mac it also fetches the preferences alongside the
+/// slots (each half fails on its own), for two caches: the day boundary
+/// every native "today" runs on (`DayStartStore`, written by
+/// `fetchPreferencesPage()` itself — "Day starts at" PR 3: the widgets and
+/// the Mac menu bar read it), and on iOS the snooze pad's preset times
 /// (`PadPresetStore`, `pad_presets`, 2026-10-21) for the notification
-/// content extension's grid — the watch and the Mac have no snooze grid.
-/// This is the app process's one preferences GET per launch/foreground.
+/// content extension's grid — the Mac has no snooze grid. This is the app
+/// process's one preferences GET per launch/foreground. Not on the watch:
+/// its app's `WatchViewModel.load()` already fetches the preferences (the
+/// label colours) on every load, which writes the same cache, and a second
+/// GET would spend the watch's radio for nothing.
 func refreshSlotActions() async {
     guard APIClient.shared.isConfigured else { return }
+    #if !os(watchOS)
     async let page = try? APIClient.shared.fetchPreferencesPage()
+    #endif
     let slots = try? await APIClient.shared.fetchTimeSlots()
     if let slots {
         TimeSlotStore.save(slots)
@@ -309,7 +314,7 @@ func refreshSlotActions() async {
     if let presets = await page?.padPresets {
         PadPresetStore.save(presets)
     }
-    #else
+    #elseif os(macOS)
     // Awaited all the same: an `async let` left unawaited is cancelled at the
     // end of the scope, and its decode is what writes the day boundary.
     _ = await page

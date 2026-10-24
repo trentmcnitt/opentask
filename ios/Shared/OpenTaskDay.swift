@@ -108,12 +108,15 @@ struct OpenTaskDay: Equatable {
     /// whose answer for a gap is the time shifted by the gap and for a
     /// repeated time is not specified: a wall time W is the instant W − o for
     /// each offset o the zone has around it, valid when the zone's offset at
-    /// that instant really is o; the earliest valid one wins.
+    /// that instant really is o; the earliest valid one wins. The offsets are
+    /// sampled up to a day either side of W, so a transition is bracketed
+    /// whatever the zone's offset (Auckland's +13 puts the instant 13 hours
+    /// before W — a 12-hour window missed its fall-back's first 02:30).
     func localMoment(_ date: LocalDate, minutes: Int) -> Date {
         let midnightAsUTC = date.utcMidnight.timeIntervalSince1970
         for m in max(minutes, 0)..<(24 * 60) {
             let wall = midnightAsUTC + Double(m * 60)
-            let offsets = Set([-43_200.0, 0, 43_200].map {
+            let offsets = Set([-86_400.0, -43_200, 0, 43_200, 86_400].map {
                 Double(timeZone.secondsFromGMT(for: Date(timeIntervalSince1970: wall + $0)))
             })
             let valid = offsets
