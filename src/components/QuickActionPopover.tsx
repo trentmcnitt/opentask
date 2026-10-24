@@ -102,8 +102,8 @@ export function QuickActionPopover({
     [focusedTask, onSaveAll],
   )
 
-  // Dirty state from QuickActionPanel: `isDirty` paints the stripe and locks
-  // the sheet's drag; the dismiss guard reads `dirtyRef`, which is current the
+  // Dirty state from QuickActionPanel: `isDirty` locks the sheet's drag (no
+  // stripe in a dialog or sheet: see DirtyCard); the dismiss guard reads `dirtyRef`, which is current the
   // moment the panel reports (see useEditorHost for why state is not enough).
   const { isDirty: isPanelDirty, dirtyRef, onDirtyChange, saveRef, commit } = useEditorHost()
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
@@ -138,7 +138,7 @@ export function QuickActionPopover({
   if (!focusedTask) return null
 
   const panel = (
-    <DirtyCard dirty={isPanelDirty}>
+    <DirtyCard dirty={isPanelDirty} flat>
       <QuickActionPanel
         key={focusedTask.id}
         task={focusedTask}

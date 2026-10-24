@@ -60,7 +60,7 @@ export function ReminderDetailModal({
   onOpenPage,
 }: ReminderDetailModalProps) {
   // Dirtiness lives in a ref for the dismiss guard and in state for the
-  // stripe — see useEditorHost for why both.
+  // sheet's drag lock — see useEditorHost for why both.
   const { isDirty, dirtyRef, onDirtyChange, saveRef, commit } = useEditorHost()
   const single = tasks.length === 1 ? tasks[0] : null
   const creating = tasks.length === 0 && !!create
@@ -94,7 +94,7 @@ export function ReminderDetailModal({
 
   const name = creating ? 'New reminder' : single ? 'Reminder' : 'Reminders'
   const panel = (
-    <DirtyCard dirty={isDirty}>
+    <DirtyCard dirty={isDirty} flat>
       <ReminderDetail
         key={creating ? 'new' : tasks.map((t) => t.id).join(',')}
         tasks={tasks}

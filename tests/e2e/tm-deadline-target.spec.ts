@@ -3,7 +3,7 @@
  * docs/TASK-MODEL.md § The deadlines page — it replaced the automatic target
  * of spec §8):
  *
- * - the row's defer menu offers "Deadline day" (ruling Q8) and, on a picked
+ * - the row's defer menu offers "Morning of the deadline" (ruling Q8) and, on a picked
  *   target with a deadline, "Remove target" (there is no "Back to auto");
  * - every move stops AT the deadline, and the toast says so;
  * - the editor: a deadline task with no target reads "No target" and a Lead
@@ -57,6 +57,11 @@ async function remove(page: Page, ids: number[]) {
   if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
 }
 
+/** Every running animation (the picker opening) has finished, for a screenshot. */
+async function settle(page: Page) {
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)))
+}
+
 const localDay = (iso: unknown) => DateTime.fromISO(String(iso)).setZone(TZ).toISODate()
 
 /** The row's snooze button, hovered into view. */
@@ -70,7 +75,7 @@ async function snoozeButton(page: Page, id: number, title: string): Promise<Loca
 }
 
 test.describe('Deadline: the snooze menu', () => {
-  test('"Deadline day" moves the target to the deadline\'s morning; a picked target offers Remove target', async ({
+  test('"Morning of the deadline" moves the target to the deadline\'s morning; a picked target offers Remove target', async ({
     page,
   }) => {
     const title = uniqueTitle('TM8 deadline day')
@@ -89,7 +94,11 @@ test.describe('Deadline: the snooze menu', () => {
         await expect(menu).toBeVisible()
         await expect(menu.getByRole('menuitem', { name: 'Remove target' })).toBeVisible()
         await expect(menu.getByRole('menuitem', { name: 'Back to auto' })).toHaveCount(0)
-        await menu.getByRole('menuitem', { name: /^Deadline day · / }).click()
+        await menu
+          .getByRole('menuitem', {
+            name: /^Morning of the deadline · .* \((Morning|Deadline) time\)$/,
+          })
+          .click()
         await expect
           .poll(async () => localDay((await stateOf(page, id)).target_at))
           .toBe(deadline.toISODate())
@@ -210,6 +219,8 @@ test.describe('Deadline: the editor', () => {
         await expect(sheet.locator('[data-quick-panel-no-target]')).toHaveText('No target')
         await expect(sheet.locator('[data-quick-panel-auto-target]')).toHaveCount(0)
         const lead = sheet.locator('[data-quick-panel-lead]')
+        await expect(sheet.locator('[data-task-model-fields]')).toContainText('Lead time')
+        await expect(lead.getByRole('group', { name: 'Lead time' })).toBeVisible()
         const from = DateTime.fromISO(String(stored.lead_from), { zone: TZ }).toFormat('ccc LLL d')
         await expect(lead.locator('[data-lead-words]')).toHaveText(
           `On the deadlines page from ${from} (3 days before)`,
@@ -237,6 +248,52 @@ test.describe('Deadline: the editor', () => {
       })
     } finally {
       await remove(page, [bare, picked])
+    }
+  })
+
+  test('the target picker\'s "Morning of the deadline" says where its time comes from, and fits at 375', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
+    const morning = String(prefs.morning_time)
+    // Three days out at 5:30 AM: earlier than the morning, so the pick is the deadline's own time.
+    const deadline = DateTime.now().setZone(TZ).plus({ days: 3 }).set({ hour: 5, minute: 30 })
+    const id = await create(page, {
+      title: uniqueTitle('TM8 morning of'),
+      deadline_at: deadline.toUTC().toISO(),
+    })
+    try {
+      await withPreferences(page, { default_grouping: 'new' }, async () => {
+        const sheet = await openEditor(page, id)
+        await sheet.locator('[data-quick-panel-no-target]').tap()
+        const pick = page.locator('[data-quick-pick]')
+        const [h, m] = morning.split(':').map(Number)
+        const morningOf = deadline.set({ hour: h, minute: m })
+        const expected = morningOf < deadline ? morningOf : deadline
+        const source = morningOf < deadline ? 'Morning time' : 'Deadline time'
+        await expect(pick).toHaveText(
+          `Morning of the deadline · ${expected.toFormat('ccc h:mm a')} (${source})`,
+        )
+        // It wraps inside the picker rather than widening it past the screen.
+        const box = (await pick.boundingBox())!
+        expect(box.x).toBeGreaterThanOrEqual(0)
+        expect(box.x + box.width).toBeLessThanOrEqual(375)
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          ),
+        ).toBe(true)
+        await settle(page)
+        await page.screenshot({ path: '.tmp/screens/morning-of-deadline-375.png' })
+        await pick.tap()
+        await sheet.getByRole('button', { name: 'Save' }).tap()
+        await expect
+          .poll(async () => Date.parse(String((await stateOf(page, id)).target_at)))
+          .toBe(expected.toMillis())
+      })
+    } finally {
+      await remove(page, [id])
     }
   })
 })

@@ -625,7 +625,7 @@ export function QuickActionPanel({
   const showsNoTarget =
     pendingDueAtCleared || deckStaged || (allNoDueDate && !isDateDirty && pendingDueAt === null)
 
-  // The target picker's "Deadline day" (ruling Q8): single task, deadline ahead.
+  // The target picker's "Morning of the deadline" (ruling Q8): single task, deadline ahead.
   const pickerDeadlineDay = isBulkMode
     ? null
     : deadlineDayPick(
@@ -1118,11 +1118,16 @@ export function QuickActionPanel({
     onOpen: () => everyTime.enter(),
   })
 
-  // Task age — "since X" text shown beside the link, for a single existing
-  // task only. The anchor rules live in formatTaskSince. The text is
-  // computed when the task or timezone changes, not on a clock tick.
+  // Task age — "since X" text shown beside "↻ Make it repeat ›", for a single
+  // existing ONE-OFF only. The anchor rules live in formatTaskSince. The text
+  // is computed when the task or timezone changes, not on a clock tick.
+  // A REPEATING task has none (2026-10-24): beside "↻ Repeats — <rule> · edit
+  // every time ›" it wrapped onto a line of its own, and what it said — when
+  // this occurrence arrived — the rows above already say ("This is the Fri
+  // Oct 16 one", or the Target row's date and "· 7 days ago").
   const sinceInfo = useMemo(() => {
     if (!effectiveTask || isBulkMode || isSelectionSheetMode || isCreateMode) return null
+    if (effectiveTask.rrule) return null
     return formatTaskSince(effectiveTask, timezone)
   }, [effectiveTask, isBulkMode, isSelectionSheetMode, isCreateMode, timezone])
 
@@ -1297,8 +1302,9 @@ export function QuickActionPanel({
       c.name.toLowerCase().includes(labelInput.toLowerCase()),
   )
 
-  // EVERY-TIME MODE replaces the whole body (mock E): its own framed card,
-  // with no pad, no chip row and no notes. See `EveryTimePanel`.
+  // EVERY-TIME MODE replaces the whole body (mock E): the teal banner and the
+  // schedule's rows on the same surface (no frame of its own), with no pad,
+  // no chip row and no notes. See `EveryTimePanel`.
   if (everyTime.session) {
     const s = everyTime.session
     const everyTimeTitle = isCreateMode ? createTitle.trim() || 'New task' : title

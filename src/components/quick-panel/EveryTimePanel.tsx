@@ -32,7 +32,7 @@ import {
   repeatEndOf,
   ruleWait,
 } from '@/lib/task-segments'
-import { DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
+import { DEADLINE_WORD, LEAD_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { HowOftenField } from '@/components/quick-panel/HowOftenField'
 import { EndsField } from '@/components/quick-panel/EndsField'
 import { TimeSelect } from '@/components/quick-panel/TimeSelect'
@@ -46,9 +46,9 @@ export type EveryTimeVariant = 'single' | 'create' | 'bulk'
  * THE QUICK PANEL'S "EVERY TIME" MODE (2026-10-22, editor plan §4, mock E;
  * PR 4c). The panel edits a repeating task in two modes: THIS ONE (the
  * default — this occurrence's target, deadline, deck) and EVERY TIME (the
- * schedule). This is the second: a framed card with a teal banner
- * ("EDITING EVERY TIME ‹ Back to this one" — teal is the MODE, blue stays
- * "unsaved"), then
+ * schedule). This is the second: a teal banner ("EDITING EVERY TIME ‹ Back
+ * to this one" — teal is the MODE, blue stays "unsaved") across the top of
+ * the surface the panel is in, then
  *   Repeats on [Target | Deadline] · How often · the anchor's time, then the
  *   other date (deadline-anchored: Deadline [8:00 AM] then Target [the day
  *   before ▾] at [6:00 PM ▾]; target-anchored: Target [4:00 PM] then
@@ -61,6 +61,11 @@ export type EveryTimeVariant = 'single' | 'create' | 'bulk'
  * the reducer, the patch, the problem (the SERVER'S planner and end check,
  * so a 400 can only come from a race), Next, the greyed choices and the hint.
  * This component only lays them out.
+ *
+ * NO FRAME OF ITS OWN (2026-10-24, Trent: "a rectangle inside a rectangle"):
+ * it sits straight on its host's surface — the dialog, the sheet, or the
+ * page's card (`DirtyCard`) — like this-one mode. The banner alone marks the
+ * mode; a teal border around the rows made a third nested box.
  *
  * Variants: `create` (the task doesn't exist yet: the button is Done — it
  * stages the draft and goes back, A7); `bulk` (several tasks, A11: Repeats on
@@ -140,10 +145,10 @@ export function EveryTimePanel({
       role="region"
       aria-labelledby={headingId}
       data-every-time
-      className="border-every-time rounded-lg border-2"
+      className="space-y-3"
     >
       <Banner headingId={headingId} headingRef={headingRef} onBack={onBack} />
-      <div className="space-y-3 p-3">
+      <div className="space-y-3">
         {title}
         {locked ? (
           <LockedRule task={task} stopped={stopped} />
@@ -217,7 +222,7 @@ function Banner({
   onBack: () => void
 }) {
   return (
-    <div className="bg-every-time text-every-time-foreground sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-[0.3rem] pl-3">
+    <div className="bg-every-time text-every-time-foreground sticky top-0 z-10 flex items-center justify-between gap-2 rounded-md pl-3">
       <h2
         id={headingId}
         ref={headingRef}
@@ -653,7 +658,7 @@ function NoTargetRow({
         <span
           className="inline-flex items-center"
           role="group"
-          aria-label="Lead days"
+          aria-label={LEAD_WORD}
           data-every-time-lead
         >
           <button
@@ -748,7 +753,15 @@ function ScheduleFrom({
   )
 }
 
-/** "Next: Fri Nov 6 → Sat Nov 7 · Fri Dec 4 → Sat Dec 5 · …", the last marked. */
+/**
+ * "Next:" and the next occurrences, ONE PER LINE, each labelled and timed
+ * (`nextDateWords`, 2026-10-24):
+ *   Next:
+ *   Sat Nov 7 · deadline 8:00 AM · target Fri 12:00 PM
+ *   Sat Dec 5 · deadline 8:00 AM · target Fri 12:00 PM · last one
+ * The last one is marked; a rule that runs out with no last one in view
+ * ends with "Ends".
+ */
 function NextLine({
   next,
   timezone,
@@ -760,15 +773,14 @@ function NextLine({
 }) {
   if (hidden) return null
   return (
-    <p data-every-time-next aria-live="polite" className="text-muted-foreground text-xs">
-      <span className="text-foreground font-semibold">Next:</span>{' '}
+    <div data-every-time-next aria-live="polite" className="text-muted-foreground text-xs">
+      <p className="text-foreground font-semibold">Next:</p>
       {next.dates.length === 0 ? (
-        (next.problem ?? ENDS_BEFORE_NEXT)
+        <p>{next.problem ?? ENDS_BEFORE_NEXT}</p>
       ) : (
-        <>
-          {next.dates.map((d, i) => (
-            <span key={d.targetAt ?? d.deadlineAt ?? ''} data-next-date>
-              {i > 0 && <span aria-hidden> · </span>}
+        <ul>
+          {next.dates.map((d) => (
+            <li key={d.targetAt ?? d.deadlineAt ?? ''} data-next-date>
               {nextDateWords({ ...d, last: false }, timezone)}
               {d.last && (
                 <span data-next-last className="text-foreground font-medium">
@@ -776,12 +788,12 @@ function NextLine({
                   · last one
                 </span>
               )}
-            </span>
+            </li>
           ))}
-          {next.ends && !next.dates.some((d) => d.last) && <span> · ends</span>}
-        </>
+          {next.ends && !next.dates.some((d) => d.last) && <li>Ends</li>}
+        </ul>
       )}
-    </p>
+    </div>
   )
 }
 

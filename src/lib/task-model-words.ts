@@ -19,8 +19,10 @@ export const OVERDUE_WORD = 'Overdue'
 export const REMOVE_TARGET = 'Remove target'
 /** The editor's target line with no target (2026-10-22). */
 export const NO_TARGET = 'No target'
-/** The picker's choice for the deadline's own day (ruling Q8). */
-export const DEADLINE_DAY = 'Deadline day'
+/** The pickers' choice for the deadline's own day (ruling Q8; "Deadline day" until 2026-10-24). */
+export const DEADLINE_MORNING = 'Morning of the deadline'
+/** The editor's lead row: when a deadline task with no target goes on the deadlines page. */
+export const LEAD_WORD = 'Lead time'
 /** Lower-case, mid-sentence form ("3 overdue"). */
 export const OVERDUE_LOWER = 'overdue'
 

@@ -8,7 +8,7 @@
  *
  * In order: the deadline pull-in (`DEADLINE_PULL_DAYS`); the deadline's stored
  * automatic target (`autoTargetAt`, §8), the target ≤ deadline cap
- * (`capAtDeadline`) and the picker's "Deadline day"; the effective horizon; the
+ * (`capAtDeadline`) and the picker's "Morning of the deadline"; the effective horizon; the
  * check-in day and the horizon segments' days (`latestSegmentDay`); segment
  * membership and carry-over (`segmentState`); the two badges (§7: the age
  * thresholds, `ageLabel`, and attempts, `effectiveAttempts`); a repeating
@@ -328,7 +328,7 @@ export function resolveTarget(
 }
 
 /**
- * The picker's "Deadline day" (ruling Q8): the user's morning on the
+ * The picker's "Morning of the deadline" (ruling Q8): the user's morning on the
  * deadline's own local day — or the deadline itself, if that is earlier.
  */
 export function deadlineDayTarget(
@@ -1487,7 +1487,7 @@ export function deadlineLeadDays(wait: number): number {
  * default, `defaultRelativeTarget`) or after now (a one-off's automatic
  * target, `autoTargetAt`) — `deadlineLeadDays(wait)` days before, at the
  * user's morning; on the deadline day itself, at the morning or the
- * deadline's own time if that is earlier (the picker's "Deadline day",
+ * deadline's own time if that is earlier (the picker's "Morning of the deadline",
  * `deadlineDayTarget`). Pure, in relative form. Every automatic ("fake")
  * target goes through it, so replacing them is one change here.
  */
