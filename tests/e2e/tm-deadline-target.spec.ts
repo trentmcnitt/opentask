@@ -96,7 +96,7 @@ test.describe('Deadline: the snooze menu', () => {
         await expect(menu.getByRole('menuitem', { name: 'Back to auto' })).toHaveCount(0)
         await menu
           .getByRole('menuitem', {
-            name: /^Morning of the deadline · .* \((Morning|Deadline) time\)$/,
+            name: /^Morning of the deadline · .* \((Default task|Deadline) time\)$/,
           })
           .click()
         await expect

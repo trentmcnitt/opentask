@@ -299,6 +299,44 @@ function sameSetting(a: TimeSetting, b: TimeSetting): boolean {
 }
 
 /**
+ * A NEW ACCOUNT STARTS LINKED (Trent, 2026-10-24): when a user's default
+ * periods are installed (`seedDefaultTimeSlots`), each of Default task time,
+ * Wake, Sleep and the four pad buttons that is still a custom time AT a new
+ * period's start is linked to that period — so it reads "Morning (9:00 AM)",
+ * not "Custom time", and follows the period if it moves. The rule only ever
+ * links a setting to the time it already has, so nothing a new user sees or
+ * gets moves.
+ *
+ * With the schema defaults and `DEFAULT_TIME_SLOTS`: Default task time 09:00 →
+ * Morning, Wake 07:00 → Early morning, the pad's 09:00 / 12:00 / 16:00 /
+ * 20:30 → Morning / Midday / Afternoon / Evening. Sleep (22:00) has no period
+ * at its time and stays custom: linking it to Evening would move bedtime, and
+ * quiet hours with it, 90 minutes earlier. Day starts at is never linked: it
+ * stays unset, the fixed 3:00 AM default (`DEFAULT_DAY_START`).
+ *
+ * Returns the `users` column writes (empty when nothing matches). A setting
+ * already linked is left alone; a pad already customised (`pad_presets` not
+ * NULL) too.
+ */
+export function newAccountLinks(
+  row: AnchorRow,
+  slots: readonly Pick<TimeSlot, 'id' | 'start_time'>[],
+): Partial<AnchorRow> {
+  const at = (time: string) => slots.find((s) => s.start_time === time)?.id ?? null
+  const writes: Partial<AnchorRow> = {}
+  for (const key of ANCHOR_KEYS) {
+    if (row[`${key}_slot_id`] !== null) continue
+    const id = at(row[`${key}_time`])
+    if (id !== null) writes[`${key}_slot_id`] = id
+  }
+  if (row.pad_presets === null) {
+    const pad = DEFAULT_PAD_PRESETS.map((p) => ({ time: p.time, slot_id: at(p.time) }))
+    if (pad.some((p) => p.slot_id !== null)) writes.pad_presets = serializePadPresets(pad)
+  }
+  return writes
+}
+
+/**
  * A REMOVED PERIOD'S LINKS BECOME CUSTOM TIMES at the period's own start
  * ("keep the time", Trent 2026-10-21) — not moved to the nearest period the
  * way its reminders and quota prompts are. One change per setting that linked
