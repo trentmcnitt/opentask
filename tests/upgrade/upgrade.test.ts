@@ -53,10 +53,8 @@ const ALLOWED_DRIFT: Record<string, { legacyDefault: string | null; why: string 
   },
   'users.default_sort': {
     legacyDefault: "'due_date'",
-    // Not quite harmless: scripts/seed-demo.ts and seed-dev.ts omit it, so a
-    // user THEY create on a long-lived database starts on the due-date sort
-    // (found by this test, 10-24; a sort the user can change, so left as is).
-    why: "scripts/create-user.ts inserts default_sort = 'horizon' explicitly, for this reason",
+    // seed-demo.ts and seed-dev.ts omitted it until this test found it (10-24).
+    why: "the scripts that create users on a real database (create-user, seed-demo, seed-dev) set default_sort = 'horizon' explicitly",
   },
   'users.priority_display': {
     legacyDefault: `'{"trailingDot":true,"colorTitle":false,"rightBorder":false}'`,
