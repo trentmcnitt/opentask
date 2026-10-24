@@ -12,6 +12,7 @@ import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
 import { rolledOverSince } from './rollover-fence'
+import { ensureLead, withoutAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
 import { applyPromptDefault, applySlotRow, applyUserSettings } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
@@ -48,7 +49,12 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
       // written (B5): leave it as the rollover left it (`rollover-fence.ts`).
       if (rolledOverSince(tx, snapshot, entry.createdAt)) continue
       const count = countBefore(tx, snapshot, entry.fieldsChanged)
-      applyFieldsToTask(snapshot.task_id, snapshot.after_state, entry.fieldsChanged)
+      // The task-queue switch is on and this would put an automatic target
+      // back: applied without it, and given a lead day if it has none
+      // (`auto-target-fence.ts`).
+      const apply = withoutAutoTarget(snapshot.after_state, entry.fieldsChanged)
+      applyFieldsToTask(snapshot.task_id, apply.state, apply.fields)
+      if (apply.dropped) ensureLead(tx, snapshot.task_id)
       // The count moved again: logged again, as a redo (`compensate`).
       compensate(tx, entry.id, snapshot, count, 'redo')
 

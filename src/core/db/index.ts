@@ -10,6 +10,7 @@ import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-de
 import { migrateRepeatAnchors, type RepeatAnchorCounts } from './migrate-repeat-anchor'
 import { migrateDeadlineLeads } from './migrate-deadline-leads'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
+import { isServerProcess } from './process-role'
 
 const DB_PATH = process.env.OPENTASK_DB_PATH || path.join(process.cwd(), 'data', 'tasks.db')
 
@@ -532,19 +533,10 @@ function runMigrations(database: Database.Database): void {
   stampRolloverDates(database)
   clearQuotaDueDates(database)
   restoreProjectGrouping(database)
-  // The deadlines page (2026-10-22, plan A1/L7) rides the task-queue switch:
-  // on, no automatic target is created at startup either.
-  const leads = taskQueueEnabled()
-  logTargetMigration(migrateDeadlineTargets(database, new Date(), { leads }))
-  // After the pull-back above: a converted row's moved target is already capped.
-  logRepeatAnchorMigration(migrateRepeatAnchors(database))
-  // After the anchor migration: a converted repeat keeps its offsets (A6).
-  if (leads) {
-    const leadCounts = migrateDeadlineLeads(database)
-    if (Object.values(leadCounts).some((n) => n > 0)) {
-      log.info('db', `deadlines page migration (2026-10-22): ${JSON.stringify(leadCounts)}`)
-    }
-  }
+  // The deadline data steps: the two that read the task-queue switch run in
+  // the SERVER only — a script skips them in both directions and leaves them
+  // to the server's next start (`runDeadlineSteps`, process-role.ts).
+  runDeadlineSteps(database)
   // After the end columns exist (above).
   const ends = liftRuleEnds(database)
   if (ends.lifted > 0 || ends.stripped.length > 0) {
@@ -553,6 +545,44 @@ function runMigrations(database: Database.Database): void {
       `repeat ends (2026-10-22): lifted ${ends.lifted} rule end(s) into columns; ` +
         `stripped from reminders/quotas: ${JSON.stringify(ends.stripped)}`,
     )
+  }
+}
+
+/**
+ * THE SWITCH-DEPENDENT DATA STEPS RUN IN THE SERVER ONLY (2026-10-24).
+ * The deadlines page (2026-10-22, plan A1/L7) rides the task-queue switch
+ * (`taskQueueEnabled()`, OPENTASK_TASK_QUEUE): on, no automatic target is
+ * created at startup and `migrateDeadlineLeads` turns any left into leads;
+ * off, the automatic target is stored. The switch lives in the SERVER's
+ * environment — a script opening the same database (the 4-hourly demo
+ * reset, create-token, the seeds) runs without it, and used to re-create
+ * an automatic target on every deadline one-off the deadlines page held
+ * (prod, 10-24), which the server's next start converted back. So:
+ *  - the server (`isServerProcess()`, marked first thing in
+ *    instrumentation's register(), before the database opens —
+ *    src/core/db/process-role.ts) runs both steps exactly as before;
+ *  - any other process runs NEITHER direction: `migrateDeadlineTargets`
+ *    skips its switch-dependent steps (`switchSteps: false`: the automatic
+ *    targets, the nag-off flag, the target-less repeat rollback) and
+ *    `migrateDeadlineLeads` does not run. The server applies them at its
+ *    next start. Every other data step here runs in every process.
+ * Tests that exercise these steps call them directly or mark the process.
+ */
+function runDeadlineSteps(database: Database.Database): void {
+  const server = isServerProcess()
+  const leads = taskQueueEnabled()
+  if (!server) {
+    log.info('db', 'not the server: the task-queue switch data steps are left to its next start')
+  }
+  logTargetMigration(migrateDeadlineTargets(database, new Date(), { leads, switchSteps: server }))
+  // After the pull-back above: a converted row's moved target is already capped.
+  logRepeatAnchorMigration(migrateRepeatAnchors(database))
+  // After the anchor migration: a converted repeat keeps its offsets (A6).
+  if (server && leads) {
+    const leadCounts = migrateDeadlineLeads(database)
+    if (Object.values(leadCounts).some((n) => n > 0)) {
+      log.info('db', `deadlines page migration (2026-10-22): ${JSON.stringify(leadCounts)}`)
+    }
   }
 }
 

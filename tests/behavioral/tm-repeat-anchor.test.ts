@@ -694,6 +694,11 @@ describe('TM-G01: every SQL writer of occurrence_at / deadline_at / lead_from de
     // which stamp and snapshot it; it never writes a target, only clears one.
     'src/core/tasks/auto-target-lead.ts': 'clears an automatic target (autoTargetToLead)',
     'src/core/tasks/task-segments.ts': 'Defer moves the lead day itself (deferLeads)',
+    // The undo fence (2026-10-24): an undo that drops an automatic target and
+    // leaves a deadline ONE-OFF with no lead day gives it `leadFor`'s, through
+    // the same `oneOffLeadFrom` as autoTargetToLead — never a repeat's date.
+    'src/core/undo/auto-target-fence.ts':
+      "a one-off's lead day after a dropped automatic target (oneOffLeadFrom)",
   }
   const writer =
     /\b(occurrence_at|deadline_at|lead_from)\s*=\s*(\?|NULL|deadline_at|due_at|COALESCE)|INSERT INTO tasks|trackField\(\s*data,\s*'(occurrence_at|deadline_at|lead_from)'/

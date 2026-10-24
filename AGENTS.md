@@ -98,6 +98,8 @@ if (!hasColumn(database, 'tasks', 'new_column')) {
 
 `runMigrations()` also runs idempotent **data** steps on every startup (`backfillTimeSlots`, `backfillLabelRegistry`, `clearQuotaDueDates`, `migrateQuotaPrompts`, `restoreProjectGrouping`) — each is safe to re-run because its `WHERE`/existence check makes a second run a no-op. Follow that shape for a backfill; there is no versioned migrations table.
 
+**Steps that read the task-queue switch run in the server only.** `OPENTASK_TASK_QUEUE` is set in the server's environment, not a script's, so the data steps that depend on it — `migrateDeadlineTargets`' automatic-target steps (`switchSteps`) and `migrateDeadlineLeads` — run only when `isServerProcess()` (`src/core/db/process-role.ts`: marked first thing in `register()` in `src/instrumentation.ts`, before the database opens). A script that opens the database (the demo reset, `create-token`, the seeds, tests) skips them in both directions and the server applies them at its next start; before 2026-10-24 each script run re-created an automatic target on every deadlines-page task. A new switch-dependent data step goes behind the same check, and a test that needs it calls the step directly or marks the process (`markServerProcess`, `unmarkServerProcess` in `afterEach`). `scripts/simulate-days.ts` marks itself: it plays the server on a copy.
+
 To test schema changes from scratch, delete `data/tasks.db` to force a full rebuild. To test the migration path, keep an existing database and restart the app — `runMigrations()` applies the change idempotently.
 
 ### Authentication
