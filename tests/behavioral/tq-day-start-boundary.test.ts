@@ -229,7 +229,9 @@ describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () =
     expect(task(q.id).progress_period_start).toBe(new Date(at('2026-01-16T03:00')).toISOString())
     expect(
       getDb()
-        .prepare('SELECT period_start, period_end, transition FROM progress_periods WHERE task_id = ?')
+        .prepare(
+          'SELECT period_start, period_end, transition FROM progress_periods WHERE task_id = ?',
+        )
         .all(q.id),
     ).toEqual([
       {
