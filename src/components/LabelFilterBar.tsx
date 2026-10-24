@@ -4,13 +4,15 @@ import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
+import { labelChipCounts } from '@/lib/label-filter'
 import { EXCLUDED_CHIP_CLASSES } from '@/lib/priority'
 import { cn } from '@/lib/utils'
 import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task } from '@/types'
 
 interface LabelFilterBarProps {
-  tasks: Task[]
+  /** The items to count — any shape with labels (tasks on the dashboard, quotas on /quotas). */
+  tasks: Pick<Task, 'labels'>[]
   selectedLabels: string[]
   excludedLabels?: string[]
   onToggleLabel: (label: string) => void
@@ -36,25 +38,11 @@ export function LabelFilterBar({
 }: LabelFilterBarProps) {
   const { labelConfig } = useLabelConfig()
 
-  const labelCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const task of tasks) {
-      for (const label of task.labels) {
-        counts.set(label, (counts.get(label) || 0) + 1)
-      }
-    }
-    // Ensure active filters appear even at count 0
-    for (const l of selectedLabels) {
-      if (!counts.has(l)) counts.set(l, 0)
-    }
-    for (const l of excludedLabels) {
-      if (!counts.has(l)) counts.set(l, 0)
-    }
-    return [...counts.entries()].sort((a, b) => {
-      if (b[1] !== a[1]) return b[1] - a[1]
-      return a[0].localeCompare(b[0])
-    })
-  }, [tasks, selectedLabels, excludedLabels])
+  // Counting is shared with every label filter (src/lib/label-filter.ts).
+  const labelCounts = useMemo(
+    () => labelChipCounts(tasks, { selectedLabels, excludedLabels }),
+    [tasks, selectedLabels, excludedLabels],
+  )
 
   if (labelCounts.length === 0) return null
 
@@ -135,6 +123,8 @@ function LabelChipBadge({
     <Badge
       variant={variant}
       className={cn('flex-shrink-0 cursor-pointer select-none', className)}
+      data-label-chip={label}
+      data-chip-state={chipState}
       onClick={handlers.onClick}
       onPointerDown={handlers.onPointerDown}
       onPointerUp={handlers.onPointerUp}

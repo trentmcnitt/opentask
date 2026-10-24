@@ -6,7 +6,14 @@ import { Button } from '@/components/ui/button'
 import { TrackPanel } from '@/components/TrackPanel'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { useQuotasData } from '@/hooks/useQuotasData'
+import { LabelFilterBar } from '@/components/LabelFilterBar'
+import { useLabelFilter } from '@/hooks/useLabelFilter'
+import { filterByLabels } from '@/lib/label-filter'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
+import type { Task } from '@/types'
+
+/** Where this browser keeps the page's label filter — see `useLabelFilter`. */
+export const QUOTAS_LABEL_FILTER_KEY = 'opentask.quotasLabelFilter'
 
 /**
  * The Quotas page: the dashboard's Quotas panel, on a page of its own.
@@ -27,6 +34,22 @@ import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
  *   bubble's trash can.
  * - grouping by label → the panel's label clusters, inside each period.
  * - search, New quota, `?quota=<id>` → here and in the panel, below.
+ *
+ * THE LABEL FILTER (2026-10-24, Trent: "there's no way to filter by tag
+ * here… That'd be nice"). The dashboard's label chips — `LabelFilterBar`
+ * itself, with its gestures and colours, and the dashboard's rules for what a
+ * selection means (src/lib/label-filter.ts: selected labels are OR'd,
+ * excluded ones removed) — in one wrapping row under the header row. No
+ * "Filters" toggle: the dashboard's folds a stack of five chip rows away, and
+ * its open/shut is that page's server preference; one row of labels has
+ * nothing to fold. The row is not drawn when no quota has a label.
+ * - Counts are over the quotas the search lets through (the dashboard counts
+ *   its label chips over its search results with every other filter applied;
+ *   here search is the only other one).
+ * - What it narrows, and how the numbers follow: `TrackPanel`'s "THE LABEL
+ *   FILTER". The line under the chips says the view is filtered, and gives
+ *   the whole count — the dashboard's "Showing N of M · Clear filter".
+ * - Kept across reloads in this browser (`useLabelFilter`).
  * - selecting several and editing or trashing them together → gone with it.
  *
  * What this adds around the panel is only what the panel does not do for
@@ -82,6 +105,8 @@ export function QuotasSummary({
     window.history.replaceState(window.history.state, '', window.location.pathname)
   }, [loaded])
 
+  const labels = useLabelFilter(QUOTAS_LABEL_FILTER_KEY)
+
   const query = normalizeTaskSearch(searchQuery)
   const searching = query.length > 0
 
@@ -94,10 +119,11 @@ export function QuotasSummary({
     <div data-quotas-summary className="space-y-3 pb-24">
       <QuotasHeaderRow count={tasks.length} onNew={openCreate} />
 
-      {searching && tasks.length > 0 && (
-        <QuotasSearchCount
-          count={tasks.filter((t) => matchesTaskSearch(t, query)).length}
-          query={searchQuery ?? ''}
+      {tasks.length > 0 && (
+        <QuotasFilterLines
+          quotas={searching ? tasks.filter((t) => matchesTaskSearch(t, query)) : tasks}
+          labels={labels}
+          searchQuery={searching ? (searchQuery ?? '') : null}
         />
       )}
 
@@ -113,11 +139,76 @@ export function QuotasSummary({
           searchQuery={searchQuery}
           highlightId={highlightId}
           onHighlightDone={clearHighlight}
+          labelFilter={labels.criteria}
         />
       )}
 
       {modal}
     </div>
+  )
+}
+
+/**
+ * The label chips, the search's count line and the "Showing N of M" line, in
+ * the dashboard's order (FilterBar, then the search line, then the filtered
+ * line). `quotas` is what the search lets through — every quota when not
+ * searching — so the chips count it and "of M" is its size, exactly as the
+ * dashboard's chips and line count its search results.
+ */
+function QuotasFilterLines({
+  quotas,
+  labels,
+  searchQuery,
+}: {
+  quotas: Task[]
+  labels: ReturnType<typeof useLabelFilter>
+  /** The search as typed, or null when not searching. */
+  searchQuery: string | null
+}) {
+  const filtering = labels.activeCount > 0
+  const hasLabels = filtering || quotas.some((q) => q.labels.length > 0)
+  const shownCount = filterByLabels(quotas, labels.criteria).length
+  return (
+    <>
+      {hasLabels && (
+        <div
+          data-quota-label-filter
+          role="group"
+          aria-label="Filter by label"
+          className="flex flex-wrap items-center gap-1.5 px-1"
+        >
+          <LabelFilterBar
+            tasks={quotas}
+            selectedLabels={labels.criteria.selectedLabels}
+            excludedLabels={labels.criteria.excludedLabels}
+            onToggleLabel={labels.toggleLabel}
+            onExclusiveLabel={labels.exclusiveLabel}
+            onExcludeLabel={labels.excludeLabel}
+          />
+        </div>
+      )}
+
+      {searchQuery !== null && <QuotasSearchCount count={quotas.length} query={searchQuery} />}
+
+      {/* An empty result under a search already says "No quota here says
+          that"; this line is about the label filter only. */}
+      {filtering && quotas.length > 0 && (
+        <div
+          data-quota-filter-count={shownCount}
+          className="text-muted-foreground rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30"
+        >
+          Showing {shownCount} of {quotas.length} quota{quotas.length === 1 ? '' : 's'}{' '}
+          <span className="mx-1">&middot;</span>
+          <button
+            type="button"
+            onClick={labels.clearLabels}
+            className="text-foreground font-medium hover:underline"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+    </>
   )
 }
 
