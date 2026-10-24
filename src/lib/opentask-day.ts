@@ -26,19 +26,7 @@
  */
 
 import { DateTime } from 'luxon'
-import { parseHHMM, sortSlotsByStart } from '@/lib/time-slot-assign'
-
-/**
- * The rollover time of day (HH:MM): the earliest period's start, else
- * `morningTime`. A slot whose start does not parse is ignored.
- */
-export function rolloverTimeOf(
-  slots: readonly { start_time: string }[],
-  morningTime: string,
-): string {
-  const first = sortSlotsByStart(slots.filter((s) => parseHHMM(s.start_time) !== null))[0]
-  return first?.start_time ?? morningTime
-}
+import { parseHHMM } from '@/lib/time-slot-assign'
 
 /**
  * A LOCAL WALL-CLOCK MOMENT: `time` ("HH:MM") on the local date `localDate`

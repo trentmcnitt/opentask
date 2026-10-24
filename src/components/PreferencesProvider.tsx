@@ -69,7 +69,7 @@ interface PreferencesContextValue {
   sleepTime: string
   sleepSlotId: number | null
   padPresets: TimeSetting[]
-  /** "Day starts at": a setting, or null when unset (the first period). */
+  /** "Day starts at": a setting, or null when unset (the 3:00 AM default). */
   dayStart: TimeSetting | null
   setAnchorPrefs: (values: Partial<Pick<Prefs, AnchorPrefKey>>) => void
   /**

@@ -456,7 +456,7 @@ function validateDayStartFields(
   if (time === undefined && slotId === undefined) return null
   if (time === null) {
     if (slotId !== undefined)
-      return 'day_start_time: null puts the day start back to the first period — send it without day_start_slot_id'
+      return 'day_start_time: null puts the day start back to the default (3:00 AM) — send it without day_start_slot_id'
     changes.day_start_time = null
     changes.day_start_slot_id = null
     return null
@@ -740,7 +740,7 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
     // The task queue (task-queue PR 3, read-only): the server's switch
     // (`OPENTASK_TASK_QUEUE`, which gates the queue UI) and the user's
     // rollover time (HH:MM — their "Day starts at", `getDayStart`: unset, the
-    // first period's start, else morning_time).
+    // fixed 3:00 AM default).
     // With the switch on a client counts attempts in OpenTask days from that
     // time, exactly as the server does; off, in calendar days.
     task_queue: taskQueueEnabled(),
@@ -790,10 +790,10 @@ function formatPreferencesResponse(row: PreferencesRow, userId: number) {
     pad_presets: anchors.pad.map((p) => ({ slot_id: p.slot_id, time: p.time })),
     // "Day starts at" (2026-10-23): the resolved time (= `rollover_time`),
     // the period it is linked to (null: custom, or the default), and whether
-    // it is the default — following the first period, whichever that is.
+    // it is the unset default — 3:00 AM for everyone (2026-10-24).
     day_start_time: dayStart.time,
-    day_start_slot_id: dayStart.first_period ? null : dayStart.slot_id,
-    day_start_first_period: dayStart.first_period,
+    day_start_slot_id: dayStart.slot_id,
+    day_start_default: dayStart.default,
     notifications_enabled: row.notifications_enabled !== 0,
     enrichment_notifications_enabled: row.enrichment_notifications_enabled !== 0,
     sweep_feedback_notifications_enabled: row.sweep_feedback_notifications_enabled !== 0,

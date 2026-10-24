@@ -488,8 +488,7 @@ async function runEnrichment(
   // regression the guard is hiding still shows up in the run output.
   const { filterProjectMatch, postProcessTaskEnrichment } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
-  const { rolloverTimeOf } = await import('@/lib/opentask-day')
-  const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
+  const { DEFAULT_DAY_START } = await import('@/lib/anchor-times')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -510,10 +509,11 @@ async function runEnrichment(
     // At the scenario's own now, so a pinned 10:57 PM places "today" as production would then.
     todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone, now),
     // On deck (D3): A4's "tomorrow" before the rollover — a default user's
-    // (the default periods' first start, 7:00), fixed so a scenario never
-    // depends on the quality DB's user having periods. The check-in day is
-    // the default Saturday (`checkInDay` left out), as for a default user.
-    rolloverTime: rolloverTimeOf(DEFAULT_TIME_SLOTS, input.morningTime ?? '09:00'),
+    // (the fixed "Day starts at" default, 3:00 AM since 2026-10-24), fixed so
+    // a scenario never depends on the quality DB's user's settings. The
+    // check-in day is the default Saturday (`checkInDay` left out), as for a
+    // default user.
+    rolloverTime: DEFAULT_DAY_START,
     now,
     // Every scenario is a new task's first enrichment, as in production.
     newTask: true,

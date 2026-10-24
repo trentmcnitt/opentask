@@ -15,10 +15,9 @@ import { taskQueueEnabled } from './task-queue'
 
 /**
  * A user's rollover time (HH:MM): their "Day starts at" (2026-10-23,
- * `getDayStart`) — a custom time, a linked period's start, or, unset (the
- * default), the earliest period's start, else the Morning time. Every
- * day-keyed server reader goes through here (or `openTaskDayStartForUser`),
- * never `rolloverTimeOf` on its own, which would miss the setting.
+ * `getDayStart`) — a custom time, a linked period's start, or, unset, the
+ * fixed 3:00 AM default (`DEFAULT_DAY_START`, 2026-10-24). Every day-keyed
+ * server reader goes through here (or `dayBoundaryForUser`).
  */
 export function rolloverTimeForUser(userId: number): string {
   return getDayStart(userId).time

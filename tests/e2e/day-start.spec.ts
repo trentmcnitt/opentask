@@ -1,7 +1,7 @@
 /**
  * "Day starts at" (2026-10-23): Settings → Defer shows when the OpenTask day
- * turns — by default the first period (which it follows), or a custom time,
- * or a link to a period. Removing a linked period keeps its time as custom,
+ * turns — by default a fixed 3:00 AM ("Default (3:00 AM)", 2026-10-24), or a
+ * custom time at any hour, or a link to a period. Removing a linked period keeps its time as custom,
  * and Undo puts the link back, like Morning's.
  *
  * The E2E user is shared with every other spec, so the setting is put back
@@ -26,7 +26,7 @@ async function prefs(page: Page) {
     rollover_time: string
     day_start_time: string
     day_start_slot_id: number | null
-    day_start_first_period: boolean
+    day_start_default: boolean
   }
 }
 
@@ -40,47 +40,52 @@ async function resetDayStart(page: Page) {
 }
 
 test.describe('Day starts at', () => {
-  test('defaults to the first period; a custom 3:00 AM saves and reads back; First period goes back', async ({
+  test('defaults to 3:00 AM; a custom 11:00 PM saves and reads back; Default goes back', async ({
     authenticatedPage: page,
   }) => {
-    const [first] = await slots(page)
     try {
       await page.goto('/settings')
       const row = page.locator('[data-anchor-row="day_start"]')
       const summary = row.locator('[data-anchor-summary]')
       const select = row.getByLabel('Day starts at: follows')
-      await expect(select).toHaveValue('first')
-      await expect(summary).toHaveText(`${clock(first.start_time)} · first period (${first.label})`)
+      await expect(select).toHaveValue('default')
+      await expect(select.locator('option[value="default"]')).toHaveText('Default (3:00 AM)')
+      await expect(summary).toHaveText('3:00 AM · default')
       await expect(row.getByLabel('Day starts at', { exact: true })).toHaveCount(0)
 
       // Custom: the time field appears at the time it read, then edits it.
       await select.selectOption('custom')
       const field = row.getByLabel('Day starts at', { exact: true })
-      await expect(field).toHaveValue(first.start_time)
-      await field.fill('03:00')
-      await expect(summary).toHaveText('3:00 AM')
+      await expect(field).toHaveValue('03:00')
+      await field.fill('23:00')
+      await expect(summary).toHaveText('11:00 PM')
       await expect
         .poll(async () => {
           const p = await prefs(page)
-          return [p.rollover_time, p.day_start_first_period, p.day_start_slot_id]
+          return [p.rollover_time, p.day_start_default, p.day_start_slot_id]
         })
-        .toEqual(['03:00', false, null])
+        .toEqual(['23:00', false, null])
 
       // It survives a reload.
       await page.reload()
       await expect(page.locator('[data-anchor-row="day_start"] [data-anchor-summary]')).toHaveText(
-        '3:00 AM',
+        '11:00 PM',
       )
 
       // Back to the default.
       await page
         .locator('[data-anchor-row="day_start"]')
         .getByLabel('Day starts at: follows')
-        .selectOption('first')
+        .selectOption('default')
       await expect(page.locator('[data-anchor-row="day_start"] [data-anchor-summary]')).toHaveText(
-        `${clock(first.start_time)} · first period (${first.label})`,
+        '3:00 AM · default',
       )
-      await expect.poll(async () => (await prefs(page)).day_start_first_period).toBe(true)
+      await expect
+        .poll(async () => {
+          const p = await prefs(page)
+          return [p.rollover_time, p.day_start_default]
+        })
+        .toEqual(['03:00', true])
     } finally {
       await resetDayStart(page)
     }

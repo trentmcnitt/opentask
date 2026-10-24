@@ -84,14 +84,25 @@ function roll(local: string) {
   return runTaskRollover({ now: new Date(at(local)), userId: TEST_USER_ID })
 }
 
-function seedPeriods(starts: string[] = ['06:30', '12:00', '20:30'], morning = '08:30') {
+function seedPeriods(
+  starts: string[] = ['06:30', '12:00', '20:30'],
+  morning = '08:30',
+  dayStart: string | null = '06:30',
+) {
   const db = getDb()
   db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
   const insert = db.prepare(
     'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
   )
   starts.forEach((s, i) => insert.run(TEST_USER_ID, `Period ${i}`, s, i))
-  db.prepare('UPDATE users SET morning_time = ? WHERE id = ?').run(morning, TEST_USER_ID)
+  // The day starts at 06:30, pinned (2026-10-24): this file's timelines were
+  // written against a 06:30 rollover (once the first period's start); the
+  // unset default is now 3:00 AM.
+  db.prepare('UPDATE users SET morning_time = ?, day_start_time = ? WHERE id = ?').run(
+    morning,
+    dayStart,
+    TEST_USER_ID,
+  )
 }
 
 /** Tue 2026-10-20 06:00, switch on, Monday's rollover already run. */
@@ -577,11 +588,11 @@ describe('TQ-E: early-morning picks, and the put-back', () => {
     expect(task(t.id).attempts).toBe(2)
   })
 
-  test('TQ-S05: the rollover moment with no periods is morning_time', () => {
-    seedPeriods([], '08:30')
+  test('TQ-S05: day start unset, no periods → the rollover is the 3:00 AM default, not morning_time', () => {
+    seedPeriods([], '08:30', null)
     const t = makeAt('2026-10-16T08:00', { due_at: at('2026-10-16T09:00') })
-    expect(roll('2026-10-17T08:29').ran).toBe(0)
-    expect(roll('2026-10-17T08:30').stripped).toBe(1)
+    expect(roll('2026-10-17T02:59').ran).toBe(0)
+    expect(roll('2026-10-17T03:00').stripped).toBe(1)
     expect(task(t.id).due_at).toBeNull()
   })
 })

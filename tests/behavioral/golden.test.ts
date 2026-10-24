@@ -52,8 +52,11 @@ function setupQueue(s: GoldenScenario) {
   ;(s.queue.periods ?? ['06:30', '12:00', '20:30']).forEach((start, i) =>
     insert.run(TEST_USER_ID, `Period ${i}`, start, i),
   )
-  db.prepare('UPDATE users SET morning_time = ?, last_rollover_date = ? WHERE id = ?').run(
+  db.prepare(
+    'UPDATE users SET morning_time = ?, day_start_time = ?, last_rollover_date = ? WHERE id = ?',
+  ).run(
     s.queue.morning ?? '08:30',
+    s.queue.dayStart === undefined ? '06:30' : s.queue.dayStart,
     DateTime.fromISO(s.from).minus({ days: 1 }).toISODate(),
     TEST_USER_ID,
   )

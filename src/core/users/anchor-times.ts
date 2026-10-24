@@ -5,11 +5,10 @@
  *
  * Every server reader of those times calls `getAnchorTimes` (or
  * `getTargetContext`, which calls it): never `SELECT morning_time` and use the
- * column, which would miss a link. The readers that still touch the raw
- * `morning_time` column: the no-periods rollover fallbacks (`read.ts`'s SQL,
- * `stampRolloverDates`) — with no periods there can be no link, so there the
- * column IS the resolved time — and `migrate-deadline-targets.ts`, a one-shot
- * migration that ran before links existed.
+ * column, which would miss a link. The one reader that still touches the
+ * raw `morning_time` column is `migrate-deadline-targets.ts`, a one-shot
+ * migration that ran before links existed. (The day start never falls back
+ * to Morning: unset, it is the fixed 3:00 AM, `DEFAULT_DAY_START`.)
  */
 
 import { getDb } from '@/core/db'
@@ -79,11 +78,11 @@ export function resolveUserAnchorTimes(
 /**
  * The user's "Day starts at", resolved (2026-10-23) — the ONE server read of
  * when the OpenTask day turns. `rolloverTimeForUser` is this time;
- * everything day-keyed reads it through there. Always reads the periods: the
- * unset default follows the first one.
+ * everything day-keyed reads it through there. The periods are read only
+ * for a link (unset is the fixed 3:00 AM default).
  */
 export function getDayStart(userId: number, slots?: readonly TimeSlot[]): ResolvedDayStart {
   const row = readAnchorRow(userId)
-  const periods = slots ?? listTimeSlots(userId)
-  return resolveDayStart(row, periods, resolveUserAnchorTimes(userId, row, periods).morning.time)
+  const linked = row.day_start_time !== null && row.day_start_slot_id !== null
+  return resolveDayStart(row, slots ?? (linked ? listTimeSlots(userId) : []))
 }

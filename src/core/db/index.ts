@@ -657,17 +657,14 @@ function logTargetMigration(counts: TargetMigrationCounts): void {
  */
 export function stampRolloverDates(database: Database.Database, now: Date = new Date()): number {
   // The day start through `dayStartTimeOf` (the resolver's rule over bare
-  // rows): this runs at startup, below the layer `getDayStart` lives in. The
-  // raw morning_time is the no-periods fallback only, where nothing can link
-  // to a period (anchor times, 2026-10-21), so it needs no resolving.
+  // rows): this runs at startup, below the layer `getDayStart` lives in.
   const users = database
     .prepare(
-      'SELECT id, timezone, morning_time, day_start_time, day_start_slot_id FROM users WHERE last_rollover_date IS NULL',
+      'SELECT id, timezone, day_start_time, day_start_slot_id FROM users WHERE last_rollover_date IS NULL',
     )
     .all() as {
     id: number
     timezone: string
-    morning_time: string | null
     day_start_time: string | null
     day_start_slot_id: number | null
   }[]
@@ -677,15 +674,11 @@ export function stampRolloverDates(database: Database.Database, now: Date = new 
   let stamped = 0
   for (const u of users) {
     try {
-      const time = dayStartTimeOf(
-        u,
-        slots.all(u.id) as { id: number; start_time: string }[],
-        u.morning_time ?? '09:00',
-      )
+      const time = dayStartTimeOf(u, slots.all(u.id) as { id: number; start_time: string }[])
       stamp.run(openTaskDayOf(now, u.timezone, time), u.id)
       stamped++
     } catch (err) {
-      // A malformed zone or morning time: left NULL, and the job stamps it
+      // A malformed zone or day start: left NULL, and the job stamps it
       // (or skips it) on its own. Never block startup.
       log.warn('db', `Rollover stamp skipped for user ${u.id}:`, err)
     }

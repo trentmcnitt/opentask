@@ -1307,7 +1307,8 @@ paths:
         behaves as described above. A call without `source` is a PICK and is
         never marked. A DEFER (`source: sweep` — Snooze-all — or `try_tomorrow`)
         is decided per task by where it lands, against the user's next ROLLOVER
-        (the start of their first period, else their morning time):
+        (their "Day starts at" — unset, 3:00 AM; see `rollover_time` in the
+        preferences):
         - below High (by the tier above), with no deadline, landing at or after
           the next rollover: the target becomes that rollover moment itself and
           the task is marked for the Tasks queue (`queue_mark`; counted in
@@ -5180,11 +5181,11 @@ components:
         rollover_time:
           type: string
           readOnly: true
-          example: '06:30'
+          example: '03:00'
           description: |
             The user's rollover time (HH:MM): their "Day starts at"
-            (`day_start_time`, resolved) — unset, the start of their first
-            reminder period, else `morning_time`. With `task_queue` on, the
+            (`day_start_time`, resolved) — unset, a fixed 3:00 AM
+            (2026-10-24). With `task_queue` on, the
             OpenTask day runs from one rollover to the next — the task queue,
             attempts, and (2026-10-23) the Reminders screen's day: its roster,
             "considered today", quota prompts and their `prompt_key` dates, a
@@ -5378,12 +5379,14 @@ components:
             "Day starts at" (HH:MM, 2026-10-23): when the OpenTask day turns
             (see `rollover_time`, which is the same resolved time). GET always
             returns the resolved time — a custom time, a linked period's
-            start, or, by default (`day_start_first_period`), the first
-            period's start (else `morning_time`). PATCH `"HH:MM"` sets a
-            custom time and unlinks (a time after midnight but before the
-            first period keeps a late night with the day before); PATCH
-            `null` (without `day_start_slot_id`) goes back to the default,
-            following the first period.
+            start, or, by default (`day_start_default`), `03:00` for every
+            user (2026-10-24: a fixed time, never the first period or
+            `morning_time`). PATCH `"HH:MM"` sets a custom time at any hour
+            and unlinks; PATCH `null` (without `day_start_slot_id`) goes back
+            to the default. The OpenTask day is named by the date it begins
+            on for a start at or before 12:00 (a 3:00 AM start: 00:00–02:59
+            belongs to the day before), and by the next date for a start
+            after 12:00 (an 11:00 PM start: Sunday 23:30 is already Monday).
         day_start_slot_id:
           type: [integer, 'null']
           description: |
@@ -5393,13 +5396,13 @@ components:
             `day_start_time` too it must be the period's start); `null`
             unlinks at the time it reads now. Deleting the period keeps its
             start as a custom time (`settings_converted`: "Day start time").
-        day_start_first_period:
+        day_start_default:
           type: boolean
           readOnly: true
           description: |
-            True while "Day starts at" is unset — the default, following
-            whichever period starts first (the rollover every user had before
-            the setting). Ignored on PATCH (send `day_start_time: null`).
+            True while "Day starts at" is unset — the default, 3:00 AM
+            (`day_start_time` then reads `03:00`, `day_start_slot_id` null).
+            Ignored on PATCH (send `day_start_time: null` to go back to it).
         pad_presets:
           type: array
           minItems: 4

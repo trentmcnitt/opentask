@@ -4,12 +4,12 @@
  * Settings → "Day starts at" (2026-10-23): when the OpenTask day turns — the
  * task queue's rollover, today's reminders and quota prompts, a daily quota's
  * count. `AnchorTimeRow`'s control (`src/lib/anchor-times.ts`), with one more
- * choice at the top: "First period", the default, which follows whichever
- * period starts earliest (the Morning time with none). That is the rollover
- * everyone had before the setting, so it stays selectable to go back to.
+ * choice at the top: "Default (3:00 AM)", the unset state every user starts
+ * in (`DEFAULT_DAY_START`, Trent 2026-10-24), kept selectable to go back to.
  *
- * A custom time after midnight but before the first period (Trent's 3:00 AM)
- * is the point of the setting: a late night stays with the day before.
+ * A custom time can be any time of day: 3:00 AM keeps a late night with the
+ * day before; 11:00 PM starts the next day an hour before midnight
+ * (`dayStartMoment` in src/lib/opentask-day.ts names the day either way).
  *
  * Optimistic like `AnchorTimeRow`: the row shows the new value at once
  * (resolved by the server's own rule), then takes the server's answer, or
@@ -20,9 +20,9 @@ import { useAnchorTimes } from '@/components/PreferencesProvider'
 import { anchorPrefsOf, parseServerPrefs, type AnchorPrefs } from '@/lib/preferences-state'
 import { savePreference } from '@/lib/save-preference'
 import {
+  DEFAULT_DAY_START,
   dayStartLabel,
   resolveDayStart,
-  resolveTime,
   type ResolvedDayStart,
   type TimeSetting,
 } from '@/lib/anchor-times'
@@ -32,7 +32,7 @@ import { formatClockTime } from '@/lib/time-utils'
 const SELECT_CLASS =
   'rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
 
-/** The wire form: null back to the first period, a link its period, a custom time its time. */
+/** The wire form: null back to the default, a link its period, a custom time its time. */
 function toWire(next: TimeSetting | null): Record<string, string | number | null> {
   if (next === null) return { day_start_time: null }
   return next.slot_id !== null ? { day_start_slot_id: next.slot_id } : { day_start_time: next.time }
@@ -46,12 +46,10 @@ export function DayStartRow({
   timeSlots: TimeSlot[]
 }) {
   const anchors = useAnchorTimes()
-  const morning = resolveTime(anchors.morning, timeSlots).time
   const resolve = (setting: TimeSetting | null): ResolvedDayStart =>
     resolveDayStart(
       { day_start_time: setting?.time ?? null, day_start_slot_id: setting?.slot_id ?? null },
       timeSlots,
-      morning,
     )
   const current = anchors.dayStart
   const resolved = resolve(current)
@@ -60,7 +58,7 @@ export function DayStartRow({
   const prefsFor = (setting: TimeSetting | null): Partial<AnchorPrefs> => {
     const r = resolve(setting)
     return {
-      dayStart: r.first_period ? null : { time: r.time, slot_id: r.slot_id },
+      dayStart: r.default ? null : { time: r.time, slot_id: r.slot_id },
       rolloverTime: r.time,
     }
   }
@@ -74,7 +72,7 @@ export function DayStartRow({
     })
   }
 
-  const value = resolved.first_period ? 'first' : (resolved.slot_id ?? 'custom')
+  const value = resolved.default ? 'default' : (resolved.slot_id ?? 'custom')
   return (
     <div className="flex flex-wrap items-center justify-between gap-2" data-anchor-row="day_start">
       <div className="min-w-0">
@@ -92,13 +90,13 @@ export function DayStartRow({
           value={value}
           onChange={(e) => {
             const picked = e.target.value
-            if (picked === 'first') save(null)
+            if (picked === 'default') save(null)
             else if (picked === 'custom') save({ time: resolved.time, slot_id: null })
             else save({ time: resolved.time, slot_id: Number(picked) })
           }}
           className={`${SELECT_CLASS} max-w-full min-w-0`}
         >
-          <option value="first">{slots.length > 0 ? 'First period' : 'Morning time'}</option>
+          <option value="default">Default ({formatClockTime(DEFAULT_DAY_START)})</option>
           <option value="custom">Custom time</option>
           {slots.map((slot) => (
             <option key={slot.id} value={slot.id}>

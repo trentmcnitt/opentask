@@ -596,8 +596,8 @@ function deferContext(
   if (!defer && source !== 'try_tomorrow') {
     return { defer, source, timezone, now, rollover: null }
   }
-  // The rollover is the user's "Day starts at" (unset: the first period's
-  // start, or the Morning time with none). Read here rather than passed in,
+  // The rollover is the user's "Day starts at" (unset: 3:00 AM). Read here
+  // rather than passed in,
   // so every caller gets the same answer.
   const rollover = nextRollover(now, timezone, rolloverTimeForUser(userId))
   return { defer, source, timezone, now, rollover }

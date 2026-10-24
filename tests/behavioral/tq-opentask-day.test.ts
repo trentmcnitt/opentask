@@ -5,7 +5,7 @@
 
 import { describe, test, expect } from 'vitest'
 import { DateTime } from 'luxon'
-import { nextRollover, openTaskDayOf, rolloverMoment, rolloverTimeOf } from '@/lib/opentask-day'
+import { nextRollover, openTaskDayOf, rolloverMoment } from '@/lib/opentask-day'
 
 const TZ = 'America/Chicago'
 
@@ -18,22 +18,6 @@ function local(iso: string, zone = TZ): Date {
 function wall(d: Date, zone = TZ): string {
   return DateTime.fromJSDate(d).setZone(zone).toFormat("yyyy-MM-dd'T'HH:mm")
 }
-
-describe('TQ-D: rolloverTimeOf', () => {
-  test('TQ-D01: the earliest period start, whatever order the slots come in', () => {
-    const slots = [{ start_time: '12:00' }, { start_time: '06:30' }, { start_time: '20:30' }]
-    expect(rolloverTimeOf(slots, '08:30')).toBe('06:30')
-  })
-
-  test('TQ-D02: no periods → morning_time', () => {
-    expect(rolloverTimeOf([], '08:30')).toBe('08:30')
-  })
-
-  test('TQ-D03: an unparseable start is ignored', () => {
-    expect(rolloverTimeOf([{ start_time: 'nope' }, { start_time: '07:15' }], '09:00')).toBe('07:15')
-    expect(rolloverTimeOf([{ start_time: 'nope' }], '09:00')).toBe('09:00')
-  })
-})
 
 describe('TQ-D: rolloverMoment', () => {
   test('TQ-D10: an ordinary day', () => {
@@ -80,12 +64,6 @@ describe('TQ-D: openTaskDayOf', () => {
     expect(openTaskDayOf(local('2027-03-14T01:59'), TZ, '02:30')).toBe('2027-03-13')
     expect(openTaskDayOf(local('2027-03-14T03:00'), TZ, '02:30')).toBe('2027-03-14')
   })
-
-  test('TQ-D23: no periods → the morning_time rollover', () => {
-    const rollover = rolloverTimeOf([], '08:30')
-    expect(openTaskDayOf(local('2026-10-20T08:00'), TZ, rollover)).toBe('2026-10-19')
-    expect(openTaskDayOf(local('2026-10-20T08:30'), TZ, rollover)).toBe('2026-10-20')
-  })
 })
 
 describe('TQ-D: nextRollover', () => {
@@ -108,11 +86,5 @@ describe('TQ-D: nextRollover', () => {
 
   test('TQ-D34: across fall back, the rollover stays at 06:30 local', () => {
     expect(wall(nextRollover(local('2026-10-31T22:00'), TZ, '06:30'))).toBe('2026-11-01T06:30')
-  })
-
-  test('TQ-D35: no periods → morning_time', () => {
-    expect(wall(nextRollover(local('2026-10-20T21:00'), TZ, rolloverTimeOf([], '08:30')))).toBe(
-      '2026-10-21T08:30',
-    )
   })
 })

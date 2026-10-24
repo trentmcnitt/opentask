@@ -16,8 +16,8 @@
  *   panels' day roster.
  *
  * Default slots (seeded by setupTestDb): Early morning 07:00, Morning 09:00,
- * Midday 12:00, Afternoon 16:00, Evening 20:30. Unset, the day would start at
- * 07:00 — several checks pin that contrast.
+ * Midday 12:00, Afternoon 16:00, Evening 20:30. 03:00 is also the unset
+ * default (2026-10-24); several checks pin the contrast with a 07:00 start.
  */
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
@@ -135,8 +135,8 @@ describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () =
     expect(evening('2026-01-16T03:00')).toEqual({ waiting: [r.id], considered: 0 })
     expect(getConsideredToday(TEST_USER_ID, tz, clock('2026-01-16T03:00'))).toEqual([])
 
-    // Unset (07:00), 03:00 is still Thursday's day.
-    setDayStart(null)
+    // Starting at 07:00, 03:00 is still Thursday's day.
+    setDayStart('07:00')
     expect(evening('2026-01-16T03:00')).toEqual({ waiting: [], considered: 1 })
   })
 
@@ -302,8 +302,8 @@ describe('TQ-D: "Day starts at" 03:00 — the nag, the rollover and the task sid
     expect(task(t.id).attempts).toBe(1)
     clock('2026-01-16T03:00')
     expect(task(t.id)).toMatchObject({ attempts: 2, attempts_counted_through: '2026-01-16' })
-    // Unset (07:00): 03:00 is still Thursday.
-    setDayStart(null)
+    // Starting at 07:00: 03:00 is still Thursday.
+    setDayStart('07:00')
     expect(task(t.id)).toMatchObject({ attempts: 1, attempts_counted_through: '2026-01-15' })
   })
 

@@ -3,8 +3,8 @@
  * `resolveDayStart` in `src/lib/anchor-times.ts`, `getDayStart` in
  * `src/core/users/anchor-times.ts`).
  *
- * Pins: unset (the default) follows the FIRST period, whichever that is, else
- * Morning — the rollover every user had before; a custom time and a link
+ * Pins: unset (the default) is a fixed 3:00 AM for every user (Trent,
+ * 2026-10-24) — never the first period or Morning; a custom time and a link
  * resolve like Morning's; every server reader of the rollover agrees (the
  * resolver, `rolloverTimeForUser`, the attempts SQL, the startup stamp);
  * deleting a linked period converts the link to custom with undo/redo,
@@ -25,6 +25,7 @@ import { getDayStart, readAnchorRow } from '@/core/users/anchor-times'
 import { updatePreferences } from '@/core/users/preferences'
 import {
   DEFAULT_ANCHOR_ROW,
+  DEFAULT_DAY_START,
   dayStartLabel,
   dayStartSetting,
   dayStartTimeOf,
@@ -71,51 +72,64 @@ describe('the day-start rule (pure)', () => {
   const slots = [slot(5, 'Morning', '08:30'), slot(4, 'Dawn', '06:30'), slot(6, 'Evening', '20:00')]
   const unset = { day_start_time: null, day_start_slot_id: null }
 
-  test('TDS-001: unset follows the FIRST period by start, not by id or order', () => {
-    expect(resolveDayStart(unset, slots, '09:00')).toEqual({
-      time: '06:30',
-      slot_id: 4,
-      slot_label: 'Dawn',
-      first_period: true,
-    })
+  test('TDS-001: unset is the fixed 3:00 AM default — not the first period, whatever the periods', () => {
+    for (const periods of [slots, [slot(7, 'Night', '01:00')], []]) {
+      expect(resolveDayStart(unset, periods)).toEqual({
+        time: DEFAULT_DAY_START,
+        slot_id: null,
+        slot_label: null,
+        default: true,
+      })
+    }
+    expect(DEFAULT_DAY_START).toBe('03:00')
   })
 
-  test('TDS-002: unset with no periods reads the Morning time', () => {
-    expect(resolveDayStart(unset, [], '09:15')).toEqual({
-      time: '09:15',
+  test('TDS-002: a custom time at any hour reads as itself — 11 PM, 1 AM, midnight, 06:30', () => {
+    for (const time of ['23:00', '01:00', '00:00', '06:30']) {
+      expect(resolveDayStart({ day_start_time: time, day_start_slot_id: null }, slots)).toEqual({
+        time,
+        slot_id: null,
+        slot_label: null,
+        default: false,
+      })
+    }
+  })
+
+  test('TDS-003: a custom 03:00 is not the default — it stays put if the default ever moves', () => {
+    expect(resolveDayStart({ day_start_time: '03:00', day_start_slot_id: null }, slots)).toEqual({
+      time: '03:00',
       slot_id: null,
       slot_label: null,
-      first_period: true,
+      default: false,
     })
-  })
-
-  test('TDS-003: a custom time reads as itself — 03:00, before every period', () => {
-    expect(
-      resolveDayStart({ day_start_time: '03:00', day_start_slot_id: null }, slots, '09:00'),
-    ).toEqual({ time: '03:00', slot_id: null, slot_label: null, first_period: false })
   })
 
   test("TDS-004: a link reads the period's start; a gone link its snapshot", () => {
-    expect(
-      resolveDayStart({ day_start_time: '19:00', day_start_slot_id: 6 }, slots, '09:00'),
-    ).toEqual({ time: '20:00', slot_id: 6, slot_label: 'Evening', first_period: false })
-    expect(
-      resolveDayStart({ day_start_time: '19:00', day_start_slot_id: 99 }, slots, '09:00'),
-    ).toEqual({ time: '19:00', slot_id: null, slot_label: null, first_period: false })
+    expect(resolveDayStart({ day_start_time: '19:00', day_start_slot_id: 6 }, slots)).toEqual({
+      time: '20:00',
+      slot_id: 6,
+      slot_label: 'Evening',
+      default: false,
+    })
+    expect(resolveDayStart({ day_start_time: '19:00', day_start_slot_id: 99 }, slots)).toEqual({
+      time: '19:00',
+      slot_id: null,
+      slot_label: null,
+      default: false,
+    })
   })
 
   test('TDS-005: dayStartTimeOf (the bare-row twin) agrees with the resolver in every state', () => {
     const rows = [
       unset,
       { day_start_time: '03:00', day_start_slot_id: null },
+      { day_start_time: '23:00', day_start_slot_id: null },
       { day_start_time: '19:00', day_start_slot_id: 6 },
       { day_start_time: '19:00', day_start_slot_id: 99 },
     ]
     for (const row of rows) {
       for (const periods of [slots, []]) {
-        expect(dayStartTimeOf(row, periods, '09:00')).toBe(
-          resolveDayStart(row, periods, '09:00').time,
-        )
+        expect(dayStartTimeOf(row, periods)).toBe(resolveDayStart(row, periods).time)
       }
     }
   })
@@ -125,19 +139,12 @@ describe('the day-start rule (pure)', () => {
   })
 
   test('TDS-007: the summary line says what it follows', () => {
-    expect(dayStartLabel(resolveDayStart(unset, slots, '09:00'))).toBe(
-      '6:30 AM · first period (Dawn)',
-    )
-    expect(dayStartLabel(resolveDayStart(unset, [], '09:00'))).toBe('9:00 AM · Morning time')
+    expect(dayStartLabel(resolveDayStart(unset, slots))).toBe('3:00 AM · default')
     expect(
-      dayStartLabel(
-        resolveDayStart({ day_start_time: '03:00', day_start_slot_id: null }, slots, '09:00'),
-      ),
-    ).toBe('3:00 AM')
+      dayStartLabel(resolveDayStart({ day_start_time: '23:00', day_start_slot_id: null }, slots)),
+    ).toBe('11:00 PM')
     expect(
-      dayStartLabel(
-        resolveDayStart({ day_start_time: '20:00', day_start_slot_id: 6 }, slots, '09:00'),
-      ),
+      dayStartLabel(resolveDayStart({ day_start_time: '20:00', day_start_slot_id: 6 }, slots)),
     ).toBe('8:00 PM · Evening period')
   })
 
@@ -178,14 +185,25 @@ describe('every server reader follows the setting', () => {
     teardownTestDb()
   })
 
-  test('TDS-020: unset is the first period, and moves with it (the rollover as it always was)', () => {
+  test('TDS-020: unset is 3:00 AM everywhere, and a new earliest period does not move it', () => {
     expect(readAnchorRow(TEST_USER_ID).day_start_time).toBeNull()
-    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('07:00')
-    expect(sqlRollover()).toBe('07:00')
-    const dawn = createTimeSlot(TEST_USER_ID, 'Dawn', '05:45')
-    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('05:45')
-    expect(getDayStart(TEST_USER_ID)).toMatchObject({ slot_id: dawn.id, first_period: true })
-    expect(sqlRollover()).toBe('05:45')
+    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('03:00')
+    expect(sqlRollover()).toBe('03:00')
+    createTimeSlot(TEST_USER_ID, 'Dawn', '05:45')
+    createTimeSlot(TEST_USER_ID, 'Night', '01:30')
+    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('03:00')
+    expect(getDayStart(TEST_USER_ID)).toMatchObject({ slot_id: null, default: true })
+    expect(sqlRollover()).toBe('03:00')
+    // A Morning time does not move it either (no fallback).
+    updatePreferences(TEST_USER_ID, { morning_time: '05:00', morning_slot_id: null })
+    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('03:00')
+    expect(sqlRollover()).toBe('03:00')
+  })
+
+  test('TDS-020b: a custom 11 PM — the resolver, rolloverTimeForUser and the SQL agree', () => {
+    setRow({ day_start_time: '23:00', day_start_slot_id: null })
+    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('23:00')
+    expect(sqlRollover()).toBe('23:00')
   })
 
   test('TDS-021: a custom 03:00 — the resolver, rolloverTimeForUser and the SQL agree', () => {
@@ -222,12 +240,12 @@ describe('every server reader follows the setting', () => {
 
     reset()
     stampRolloverDates(getDb(), at0400)
-    expect(stamped()).toBe('2026-01-14') // unset: 07:00, so 04:00 is still yesterday
+    expect(stamped()).toBe('2026-01-15') // unset: 03:00, so at 04:00 the day has started
 
-    setRow({ day_start_time: '03:00', day_start_slot_id: null })
+    setRow({ day_start_time: '07:00', day_start_slot_id: null })
     reset()
     stampRolloverDates(getDb(), at0400)
-    expect(stamped()).toBe('2026-01-15') // 03:00: the day has started
+    expect(stamped()).toBe('2026-01-14') // 07:00: 04:00 is still yesterday
   })
 })
 
@@ -254,7 +272,7 @@ describe('deleting the period the day start links to', () => {
       time: '12:00',
       slot_id: null,
       slot_label: null,
-      first_period: false,
+      default: false,
     })
     const entry = getDb()
       .prepare('SELECT description FROM undo_log WHERE id = ?')
@@ -268,13 +286,13 @@ describe('deleting the period the day start links to', () => {
     deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, slotId: midday.id })
 
     executeUndo(TEST_USER_ID)
-    expect(getDayStart(TEST_USER_ID)).toMatchObject({ slot_id: midday.id, first_period: false })
+    expect(getDayStart(TEST_USER_ID)).toMatchObject({ slot_id: midday.id, default: false })
 
     executeRedo(TEST_USER_ID)
     expect(getDayStart(TEST_USER_ID)).toMatchObject({
       time: '12:00',
       slot_id: null,
-      first_period: false,
+      default: false,
     })
   })
 
@@ -290,7 +308,7 @@ describe('deleting the period the day start links to', () => {
     expect(slotByLabel('Midday').id).toBe(midday.id)
   })
 
-  test('TDS-033: unset — deleting the first period converts nothing; the day starts at the next one', () => {
+  test('TDS-033: unset — deleting the first period converts nothing; the day still starts at 3:00', () => {
     const early = slotByLabel('Early morning')
     const result = deleteTimeSlot({
       userId: TEST_USER_ID,
@@ -298,12 +316,8 @@ describe('deleting the period the day start links to', () => {
       slotId: early.id,
     })
     expect(result.settings_converted).toEqual([])
-    expect(getDayStart(TEST_USER_ID)).toMatchObject({
-      time: '09:00',
-      slot_label: 'Morning',
-      first_period: true,
-    })
+    expect(getDayStart(TEST_USER_ID)).toMatchObject({ time: '03:00', default: true })
     executeUndo(TEST_USER_ID)
-    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('07:00')
+    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('03:00')
   })
 })

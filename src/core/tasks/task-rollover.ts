@@ -3,9 +3,8 @@
  * rollover; design `task-queue-design.md` rules 1, 2, 5, B3, B5, B7 and the
  * build-plan resolutions).
  *
- * Once per OpenTask day, at the user's ROLLOVER — the start of their first
- * reminder period (Trent's 6:30), or `morning_time` with no periods
- * (`src/lib/opentask-day.ts`) — every below-High task with no deadline that
+ * Once per OpenTask day, at the user's ROLLOVER — their "Day starts at"
+ * (unset, 3:00 AM; `src/lib/opentask-day.ts`) — every below-High task with no deadline that
  * is still sitting on a previous day's target, or that a Snooze-all marked
  * for the queue (`queue_mark`, PR 1), is handed to the task queue:
  *

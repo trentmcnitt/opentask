@@ -5,7 +5,7 @@
  * the automatic deadline target is still written, and this never runs.
  *
  * THE STEPS, in one transaction, per row in the owner's zone and OpenTask day
- * (rollover time = the first period's start, else the raw morning time, as
+ * (rollover time = the owner's "Day starts at" through `dayStartTimeOf`, as
  * `stampRolloverDates` reads it — this runs below the `getDb()` layer):
  *  1. AUTO → LEAD — an OPEN one-off whose target is the deadline's automatic
  *     one (`target_auto = 1`): its attempts are checkpointed as of now
@@ -47,7 +47,7 @@
 
 import type Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { rolloverTimeOf } from '@/lib/opentask-day'
+import { dayStartTimeOf } from '@/lib/anchor-times'
 import {
   defaultRelativeTarget,
   deadlineDay,
@@ -94,12 +94,14 @@ interface Row {
   attempts_counted_through: string | null
   timezone: string | null
   morning_time: string | null
+  day_start_time: string | null
+  day_start_slot_id: number | null
 }
 
 const COLUMNS = `t.id, t.user_id, t.due_at, t.deadline_at, t.rrule, t.recurrence_mode,
   t.anchor_time, t.repeat_anchor, t.target_days_before, t.target_time, t.lead_days,
   t.occurrence_at, t.created_at, t.target_set_at, t.last_completed_at, t.attempts,
-  t.attempts_counted_through, u.timezone, u.morning_time`
+  t.attempts_counted_through, u.timezone, u.morning_time, u.day_start_time, u.day_start_slot_id`
 
 function rows(db: Database.Database, where: string): Row[] {
   return db
@@ -112,15 +114,17 @@ function rows(db: Database.Database, where: string): Row[] {
 
 /** A user's clock as the migration reads it (no resolver: below `getDb()`). */
 function clockFor(db: Database.Database): (row: Row) => { tz: string; rollover: string } {
-  const slots = db.prepare('SELECT start_time FROM time_slots WHERE user_id = ?')
+  const slots = db.prepare('SELECT id, start_time FROM time_slots WHERE user_id = ?')
   const cache = new Map<number, { tz: string; rollover: string }>()
   return (row) => {
     let clock = cache.get(row.user_id)
     if (!clock) {
-      const morning = row.morning_time || '09:00'
       clock = {
         tz: row.timezone || 'UTC',
-        rollover: rolloverTimeOf(slots.all(row.user_id) as { start_time: string }[], morning),
+        rollover: dayStartTimeOf(
+          row,
+          slots.all(row.user_id) as { id: number; start_time: string }[],
+        ),
       }
       cache.set(row.user_id, clock)
     }

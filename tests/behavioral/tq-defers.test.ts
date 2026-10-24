@@ -69,14 +69,25 @@ function sweep(
 }
 
 /** The periods and morning time the whole file runs on. */
-function seedPeriods(starts: string[] = ['06:30', '12:00', '20:30'], morning = '08:30') {
+function seedPeriods(
+  starts: string[] = ['06:30', '12:00', '20:30'],
+  morning = '08:30',
+  dayStart: string | null = '06:30',
+) {
   const db = getDb()
   db.prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
   const insert = db.prepare(
     'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
   )
   starts.forEach((s, i) => insert.run(TEST_USER_ID, `Period ${i}`, s, i))
-  db.prepare('UPDATE users SET morning_time = ? WHERE id = ?').run(morning, TEST_USER_ID)
+  // The day starts at 06:30, pinned (2026-10-24): this file's timelines were
+  // written against a 06:30 rollover (once the first period's start); the
+  // unset default is now 3:00 AM.
+  db.prepare('UPDATE users SET morning_time = ?, day_start_time = ? WHERE id = ?').run(
+    morning,
+    dayStart,
+    TEST_USER_ID,
+  )
 }
 
 beforeEach(() => {
@@ -214,11 +225,11 @@ describe('TQ-L: where a sweep lands, for every option', () => {
     expect(task(t.id).queue_mark).toBe(false)
   })
 
-  test('TQ-L14: no periods → the rollover is morning_time', () => {
-    getDb().prepare('DELETE FROM time_slots WHERE user_id = ?').run(TEST_USER_ID)
+  test('TQ-L14: day start unset, no periods → the rollover is the 3:00 AM default, never morning_time', () => {
+    seedPeriods([], '08:30', null)
     const t = make({ due_at: at('2026-10-20T15:00') })
     sweep([t.id], { until: at('2026-10-21T09:00') })
-    expect(task(t.id).due_at).toBe(at('2026-10-21T08:30'))
+    expect(task(t.id).due_at).toBe(at('2026-10-21T03:00'))
     expect(task(t.id).queue_mark).toBe(true)
   })
 

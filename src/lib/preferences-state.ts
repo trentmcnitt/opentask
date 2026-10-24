@@ -79,8 +79,8 @@ export interface Prefs {
   padPresets: TimeSetting[]
   /**
    * "Day starts at" (2026-10-23) as the server reports it: a custom time or
-   * a link (`{ time, slot_id }`, resolved), or null when unset — the first
-   * period's start, which it follows. The time it resolves to is
+   * a link (`{ time, slot_id }`, resolved), or null when unset — the fixed
+   * 3:00 AM default (`DEFAULT_DAY_START`). The time it resolves to is
    * `rolloverTime`.
    */
   dayStart: TimeSetting | null
@@ -117,7 +117,7 @@ export interface Prefs {
   /**
    * The server's task-queue switch (`OPENTASK_TASK_QUEUE`, task queue PR 3)
    * and the user's rollover time (HH:MM: their "Day starts at" — unset, the
-   * first period's start, else `morning_time`). Read-only, server facts. The switch gates the queue UI;
+   * 3:00 AM default). Read-only, server facts. The switch gates the queue UI;
    * with it on, attempts count OpenTask days from the rollover time, as the
    * server counts them (`useTaskQueue` in PreferencesProvider).
    */
@@ -275,10 +275,10 @@ export function parseServerPrefs(data: Record<string, unknown> | null | undefine
   if (Array.isArray(data.pad_presets)) {
     out.padPresets = parsePadPresets(JSON.stringify(data.pad_presets))
   }
-  // "Day starts at": null when unset (the first period), else as sent.
-  if (typeof data.day_start_first_period === 'boolean') {
+  // "Day starts at": null when unset (the 3:00 AM default), else as sent.
+  if (typeof data.day_start_default === 'boolean') {
     out.dayStart =
-      data.day_start_first_period || typeof data.day_start_time !== 'string'
+      data.day_start_default || typeof data.day_start_time !== 'string'
         ? null
         : {
             time: data.day_start_time,

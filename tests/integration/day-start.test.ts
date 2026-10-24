@@ -1,6 +1,6 @@
 /**
  * "Day starts at" over HTTP (2026-10-23): GET/PATCH /api/user/preferences
- * `day_start_time` / `day_start_slot_id` / `day_start_first_period` and
+ * `day_start_time` / `day_start_slot_id` / `day_start_default` and
  * `rollover_time` (the same resolved time), validation, a period delete
  * converting a link with undo, and — with the task queue on — the Reminders
  * screen counting its day from it (`prompt_key` dates and the stale-key 400).
@@ -53,25 +53,27 @@ describe('"Day starts at" in /api/user/preferences', () => {
     await resetTestData()
   })
 
-  test('a fresh user follows the first period — the rollover as it always was', async () => {
+  test('a fresh user reads the 3:00 AM default — not the first period', async () => {
     const [first] = await slots()
+    expect(first.start_time).not.toBe('03:00')
     const data = await prefs()
     expect(data).toMatchObject({
-      day_start_time: first.start_time,
-      day_start_slot_id: null,
-      day_start_first_period: true,
-      rollover_time: first.start_time,
-    })
-  })
-
-  test('custom, linked, unlinked, and back to the first period', async () => {
-    let res = await patch({ day_start_time: '03:00' })
-    expect(res.status).toBe(200)
-    expect((await res.json()).data).toMatchObject({
       day_start_time: '03:00',
       day_start_slot_id: null,
-      day_start_first_period: false,
+      day_start_default: true,
       rollover_time: '03:00',
+    })
+    expect(data).not.toHaveProperty('day_start_first_period')
+  })
+
+  test('custom (11 PM), linked, unlinked, and back to the default', async () => {
+    let res = await patch({ day_start_time: '23:00' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data).toMatchObject({
+      day_start_time: '23:00',
+      day_start_slot_id: null,
+      day_start_default: false,
+      rollover_time: '23:00',
     })
 
     const evening = (await slots()).find((s) => s.label === 'Evening')!
@@ -79,7 +81,7 @@ describe('"Day starts at" in /api/user/preferences', () => {
     expect((await res.json()).data).toMatchObject({
       day_start_time: evening.start_time,
       day_start_slot_id: evening.id,
-      day_start_first_period: false,
+      day_start_default: false,
     })
 
     // Unlink: at the time it reads now, so nothing jumps.
@@ -87,11 +89,16 @@ describe('"Day starts at" in /api/user/preferences', () => {
     expect((await res.json()).data).toMatchObject({
       day_start_time: evening.start_time,
       day_start_slot_id: null,
-      day_start_first_period: false,
+      day_start_default: false,
     })
 
     res = await patch({ day_start_time: null })
-    expect((await res.json()).data).toMatchObject({ day_start_first_period: true })
+    expect((await res.json()).data).toMatchObject({
+      day_start_time: '03:00',
+      day_start_slot_id: null,
+      day_start_default: true,
+      rollover_time: '03:00',
+    })
   })
 
   test('validation', async () => {
@@ -113,7 +120,7 @@ describe('"Day starts at" in /api/user/preferences', () => {
     expect(await prefs()).toMatchObject({
       day_start_time: midday.start_time,
       day_start_slot_id: null,
-      day_start_first_period: false,
+      day_start_default: false,
     })
     expect((await apiFetch('/api/undo', { method: 'POST' })).status).toBe(200)
     expect((await prefs()).day_start_slot_id).toBe(midday.id)

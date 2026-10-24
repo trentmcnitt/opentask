@@ -220,10 +220,10 @@ describe('a linked setting follows its period', () => {
     expect(getScheduleBlock(TEST_USER_ID)).toContain('wakes at 6:15 AM, sleeps at 10:00 PM')
   })
 
-  test("TAT-013: the rollover's no-periods fallback is the resolved Morning", () => {
-    // With periods the rollover is the first one's start, whatever Morning is.
+  test('TAT-013: the rollover never follows Morning — unset, it is the 3:00 AM default', () => {
+    // Since 2026-10-24 "Day starts at" has no Morning (or first-period) fallback.
     setRow({ morning_slot_id: slotByLabel('Midday').id, morning_time: '12:00' })
-    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('07:00')
+    expect(rolloverTimeForUser(TEST_USER_ID)).toBe('03:00')
   })
 })
 

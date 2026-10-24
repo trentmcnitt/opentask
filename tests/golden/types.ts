@@ -50,11 +50,18 @@ export interface GoldenScenario {
   counts?: Record<string, Record<string, number>>
   /**
    * The task queue ON (task-queue PR 2): the runner sets OPENTASK_TASK_QUEUE,
-   * gives the user these periods (default 06:30 / 12:00 / 20:30, so the
-   * rollover is 06:30) and morning time (default 08:30), stamps
+   * gives the user these periods (default 06:30 / 12:00 / 20:30), morning
+   * time (default 08:30) and "Day starts at" (`dayStart`, default 06:30 —
+   * pinned 2026-10-24, when the unset default moved from the first period's
+   * start to 3:00 AM; `null` leaves it unset, the 3:00 default), stamps
    * `last_rollover_date` to the day before `from`, and runs the rollover at
    * each day's rollover moment — or at `late[date]` (HH:mm), a missed run
    * caught up. A queued task's line says "queued" after its place.
    */
-  queue?: { periods?: string[]; morning?: string; late?: Record<string, string> }
+  queue?: {
+    periods?: string[]
+    morning?: string
+    dayStart?: string | null
+    late?: Record<string, string>
+  }
 }

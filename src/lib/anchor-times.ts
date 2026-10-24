@@ -31,20 +31,22 @@
  *
  * DAY STARTS AT (2026-10-23, Trent): an eighth setting of the same kind —
  * when the OpenTask day turns (`src/lib/opentask-day.ts`). Custom or linked
- * like the others, with ONE extra state: unset, the default, which follows
- * the FIRST period (whichever that is now — add an earlier period and it
- * moves), else the Morning time. That is the rollover every user had before
- * the setting, so nobody's day moved when it shipped. Stored as
- * `day_start_time` / `day_start_slot_id`, both NULL when unset. A period
- * delete converts an explicit link to custom like any other; the unset
- * default has nothing to convert (it simply follows the new first period).
- * `resolveDayStart` is its rule; `dayStartTimeOf` the same rule over bare
- * rows, for the readers below the resolver (`stampRolloverDates`).
+ * like the others, with ONE extra state: unset, the default, which is a
+ * fixed 3:00 AM (`DEFAULT_DAY_START`, Trent 2026-10-24) — never a period,
+ * never the Morning time. Every user who has not set it reads 3:00; nothing
+ * is written for them. Stored as `day_start_time` / `day_start_slot_id`,
+ * both NULL when unset. A period delete converts an explicit link to custom
+ * like any other; the unset default has nothing to convert. A custom time
+ * may be any time of day (11 PM, 1 AM, midnight) — the OpenTask day names
+ * itself either way (`dayStartMoment`). `resolveDayStart` is its rule;
+ * `dayStartTimeOf` the same rule over bare rows, for the readers below the
+ * resolver (`stampRolloverDates`, the deadline-leads migration), and
+ * `read.ts`'s owner_rollover_time SQL the same rule in SQL.
  *
  * Pure and browser-safe: Settings uses it for the optimistic summary line.
  */
 
-import { parseHHMM, sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { formatClockTime } from '@/lib/time-utils'
 
 export type AnchorKey = 'morning' | 'wake' | 'sleep'
@@ -91,7 +93,7 @@ export interface AnchorRow {
   sleep_time: string
   sleep_slot_id: number | null
   pad_presets: string | null
-  /** "Day starts at": NULL (with a NULL slot id) = unset, the first period. */
+  /** "Day starts at": NULL (with a NULL slot id) = unset, the 3:00 AM default. */
   day_start_time: string | null
   day_start_slot_id: number | null
 }
@@ -206,9 +208,15 @@ export function resolveAnchorTimes(row: AnchorRow, slots: readonly TimeSlot[]): 
 export const DAY_START_NAME = 'Day start time'
 
 /**
- * "Day starts at" as stored: a setting, or null when unset (the default —
- * the first period). A row with a slot id but no time (never written) reads
- * as unset.
+ * "Day starts at" when the user has not set it (Trent, 2026-10-24): 3:00 AM
+ * for everyone — a fixed time, not the first period or the Morning time. The
+ * one literal: `read.ts`'s SQL and every resolver read it from here.
+ */
+export const DEFAULT_DAY_START = '03:00'
+
+/**
+ * "Day starts at" as stored: a setting, or null when unset (the 3:00 AM
+ * default). A row with a slot id but no time (never written) reads as unset.
  */
 export function dayStartSetting(
   row: Pick<AnchorRow, 'day_start_time' | 'day_start_slot_id'>,
@@ -219,65 +227,45 @@ export function dayStartSetting(
 
 /** "Day starts at" as read: a `ResolvedTime`, and whether it is the unset default. */
 export interface ResolvedDayStart extends ResolvedTime {
-  /**
-   * True when unset: the day starts at the first period (whose id and label
-   * `slot_id` / `slot_label` then name, for the summary line), or at the
-   * Morning time when there are no periods (both null).
-   */
-  first_period: boolean
-}
-
-/** The earliest period by start (a start that does not parse is ignored — `rolloverTimeOf`'s rule). */
-function firstPeriod<T extends { start_time: string }>(slots: readonly T[]): T | undefined {
-  return sortSlotsByStart(slots.filter((s) => parseHHMM(s.start_time) !== null))[0]
+  /** True when unset: the day starts at `DEFAULT_DAY_START` (slot id and label then null). */
+  default: boolean
 }
 
 /**
  * THE DAY-START RULE: a setting resolves like any anchor (`resolveTime`);
- * unset reads the first period's start, else `morningTime` (the resolved
- * Morning — with no periods nothing can link, so it is the column).
+ * unset reads `DEFAULT_DAY_START`.
  */
 export function resolveDayStart(
   row: Pick<AnchorRow, 'day_start_time' | 'day_start_slot_id'>,
   slots: readonly TimeSlot[],
-  morningTime: string,
 ): ResolvedDayStart {
   const setting = dayStartSetting(row)
-  if (setting) return { ...resolveTime(setting, slots), first_period: false }
-  const first = firstPeriod(slots)
-  return first
-    ? { time: first.start_time, slot_id: first.id, slot_label: first.label, first_period: true }
-    : { time: morningTime, slot_id: null, slot_label: null, first_period: true }
+  if (setting) return { ...resolveTime(setting, slots), default: false }
+  return { time: DEFAULT_DAY_START, slot_id: null, slot_label: null, default: true }
 }
 
 /**
  * `resolveDayStart`'s time over bare rows — for a reader below the resolver
- * (`stampRolloverDates`, at startup). The same rule; one place to keep it.
+ * (`stampRolloverDates` at startup, the deadline-leads migration). The same
+ * rule; one place to keep it.
  */
 export function dayStartTimeOf(
   row: Pick<AnchorRow, 'day_start_time' | 'day_start_slot_id'>,
   slots: readonly { id: number; start_time: string }[],
-  morningTime: string,
 ): string {
   const setting = dayStartSetting(row)
-  if (setting) {
-    const linked = setting.slot_id !== null ? slots.find((s) => s.id === setting.slot_id) : null
-    return linked ? linked.start_time : setting.time
-  }
-  return firstPeriod(slots)?.start_time ?? morningTime
+  if (!setting) return DEFAULT_DAY_START
+  const linked = setting.slot_id !== null ? slots.find((s) => s.id === setting.slot_id) : null
+  return linked ? linked.start_time : setting.time
 }
 
 /**
- * Settings' summary line for "Day starts at": "3:00 AM" custom, "6:30 AM ·
- * Morning period" linked, "6:30 AM · first period (Morning)" unset, and
- * "9:00 AM · Morning time" unset with no periods.
+ * Settings' summary line for "Day starts at": "11:00 PM" custom, "6:30 AM ·
+ * Morning period" linked, "3:00 AM · default" unset.
  */
 export function dayStartLabel(resolved: ResolvedDayStart): string {
-  const time = formatClockTime(resolved.time)
-  if (!resolved.first_period) return anchorLabel(resolved)
-  return resolved.slot_label
-    ? `${time} · first period (${resolved.slot_label})`
-    : `${time} · ${ANCHOR_NAMES.morning}`
+  if (!resolved.default) return anchorLabel(resolved)
+  return `${formatClockTime(resolved.time)} · default`
 }
 
 /**
@@ -330,7 +318,7 @@ export function unlinkSlot(
   parsePadPresets(row.pad_presets).forEach((before, index) => {
     if (before.slot_id === removed.id) changes.push({ setting: index, before, after })
   })
-  // Only an explicit link: an unset day start follows the new first period.
+  // Only an explicit link: an unset day start is the fixed default.
   const dayStart = dayStartSetting(row)
   if (dayStart && dayStart.slot_id === removed.id) {
     changes.push({ setting: 'day_start', before: dayStart, after })
