@@ -70,6 +70,31 @@ export function deckTomorrowDay(timezone: string, now: Date, dayStart: string): 
 }
 
 /**
+ * THE DAY START NOT KNOWN YET ("Day starts at" PR 2 review): before the
+ * preferences load, with nothing remembered (`useDayStartKnown`), the
+ * browser reads midnight — and between midnight and a 3:00 AM day start,
+ * midnight's "tomorrow" is a day late. A deck commits a DAY, so it waits:
+ * the one-tap "On deck tomorrow" does nothing (null) and the hold menu's
+ * days are shown but not choosable, as Snooze's Tomorrow.
+ */
+export const DAY_UNKNOWN_CAPTION = 'loading your day'
+
+/** The one-tap "On deck tomorrow" day, or null while the day start is unknown. */
+export function deckTomorrowIfKnown(
+  timezone: string,
+  now: Date,
+  dayStart: string,
+  dayKnown: boolean,
+): string | null {
+  return dayKnown ? deckTomorrowDay(timezone, now, dayStart) : null
+}
+
+/** The hold menu's days, disabled while the day start is unknown. */
+export function gateDeckDays(days: DeckMenuDay[], dayKnown: boolean): DeckMenuDay[] {
+  return dayKnown ? days : days.map((d) => ({ ...d, disabled: true, caption: DAY_UNKNOWN_CAPTION }))
+}
+
+/**
  * The hold menu's day items, nearest first. `limit` (A1) greys every day
  * after its `latestDay`, with its caption; null = no limit.
  */

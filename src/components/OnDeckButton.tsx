@@ -15,9 +15,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { OptionMenu, type OptionMenuItem } from '@/components/OptionMenu'
-import { useCheckInDay, useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
+import {
+  useCheckInDay,
+  useDayStart,
+  useDayStartKnown,
+  useTaskQueue,
+} from '@/components/PreferencesProvider'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
-import { deckLimit, deckMenuDays, deckTapDay, type DeckLimit } from '@/lib/deck-menu'
+import { deckLimit, deckMenuDays, deckTapDay, gateDeckDays, type DeckLimit } from '@/lib/deck-menu'
 import { DECK_DAY_FORMAT, deckIsToday, openTaskToday } from '@/lib/task-segments'
 import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import type { Task } from '@/types'
@@ -260,6 +265,8 @@ export function DeckMenu({
 }) {
   const { checkInDay } = useCheckInDay()
   const dayStart = useDayStart()
+  // The days wait for the user's day start (`gateDeckDays`).
+  const dayKnown = useDayStartKnown()
   // The rollover time (with the switch on, as decks need): a repeating
   // deadline before the rollover counts as the evening before (`deckLimit`).
   const { attemptsRolloverTime: rolloverTime } = useTaskQueue()
@@ -269,7 +276,7 @@ export function DeckMenu({
   const [pickerOpen, setPickerOpen] = useState(false)
   const now = new Date()
   const bound = limit === undefined ? deckLimit(task, timezone, now, null, rolloverTime) : limit
-  const days = deckMenuDays(timezone, now, dayStart, checkInDay, bound)
+  const days = gateDeckDays(deckMenuDays(timezone, now, dayStart, checkInDay, bound), dayKnown)
   const options: OptionMenuItem[] = [
     ...days.map((d) => ({
       label: d.label,

@@ -19,6 +19,12 @@ import {
 } from '@/lib/browser-day-start'
 import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
+import {
+  DAY_UNKNOWN_CAPTION,
+  deckMenuDays,
+  deckTomorrowIfKnown,
+  gateDeckDays,
+} from '@/lib/deck-menu'
 
 const TZ = 'America/Chicago'
 
@@ -100,5 +106,20 @@ describe('the remembered day start', () => {
     expect(snoozeOptionNeedsDay('tomorrow')).toBe(true)
     expect(snoozeOptionNeedsDay('next_period')).toBe(true)
     expect(snoozeOptionNeedsDay('60')).toBe(false)
+  })
+})
+
+describe('decks wait for the day start too', () => {
+  test('BDS-05: before the day start is known, "On deck tomorrow" commits nothing and the hold menu\'s days are not choosable', () => {
+    const at0130 = DateTime.fromISO('2026-10-25T01:30', { zone: TZ }).toJSDate()
+    // Known (3:00 AM): tomorrow is Sunday Oct 25, the day after the one ending.
+    expect(deckTomorrowIfKnown(TZ, at0130, '03:00', true)).toBe('2026-10-25')
+    // Unknown: midnight's tomorrow would be Monday — a day late — so nothing.
+    expect(deckTomorrowIfKnown(TZ, at0130, UNKNOWN_DAY_START, false)).toBeNull()
+    const days = deckMenuDays(TZ, at0130, UNKNOWN_DAY_START)
+    const gated = gateDeckDays(days, false)
+    expect(gated).toHaveLength(days.length)
+    expect(gated.every((d) => d.disabled && d.caption === DAY_UNKNOWN_CAPTION)).toBe(true)
+    expect(gateDeckDays(days, true)).toBe(days)
   })
 })

@@ -10,7 +10,7 @@ import { TargetTodayButton } from '@/components/TargetMenu'
 import { DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
 import {
   deckReplaces,
-  deckTomorrowDay,
+  deckTomorrowIfKnown,
   deferLeadDays,
   offersDeck,
   todayReplaces,
@@ -54,7 +54,7 @@ import {
 } from '@/lib/task-segments'
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
-import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
+import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -849,6 +849,9 @@ function DeckTomorrowButton({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const dayStart = useDayStart()
+  // Until the browser knows the day start, the tap commits no day
+  // (`deckTomorrowIfKnown`): midnight's tomorrow can be a day late.
+  const dayKnown = useDayStartKnown()
   // A picked target this would replace (plan §5): faded, and it asks first.
   const replaces = deckReplaces(task, timezone)
   const [pending, setPending] = useState<string | null>(null)
@@ -860,7 +863,10 @@ function DeckTomorrowButton({
   }
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => act(deckTomorrowDay(timezone, new Date(), dayStart)),
+    onShortPress: () => {
+      const day = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
+      if (day !== null) act(day)
+    },
     // The tap takes the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })

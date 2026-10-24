@@ -20,9 +20,11 @@
  * week-start boundary after it. That period is short (Mon → Sun is 6 days):
  * a TRANSITION period (`anchorOnPeriodStart`), met → a completion, unmet →
  * recorded and marked, breaking no streak; the period after it starts on the
- * boundary, so from then on the quota is aligned. (A timezone move or a
- * day-start change is not a misalignment: the anchor's DATE is unchanged —
- * `anchorDate`, below.)
+ * boundary, so from then on the quota is aligned. (A day-start change is
+ * never a misalignment: the anchor's DATE is unchanged — `anchorDate`,
+ * below. A timezone move usually isn't either; one large enough to carry the
+ * anchor's local time across noon or midnight shifts its read date by one,
+ * which gives one transition period, then aligns — no worse than before.)
  *
  * INTERVAL > 1: the short period still ends at the next boundary (one week at
  * most), and the next period then runs the full `interval` weeks from it.
@@ -86,8 +88,9 @@ export type PeriodUnit = 'days' | 'weeks' | 'months' | 'years'
  * of its next first date — a few hours longer or shorter, once.
  *
  * A MISALIGNED anchor — one whose date is not the first date of its unit (a
- * week anchored under the old Monday-only rule, a week-start change, a
- * timezone move) — ends at the start of the NEXT unit: a TRANSITION period,
+ * week anchored under the old Monday-only rule, a week-start change, or a
+ * timezone move large enough to shift the anchor's read date by one) — ends
+ * at the start of the NEXT unit: a TRANSITION period,
  * shorter than its unit by whole days, aligned from then on. The rollover
  * marks its record (`progress_periods.transition`) so an unmet one breaks no
  * streak, and carries any taps logged after its end into the next period
