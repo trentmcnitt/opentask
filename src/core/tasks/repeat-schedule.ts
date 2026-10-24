@@ -20,8 +20,9 @@
  *    deadlines page from its lead day (`lead_from`). Validated (`relativeTargetProblem`): never after the deadline,
  *    never on or before the previous deadline;
  *  - never on a reminder or a quota (their date is their occurrence / they
- *    have none), never without a rule or a deadline; the offsets only with
- *    the 'deadline' anchor, and together.
+ *    have none), never without a rule or a deadline; on a REPEAT the offsets
+ *    only with the 'deadline' anchor, and together (a one-off with a deadline
+ *    may carry them since 2026-10-24 — relative targets, `relative-target.ts`).
  * A PATCH also reschedules this occurrence (a deadline sent), switches the
  * anchor (with its rule), keeps a moved target (capped) and a deck (PR 4a,
  * `occurrenceIsPersonal`) and refuses clearing the deadline or the target —

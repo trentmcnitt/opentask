@@ -13,7 +13,20 @@
  * Candidates are the user's own undone, non-deleted reminders (`is_reminder`),
  * every one of them, not just today's: a Tue/Thu reminder must move on a
  * Monday too. Ordinary tasks are never touched — their due time is a real
- * time, and they simply regroup on the dashboard.
+ * time, and they simply regroup on the dashboard — EXCEPT a relative target
+ * linked to the period (2026-10-24, `target_slot_id`; see RELATIVE TARGETS
+ * below and docs/TASK-MODEL.md § Relative targets).
+ *
+ * RELATIVE TARGETS (2026-10-24): a task whose relative target's time follows
+ * the period (`target_slot_id`) keeps `target_time` equal to the period's
+ * start. A RETIME moves every open linked row in the same transaction and
+ * undo entry (a one-off re-derives its target; a deadline-anchored repeat its
+ * unmoved one) without restamping `target_set_at`; a row the new time would
+ * be refused for is unlinked and keeps its old time instead. CLOSED rows
+ * (done, archived, trashed) take the new time in ONE compare-and-set
+ * statement recorded in `slot_state.target_times`. A DELETE unlinks every
+ * linked row, keeping its time (closed rows' ids in `slot_state.target_unlinked`).
+ * Undo and redo of both: `applyTargetRows` in src/core/undo/slot-row.ts.
  *
  * Changing a slot's START (old → new):
  *   1. A reminder ON the old boundary (its time == old start) moves to the new
