@@ -2525,6 +2525,20 @@ paths:
             considered out of the queue) comes back as a `considered` row with `segment_left`,
             so it counts in both numbers. One that left unhandled (trashed, its heads-up over)
             drops out. Omitted: the segments hold only the rows listed now. The web sends it.
+        - name: fill
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1` (2026-10-24, every segment every day): `task_segments` holds every kind this
+            client draws, in the fixed order (`deadlines`, `queue_today`, `queue_previous`,
+            `days`, `upcoming`, `weeks`, `months`, `eventually`), an empty one with `tasks: []`
+            and zero counts. `deadlines` comes only with the task queue on and `deadlines=1`, the
+            queue's two panels only with it on and `queue=1`; the rest always. Display only:
+            which task is in which segment does not change. Omitted: a segment comes only on a
+            day it has rows. The web sends it.
       responses:
         '200':
           description: Reminder groups in slot order

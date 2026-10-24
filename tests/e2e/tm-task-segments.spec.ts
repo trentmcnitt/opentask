@@ -256,9 +256,22 @@ test.describe('Task segments on the dashboard', () => {
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
       const remBox = (await remindersCard(page).boundingBox())!
       expect((await tasks.boundingBox())!.y).toBeGreaterThan(remBox.y + remBox.height - 1)
-      // Its own strip: one bar per segment, no divider.
+      // Its own strip: one bar per segment — every segment, every day, in
+      // its fixed place (2026-10-24; the switch off: no queue pages) — no
+      // divider. The empty ones are done.
       const strip = tasks.getByRole('group', { name: "Today's task segments" })
-      await expect(strip.getByRole('button')).toHaveCount(2)
+      const bars = strip.getByRole('button')
+      const order = ['days', 'upcoming', 'weeks', 'months', 'eventually']
+      await expect(bars).toHaveCount(order.length)
+      for (let i = 0; i < order.length; i++) {
+        await expect(bars.nth(i)).toHaveAttribute('data-slot-segment', `tasks:${order[i]}`)
+      }
+      for (const empty of ['upcoming', 'months', 'eventually']) {
+        await expect(strip.locator(`[data-slot-segment="tasks:${empty}"]`)).toHaveAttribute(
+          'data-slot-state',
+          'done',
+        )
+      }
       await expect(strip.locator('[data-segment-divider]')).toHaveCount(0)
       // The header is "Task queue · Daily", nothing after it (2026-10-20).
       const header = tasks.locator('[data-slot-header-toggle]')
@@ -275,13 +288,19 @@ test.describe('Task segments on the dashboard', () => {
       await expect(cardRow(page, days[0])).toBeVisible()
       await expect.poll(async () => (await stateOf(page, days[0])).last_considered_at).toBeNull()
 
-      // The chevrons page through the segments.
+      // The chevrons page through every segment, an empty one included
+      // ("Nothing today ✓", 0 of 0).
+      await tasks.getByRole('button', { name: 'Next task segment' }).click()
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
+      await expect(tasks.locator('[data-segment-empty]')).toHaveText('Nothing today')
       await tasks.getByRole('button', { name: 'Next task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
       await tasks.getByRole('button', { name: 'Previous task segment' }).click()
+      await tasks.getByRole('button', { name: 'Previous task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
 
-      // Defer all, behind the header tap, finishes Days: on to Weeks.
+      // Defer all, behind the header tap, finishes Days: on to Weeks, the
+      // next with work (past the empty Upcoming).
       await tasks.locator('[data-slot-header-toggle]').click()
       await tasks.getByRole('button', { name: /^Defer all/ }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
@@ -358,9 +377,20 @@ test.describe('Task segments on the dashboard', () => {
       await page.goto('/reminders')
       const headline = page.locator('[data-reminders-headline]')
       const bar = headline.getByRole('group', { name: 'Go to a period' })
-      await expect(bar.locator('[data-day-segment]').last()).toHaveAttribute(
-        'data-day-segment',
-        'tasks:days',
+      // Every task segment, every day, in its fixed place (2026-10-24; the
+      // switch off), after the slots; the empty ones done.
+      const segs = bar.locator('[data-day-segment^="tasks:"]')
+      const order = ['days', 'upcoming', 'weeks', 'months', 'eventually']
+      await expect(segs).toHaveCount(order.length)
+      for (let i = 0; i < order.length; i++) {
+        await expect(segs.nth(i)).toHaveAttribute('data-day-segment', `tasks:${order[i]}`)
+      }
+      await expect(bar.locator('[data-day-segment="tasks:days"]')).not.toHaveAttribute(
+        'data-day-segment-done',
+      )
+      await expect(bar.locator('[data-day-segment="tasks:eventually"]')).toHaveAttribute(
+        'data-day-segment-done',
+        '',
       )
       await expect(bar.locator('[data-segment-divider]')).toHaveCount(1)
       // The task row is not in the day's count: one reminder, nothing else.

@@ -12,12 +12,14 @@ import {
 } from '@/components/reminders/ReminderSlotGroup'
 import {
   ConsideredSegmentRow,
+  EmptySegmentLine,
   SegmentNudge,
   TaskSegmentRow,
   handledRows,
   offersDeferAll,
   segmentCounts,
   segmentColor,
+  segmentEmpty,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -47,6 +49,11 @@ import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/u
  *   hand yet; a segment always is, like a started slot, which shows everything.
  * - Rows are not selectable (no selection bar for tasks here); the circle and
  *   a tap on the row consider, as before.
+ * - EMPTY IS DONE (Trent, 2026-10-24: "always show every queue segment, every
+ *   day, in fixed positions"): a segment with no rows today is still here, in
+ *   its place, finished from the start of the day — "0 of 0 ✓", a green
+ *   hairline, and "Nothing today ✓" where its rows would be. An empty slot
+ *   is never drawn at all.
  */
 export function TaskSegmentGroup({
   segment,
@@ -76,6 +83,7 @@ export function TaskSegmentGroup({
   const { handled: handledCount, total } = segmentCounts(segment)
   // What "Considered all" would still change (not a seen safety-net row).
   const considerable = toConsider(segment).length
+  const empty = segmentEmpty(segment)
   const headerRow = (
     <SlotHeaderRow
       label={label}
@@ -85,6 +93,7 @@ export function TaskSegmentGroup({
       open={open}
       started
       accent={segmentTitleColor(segment.horizon)}
+      emptyDone
     />
   )
   return (
@@ -139,11 +148,19 @@ export function TaskSegmentGroup({
         )}
       </div>
 
-      <SlotHairline label={label} considered={handledCount} total={total} color={color} />
+      <SlotHairline
+        label={label}
+        considered={handledCount}
+        total={total}
+        color={color}
+        // Empty is done: a full green line, not an empty track.
+        fraction={empty ? 1 : undefined}
+      />
 
       {open && (
         <>
           <SegmentNudge segment={segment} className="mx-3" />
+          {empty && <EmptySegmentLine className="px-3 pb-1" />}
           {waiting.length > 0 && (
             <ul className="space-y-0.5 px-1" aria-label={label}>
               {waiting.map((row) => (
@@ -204,9 +221,11 @@ function SegmentConsideredDisclosure({
 }
 
 /**
- * Every task segment with a row today, AFTER the slots (Trent, 10-11: "Tasks
- * should go underneath Reminders"), in screen order (the task queue's two
- * panels, days, upcoming, weeks, months, eventually), with the slots' spacing. Open/folded comes from the slots' own
+ * Every task segment, AFTER the slots (Trent, 10-11: "Tasks should go
+ * underneath Reminders"), in screen order (`SEGMENT_ORDER`: with the switch on
+ * the deadlines page, then the task queue's two panels; days, upcoming,
+ * weeks, months, eventually), with the slots' spacing. Every one, every day
+ * (2026-10-24, the server's `?fill=1`): an empty one reads "Nothing today ✓". Open/folded comes from the slots' own
  * `useSlotDisclosure`, under a "tasks:<horizon>" key that is never a slot id.
  */
 export function TaskSegmentSections({

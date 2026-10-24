@@ -187,11 +187,12 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     await expect(earlier.getByText('Task queue · Previous pulls', { exact: true })).toBeVisible()
     await expect(today.getByText('Stripped today')).toHaveCount(0)
     await expect(earlier.getByText('Previously targeted')).toHaveCount(0)
-    // First among the task segments.
+    // First among the task segments after the deadlines page, which always
+    // leads — shown every day, empty or not (2026-10-24).
     const kinds = await page
       .locator('[data-task-segments] > [data-task-segment]')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-task-segment')))
-    expect(kinds.slice(0, 2)).toEqual(['queue_today', 'queue_previous'])
+    expect(kinds.slice(0, 3)).toEqual(['deadlines', 'queue_today', 'queue_previous'])
 
     // Priority first: the Medium strip above the Try Tomorrow row, which
     // carries the left-edge mark and is not lifted to the top.

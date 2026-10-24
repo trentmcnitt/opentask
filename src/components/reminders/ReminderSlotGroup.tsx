@@ -363,6 +363,7 @@ export function SlotHeaderRow({
   open,
   started,
   accent,
+  emptyDone = false,
 }: {
   label: string
   time: string | null
@@ -372,9 +373,15 @@ export function SlotHeaderRow({
   started: boolean
   /** A colour for the label — a task segment's teal. */
   accent?: string
+  /**
+   * Empty is DONE (a task segment, Trent 2026-10-24: every segment shows
+   * every day, an empty one finished from the start): "0 of 0 ✓", and the
+   * chevron stays, since its body has "Nothing today ✓" to show.
+   */
+  emptyDone?: boolean
 }) {
   const total = count + considered
-  const finished = count === 0 && considered > 0
+  const finished = count === 0 && (considered > 0 || emptyDone)
   const labelEl = (
     <span
       // May wrap, never truncate: "TASK QUEUE · PREVIOUSLY STAGED" (2026-10-20)
@@ -418,7 +425,7 @@ export function SlotHeaderRow({
           className={cn(
             'text-muted-foreground/60 size-3.5 transition-transform duration-200',
             !open && '-rotate-90',
-            count === 0 && considered === 0 && 'invisible',
+            count === 0 && considered === 0 && !emptyDone && 'invisible',
           )}
         />
       </span>

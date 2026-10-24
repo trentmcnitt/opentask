@@ -179,8 +179,11 @@ export interface UseRemindersReturn {
  * task with no target from its lead day, with `safety_net` and `seen` on each
  * row, and the lead day's Upcoming heads-ups — without it (and with the task
  * queue on) such a task would fall back into its horizon segment.
+ * And it shows EVERY segment, every day, in fixed positions (`?fill=1`,
+ * Trent 2026-10-24): an empty one comes back with no rows and reads as done
+ * ("Nothing today ✓").
  */
-const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1&deadlines=1'
+const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1'
 
 export interface ReminderCreateInput {
   title: string
