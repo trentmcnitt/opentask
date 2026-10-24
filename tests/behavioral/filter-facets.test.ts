@@ -43,6 +43,7 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     repeat_anchor: null,
     target_days_before: null,
     target_time: null,
+    target_slot_id: null,
     repeat_count: null,
     repeat_count_used: 0,
     repeat_until: null,

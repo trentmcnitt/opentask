@@ -105,8 +105,21 @@ export interface Task {
    * ('target' on a one-off) and every undo snapshot can be written back.
    */
   repeat_anchor: RepeatAnchor | null
+  /**
+   * RELATIVE TARGETS (2026-10-24, docs/TASK-MODEL.md § Relative targets): the
+   * same pair on a ONE-OFF with a deadline makes its target relative — derived
+   * from the deadline (`relativeTargetAt`) and moved with it; any picked date
+   * makes it fixed again (both null). `isRelativeOneOff` is the test.
+   */
   target_days_before: number | null
   target_time: string | null
+  /**
+   * The reminder period `target_time` follows (a link), or null for a custom
+   * time (2026-10-24). When set, `target_time` is that period's current start
+   * — a period retime rewrites both (src/core/time-slots/edit.ts). The OWNER's
+   * period, on a shared task too.
+   */
+  target_slot_id: number | null
   /**
    * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends). The stored
    * `rrule` never carries COUNT or UNTIL; the end lives here and ONE pure

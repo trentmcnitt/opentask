@@ -46,6 +46,7 @@ const TASK_COLUMNS = [
   'repeat_anchor',
   'target_days_before',
   'target_time',
+  'target_slot_id',
   'repeat_count',
   'repeat_count_used',
   'repeat_until',
@@ -307,6 +308,7 @@ export interface TaskRow {
   repeat_anchor?: string | null
   target_days_before?: number | null
   target_time?: string | null
+  target_slot_id?: number | null
   repeat_count?: number | null
   repeat_count_used?: number | null
   repeat_until?: string | null
@@ -458,6 +460,7 @@ function repeatFields(
   | 'repeat_anchor'
   | 'target_days_before'
   | 'target_time'
+  | 'target_slot_id'
   | 'repeat_count'
   | 'repeat_count_used'
   | 'repeat_until'
@@ -466,6 +469,7 @@ function repeatFields(
     repeat_anchor: row.repeat_anchor === 'deadline' ? 'deadline' : 'target',
     target_days_before: row.target_days_before ?? null,
     target_time: row.target_time ?? null,
+    target_slot_id: row.target_slot_id ?? null,
     // Repeat ends (2026-10-22): defaulted for a row from before the columns.
     repeat_count: row.repeat_count ?? null,
     repeat_count_used: row.repeat_count_used ?? 0,
