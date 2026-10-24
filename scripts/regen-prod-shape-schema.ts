@@ -41,7 +41,8 @@
  * database — rolled back. Every other step must succeed: a step that fails
  * is a migration that would fail an upgrade, and the script stops.
  *
- * Takes a minute or two (one tsx process per step). Needs node_modules.
+ * About 30 s (69 steps, one tsx process each). Needs node_modules.
+ * Deterministic: a rerun with the same --to writes the same file.
  */
 
 import Database from 'better-sqlite3'
@@ -54,7 +55,11 @@ const ROOT = path.resolve(__dirname, '..')
 const OUT = path.join(ROOT, 'tests', 'fixtures', 'schema', 'prod-shape.sql')
 const DEFAULT_FROM = '9f9baf11' // 2026-02-13: removed every earlier migration (see --from above)
 
-/** Releases that never ran against a real database (rolled back), by short sha. */
+/**
+ * Releases that never ran against a real database (rolled back), by short
+ * sha. Not on the committed fixture's path (it stops before them); a later
+ * `--to` replays past them without the step that breaks.
+ */
 const SKIP: Record<string, string> = {
   '80a5c95b':
     'relative targets #342: schema.sql indexed tasks.target_slot_id before runMigrations added it; rolled back on prod 10-24 (fixed by #343)',
