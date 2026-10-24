@@ -411,6 +411,21 @@ describe('TQ-N: roll over now — undo, events, refusals', () => {
     expect(task(f.passed.id).due_at).toBe(at('2026-10-20T10:00'))
   })
 
+  test('TQ-N13: Try Tomorrow flags survive (rows stay in Stripped today)', () => {
+    stamp('2026-10-19')
+    const t = makeAt('2026-10-19T08:00', { due_at: at('2026-10-19T09:00') })
+    setClock('2026-10-19T15:00')
+    bulkSnooze({ ...u, taskIds: [t.id], source: 'try_tomorrow' })
+    roll('2026-10-20T06:30')
+    expect(task(t.id)).toMatchObject({ due_at: null, try_tomorrow: true })
+    runNow('2026-10-20T21:00')
+    expect(task(t.id).try_tomorrow).toBe(true)
+  })
+})
+
+describe('TQ-N: roll over now — run twice', () => {
+  hooks()
+
   test('TQ-N14: run twice — the second changes nothing, and the first undoes whole', () => {
     // Settings → Advanced → Roll over now tapped again right after a run
     // (Trent, 2026-10-24: "seems dangerous"). The first run leaves nothing
@@ -481,16 +496,5 @@ describe('TQ-N: roll over now — undo, events, refusals', () => {
         expect(now[k], `${was.title}.${k}`).toEqual(was[k])
       }
     }
-  })
-
-  test('TQ-N13: Try Tomorrow flags survive (rows stay in Stripped today)', () => {
-    stamp('2026-10-19')
-    const t = makeAt('2026-10-19T08:00', { due_at: at('2026-10-19T09:00') })
-    setClock('2026-10-19T15:00')
-    bulkSnooze({ ...u, taskIds: [t.id], source: 'try_tomorrow' })
-    roll('2026-10-20T06:30')
-    expect(task(t.id)).toMatchObject({ due_at: null, try_tomorrow: true })
-    runNow('2026-10-20T21:00')
-    expect(task(t.id).try_tomorrow).toBe(true)
   })
 })
