@@ -80,6 +80,32 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # The upgrade test (tests/upgrade/, `npm run test:upgrade`): this change's
+  # code opened on databases an OLDER release made — the previous release's
+  # schema.sql and the replayed production-shaped fixture — the path every
+  # deploy takes. Every other job builds its databases fresh, so none of them
+  # can see a migration that only breaks an existing database (prod, 10-24: a
+  # schema.sql index on a column only runMigrations adds). Full history, for
+  # `git show <base>:src/core/db/schema.sql`: on a PR the base is the PR's
+  # base commit, on a push to main the commit before it. ~1 s of tests.
+  upgrade:
+    name: Upgrade
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:upgrade
+        env:
+          UPGRADE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^1' }}
+
   build:
     name: Build
     runs-on: ubuntu-latest

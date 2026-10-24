@@ -1119,9 +1119,11 @@ export async function seedDemoUser(
   // Create user
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
   const userResult = db
+    // default_sort is explicit: a database created before 2026-10-11 still
+    // carries the column's old 'due_date' default (as in create-user.ts).
     .prepare(
-      `INSERT INTO users (email, name, password_hash, timezone, notifications_enabled, is_demo)
-       VALUES (?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO users (email, name, password_hash, timezone, notifications_enabled, is_demo, default_sort)
+       VALUES (?, ?, ?, ?, ?, 1, 'horizon')`,
     )
     .run(email, username, passwordHash, TIMEZONE, 0)
   const userId = Number(userResult.lastInsertRowid)

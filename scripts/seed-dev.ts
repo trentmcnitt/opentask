@@ -344,9 +344,11 @@ async function main(): Promise<void> {
   // Create dev user
   const passwordHash = await bcrypt.hash('dev', SALT_ROUNDS)
   const userResult = db
+    // default_sort is explicit: a database created before 2026-10-11 still
+    // carries the column's old 'due_date' default (as in create-user.ts).
     .prepare(
-      `INSERT INTO users (email, name, password_hash, timezone)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO users (email, name, password_hash, timezone, default_sort)
+       VALUES (?, ?, ?, ?, 'horizon')`,
     )
     .run('dev@opentask.local', 'dev', passwordHash, TIMEZONE)
   const userId = Number(userResult.lastInsertRowid)

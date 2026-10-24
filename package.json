@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:upgrade": "vitest run --config vitest.upgrade.config.ts",
     "test:e2e": "playwright test",
     "test:perf": "playwright test --config playwright.perf.config.ts",
     "test:e2e:ui": "playwright test --ui",
