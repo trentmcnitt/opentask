@@ -202,6 +202,7 @@ function DayBarButton({
       type="button"
       onClick={onClick}
       data-day-segment={id}
+      data-day-segment-done={done ? '' : undefined}
       aria-label={`Go to ${label}, ${considered} of ${total} considered`}
       title={`${label} · ${considered} of ${total} considered`}
       style={{ flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
