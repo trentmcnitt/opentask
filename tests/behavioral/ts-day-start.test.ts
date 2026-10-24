@@ -246,6 +246,15 @@ describe('every server reader follows the setting', () => {
     reset()
     stampRolloverDates(getDb(), at0400)
     expect(stamped()).toBe('2026-01-14') // 07:00: 04:00 is still yesterday
+
+    // 11 PM: 22:30 Chicago on Jan 15 is still the 15th; 23:00 is already the 16th.
+    setRow({ day_start_time: '23:00', day_start_slot_id: null })
+    reset()
+    stampRolloverDates(getDb(), new Date('2026-01-16T04:30:00Z'))
+    expect(stamped()).toBe('2026-01-15')
+    reset()
+    stampRolloverDates(getDb(), new Date('2026-01-16T05:00:00Z'))
+    expect(stamped()).toBe('2026-01-16')
   })
 })
 

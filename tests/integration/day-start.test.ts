@@ -7,7 +7,7 @@
  *
  * Time-agnostic: the expected OpenTask day is computed from the clock at the
  * request with the server's own rule (`openTaskDayOf`), and the day start
- * chosen is hours away from now, so no test straddles a boundary.
+ * chosen is at least half an hour from now, so no test straddles a boundary.
  */
 
 import { describe, test, expect, beforeEach, afterAll } from 'vitest'
@@ -39,13 +39,17 @@ function patch(body: Record<string, unknown>) {
 }
 
 /**
- * A day start later today than now — two hours on, or 23:59 when that would
- * pass midnight — so now still belongs to the day before's OpenTask day.
+ * A day start that puts now on an OpenTask day OTHER than the calendar date,
+ * at least half an hour from either boundary: before 11:00, 11:59 (at or
+ * before noon, not reached yet — still yesterday's day); from 13:00, 12:30
+ * (after noon, already passed — tomorrow's day). Between 11:00 and 13:00
+ * neither exists; 23:59 then (today's day, the stale check skipped).
  */
-function laterToday(): string {
-  const local = DateTime.now().setZone(TZ)
-  const later = local.plus({ hours: 2 })
-  return later.hasSame(local, 'day') ? later.toFormat('HH:mm') : '23:59'
+function awayFromToday(): string {
+  const hour = DateTime.now().setZone(TZ).hour
+  if (hour < 11) return '11:59'
+  if (hour >= 13) return '12:30'
+  return '23:59'
 }
 
 describe('"Day starts at" in /api/user/preferences', () => {
@@ -137,8 +141,8 @@ describe('the Reminders screen counts its day from it (task queue on)', () => {
   })
 
   test("prompt keys carry the OpenTask day, and another day's key is a 400", async () => {
-    // A day start later today: it is still the day before's OpenTask day.
-    const dayStart = laterToday()
+    // A day start that names now by another date (either direction).
+    const dayStart = awayFromToday()
     await patch({ day_start_time: dayStart })
     const quota = await apiFetch('/api/tasks', {
       method: 'POST',
@@ -156,7 +160,7 @@ describe('the Reminders screen counts its day from it (task queue on)', () => {
     expect(keys).toEqual([`q:${id}:0:${expected}`])
 
     const calendar = DateTime.now().setZone(TZ).toISODate()!
-    // (Equal only in the last minute before midnight, when no later day start exists.)
+    // (Equal only between 11:00 and 13:00, when neither direction exists.)
     if (calendar !== expected) {
       // The calendar date's key is another day's: refused.
       const stale = await apiFetch('/api/quota-prompts/consider', {
