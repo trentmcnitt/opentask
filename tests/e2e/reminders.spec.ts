@@ -1317,7 +1317,7 @@ test.describe('Reminder details', () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     // The quick add sends only the words; the server puts the thought in the
-    // user's default reminder slot (Settings → Default period, 2026-09-28) —
+    // user's default reminder slot (Settings → Default reminder period, 2026-09-28) —
     // not the slot current right now. Pick a default that is deliberately NOT
     // the first period, so the fallback cannot pass this by accident.
     const slots = (await (await page.request.get('/api/time-slots')).json()).data.time_slots as {

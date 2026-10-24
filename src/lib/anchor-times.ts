@@ -55,7 +55,7 @@ export const ANCHOR_KEYS: readonly AnchorKey[] = ['morning', 'wake', 'sleep']
 
 /** What the user calls each anchor (Settings, the delete toast). */
 export const ANCHOR_NAMES: Record<AnchorKey, string> = {
-  morning: 'Morning time',
+  morning: 'Default task time',
   wake: 'Wake time',
   sleep: 'Sleep time',
 }
@@ -288,7 +288,7 @@ export interface SettingChange {
   after: TimeSetting
 }
 
-/** What the user calls a setting ("Morning time", "Day starts at", "Number pad button 2"). */
+/** What the user calls a setting ("Default task time", "Day starts at", "Number pad button 2"). */
 export function settingName(setting: SettingChange['setting']): string {
   if (typeof setting === 'number') return padButtonName(setting)
   return setting === 'day_start' ? DAY_START_NAME : ANCHOR_NAMES[setting]

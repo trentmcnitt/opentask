@@ -64,10 +64,10 @@ test.describe('Anchor times', () => {
 
       // Link it: the time field goes, the summary names the period.
       await morning
-        .getByLabel('Morning time: follows')
+        .getByLabel('Default task time: follows')
         .selectOption({ label: 'Afternoon (4:00 PM)' })
       await expect(summary).toHaveText('4:00 PM · Afternoon period')
-      await expect(morning.getByLabel('Morning time', { exact: true })).toHaveCount(0)
+      await expect(morning.getByLabel('Default task time', { exact: true })).toHaveCount(0)
 
       // Move the period: Morning follows it.
       const start = periods(page).getByLabel('Start time of Afternoon')
@@ -78,10 +78,10 @@ test.describe('Anchor times', () => {
       // Remove it: Morning keeps 4:30 PM as its own time, and the toast says so.
       await periods(page).getByRole('button', { name: 'Remove Afternoon' }).click()
       await expect(
-        page.getByText(/Removed "Afternoon".* · Morning time stays at 4:30 PM/),
+        page.getByText(/Removed "Afternoon".* · Default task time stays at 4:30 PM/),
       ).toBeVisible()
       await expect(summary).toHaveText('4:30 PM')
-      await expect(morning.getByLabel('Morning time', { exact: true })).toHaveValue('16:30')
+      await expect(morning.getByLabel('Default task time', { exact: true })).toHaveValue('16:30')
 
       // Undo brings the period back, and Morning follows it again.
       await toastUndo(page, 'Removed "Afternoon"').click()
@@ -181,7 +181,7 @@ test.describe('Anchor times: Settings loads the server’s values', () => {
       expect(await morning.locator('[data-anchor-summary]').textContent()).toBe(
         '7:00 AM · Early morning period',
       )
-      await expect(morning.getByLabel('Morning time: follows')).toHaveValue(String(early.id))
+      await expect(morning.getByLabel('Default task time: follows')).toHaveValue(String(early.id))
       await expect(anchorRow(settings, '0').locator('[data-anchor-summary]')).toHaveText(
         '8:30 PM · Evening period',
       )

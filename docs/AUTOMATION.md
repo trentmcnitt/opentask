@@ -75,7 +75,7 @@ curl -X POST https://tasks.example.com/api/tasks \
 ```
 
 It is scheduled immediately in your **default reminder period** (Settings →
-Reminder periods → Default period), daily at that period's start, so it never
+Reminder periods → Default reminder period), daily at that period's start, so it never
 lands unscheduled. AI enrichment then reads the text: a stated cadence or time
 of day ("every Friday evening") moves it to the matching period; with no time
 cue it stays in the default period. If AI is off or enrichment fails, it stays

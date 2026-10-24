@@ -271,7 +271,7 @@ test.describe('Deadline: the editor', () => {
         const [h, m] = morning.split(':').map(Number)
         const morningOf = deadline.set({ hour: h, minute: m })
         const expected = morningOf < deadline ? morningOf : deadline
-        const source = morningOf < deadline ? 'Morning time' : 'Deadline time'
+        const source = morningOf < deadline ? 'Default task time' : 'Deadline time'
         await expect(pick).toHaveText(
           `Morning of the deadline · ${expected.toFormat('ccc h:mm a')} (${source})`,
         )

@@ -177,7 +177,7 @@ export function leadLineWords(line: LeadLine, timezone: string, today: string): 
  * — when the deadline is earlier in the day than that — the Deadline time.
  * The weekday is dropped when the day is today or tomorrow (the words
  * already say which day: the deadline's):
- *   "Morning of the deadline · 9:00 AM (Morning time)"
+ *   "Morning of the deadline · 9:00 AM (Default task time)"
  *   "Morning of the deadline · Tue 8:30 AM (Deadline time)"
  */
 export function deadlineDayPick(
@@ -199,7 +199,7 @@ export function deadlineDayPick(
   const fromDeadline = Date.parse(at) === Date.parse(deadlineAt)
   const source = fromDeadline && target.toFormat('HH:mm') !== ctx.morningTime
   return {
-    label: `${DEADLINE_MORNING} · ${when} (${source ? 'Deadline time' : 'Morning time'})`,
+    label: `${DEADLINE_MORNING} · ${when} (${source ? 'Deadline time' : 'Default task time'})`,
     at,
   }
 }

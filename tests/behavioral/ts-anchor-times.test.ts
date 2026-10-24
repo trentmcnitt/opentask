@@ -324,7 +324,7 @@ describe('deleting a period something links to', () => {
       userTimezone: TEST_TIMEZONE,
       slotId: midday.id,
     })
-    expect(result.settings_converted).toEqual(['Morning time', 'Number pad button 2'])
+    expect(result.settings_converted).toEqual(['Default task time', 'Number pad button 2'])
 
     const row = readAnchorRow(TEST_USER_ID)
     expect([row.morning_time, row.morning_slot_id]).toEqual(['12:00', null])
@@ -335,7 +335,7 @@ describe('deleting a period something links to', () => {
       .prepare('SELECT description FROM undo_log WHERE id = ?')
       .get(result.undo_id) as { description: string }
     expect(entry.description).toBe(
-      'Removed "Midday"; kept Morning time, Number pad button 2 at 12:00 PM',
+      'Removed "Midday"; kept Default task time, Number pad button 2 at 12:00 PM',
     )
   })
 

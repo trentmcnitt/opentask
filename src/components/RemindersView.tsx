@@ -497,7 +497,7 @@ export function RemindersView({
   /**
    * Creating: the quick add sends only the text, and the SERVER makes it a
    * daily thought in the user's default reminder slot (Settings → Reminder
-   * periods → Default period; `defaultReminderRule` in createTask) — the same
+   * periods → Default reminder period; `defaultReminderRule` in createTask) — the same
    * path an Apple Shortcut's title-only POST takes (Trent, 2026-09-28: "adding
    * a reminder should be just like adding a task"). It is on screen the moment
    * the server answers. Until 2026-09-28 this box used the slot current right
