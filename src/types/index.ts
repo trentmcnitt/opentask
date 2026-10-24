@@ -430,6 +430,20 @@ export interface SlotUndoState {
    * nothing linked to the period, and on every entry logged before this existed.
    */
   user_settings?: SettingChange[]
+  /**
+   * RELATIVE TARGETS (2026-10-24): a time_slot_edit's retime of the CLOSED
+   * (done, archived or trashed) rows linked to the period — one
+   * compare-and-set statement, `target_time` from `before` to `after`
+   * (`due_at` untouched: a reopen re-derives it). Undo and redo apply the
+   * mirror statement (`applyTargetRows`). Open rows ride the snapshots.
+   */
+  target_times?: { slot_id: number; before: string; after: string }
+  /**
+   * A time_slot_delete's closed rows whose link it removed (their time kept);
+   * undo re-links, compare-and-set — only rows still unlinked at the period's
+   * start. Open rows ride the snapshots.
+   */
+  target_unlinked?: number[]
 }
 
 /** A time_slots row as stored — mirrors `TimeSlot` in `@/lib/time-slot-assign`. */

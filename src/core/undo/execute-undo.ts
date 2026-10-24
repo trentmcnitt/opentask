@@ -15,7 +15,7 @@ import { periodMoved } from './log-action'
 import { rolledOverSince } from './rollover-fence'
 import { ensureLead, withoutAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
-import { applyPromptDefault, applySlotRow, applyUserSettings } from './slot-row'
+import { applyPromptDefault, applySlotRow, applyTargetRows, applyUserSettings } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
@@ -31,6 +31,7 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
     applySlotRow(tx, entry.slotState.after, entry.slotState.before)
     applyPromptDefault(tx, entry.slotState, 'before')
     applyUserSettings(tx, entry.slotState, 'before', entry.id)
+    applyTargetRows(tx, entry.slotState, 'before', entry.id)
   }
 
   // Handle special case: undoing a 'create' means soft-deleting the task

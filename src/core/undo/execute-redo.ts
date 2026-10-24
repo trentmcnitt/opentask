@@ -14,7 +14,7 @@ import { periodMoved } from './log-action'
 import { rolledOverSince } from './rollover-fence'
 import { ensureLead, withoutAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
-import { applyPromptDefault, applySlotRow, applyUserSettings } from './slot-row'
+import { applyPromptDefault, applySlotRow, applyTargetRows, applyUserSettings } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
@@ -28,6 +28,7 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
     applySlotRow(tx, entry.slotState.before, entry.slotState.after)
     applyPromptDefault(tx, entry.slotState, 'after')
     applyUserSettings(tx, entry.slotState, 'after', entry.id)
+    applyTargetRows(tx, entry.slotState, 'after', entry.id)
   }
 
   // Handle special case: redoing a 'create' means restoring the task from trash

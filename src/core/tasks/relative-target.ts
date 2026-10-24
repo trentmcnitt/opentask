@@ -48,6 +48,7 @@ import {
 } from '@/lib/task-segments'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
+import { getTargetContext } from './target-context'
 
 export const TARGET_SLOT_NOT_OWNED_MESSAGE =
   "target_slot_id must name one of the task owner's reminder periods"
@@ -238,9 +239,10 @@ export interface RelativeRederive {
  * rows), never its `due_at`. Null when the target already is the derived one
  * (or the row is not a relative one-off). Derived in the OWNER's zone.
  */
-export function rederiveOnReopen(task: Task, ownerTimezone: string): RelativeRederive | null {
+export function rederiveOnReopen(task: Task, ownerTimezone?: string): RelativeRederive | null {
   if (!isRelativeOneOff(task)) return null
-  const derived = relativeTargetAt(task.deadline_at!, relativeOf(task)!, ownerTimezone)
+  const timezone = ownerTimezone ?? getTargetContext(task.user_id).timezone
+  const derived = relativeTargetAt(task.deadline_at!, relativeOf(task)!, timezone)
   if (task.due_at !== null && Date.parse(task.due_at) === Date.parse(derived)) return null
   return {
     sql: 'due_at = ?',

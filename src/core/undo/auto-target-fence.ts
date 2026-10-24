@@ -16,8 +16,10 @@
  * automatic target (`withoutAutoTarget`): `due_at`, `original_due_at` → NULL
  * and `target_auto` → 0 are written in place of the snapshot's values — and
  * the queue state cleared (`queued_at` NULL, `try_tomorrow` / `queue_mark` 0,
- * as `autoTargetToLead` does: a deadline task is never queued) — and
- * every other field is restored as usual — the task comes back done, trashed
+ * as `autoTargetToLead` does: a deadline task is never queued), and the
+ * relative target's offsets and link (2026-10-24: never on a row the fence
+ * hits — a relative target is never automatic — but nulled so none can
+ * appear beside the dropped target) — and every other field is restored as usual — the task comes back done, trashed
  * or open, exactly as the undo means, with no target. Undo over a dead Undo
  * (Trent's rule): the user's Undo always does what it says. The dropped
  * target never becomes a picked one: `target_auto` stays 0, `due_at` NULL,
@@ -52,6 +54,13 @@ const DROPPED = [
   'queued_at',
   'try_tomorrow',
   'queue_mark',
+  // Relative targets (2026-10-24): a dropped automatic target leaves no
+  // relative target either — the offsets and the link go too, so the task is
+  // a plain target-less deadline task (an automatic target was a one-off's,
+  // and a one-off with offsets would read as relative).
+  'target_days_before',
+  'target_time',
+  'target_slot_id',
 ] as const
 
 /**
@@ -76,6 +85,9 @@ export function withoutAutoTarget<S extends object>(
       queued_at: null,
       try_tomorrow: false,
       queue_mark: false,
+      target_days_before: null,
+      target_time: null,
+      target_slot_id: null,
     },
     fields: [...new Set([...fieldsChanged, ...DROPPED])],
     dropped: true,

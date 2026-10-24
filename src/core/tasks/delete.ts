@@ -3,6 +3,7 @@
  */
 
 import { autoTargetToLead } from './auto-target-lead'
+import { rederiveOnReopen } from './relative-target'
 import { getDb, withTransaction } from '@/core/db'
 import type { Task } from '@/types'
 import { nowUtc } from '@/core/recurrence'
@@ -92,8 +93,12 @@ export function restoreTask(options: RestoreTaskOptions): Task {
 
   // Execute restore and undo log in a transaction
   // A pre-migration automatic target restored (the deadlines page, switch on):
-  // converted in the same write (`autoTargetToLead`).
-  const conv = task.done ? null : autoTargetToLead(task)
+  // converted in the same write (`autoTargetToLead`). A relative one-off
+  // restored open (2026-10-24) re-derives its target (`rederiveOnReopen`): a
+  // period retime while it was trashed moved only its `target_time`.
+  const conv = task.done
+    ? null
+    : (autoTargetToLead(task) ?? (task.archived_at ? null : rederiveOnReopen(task)))
   const fields = ['deleted_at', ...(conv?.fields ?? [])]
   const restoredTask = withTransaction((db) => {
     // Restore from trash

@@ -74,6 +74,69 @@ export function applyUserSettings(
   if (state.user_settings) applySettingChanges(tx, userId, state.user_settings, side)
 }
 
+/** A row is CLOSED for the period hooks: done, archived or trashed (`time-slots/edit.ts`). */
+const CLOSED_SQL = '(done = 1 OR archived_at IS NOT NULL OR deleted_at IS NOT NULL)'
+
+/**
+ * RELATIVE TARGETS (2026-10-24): the CLOSED rows a period entry moved in one
+ * statement (`SlotUndoState.target_times` / `target_unlinked`), on undo and
+ * redo — the open rows ride the entry's snapshots. Called after
+ * `applySlotRow` (the period is back, or gone again). Compare-and-set, by
+ * the owner:
+ *  - a RETIME's mirror: `target_time` from one side's start to the other's,
+ *    only on rows still linked to the period and still at that time;
+ *  - a DELETE's undo re-links the recorded rows still unlinked and still at
+ *    the period's start; its REDO unlinks whatever closed row links to the
+ *    period NOW (as `applyUserSettings` does) and rewrites the record, so a
+ *    later undo puts back exactly what this redo unlinked.
+ */
+export function applyTargetRows(
+  tx: Database.Database,
+  state: SlotUndoState,
+  side: 'before' | 'after',
+  entryId: number,
+): void {
+  const userId = state.before?.user_id ?? state.after?.user_id
+  if (userId === undefined) return
+  const times = state.target_times
+  if (times) {
+    const [from, to] = side === 'before' ? [times.after, times.before] : [times.before, times.after]
+    tx.prepare(
+      `UPDATE tasks SET target_time = ?
+        WHERE user_id = ? AND target_slot_id = ? AND target_time = ? AND ${CLOSED_SQL}`,
+    ).run(to, userId, times.slot_id, from)
+  }
+  const removed = state.after === null ? state.before : null
+  if (!removed) return
+  if (side === 'before') {
+    const ids = state.target_unlinked ?? []
+    if (ids.length === 0) return
+    tx.prepare(
+      `UPDATE tasks SET target_slot_id = ?
+        WHERE user_id = ? AND target_slot_id IS NULL AND target_time = ?
+          AND id IN (${ids.map(() => '?').join(', ')})`,
+    ).run(removed.id, userId, removed.start_time, ...ids)
+    return
+  }
+  const ids = (
+    tx
+      .prepare(`SELECT id FROM tasks WHERE user_id = ? AND target_slot_id = ? AND ${CLOSED_SQL}`)
+      .all(userId, removed.id) as { id: number }[]
+  ).map((r) => r.id)
+  if (ids.length > 0) {
+    tx.prepare(
+      `UPDATE tasks SET target_slot_id = NULL WHERE user_id = ? AND target_slot_id = ? AND ${CLOSED_SQL}`,
+    ).run(userId, removed.id)
+  }
+  // The record as this redo left it, over whatever `applyUserSettings` wrote.
+  const row = tx.prepare('SELECT slot_state FROM undo_log WHERE id = ?').get(entryId) as
+    | { slot_state: string | null }
+    | undefined
+  const current = parseSlotState(row?.slot_state) ?? state
+  const next: SlotUndoState = { ...current, target_unlinked: ids.length ? ids : undefined }
+  tx.prepare('UPDATE undo_log SET slot_state = ? WHERE id = ?').run(JSON.stringify(next), entryId)
+}
+
 export function parseSlotState(raw: string | null | undefined): SlotUndoState | null {
   if (!raw) return null
   return JSON.parse(raw) as SlotUndoState

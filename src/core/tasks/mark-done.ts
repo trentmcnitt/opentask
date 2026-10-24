@@ -6,6 +6,7 @@
 
 import { attemptsRolloverTime, leadContextFor, rolloverTimeForUser } from './rollover-time'
 import { autoTargetToLead } from './auto-target-lead'
+import { rederiveOnReopen } from './relative-target'
 import {
   occurrenceDates,
   putBackCountedThrough,
@@ -248,8 +249,11 @@ export function markUndone(options: MarkDoneOptions): Task {
     ...(recurring ? ['repeat_count_used'] : []),
   ]
   // A pre-migration automatic target reopened (the deadlines page, switch
-  // on): converted in the same write (`autoTargetToLead`).
-  const conv = autoTargetToLead(task)
+  // on): converted in the same write (`autoTargetToLead`). A relative one-off
+  // (2026-10-24) re-derives its target from its offsets in the same write
+  // (`rederiveOnReopen`): a period retime while it was done moved only its
+  // `target_time`. The two never meet (a relative target is never automatic).
+  const conv = autoTargetToLead(task) ?? rederiveOnReopen(task)
   if (conv) fieldsChanged.push(...conv.fields)
 
   // §7: the attempts come back from the completion row it deletes (done
