@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { formatClockTime } from '@/lib/time-utils'
 import {
   RelativeTargetControl,
   type DaysChoice,
@@ -94,7 +95,9 @@ export function BeforeDeadlineBlock({
                 <span className="text-muted-foreground"> · greyed: {AFTER_THE_DEADLINE}</span>
               )}
             </p>
-            <div className="flex flex-wrap gap-1.5">
+            {/* Two to a row at the calendar's width (one chip a line made the
+                picker twice as tall); a long name wraps inside its chip. */}
+            <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-1.5">
               {row.chips.map((chip) => {
                 const pressed = currentIsSet && samePick(chip.pick, current)
                 return (
@@ -107,12 +110,15 @@ export function BeforeDeadlineBlock({
                     aria-label={`${row.title}, ${periodChoiceLabel(chip.slot)}${chip.afterDeadline ? `, ${AFTER_THE_DEADLINE}` : ''}`}
                     onClick={() => onPick(chip.pick)}
                     className={cn(
-                      'rounded-md border px-2 py-1 text-xs whitespace-nowrap transition-colors',
+                      'min-w-0 rounded-md border px-2 py-1 text-left text-xs leading-tight transition-colors',
                       'hover:bg-accent active:bg-accent disabled:cursor-not-allowed disabled:opacity-40',
                       pressed && 'border-foreground/40 bg-accent font-semibold',
                     )}
                   >
-                    {periodChoiceLabel(chip.slot)}
+                    {chip.slot.label}{' '}
+                    <span className="text-muted-foreground whitespace-nowrap">
+                      · {formatClockTime(chip.slot.start_time)}
+                    </span>
                   </button>
                 )
               })}
