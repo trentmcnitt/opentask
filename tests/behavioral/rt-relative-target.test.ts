@@ -15,7 +15,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
-import { getDb } from '@/core/db'
 import {
   bulkEdit,
   bulkSnooze,
@@ -361,7 +360,9 @@ describe('RT: PATCH, bulk edit, snooze', () => {
       at('2026-11-02T18:00'),
     )
   })
+})
 
+describe('RT: clearing, the link, defers, bulk edit', () => {
   test('RT27: Remove target clears everything; switch on → the deadlines page', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
     const t = dayBefore({ target_time: undefined, target_slot_id: slot('Evening').id })
