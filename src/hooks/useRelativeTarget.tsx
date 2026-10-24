@@ -29,7 +29,9 @@ import type { Task } from '@/types'
  * linked while the setting follows one of these periods, else its time.
  */
 export function useLinkableSlots(task: Task | null, isCreateMode: boolean) {
-  const { timeSlots, loaded } = useTimeSlots()
+  // The page's shared list (`useTimeSlots`): read, never re-fetched per open —
+  // the editor opens often, and a surface's sync handler keeps it current.
+  const { timeSlots, loaded } = useTimeSlots(undefined, { revalidate: false })
   const { data: session } = useSession()
   const anchors = useAnchorTimes()
   const owns = isCreateMode || (!!task && String(task.user_id) === session?.user?.id)

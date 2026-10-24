@@ -135,6 +135,50 @@ async function padTapMakesFixed(page: Page, dialog: Locator, id: number, expecte
   expect(Date.parse(after.target_at!)).toBe(expected.toMillis())
 }
 
+test.describe('Relative targets — the shared period list', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' })
+
+  test("the editor reads the page's periods: opening it twice on the dashboard makes no time-slots request", async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await create(page, {
+      title: uniqueTitle('Book the car service'),
+      deadline_at: deadlineIn(6).toUTC().toISO(),
+    })
+    try {
+      await withPreferences(page, unified, async () => {
+        const row = page.locator(`#task-row-${id}`)
+        await waitForPrefsLoaded(page, () => page.goto('/'), row)
+        // The dashboard ships its periods with the page (the shared list,
+        // `useTimeSlots`): the editor reads them, it never fetches its own.
+        const fetched: string[] = []
+        page.on('request', (r) => {
+          if (new URL(r.url()).pathname === '/api/time-slots') fetched.push(r.method())
+        })
+        for (let open = 0; open < 2; open++) {
+          await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+          await row.dblclick()
+          const dialog = page.getByRole('dialog')
+          await dialog.getByRole('button', { name: 'Target: change' }).click()
+          // The chips are there at once: no wait on the network.
+          await expect(
+            page
+              .locator('[data-before-deadline]')
+              .getByRole('button', { name: 'The day before, Evening · 8:30 PM', exact: true }),
+          ).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(page.locator('[data-before-deadline]')).toHaveCount(0)
+          await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+          await expect(dialog).toHaveCount(0)
+        }
+        expect(fetched).toEqual([])
+      })
+    } finally {
+      await trash(page, [id])
+    }
+  })
+})
+
 test.describe('Relative targets — desktop, light', () => {
   test.use({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' })
 
