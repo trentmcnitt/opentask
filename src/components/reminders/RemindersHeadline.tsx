@@ -24,7 +24,7 @@ import type { SegmentView } from '@/hooks/useTaskSegments'
  * win each time — and the number goes green when the day is.
  *
  * The task segments follow the slots (2026-10-11), after a faint divider, in
- * their teal — the dashboard strip's bars, so a segment reads the same on
+ * their teal — every one, every day (2026-10-24; an empty one green) — the dashboard strip's bars, so a segment reads the same on
  * both surfaces; a tap scrolls to its section. They are NOT in the line or
  * the count: task rows never count in "N waiting so far" or "X of Y
  * considered" (docs/TASK-MODEL.md § Task segments).
@@ -136,6 +136,7 @@ export function RemindersHeadline({
                 total={total}
                 started
                 color={segmentColor(segment.horizon)}
+                emptyDone
                 onClick={() => onGoToSlot(key)}
               />
             )
@@ -182,6 +183,7 @@ function DayBarButton({
   total,
   started,
   color,
+  emptyDone = false,
   onClick,
 }: {
   id: string
@@ -190,9 +192,11 @@ function DayBarButton({
   total: number
   started: boolean
   color?: string
+  /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
+  emptyDone?: boolean
   onClick: () => void
 }) {
-  const done = total > 0 && considered >= total
+  const done = total > 0 ? considered >= total : emptyDone
   return (
     <button
       type="button"
@@ -218,7 +222,7 @@ function DayBarButton({
             done ? 'bg-green-600' : 'bg-indigo-600',
           )}
           style={{
-            width: `${total > 0 ? (considered / total) * 100 : 0}%`,
+            width: `${total > 0 ? (considered / total) * 100 : done ? 100 : 0}%`,
             ...(color && !done ? { backgroundColor: color } : {}),
           }}
         />

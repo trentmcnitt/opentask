@@ -202,6 +202,38 @@ export function segmentKey(segment: SegmentView): string {
 }
 
 /**
+ * An EMPTY segment (Trent, 2026-10-24: "always show every queue segment,
+ * every day, in fixed positions"): no rows today, so it is done from the
+ * start of the day — green in the strip and the day bar, "0 of 0 ✓" in its
+ * header, and this line where its rows would be. Not "Nothing left here",
+ * which says a segment that had rows was worked through.
+ */
+export function segmentEmpty(segment: SegmentView): boolean {
+  return segment.rows.length === 0
+}
+
+/**
+ * "Nothing today ✓" — Trent's words — on an empty segment's page or section.
+ * The muted text and the green check of every finished count here (the Tasks
+ * card's done line, a finished slot's "N of N ✓").
+ */
+export function EmptySegmentLine({ className }: { className?: string }) {
+  return (
+    <p
+      data-segment-empty
+      className={cn('text-muted-foreground flex items-center gap-1 text-sm', className)}
+    >
+      Nothing today
+      <Check
+        className="size-3.5 text-green-700 dark:text-green-400"
+        strokeWidth={2.5}
+        aria-hidden="true"
+      />
+    </p>
+  )
+}
+
+/**
  * Over SEGMENT_NUDGE_THRESHOLD waiting, a nudge toward Process or the AI.
  * Counted from what still waits, so it leaves as rows are considered, without
  * waiting for the next fetch (the server's `nudge` rule). A neutral grey box,

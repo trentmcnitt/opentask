@@ -315,35 +315,37 @@ function segmentViews(
   segments: TaskSegmentPayload[],
   overlay: Map<number, Overlay>,
 ): SegmentView[] {
-  return segments
-    .map((seg) => {
-      const rows = seg.tasks
-        .map((t) => {
-          const o = overlay.get(t.id)
-          const obj = typeof o === 'object' ? o : null
-          const left = obj ? obj.left : o === undefined ? t.segment_left : undefined
-          const state = obj ? (obj.left ? 'considered' : t.segment_state) : (o ?? t.segment_state)
-          return {
-            task: (obj?.patch ? { ...t, ...obj.patch } : t) as Task,
-            state,
-            recurring: t.recurring ?? t.rrule !== null,
-            ...(left ? { left } : {}),
-            ...(t.safety_net ? { safetyNet: true } : {}),
-            ...(obj?.seen || t.seen ? { seen: true } : {}),
-          }
-        })
-        .filter((r): r is SegmentRow => r.state !== 'gone')
-      const count = (s: SegmentState) => rows.filter((r) => r.state === s).length
-      return {
-        horizon: seg.horizon,
-        rows,
-        waiting: count('waiting'),
-        considered: count('considered'),
-        deferred: count('deferred'),
-        nudge: seg.nudge,
-      }
-    })
-    .filter((seg) => seg.rows.length > 0)
+  // NO FILTER ON EMPTY SEGMENTS (Trent, 2026-10-24: "always show every queue
+  // segment, every day, in fixed positions"). The server sends every kind
+  // the web draws (`?fill=1`), an empty one with no rows; it stays, and reads
+  // as done ("Nothing today ✓") — so does one whose last row was trashed.
+  return segments.map((seg) => {
+    const rows = seg.tasks
+      .map((t) => {
+        const o = overlay.get(t.id)
+        const obj = typeof o === 'object' ? o : null
+        const left = obj ? obj.left : o === undefined ? t.segment_left : undefined
+        const state = obj ? (obj.left ? 'considered' : t.segment_state) : (o ?? t.segment_state)
+        return {
+          task: (obj?.patch ? { ...t, ...obj.patch } : t) as Task,
+          state,
+          recurring: t.recurring ?? t.rrule !== null,
+          ...(left ? { left } : {}),
+          ...(t.safety_net ? { safetyNet: true } : {}),
+          ...(obj?.seen || t.seen ? { seen: true } : {}),
+        }
+      })
+      .filter((r): r is SegmentRow => r.state !== 'gone')
+    const count = (s: SegmentState) => rows.filter((r) => r.state === s).length
+    return {
+      horizon: seg.horizon,
+      rows,
+      waiting: count('waiting'),
+      considered: count('considered'),
+      deferred: count('deferred'),
+      nudge: seg.nudge,
+    }
+  })
 }
 
 /**
