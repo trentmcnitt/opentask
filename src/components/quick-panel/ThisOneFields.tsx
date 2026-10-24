@@ -25,7 +25,7 @@ import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target
  *   Deadline  Sat Nov 7, 8:00 AM
  *   Lead      On the deadlines page from Tue Nov 3 (4 days before)  − 4 days +
  *   On deck   —
- *   ↻ Repeats — Fridays at 4:00 PM · edit every time ›     · since …
+ *   ↻ Repeats — Fridays at 4:00 PM · edit every time ›   (one line: no "since")
  *
  * TRUE LABELS: in this mode the rule's time is never called "Target" — the
  * rule shows only in the link's words. The link is the ONE way into every-
@@ -482,13 +482,20 @@ export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(functio
       {words ? (
         <>
           <span>Repeats — {words}</span>
-          <span aria-hidden>·</span>
-          <span className="text-foreground/80">{action}</span>
+          {/* "· edit every time ›" is one unit: if a long rule leaves no
+              room it moves down whole, never leaving "›" alone on a line. */}
+          <span className="inline-flex items-center gap-x-1 whitespace-nowrap">
+            <span aria-hidden>·</span>
+            <span className="text-foreground/80">{action}</span>
+            <ChevronRight className="size-3 shrink-0" aria-hidden />
+          </span>
         </>
       ) : (
-        <span>Make it repeat</span>
+        <>
+          <span>Make it repeat</span>
+          <ChevronRight className="size-3 shrink-0" aria-hidden />
+        </>
       )}
-      <ChevronRight className="size-3 shrink-0" aria-hidden />
     </button>
   )
 })
