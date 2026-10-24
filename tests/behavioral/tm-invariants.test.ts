@@ -53,10 +53,17 @@ import {
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
 import { AppError, ValidationError } from '@/core/errors'
-import { executeUndo } from '@/core/undo'
+import { executeRedo, executeUndo } from '@/core/undo'
 import { createTimeSlot, listTimeSlots } from '@/core/time-slots'
 import { deleteTimeSlot, updateTimeSlot } from '@/core/time-slots/edit'
-import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import {
+  seedTestProject,
+  seedTestUser,
+  setupTestDb,
+  teardownTestDb,
+  TEST_TIMEZONE,
+  TEST_USER_ID,
+} from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
 const SEED = 20261012
@@ -1148,6 +1155,9 @@ describe('TM-INV: relative targets (seeded random)', () => {
     let relativeSeen = 0
     let linkedSeen = 0
     let periodWrites = 0
+    let collaboratorUndos = 0
+    let deckRetimes = 0
+    const c2 = { userId: 2, userTimezone: tz }
     const check = (ids: number[], l: string) => {
       const slots = new Map(listTimeSlots(TEST_USER_ID).map((s) => [s.id, s.start_time]))
       for (const id of ids) {
@@ -1197,15 +1207,41 @@ describe('TM-INV: relative targets (seeded random)', () => {
           .set({ hour: 6 + Math.floor(r() * 16), minute: 0 })
           .toUTC()
           .toISO()!
+      // A collaborator (user 2) on a shared project: their undo stack is
+      // their own, so their undo restores snapshots from before the owner's
+      // period retimes and deletes (the heal's case).
+      seedTestUser(2, 'collaborator@example.com')
+      seedTestProject(2, 'Shared', TEST_USER_ID, true)
       const ids = [0, 1, 2].map(
-        (i) => createTask({ ...u, input: { title: `rt ${c}.${i}`, deadline_at: deadline() } }).id,
+        (i) =>
+          createTask({
+            ...u,
+            input: { title: `rt ${c}.${i}`, deadline_at: deadline(), project_id: i ? 2 : 1 },
+          }).id,
+      )
+      // And a deadline-anchored repeat linked to a period, for decks and
+      // rollovers (the rollover's fence skips an undo's snapshot of it).
+      const weekly = clock.plus({ days: 3 }).set({ hour: 8, minute: 30 })
+      const day = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][weekly.weekday - 1]
+      ids.push(
+        createTask({
+          ...u,
+          input: {
+            title: `rt ${c}.repeat`,
+            project_id: 2,
+            rrule: `FREQ=WEEKLY;BYDAY=${day};BYHOUR=8;BYMINUTE=30`,
+            deadline_at: weekly.toUTC().toISO()!,
+            target_days_before: 1,
+            target_slot_id: pick(listTimeSlots(TEST_USER_ID)).id,
+          },
+        }).id,
       )
       check(ids, label(c, 'create'))
-      for (let s = 0; s < 12; s++) {
+      for (let s = 0; s < 16; s++) {
         clock = clock.plus({ minutes: Math.floor(r() * 30 * 60) })
         vi.setSystemTime(clock.toJSDate())
         const id = pick(ids)
-        const op = Math.floor(r() * 12)
+        const op = Math.floor(r() * 17)
         const step = label(c, `op ${s}:${op}`)
         try {
           if (op <= 2) {
@@ -1231,6 +1267,52 @@ describe('TM-INV: relative targets (seeded random)', () => {
             else markDone({ ...u, taskId: id })
           } else if (op === 8) {
             executeUndo(TEST_USER_ID)
+          } else if (op === 12) {
+            // A collaborator interleaving: the collaborator defers (or
+            // re-times) a shared linked task, the OWNER then retimes or
+            // deletes that period, and the collaborator undoes — a snapshot
+            // from before the period write, restored after it.
+            const shared = getTaskById(pick(ids.slice(1, 3)))!
+            const linked = shared.target_slot_id
+            const to = clock.plus({ minutes: Math.floor(r() * 4 * 24 * 60) })
+            if (r() < 0.6) snoozeTask({ ...c2, taskId: shared.id, until: to.toUTC().toISO()! })
+            else updateTask({ ...c2, taskId: shared.id, input: { target_time: hhmm() } })
+            if (linked !== null) {
+              if (r() < 0.6) {
+                updateTimeSlot({ ...u, slotId: linked, input: { start_time: hhmm() } })
+              } else if (listTimeSlots(TEST_USER_ID).length > 2) {
+                deleteTimeSlot({ ...u, slotId: linked })
+                createTimeSlot(TEST_USER_ID, `C${c}.${s}`, hhmm())
+              }
+            }
+            executeUndo(2)
+            collaboratorUndos++
+          } else if (op === 13) {
+            executeRedo(2)
+          } else if (op === 14 || op === 15) {
+            // A decked repeat: on deck today, its period retimed, the next
+            // day's rollover ends the deck (its fence then skips the retime's
+            // snapshot of it), and the retime is undone — then maybe redone.
+            const repeat = getTaskById(ids[3])!
+            deckTasks({
+              userId: TEST_USER_ID,
+              timezone: tz,
+              ids: [repeat.id],
+              day: clock.toISODate()!,
+            })
+            const slotId = getTaskById(repeat.id)!.target_slot_id
+            if (slotId !== null) {
+              updateTimeSlot({ ...u, slotId, input: { start_time: hhmm() } })
+              periodWrites++
+            }
+            clock = clock.plus({ days: 1 }).set({ hour: 4, minute: 0 })
+            vi.setSystemTime(clock.toJSDate())
+            runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
+            executeUndo(TEST_USER_ID)
+            if (op === 15) executeRedo(TEST_USER_ID)
+            deckRetimes++
+          } else if (op === 16) {
+            runTaskRollover({ now: clock.toJSDate(), userId: TEST_USER_ID })
           } else if (op <= 10) {
             // A period RETIME: any period, to a free random time.
             const slot = pick(listTimeSlots(TEST_USER_ID))
@@ -1254,5 +1336,7 @@ describe('TM-INV: relative targets (seeded random)', () => {
     expect(relativeSeen).toBeGreaterThan(30)
     expect(linkedSeen).toBeGreaterThan(30)
     expect(periodWrites).toBeGreaterThan(30)
+    expect(collaboratorUndos).toBeGreaterThan(20)
+    expect(deckRetimes).toBeGreaterThan(20)
   }, 60_000)
 })

@@ -6,6 +6,20 @@
 
 import { getTargetContext } from './target-context'
 import { ownerSlots, type SlotsFor } from './relative-target'
+import type { TargetContext } from '@/lib/task-segments'
+
+/**
+ * The target context (`getTargetContext`: the zone and morning time an
+ * automatic target and a relative target are derived in) of each task's
+ * OWNER, memoized: a batch over a shared project reads each owner once.
+ */
+function ownerContexts(): (ownerId: number) => TargetContext {
+  const cache = new Map<number, TargetContext>()
+  return (ownerId) => {
+    if (!cache.has(ownerId)) cache.set(ownerId, getTargetContext(ownerId))
+    return cache.get(ownerId)!
+  }
+}
 import { getDb, withTransaction } from '@/core/db'
 import { isTracked } from '@/lib/track'
 import type { QuotaPromptConfig, Task, UndoAction, UndoSnapshot } from '@/types'
@@ -855,7 +869,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   if (snoozeable.length === 0) return emptySnoozeResult(counts)
 
   const nowDate = new Date()
-  const targetCtx = getTargetContext(userId)
+  const targetCtx = ownerContexts()
   const ctx = deferContext(userId, userTimezone, source, nowDate)
   let deadlineCapped = 0
   let cappedOccurrence = 0
@@ -896,7 +910,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
         userTimezone,
         now: nowDate,
         skipProjectValidation: true,
-        targetCtx,
+        targetCtx: targetCtx(task.user_id),
       })
       if (data.fieldsChanged.length === 0) continue
       if (wasCapped(data)) deadlineCapped++
@@ -1383,9 +1397,10 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
   const nowStr = nowUtc()
   const nowDate = new Date()
-  const targetCtx = getTargetContext(tasks[0].user_id)
-  // Relative targets (2026-10-24): a sent `target_slot_id` is checked against
-  // each task's OWNER's periods — read once per owner, not once per task.
+  // Each task's OWNER's clock (zone, morning) and periods — a shared project
+  // mixes owners — read once per owner, not once per task (relative targets,
+  // 2026-10-24: a sent `target_slot_id` is checked against the owner's).
+  const targetCtx = ownerContexts()
   const slotCache = new Map<number, ReturnType<SlotsFor>>()
   const slotsFor: SlotsFor = (ownerId) => {
     if (!slotCache.has(ownerId)) slotCache.set(ownerId, ownerSlots(ownerId))
@@ -1423,7 +1438,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
         userTimezone,
         now: nowDate,
         skipProjectValidation: true, // Already validated above
-        targetCtx,
+        targetCtx: targetCtx(task.user_id),
         slotsFor,
       })
       // §8.2: a date stopped at a deadline still ahead.

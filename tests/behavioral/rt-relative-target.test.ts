@@ -732,6 +732,11 @@ describe('RT-G: guards (plan §8)', () => {
       // Unlinks only, beside a dropped/fixed target.
       'src/core/undo/auto-target-fence.ts': 'unlinks only (the undo fence)',
       'src/core/ai/enrichment.ts': 'unlinks only (a target the AI made fixed)',
+      // THE HEAL (2026-10-24): re-validates a link undo / redo restored
+      // against the period's current start — resolving it through the retime
+      // path (`collectFieldChanges` with the period sent, i.e. `linkTargetTime`)
+      // or unlinking it. Its own writes are the rule, not an exception to it.
+      'src/core/tasks/relative-link-heal.ts': 'the heal: a restored link re-validated',
     }
     const writer =
       /\btarget_slot_id\s*=\s*(\?|NULL)|INSERT INTO tasks[^;]*target_slot_id|for \(const f of fields\) trackField/
@@ -744,6 +749,24 @@ describe('RT-G: guards (plan §8)', () => {
     expect(read(path.join(root, 'src/core/tasks/relative-target.ts'))).toMatch(
       /import \{ resolveTime \} from '@\/lib\/anchor-times'/,
     )
+  })
+
+  /**
+   * RT-G05: a snapshot written back is a link written without `resolveTime`,
+   * so every writer of snapshots (`applyFieldsToTask`'s callers: undo, redo)
+   * runs the heal over every task its entry touched — `healRelativeLinks`,
+   * which re-validates each restored link against the current period.
+   */
+  test('RT-G05: every undo / redo writer heals the links it restores', () => {
+    const callers = src()
+      .filter((f) => f !== 'src/core/undo/apply-fields.ts')
+      .filter((f) => /\bapplyFieldsToTask\(/.test(read(f)))
+    expect(callers.length).toBeGreaterThan(0)
+    for (const f of callers) expect(read(f), f).toMatch(/\bhealRelativeLinks\(/)
+    // The heal resolves through the retime path, which links via linkTargetTime.
+    const heal = read(path.join(root, 'src/core/tasks/relative-link-heal.ts'))
+    expect(heal).toMatch(/collectFieldChanges\(/)
+    expect(heal).toMatch(/retimeRefused\(/)
   })
 
   test('RT-G04: a shared task links only to its OWNER’s periods (a collaborator’s is a 400)', () => {
