@@ -47,11 +47,13 @@ export function deckToastMessage(
   result: DeckResponse,
   title: string,
   timezone: string,
+  /** The user's day boundary (`useDayStart`): "today" / "tomorrow" by OpenTask day. */
+  dayStart: string,
   now: Date = new Date(),
 ): string | null {
   if (result.day === null) return result.undecked > 0 ? `Taken off deck: “${title}”` : null
   if (result.decked === 0) return null
-  return `On deck for ${deckDayWords(result.day, timezone, now)}: “${title}”`
+  return `On deck for ${deckDayWords(result.day, timezone, now, dayStart)}: “${title}”`
 }
 
 /**

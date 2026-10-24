@@ -8,6 +8,7 @@
  * writer of `occurrence_at` / `deadline_at` on the derivation.
  * Every date is a LOCAL time in America/Chicago.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest'
@@ -281,7 +282,7 @@ describe('TM-RA: create', () => {
     test('TM-RA33: a derived target already past while the deadline is ahead is over target at birth', () => {
       const t = friday({ target_days_before: 4, target_time: '09:00' })
       expect(t.due_at).toBe(at('2026-10-19T09:00'))
-      expect(effectiveDueAt(t, tz)!.getTime()).toBeLessThan(Date.now())
+      expect(effectiveDueAt(t, tz, CALENDAR_DAY_START)!.getTime()).toBeLessThan(Date.now())
     })
 
     test('TM-RA34: the 400s', () => {
@@ -453,7 +454,7 @@ describe('TM-RA: the advancing writers and the readers', () => {
       const t = friday()
       getDb().prepare('UPDATE tasks SET due_at = NULL WHERE id = ?').run(t.id)
       setClock('2026-10-23T18:00')
-      expect(effectiveDueAt(getTaskById(t.id)!, tz)).toBeNull()
+      expect(effectiveDueAt(getTaskById(t.id)!, tz, CALENDAR_DAY_START)).toBeNull()
     })
 
     test('TM-RA51: the snooze guard names the next occurrence’s derived target', () => {

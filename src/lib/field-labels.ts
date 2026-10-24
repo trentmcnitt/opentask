@@ -82,11 +82,17 @@ export function formatFieldSummary(fieldsChanged: string[]): string | null {
  * - Within 7 days:  "Mon 9:00 AM"
  * - Beyond:         "Jan 15 9:00 AM"
  */
-export function formatSnoozeTarget(isoUtc: string, timezone: string): string {
+export function formatSnoozeTarget(
+  isoUtc: string,
+  timezone: string,
+  /** The user's day boundary: "tomorrow" is the next OpenTask day. */
+  dayStart: string,
+  now: Date = new Date(),
+): string {
   const target = new Date(isoUtc)
   const time = formatTimeInTimezone(isoUtc, timezone)
   const { todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
-    getTimezoneDayBoundaries(timezone)
+    getTimezoneDayBoundaries(timezone, dayStart, now)
 
   if (target >= todayStart && target < tomorrowStart) {
     return time
@@ -126,6 +132,8 @@ export interface EditDescriptionContext {
   beforeState: Partial<Record<string, unknown>> & { id: number }
   afterState: Partial<Record<string, unknown>> & { id: number }
   userTimezone: string
+  /** The user's day boundary (`dayBoundaryForUser`): "tomorrow 9:00 AM" by OpenTask day. */
+  dayStart: string
   /** Project name when project_id changed (looked up by caller) */
   projectName?: string
   /** A3 (2026-10-11): the snooze stopped AT the deadline — "Deferred to deadline …". */
@@ -237,7 +245,7 @@ function buildFieldFragment(
       return buildPriorityFragment(beforeState, afterState)
     case 'due_at':
       return context.isSnooze
-        ? buildSnoozeFragment(beforeState, afterState, userTimezone, context.cappedAtDeadline)
+        ? buildSnoozeFragment(beforeState, afterState, userTimezone, context)
         : buildDueDateFragment(afterState)
     case 'rrule':
       return buildRecurrenceFragment(afterState)
@@ -368,14 +376,15 @@ function buildSnoozeFragment(
   beforeState: Partial<Record<string, unknown>>,
   afterState: Partial<Record<string, unknown>>,
   userTimezone: string,
-  cappedAtDeadline = false,
+  context: Pick<EditDescriptionContext, 'cappedAtDeadline' | 'dayStart'>,
 ): string | null {
   const newDueAt = afterState.due_at
   if (typeof newDueAt !== 'string') return null
 
   // A snooze that stopped at the deadline says so (ruling A3): "Deferred to
   // deadline 6:00 PM (+9h)" — the toast, the activity log and the undo entry.
-  const target = `${cappedAtDeadline ? 'deadline ' : ''}${formatSnoozeTarget(newDueAt, userTimezone)}`
+  const when = formatSnoozeTarget(newDueAt, userTimezone, context.dayStart)
+  const target = `${context.cappedAtDeadline ? 'deadline ' : ''}${when}`
   const oldDueAt = beforeState.due_at
 
   if (typeof oldDueAt === 'string') {

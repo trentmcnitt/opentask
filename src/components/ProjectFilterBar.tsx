@@ -10,6 +10,7 @@ import { classifyChipDueBadge } from '@/lib/chip-due-badges'
 import { ChipDueBadges, describeChipDueBadges } from '@/components/ChipDueBadges'
 import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task, Project } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface ProjectFilterBarProps {
   projects: Project[]
@@ -51,8 +52,9 @@ export function ProjectFilterBar({
   timezone,
   now,
 }: ProjectFilterBarProps) {
+  const dayStart = useDayStart()
   const projectCounts = useMemo(() => {
-    const boundaries = timezone ? getTimezoneDayBoundaries(timezone, now) : null
+    const boundaries = timezone ? getTimezoneDayBoundaries(timezone, dayStart, now) : null
     const counts = new Map<number, number>()
     const dueTodayCounts = new Map<number, number>()
     const overdueCounts = new Map<number, number>()
@@ -82,7 +84,7 @@ export function ProjectFilterBar({
         if (b.count !== a.count) return b.count - a.count
         return a.project.sort_order - b.project.sort_order
       })
-  }, [projects, tasks, selectedProjects, excludedProjects, timezone, now])
+  }, [projects, tasks, selectedProjects, excludedProjects, timezone, dayStart, now])
 
   const hasActiveProjectFilter = selectedProjects.length > 0 || excludedProjects.length > 0
   if (projectCounts.length < 2 && !hasActiveProjectFilter) return null

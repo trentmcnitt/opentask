@@ -2,6 +2,7 @@
  * countTasks — the one definition of total / overdue / due today shared by
  * the Tasks top bar, the nav badges and GET /api/tasks/counts.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect } from 'vitest'
 import { countTasks } from '@/lib/task-counts'
 
@@ -20,6 +21,7 @@ describe('countTasks', () => {
         { due_at: null, progress_target: 1, is_tracked: false },
       ],
       tz,
+      CALENDAR_DAY_START,
       now,
     )
     expect(counts).toEqual({ total: 5, overdue: 2, today: 2 })
@@ -36,6 +38,7 @@ describe('countTasks', () => {
         { due_at: '2026-01-15T15:00:00.000Z', progress_target: 1, is_tracked: false },
       ],
       tz,
+      CALENDAR_DAY_START,
       now,
     )
     // All three are still tasks — only the two quotas drop out of the debt.
@@ -43,6 +46,6 @@ describe('countTasks', () => {
   })
 
   test('nothing due counts nothing', () => {
-    expect(countTasks([], tz, now)).toEqual({ total: 0, overdue: 0, today: 0 })
+    expect(countTasks([], tz, CALENDAR_DAY_START, now)).toEqual({ total: 0, overdue: 0, today: 0 })
   })
 })

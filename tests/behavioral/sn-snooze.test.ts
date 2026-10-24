@@ -8,6 +8,7 @@
  * SN-011 to SN-012: Snooze tracking cleared on rrule change
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb, resetDb } from '@/core/db'
 import { createTask, getTaskById, markDone, updateTask } from '@/core/tasks'
@@ -830,7 +831,7 @@ describe('computeSnoozeTime rounding', () => {
     // Freeze time to 8:45 AM UTC
     vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
 
-    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const result = computeSnoozeTime('60', 'UTC', '09:00', CALENDAR_DAY_START)
     const d = new Date(result)
 
     // 8:45 + 60m = 9:45 → 45 >= 35 → rounds up to 10:00
@@ -848,7 +849,7 @@ describe('computeSnoozeTime rounding', () => {
   test('SN-016: +1h at :20 truncates down (minutes < 35 threshold)', () => {
     vi.setSystemTime(new Date('2026-01-15T08:20:00Z'))
 
-    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const result = computeSnoozeTime('60', 'UTC', '09:00', CALENDAR_DAY_START)
     const d = new Date(result)
 
     // 8:20 + 60m = 9:20 → 20 < 35 → truncates to 9:00
@@ -866,7 +867,7 @@ describe('computeSnoozeTime rounding', () => {
   test('SN-017: +2h at :35 rounds up (exact boundary)', () => {
     vi.setSystemTime(new Date('2026-01-15T08:35:00Z'))
 
-    const result = computeSnoozeTime('120', 'UTC', '09:00')
+    const result = computeSnoozeTime('120', 'UTC', '09:00', CALENDAR_DAY_START)
     const d = new Date(result)
 
     // 8:35 + 120m = 10:35 → 35 >= 35 → rounds up to 11:00
@@ -880,7 +881,7 @@ describe('computeSnoozeTime rounding', () => {
   test('SN-018: +1h at :34 truncates (just below threshold)', () => {
     vi.setSystemTime(new Date('2026-01-15T08:34:00Z'))
 
-    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const result = computeSnoozeTime('60', 'UTC', '09:00', CALENDAR_DAY_START)
     const d = new Date(result)
 
     // 8:34 + 60m = 9:34 → 34 < 35 → truncates to 9:00
@@ -894,7 +895,7 @@ describe('computeSnoozeTime rounding', () => {
   test('SN-019: +1h at :00 stays on the hour', () => {
     vi.setSystemTime(new Date('2026-01-15T08:00:00Z'))
 
-    const result = computeSnoozeTime('60', 'UTC', '09:00')
+    const result = computeSnoozeTime('60', 'UTC', '09:00', CALENDAR_DAY_START)
     const d = new Date(result)
 
     // 8:00 + 60m = 9:00 → 0 < 35 → truncates to 9:00 (same result)
@@ -908,7 +909,7 @@ describe('computeSnoozeTime rounding', () => {
   test('SN-020: sub-hour snooze uses exact time', () => {
     vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
 
-    const result = computeSnoozeTime('30', 'UTC', '09:00')
+    const result = computeSnoozeTime('30', 'UTC', '09:00', CALENDAR_DAY_START)
     const d = new Date(result)
 
     // 8:45 + 30m = 9:15 — no rounding for sub-hour
@@ -922,7 +923,7 @@ describe('computeSnoozeTime rounding', () => {
   test('SN-021: tomorrow option uses morningTime', () => {
     vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
 
-    const result = computeSnoozeTime('tomorrow', 'America/Chicago', '09:00')
+    const result = computeSnoozeTime('tomorrow', 'America/Chicago', '09:00', CALENDAR_DAY_START)
     const d = DateTime.fromISO(result).setZone('America/Chicago')
 
     expect(d.hour).toBe(9)
@@ -950,7 +951,7 @@ describe('computeSnoozeTime: next_period', () => {
     // 10:15 Chicago
     vi.setSystemTime(new Date('2026-01-15T16:15:00Z'))
     const d = DateTime.fromISO(
-      computeSnoozeTime('next_period', 'America/Chicago', '09:00', slots),
+      computeSnoozeTime('next_period', 'America/Chicago', '09:00', CALENDAR_DAY_START, slots),
     ).setZone('America/Chicago')
     expect(d.toFormat('dd HH:mm')).toBe('15 12:00')
   })
@@ -959,14 +960,16 @@ describe('computeSnoozeTime: next_period', () => {
     // 21:10 Chicago
     vi.setSystemTime(new Date('2026-01-16T03:10:00Z'))
     const d = DateTime.fromISO(
-      computeSnoozeTime('next_period', 'America/Chicago', '09:00', slots),
+      computeSnoozeTime('next_period', 'America/Chicago', '09:00', CALENDAR_DAY_START, slots),
     ).setZone('America/Chicago')
     expect(d.toFormat('dd HH:mm')).toBe('15 22:00')
   })
 
   test('SN-024: no periods → the top of the next hour', () => {
     vi.setSystemTime(new Date('2026-01-15T08:45:00Z'))
-    expect(computeSnoozeTime('next_period', 'UTC', '09:00', [])).toBe('2026-01-15T09:00:00.000Z')
+    expect(computeSnoozeTime('next_period', 'UTC', '09:00', CALENDAR_DAY_START, [])).toBe(
+      '2026-01-15T09:00:00.000Z',
+    )
   })
 })
 

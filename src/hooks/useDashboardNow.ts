@@ -8,6 +8,7 @@ import {
   shouldAutoClearOverdueFilter,
 } from '@/lib/dashboard-clock'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 /**
  * The Tasks page's single "now" — see `src/lib/dashboard-clock.ts` for why it
@@ -29,12 +30,14 @@ import type { Task } from '@/types'
  */
 export function useDashboardNow(tasks: Task[], timezone: string): Date {
   const [now, setNow] = useState(() => new Date())
+  // The day turns at the user's day start ("Day starts at" PR 2), not midnight.
+  const dayStart = useDayStart()
 
   useEffect(() => {
-    const delay = clockTickDelay(nextClockTick(tasks, now, timezone), now)
+    const delay = clockTickDelay(nextClockTick(tasks, now, timezone, dayStart), now)
     const id = setTimeout(() => setNow(new Date()), delay)
     return () => clearTimeout(id)
-  }, [tasks, now, timezone])
+  }, [tasks, now, timezone, dayStart])
 
   useEffect(() => {
     const refresh = () => {

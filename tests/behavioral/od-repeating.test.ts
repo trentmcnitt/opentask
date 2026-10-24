@@ -13,6 +13,7 @@
  * America/Chicago, the task queue on. The clock is Tue 2026-10-20 10:00.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { DateTime } from 'luxon'
 
@@ -170,7 +171,7 @@ describe('OD-RP: the pure rules', () => {
     expect(deckRefusal(passed, '2026-10-20', ctx, now)).toBe('deadline_nagging')
     // The web greys the same days.
     expect(deckLimit(t, tz, now)).toEqual({ latestDay: '2026-10-23', caption: 'deadline Fri' })
-    const days = deckMenuDays(tz, now, 6, deckLimit(t, tz, now))
+    const days = deckMenuDays(tz, now, CALENDAR_DAY_START, 6, deckLimit(t, tz, now))
     expect(days.filter((d) => !d.disabled).map((d) => d.day)).toEqual([
       '2026-10-21',
       '2026-10-22',
@@ -190,10 +191,17 @@ describe('OD-RP: the pure rules', () => {
       occurrence_at: at('2026-10-20T08:00'),
       on_deck_day: '2026-10-20',
     }
-    expect(effectiveDueAt(decked, tz, new Date(at('2026-10-20T10:00')))).toBeNull()
+    expect(
+      effectiveDueAt(decked, tz, CALENDAR_DAY_START, new Date(at('2026-10-20T10:00'))),
+    ).toBeNull()
     // Off deck, the schedule answers (today's 08:00 occurrence).
     expect(
-      effectiveDueAt({ ...decked, on_deck_day: null }, tz, new Date(at('2026-10-20T10:00'))),
+      effectiveDueAt(
+        { ...decked, on_deck_day: null },
+        tz,
+        CALENDAR_DAY_START,
+        new Date(at('2026-10-20T10:00')),
+      ),
     ).not.toBeNull()
   })
 })

@@ -12,6 +12,7 @@
  * All in America/Chicago with a frozen clock. September 2026: Sun 20, Mon 21,
  * … Sat 26, Sun 27, Mon 28. CDT (UTC−5), so local midnight is 05:00Z.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
@@ -91,28 +92,36 @@ describe('startOfWeek / quotaPeriodEnd (pure)', () => {
   test('an aligned anchor runs interval weeks; a misaligned one ends at the next boundary', () => {
     const sun = local('2026-09-20T00:00')
     const mon = local('2026-09-21T00:00')
-    expect(quotaPeriodEnd(sun, 'weeks', 1, 'sunday').toISO()).toBe(
+    expect(quotaPeriodEnd(sun, 'weeks', 1, 'sunday', CALENDAR_DAY_START).toISO()).toBe(
       local('2026-09-27T00:00').toISO(),
     )
-    expect(quotaPeriodEnd(sun, 'weeks', 2, 'sunday').toISO()).toBe(
+    expect(quotaPeriodEnd(sun, 'weeks', 2, 'sunday', CALENDAR_DAY_START).toISO()).toBe(
       local('2026-10-04T00:00').toISO(),
     )
     // Monday anchor, Sunday week: the 6-day stretch to Sunday 27.
-    expect(quotaPeriodEnd(mon, 'weeks', 1, 'sunday').toISO()).toBe(
+    expect(quotaPeriodEnd(mon, 'weeks', 1, 'sunday', CALENDAR_DAY_START).toISO()).toBe(
       local('2026-09-27T00:00').toISO(),
     )
-    expect(quotaPeriodEnd(mon, 'weeks', 2, 'sunday').toISO()).toBe(
+    expect(quotaPeriodEnd(mon, 'weeks', 2, 'sunday', CALENDAR_DAY_START).toISO()).toBe(
       local('2026-09-27T00:00').toISO(),
     )
     // Sunday anchor, Monday week: a 1-day stretch to Monday 21.
-    expect(quotaPeriodEnd(sun, 'weeks', 1, 'monday').toISO()).toBe(
+    expect(quotaPeriodEnd(sun, 'weeks', 1, 'monday', CALENDAR_DAY_START).toISO()).toBe(
       local('2026-09-21T00:00').toISO(),
     )
     // Other units ignore the week start.
-    expect(quotaPeriodEnd(mon, 'days', 1, 'sunday').toISODate()).toBe('2026-09-22')
-    expect(quotaPeriodEnd(local('2026-09-01T00:00'), 'months', 1, 'sunday').toISODate()).toBe(
-      '2026-10-01',
+    expect(quotaPeriodEnd(mon, 'days', 1, 'sunday', CALENDAR_DAY_START).toISODate()).toBe(
+      '2026-09-22',
     )
+    expect(
+      quotaPeriodEnd(
+        local('2026-09-01T00:00'),
+        'months',
+        1,
+        'sunday',
+        CALENDAR_DAY_START,
+      ).toISODate(),
+    ).toBe('2026-10-01')
   })
 
   test('unknown stored values read as the Sunday default', () => {
@@ -191,7 +200,9 @@ describe('Weekly quota periods by week start', () => {
     setWeekStart('sunday')
     // Before the rollover runs, the expired stretch already reads as the new week's count.
     const now = at('2026-09-27', 12)
-    expect(effectiveProgress(getTaskById(met.id)!, TEST_TIMEZONE, now, 'sunday')).toBe(0)
+    expect(
+      effectiveProgress(getTaskById(met.id)!, TEST_TIMEZONE, now, 'sunday', CALENDAR_DAY_START),
+    ).toBe(0)
     expect(rolloverTrackedPeriods(now)).toEqual({ anchored: 0, rolled: 2 })
 
     // Met: Mon 21 → Sun 27, 2 of 2 — a completion. The Sunday tap is carried.

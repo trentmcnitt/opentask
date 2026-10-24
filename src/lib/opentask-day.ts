@@ -37,9 +37,20 @@
  * screen: its roster and "considered today", quota prompts and their day
  * keys, a daily quota's count, and the slot nag (`dayBoundaryForUser` in
  * src/core/tasks/rollover-time.ts is their read; with the switch off it is
- * midnight, `CALENDAR_DAY_START`). "Today" in the Now view, the Today pill,
- * Upcoming, the horizon segments, check_in_day and the longer quota periods
- * stay on midnight for now (PR 2 moves them — the guard's allowlist).
+ * midnight, `CALENDAR_DAY_START`).
+ *
+ * EVERYTHING USES THE OPENTASK DATE ("Day starts at" PR 2, Trent
+ * 2026-10-24): one pure function maps an instant to its OpenTask date
+ * (`openTaskDayOf`, and `openTaskLocalDay` for calendar maths on it), and
+ * every surface downstream is plain calendar maths on that date — the Now
+ * view's "today", the Today pill and header counts, the date labels and
+ * filter chips (`openTaskDayBoundaries`), Upcoming, the horizon segments and
+ * check_in_day, the day roster, the overdue fallback, decks (`on_deck_day`
+ * is an OpenTask date), the weekly / monthly / yearly quota periods and the
+ * Quotas page, daily stats and History. Target and deadline timestamps never
+ * move; only which day's list they are on. The server reads the user's day
+ * start through `dayBoundaryForUser`, the browser through `useDayStart`
+ * (src/components/PreferencesProvider.tsx) — the same rule.
  *
  * Pure: no database, no clock of its own. Every function takes the instant it
  * is asked about.
@@ -281,4 +292,58 @@ export function targetOpenTaskDay(
     return calendarDateOf(new Date(dueAt), timezone)
   }
   return openTaskDayOf(new Date(dueAt), timezone, dayStart)
+}
+
+/**
+ * The OpenTask date of `instant` as a Luxon DateTime at that date's local
+ * midnight in `timezone` — the shape the date rules do their calendar maths
+ * on (weekdays, months, quarters, day gaps: `src/lib/task-segments.ts`).
+ * "Day starts at" PR 2 (Trent, 2026-10-24: everything uses the OpenTask
+ * date): one pure function maps an instant to its date, and everything
+ * downstream is plain calendar maths on that date. With `CALENDAR_DAY_START`
+ * it is the instant's own local midnight.
+ */
+export function openTaskLocalDay(instant: Date, timezone: string, dayStart: string): DateTime {
+  return DateTime.fromISO(openTaskDayOf(instant, timezone, dayStart), { zone: timezone })
+}
+
+/** The instants the days around `now` start at: yesterday, today, tomorrow, the day after, a week on. */
+export interface DayBoundaries {
+  yesterdayStart: Date
+  todayStart: Date
+  tomorrowStart: Date
+  dayAfterTomorrowStart: Date
+  nextWeekStart: Date
+}
+
+/**
+ * The OpenTask days around `now`, as the instants they start at
+ * (`dayStartMoment` of today's OpenTask date −1, 0, +1, +2, +7) — every
+ * "Today" / "Tomorrow" / "Yesterday" label, the Today pill and the due-date
+ * filter chips read these. With `CALENDAR_DAY_START`, local midnights.
+ */
+export function openTaskDayBoundaries(
+  timezone: string,
+  dayStart: string,
+  now: Date,
+): DayBoundaries {
+  const today = openTaskDayOf(now, timezone, dayStart)
+  const at = (days: number) => dayStartMoment(addDays(today, days), timezone, dayStart)
+  return {
+    yesterdayStart: at(-1),
+    todayStart: at(0),
+    tomorrowStart: at(1),
+    dayAfterTomorrowStart: at(2),
+    nextWeekStart: at(7),
+  }
+}
+
+/**
+ * Whole OpenTask days from `a` to `b` (negative when `b` is earlier): the gap
+ * between their OpenTask dates, calendar arithmetic on the dates.
+ */
+export function openTaskDaysBetween(a: Date, b: Date, timezone: string, dayStart: string): number {
+  const from = openTaskLocalDay(a, timezone, dayStart)
+  const to = openTaskLocalDay(b, timezone, dayStart)
+  return Math.round(to.diff(from, 'days').days)
 }

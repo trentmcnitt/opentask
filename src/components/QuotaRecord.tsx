@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { TrackState } from '@/lib/track'
 import type { QuotaStats } from '@/core/tasks/quotas'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 /**
  * The quota's record — in a chip's bubble (`TrackChipPopover`) since the Quotas
@@ -41,6 +42,7 @@ export function QuotaRecord({
 }) {
   const stats = useQuotaStats(task.id)
   const timezone = useTimezone()
+  const dayStart = useDayStart()
   const loading = stats === undefined
   const streak = stats ? stats.current_streak + (state.met ? 1 : 0) : null
   const longest = stats && streak !== null ? Math.max(stats.longest_streak, streak) : null
@@ -89,7 +91,7 @@ export function QuotaRecord({
           subtracted. Nothing at all when nothing stands: no "Never". */}
       {stats?.last_logged_at && (
         <p className="text-muted-foreground col-span-2" data-quota-last>
-          Last: {formatLastLogged(stats.last_logged_at, timezone)}
+          Last: {formatLastLogged(stats.last_logged_at, timezone, dayStart)}
         </p>
       )}
     </dl>

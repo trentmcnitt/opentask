@@ -7,7 +7,7 @@ import { DateTimePicker } from '@/components/DateTimePicker'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
-import { useSnoozePreferences } from '@/components/PreferencesProvider'
+import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
 import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import type { Task } from '@/types'
@@ -47,10 +47,11 @@ export function TargetMenu({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [anchor, setAnchor] = useState<string | null>(null)
   const { morningTime } = useSnoozePreferences()
+  const dayStart = useDayStart()
   // "Morning of the deadline" (ruling Q8), read as the picker opens.
   const [deadlineDay, setDeadlineDay] = useState<{ label: string; at: string } | null>(null)
   const openPicker = () => {
-    setAnchor(computeSnoozeTime('tomorrow', timezone, morningTime))
+    setAnchor(computeSnoozeTime('tomorrow', timezone, morningTime, dayStart))
     setDeadlineDay(deadlineDayPick(task.deadline_at, { timezone, morningTime }))
     setPickerOpen(true)
   }

@@ -11,6 +11,7 @@
  * anchor too since the creation-day ruling (rd-creation-day.test.ts).
  * Every date is a LOCAL time in America/Chicago.
  */
+import { CALENDAR_DAY_START, openTaskDaySpan } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { RRule } from 'rrule'
@@ -330,7 +331,12 @@ describe('RD-GRID: the writers and readers agree on the grid', () => {
       occurrence_at: at('2026-11-09T08:00'),
     }
     // Grid: … Nov 3, Nov 6, Nov 9 …
-    const on = (day: string) => todaysOccurrence(reminder, tz, new Date(at(`${day}T12:00`)))
+    const on = (day: string) =>
+      todaysOccurrence(
+        reminder,
+        tz,
+        openTaskDaySpan(new Date(at(`${day}T12:00`)), tz, CALENDAR_DAY_START),
+      )
     expect(local(on('2026-11-06'))).toBe('2026-11-06T08:00')
     expect(on('2026-11-07')).toBeNull()
     expect(on('2026-11-08')).toBeNull()

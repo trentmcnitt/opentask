@@ -152,12 +152,17 @@ export function formatTasksResponse(tasks: Task[], timezone: string): FormattedT
  * Order: project name (in brackets), then parenthetical with due date, recurrence, priority, labels.
  * Empty parts are omitted. Returns empty string if no metadata is present.
  */
-function formatTaskMeta(task: Task, timezone: string, projectName?: string): string {
+function formatTaskMeta(
+  task: Task,
+  timezone: string,
+  dayStart: string,
+  projectName?: string,
+): string {
   const prefix = projectName ? ` [${projectName}]` : ''
   const parts: string[] = []
 
   if (task.due_at) {
-    parts.push(formatDueTimeParts(task.due_at, timezone).relative)
+    parts.push(formatDueTimeParts(task.due_at, timezone, dayStart).relative)
   }
 
   if (task.rrule) {
@@ -203,6 +208,8 @@ function formatNotesLine(notes: string | null): string | null {
 export function formatTasksForClipboard(
   groups: ClipboardGroup[],
   timezone: string,
+  /** The user's day boundary (`useDayStart`): "Tomorrow 9:00 AM" by OpenTask day. */
+  dayStart: string,
   projectMap?: Map<number, string>,
   annotationMap?: Map<number, string>,
 ): string {
@@ -218,7 +225,7 @@ export function formatTasksForClipboard(
     const bullet = group.tasks.length > 1 ? '- ' : ''
     for (const task of group.tasks) {
       const projectName = projectMap?.get(task.project_id)
-      lines.push(`${bullet}${task.title}${formatTaskMeta(task, timezone, projectName)}`)
+      lines.push(`${bullet}${task.title}${formatTaskMeta(task, timezone, dayStart, projectName)}`)
       const annotation = annotationMap?.get(task.id)
       if (annotation) {
         lines.push(`    ✨ ${annotation}`)

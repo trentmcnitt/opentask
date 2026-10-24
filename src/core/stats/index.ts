@@ -1,11 +1,16 @@
 /**
  * User daily stats module
  *
- * Tracks aggregate stats with daily granularity in user's timezone.
+ * Tracks aggregate stats with daily granularity in the user's timezone, on
+ * the user's OPENTASK days ("Day starts at" PR 2, Trent 2026-10-24:
+ * everything uses the OpenTask date): with a 3:00 AM day start, a completion
+ * at 01:30 counts for the day before. The day start with the task queue on,
+ * midnight off (`dayBoundaryForUser`).
  */
 
 import { getDb } from '@/core/db'
-import { DateTime } from 'luxon'
+import { addDays, openTaskDayOf } from '@/lib/opentask-day'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import type { DailyStat, StatsSummary } from '@/types'
 import { ValidationError } from '@/core/errors'
 
@@ -37,9 +42,8 @@ export function incrementDailyStat(
 
   const db = getDb()
 
-  // Get today's date in user's timezone
-  const userNow = DateTime.now().setZone(userTimezone)
-  const dateStr = userNow.toFormat('yyyy-MM-dd')
+  // Today's OpenTask date in the user's timezone
+  const dateStr = openTaskDayOf(new Date(), userTimezone, dayBoundaryForUser(userId))
 
   // Use SQLite upsert (INSERT ... ON CONFLICT ... DO UPDATE)
   db.prepare(
@@ -97,11 +101,10 @@ export function getDailyStats(userId: number, startDate: string, endDate: string
 export function getStatsSummary(userId: number, userTimezone: string): StatsSummary {
   const db = getDb()
 
-  // Get today's date in user's timezone
-  const userNow = DateTime.now().setZone(userTimezone)
-  const todayStr = userNow.toFormat('yyyy-MM-dd')
-  const weekAgoStr = userNow.minus({ days: 7 }).toFormat('yyyy-MM-dd')
-  const monthAgoStr = userNow.minus({ days: 30 }).toFormat('yyyy-MM-dd')
+  // Today's OpenTask date in the user's timezone
+  const todayStr = openTaskDayOf(new Date(), userTimezone, dayBoundaryForUser(userId))
+  const weekAgoStr = addDays(todayStr, -7)
+  const monthAgoStr = addDays(todayStr, -30)
 
   // Get today's stats (needs full row for DailyStat type)
   const today = db

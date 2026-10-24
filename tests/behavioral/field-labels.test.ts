@@ -5,6 +5,7 @@
  * undo descriptions flow through updateTask() correctly.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   formatFieldSummary,
@@ -77,28 +78,28 @@ describe('formatSnoozeTarget', () => {
     // Freeze at Jan 15, 2026 10:00 AM Chicago (16:00 UTC)
     vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
     // Target: Jan 15, 2026 5:00 PM Chicago (23:00 UTC)
-    const result = formatSnoozeTarget('2026-01-15T23:00:00Z', TZ)
+    const result = formatSnoozeTarget('2026-01-15T23:00:00Z', TZ, CALENDAR_DAY_START)
     expect(result).toBe('5:00 PM')
   })
 
   test('tomorrow shows "tomorrow" with time', () => {
     vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
     // Target: Jan 16, 2026 9:00 AM Chicago (15:00 UTC)
-    const result = formatSnoozeTarget('2026-01-16T15:00:00Z', TZ)
+    const result = formatSnoozeTarget('2026-01-16T15:00:00Z', TZ, CALENDAR_DAY_START)
     expect(result).toBe('tomorrow 9:00 AM')
   })
 
   test('within 7 days shows day name with time', () => {
     vi.setSystemTime(new Date('2026-01-15T16:00:00Z')) // Thursday
     // Target: Jan 19, 2026 9:00 AM Chicago (15:00 UTC) — Monday
-    const result = formatSnoozeTarget('2026-01-19T15:00:00Z', TZ)
+    const result = formatSnoozeTarget('2026-01-19T15:00:00Z', TZ, CALENDAR_DAY_START)
     expect(result).toBe('Mon 9:00 AM')
   })
 
   test('beyond 7 days shows date with time', () => {
     vi.setSystemTime(new Date('2026-01-15T16:00:00Z'))
     // Target: Jan 25, 2026 9:00 AM Chicago (15:00 UTC)
-    const result = formatSnoozeTarget('2026-01-25T15:00:00Z', TZ)
+    const result = formatSnoozeTarget('2026-01-25T15:00:00Z', TZ, CALENDAR_DAY_START)
     expect(result).toBe('Jan 25 9:00 AM')
   })
 })
@@ -120,6 +121,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, priority: 0 },
       afterState: { id: 1, priority: 3 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Priority set to High \u2014 "Buy groceries"')
   })
@@ -130,6 +132,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, priority: 2 },
       afterState: { id: 1, priority: 3 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Priority Medium \u2192 High \u2014 "Buy groceries"')
   })
@@ -140,6 +143,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, priority: 3 },
       afterState: { id: 1, priority: 0 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Priority cleared \u2014 "Buy groceries"')
   })
@@ -155,6 +159,7 @@ describe('formatEditDescription', () => {
         beforeState: { id: 1, due_at: '2026-01-15T15:00:00Z' },
         afterState: { id: 1, due_at: '2026-01-19T15:00:00Z' },
         userTimezone: TZ,
+        dayStart: CALENDAR_DAY_START,
       },
     )
     expect(result).toBe('Deferred to Mon 9:00 AM (+4d) \u2014 "Buy groceries"')
@@ -169,6 +174,7 @@ describe('formatEditDescription', () => {
         beforeState: { id: 1, due_at: '2026-01-15T15:00:00Z', priority: 2 },
         afterState: { id: 1, due_at: '2026-01-19T15:00:00Z', priority: 3 },
         userTimezone: TZ,
+        dayStart: CALENDAR_DAY_START,
       },
     )
     expect(result).toContain('Deferred to Mon 9:00 AM (+4d)')
@@ -184,6 +190,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, due_at: null },
       afterState: { id: 1, due_at: '2026-01-19T15:00:00Z' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Due date set \u2014 "Buy groceries"')
   })
@@ -194,6 +201,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, due_at: '2026-01-15T15:00:00Z' },
       afterState: { id: 1, due_at: null },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Due date cleared \u2014 "Buy groceries"')
   })
@@ -206,6 +214,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, rrule: null },
       afterState: { id: 1, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', anchor_time: '09:00' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Recurrence set to Daily at 9:00 AM \u2014 "Buy groceries"')
   })
@@ -216,6 +225,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, rrule: 'FREQ=DAILY' },
       afterState: { id: 1, rrule: 'FREQ=WEEKLY;BYDAY=MO', anchor_time: '09:00' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Recurrence set to Mondays at 9:00 AM \u2014 "Buy groceries"')
   })
@@ -229,6 +239,7 @@ describe('formatEditDescription', () => {
         beforeState: { id: 1, rrule: 'FREQ=DAILY' },
         afterState: { id: 1, rrule: null },
         userTimezone: TZ,
+        dayStart: CALENDAR_DAY_START,
       },
     )
     expect(result).toBe('Recurrence cleared \u2014 "Buy groceries"')
@@ -242,6 +253,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, target_days_before: 1, target_time: '18:00' },
       afterState: { id: 1, target_days_before: 2, target_time: '18:00' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Target 2 days before at 6:00 PM \u2014 "Craft"')
   })
@@ -252,6 +264,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, target_days_before: 1, due_at: '2026-11-06T00:00:00Z' },
       afterState: { id: 1, target_days_before: 2, due_at: '2026-11-05T00:00:00Z' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Target 2 days before — "Craft"')
   })
@@ -262,6 +275,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, repeat_anchor: 'target' },
       afterState: { id: 1, repeat_anchor: 'deadline' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Repeats on its deadline \u2014 "Craft"')
   })
@@ -274,6 +288,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, project_id: 1 },
       afterState: { id: 1, project_id: 2 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
       projectName: 'Work',
     })
     expect(result).toBe('Moved to Work \u2014 "Buy groceries"')
@@ -285,6 +300,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, project_id: 1 },
       afterState: { id: 1, project_id: 2 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Project updated \u2014 "Buy groceries"')
   })
@@ -297,6 +313,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, title: 'Old title' },
       afterState: { id: 1, title: 'New title' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Renamed "Old title" \u2192 "New title"')
   })
@@ -307,6 +324,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1, title: 'A very long old title here' },
       afterState: { id: 1, title: 'A very long new title here' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Renamed "A very long o..." \u2192 "A very long n..."')
   })
@@ -319,6 +337,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1 },
       afterState: { id: 1 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Labels updated \u2014 "Buy groceries"')
   })
@@ -329,6 +348,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1 },
       afterState: { id: 1 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Notes updated \u2014 "Buy groceries"')
   })
@@ -339,6 +359,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1 },
       afterState: { id: 1 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Changed short name \u2014 "Buy groceries"')
   })
@@ -354,6 +375,7 @@ describe('formatEditDescription', () => {
         beforeState: { id: 1, due_at: '2026-01-15T15:00:00Z', priority: 0 },
         afterState: { id: 1, due_at: '2026-01-16T15:00:00Z', priority: 3 },
         userTimezone: TZ,
+        dayStart: CALENDAR_DAY_START,
       },
     )
     // Two user-facing fields: due_at + priority → fragment, fragment — title
@@ -368,6 +390,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1 },
       afterState: { id: 1, rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', anchor_time: '09:00' },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Recurrence set to Daily at 9:00 AM, Notes updated \u2014 "Buy groceries"')
   })
@@ -383,6 +406,7 @@ describe('formatEditDescription', () => {
         beforeState: { id: 1, priority: 0 },
         afterState: { id: 1, priority: 2 },
         userTimezone: TZ,
+        dayStart: CALENDAR_DAY_START,
       },
     )
     expect(result).toBe('Updated priority, due date, and recurrence \u2014 "Buy groceries"')
@@ -399,6 +423,7 @@ describe('formatEditDescription', () => {
         beforeState: { id: 1, priority: 2 },
         afterState: { id: 1, priority: 3 },
         userTimezone: TZ,
+        dayStart: CALENDAR_DAY_START,
       },
     )
     expect(result).toContain('"This is a very lo..."')
@@ -412,6 +437,7 @@ describe('formatEditDescription', () => {
       beforeState: { id: 1 },
       afterState: { id: 1 },
       userTimezone: TZ,
+      dayStart: CALENDAR_DAY_START,
     })
     expect(result).toBe('Edited "Buy groceries"')
   })
