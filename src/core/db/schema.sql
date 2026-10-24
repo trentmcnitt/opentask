@@ -75,8 +75,8 @@ CREATE TABLE IF NOT EXISTS users (
   sleep_slot_id   INTEGER DEFAULT NULL,
   pad_presets     TEXT DEFAULT NULL,
   -- "Day starts at" (2026-10-23, src/lib/anchor-times.ts): when the OpenTask
-  -- day turns. Both NULL (the default) = the first period's start, else
-  -- morning_time — the rollover as it always was. A custom time: slot id
+  -- day turns. Both NULL (the default) = 03:00 for everyone
+  -- (DEFAULT_DAY_START, 2026-10-24; read, never written). A custom time: slot id
   -- NULL. Linked: the period's id, and day_start_time its start as of the
   -- link (a snapshot, like the anchor times').
   day_start_time    TEXT DEFAULT NULL,
