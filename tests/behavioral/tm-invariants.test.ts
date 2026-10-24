@@ -26,7 +26,7 @@
  */
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
-import { createTask, updateTask, markDone, bulkSnooze, bulkEdit } from '@/core/tasks'
+import { createTask, updateTask, markDone, markUndone, bulkSnooze, bulkEdit } from '@/core/tasks'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { skipUntil } from '@/core/tasks/skip-until'
 import { runTaskRollover } from '@/core/tasks/task-rollover'
@@ -47,10 +47,14 @@ import {
   type PersonalOccurrence,
   hasRelativeTarget,
   isDeadlineAnchored,
+  relativeTargetAt,
 } from '@/lib/task-segments'
 import { simulateDays, type SimEvent, type SimTaskDay } from '@/core/sim/day-simulator'
 import type { Task } from '@/types'
-import { ValidationError } from '@/core/errors'
+import { AppError, ValidationError } from '@/core/errors'
+import { executeUndo } from '@/core/undo'
+import { createTimeSlot, listTimeSlots } from '@/core/time-slots'
+import { deleteTimeSlot, updateTimeSlot } from '@/core/time-slots/edit'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -1103,4 +1107,144 @@ describe('TM-INV: repeat ends (seeded random)', () => {
     // The seed closes plenty of series by each path.
     expect(closed).toBeGreaterThan(10)
   }, 30_000)
+})
+
+describe('TM-INV: relative targets (seeded random)', () => {
+  afterAll(() => teardownTestDb())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  /**
+   * TM-INV-12 (relative targets, 2026-10-24; docs/TASK-MODEL.md § Relative
+   * targets): random one-offs with deadlines through random relative targets
+   * (custom or linked to a period), deadline moves and removals, picks,
+   * defers, Remove target, decks, done and put-back, undo — and random period
+   * RETIMES and DELETES (the generator's period writes). After every write,
+   * for every task:
+   *  1. an OPEN one-off with offsets has a deadline, no deck, `target_auto`
+   *     0, and `due_at` = `relativeTargetAt(deadline, offsets)`;
+   *  2. a LINKED row (any state) has both offsets, and `target_time` equals
+   *     its period's current start — a period that still exists;
+   *  3. the offsets come in pairs, and a link never sits without them.
+   */
+  test('TM-INV-12: one derivation and a true link, whatever the writes', () => {
+    const SEED12 = SEED + 12
+    const r = rng(SEED12)
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    const label = (c: number, s: string) => `seed ${SEED12} case ${c} ${s}`
+    const hhmm = () =>
+      `${String(6 + Math.floor(r() * 16)).padStart(2, '0')}:${pick(['00', '15', '30', '45'])}`
+    let relativeSeen = 0
+    let linkedSeen = 0
+    let periodWrites = 0
+    const check = (ids: number[], l: string) => {
+      const slots = new Map(listTimeSlots(TEST_USER_ID).map((s) => [s.id, s.start_time]))
+      for (const id of ids) {
+        const task = getTaskById(id)!
+        const tl = `${l} task ${id}`
+        expect(task.target_days_before === null, `${tl}: half a pair`).toBe(
+          task.target_time === null,
+        )
+        if (task.target_slot_id !== null) {
+          linkedSeen++
+          expect(task.target_time, `${tl}: a link without offsets`).not.toBeNull()
+          expect(slots.has(task.target_slot_id), `${tl}: a link to a period that is gone`).toBe(
+            true,
+          )
+          expect(task.target_time, `${tl}: a linked time that is not the period's`).toBe(
+            slots.get(task.target_slot_id),
+          )
+        }
+        const open = !task.done && !task.deleted_at && !task.archived_at
+        if (open && !task.rrule && task.target_days_before !== null) {
+          relativeSeen++
+          expect(task.deadline_at, `${tl}: relative with no deadline`).not.toBeNull()
+          expect(task.on_deck_day, `${tl}: relative AND on deck`).toBeNull()
+          expect(task.target_auto, `${tl}: relative AND automatic`).toBe(false)
+          expect(task.due_at, `${tl}: not the derivation`).toBe(
+            relativeTargetAt(
+              task.deadline_at!,
+              { days_before: task.target_days_before, time: task.target_time! },
+              tz,
+            ),
+          )
+        }
+      }
+    }
+    for (let c = 0; c < 30; c++) {
+      setupTestDb()
+      let clock = DateTime.fromISO(pick(WINDOWS), { zone: tz }).plus({
+        minutes: Math.floor(r() * 5 * 24 * 60),
+      })
+      vi.setSystemTime(clock.toJSDate())
+      getDb()
+        .prepare('UPDATE users SET last_rollover_date = ? WHERE id = ?')
+        .run(clock.minus({ days: 1 }).toISODate(), TEST_USER_ID)
+      const deadline = () =>
+        clock
+          .plus({ days: 1 + Math.floor(r() * 12) })
+          .set({ hour: 6 + Math.floor(r() * 16), minute: 0 })
+          .toUTC()
+          .toISO()!
+      const ids = [0, 1, 2].map(
+        (i) => createTask({ ...u, input: { title: `rt ${c}.${i}`, deadline_at: deadline() } }).id,
+      )
+      check(ids, label(c, 'create'))
+      for (let s = 0; s < 12; s++) {
+        clock = clock.plus({ minutes: Math.floor(r() * 30 * 60) })
+        vi.setSystemTime(clock.toJSDate())
+        const id = pick(ids)
+        const op = Math.floor(r() * 12)
+        const step = label(c, `op ${s}:${op}`)
+        try {
+          if (op <= 2) {
+            // A relative target: custom, or linked to a random period.
+            const days = Math.floor(r() * 4)
+            const input =
+              r() < 0.5
+                ? { target_days_before: days, target_time: hhmm() }
+                : { target_days_before: days, target_slot_id: pick(listTimeSlots(TEST_USER_ID)).id }
+            updateTask({ ...u, taskId: id, input })
+          } else if (op === 3) {
+            updateTask({ ...u, taskId: id, input: { deadline_at: deadline() } })
+          } else if (op === 4) {
+            const to = clock.plus({ minutes: Math.floor(r() * 4 * 24 * 60) })
+            snoozeTask({ ...u, taskId: id, until: to.toUTC().toISO()! })
+          } else if (op === 5) {
+            updateTask({ ...u, taskId: id, input: pick([{ due_at: null }, { deadline_at: null }]) })
+          } else if (op === 6) {
+            deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [id], day: clock.toISODate()! })
+          } else if (op === 7) {
+            const task = getTaskById(id)!
+            if (task.done) markUndone({ ...u, taskId: id })
+            else markDone({ ...u, taskId: id })
+          } else if (op === 8) {
+            executeUndo(TEST_USER_ID)
+          } else if (op <= 10) {
+            // A period RETIME: any period, to a free random time.
+            const slot = pick(listTimeSlots(TEST_USER_ID))
+            updateTimeSlot({ ...u, slotId: slot.id, input: { start_time: hhmm() } })
+            periodWrites++
+          } else {
+            // A period DELETE, and a fresh one so the pool never runs dry.
+            const slots = listTimeSlots(TEST_USER_ID)
+            if (slots.length > 2) deleteTimeSlot({ ...u, slotId: pick(slots).id })
+            createTimeSlot(TEST_USER_ID, `P${c}.${s}`, hhmm())
+            periodWrites++
+          }
+        } catch (err) {
+          // A refusal (400 / 409) is part of the contract; nothing half-written.
+          if (!(err instanceof ValidationError) && !(err instanceof AppError)) throw err
+        }
+        check(ids, step)
+      }
+    }
+    // The seed exercises every part.
+    expect(relativeSeen).toBeGreaterThan(30)
+    expect(linkedSeen).toBeGreaterThan(30)
+    expect(periodWrites).toBeGreaterThan(30)
+  }, 60_000)
 })
