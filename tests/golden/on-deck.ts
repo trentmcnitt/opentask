@@ -84,21 +84,40 @@ export const onDeckScenarios: GoldenScenario[] = [
   },
   {
     id: 'od-1am',
-    title: 'A deck for "today" made at 1 AM is the coming calendar day: it lasts that day',
-    source: 'A2',
+    title:
+      'At 1 AM "today" is the day that is ending: a deck for today is queued at the 6:30 rollover; one for Tomorrow lasts the coming day',
+    // "Day starts at" PR 2 (Trent, 2026-10-24: everything uses the OpenTask
+    // date). Under A2 a 1 AM deck for "today" was the coming CALENDAR day and
+    // lasted it; a deck day is now an OpenTask date, so at 01:00 Tuesday
+    // (06:30 start) "today" is Monday — its rollover at 06:30 queues the
+    // deck — and the late night's pick for the coming day is Tomorrow
+    // (Tuesday), which is on deck all Tuesday and queued at Wednesday's.
+    source: '"Day starts at" PR 2 (replaces A2); rule 4',
     from: '2026-10-19',
     to: '2026-10-22',
     policy: ['never'],
     queue: QUEUE,
-    tasks: [{ name: 'task', created: '2026-10-19T09:00', input: UNDATED }],
+    tasks: [
+      { name: 'task', created: '2026-10-19T09:00', input: UNDATED },
+      { name: 'late', created: '2026-10-19T09:00', input: UNDATED },
+    ],
     events: [
       { at: '2026-10-20T01:00', run: deck(['task']) },
-      { at: '2026-10-20T01:01', run: check('task', { on_deck_day: '2026-10-20' }) },
-      // Still on deck after the 6:30 rollover the same morning.
-      { at: '2026-10-20T06:31', run: check('task', { on_deck_day: '2026-10-20' }) },
+      { at: '2026-10-20T01:01', run: deck(['late'], '2026-10-20') },
+      { at: '2026-10-20T01:02', run: check('task', { on_deck_day: '2026-10-19' }) },
+      // The 6:30 rollover the same morning: Monday's deck has ended.
+      {
+        at: '2026-10-20T06:31',
+        run: check('task', { on_deck_day: null, queued_from_deck_day: '2026-10-19' }),
+      },
+      { at: '2026-10-20T06:32', run: check('late', { on_deck_day: '2026-10-20' }) },
     ],
     expect: {
       task: {
+        '2026-10-20': 'queue_today queued',
+        '2026-10-21..2026-10-22': 'queue_previous queued',
+      },
+      late: {
         '2026-10-20': 'deck',
         '2026-10-21': 'queue_today queued',
         '2026-10-22': 'queue_previous queued',
@@ -384,8 +403,14 @@ export const onDeckScenarios: GoldenScenario[] = [
   {
     id: 'od-dst-spring-forward',
     title:
-      'DST: a 02:30 first period on Mar 14 2027 rolls over at 03:00; a 1:30 AM deck that day lasts it',
-    source: 'A2; rolloverMoment (next valid minute)',
+      'DST: a 02:30 first period on Mar 14 2027 rolls over at 03:00; a 1:30 AM deck for "today" is Saturday\'s, one for Tomorrow lasts Sunday',
+    // "Day starts at" PR 2 (2026-10-24): at 01:30 Sunday, before the swallowed
+    // 02:30, the OpenTask day is still Saturday (it runs to 03:00, the next
+    // valid minute), so a deck for "today" is Saturday's and the 03:00
+    // rollover queues it with Saturday's; Tomorrow — Sunday — is on deck from
+    // 03:00 and queued at Monday's 02:30. (Under A2 a 1:30 deck for "today"
+    // was calendar Sunday.)
+    source: '"Day starts at" PR 2 (replaces A2); dayStartMoment (next valid minute)',
     from: '2027-03-13',
     to: '2027-03-16',
     policy: ['never'],
@@ -393,20 +418,33 @@ export const onDeckScenarios: GoldenScenario[] = [
     tasks: [
       { name: 'sat', created: '2027-03-13T09:00', input: UNDATED },
       { name: 'sun', created: '2027-03-13T09:00', input: UNDATED },
+      { name: 'late', created: '2027-03-13T09:00', input: UNDATED },
     ],
     events: [
       { at: '2027-03-13T10:00', run: deck(['sat']) },
-      // 01:30 Sunday, before the swallowed 02:30: "today" is calendar Sunday.
-      { at: '2027-03-14T01:30', run: deck(['sun']) },
+      // 01:30 Sunday, before the swallowed 02:30: "today" is still Saturday.
+      { at: '2027-03-14T01:30', run: deck(['late']) },
+      { at: '2027-03-14T01:31', run: deck(['sun'], '2027-03-14') },
+      { at: '2027-03-14T01:32', run: check('late', { on_deck_day: '2027-03-13' }) },
       {
         at: '2027-03-14T03:01',
         run: check('sat', { on_deck_day: null, queued_from_deck_day: '2027-03-13' }),
       },
-      { at: '2027-03-14T03:02', run: check('sun', { on_deck_day: '2027-03-14' }) },
+      {
+        at: '2027-03-14T03:02',
+        run: check('late', { on_deck_day: null, queued_from_deck_day: '2027-03-13' }),
+      },
+      { at: '2027-03-14T03:03', run: check('sun', { on_deck_day: '2027-03-14' }) },
     ],
     expect: {
       sat: {
         '2027-03-13': 'deck',
+        '2027-03-14': 'queue_today queued',
+        '2027-03-15..2027-03-16': 'queue_previous queued',
+      },
+      late: {
+        // Undated on Saturday, the check-in day: its weeks segment (unset = weeks).
+        '2027-03-13': 'weeks',
         '2027-03-14': 'queue_today queued',
         '2027-03-15..2027-03-16': 'queue_previous queued',
       },
