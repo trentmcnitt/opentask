@@ -109,6 +109,13 @@
  *     POST /api/task-segments/defer-lead [the first, to tomorrow]
  *                                               → task-segments-defer-lead.json
  *
+ * 20. Relative targets (2026-10-24): a one-off whose deadline is five days
+ *     out at 9 AM, its target the day before at User B's last period's start
+ *     (linked)
+ *     GET   /api/tasks/{id}                     → task-relative-one-off.json
+ *     PATCH /api/tasks/{id} [target_at: a pick] → task-relative-fixed.json
+ *     (the offsets and the link cleared: a picked date is a fixed target)
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -235,6 +242,7 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
         return ids.map('task', value)
       case 'slot_id':
       case 'quota_prompt_slot_id':
+      case 'target_slot_id': // relative targets (2026-10-24): the period a target follows
         return ids.map('slot', value)
       case 'project_id':
         return ids.map('project', value)
@@ -255,6 +263,10 @@ function normaliseString(value: string, ids: IdMap, key?: string): string {
   // The deadlines page's Defer summary names its day in words (2026-10-22).
   if (key === 'summary' && /^Deferred \d+ tasks? to /.test(value)) {
     return value.replace(/ to .*$/, ' to <day>')
+  }
+  // A PATCH's move description names its time relative to now (2026-10-24).
+  if (key === 'description' && /^Deferred to .* \u2014 "/.test(value)) {
+    return value.replace(/^Deferred to .* \u2014 "/, 'Deferred to <when> \u2014 "')
   }
   if (ISO_DATETIME.test(value)) return PINNED_TIMESTAMP
   if (ISO_DATE.test(value)) return PINNED_DATE
@@ -944,6 +956,44 @@ describe('contract fixtures (native clients)', () => {
     plainWithoutDeadlines = forms.plain
   })
 
+  // 20. Relative targets (2026-10-24). Its own hook, last.
+  beforeAll(async () => {
+    const placeholder = 101 + Object.keys(created).length
+    const slots = (await call('/api/time-slots')) as {
+      data: { time_slots: { id: number; start_time: string }[] }
+    }
+    const period = slots.data.time_slots[slots.data.time_slots.length - 1]
+    const res = (await call('/api/tasks', {
+      title: 'File the quarterly report',
+      deadline_at: nineAm(5),
+      target_days_before: 1,
+      target_slot_id: period.id,
+    })) as { data: { id: number } }
+    created.relativeOneOff = res.data.id
+    ids.register('task', res.data.id, placeholder)
+    captured['task-relative-one-off'] = await call(`/api/tasks/${res.data.id}`)
+    captured['task-relative-fixed'] = await call(
+      `/api/tasks/${res.data.id}`,
+      { target_at: nineAm(3) },
+      'PATCH',
+    )
+  })
+
+  test('a relative one-off: linked and derived; a pick makes it fixed', () => {
+    type T = { data: Record<string, unknown> }
+    const linked = (captured['task-relative-one-off'] as unknown as T).data
+    expect(linked).toMatchObject({ target_days_before: 1, target_auto: false })
+    expect(linked.target_slot_id).toEqual(expect.any(Number))
+    expect(linked.target_at).toBe(linked.due_at)
+    const fixed = (captured['task-relative-fixed'] as unknown as T).data
+    expect(fixed).toMatchObject({
+      target_days_before: null,
+      target_time: null,
+      target_slot_id: null,
+      target_at: nineAm(3),
+    })
+  })
+
   test('the deadlines page: first, opt-in, the safety net flagged, nearest deadline first', () => {
     type Row = { id: number; segment_state: string; safety_net?: boolean; seen?: boolean }
     type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
@@ -1030,6 +1080,8 @@ describe('contract fixtures (native clients)', () => {
     'reminders-deadlines',
     'task-segments-defer-lead',
     'reminders-deadlines-plain',
+    'task-relative-one-off',
+    'task-relative-fixed',
   ]
 
   for (const name of names) {

@@ -18,6 +18,7 @@
     "repeat_anchor": "deadline",
     "target_days_before": 1,
     "target_time": "18:00",
+    "target_slot_id": null,
     "repeat_count": null,
     "repeat_count_used": 0,
     "repeat_until": null,
