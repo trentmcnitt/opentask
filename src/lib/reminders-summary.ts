@@ -9,7 +9,7 @@
  * him up to this moment.
  */
 import { DateTime } from 'luxon'
-import { CALENDAR_DAY_START, minutesIntoDay } from '@/lib/opentask-day'
+import { minutesIntoDay } from '@/lib/opentask-day'
 import { parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { groupConsidered, groupWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 
@@ -59,7 +59,7 @@ export function slotHasStarted(
   slot: TimeSlot | null,
   timezone: string,
   now: Date,
-  dayStart: string = CALENDAR_DAY_START,
+  dayStart: string,
 ): boolean {
   if (!slot) return true
   const start = parseHHMM(slot.start_time)
@@ -73,7 +73,7 @@ export function summarizeReminders<G extends SummaryGroup>(
   groups: G[],
   timezone: string,
   now: Date = new Date(),
-  dayStart: string = CALENDAR_DAY_START,
+  dayStart: string,
 ): RemindersSummary<G> {
   const started: G[] = []
   const later: G[] = []

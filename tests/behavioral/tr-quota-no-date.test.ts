@@ -10,6 +10,7 @@
  * The sibling to compare against is the reminder carve-out (§6), which these
  * rules are deliberately shaped like.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTask, getTaskById, updateTask, snoozeTask, bulkEdit } from '@/core/tasks'
 import { executeUndo, executeRedo } from '@/core/undo'
@@ -158,7 +159,7 @@ describe('A quota has no due date', () => {
     expect(retired.rrule).toBeNull()
     expect(retired.anchor_time).toBeNull()
     expect(retired.anchor_dow).toBeNull()
-    expect(effectiveDueAt(retired, TEST_TIMEZONE, NOW)).toBeNull()
+    expect(effectiveDueAt(retired, TEST_TIMEZONE, CALENDAR_DAY_START, NOW)).toBeNull()
   })
 
   test('TR-016: retiring a quota and dating it in one request keeps the date', () => {
@@ -227,7 +228,11 @@ describe('A quota has no due date', () => {
     const quota = makeQuota()
     const stored = getTaskById(quota.id)!
     // Two independent reasons now: no due_at, and the explicit tracked guard.
-    expect(countTasks([stored], TEST_TIMEZONE, NOW)).toEqual({ total: 1, overdue: 0, today: 0 })
+    expect(countTasks([stored], TEST_TIMEZONE, CALENDAR_DAY_START, NOW)).toEqual({
+      total: 1,
+      overdue: 0,
+      today: 0,
+    })
   })
 })
 

@@ -12,6 +12,7 @@
  *  - TM-INV-10 / TM-INV-11, seeded random (plan §10 named them INV-09/10;
  *    TM-INV-09 was already repeat ends).
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -555,12 +556,12 @@ describe('DL-S: the page', () => {
 
   test('DL-S04: Now — a target-less deadline task is relevant only in its safety net', () => {
     const t = make({ deadline_at: at('2026-10-30T23:59'), priority: 4 })
-    const opts = { queue: true, rolloverTime: ROLLOVER }
+    const opts = { queue: true, dayStart: ROLLOVER }
     expect(isRelevantNow(task(t.id), tz, new Date(), opts)).toBe(false)
     expect(isRelevantNow(task(t.id), tz, new Date(at('2026-10-29T10:00')), opts)).toBe(true)
     expect(isRelevantNow(task(t.id), tz, new Date(at('2026-11-01T10:00')), opts)).toBe(true)
     // Queue off (the web's flag): undated Urgent, relevant as before.
-    expect(isRelevantNow(task(t.id), tz, new Date(), {})).toBe(true)
+    expect(isRelevantNow(task(t.id), tz, new Date(), { dayStart: CALENDAR_DAY_START })).toBe(true)
   })
 
   test('DL-S05: the rollover never touches a page row; a deadline deck is cleared, never queued', () => {

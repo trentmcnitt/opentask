@@ -19,6 +19,7 @@
  * Midday 12:00, Afternoon 16:00, Evening 20:30. 03:00 is also the unset
  * default (2026-10-24); several checks pin the contrast with a 07:00 start.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 
@@ -373,7 +374,7 @@ describe('TQ-D: the web reads the same day (pure)', () => {
     // 03:00: a new day, nothing started before its 07:00 slot.
     expect(slotHasStarted(eveningSlot, tz, local('2026-01-16T03:00'), '03:00')).toBe(false)
     // Midnight (the switch off): as it always was.
-    expect(slotHasStarted(eveningSlot, tz, t0030)).toBe(false)
+    expect(slotHasStarted(eveningSlot, tz, t0030, CALENDAR_DAY_START)).toBe(false)
 
     const groups = [
       { slot: late, reminders: [{ id: 1 }], considered: 0 },
@@ -384,7 +385,7 @@ describe('TQ-D: the web reads the same day (pure)', () => {
     expect(naturalSlotIndex(groups, tz, local('2026-01-16T01:30'), '03:00')).toBe(0) // late night
     expect(naturalSlotIndex(groups, tz, t0030)).toBe(0) // midnight: the 1:00 one ahead → first
     expect(summarizeReminders(groups, tz, t0030, '03:00').waitingSoFar).toBe(1)
-    expect(summarizeReminders(groups, tz, t0030).waitingSoFar).toBe(0)
+    expect(summarizeReminders(groups, tz, t0030, CALENDAR_DAY_START).waitingSoFar).toBe(0)
   })
 
   test("TQ-D13: the dashboard pager walks the day's order — finishing the evening at 00:30 goes to a started slot, not the 1:00 AM one", () => {

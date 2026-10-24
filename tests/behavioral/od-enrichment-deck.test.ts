@@ -14,6 +14,7 @@
  *   target, the toast/notification words, and undo.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
 
@@ -504,10 +505,12 @@ describe('"nag me <day>" is a target at the default time, like "remind me" (2026
 
 describe('deckDayAsTarget (the fallback when the deck cannot be written)', () => {
   test('today → the "Target today" time; another day → the default task time', () => {
-    expect(deckDayAsTarget('2026-10-20', TZ, '09:00', TODAY_TARGET, TUE_2PM)).toBe(TODAY_TARGET)
-    expect(deckDayAsTarget('2026-10-24', TZ, '09:00', TODAY_TARGET, TUE_2PM)).toBe(
-      '2026-10-24T14:00:00.000Z',
-    )
+    expect(
+      deckDayAsTarget('2026-10-20', TZ, '09:00', TODAY_TARGET, CALENDAR_DAY_START, TUE_2PM),
+    ).toBe(TODAY_TARGET)
+    expect(
+      deckDayAsTarget('2026-10-24', TZ, '09:00', TODAY_TARGET, CALENDAR_DAY_START, TUE_2PM),
+    ).toBe('2026-10-24T14:00:00.000Z')
   })
 })
 
@@ -775,6 +778,7 @@ describe('the enrichment write', () => {
       task: getTaskById(task.id)!,
       projectName: 'Inbox',
       timezone: TEST_TIMEZONE,
+      dayStart: CALENDAR_DAY_START,
       slots: [],
     })
     expect(body).toBe('Added to Inbox · On deck Sat Oct 24')

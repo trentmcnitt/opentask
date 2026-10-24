@@ -10,6 +10,7 @@
  * `hasDebtDueDate`, and the pill counts the same facet as the chip
  * (`useDateFacetCounts`). These tests pin both halves.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { countTasks, isOverdue } from '@/lib/task-counts'
 import { classifyTaskDueDate } from '@/components/DueDateFilterBar'
@@ -56,7 +57,7 @@ function emptyCriteria(): TaskFilterCriteria {
 
 /** What the Overdue filter chip counts over a set. */
 function chipOverdueCount(tasks: Task[]): number {
-  const boundaries = getTimezoneDayBoundaries(TZ, NOW)
+  const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, NOW)
   return tasks.filter((t) => classifyTaskDueDate(t, NOW, boundaries).includes('overdue')).length
 }
 
@@ -82,14 +83,18 @@ describe('isOverdue — the one definition', () => {
   })
 
   test('the header count and the Overdue chip agree over the same set and now', () => {
-    expect(countTasks(corpus, TZ, NOW).overdue).toBe(4)
+    expect(countTasks(corpus, TZ, CALENDAR_DAY_START, NOW).overdue).toBe(4)
     expect(chipOverdueCount(corpus)).toBe(4)
   })
 
   test('a legacy quota row lands in "No Due Date", matching countTasks', () => {
-    const boundaries = getTimezoneDayBoundaries(TZ, NOW)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, NOW)
     expect(classifyTaskDueDate(corpus[7], NOW, boundaries)).toEqual(['no_due_date'])
-    expect(countTasks([corpus[7]], TZ, NOW)).toEqual({ total: 1, overdue: 0, today: 0 })
+    expect(countTasks([corpus[7]], TZ, CALENDAR_DAY_START, NOW)).toEqual({
+      total: 1,
+      overdue: 0,
+      today: 0,
+    })
   })
 })
 
@@ -105,31 +110,49 @@ describe('the pill counts the date facet, not the filtered list', () => {
   test('with the Today chip on, the filtered list holds fewer overdue tasks than the chip counts', () => {
     const criteria: TaskFilterCriteria = { ...emptyCriteria(), selectedDateFilters: ['today'] }
     // The old header population: every filter applied — only #2 is overdue AND today.
-    const filtered = applyTaskFilters(corpus, criteria, { timezone: TZ })
-    expect(countTasks(filtered, TZ, NOW).overdue).toBe(1)
+    const filtered = applyTaskFilters(corpus, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      timezone: TZ,
+    })
+    expect(countTasks(filtered, TZ, CALENDAR_DAY_START, NOW).overdue).toBe(1)
     // The date facet (what the pill and the Overdue chip now both count).
-    const facet = applyTaskFilters(corpus, criteria, { timezone: TZ, skipGroup: 'dateFilters' })
-    expect(countTasks(facet, TZ, NOW).overdue).toBe(chipOverdueCount(facet))
-    expect(countTasks(facet, TZ, NOW).overdue).toBe(4)
+    const facet = applyTaskFilters(corpus, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      timezone: TZ,
+      skipGroup: 'dateFilters',
+    })
+    expect(countTasks(facet, TZ, CALENDAR_DAY_START, NOW).overdue).toBe(chipOverdueCount(facet))
+    expect(countTasks(facet, TZ, CALENDAR_DAY_START, NOW).overdue).toBe(4)
   })
 
   test('other groups still narrow the facet: a project filter narrows pill and chip alike', () => {
     const criteria: TaskFilterCriteria = { ...emptyCriteria(), selectedProjects: [9] }
-    const facet = applyTaskFilters(corpus, criteria, { timezone: TZ, skipGroup: 'dateFilters' })
-    expect(countTasks(facet, TZ, NOW).overdue).toBe(1)
+    const facet = applyTaskFilters(corpus, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      timezone: TZ,
+      skipGroup: 'dateFilters',
+    })
+    expect(countTasks(facet, TZ, CALENDAR_DAY_START, NOW).overdue).toBe(1)
     expect(chipOverdueCount(facet)).toBe(1)
   })
 
   test('tapping the pill gives exactly the pill count (exclusive Overdue over the facet)', () => {
     const before: TaskFilterCriteria = { ...emptyCriteria(), selectedDateFilters: ['today'] }
     const pill = countTasks(
-      applyTaskFilters(corpus, before, { timezone: TZ, skipGroup: 'dateFilters' }),
+      applyTaskFilters(corpus, before, {
+        dayStart: CALENDAR_DAY_START,
+        timezone: TZ,
+        skipGroup: 'dateFilters',
+      }),
       TZ,
+      CALENDAR_DAY_START,
       NOW,
     ).overdue
     // `exclusiveDateFilter('overdue')`: Overdue becomes the only date filter.
     const after: TaskFilterCriteria = { ...before, selectedDateFilters: ['overdue'] }
-    expect(applyTaskFilters(corpus, after, { timezone: TZ })).toHaveLength(pill)
+    expect(
+      applyTaskFilters(corpus, after, { dayStart: CALENDAR_DAY_START, timezone: TZ }),
+    ).toHaveLength(pill)
   })
 })
 
@@ -140,7 +163,9 @@ describe('the Overdue filter classifies against the page clock', () => {
   test('a task due at 2pm joins the Overdue list once `now` passes 2pm', () => {
     const criteria: TaskFilterCriteria = { ...emptyCriteria(), selectedDateFilters: ['overdue'] }
     const ids = (now: Date) =>
-      applyTaskFilters(corpus, criteria, { timezone: TZ, now }).map((t) => t.id)
+      applyTaskFilters(corpus, criteria, { dayStart: CALENDAR_DAY_START, timezone: TZ, now }).map(
+        (t) => t.id,
+      )
     expect(ids(NOW)).not.toContain(3)
     expect(ids(new Date('2026-01-15T20:00:00Z'))).not.toContain(3) // exactly 2pm: not yet
     expect(ids(new Date('2026-01-15T20:00:00.001Z'))).toContain(3)

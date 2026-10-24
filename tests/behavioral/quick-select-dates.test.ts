@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import {
   snapToNextPreset,
   adjustDate,
@@ -10,6 +11,9 @@ import {
   snapToNextHour,
 } from '@/lib/quick-select-dates'
 import { parseLocalDatetimeInput } from '@/lib/format-date'
+
+/** The process's own zone: what `formatRelativeTime` read before it took one. */
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 const TZ = 'America/Chicago' // UTC-6 (CST) / UTC-5 (CDT)
 
@@ -129,7 +133,7 @@ describe('formatQuickSelectHeader', () => {
   it('shows "Today" for today\'s date', () => {
     // Feb 3, 2025 9:00 AM CST, now is Feb 3 8 AM CST
     vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST
-    const result = formatQuickSelectHeader('2025-02-03T15:00:00.000Z', TZ)
+    const result = formatQuickSelectHeader('2025-02-03T15:00:00.000Z', TZ, CALENDAR_DAY_START)
     expect(result).toContain('Today')
     expect(result).toContain('Feb')
     expect(result).toContain('3')
@@ -139,7 +143,7 @@ describe('formatQuickSelectHeader', () => {
 
   it('shows "Tomorrow" for tomorrow\'s date', () => {
     vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST Feb 3
-    const result = formatQuickSelectHeader('2025-02-04T15:00:00.000Z', TZ) // Feb 4 9 AM CST
+    const result = formatQuickSelectHeader('2025-02-04T15:00:00.000Z', TZ, CALENDAR_DAY_START) // Feb 4 9 AM CST
     expect(result).toContain('Tomorrow')
     expect(result).toContain('Feb')
     expect(result).toContain('4')
@@ -147,7 +151,7 @@ describe('formatQuickSelectHeader', () => {
 
   it('shows "Yesterday" for yesterday\'s date', () => {
     vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST Feb 3
-    const result = formatQuickSelectHeader('2025-02-02T15:00:00.000Z', TZ) // Feb 2 9 AM CST
+    const result = formatQuickSelectHeader('2025-02-02T15:00:00.000Z', TZ, CALENDAR_DAY_START) // Feb 2 9 AM CST
     expect(result).toContain('Yesterday')
     expect(result).toContain('Feb')
     expect(result).toContain('2')
@@ -155,7 +159,7 @@ describe('formatQuickSelectHeader', () => {
 
   it('shows weekday for dates beyond yesterday/tomorrow', () => {
     vi.setSystemTime(new Date('2025-02-03T14:00:00.000Z')) // 8 AM CST Feb 3
-    const result = formatQuickSelectHeader('2025-02-05T15:00:00.000Z', TZ) // Feb 5 9 AM CST (Wednesday)
+    const result = formatQuickSelectHeader('2025-02-05T15:00:00.000Z', TZ, CALENDAR_DAY_START) // Feb 5 9 AM CST (Wednesday)
     expect(result).toContain('Wed')
     expect(result).toContain('Feb')
     expect(result).toContain('5')
@@ -166,43 +170,43 @@ describe('formatRelativeTime', () => {
   it('shows "in X mins" for near-future dates', () => {
     const now = new Date('2025-02-03T15:00:00.000Z')
     const future = '2025-02-03T15:26:00.000Z'
-    expect(formatRelativeTime(future, now)).toBe('in 26 mins')
+    expect(formatRelativeTime(future, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('in 26 mins')
   })
 
   it('shows "in 1 min" for singular', () => {
     const now = new Date('2025-02-03T15:00:00.000Z')
     const future = '2025-02-03T15:01:30.000Z' // 1.5 min, floor = 1
-    expect(formatRelativeTime(future, now)).toBe('in 1 min')
+    expect(formatRelativeTime(future, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('in 1 min')
   })
 
   it('shows "in Xh Ym" for hours', () => {
     const now = new Date('2025-02-03T15:00:00.000Z')
     const future = '2025-02-03T17:30:00.000Z'
-    expect(formatRelativeTime(future, now)).toBe('in 2h 30m')
+    expect(formatRelativeTime(future, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('in 2h 30m')
   })
 
   it('shows "Xh ago" for past dates', () => {
     const now = new Date('2025-02-03T17:00:00.000Z')
     const past = '2025-02-03T15:00:00.000Z'
-    expect(formatRelativeTime(past, now)).toBe('2h ago')
+    expect(formatRelativeTime(past, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('2h ago')
   })
 
   it('shows days for longer durations', () => {
     const now = new Date('2025-02-05T15:00:00.000Z')
     const past = '2025-02-03T15:00:00.000Z'
-    expect(formatRelativeTime(past, now)).toBe('2 days ago')
+    expect(formatRelativeTime(past, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('2 days ago')
   })
 
   it('shows "in <1 min" for very small future differences', () => {
     const now = new Date('2025-02-03T15:00:00.000Z')
     const near = '2025-02-03T15:00:30.000Z'
-    expect(formatRelativeTime(near, now)).toBe('in <1 min')
+    expect(formatRelativeTime(near, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('in <1 min')
   })
 
   it('shows "just now" for very small past differences', () => {
     const now = new Date('2025-02-03T15:00:30.000Z')
     const recent = '2025-02-03T15:00:00.000Z'
-    expect(formatRelativeTime(recent, now)).toBe('just now')
+    expect(formatRelativeTime(recent, LOCAL_TZ, CALENDAR_DAY_START, now)).toBe('just now')
   })
 })
 
@@ -370,7 +374,7 @@ describe('getDayLabel DST', () => {
     // March 10, 2025 in CDT — yesterday was March 9 (spring-forward day)
     vi.setSystemTime(new Date('2025-03-10T12:00:00Z')) // 7 AM CDT
     // 11 PM CST on March 9 = 05:00 UTC March 10 (right before midnight CDT)
-    expect(getDayLabel('2025-03-10T04:00:00.000Z', TZ)).toBe('Yesterday')
+    expect(getDayLabel('2025-03-10T04:00:00.000Z', TZ, CALENDAR_DAY_START)).toBe('Yesterday')
   })
 })
 
@@ -451,7 +455,7 @@ describe('formatRelativeTime counts calendar days in the account timezone', () =
     // from 16:00 Jan 15 to 05:00 Jan 16: tomorrow, 12+ hours away.
     const now = new Date('2026-01-15T07:00:00.000Z')
     const target = '2026-01-15T20:00:00.000Z'
-    expect(formatRelativeTime(target, now, 'Asia/Tokyo')).toBe('in 1 day')
-    expect(formatRelativeTime(target, now, TZ)).toBe('in 13h')
+    expect(formatRelativeTime(target, 'Asia/Tokyo', CALENDAR_DAY_START, now)).toBe('in 1 day')
+    expect(formatRelativeTime(target, TZ, CALENDAR_DAY_START, now)).toBe('in 13h')
   })
 })
