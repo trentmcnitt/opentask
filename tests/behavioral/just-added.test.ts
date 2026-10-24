@@ -4,6 +4,7 @@
  * the dashboard's Just now card, newest event first, with which event and how
  * long ago. Pure selection logic, frozen clock.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   JUST_ADDED_WINDOW_MS,
@@ -257,11 +258,20 @@ describe('the targeted event drives the clock, the tag and Clear', () => {
   })
 
   test('the real row is tagged "New" for an add and "Targeted" for a targeting', () => {
-    expect(justAddedTag(makeTask({ id: 1, created_at: ago(MIN) }), NOW)).toBe('New')
     expect(
-      justAddedTag(makeTask({ id: 2, created_at: ago(HOUR), segment_targeted_at: ago(MIN) }), NOW),
+      justAddedTag(makeTask({ id: 1, created_at: ago(MIN) }), NOW, undefined, CALENDAR_DAY_START),
+    ).toBe('New')
+    expect(
+      justAddedTag(
+        makeTask({ id: 2, created_at: ago(HOUR), segment_targeted_at: ago(MIN) }),
+        NOW,
+        undefined,
+        CALENDAR_DAY_START,
+      ),
     ).toBe('Targeted')
-    expect(justAddedTag(makeTask({ id: 3, created_at: ago(HOUR) }), NOW)).toBeUndefined()
+    expect(
+      justAddedTag(makeTask({ id: 3, created_at: ago(HOUR) }), NOW, undefined, CALENDAR_DAY_START),
+    ).toBeUndefined()
   })
 
   test('a Clear key is per event: re-targeting after a Clear makes a new key', () => {
@@ -311,22 +321,22 @@ describe("a deck's tag names its day (deckTagLabel, Trent 2026-10-22)", () => {
     makeTask({ id: 9, created_at: ago(HOUR), segment_targeted_at: ago(MIN), on_deck_day: day })
 
   test('today: "On deck"; tomorrow: "On deck tomorrow"; later: "On deck Jan 20"', () => {
-    expect(justAddedTag(decked('2026-01-15'), NOW, TZ)).toBe('On deck')
-    expect(justAddedTag(decked('2026-01-16'), NOW, TZ)).toBe('On deck tomorrow')
-    expect(justAddedTag(decked('2026-01-20'), NOW, TZ)).toBe('On deck Jan 20')
-    expect(justAddedTag(decked('2026-11-15'), NOW, TZ)).toBe('On deck Nov 15')
+    expect(justAddedTag(decked('2026-01-15'), NOW, TZ, CALENDAR_DAY_START)).toBe('On deck')
+    expect(justAddedTag(decked('2026-01-16'), NOW, TZ, CALENDAR_DAY_START)).toBe('On deck tomorrow')
+    expect(justAddedTag(decked('2026-01-20'), NOW, TZ, CALENDAR_DAY_START)).toBe('On deck Jan 20')
+    expect(justAddedTag(decked('2026-11-15'), NOW, TZ, CALENDAR_DAY_START)).toBe('On deck Nov 15')
   })
 
   test("the day is the user's: late evening UTC-next-day is still today", () => {
     // 11:30pm Chicago on Jan 15 is Jan 16 in UTC.
     const late = new Date('2026-01-16T05:30:00Z').getTime()
-    expect(deckTagLabel('2026-01-15', TZ, late)).toBe('On deck')
-    expect(deckTagLabel('2026-01-16', TZ, late)).toBe('On deck tomorrow')
+    expect(deckTagLabel('2026-01-15', TZ, late, CALENDAR_DAY_START)).toBe('On deck')
+    expect(deckTagLabel('2026-01-16', TZ, late, CALENDAR_DAY_START)).toBe('On deck tomorrow')
   })
 
   test('no zone or an unreadable day: plain "On deck"', () => {
-    expect(justAddedTag(decked('2026-01-20'), NOW)).toBe('On deck')
-    expect(deckTagLabel('not-a-day', TZ, NOW)).toBe('On deck')
+    expect(justAddedTag(decked('2026-01-20'), NOW, undefined, CALENDAR_DAY_START)).toBe('On deck')
+    expect(deckTagLabel('not-a-day', TZ, NOW, CALENDAR_DAY_START)).toBe('On deck')
   })
 })
 

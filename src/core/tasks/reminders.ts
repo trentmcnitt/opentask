@@ -94,7 +94,7 @@ export function getTodaysReminders(
       return !Number.isNaN(due) && due < day.end.getTime()
     }
 
-    return todaysOccurrence(task, timezone, now, day) !== null
+    return todaysOccurrence(task, timezone, day) !== null
   })
 }
 

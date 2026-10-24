@@ -62,7 +62,10 @@ export function hasAnyQuotas(userId: number): boolean {
 export interface QuotaStats {
   /** Closed periods that reached the target. */
   periods_met: number
-  /** Closed periods that fell short of it (including a missed one recorded as 0). */
+  /**
+   * Closed periods that fell short of it (including a missed one recorded as
+   * 0). Not an unmet TRANSITION period (`progress_periods.transition`).
+   */
   periods_missed: number
   /** Met periods in a row, counting back from the most recent closed one. */
   current_streak: number
@@ -99,6 +102,12 @@ export function getQuotaStats(userId: number, taskId: number): QuotaStats {
     .prepare(
       `SELECT met FROM progress_periods
         WHERE task_id = ?
+          -- A TRANSITION period ("Day starts at" PR 2): it ended early because
+          -- its anchor was not on a period start (every midnight anchor once
+          -- the day starts at 3:00) — hours long, not a week the user missed.
+          -- Unmet, it is neither met nor missed and does not break a streak;
+          -- met, it counts like any period.
+          AND NOT (transition = 1 AND met = 0)
         ORDER BY period_start DESC, id DESC`,
     )
     .all(taskId) as { met: number }[]

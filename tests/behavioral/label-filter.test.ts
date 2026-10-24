@@ -66,9 +66,9 @@ describe('filterByLabels', () => {
       selectedProjects: [],
       excludedProjects: [],
     }
-    expect(ids(applyTaskFilters(items as unknown as Task[], criteria))).toEqual(
-      ids(filterByLabels(items, c)),
-    )
+    expect(
+      ids(applyTaskFilters(items as unknown as Task[], criteria, { dayStart: '03:00' })),
+    ).toEqual(ids(filterByLabels(items, c)))
   })
 })
 

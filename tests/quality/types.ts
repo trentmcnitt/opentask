@@ -74,7 +74,7 @@ export interface ReminderEnrichmentInput {
   /** The user's time slots, in order. Defaults to DEFAULT_TIME_SLOTS. */
   slots?: Array<{ label: string; start_time: string }>
   /**
-   * Label of the user's default reminder slot (Settings → Default period),
+   * Label of the user's default reminder slot (Settings → Default reminder period),
    * where a thought with no time cue goes.
    */
   defaultSlotLabel?: string

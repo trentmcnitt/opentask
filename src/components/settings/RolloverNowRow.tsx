@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * Settings → Snooze → "Roll over now" (task queue, 2026-10-20): run the
+ * Settings → Advanced → "Roll over now" (task queue, 2026-10-20; under Defer
+ * until 2026-10-24, src/components/settings/AdvancedSection.tsx): run the
  * rollover by hand — "end my day now" (`POST /api/rollover/run-now`,
  * src/core/tasks/rollover-now.ts). Only with the server's task queue on
  * (`useTaskQueue`); hidden otherwise, and while preferences load.
@@ -29,6 +30,7 @@ import {
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { apiFetch, jsonInit } from '@/lib/api-client'
 import { showToast } from '@/lib/toast'
+import { OVERDUE_LOWER } from '@/lib/task-model-words'
 import { SettingRow } from './SettingRow'
 
 interface RunNowResult {
@@ -154,7 +156,7 @@ export function RolloverNowRow() {
     <>
       <SettingRow
         label="Roll over now"
-        description="End your day now: tasks past their target go to the queue"
+        description={`End your day now: ${OVERDUE_LOWER} tasks go to the queue`}
       >
         <Button
           size="sm"

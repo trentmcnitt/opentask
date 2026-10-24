@@ -12,7 +12,12 @@ import type { AiMode } from '@/hooks/useAiMode'
 import type { FeatureMode } from '@/core/ai/user-context'
 import type { FeatureInfo } from '@/core/ai/models'
 import { WEEK_START_DEFAULT, type WeekStart } from '@/lib/week-start'
-import { CALENDAR_DAY_START } from '@/lib/opentask-day'
+import {
+  UNKNOWN_DAY_START,
+  browserDayStart,
+  rememberDayStart,
+  useLastKnownDayStart,
+} from '@/lib/browser-day-start'
 import { CHECK_IN_DAY_DEFAULT, type CheckInDay } from '@/lib/task-segments'
 import {
   DEFAULT_PREFS,
@@ -436,7 +441,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // optimistically) — and a reload takes the server's values for those seven
   // fields (and "Day starts at") only, leaving every other field and the dirty set alone. Reloaded
   // after a period edit or undo in Settings (`TimeSlotSettings`), and when
-  // Settings opens or its window regains focus (`SnoozeSection`). Deliberately
+  // Settings opens or its window regains focus (`useFreshAnchorTimes`). Deliberately
   // NOT on sync events: every page already holds its own stream, and a second
   // stream plus a preferences GET after every task change in every tab costs
   // latency for a value that only Settings edits. Other pages read the new
@@ -482,6 +487,18 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (preferencesLoaded) rememberQueueOn(prefs.taskQueue)
   }, [preferencesLoaded, prefs.taskQueue])
+  // And the day boundary, so the next load's first paint already reads the
+  // user's day (`browser-day-start.ts`).
+  useEffect(() => {
+    if (!preferencesLoaded) return
+    const known = browserDayStart({
+      loaded: true,
+      taskQueue: prefs.taskQueue,
+      rolloverTime: prefs.rolloverTime,
+      remembered: null,
+    })
+    if (known) rememberDayStart(known)
+  }, [preferencesLoaded, prefs.taskQueue, prefs.rolloverTime])
 
   return (
     <PreferencesContext.Provider
@@ -645,14 +662,39 @@ export function useTaskQueue(): {
 }
 
 /**
- * Where the Reminders screen's day starts (2026-10-23, "Day starts at"): the
- * user's day start with the task queue's switch on, else midnight — the
- * server's `dayBoundaryForUser`, so "has this slot started" on the web
- * (`slotHasStarted`, `naturalSlotIndex`) reads the day the roster is for.
+ * THE BROWSER'S DAY BOUNDARY ("Day starts at" PR 2, Trent 2026-10-24:
+ * everything uses the OpenTask date): the user's day start with the task
+ * queue's switch on, else midnight — the server's `dayBoundaryForUser`, the
+ * one rule. Every client "today" goes through it, into the pure helpers of
+ * `src/lib/opentask-day.ts` (and the functions built on them —
+ * `getTimezoneDayBoundaries`, `targetIsToday`, `segmentState`,
+ * `upcomingState`, `isRelevantNow`, `deckIsToday`, the quota periods): the
+ * Now view, the Today pill and the header counts, the date labels, the
+ * filter chips, decks, the Quotas page, History, and the Reminders screen's
+ * "has this slot started". Until the preferences load, midnight. The guard
+ * (TQ-G03, tests/behavioral/tq-day-guard.test.ts) keeps `CALENDAR_DAY_START`
+ * out of every other client file, so no surface picks its own day.
  */
-export function useReminderDayStart(): string {
-  const { taskQueue, rolloverTime } = useContext(PreferencesContext)
-  return taskQueue && rolloverTime ? rolloverTime : CALENDAR_DAY_START
+export function useDayStart(): string {
+  return useKnownDayStart() ?? UNKNOWN_DAY_START
+}
+
+/** The boundary, or null before the preferences load with nothing remembered. */
+function useKnownDayStart(): string | null {
+  const { taskQueue, rolloverTime, preferencesLoaded } = useContext(PreferencesContext)
+  const remembered = useLastKnownDayStart()
+  return browserDayStart({ loaded: preferencesLoaded, taskQueue, rolloverTime, remembered })
+}
+
+/**
+ * Whether `useDayStart` is the user's real boundary yet — the preferences
+ * have loaded, or this browser remembers it. Until then it is midnight, and
+ * an action that commits a DAY (Defer's "tomorrow", "next period still
+ * today") waits, as `useTaskQueue`'s `loaded` gates the queue UI: between
+ * midnight and the day start, midnight's "tomorrow" is a day late.
+ */
+export function useDayStartKnown(): boolean {
+  return useKnownDayStart() !== null
 }
 
 /**

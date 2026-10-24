@@ -6,6 +6,7 @@
  * Tasks made "old" have their created_at rewritten, since creation counts as
  * seeing a task (it waits for its segment's next day).
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
@@ -400,7 +401,7 @@ describe('Task model', () => {
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
       // "Overdue" in the counts is strictly past, so a minute on.
       const minuteOn = new Date(SAT.getTime() + 60_000)
-      expect(countTasks([getTaskById(t.id)!], tz, minuteOn).overdue).toBe(1)
+      expect(countTasks([getTaskById(t.id)!], tz, CALENDAR_DAY_START, minuteOn).overdue).toBe(1)
       expect(formatTaskResponse(getTaskById(t.id)!, tz).deadline_nag_off).toBe(false)
 
       // A picked target replaces it.

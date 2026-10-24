@@ -24,6 +24,7 @@
  * tier — swept only once no P0–P2 task without a passed deadline is left in
  * the batch; a P4 is never swept, deadline or not.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { createTask, updateTask, markDone, markUndone, bulkSnooze, bulkEdit } from '@/core/tasks'
@@ -76,13 +77,16 @@ function rng(seed: number) {
 const WINDOWS = ['2026-10-20T00:00', '2027-03-05T00:00'] // across Nov 1 and Mar 14
 
 function checkDay(task: Task, now: Date, label: string): void {
-  const placed = segmentState(task, tz, now)
-  const heads = upcomingState(task, tz, now)
+  const placed = segmentState(task, tz, now, CALENDAR_DAY_START)
+  const heads = upcomingState(task, tz, now, CALENDAR_DAY_START)
   if (hasPickedTarget(task)) expect(placed, `${label}: picked target but in a segment`).toBeNull()
   if (task.target_auto) expect(heads, `${label}: auto target in Upcoming`).toBeNull()
   expect(placed !== null && heads !== null, `${label}: segment AND Upcoming`).toBe(false)
   if (heads) {
-    expect(isCurrentlyDue(task, tz, now), `${label}: Upcoming AND over target`).toBe(false)
+    expect(
+      isCurrentlyDue(task, tz, CALENDAR_DAY_START, now),
+      `${label}: Upcoming AND over target`,
+    ).toBe(false)
   }
 }
 
@@ -204,9 +208,10 @@ describe('TM-INV: target-model invariants (seeded random)', () => {
           // occurrence it closed.
           const closed = Date.parse(before.occurrence_at!)
           expect(next.toMillis(), label(`done ${s}: before the closed one`)).toBeGreaterThan(closed)
-          expect(isCurrentlyDue(after, tz, clock.toJSDate()), label(`done ${s}: double fire`)).toBe(
-            false,
-          )
+          expect(
+            isCurrentlyDue(after, tz, CALENDAR_DAY_START, clock.toJSDate()),
+            label(`done ${s}: double fire`),
+          ).toBe(false)
         }
         checkDay(getTaskById(t.id)!, clock.toJSDate(), label(`step ${s}`))
       }
@@ -683,7 +688,10 @@ describe('TM-INV: on deck over a random list', () => {
         if (!task.on_deck_day) continue
         expect(hasPickedTarget(task), `${l}: deck + picked target`).toBe(false)
         expect(task.queued_at, `${l}: deck + queued`).toBeNull()
-        expect(segmentState(task, tz, new Date()), `${l}: deck in a segment`).toBeNull()
+        expect(
+          segmentState(task, tz, new Date(), CALENDAR_DAY_START),
+          `${l}: deck in a segment`,
+        ).toBeNull()
         if (!task.done) {
           const arrived = task.due_at !== null && Date.parse(task.due_at) <= Date.now()
           expect(arrived, `${l}: a deck nags`).toBe(false)

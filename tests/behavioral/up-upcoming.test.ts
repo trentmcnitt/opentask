@@ -9,6 +9,7 @@
  * is created and marked done, and `markDone` advances it and stamps
  * `target_set_at`.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import fs from 'fs'
 import path from 'path'
 import { describe, test, expect, afterAll, beforeEach, afterEach, vi } from 'vitest'
@@ -293,7 +294,7 @@ describe('Upcoming', () => {
       // directly here).
       setClock('2026-10-20T10:00')
       expect(placesOf(t.id)).toEqual([])
-      expect(isCurrentlyDue(getTaskById(t.id)!, tz, new Date())).toBe(true)
+      expect(isCurrentlyDue(getTaskById(t.id)!, tz, CALENDAR_DAY_START, new Date())).toBe(true)
     })
 
     test('UP-031: considered on the early heads-up, it is back on the day before (chained)', () => {

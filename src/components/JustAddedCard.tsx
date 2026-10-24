@@ -14,6 +14,7 @@ import {
 } from '@/lib/just-added'
 import { SLOT_FOOTER_TOGGLE_CLASS } from '@/components/reminders/ReminderSlotGroup'
 import type { Project, Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface JustAddedCardProps {
   /** Tasks added or targeted in the last 15 minutes, newest first (`selectJustAddedEntries`). */
@@ -130,9 +131,10 @@ function JustAddedRow({
   onShow: () => void
 }) {
   const { task } = entry
+  const dayStart = useDayStart()
   const color = project?.color ? LABEL_COLORS[project.color] : null
   const enriching = task.labels.includes('ai-to-process')
-  const details = entryDetails(task, timezone)
+  const details = entryDetails(task, timezone, dayStart)
   // "Added 2m ago" / "Targeted 2m ago": which event put it here, and when.
   const age = formatJustAddedLabel(entry, now)
   const projectName = project?.name ?? 'Inbox'
@@ -192,10 +194,10 @@ function JustAddedRow({
 }
 
 /** "Tomorrow 9:00 AM · High" — what the AI (or the title) set; null when nothing. */
-function entryDetails(task: Task, timezone: string): string | null {
+function entryDetails(task: Task, timezone: string, dayStart: string): string | null {
   const parts: string[] = []
   if (task.due_at) {
-    const due = formatDueTimeParts(task.due_at, timezone)
+    const due = formatDueTimeParts(task.due_at, timezone, dayStart)
     parts.push(due.absolute ? `${due.relative} · ${due.absolute}` : due.relative)
   }
   if (task.priority > 0) parts.push(getPriorityOption(task.priority).label)

@@ -27,7 +27,7 @@ import { bulkSnoozeMessage } from '@/lib/snooze'
 import { taskWord } from '@/lib/utils'
 import { nextRollover } from '@/lib/opentask-day'
 import { taskQueueEnabled } from './task-queue'
-import { rolloverTimeForUser } from './rollover-time'
+import { dayBoundaryForUser, rolloverTimeForUser } from './rollover-time'
 import { validateLabelsExist } from '@/core/labels'
 import { getTaskById } from './create'
 import { canUserAccessTask } from './update'
@@ -922,6 +922,7 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
           deltaMinutes,
           ctx,
           userTimezone,
+          dayBoundaryForUser(userId),
         ),
         Array.from(allFieldsChanged),
         snapshots,
@@ -1009,6 +1010,8 @@ function bulkSnoozeDescription(
   deltaMinutes: number | undefined,
   ctx: DeferContext,
   userTimezone: string,
+  /** The user's day boundary: "tomorrow 9:00 AM" by OpenTask day. */
+  dayStart: string,
 ): string {
   if (queued > 0 && ctx.rollover) {
     const at = formatTimeInTimezone(ctx.rollover.toISOString(), userTimezone)
@@ -1017,10 +1020,11 @@ function bulkSnoozeDescription(
       : `Deferred ${count} tasks (${queued} to the queue at ${at})`
   }
   if (ctx.source === 'try_tomorrow' && ctx.rollover) {
-    return `Deferred ${count} tasks to ${formatSnoozeTarget(ctx.rollover.toISOString(), userTimezone)}`
+    const at = formatSnoozeTarget(ctx.rollover.toISOString(), userTimezone, dayStart)
+    return `Deferred ${count} tasks to ${at}`
   }
   if (until !== undefined) {
-    return `Deferred ${count} tasks to ${formatSnoozeTarget(until, userTimezone)}`
+    return `Deferred ${count} tasks to ${formatSnoozeTarget(until, userTimezone, dayStart)}`
   }
   return `Deferred ${count} tasks (${formatDurationDelta(0, deltaMinutes! * 60 * 1000)})`
 }

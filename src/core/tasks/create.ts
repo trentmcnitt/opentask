@@ -18,7 +18,7 @@ import {
   type RelativeTarget,
   type TargetContext,
 } from '@/lib/task-segments'
-import { rolloverTimeForUser } from './rollover-time'
+import { dayBoundaryForUser, rolloverTimeForUser } from './rollover-time'
 import {
   REPEAT_END_MESSAGES,
   assertRuleOnDeadline,
@@ -621,7 +621,7 @@ function assertCreateDeck(
     : deckSkip({ is_reminder: !!input.is_reminder, is_tracked: tracked })
   if (skip) throw new ValidationError(`Only a one-off task can go on deck (this is ${skip})`)
   const now = new Date()
-  const problem = deckDayProblem(day, ctx.timezone, now)
+  const problem = deckDayProblem(day, ctx.timezone, now, dayBoundaryForUser(userId))
   if (problem) throw new ValidationError(problem)
   // A1 (2026-10-22): the deck day at most the deadline's OpenTask day.
   const refusal = deckRefusal(

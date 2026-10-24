@@ -64,8 +64,10 @@ export async function seedTestData(): Promise<void> {
   // Register the system label vocabulary for both users (§7.2)
   seedSystemLabels(1)
   seedSystemLabels(2)
-  seedDefaultTimeSlots(1)
-  seedDefaultTimeSlots(2)
+  // The schema-default baseline (every anchor custom), not a new account's
+  // links: the integration tests and contract fixtures are pinned to it.
+  seedDefaultTimeSlots(1, { linkAnchors: false })
+  seedDefaultTimeSlots(2, { linkAnchors: false })
 
   // Insert projects for User A
   db.prepare(

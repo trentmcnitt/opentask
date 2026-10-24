@@ -10,6 +10,7 @@ import { ArrowRight, Sparkles, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { URGENT_PRIORITY } from '@/lib/priority'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 /**
  * Auto-dismiss countdown with hover-pause and a draining SVG ring around the X button.
@@ -42,8 +43,8 @@ interface QuickTakeBannerProps {
  * Format a due date for the compact banner chip.
  * Strips the time portion to keep it short: "Tomorrow" not "Tomorrow 9:00 AM".
  */
-function formatDueChip(dueAt: string, timezone: string): string {
-  const { relative } = formatDueTimeParts(dueAt, timezone)
+function formatDueChip(dueAt: string, timezone: string, dayStart: string): string {
+  const { relative } = formatDueTimeParts(dueAt, timezone, dayStart)
   // Strip time from multi-word relatives like "Tomorrow 9:00 AM" → "Tomorrow"
   // Keep single-word or countdown formats ("in 2h", "3d ago") as-is
   return relative.replace(/\s+\d{1,2}:\d{2}\s*(AM|PM)/i, '')
@@ -64,6 +65,7 @@ export function QuickTakeBanner({
   onDismiss,
   onViewTask,
 }: QuickTakeBannerProps) {
+  const dayStart = useDayStart()
   const [hovered, setHovered] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const elapsedRef = useRef(0)
@@ -116,7 +118,7 @@ export function QuickTakeBanner({
   // Build metadata chips
   const chips: Array<{ key: string; label: string; urgent?: boolean }> = []
   if (dueAt) {
-    chips.push({ key: 'due', label: formatDueChip(dueAt, timezone) })
+    chips.push({ key: 'due', label: formatDueChip(dueAt, timezone, dayStart) })
   }
   if (priority && priority >= 2) {
     const label = PRIORITY_CHIP_LABELS[priority]

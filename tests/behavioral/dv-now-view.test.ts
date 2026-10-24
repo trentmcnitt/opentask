@@ -7,6 +7,7 @@
  * today's Upcoming heads-up (the Upcoming segment's own rule, not deferred),
  * or undated High/Urgent. Everything else folds. The clock is frozen.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { isRelevantNow, splitNow } from '@/lib/now-view'
@@ -104,7 +105,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   }
 }
 
-const relevant = (task: Task) => isRelevantNow(task, TZ, NOW)
+const relevant = (task: Task) => isRelevantNow(task, TZ, NOW, { dayStart: CALENDAR_DAY_START })
 
 describe('DV-NOW: what is relevant now', () => {
   beforeEach(() => vi.setSystemTime(NOW))
@@ -199,6 +200,7 @@ describe('DV-NOW: project groups split into relevant rows and the fold', () => {
       ),
       TZ,
       NOW,
+      { dayStart: CALENDAR_DAY_START },
     )
 
   test('each project keeps every task; the split keeps the sort order', () => {
@@ -267,7 +269,9 @@ describe('DV-NOW: project groups split into relevant rows and the fold', () => {
   })
 
   test('splitNow counts add up to the project', () => {
-    const { relevant: r, more } = splitNow([overdue, later, urgent, someday], TZ, NOW)
+    const { relevant: r, more } = splitNow([overdue, later, urgent, someday], TZ, NOW, {
+      dayStart: CALENDAR_DAY_START,
+    })
     expect(r.length + more.length).toBe(4)
   })
 })

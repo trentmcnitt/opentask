@@ -12,7 +12,7 @@ import { SettingsSection } from './SettingsSection'
  *
  * The slot list is read once, by the Settings page, and handed to both (and
  * to Snooze, whose anchor times can follow a period). Each used to read its
- * own copy, so renaming or adding a period left the Default period picker
+ * own copy, so renaming or adding a period left the Default reminder period picker
  * showing the old list until the page was reloaded.
  */
 export function ScheduleSection({

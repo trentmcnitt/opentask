@@ -51,6 +51,7 @@
 
 import { DateTime } from 'luxon'
 import { computeNextOccurrence } from './compute-next'
+import { openTaskDaySpan } from '@/lib/opentask-day'
 
 /** The subset of a task this module needs. */
 export interface OccurrenceTask {
@@ -85,26 +86,23 @@ function anchorOf(task: OccurrenceTask): Date | null {
  * `from_completion` items — those genuinely have no scheduled occurrence until
  * they are completed, so asserting one would invent a schedule they don't have.
  *
- * "Today" is the local calendar day, or `day` when given — the Reminders
- * screen passes its OpenTask day (2026-10-23, `openTaskDaySpan`), so with the
- * day starting at 3:00 a 2:00 AM occurrence belongs to the evening before.
+ * "Today" is `day`: the caller's OpenTask day (`openTaskDaySpan` — the
+ * Reminders screen since 2026-10-23, the overdue fallback below since "Day
+ * starts at" PR 2), so with the day starting at 3:00 a 2:00 AM occurrence
+ * belongs to the evening before. With the task queue off it is the calendar
+ * day (`CALENDAR_DAY_START`).
  */
 export function todaysOccurrence(
   task: OccurrenceTask,
   timezone: string,
-  now: Date = new Date(),
-  day?: { start: Date; end: Date },
+  day: { start: Date; end: Date },
 ): Date | null {
   if (!task.rrule) return null
   if (task.recurrence_mode === 'from_completion') return null
 
-  const localNow = DateTime.fromJSDate(now).setZone(timezone)
-  if (!localNow.isValid) return null
-
   // Search from just before the day's start so the first result is today's
   // occurrence if one exists.
-  const dayStart = day ? DateTime.fromJSDate(day.start) : localNow.startOf('day')
-  const justBeforeToday = dayStart.minus({ milliseconds: 1 }).toJSDate()
+  const justBeforeToday = new Date(day.start.getTime() - 1)
 
   let next: Date
   try {
@@ -125,22 +123,22 @@ export function todaysOccurrence(
     return null
   }
 
-  const localNext = DateTime.fromJSDate(next).setZone(timezone)
-  if (!localNext.isValid) return null
-
-  if (day) return next.getTime() < day.end.getTime() ? next : null
-  return localNext.hasSame(localNow, 'day') ? next : null
+  if (!DateTime.fromJSDate(next).setZone(timezone).isValid) return null
+  return next.getTime() < day.end.getTime() ? next : null
 }
 
 /**
  * The time this item should be treated as due, as of `now`.
  *
  * Returns null when the item is not due at all today — which for a recurring
- * item is a real answer, not a missing one.
+ * item is a real answer, not a missing one. `dayStart`: the owner's day
+ * boundary (`dayBoundaryForUser`) — "today" for the no-target fallback is the
+ * OpenTask day.
  */
 export function effectiveDueAt(
   task: OccurrenceTask,
   timezone: string,
+  dayStart: string,
   now: Date = new Date(),
 ): Date | null {
   // ON DECK never nags (2026-10-20). A REPEATING task on deck has `due_at`
@@ -181,7 +179,7 @@ export function effectiveDueAt(
 
   // No due_at at all: ask the schedule whether there is an occurrence today.
   // (A task that has never carried a date has nothing to be overdue from.)
-  return todaysOccurrence(task, timezone, now)
+  return todaysOccurrence(task, timezone, openTaskDaySpan(now, timezone, dayStart))
 }
 
 /**
@@ -192,8 +190,9 @@ export function effectiveDueAt(
 export function isCurrentlyDue(
   task: OccurrenceTask,
   timezone: string,
+  dayStart: string,
   now: Date = new Date(),
 ): boolean {
-  const due = effectiveDueAt(task, timezone, now)
+  const due = effectiveDueAt(task, timezone, dayStart, now)
   return due !== null && due.getTime() <= now.getTime()
 }

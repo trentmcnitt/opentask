@@ -59,7 +59,6 @@ import { getAnchorTimes } from '@/core/users/anchor-times'
 import {
   CHECK_IN_DAY_DEFAULT,
   coerceCheckInDay,
-  calendarToday,
   deckDayProblem,
   deckDayWords,
   deckSkip,
@@ -70,8 +69,8 @@ import {
   type CheckInDay,
   type RelativeTarget,
 } from '@/lib/task-segments'
-import { isLateNight } from '@/lib/opentask-day'
-import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
+import { isLateNight, openTaskDayOf } from '@/lib/opentask-day'
+import { dayBoundaryForUser, rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
@@ -454,6 +453,8 @@ function buildEnrichmentDescription(
   task: Task,
   fieldsChanged: string[],
   userTimezone: string,
+  /** The user's day boundary: "Tomorrow 9:00 AM" / "On deck tomorrow" by OpenTask day. */
+  dayStart: string,
   projectName?: string,
 ): string | undefined {
   const parts: string[] = []
@@ -462,16 +463,16 @@ function buildEnrichmentDescription(
   // deadline, so saying "in 5 days" about one would be describing debt it does
   // not carry. Its schedule alone is the news.
   if (!task.is_reminder && fieldsChanged.includes('due_at') && task.due_at) {
-    parts.push(formatDueTimeParts(task.due_at, userTimezone).relative)
+    parts.push(formatDueTimeParts(task.due_at, userTimezone, dayStart).relative)
   }
 
   // On deck (D3): a day with no time — "On deck tomorrow", "On deck Sat Oct 24".
   if (fieldsChanged.includes('on_deck_day') && task.on_deck_day) {
-    parts.push(`On deck ${deckDayWords(task.on_deck_day, userTimezone, new Date())}`)
+    parts.push(`On deck ${deckDayWords(task.on_deck_day, userTimezone, new Date(), dayStart)}`)
   }
 
   if (fieldsChanged.includes('deadline_at') && task.deadline_at) {
-    parts.push(`Deadline ${formatDueTimeParts(task.deadline_at, userTimezone).relative}`)
+    parts.push(`Deadline ${formatDueTimeParts(task.deadline_at, userTimezone, dayStart).relative}`)
   }
 
   if (fieldsChanged.includes('horizon') && task.horizon) {
@@ -612,6 +613,7 @@ function emitEnrichmentComplete(taskId: number, userId: number, enrichedFields: 
       enrichedTask,
       enrichedFields,
       userRow?.timezone ?? 'America/Chicago',
+      dayBoundaryForUser(userId),
       projectName,
     ),
     due_at: enrichedTask.due_at,
@@ -1362,10 +1364,12 @@ export function deckDayAsTarget(
   timezone: string,
   morningTime: string,
   todayTarget: string,
+  /** The user's day boundary: a deck day is an OpenTask date ("Day starts at" PR 2). */
+  dayStart: string,
   now: Date = new Date(),
 ): string {
   const local = DateTime.fromISO(day, { zone: timezone })
-  if (local.hasSame(DateTime.fromJSDate(now).setZone(timezone), 'day')) return todayTarget
+  if (day === openTaskDayOf(now, timezone, dayStart)) return todayTarget
   const [hour, minute] = (morningTime || '09:00').split(':').map(Number)
   return local.set({ hour, minute, second: 0, millisecond: 0 }).toUTC().toISO()!
 }
@@ -2890,8 +2894,10 @@ export function deckOrTarget(
   const stated = enrichment.on_deck_day
   if (!stated) return enrichment
   // Never in the past (D3 ruling): a day that ended while the model ran (the
-  // words said before midnight) is decked for the current calendar day.
-  const today = calendarToday(user.timezone, now)
+  // words said before the day turned) is decked for the current day — the
+  // OpenTask day ("Day starts at" PR 2: deck days are OpenTask dates).
+  const dayStart = dayBoundaryForUser(user.id)
+  const today = openTaskDayOf(now, user.timezone, dayStart)
   const day = stated < today ? today : stated
   if (day !== stated) enrichment = { ...enrichment, on_deck_day: day }
   const repeats = !!(enrichment.rrule ?? task.rrule)
@@ -2909,7 +2915,7 @@ export function deckOrTarget(
         ? `it is ${skip}`
         : task.deadline_at
           ? 'it has a deadline'
-          : deckDayProblem(day, user.timezone, now)
+          : deckDayProblem(day, user.timezone, now, dayStart)
   if (!why) return enrichment
   log.info('ai', `Task ${task.id}: not on deck (${why}) — a target on ${day} instead`)
   const dueAt = deckDayAsTarget(
@@ -2917,6 +2923,7 @@ export function deckOrTarget(
     user.timezone,
     getTargetContext(user.id).morningTime,
     targetTodayTime(user.id, user.timezone, now),
+    dayStart,
     now,
   )
   return { ...enrichment, on_deck_day: null, due_at: dueAt }

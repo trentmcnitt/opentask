@@ -468,6 +468,10 @@ test.describe('touch', () => {
       const r = segRow(segment(page, 'days'), id)
       const button = r.locator('[data-deck-tomorrow]')
       await expect(button).toBeVisible()
+      // The raw touch lands at screen coordinates, so bring the row on screen
+      // first: every task segment shows now (2026-10-24), the empty deadlines
+      // and queue sections above Daily push it below a phone's fold.
+      await button.scrollIntoViewIfNeeded()
 
       const cdp = await page.context().newCDPSession(page)
       const box = (await button.boundingBox())!

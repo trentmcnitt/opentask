@@ -724,7 +724,7 @@ around the user's time slots, and its result passes through
 what the database would actually receive.
 
 A reminder whose text states no time of day goes in the user's **default
-reminder slot** (Settings → Reminder periods → Default period; Trent,
+reminder slot** (Settings → Reminder periods → Default reminder period; Trent,
 2026-09-28). The prompt marks that slot `← default slot`, a scenario names it
 with `defaultSlotLabel`, and the sanitizer falls back to it when the model's
 rule carries no BYHOUR. Before that it was the slot current at enrichment time.

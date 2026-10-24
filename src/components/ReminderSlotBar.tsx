@@ -94,6 +94,14 @@ export interface SlotBarItem {
   /** A task segment's teal (`segmentColor`): its fill while it fills. The
    *  page on screen grows like a slot's, with no ring. Absent for a slot. */
   color?: string
+  /**
+   * EMPTY IS DONE (a task segment, Trent 2026-10-24: "always show every queue
+   * segment, every day, in fixed positions"). With this set an item holding
+   * nothing keeps its place in the strip, drawn finished — a full green bar —
+   * from the start of the day. Without it (a slot) an empty item gets no
+   * segment, the 09-21 rule below.
+   */
+  emptyDone?: boolean
 }
 
 /**
@@ -112,6 +120,7 @@ export function SegmentDivider() {
 type SlotState = 'done' | 'behind' | 'upcoming'
 
 function slotState(item: SlotBarItem): SlotState {
+  if (item.emptyDone && item.total === 0) return 'done'
   const waiting = item.total - item.considered
   if (item.started && waiting === 0 && item.considered > 0) return 'done'
   if (item.started && waiting > 0) return 'behind'
@@ -138,8 +147,11 @@ export function ReminderSlotBar({
   // is general: a segment is a claim that there is something there, and a
   // slot holding nothing has nothing to report, nothing to finish and nothing
   // worth paging to. The original index rides along so a tap still lands on
-  // the right page after the empty ones are dropped.
-  const shown = items.map((item, index) => ({ item, index })).filter((s) => s.item.total > 0)
+  // the right page after the empty ones are dropped. A task segment is the
+  // exception (`emptyDone`, 2026-10-24): it always has its place, drawn done.
+  const shown = items
+    .map((item, index) => ({ item, index }))
+    .filter((s) => s.item.total > 0 || s.item.emptyDone)
 
   // One segment is not a bar — it would say only "everything is here", which
   // the header already says better.
@@ -152,7 +164,8 @@ export function ReminderSlotBar({
         // The divider goes before the first task segment, after a slot.
         const divider = color !== undefined && n > 0 && shown[n - 1].item.color === undefined
         const state = slotState(item)
-        const fraction = considered / total
+        // An empty task segment is done: a full green fill (`emptyDone`).
+        const fraction = total > 0 ? considered / total : 1
         // Gated on the numbers, not on `state`: `state` only calls a slot
         // 'done' once it has STARTED, but a slot can be fully considered
         // ahead of its own start time (still 'upcoming') and the fill must
@@ -179,8 +192,8 @@ export function ReminderSlotBar({
               className="group flex items-center py-1"
               style={{
                 // Weight by size, but never below a thumb. `flexBasis: 0` makes
-                // grow the only thing deciding width, and every segment here
-                // holds at least one thought, so the weight is never zero.
+                // grow the only thing deciding width. Only an empty task
+                // segment (`emptyDone`) weighs zero: it is exactly the minimum.
                 flexGrow: total,
                 flexBasis: 0,
                 minWidth: MIN_SEGMENT_PX,

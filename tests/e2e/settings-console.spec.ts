@@ -1,5 +1,5 @@
 /**
- * Settings → Default period stays a controlled Select while its prefs load.
+ * Settings → Default reminder period stays a controlled Select while its prefs load.
  *
  * The picker mounts once the periods have loaded, but its value comes from a
  * separate GET /api/user/preferences (`useQuotaPromptPrefs`). It used to be
@@ -10,7 +10,7 @@
  */
 import { test, expect } from './fixtures'
 
-test('Default period picker: no uncontrolled → controlled warning', async ({
+test('Default reminder period picker: no uncontrolled → controlled warning', async ({
   authenticatedPage: page,
 }) => {
   const warnings: string[] = []

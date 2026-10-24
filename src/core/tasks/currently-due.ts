@@ -15,6 +15,7 @@
 
 import { getDb } from '@/core/db'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
+import { dayBoundaryForUser } from './rollover-time'
 
 /*
  * A deadline's target is STORED since 2026-10-12 (§8: `target_auto`), so
@@ -82,7 +83,11 @@ function fetchDueCandidates(userId: number, now: Date): DueCandidate[] {
 }
 
 function fetchCurrentlyDue(userId: number, now: Date): DueCandidate[] {
-  return fetchDueCandidates(userId, now).filter((row) => isCurrentlyDue(row, row.timezone, now))
+  // The no-target fallback's "today" is the user's OpenTask day.
+  const dayStart = dayBoundaryForUser(userId)
+  return fetchDueCandidates(userId, now).filter((row) =>
+    isCurrentlyDue(row, row.timezone, dayStart, now),
+  )
 }
 
 /** IDs of the user's tasks that are due or overdue as of `now`. */

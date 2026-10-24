@@ -422,3 +422,79 @@ describe('TQ-N: roll over now — undo, events, refusals', () => {
     expect(task(t.id).try_tomorrow).toBe(true)
   })
 })
+
+describe('TQ-N: roll over now — run twice', () => {
+  hooks()
+
+  test('TQ-N14: run twice — the second changes nothing, and the first undoes whole', () => {
+    // Settings → Advanced → Roll over now tapped again right after a run
+    // (Trent, 2026-10-24: "seems dangerous"). The first run leaves nothing
+    // eligible, so the second must be a no-op: no row written, no undo entry
+    // (else its Undo would sit on top of the first's), no event.
+    const f = fixture()
+    const all = [f.passed, f.later, f.high, f.deadline, f.daily, f.pulled]
+    const before = Object.fromEntries(all.map((t) => [t.id, task(t.id)]))
+    const count = undoCount()
+    const first = runNow('2026-10-20T21:00')
+    expect(first.stripped + first.rolled + first.waiting + first.released).toBe(3)
+    expect(first.undo_id).not.toBeNull()
+    expect(undoCount()).toBe(count + 1)
+
+    const db = getDb()
+    const dump = () =>
+      JSON.stringify([
+        db.prepare('SELECT * FROM tasks ORDER BY id').all(),
+        db.prepare('SELECT * FROM undo_log ORDER BY id').all(),
+        db.prepare('SELECT * FROM activity_log ORDER BY id').all(),
+        db.prepare('SELECT * FROM users ORDER BY id').all(),
+      ])
+    const afterFirst = dump()
+    clearEvents()
+
+    const second = runNow('2026-10-20T21:00')
+    expect(second).toMatchObject({
+      stripped: 0,
+      rolled: 0,
+      waiting: 0,
+      released: 0,
+      undo_id: null,
+      dry_run: false,
+    })
+    expect(second.ids).toEqual({
+      stripped: [],
+      rolled: [],
+      waiting: [],
+      released: [],
+      deck_stripped: [],
+    })
+    expect(dump()).toBe(afterFirst)
+    expect(undoCount()).toBe(count + 1)
+    expect(emitSyncEvent).not.toHaveBeenCalled()
+    expect(dispatchWebhookEvent).not.toHaveBeenCalled()
+    expect(dismissNotificationsForTasks).not.toHaveBeenCalled()
+
+    // The first run is still the newest entry, and its Undo puts every task
+    // back (all but `rolled_over_at`, the fence stamp, which stays — TQ-N09).
+    const newest = db
+      .prepare('SELECT id FROM undo_log WHERE user_id = ? AND undone = 0 ORDER BY id DESC LIMIT 1')
+      .get(TEST_USER_ID) as { id: number }
+    expect(newest.id).toBe(first.undo_id)
+    setClock('2026-10-20T21:01')
+    expect(executeUndo(TEST_USER_ID)?.tasks_affected).toBe(3)
+    for (const [id, was] of Object.entries(before)) {
+      const now = task(Number(id))
+      for (const k of [
+        'due_at',
+        'occurrence_at',
+        'queued_at',
+        'queued_from_due_at',
+        'queue_mark',
+        'skip_count',
+        'target_set_at',
+        'attempts',
+      ] as const) {
+        expect(now[k], `${was.title}.${k}`).toEqual(was[k])
+      }
+    }
+  })
+})

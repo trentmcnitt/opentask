@@ -11,6 +11,7 @@
  * scenario with `skipGroup: 'dateFilters'` (what the Today chip's own row
  * computes when the Work project filter is active elsewhere).
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { applyTaskFilters, type TaskFilterCriteria } from '@/hooks/useFilterState'
 import { classifyTaskDueDate } from '@/components/DueDateFilterBar'
@@ -132,8 +133,12 @@ describe('applyTaskFilters — faceted counts', () => {
       }),
     ]
     const criteria = emptyCriteria()
-    const full = applyTaskFilters(tasks, criteria, { timezone: TIMEZONE })
+    const full = applyTaskFilters(tasks, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      timezone: TIMEZONE,
+    })
     const faceted = applyTaskFilters(tasks, criteria, {
+      dayStart: CALENDAR_DAY_START,
       timezone: TIMEZONE,
       skipGroup: 'dateFilters',
     })
@@ -168,6 +173,7 @@ describe('applyTaskFilters — faceted counts', () => {
     // chip's count. Work has nothing due today, so only the Work task due
     // NEXT WEEK survives the project narrowing.
     const dateChipFacet = applyTaskFilters(tasks, criteria, {
+      dayStart: CALENDAR_DAY_START,
       timezone: TIMEZONE,
       skipGroup: 'dateFilters',
     })
@@ -176,7 +182,7 @@ describe('applyTaskFilters — faceted counts', () => {
     // Bucketing the facet (what DueDateFilterBar does next) finds zero
     // "today" tasks — reproducing Trent's report that Work's Today chip
     // should read 0, not the corpus-wide 3.
-    const boundaries = getTimezoneDayBoundaries(TIMEZONE)
+    const boundaries = getTimezoneDayBoundaries(TIMEZONE, CALENDAR_DAY_START)
     const now = new Date()
     const todayCountForWork = dateChipFacet.filter((t) =>
       classifyTaskDueDate(t, now, boundaries).includes('today'),
@@ -186,6 +192,7 @@ describe('applyTaskFilters — faceted counts', () => {
     // Clearing the project filter (what Trent did next) restores the full
     // corpus for faceting — all 4 tasks are candidates again.
     const cleared = applyTaskFilters(tasks, emptyCriteria(), {
+      dayStart: CALENDAR_DAY_START,
       timezone: TIMEZONE,
       skipGroup: 'dateFilters',
     })
@@ -206,13 +213,19 @@ describe('applyTaskFilters — faceted counts', () => {
     // Priority row's facet: the project filter (Work) still applies, the
     // priority filter is skipped — so both Work tasks are visible for the
     // priority row's own counts, regardless of their own priority.
-    const priorityFacet = applyTaskFilters(tasks, criteria, { skipGroup: 'priorities' })
+    const priorityFacet = applyTaskFilters(tasks, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      skipGroup: 'priorities',
+    })
     expect(priorityFacet.map((t) => t.id).sort()).toEqual([1, 2])
 
     // Project row's facet: the priority filter (P2) still applies, the
     // project filter is skipped — so both P2 tasks are visible regardless of
     // which project they're in.
-    const projectFacet = applyTaskFilters(tasks, criteria, { skipGroup: 'projects' })
+    const projectFacet = applyTaskFilters(tasks, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      skipGroup: 'projects',
+    })
     expect(projectFacet.map((t) => t.id).sort()).toEqual([1, 3])
   })
 
@@ -228,7 +241,10 @@ describe('applyTaskFilters — faceted counts', () => {
     }
     // Priority row's facet: Work is excluded (still applies), priority group
     // itself is skipped.
-    const priorityFacet = applyTaskFilters(tasks, criteria, { skipGroup: 'priorities' })
+    const priorityFacet = applyTaskFilters(tasks, criteria, {
+      dayStart: CALENDAR_DAY_START,
+      skipGroup: 'priorities',
+    })
     expect(priorityFacet.map((t) => t.id).sort()).toEqual([2, 3])
   })
 })

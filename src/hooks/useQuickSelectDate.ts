@@ -7,6 +7,7 @@ import {
   formatRelativeTime,
   formatDeltaText,
 } from '@/lib/quick-select-dates'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface UseQuickSelectDateOptions {
   dueAt: string | null
@@ -42,6 +43,7 @@ export function useQuickSelectDate({
   dueAt,
   timezone,
 }: UseQuickSelectDateOptions): UseQuickSelectDateResult {
+  const dayStart = useDayStart()
   const [initialDate, setInitialDate] = useState(() => initWorkingDate(dueAt))
   const [workingDate, setWorkingDate] = useState(() => initWorkingDate(dueAt))
   const [tick, setTick] = useState(0)
@@ -89,10 +91,10 @@ export function useQuickSelectDate({
   void tick
 
   const now = new Date()
-  const headerText = formatQuickSelectHeader(workingDate, timezone)
+  const headerText = formatQuickSelectHeader(workingDate, timezone, dayStart)
   const isPast = new Date(workingDate) < now
 
-  const relativeText = formatRelativeTime(workingDate, now, timezone)
+  const relativeText = formatRelativeTime(workingDate, timezone, dayStart, now)
 
   // Compute delta from actual difference between initialDate and workingDate.
   // This works for all change types (preset, relative, smart buttons) and

@@ -10,6 +10,8 @@
  * - `progress_events` records the delta that was APPLIED, not the one asked
  *   for — a −1 at zero changes nothing and logs nothing.
  */
+import { WEEK_START_DEFAULT } from '@/lib/week-start'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, getTaskById, rolloverTrackedPeriods } from '@/core/tasks'
@@ -53,14 +55,26 @@ describe('Quota effective count', () => {
     rolloverTrackedPeriods(THU_10AM)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
     const task = getTaskById(q.id)!
-    expect(effectiveProgress(task, TEST_TIMEZONE, THU_10AM)).toBe(1)
-    expect(effectiveProgress(task, TEST_TIMEZONE, FRI_0002)).toBe(0)
+    expect(
+      effectiveProgress(task, TEST_TIMEZONE, THU_10AM, WEEK_START_DEFAULT, CALENDAR_DAY_START),
+    ).toBe(1)
+    expect(
+      effectiveProgress(task, TEST_TIMEZONE, FRI_0002, WEEK_START_DEFAULT, CALENDAR_DAY_START),
+    ).toBe(0)
   })
 
   test('TR-041: no anchor yet means nothing has expired', () => {
     const q = quota('FREQ=WEEKLY')
     getDb().prepare('UPDATE tasks SET progress_current = 3 WHERE id = ?').run(q.id)
-    expect(effectiveProgress(getTaskById(q.id)!, TEST_TIMEZONE, FRI_0002)).toBe(3)
+    expect(
+      effectiveProgress(
+        getTaskById(q.id)!,
+        TEST_TIMEZONE,
+        FRI_0002,
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(3)
   })
 
   test('TR-042: INTERVAL is honoured — every other day does not expire at the first midnight', () => {
@@ -68,8 +82,18 @@ describe('Quota effective count', () => {
     rolloverTrackedPeriods(THU_10AM)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
     const task = getTaskById(q.id)!
-    expect(effectiveProgress(task, TEST_TIMEZONE, FRI_0002)).toBe(1)
-    expect(effectiveProgress(task, TEST_TIMEZONE, new Date('2026-01-17T06:02:00Z'))).toBe(0)
+    expect(
+      effectiveProgress(task, TEST_TIMEZONE, FRI_0002, WEEK_START_DEFAULT, CALENDAR_DAY_START),
+    ).toBe(1)
+    expect(
+      effectiveProgress(
+        task,
+        TEST_TIMEZONE,
+        new Date('2026-01-17T06:02:00Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
   })
 
   test('TR-043: a +1 just after midnight lands in today, and yesterday is recorded as it was', () => {

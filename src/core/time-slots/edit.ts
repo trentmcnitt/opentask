@@ -510,7 +510,7 @@ export interface TimeSlotChangeResult {
   quotas_moved: number
   /**
    * The user's settings that linked to a deleted period and now keep its
-   * start as a custom time ("Morning time", "Number pad button 2") — a delete only;
+   * start as a custom time ("Default task time", "Number pad button 2") — a delete only;
    * a retime keeps the period, and linked settings follow it on their own.
    */
   settings_converted: string[]
@@ -667,7 +667,7 @@ function readPromptDefault(userId: number): number | null {
 }
 
 /**
- * `Removed "Morning" (moved 2 reminders); kept Morning time, Number pad button 1 at
+ * `Removed "Morning" (moved 2 reminders); kept Default task time, Number pad button 1 at
  * 9:00 AM` — the undo entry's description; the settings part names what was
  * linked to the period and now keeps its start as a custom time.
  */

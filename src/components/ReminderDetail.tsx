@@ -267,7 +267,7 @@ export function ReminderDetail({
   /**
    * A reminder that has no time of day (a new one, or a one-time thought with
    * no due time) gets one the moment it repeats: the user's DEFAULT reminder
-   * slot (Settings → Reminder periods → Default period), resolved by the
+   * slot (Settings → Reminder periods → Default reminder period), resolved by the
    * server's own rule (`resolvePromptSlot`: the stored slot, else the first
    * period), so the chip that lights up is the honest answer to "when will
    * this come up" — and the same slot the quick add, an Apple Shortcut and AI

@@ -54,6 +54,7 @@ export function SlotPagerHeader({
   onToggleExpanded,
   showConsidered,
   onToggleConsidered,
+  emptyDone = false,
 }: {
   label: string
   /** A colour for the label — a task segment's teal. */
@@ -75,12 +76,17 @@ export function SlotPagerHeader({
   onToggleExpanded: () => void
   showConsidered: boolean
   onToggleConsidered: () => void
+  /**
+   * An empty page is DONE (a task segment, Trent 2026-10-24: every segment
+   * shows every day, an empty one finished from the start): "0 of 0 ✓".
+   */
+  emptyDone?: boolean
 }) {
   // Same numbers the slot bar fills with — no parallel notion of "finished".
   // `total > 0` matters here: an empty slot reading "0 of 0" is not complete,
   // it's empty, and gets no check mark (no chrome for something that isn't
-  // there).
-  const complete = total > 0 && considered >= total
+  // there). An empty task segment is the exception (`emptyDone`).
+  const complete = total > 0 ? considered >= total : emptyDone
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
       <button
@@ -184,12 +190,19 @@ export function SlotPagerHeader({
         </button>
       ) : (
         <span
-          className="px-1.5 text-xs whitespace-nowrap tabular-nums"
+          className="flex shrink-0 items-center gap-1 px-1.5 text-xs whitespace-nowrap tabular-nums"
           aria-label={`${considered} of ${total} considered`}
         >
           <span className="text-muted-foreground">
             {considered} of {total}
           </span>
+          {complete && (
+            <Check
+              className="size-3.5 text-green-700 dark:text-green-400"
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          )}
         </span>
       )}
 

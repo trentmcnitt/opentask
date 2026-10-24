@@ -24,7 +24,7 @@ import type { SegmentView } from '@/hooks/useTaskSegments'
  * win each time — and the number goes green when the day is.
  *
  * The task segments follow the slots (2026-10-11), after a faint divider, in
- * their teal — the dashboard strip's bars, so a segment reads the same on
+ * their teal — every one, every day (2026-10-24; an empty one green) — the dashboard strip's bars, so a segment reads the same on
  * both surfaces; a tap scrolls to its section. They are NOT in the line or
  * the count: task rows never count in "N waiting so far" or "X of Y
  * considered" (docs/TASK-MODEL.md § Task segments).
@@ -136,6 +136,7 @@ export function RemindersHeadline({
                 total={total}
                 started
                 color={segmentColor(segment.horizon)}
+                emptyDone
                 onClick={() => onGoToSlot(key)}
               />
             )
@@ -169,6 +170,9 @@ export function RemindersHeadline({
   )
 }
 
+/** How narrow an empty task segment's bar may get when the day bar runs out of room. */
+const EMPTY_SEGMENT_MIN_PX = 12
+
 /**
  * One segment of the day bar: a slot, or a task segment in its teal. Blue (a
  * task segment: its teal) while still filling, green the moment it's done —
@@ -182,6 +186,7 @@ function DayBarButton({
   total,
   started,
   color,
+  emptyDone = false,
   onClick,
 }: {
   id: string
@@ -190,17 +195,35 @@ function DayBarButton({
   total: number
   started: boolean
   color?: string
+  /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
+  emptyDone?: boolean
   onClick: () => void
 }) {
-  const done = total > 0 && considered >= total
+  const done = total > 0 ? considered >= total : emptyDone
   return (
     <button
       type="button"
       onClick={onClick}
       data-day-segment={id}
+      data-day-segment-done={done ? '' : undefined}
       aria-label={`Go to ${label}, ${considered} of ${total} considered`}
       title={`${label} · ${considered} of ${total} considered`}
-      style={{ flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
+      style={
+        total === 0 && emptyDone
+          ? // An EMPTY task segment (2026-10-24): every one is on the bar every
+            // day, so on a phone with several periods eight thumb-wide bars
+            // would push the bar past the screen. An empty one asks for the
+            // same width as any other, but alone may give way (to
+            // EMPTY_SEGMENT_MIN_PX) when the row runs out of room — it holds
+            // nothing to tap through to.
+            {
+              flexGrow: 0,
+              flexShrink: 1,
+              flexBasis: MIN_SEGMENT_PX,
+              minWidth: EMPTY_SEGMENT_MIN_PX,
+            }
+          : { flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }
+      }
       className="group rounded-full py-1.5 focus-visible:outline-none"
     >
       <span
@@ -218,7 +241,7 @@ function DayBarButton({
             done ? 'bg-green-600' : 'bg-indigo-600',
           )}
           style={{
-            width: `${total > 0 ? (considered / total) * 100 : 0}%`,
+            width: `${total > 0 ? (considered / total) * 100 : done ? 100 : 0}%`,
             ...(color && !done ? { backgroundColor: color } : {}),
           }}
         />

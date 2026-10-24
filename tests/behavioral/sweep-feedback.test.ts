@@ -9,6 +9,7 @@
  * payload (`buildSweepResultNotification`: banner without sound, TASK_SUMMARY,
  * its own collapse id, the `priority` that keeps a sweep from clearing it).
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { PushType, Priority } from 'apns2'
 import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../helpers/setup'
@@ -48,6 +49,7 @@ function input(
     counts: counts(c),
     until: UNTIL_3PM,
     timezone: TEST_TIMEZONE,
+    dayStart: CALENDAR_DAY_START,
     totalOverdueCount: (c.high ?? 0) + (c.urgent ?? 0),
     ...extra,
   }
@@ -62,26 +64,45 @@ afterEach(() => {
 
 describe('the copy (counts only)', () => {
   test('nothing High or Urgent left: no notification', () => {
-    expect(sweepFeedbackContent(counts({ affected: 8 }), UNTIL_3PM, TEST_TIMEZONE)).toBeNull()
-    expect(sweepFeedbackContent(counts({}), UNTIL_3PM, TEST_TIMEZONE)).toBeNull()
+    expect(
+      sweepFeedbackContent(counts({ affected: 8 }), UNTIL_3PM, TEST_TIMEZONE, CALENDAR_DAY_START),
+    ).toBeNull()
+    expect(
+      sweepFeedbackContent(counts({}), UNTIL_3PM, TEST_TIMEZONE, CALENDAR_DAY_START),
+    ).toBeNull()
   })
 
   test('High left after the first press: says when, and that a second press moves them', () => {
     expect(
-      sweepFeedbackContent(counts({ affected: 8, high: 2 }), UNTIL_3PM, TEST_TIMEZONE),
+      sweepFeedbackContent(
+        counts({ affected: 8, high: 2 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      ),
     ).toEqual({
       title: 'Deferred 8 tasks until 3:00 PM',
       body: '2 High still overdue. Defer again to move the High ones',
       priority: 3,
     })
     expect(
-      sweepFeedbackContent(counts({ affected: 1, high: 1 }), UNTIL_3PM, TEST_TIMEZONE)?.body,
+      sweepFeedbackContent(
+        counts({ affected: 1, high: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      )?.body,
     ).toBe('1 High still overdue. Defer again to move the High one')
   })
 
   test('High and Urgent left: both named, the hint is about High only', () => {
     expect(
-      sweepFeedbackContent(counts({ affected: 8, high: 2, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE),
+      sweepFeedbackContent(
+        counts({ affected: 8, high: 2, urgent: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      ),
     ).toEqual({
       title: 'Deferred 8 tasks until 3:00 PM',
       body: '2 High and 1 Urgent still overdue. Defer again to move the High ones',
@@ -91,7 +112,12 @@ describe('the copy (counts only)', () => {
 
   test('a passed deadline left behind is named and the next press takes it (2026-10-12)', () => {
     expect(
-      sweepFeedbackContent(counts({ affected: 3, deadline: 1 }), UNTIL_3PM, TEST_TIMEZONE),
+      sweepFeedbackContent(
+        counts({ affected: 3, deadline: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      ),
     ).toEqual({
       title: 'Deferred 3 tasks until 3:00 PM',
       body: '1 past deadline still overdue. Defer again to move it',
@@ -102,12 +128,15 @@ describe('the copy (counts only)', () => {
         counts({ affected: 3, high: 2, deadline: 1, urgent: 1 }),
         UNTIL_3PM,
         TEST_TIMEZONE,
+        CALENDAR_DAY_START,
       )?.body,
     ).toBe('2 High, 1 past deadline and 1 Urgent still overdue. Defer again to move them')
   })
 
   test('Urgent only, nothing snoozed', () => {
-    expect(sweepFeedbackContent(counts({ urgent: 3 }), UNTIL_3PM, TEST_TIMEZONE)).toEqual({
+    expect(
+      sweepFeedbackContent(counts({ urgent: 3 }), UNTIL_3PM, TEST_TIMEZONE, CALENDAR_DAY_START),
+    ).toEqual({
       title: 'Nothing deferred',
       body: "3 Urgent can't be bulk deferred",
       priority: 4,
@@ -116,7 +145,12 @@ describe('the copy (counts only)', () => {
 
   test('something snoozed, Urgent left', () => {
     expect(
-      sweepFeedbackContent(counts({ affected: 4, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE),
+      sweepFeedbackContent(
+        counts({ affected: 4, urgent: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      ),
     ).toEqual({
       title: 'Deferred 4 tasks until 3:00 PM',
       body: "1 Urgent still overdue. Urgent can't be bulk deferred",
@@ -130,6 +164,7 @@ describe('the copy (counts only)', () => {
         counts({ affected: 2, highAffected: 2, urgent: 1 }),
         UNTIL_TOMORROW_9AM,
         TEST_TIMEZONE,
+        CALENDAR_DAY_START,
       ),
     ).toEqual({
       title: 'Deferred 2 high-priority tasks until tomorrow 9:00 AM',
@@ -139,7 +174,14 @@ describe('the copy (counts only)', () => {
   })
 
   test('nothing moved but High left: no "snooze again" (it would do the same)', () => {
-    expect(sweepFeedbackContent(counts({ high: 2, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE)).toEqual({
+    expect(
+      sweepFeedbackContent(
+        counts({ high: 2, urgent: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      ),
+    ).toEqual({
       title: 'Nothing deferred',
       body: '2 High and 1 Urgent still overdue',
       priority: 4,
@@ -148,7 +190,12 @@ describe('the copy (counts only)', () => {
 
   test('one task: singular', () => {
     expect(
-      sweepFeedbackContent(counts({ affected: 1, urgent: 1 }), UNTIL_3PM, TEST_TIMEZONE)?.title,
+      sweepFeedbackContent(
+        counts({ affected: 1, urgent: 1 }),
+        UNTIL_3PM,
+        TEST_TIMEZONE,
+        CALENDAR_DAY_START,
+      )?.title,
     ).toBe('Deferred 1 task until 3:00 PM')
   })
 })

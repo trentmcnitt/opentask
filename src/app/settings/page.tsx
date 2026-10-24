@@ -9,12 +9,16 @@ import TokenManager from '@/components/TokenManager'
 import { useAiAvailable } from '@/components/PreferencesProvider'
 import { useRequireSession } from '@/hooks/useRequireSession'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
+import { useFreshAnchorTimes } from '@/hooks/useFreshAnchorTimes'
 import { PageLoading } from '@/components/PageLoading'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { AppearanceSection, PriorityDisplaySection } from '@/components/settings/AppearanceSection'
 import { NotificationsSection } from '@/components/settings/NotificationsSection'
-import { SnoozeSection } from '@/components/settings/SnoozeSection'
+import { DeferSection } from '@/components/settings/DeferSection'
+import { YourDaySection } from '@/components/settings/YourDaySection'
+import { NumberPadSection } from '@/components/settings/NumberPadSection'
+import { AdvancedSection } from '@/components/settings/AdvancedSection'
 import { ScheduleSection } from '@/components/settings/ScheduleSection'
 import { LabelsSection } from '@/components/settings/LabelsSection'
 import { ProjectsSection } from '@/components/settings/ProjectsSection'
@@ -29,8 +33,14 @@ const noopSubscribe = () => () => {}
  * The page keeps only what crosses sections or depends on the environment:
  * the session (`isDemo`), whether AI runs on this server, whether we're
  * inside the native iOS wrapper, and the reminder periods — read once here
- * and handed to Reminder periods (which edits them) and Snooze (whose anchor
- * times and pad buttons can follow them), so both always show the same list.
+ * and handed to Reminder periods (which edits them), Your day and Number pad
+ * (whose times can follow them), so all three always show the same list —
+ * along with whether the anchor times have been read fresh
+ * (`useFreshAnchorTimes`), which gates the rows of both.
+ *
+ * ORDER (Trent, 2026-10-24): … Notifications, Your day, Reminder periods,
+ * Number pad, Defer, … About, then Advanced (a closed fold, task queue only)
+ * just above Sign Out.
  */
 export default function SettingsPage() {
   const { session, ready } = useRequireSession()
@@ -44,6 +54,8 @@ export default function SettingsPage() {
   // Running inside the native iOS app wrapper? (WKWebView injects
   // `__OPENTASK_IOS`.) It never changes, so there's nothing to subscribe to;
   // the server snapshot is false, as before hydration.
+  const anchorsFresh = useFreshAnchorTimes()
+  const anchorRowsReady = slotsLoaded && anchorsFresh
   const isNativeApp = useSyncExternalStore(
     noopSubscribe,
     () => '__OPENTASK_IOS' in window,
@@ -92,8 +104,10 @@ export default function SettingsPage() {
 
         <PriorityDisplaySection />
         <NotificationsSection />
-        <SnoozeSection timeSlots={timeSlots} slotsLoaded={slotsLoaded} />
+        <YourDaySection timeSlots={timeSlots} rowsReady={anchorRowsReady} />
         <ScheduleSection timeSlots={timeSlots} loading={slotsLoading} refresh={refreshSlots} />
+        <NumberPadSection timeSlots={timeSlots} rowsReady={anchorRowsReady} />
+        <DeferSection />
         <LabelsSection />
         <ProjectsSection />
 
@@ -142,6 +156,8 @@ export default function SettingsPage() {
 
         {/* Disconnect app (only visible inside native iOS wrapper) */}
         {isNativeApp && <ConnectedAppSection />}
+
+        <AdvancedSection />
 
         {/* Sign out */}
         <button

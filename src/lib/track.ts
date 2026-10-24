@@ -8,15 +8,8 @@
 import { DateTime } from 'luxon'
 import { getLabelColor, LABEL_COLORS } from '@/lib/label-colors'
 import { isReservedLabel } from '@/lib/label-vocabulary'
-import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
-import {
-  quotaPeriodEnd,
-  startOfDayAt,
-  startOfWeek,
-  WEEK_START_DEFAULT,
-  type PeriodUnit,
-  type WeekStart,
-} from '@/lib/week-start'
+import { openTaskDayOf } from '@/lib/opentask-day'
+import { quotaPeriodEnd, unitStartAt, type PeriodUnit, type WeekStart } from '@/lib/week-start'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
@@ -178,29 +171,21 @@ export function quotaRule(freq: QuotaFreq, interval: number): string {
 }
 
 /**
- * The start of the calendar unit `local` falls in, by the user's clock — where
- * a quota's period is anchored: 00:00 on the user's first day of the week, the
- * 1st of the month, midnight, Jan 1. The ONE anchor rule: create, a period
- * edit and the rollover's first pass all anchor through here. INTERVAL plays
- * no part — a fortnight made this week starts on this week's first day.
+ * The start of the unit `local` falls in, by the user's clock — where a
+ * quota's period is anchored: the day start of the user's first day of the
+ * week, of the 1st of the month, of the day, of Jan 1 — by OpenTask date
+ * ("Day starts at" PR 2, `unitStartAt`; midnight with the task queue off).
+ * The ONE anchor rule: create, a period edit and the rollover's first pass
+ * all anchor through here. INTERVAL plays no part — a fortnight made this
+ * week starts on this week's first day.
  */
 export function quotaUnitStart(
   local: DateTime,
   unit: PeriodUnit,
   weekStart: WeekStart,
-  dayStart: string = CALENDAR_DAY_START,
+  dayStart: string,
 ): DateTime {
-  switch (unit) {
-    case 'days':
-      // The OpenTask day's start (2026-10-23): midnight unless `dayStart` says.
-      return startOfDayAt(local, dayStart)
-    case 'weeks':
-      return startOfWeek(local, weekStart)
-    case 'months':
-      return local.startOf('month')
-    case 'years':
-      return local.startOf('year')
-  }
+  return unitStartAt(local, unit, weekStart, dayStart)
 }
 
 /**
@@ -217,9 +202,9 @@ export function quotaUnitStart(
 export function quotaWindow(
   task: Pick<Task, 'rrule' | 'progress_period_start'>,
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
-  dayStart: string = CALENDAR_DAY_START,
+  now: Date,
+  weekStart: WeekStart,
+  dayStart: string,
 ): { start: DateTime; end: DateTime; interval: number } | null {
   const period = quotaPeriodUnit(task.rrule)
   if (!period) return null
@@ -246,11 +231,10 @@ export function quotaWindow(
  *
  * - `progress_period_end`: the current window's end, UTC, EXCLUSIVE.
  * - `period_interval`: the rule's INTERVAL (1 when it has none).
- * - `period_last_day`: the window's last local day, `YYYY-MM-DD` — the end
- *   minus one day, since the end itself is the next period's first midnight;
- *   for a daily quota on a day start (2026-10-23), the OpenTask day the
- *   window's last instant belongs to (`openTaskDayOf` — with an 11 PM start
- *   the window ends on the date it is named by, at 23:00).
+ * - `period_last_day`: the window's last OpenTask day, `YYYY-MM-DD` — the
+ *   day the window's last instant belongs to (`openTaskDayOf`; with an 11 PM
+ *   start a week ends on Saturday at 23:00 — its last day is Saturday). At
+ *   midnight, the end minus one day.
  * - `period_label`: "by Oct 24" (that last day) for an interval above 1;
  *   NULL at interval 1, where every client keeps its own words ("this week",
  *   "wk", "today") — a fortnight cannot be called "this week", but a week can.
@@ -277,32 +261,24 @@ export function periodByLabel(lastDay: string): string {
 }
 
 /**
- * A window's inclusive last day: the OpenTask day of its last instant for a
- * daily quota on a day start, else the calendar day before its end.
+ * A window's inclusive last day: the OpenTask day of its last instant (with
+ * `CALENDAR_DAY_START`, the calendar day before its end).
  */
-function periodLastDay(
-  end: DateTime,
-  unit: PeriodUnit | undefined,
-  timezone: string,
-  dayStart: string,
-): string {
-  if (unit === 'days' && dayStart !== CALENDAR_DAY_START) {
-    return openTaskDayOf(new Date(end.toMillis() - 1), timezone, dayStart)
-  }
-  return end.minus({ days: 1 }).toISODate()!
+function periodLastDay(end: DateTime, timezone: string, dayStart: string): string {
+  return openTaskDayOf(new Date(end.toMillis() - 1), timezone, dayStart)
 }
 
 export function quotaPeriodFields(
   task: Pick<Task, 'rrule' | 'progress_period_start' | 'progress_target' | 'is_tracked'>,
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
-  dayStart: string = CALENDAR_DAY_START,
+  now: Date,
+  weekStart: WeekStart,
+  dayStart: string,
 ): QuotaPeriodFields {
   if (!isTracked(task)) return NO_QUOTA_PERIOD
   const window = quotaWindow(task, timezone, now, weekStart, dayStart)
   if (!window) return NO_QUOTA_PERIOD
-  const lastDay = periodLastDay(window.end, quotaPeriodUnit(task.rrule)?.unit, timezone, dayStart)
+  const lastDay = periodLastDay(window.end, timezone, dayStart)
   return {
     progress_period_end: window.end.toUTC().toISO(),
     period_interval: window.interval,
@@ -328,9 +304,9 @@ export function quotaPeriodFields(
 export function effectiveProgress(
   task: Pick<Task, 'rrule' | 'progress_current' | 'progress_period_start'>,
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
-  dayStart: string = CALENDAR_DAY_START,
+  now: Date,
+  weekStart: WeekStart,
+  dayStart: string,
 ): number {
   const current = Math.max(0, task.progress_current ?? 0)
   const period = quotaPeriodUnit(task.rrule)
@@ -707,38 +683,26 @@ export function trackStream(quotas: Task[], labelConfig: LabelConfig[]): TrackSt
 
 /**
  * A period's [start, end) window in the user's timezone — the boundaries every
- * function below measures against. `end` is exclusive and always
- * `start.plus({ <unit>: 1 })`: a CALENDAR addition, not 24/168/etc. hours, so a
- * DST day of 23 or 25 real hours is still exactly "one day" here and the
- * fraction below comes out right without a special case for it.
+ * function below measures against. The unit the OpenTask date of `now` is in
+ * ("Day starts at" PR 2: with 3:00 AM a week runs from Sunday 03:00), from
+ * its start (`unitStartAt`, the quota anchor rule) to the next unit's start
+ * — the rollover's own end rule for an aligned anchor (`quotaPeriodEnd`). A
+ * CALENDAR addition on the dates, not 24/168/etc. hours, so a DST day of 23
+ * or 25 real hours is still exactly "one day" here and the fraction below
+ * comes out right without a special case for it. The user's week (Sunday by
+ * default, or Monday) — never Luxon's ISO-Monday `startOf('week')`.
  */
 function periodBounds(
   freq: QuotaFreq,
   timezone: string,
   now: Date,
   weekStart: WeekStart,
+  dayStart: string,
 ): { start: DateTime; end: DateTime } {
   const local = DateTime.fromJSDate(now).setZone(timezone)
-  switch (freq) {
-    case 'DAILY': {
-      const start = local.startOf('day')
-      return { start, end: start.plus({ days: 1 }) }
-    }
-    case 'WEEKLY': {
-      // The user's week (Sunday by default, or Monday) — never Luxon's
-      // `startOf('week')`, which is always ISO Monday. See `@/lib/week-start`.
-      const start = startOfWeek(local, weekStart)
-      return { start, end: start.plus({ weeks: 1 }) }
-    }
-    case 'MONTHLY': {
-      const start = local.startOf('month')
-      return { start, end: start.plus({ months: 1 }) }
-    }
-    case 'YEARLY': {
-      const start = local.startOf('year')
-      return { start, end: start.plus({ years: 1 }) }
-    }
-  }
+  const unit = FREQ_UNIT[freq]
+  const start = unitStartAt(local, unit, weekStart, dayStart)
+  return { start, end: quotaPeriodEnd(start, unit, 1, weekStart, dayStart) }
 }
 
 /**
@@ -756,10 +720,11 @@ function periodBounds(
 export function periodElapsedFraction(
   freq: QuotaFreq,
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
+  now: Date,
+  weekStart: WeekStart,
+  dayStart: string,
 ): number {
-  const { start, end } = periodBounds(freq, timezone, now, weekStart)
+  const { start, end } = periodBounds(freq, timezone, now, weekStart, dayStart)
   const local = DateTime.fromJSDate(now).setZone(timezone)
   const total = end.diff(start).as('milliseconds')
   if (total <= 0) return 0
@@ -768,23 +733,31 @@ export function periodElapsedFraction(
 }
 
 /**
- * Calendar days left in a quota's period, TODAY COUNTED (Trent's mock:
- * Wednesday with 5 days left in a Monday-start week — Wed, Thu, Fri, Sat, Sun;
- * 4 in the default Sunday-start week — Wed, Thu, Fri, Sat).
+ * Days left in a quota's period, TODAY COUNTED (Trent's mock: Wednesday with
+ * 5 days left in a Monday-start week — Wed, Thu, Fri, Sat, Sun; 4 in the
+ * default Sunday-start week — Wed, Thu, Fri, Sat).
  *
- * Measured from the start of TODAY to the period's end, not from `now` itself,
- * so the number does not tick down at the moment `now`'s clock passes; it only
- * changes at midnight, the way a person reading "5 days left" expects.
+ * Counted on OpenTask dates, from today's to the period's last day
+ * ("Day starts at" PR 2), not from `now` itself, so the number does not tick
+ * down at the moment `now`'s clock passes; it only changes when the day
+ * turns (the day start — 01:30 with 3:00 AM is still yesterday), the way a
+ * person reading "5 days left" expects.
  */
 export function periodDaysLeft(
   freq: QuotaFreq,
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
+  now: Date,
+  weekStart: WeekStart,
+  dayStart: string,
 ): number {
-  const { end } = periodBounds(freq, timezone, now, weekStart)
-  const startOfToday = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  return Math.ceil(end.diff(startOfToday, 'days').days)
+  const { end } = periodBounds(freq, timezone, now, weekStart, dayStart)
+  const today = openTaskDayOf(now, timezone, dayStart)
+  const lastDay = periodLastDay(end, timezone, dayStart)
+  const gap = DateTime.fromISO(lastDay, { zone: 'utc' }).diff(
+    DateTime.fromISO(today, { zone: 'utc' }),
+    'days',
+  ).days
+  return Math.round(gap) + 1
 }
 
 /**
@@ -797,11 +770,12 @@ export function periodDaysLeft(
 export function periodTimeLeftText(
   freq: QuotaFreq,
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
+  now: Date,
+  weekStart: WeekStart,
+  dayStart: string,
 ): string | null {
   if (freq === 'DAILY') return null
-  const days = periodDaysLeft(freq, timezone, now, weekStart)
+  const days = periodDaysLeft(freq, timezone, now, weekStart, dayStart)
   return `${days} day${days === 1 ? '' : 's'} left`
 }
 
@@ -857,15 +831,19 @@ export interface TrackSection {
 export function trackSections(
   quotas: Task[],
   timezone: string,
-  now: Date = new Date(),
-  weekStart: WeekStart = WEEK_START_DEFAULT,
+  now: Date,
+  weekStart: WeekStart,
+  /** The user's day boundary (`useDayStart`): periods run on OpenTask dates. */
+  dayStart: string,
 ): TrackSection[] {
   return groupByPeriod(quotas).map(({ key, freq, interval, period, tasks }) => {
     const summary = quotaGroupSummary(tasks)
     const { done, total } = trackSummary(tasks)
     const barFraction = total === 0 ? 0 : done / total
     const clock = freq !== null && interval === 1 ? freq : null
-    const elapsedFraction = clock ? periodElapsedFraction(clock, timezone, now, weekStart) : null
+    const elapsedFraction = clock
+      ? periodElapsedFraction(clock, timezone, now, weekStart, dayStart)
+      : null
     const fillPct = Math.round(barFraction * 100)
     const elapsedPct = elapsedFraction === null ? null : Math.round(elapsedFraction * 100)
     const noun = clock ? QUOTA_PERIODS.find((p) => p.freq === clock)?.noun : null
@@ -874,7 +852,7 @@ export function trackSections(
       freq,
       interval,
       heading: period ?? 'no period',
-      timeLeft: clock ? periodTimeLeftText(clock, timezone, now, weekStart) : null,
+      timeLeft: clock ? periodTimeLeftText(clock, timezone, now, weekStart, dayStart) : null,
       elapsedFraction,
       barFraction,
       barAriaLabel:

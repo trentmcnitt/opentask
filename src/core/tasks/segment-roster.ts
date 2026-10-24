@@ -10,9 +10,10 @@
  * today — considered, decked, targeted, done or deferred.
  *
  * The rule (one for every panel — the queue's two, Upcoming, the horizons):
- * - Every row a segment lists is remembered for that segment's day
- *   (`segment_roster`): the OpenTask day for the queue panels, the calendar day
- *   for the rest — the same split `queueRowState` and `segmentState` make.
+ * - Every row a segment lists is remembered for the day (`segment_roster`):
+ *   the user's OpenTask day, for every panel ("Day starts at" PR 2, 2026-10-24
+ *   — until then the horizons and Upcoming used the calendar day), the day
+ *   `queueRowState` and `segmentState` read.
  * - A remembered row that is no longer listed is still counted, as HANDLED, when
  *   the task shows it was handled that day: done (`done_at`, or a repeating
  *   task's `last_completed_at`), targeted or decked from a segment
@@ -40,11 +41,10 @@
  */
 
 import { getDb } from '@/core/db'
-import { DateTime } from 'luxon'
 import { openTaskDayOf } from '@/lib/opentask-day'
-import { isQueueKind, type SegmentKind, type SegmentLeft } from '@/lib/task-segments'
+import { type SegmentKind, type SegmentLeft } from '@/lib/task-segments'
 import { rowToTask, taskColumns, type TaskRow } from './read'
-import { rolloverTimeForUser } from './rollover-time'
+import { dayBoundaryForUser } from './rollover-time'
 import type { Task } from '@/types'
 
 export type { SegmentLeft }
@@ -65,16 +65,11 @@ export function rosterLeftRows(
   now: Date,
   listed: Map<SegmentKind, Task[]>,
 ): Map<SegmentKind, LeftRow[]> {
-  const rolloverTime = rolloverTimeForUser(userId)
-  const calendarDay = (d: Date) => DateTime.fromJSDate(d).setZone(timezone).toISODate()!
-  // The queue's panels and the deadlines page (2026-10-22) run on the
-  // OpenTask day; the rest on the calendar day.
-  const dayOf = (kind: SegmentKind, d: Date) =>
-    isQueueKind(kind) || kind === 'deadlines'
-      ? openTaskDayOf(d, timezone, rolloverTime)
-      : calendarDay(d)
-  const queueDay = openTaskDayOf(now, timezone, rolloverTime)
-  const today = calendarDay(now)
+  // Every panel runs on the user's OpenTask day (the day start with the
+  // task queue on, midnight off).
+  const dayStart = dayBoundaryForUser(userId)
+  const dayOf = (d: Date) => openTaskDayOf(d, timezone, dayStart)
+  const today = dayOf(now)
   const db = getDb()
 
   db.transaction(() => {
@@ -82,28 +77,24 @@ export function rosterLeftRows(
       'INSERT OR IGNORE INTO segment_roster (user_id, day, kind, task_id) VALUES (?, ?, ?, ?)',
     )
     for (const [kind, tasks] of listed) {
-      const day = dayOf(kind, now)
-      for (const task of tasks) remember.run(userId, day, kind, task.id)
+      for (const task of tasks) remember.run(userId, today, kind, task.id)
     }
-    // Only today's two day keys are ever read; keep yesterday's for the
-    // stretch between midnight and the rollover, drop the rest.
-    const oldest = [queueDay, today].sort()[0]
-    db.prepare('DELETE FROM segment_roster WHERE user_id = ? AND day < ?').run(userId, oldest)
+    // Only today's key is ever read: drop the rest.
+    db.prepare('DELETE FROM segment_roster WHERE user_id = ? AND day < ?').run(userId, today)
   })()
 
   const remembered = db
     .prepare(
-      'SELECT day, kind, task_id, left_how FROM segment_roster WHERE user_id = ? AND day IN (?, ?)',
+      'SELECT day, kind, task_id, left_how FROM segment_roster WHERE user_id = ? AND day = ?',
     )
-    .all(userId, queueDay, today) as {
+    .all(userId, today) as {
     day: string
     kind: SegmentKind
     task_id: number
     left_how: string | null
   }[]
   const missing = remembered.filter(
-    (r) =>
-      r.day === dayOf(r.kind, now) && !(listed.get(r.kind) ?? []).some((t) => t.id === r.task_id),
+    (r) => !(listed.get(r.kind) ?? []).some((t) => t.id === r.task_id),
   )
   const out = new Map<SegmentKind, LeftRow[]>()
   if (missing.length === 0) return out
@@ -127,10 +118,9 @@ export function rosterLeftRows(
     const task = tasks.get(r.task_id)
     // Trashed: gone from M. (Not `archived_at`: done archives a one-off.)
     if (!task) continue
-    const day = dayOf(r.kind, now)
     const left = howItLeft(
       task,
-      (iso) => iso !== null && dayOf(r.kind, new Date(iso)) === day,
+      (iso) => iso !== null && dayOf(new Date(iso)) === today,
       r.left_how,
     )
     if (!left) continue

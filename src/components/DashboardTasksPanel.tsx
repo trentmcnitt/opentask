@@ -13,12 +13,14 @@ import {
 } from '@/components/reminders/PanelPagerParts'
 import {
   ConsideredSegmentRow,
+  EmptySegmentLine,
   SegmentNudge,
   TaskSegmentRow,
   handledRows,
   offersDeferAll,
   segmentColor,
   segmentCounts,
+  segmentEmpty,
   segmentKey,
   segmentLabel,
   segmentTitleColor,
@@ -41,21 +43,30 @@ import {
  * in the dashboard … now the segments are all in a line. i liked the reminders
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
- * across today's segments (the task queue's two panels first, with the
- * switch on, then Daily, Upcoming, Weekly, Monthly, Quarterly), its own strip of
+ * across the segments (with the switch on the deadlines page first, then the
+ * task queue's two panels; then Daily, Upcoming, Weekly, Monthly, Quarterly —
+ * `SEGMENT_ORDER`), its own strip of
  * teal bars (the current one taller, as a slot's is; green when finished), the
  * same header (the title, "TASK QUEUE · DAILY", as a slot shows its name; "X of Y"
  * that opens what was considered with put-back, ‹ ›), the same rows, and
  * "Defer all" behind the header tap where a slot has "Considered all".
  *
- * WHERE IT OPENS: the first segment with anything waiting; finishing one (its
+ * EVERY SEGMENT, EVERY DAY (Trent, 2026-10-24: "always show every queue
+ * segment, every day, in fixed positions"). The server sends every kind the
+ * web draws (`?fill=1`), so the strip always has the same bars in the same
+ * places and the chevrons step through all of them. An EMPTY segment is done
+ * from the start of the day: a green bar, "0 of 0 ✓", "Nothing today ✓" on
+ * its page (`segmentEmpty`).
+ *
+ * WHERE IT OPENS: the first segment with anything waiting — an empty one
+ * waits for nothing, so it is never where the card opens; finishing one (its
  * last row, or Defer all) moves to the next that waits. It never lands on a
  * finished segment while another waits — Trent's screenshot had the old pager
  * on a weeks segment at "75 of 75 — Nothing left here". When every segment is
  * finished the card collapses to one line ("Tasks · 75 of 75 ✓"), whose count
  * still opens what was considered.
  *
- * Only on a day with task segments. Never counted in the reminders headline,
+ * Never counted in the reminders headline,
  * the nav badge or "Considered all so far" (docs/TASK-MODEL.md § Task segments).
  */
 export function DashboardTasksPanel({
@@ -79,6 +90,7 @@ export function DashboardTasksPanel({
       total,
       started: true,
       color: segmentColor(segment.horizon),
+      emptyDone: true,
     }
   })
   // No page is a slot: the natural page is the first segment still waiting.
@@ -92,8 +104,8 @@ export function DashboardTasksPanel({
   // after the fetch has landed (`hydrated`, not the module cache's instant
   // paint — the same trap `?reminder=` avoids in RemindersView), straight
   // from window.location, and stripped with a raw history rewrite (never
-  // router.replace — see DashboardClient's `?task=`). A kind the card isn't
-  // showing today is consumed and ignored.
+  // router.replace — see DashboardClient's `?task=`). A kind the card doesn't
+  // draw (the deadlines page with the switch off) is consumed and ignored.
   useEffect(() => {
     if (linkDone.current || !hydrated) return
     linkDone.current = true
@@ -182,6 +194,7 @@ export function DashboardTasksPanel({
         onToggleExpanded={() => setExpanded(!expanded)}
         showConsidered={showConsidered}
         onToggleConsidered={pager.toggleConsidered}
+        emptyDone
       />
       <ReminderSlotBar
         items={pages}
@@ -205,6 +218,11 @@ export function DashboardTasksPanel({
  * Every segment finished: one line, "Tasks · 75 of 75 ✓", rather than a page
  * that says "Nothing left here". Its count opens everything considered or
  * deferred today, each with its put-back — the pager's own "X of Y" tap.
+ *
+ * Kept with every segment always shown (2026-10-24): with nothing waiting
+ * anywhere there is nothing to page to, and the strip would only be a row of
+ * green bars. A day with no task rows at all reads "Tasks · 0 of 0 ✓", the
+ * count then a plain readout (nothing behind it to open).
  */
 function TasksDoneLine({
   segments,
@@ -230,11 +248,12 @@ function TasksDoneLine({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
+          disabled={handled === 0}
           aria-expanded={open}
           data-considered-toggle
           aria-label={`${handled} of ${total} considered — show what was considered`}
           className={cn(
-            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors disabled:pointer-events-none',
             open && 'bg-foreground/5',
           )}
         >
@@ -294,7 +313,9 @@ function TaskPageBody({
   return (
     <>
       <SegmentNudge segment={segment} className="mx-3" />
-      {rows.length === 0 ? (
+      {segmentEmpty(segment) ? (
+        <EmptySegmentLine className="px-3 pb-3" />
+      ) : rows.length === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
       ) : (
         <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>

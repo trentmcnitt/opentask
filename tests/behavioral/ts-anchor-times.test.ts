@@ -15,7 +15,12 @@ import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { createTask } from '@/core/tasks'
 import { executeUndo, executeRedo } from '@/core/undo'
-import { createTimeSlot, listTimeSlots, type TimeSlot } from '@/core/time-slots'
+import {
+  createTimeSlot,
+  listTimeSlots,
+  seedDefaultTimeSlots,
+  type TimeSlot,
+} from '@/core/time-slots'
 import { updateTimeSlot, deleteTimeSlot } from '@/core/time-slots/edit'
 import { getTargetContext } from '@/core/tasks/target-context'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
@@ -30,6 +35,7 @@ import {
   DEFAULT_ANCHOR_ROW,
   DEFAULT_PAD_PRESETS,
   hasAnyLink,
+  newAccountLinks,
   parsePadPresets,
   resolveAnchorTimes,
   resolveTime,
@@ -324,7 +330,7 @@ describe('deleting a period something links to', () => {
       userTimezone: TEST_TIMEZONE,
       slotId: midday.id,
     })
-    expect(result.settings_converted).toEqual(['Morning time', 'Number pad button 2'])
+    expect(result.settings_converted).toEqual(['Default task time', 'Number pad button 2'])
 
     const row = readAnchorRow(TEST_USER_ID)
     expect([row.morning_time, row.morning_slot_id]).toEqual(['12:00', null])
@@ -335,7 +341,7 @@ describe('deleting a period something links to', () => {
       .prepare('SELECT description FROM undo_log WHERE id = ?')
       .get(result.undo_id) as { description: string }
     expect(entry.description).toBe(
-      'Removed "Midday"; kept Morning time, Number pad button 2 at 12:00 PM',
+      'Removed "Midday"; kept Default task time, Number pad button 2 at 12:00 PM',
     )
   })
 
@@ -435,5 +441,84 @@ describe('deleting a period something links to', () => {
     expect(() =>
       deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, slotId: last[0].id }),
     ).toThrow('Keep at least one reminder period')
+  })
+})
+
+describe('a new account starts linked (2026-10-24)', () => {
+  const defaults = [
+    slot(11, 'Early morning', '07:00'),
+    slot(12, 'Morning', '09:00'),
+    slot(13, 'Midday', '12:00'),
+    slot(14, 'Afternoon', '16:00'),
+    slot(15, 'Evening', '20:30'),
+  ]
+
+  afterEach(() => {
+    vi.useRealTimers()
+    teardownTestDb()
+  })
+
+  test('TAT-040: each setting at a new period’s start links to it; Sleep and Day starts at stay', () => {
+    const writes = newAccountLinks(DEFAULT_ANCHOR_ROW, defaults)
+    expect(writes).toEqual({
+      morning_slot_id: 12,
+      wake_slot_id: 11,
+      pad_presets: serializePadPresets([
+        { time: '09:00', slot_id: 12 },
+        { time: '12:00', slot_id: 13 },
+        { time: '16:00', slot_id: 14 },
+        { time: '20:30', slot_id: 15 },
+      ]),
+    })
+    // Nothing moves: every setting resolves to the time it had.
+    const before = resolveAnchorTimes(DEFAULT_ANCHOR_ROW, defaults)
+    const after = resolveAnchorTimes({ ...DEFAULT_ANCHOR_ROW, ...writes }, defaults)
+    expect(after.morning.time).toBe(before.morning.time)
+    expect(after.wake.time).toBe(before.wake.time)
+    expect(after.sleep).toEqual(before.sleep)
+    expect(after.pad.map((p) => p.time)).toEqual(before.pad.map((p) => p.time))
+    expect(after.morning.slot_label).toBe('Morning')
+    expect(after.wake.slot_label).toBe('Early morning')
+  })
+
+  test('TAT-041: a custom time off every start, a link, or a customised pad is left alone', () => {
+    const row: AnchorRow = {
+      ...DEFAULT_ANCHOR_ROW,
+      morning_time: '08:30',
+      wake_slot_id: 99,
+      pad_presets: serializePadPresets(DEFAULT_PAD_PRESETS),
+    }
+    expect(newAccountLinks(row, defaults)).toEqual({})
+  })
+
+  test('TAT-042: seedDefaultTimeSlots links a new user once; a second call changes nothing', () => {
+    setupTestDb()
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, timezone) VALUES (7, 'new@example.com', 'new', 'x', 'UTC')",
+    ).run()
+    seedDefaultTimeSlots(7)
+    const slots = listTimeSlots(7)
+    const id = (label: string) => slots.find((s) => s.label === label)!.id
+    const row = readAnchorRow(7)
+    expect(row).toMatchObject({
+      morning_time: '09:00',
+      morning_slot_id: id('Morning'),
+      wake_time: '07:00',
+      wake_slot_id: id('Early morning'),
+      sleep_time: '22:00',
+      sleep_slot_id: null,
+      day_start_time: null,
+      day_start_slot_id: null,
+    })
+    expect(parsePadPresets(row.pad_presets).map((p) => p.slot_id)).toEqual([
+      id('Morning'),
+      id('Midday'),
+      id('Afternoon'),
+      id('Evening'),
+    ])
+    seedDefaultTimeSlots(7)
+    expect(readAnchorRow(7)).toEqual(row)
+    expect(listTimeSlots(7)).toHaveLength(5)
   })
 })

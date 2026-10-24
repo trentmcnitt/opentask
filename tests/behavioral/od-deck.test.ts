@@ -15,6 +15,7 @@
  * 2026-10-20 10:00 unless a test says otherwise.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import fs from 'fs'
 import path from 'path'
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
@@ -53,6 +54,7 @@ import { slotWaitingBody, withDeckCount } from '@/core/notifications/apns'
 import { formatTaskResponse } from '@/lib/format-task'
 import { isRelevantNow } from '@/lib/now-view'
 import { growthAsk } from '@/lib/process-rules'
+import { deckTomorrowDay } from '@/lib/deck-menu'
 import {
   ageLabel,
   compareQueueRows,
@@ -181,18 +183,18 @@ describe('OD-R: the rules', () => {
   const tue10 = new Date(at('2026-10-20T10:00'))
 
   test('OD-R01: the deck day is a calendar date, today or later — 1 AM is the coming day (A2)', () => {
-    expect(deckDayProblem('2026-10-20', tz, tue10)).toBeNull()
-    expect(deckDayProblem('2026-10-19', tz, tue10)).toMatch(/today or later/)
-    expect(deckDayProblem('2026-13-01', tz, tue10)).toMatch(/date/)
-    expect(deckDayProblem('Oct 21', tz, tue10)).toMatch(/date/)
+    expect(deckDayProblem('2026-10-20', tz, tue10, CALENDAR_DAY_START)).toBeNull()
+    expect(deckDayProblem('2026-10-19', tz, tue10, CALENDAR_DAY_START)).toMatch(/today or later/)
+    expect(deckDayProblem('2026-13-01', tz, tue10, CALENDAR_DAY_START)).toMatch(/date/)
+    expect(deckDayProblem('Oct 21', tz, tue10, CALENDAR_DAY_START)).toMatch(/date/)
     // 01:00 Wed is still Tuesday's OpenTask day, but the deck is a CALENDAR date.
     const wed1am = new Date(at('2026-10-21T01:00'))
-    expect(deckDayProblem('2026-10-21', tz, wed1am)).toBeNull()
-    expect(deckDayProblem('2026-10-20', tz, wed1am)).toMatch(/today or later/)
-    expect(deckIsToday({ on_deck_day: '2026-10-21' }, tz, wed1am)).toBe(true)
+    expect(deckDayProblem('2026-10-21', tz, wed1am, CALENDAR_DAY_START)).toBeNull()
+    expect(deckDayProblem('2026-10-20', tz, wed1am, CALENDAR_DAY_START)).toMatch(/today or later/)
+    expect(deckIsToday({ on_deck_day: '2026-10-21' }, tz, wed1am, CALENDAR_DAY_START)).toBe(true)
     // Yesterday's leftover still counts as today's until the rollover strips it.
-    expect(deckIsToday({ on_deck_day: '2026-10-20' }, tz, wed1am)).toBe(true)
-    expect(deckIsToday({ on_deck_day: '2026-10-22' }, tz, wed1am)).toBe(false)
+    expect(deckIsToday({ on_deck_day: '2026-10-20' }, tz, wed1am, CALENDAR_DAY_START)).toBe(true)
+    expect(deckIsToday({ on_deck_day: '2026-10-22' }, tz, wed1am, CALENDAR_DAY_START)).toBe(false)
   })
 
   test('OD-R02: A1 (the deadlines page, 2026-10-22) — a deadline deck up to the deadline day, while it is ahead', () => {
@@ -221,8 +223,9 @@ describe('OD-R: the rules', () => {
   test('OD-R03: quiet like a picked target — no segment; Upcoming on heads-up days (B6)', () => {
     // Decked Tue Oct 20 for Sat Oct 31: wait 11 → heads-ups Wed Oct 28 and Fri Oct 30.
     const t = bare({ on_deck_day: '2026-10-31' })
-    expect(segmentState(t, tz, tue10)).toBeNull()
-    const on = (local: string) => upcomingState(t, tz, new Date(at(local)))?.state ?? null
+    expect(segmentState(t, tz, tue10, CALENDAR_DAY_START)).toBeNull()
+    const on = (local: string) =>
+      upcomingState(t, tz, new Date(at(local)), CALENDAR_DAY_START)?.state ?? null
     expect(on('2026-10-27T10:00')).toBeNull()
     expect(on('2026-10-28T10:00')).toBe('waiting')
     expect(on('2026-10-29T10:00')).toBe('waiting') // carry-over
@@ -230,15 +233,19 @@ describe('OD-R: the rules', () => {
     expect(on('2026-10-31T10:00')).toBeNull() // its day: the On deck section
     expect(upcomingGap(t, tz).target).toBe('On deck Sat Oct 31')
     // Decked for tomorrow: no heads-up (wait 1), like a picked target.
-    expect(upcomingState(bare({ on_deck_day: '2026-10-21' }), tz, tue10)).toBeNull()
+    expect(
+      upcomingState(bare({ on_deck_day: '2026-10-21' }), tz, tue10, CALENDAR_DAY_START),
+    ).toBeNull()
   })
 
   test('OD-R04: a deck is a plan — no age badge, no growth ask (B7)', () => {
     const old = bare({ created_at: at('2026-01-01T09:00') })
     expect(ageLabel(old, tue10, tz)).toBe('>1 mo')
     expect(ageLabel({ ...old, on_deck_day: '2026-10-24' }, tue10, tz)).toBeNull()
-    expect(growthAsk(old, tz, tue10)).not.toBeNull()
-    expect(growthAsk({ ...old, on_deck_day: '2026-10-24' }, tz, tue10)).toBeNull()
+    expect(growthAsk(old, tz, tue10, CALENDAR_DAY_START)).not.toBeNull()
+    expect(
+      growthAsk({ ...old, on_deck_day: '2026-10-24' }, tz, tue10, CALENDAR_DAY_START),
+    ).toBeNull()
   })
 
   test('OD-R05: the queue sorts a deck-stripped row by its day’s rollover moment', () => {
@@ -255,15 +262,21 @@ describe('OD-R: the rules', () => {
 
   test('OD-R06: Now — today’s decks fold; a future deck on its heads-up day; queued High folds (A8, A13)', () => {
     const high = bare({ priority: 3 })
-    const on = { queue: true }
-    expect(isRelevantNow(high, tz, tue10)).toBe(true)
+    const on = { queue: true, dayStart: CALENDAR_DAY_START }
+    expect(isRelevantNow(high, tz, tue10, { dayStart: CALENDAR_DAY_START })).toBe(true)
     expect(isRelevantNow({ ...high, on_deck_day: '2026-10-20' }, tz, tue10, on)).toBe(false)
     // The deck rules with the queue switch on only (D2 review): off, main's.
-    expect(isRelevantNow({ ...high, on_deck_day: '2026-10-20' }, tz, tue10)).toBe(true)
+    expect(
+      isRelevantNow({ ...high, on_deck_day: '2026-10-20' }, tz, tue10, {
+        dayStart: CALENDAR_DAY_START,
+      }),
+    ).toBe(true)
     // A8 with the queue switch on only: off, main's behaviour (relevant).
     const queuedHigh = { ...high, queued_at: at('2026-10-20T06:30') }
-    expect(isRelevantNow(queuedHigh, tz, tue10, { queue: true })).toBe(false)
-    expect(isRelevantNow(queuedHigh, tz, tue10)).toBe(true)
+    expect(
+      isRelevantNow(queuedHigh, tz, tue10, { queue: true, dayStart: CALENDAR_DAY_START }),
+    ).toBe(false)
+    expect(isRelevantNow(queuedHigh, tz, tue10, { dayStart: CALENDAR_DAY_START })).toBe(true)
     // Decked Tue for Sat Oct 31 → heads-up Wed Oct 28.
     const future = bare({ on_deck_day: '2026-10-31' })
     expect(isRelevantNow(future, tz, tue10, on)).toBe(false)
@@ -291,7 +304,7 @@ describe('OD-R: the rules', () => {
       skipped_trashed: 0,
       refused: [],
     }
-    expect(deckSummary(base, tz, tue10)).toBe(
+    expect(deckSummary(base, tz, tue10, CALENDAR_DAY_START)).toBe(
       '3 tasks on deck for tomorrow · 1 repeating, 2 quotas skipped',
     )
     expect(
@@ -305,6 +318,7 @@ describe('OD-R: the rules', () => {
         },
         tz,
         tue10,
+        CALENDAR_DAY_START,
       ),
     ).toBe('This deadline has passed.')
     expect(
@@ -312,6 +326,7 @@ describe('OD-R: the rules', () => {
         { ...base, day: null, decked: 0, undecked: 2, skipped_recurring: 0, skipped_quota: 0 },
         tz,
         tue10,
+        CALENDAR_DAY_START,
       ),
     ).toBe('Took 2 tasks off deck')
   })
@@ -339,10 +354,16 @@ describe('OD-W: deckTasks', () => {
     expect(formatTaskResponse(task(t.id), tz)).toMatchObject({ on_deck_day: '2026-10-20' })
   })
 
-  test('OD-W02: at 1 AM "today" is the coming calendar day (A2)', () => {
+  test('OD-W02: at 1 AM "today" is the OpenTask day that is ending ("Day starts at" PR 2; it was the coming calendar day under A2) — the late night\'s pick is Tomorrow', () => {
     setClock('2026-10-21T01:00')
     const t = make()
-    expect(deck([t.id]).day).toBe('2026-10-21')
+    expect(deck([t.id]).day).toBe('2026-10-20')
+    expect(deckTomorrowDay(tz, new Date(at('2026-10-21T01:00')), '06:30')).toBe('2026-10-21')
+    // A day before today's OpenTask date is refused; today's is fine.
+    expect(deckDayProblem('2026-10-19', tz, new Date(at('2026-10-21T01:00')), '06:30')).toBe(
+      'The deck day must be today or later',
+    )
+    expect(deckDayProblem('2026-10-20', tz, new Date(at('2026-10-21T01:00')), '06:30')).toBeNull()
   })
 
   test('OD-W03: never both — a picked target is dropped (time and all); one Undo puts it back', () => {
@@ -800,15 +821,18 @@ describe('OD-RO: the rollover sends an ended deck to the queue', () => {
     expect(placesOf(low.id)).toEqual(['queue_previous'])
   })
 
-  test('OD-RO02: a deck made at 1 AM for "today" survives the 6:30 rollover (A2)', () => {
+  test('OD-RO02: at 1 AM a deck for "today" is the ending day\'s — the 6:30 rollover queues it; a deck for Tomorrow survives it ("Day starts at" PR 2, replacing A2)', () => {
     setClock('2026-10-21T01:00')
     const t = make()
+    const later = make()
     deck([t.id])
-    expect(task(t.id).on_deck_day).toBe('2026-10-21')
+    deck([later.id], '2026-10-21')
+    expect(task(t.id).on_deck_day).toBe('2026-10-20')
     roll('2026-10-21T06:30')
-    expect(task(t.id).on_deck_day).toBe('2026-10-21')
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, queued_from_deck_day: '2026-10-20' })
+    expect(task(later.id).on_deck_day).toBe('2026-10-21')
     roll('2026-10-22T06:30')
-    expect(task(t.id)).toMatchObject({ on_deck_day: null, queued_from_deck_day: '2026-10-21' })
+    expect(task(later.id)).toMatchObject({ on_deck_day: null, queued_from_deck_day: '2026-10-21' })
   })
 
   test('OD-RO03: a deadline task’s expired deck is cleared, never queued (the deadlines page)', () => {
@@ -839,7 +863,7 @@ describe('OD-RO: the rollover sends an ended deck to the queue', () => {
     const tueLeftover = make()
     getDb().prepare("UPDATE tasks SET on_deck_day = '2026-10-20' WHERE id = ?").run(tueLeftover.id)
     const wed = make()
-    deck([wed.id]) // the coming day (calendar Wed)
+    deck([wed.id], '2026-10-21') // the coming day (Tomorrow, at 1 AM)
     const r = runRolloverNow({ userId: TEST_USER_ID, now: new Date(at('2026-10-21T01:00')) })
     expect(r).toMatchObject({ deck_stripped: 1 })
     expect(r.ids.deck_stripped).toEqual([tueLeftover.id])

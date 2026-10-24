@@ -74,6 +74,7 @@ import {
   useAiPreferences,
   useAiUnshelved,
   useTaskQueue,
+  useDayStart,
 } from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
 import type { Task, Project } from '@/types'
@@ -1050,12 +1051,11 @@ function HomeContent({
   const nowAvailable = grouping === 'project' && !listNarrowed
   // The task queue switch: with it on, a queued undated High folds (A8).
   const queueOn = taskQueue.enabled
-  // Now's options: the switch, and the rollover time the deadlines page's
-  // safety net is counted on (2026-10-22) — one object for every Now rule.
-  const nowOpts = useMemo(
-    () => ({ queue: queueOn, rolloverTime: taskQueue.attemptsRolloverTime }),
-    [queueOn, taskQueue.attemptsRolloverTime],
-  )
+  // Now's options: the switch, and the user's day boundary ("Day starts at"
+  // PR 2) — Now's "today", Upcoming's heads-ups, today's decks and the
+  // deadlines page's safety net are OpenTask days. One object for every Now rule.
+  const dayStart = useDayStart()
+  const nowOpts = useMemo(() => ({ queue: queueOn, dayStart }), [queueOn, dayStart])
   // Now's On deck section (D2, `withDeckSection`): today's decks, with the
   // task queue on — part of what Now shows, so part of its count.
   const deckSection = nowAvailable && queueOn

@@ -9,9 +9,10 @@
  * WHAT IT CATCHES, per source line (comments skipped):
  * - A DAY FROM NOW: a day operation — `.startOf('day')`, `.endOf('day')`,
  *   `.toISODate()`, `toFormat('yyyy-MM-dd')` (or the deck / attempts date
- *   formats), `setHours(0`, `toISOString().split('T')` / `.slice(0, 10)` —
- *   on a line that reads the clock (`now`, `today`, `new Date()`,
- *   `Date.now()`, `DateTime.now()`, or a variable made from `now`).
+ *   formats), `hasSame(…, 'day')`, `setHours(0`, `toISOString().split('T')`
+ *   / `.slice(0, 10)` — on a line that reads the clock (`now`, `today`,
+ *   `nowLocal`, `new Date()`, `Date.now()`, `DateTime.now()`, or a variable
+ *   made from `now`).
  * - AN INSTANT'S CALENDAR DAY: a day operation on an instant turned local
  *   (`DateTime.fromJSDate(…)`, `fromMillis(…)`, `fromISO(…, { zone: 'utc' })
  *   .setZone(…)`) — the local date of a moment, which with a day start is
@@ -19,68 +20,66 @@
  * - HAND-ROLLED DAY-START MINUTES: `% 1440`, or `parseHHMM(` of a rollover /
  *   day start, outside the helpers (`minutesIntoDay`).
  *
- * THE ALLOWLIST below is every such line left, each with its reason. Most
- * are the surfaces PR 2 moves onto the OpenTask day ("PR 2 moves this" —
- * PR 2 empties those); the rest are calendar dates on purpose, the
- * switch-off path, or not a user's day at all. Two are open questions for a
- * ruling (decks, stats/History — see their reasons). The count is exact, and
- * an entry that no longer matches fails too, so the list stays true.
+ * "DAY STARTS AT" PR 2 (Trent, 2026-10-24: EVERYTHING uses the OpenTask
+ * date) emptied the "PR 2 moves this" and "needs a ruling" entries: the Now
+ * view, the Today pill, Upcoming, the horizon segments, check_in_day, the
+ * roster, the overdue fallback, date labels, quota periods and the Quotas
+ * page, decks, daily stats and History all go through opentask-day.ts now.
+ * THE ALLOWLIST below is every such line left, each with its reason:
+ * calendar dates on purpose (a date the user picked or said, read as a
+ * date), calendar arithmetic on an OpenTask date already worked out, the
+ * switch-off path, or not a user's day at all. The count is exact, and an
+ * entry that no longer matches fails too, so the list stays true.
+ *
+ * TQ-G03 covers the CLIENT (and every default): the only places that choose
+ * a day start are `dayBoundaryForUser` (server) and `useDayStart` (browser);
+ * `CALENDAR_DAY_START` (midnight) appears nowhere else but the switch-off
+ * paths listed there, and no function defaults its day start to midnight —
+ * so a "today" in a component or hook can only come from the user's day.
  */
 import { describe, test, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const PR2 = 'PR 2 moves this'
-const PR2_OVERDUE = `${PR2}: overdue "now" (the badge, the Today pill, the notifier) — a repeat with no target falls back to today's occurrence by the calendar day`
-const PR2_SEGMENTS = `${PR2}: the horizon segments, Upcoming heads-up days and "considered today" on the Reminders screen's task side, check_in_day`
-const PR2_QUOTA_PAGE = `${PR2}: the Quotas page — "% of day" and "N days left" (periodBounds / periodDaysLeft)`
-const PR2_NOW = `${PR2}: "Today" / "Tomorrow" in date labels (the Now view, the Today pill)`
-const DECKS =
-  'decks are dated by the calendar (on_deck_day, A2/A4: from midnight to the day start the calendar date is the coming day). With a day start after 12:00 the calendar date LAGS the OpenTask day from the start to midnight — not in PR 2’s list; needs a ruling'
 const CALENDAR =
   'a calendar date the user picked, typed or stored, read as a date (not "which day is it")'
+const WORDS =
+  'the user’s words, read on the calendar: enrichment’s "today" / "tomorrow" (A4 maps a late-night "tomorrow" to the coming day, `saidTomorrowBeforeRollover`); the deck floor it then meets is the OpenTask day (`deckOrTarget`)'
+const ON_OPENTASK_DATE =
+  'calendar arithmetic on today’s OpenTask date, already worked out (`openTaskToday`) — "plain calendar maths on that date"'
 const SWITCH_OFF = "the switch-off path: the calendar day, which is CALENDAR_DAY_START's day"
-const STATS_HISTORY =
-  'daily stats and History browse calendar dates — not in PR 2’s list; needs a ruling'
 const SHELVED = 'not a user day: shelved AI code (What’s Next / Insights / Quick Take), UTC dates'
 const NOT_A_DAY = 'not a user day: a UTC date stamp (an export file name)'
 
 /** `file: trimmed line` → [occurrences, reason]. */
 const ALLOWLIST: Record<string, [number, string]> = {
-  // ── PR 2 moves these ────────────────────────────────────────────────
-  "src/core/recurrence/occurrence.ts: const dayStart = day ? DateTime.fromJSDate(day.start) : localNow.startOf('day')":
-    [1, PR2_OVERDUE],
-  'src/core/tasks/segment-roster.ts: const calendarDay = (d: Date) => DateTime.fromJSDate(d).setZone(timezone).toISODate()!':
-    [1, PR2_SEGMENTS],
-  "src/core/tasks/task-segments.ts: const day = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone).startOf('day')":
-    [1, `${PR2_SEGMENTS} ("Today" from a segment: target today or later)`],
-  "src/core/tasks/task-segments.ts: const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')":
-    [1, `${PR2_SEGMENTS} ("Today" from a segment: target today or later)`],
-  "src/lib/task-segments.ts: return DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).startOf('day')":
-    [1, `${PR2_SEGMENTS} (localDay)`],
-  "src/lib/task-segments.ts: const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')":
-    [3, `${PR2_SEGMENTS} (targetIsToday, segmentState, upcomingState)`],
-  "src/lib/track.ts: const start = local.startOf('day')": [1, PR2_QUOTA_PAGE],
-  "src/lib/track.ts: const startOfToday = DateTime.fromJSDate(now).setZone(timezone).startOf('day')":
-    [1, PR2_QUOTA_PAGE],
-  "src/lib/format-date.ts: const dayA = DateTime.fromJSDate(a, opts).startOf('day')": [1, PR2_NOW],
-  "src/lib/format-date.ts: const dayB = DateTime.fromJSDate(b, opts).startOf('day')": [1, PR2_NOW],
-
-  // ── Decks (open question) ───────────────────────────────────────────
-  'src/lib/task-segments.ts: return DateTime.fromJSDate(now).setZone(timezone).toFormat(DECK_DAY_FORMAT)':
-    [1, `${DECKS} (calendarToday)`],
-  "src/core/ai/enrichment.ts: const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')":
-    [2, `${DECKS} (settleDeckDay); and dropUnstatedPastDates: ${CALENDAR}`],
-  "src/core/ai/enrichment.ts: const settled = settleDeckDay(day.startOf('day'), inputText, today, opts, now)":
-    [1, DECKS],
-  "src/lib/just-added.ts: const today = DateTime.fromMillis(now).setZone(timezone).startOf('day')":
-    [1, `${DECKS} (deckTagLabel)`],
+  // ── Calendar arithmetic on an OpenTask date ─────────────────────────
+  'src/components/OnDeckButton.tsx: const tomorrow = DateTime.fromISO(today).plus({ days: 1 }).toFormat(DECK_DAY_FORMAT)':
+    [1, `${ON_OPENTASK_DATE} (the deck picker's tomorrow)`],
   'src/lib/deck-menu.ts: latestDay: today.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),': [
     1,
-    DECKS,
+    `${ON_OPENTASK_DATE} (a passed deadline's deck limit: yesterday)`,
   ],
-  'src/components/OnDeckButton.tsx: const tomorrow = DateTime.fromISO(today).plus({ days: 1 }).toFormat(DECK_DAY_FORMAT)':
-    [1, DECKS],
+
+  // ── The user's words (enrichment) ───────────────────────────────────
+  "src/core/ai/enrichment.ts: const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')":
+    [2, `${WORDS} (resolveDeckDay); and dropUnstatedPastDates: ${CALENDAR}`],
+  "src/core/ai/enrichment.ts: const settled = settleDeckDay(day.startOf('day'), inputText, today, opts, now)":
+    [1, WORDS],
+  "src/core/ai/enrichment.ts: day.hasSame(today, 'day') && !enrichment.rrule": [
+    1,
+    `${WORDS} (a date-only target said for today)`,
+  ],
+  "src/core/ai/enrichment.ts: if (day.hasSame(today, 'day') && !TODAY_CUE.test(inputText)) {": [
+    1,
+    `${WORDS} (a date-only target said for today)`,
+  ],
+  "src/core/ai/enrichment.ts: if (!target.hasSame(nowMinute, 'day')) return enrichment": [
+    1,
+    `${WORDS} (a time said for today that has passed)`,
+  ],
+  "src/core/ai/enrichment.ts: if (target.hasSame(nowLocal, 'day') && (namedClock || target >= nowLocal)) return enrichment":
+    [1, `${WORDS} (resolveSameDayPast)`],
 
   // ── Calendar dates on purpose ───────────────────────────────────────
   "src/core/ai/enrichment.ts: return local !== null && local.startOf('day') < today": [1, CALENDAR],
@@ -90,8 +89,6 @@ const ALLOWLIST: Record<string, [number, string]> = {
     [1, `${CALENDAR} (skip until: tomorrow or later)`],
   'src/components/quick-panel/EveryTimePanel.tsx: const today = DateTime.fromJSDate(ctx.now).setZone(ctx.timezone).toISODate()!':
     [1, `${CALENDAR} (the repeat-until picker's earliest date)`],
-  "src/lib/task-segments.ts: const wait = waitDays(deadlineDay, DateTime.fromJSDate(now).setZone(zone).startOf('day'))":
-    [1, `${CALENDAR} (calendar days to a deadline: the automatic target's lead, switch off)`],
   "src/lib/task-segments.ts: const day = DateTime.fromISO(occurrenceAt, { zone: 'utc' }).setZone(timezone).toISODate()!":
     [1, `${CALENDAR} (an occurrence's own date, for its rule time)`],
   "src/lib/task-segments.ts: return DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toISODate()!":
@@ -108,24 +105,8 @@ const ALLOWLIST: Record<string, [number, string]> = {
     [1, `${CALENDAR} (a migration)`],
 
   // ── The switch-off path ─────────────────────────────────────────────
-  "src/lib/task-segments.ts: : DateTime.fromJSDate(instant).setZone(timezone).startOf('day')": [
-    1,
-    `${SWITCH_OFF} (putBackCountedThrough)`,
-  ],
-  "src/lib/task-segments.ts: return DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone).toFormat(DECK_DAY_FORMAT)":
-    [1, `${SWITCH_OFF} (repeatingDeadlineDay)`],
-
-  // ── Stats and History (open question) ───────────────────────────────
-  "src/core/stats/index.ts: const dateStr = userNow.toFormat('yyyy-MM-dd')": [1, STATS_HISTORY],
-  "src/core/stats/index.ts: const todayStr = userNow.toFormat('yyyy-MM-dd')": [1, STATS_HISTORY],
-  "src/core/stats/index.ts: const weekAgoStr = userNow.minus({ days: 7 }).toFormat('yyyy-MM-dd')": [
-    1,
-    STATS_HISTORY,
-  ],
-  "src/core/stats/index.ts: const monthAgoStr = userNow.minus({ days: 30 }).toFormat('yyyy-MM-dd')":
-    [1, STATS_HISTORY],
-  'src/app/history/page.tsx: const date = pickedDate ?? DateTime.now().setZone(timezone).toISODate()!':
-    [1, STATS_HISTORY],
+  "src/lib/task-segments.ts: const wait = waitDays(deadlineDay, DateTime.fromJSDate(now).setZone(zone).startOf('day'))":
+    [1, `${SWITCH_OFF} (the automatic target's lead, written only with the task queue off, A1)`],
 
   // ── Not a user's day ────────────────────────────────────────────────
   "src/app/api/ai/insights/results/route.ts: const todayUtc = new Date().toISOString().split('T')[0]":
@@ -144,14 +125,30 @@ const ALLOWLIST: Record<string, [number, string]> = {
   ],
 }
 
+/**
+ * TQ-G03: the files where `CALENDAR_DAY_START` (midnight as a day start) may
+ * appear in code, each with its reason — everywhere else a day start comes
+ * from the user (`dayBoundaryForUser` / `useDayStart`).
+ */
+const CALENDAR_DAY_START_FILES: Record<string, string> = {
+  'src/lib/opentask-day.ts': 'its definition',
+  'src/core/tasks/rollover-time.ts':
+    '`dayBoundaryForUser`: the server’s one rule (the day start with the task queue on, midnight off)',
+  'src/lib/browser-day-start.ts':
+    '`browserDayStart`: the browser’s one rule (`useDayStart`), the same as `dayBoundaryForUser`, and what the page draws with while the day start is unknown',
+  'src/lib/task-segments.ts':
+    'a null rollover time (the switch off) read as calendar days: attempts, the put-back, the deadlines page’s day',
+  'src/core/tasks/read.ts':
+    'the served quota period of a row whose owner rollover time is null (the switch off)',
+}
 /** The helpers themselves (and `minutesIntoDay`'s home beside the slot pager). */
 const HELPERS = new Set(['src/lib/opentask-day.ts'])
 const MINUTE_HELPERS = new Set(['src/lib/opentask-day.ts', 'src/lib/time-slot-assign.ts'])
 
 const DAY_OP =
-  /\.startOf\(\s*'day'\s*\)|\.endOf\(\s*'day'\s*\)|\.toISODate\(\)|toFormat\(\s*('yyyy-MM-dd'|DECK_DAY_FORMAT|ATTEMPTS_DATE_FORMAT)\s*\)|setHours\(\s*0|toISOString\(\)\s*\.(split\(\s*'T'\s*\)|slice\(\s*0\s*,\s*10\s*\))|toLocaleDateString\(\s*'en-CA'/
+  /\.startOf\(\s*'day'\s*\)|\.endOf\(\s*'day'\s*\)|\.toISODate\(\)|toFormat\(\s*('yyyy-MM-dd'|DECK_DAY_FORMAT|ATTEMPTS_DATE_FORMAT)\s*\)|setHours\(\s*0|toISOString\(\)\s*\.(split\(\s*'T'\s*\)|slice\(\s*0\s*,\s*10\s*\))|toLocaleDateString\(\s*'en-CA'|hasSame\([^)]*'day'\s*\)/
 const READS_CLOCK =
-  /\b(now|localNow|today|userNow)\b|Date\.now\(\)|DateTime\.(now|local)\(\)|new Date\(\)/
+  /\b(now|localNow|today|userNow|nowLocal|nowDt|nowMinute)\b|Date\.now\(\)|DateTime\.(now|local)\(\)|new Date\(\)/
 const INSTANT_TO_LOCAL = /fromJSDate\(|fromMillis\(|\{\s*zone:\s*'utc'\s*\}\)\.setZone\(/
 const MINUTES = /%\s*1440\b|parseHHMM\(\s*(rolloverTime|dayStart|rollover)\b/
 const NOW_VAR =
@@ -246,5 +243,53 @@ describe('TQ-G02: the old day-start fallbacks are gone', () => {
     const sql = read(path.join(root, 'src/core/tasks/read.ts'))
     expect(sql).not.toMatch(/MIN\(start_time\)/)
     expect(sql).not.toMatch(/SELECT morning_time FROM users/)
+  })
+})
+
+describe('TQ-G03: the user chooses the day — no default midnight, on the server or in the browser', () => {
+  const root = process.cwd()
+  const codeLines = (f: string) =>
+    fs
+      .readFileSync(f, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => !(l.startsWith('*') || l.startsWith('//') || l.startsWith('/*')))
+  const srcFiles = files(path.join(root, 'src')).map((f) => path.relative(root, f))
+
+  test('TQ-G03: CALENDAR_DAY_START appears in code only where midnight is the rule (dayBoundaryForUser, useDayStart, the switch-off paths)', () => {
+    const using = srcFiles.filter((f) =>
+      codeLines(path.join(root, f)).some((l) => /\bCALENDAR_DAY_START\b/.test(l)),
+    )
+    expect(using.sort()).toEqual(Object.keys(CALENDAR_DAY_START_FILES).sort())
+    for (const reason of Object.values(CALENDAR_DAY_START_FILES)) {
+      expect(reason.length).toBeGreaterThan(10)
+    }
+  })
+
+  test('TQ-G03b: no function defaults its day start to midnight — every caller passes the user’s', () => {
+    const defaults = srcFiles.flatMap((f) =>
+      codeLines(path.join(root, f))
+        .filter(
+          (l) => /(?<![=!<>])=\s*CALENDAR_DAY_START\s*[,)]/.test(l) && !/^(const|let)\b/.test(l),
+        )
+        .map((l) => `${f}: ${l}`),
+    )
+    expect(defaults).toEqual([])
+  })
+
+  test('TQ-G03c: the browser reads its day start from useDayStart — no client file asks the server helpers or picks midnight', () => {
+    const client = srcFiles.filter(
+      (f) =>
+        (f.startsWith('src/components/') ||
+          f.startsWith('src/hooks/') ||
+          (f.startsWith('src/app/') && !f.startsWith('src/app/api/'))) &&
+        f !== 'src/components/PreferencesProvider.tsx',
+    )
+    const offenders = client.filter((f) =>
+      codeLines(path.join(root, f)).some((l) =>
+        /\b(CALENDAR_DAY_START|dayBoundaryForUser|rolloverTimeForUser)\b|['"]00:00['"]/.test(l),
+      ),
+    )
+    expect(offenders).toEqual([])
   })
 })

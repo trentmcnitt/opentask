@@ -15,7 +15,7 @@ import { useReminders, type ReminderCreateInput } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
-import { useReminderDayStart } from '@/components/PreferencesProvider'
+import { useDayStart } from '@/components/PreferencesProvider'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
 import { usePromptDeepLink } from '@/hooks/useRemindersDeepLinks'
@@ -115,7 +115,7 @@ export function RemindersView({
   searchQuery,
 }: RemindersViewProps) {
   const timezone = useTimezone()
-  const dayStart = useReminderDayStart()
+  const dayStart = useDayStart()
   // Held for the details editor's slot chips (so opening one never waits on a
   // fetch) and for placing a new reminder in its slot at once.
   const { timeSlots, refresh: refreshTimeSlots } = useTimeSlots()
@@ -497,7 +497,7 @@ export function RemindersView({
   /**
    * Creating: the quick add sends only the text, and the SERVER makes it a
    * daily thought in the user's default reminder slot (Settings → Reminder
-   * periods → Default period; `defaultReminderRule` in createTask) — the same
+   * periods → Default reminder period; `defaultReminderRule` in createTask) — the same
    * path an Apple Shortcut's title-only POST takes (Trent, 2026-09-28: "adding
    * a reminder should be just like adding a task"). It is on screen the moment
    * the server answers. Until 2026-09-28 this box used the slot current right

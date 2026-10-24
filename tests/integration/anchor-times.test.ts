@@ -220,7 +220,7 @@ describe('deleting a linked period', () => {
 
     const res = await apiFetch(`/api/time-slots/${midday.id}`, { method: 'DELETE' })
     expect(res.status).toBe(200)
-    expect((await res.json()).data.settings_converted).toEqual(['Morning time'])
+    expect((await res.json()).data.settings_converted).toEqual(['Default task time'])
     let data = await prefs()
     expect(data.morning_slot_id).toBeNull()
     expect(data.morning_time).toBe(midday.start_time)

@@ -6,6 +6,7 @@
  * `planDeadlineTargetMigration`, what `scripts/count-target-migration.ts`
  * prints), applied, and idempotent.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
@@ -177,8 +178,8 @@ describe('TM8-M: the target-model migration', () => {
     // 1 day gives no heads-up), not in a horizon segment.
     vi.setSystemTime(MON_EVENING)
     expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(id)
-    expect(upcomingState(t, tz, MON_EVENING)).toBeNull()
-    expect(segmentState(t, tz, MON_EVENING)).toBeNull()
+    expect(upcomingState(t, tz, MON_EVENING, CALENDAR_DAY_START)).toBeNull()
+    expect(segmentState(t, tz, MON_EVENING, CALENDAR_DAY_START)).toBeNull()
 
     // Tue Oct 13, 1 PM: over target.
     const TUE_1PM = new Date(at('2026-10-13T13:00'))
