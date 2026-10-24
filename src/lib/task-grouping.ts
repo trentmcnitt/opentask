@@ -275,7 +275,7 @@ export function applyNowFolds(
   groups: SortedTaskGroup[],
   timezone: string,
   now: Date,
-  opts: NowOptions = {},
+  opts: NowOptions,
 ): SortedTaskGroup[] {
   return groups.map((g) =>
     g.deck ? g : { ...g, now: splitNow(g.sortedTasks, timezone, now, opts) },
@@ -296,7 +296,7 @@ export function withDeckSection(
   groups: SortedTaskGroup[],
   timezone: string,
   now: Date,
-  opts: NowOptions = {},
+  opts: NowOptions,
 ): SortedTaskGroup[] {
   const decks: Task[] = []
   const projects: SortedTaskGroup[] = []

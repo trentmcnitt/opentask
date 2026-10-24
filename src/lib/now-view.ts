@@ -7,8 +7,10 @@
  * now (`isRelevantNow`) when it is:
  *
  * 1. over target — `isOverdue`, the top bar's red-pill definition;
- * 2. targeted today — its target falls on the user's local today, later
- *    today included (`targetIsToday`, the task segments' own test). (With the
+ * 2. targeted today — its target falls on the user's OpenTask today, later
+ *    today included (`targetIsToday`, the task segments' own test; "Day
+ *    starts at" PR 2, 2026-10-24: with a 3:00 AM day start, at 01:30 "today"
+ *    is still the day before, and a 2:00 AM target is part of it). (With the
  *    task queue off, a deadline's AUTOMATIC target counts once its day comes:
  *    that is when the task starts to nag.)
  * 3. in today's Upcoming heads-up — exactly the Upcoming task segment's rule
@@ -76,19 +78,14 @@ export const NOW_PRIORITY_MIN = 3
 export interface NowOptions {
   queue?: boolean
   /**
-   * The user's rollover time (GET /api/user/preferences): the deadlines
-   * page's safety net starts on the deadline's OpenTask day minus one. Absent:
-   * calendar days.
+   * The user's day boundary (`useDayStart`: the day start with the task
+   * queue on, midnight off): "today", Upcoming's heads-up days, today's decks
+   * and the deadlines page's safety net are all OpenTask days.
    */
-  rolloverTime?: string | null
+  dayStart: string
 }
 
-export function isRelevantNow(
-  task: Task,
-  timezone: string,
-  now: Date,
-  opts: NowOptions = {},
-): boolean {
+export function isRelevantNow(task: Task, timezone: string, now: Date, opts: NowOptions): boolean {
   // Over target first. Belt and braces: A1 (strict) keeps a deck off a task
   // whose automatic target has arrived, but one that nags is relevant, deck
   // or not.
@@ -96,7 +93,7 @@ export function isRelevantNow(
   // The deadlines page (queue on): a target-less deadline task, deck or not,
   // is relevant only in its safety net.
   if (opts.queue && isDeadlinePageTask(task)) {
-    return inSafetyNet(task.deadline_at!, timezone, now, opts.rolloverTime ?? null)
+    return inSafetyNet(task.deadline_at!, timezone, now, opts.dayStart)
   }
   // ON DECK (2026-10-20, A13). Today's decks (and yesterday's leftovers until
   // the rollover strips them, A2) are not relevant in their project group:
@@ -105,7 +102,7 @@ export function isRelevantNow(
   // target: relevant only on its Upcoming heads-up days. With the queue
   // switch on only, like A8 — off, main's behaviour exactly.
   if (opts.queue && task.on_deck_day) {
-    const heads = upcomingState(task, timezone, now)
+    const heads = upcomingState(task, timezone, now, opts.dayStart)
     return heads !== null && heads.state !== 'deferred'
   }
   // Undated High/Urgent — but, with the queue on, not a QUEUED one (A8): the
@@ -114,8 +111,8 @@ export function isRelevantNow(
     if (opts.queue && task.queued_at) return false
     return (task.priority ?? 0) >= NOW_PRIORITY_MIN
   }
-  if (targetIsToday(task.due_at, timezone, now)) return true
-  const heads = upcomingState(task, timezone, now)
+  if (targetIsToday(task.due_at, timezone, now, opts.dayStart)) return true
+  const heads = upcomingState(task, timezone, now, opts.dayStart)
   return heads !== null && heads.state !== 'deferred'
 }
 
@@ -131,7 +128,7 @@ export function splitNow(
   sortedTasks: Task[],
   timezone: string,
   now: Date,
-  opts: NowOptions = {},
+  opts: NowOptions,
 ): NowSplit {
   const relevant: Task[] = []
   const more: Task[] = []
@@ -151,21 +148,16 @@ export function splitNow(
  * review), sorted priority then id (`deckSectionOrder`). Only while Now's folds are on
  * (with Show all, a search or a filter, decks are ordinary rows in their
  * project), and only with the task queue on. Pass the same `opts` as
- * `isRelevantNow` (the queue switch, the rollover time).
+ * `isRelevantNow` (the queue switch, the day start).
  */
-export function inDeckSection(
-  task: Task,
-  timezone: string,
-  now: Date,
-  opts: NowOptions = {},
-): boolean {
-  if (!deckIsToday(task, timezone, now) || isOverdue(task, now)) return false
+export function inDeckSection(task: Task, timezone: string, now: Date, opts: NowOptions): boolean {
+  if (!deckIsToday(task, timezone, now, opts.dayStart) || isOverdue(task, now)) return false
   // THE DEADLINES PAGE (2026-10-22, plan §4): in its safety net a target-less
   // deadline task is the page's — on deck or not — and relevant in its
   // project (`isRelevantNow`), never in the On deck section too. The server's
   // `onDeckToday` leaves it out the same way.
   if (opts.queue && isDeadlinePageTask(task)) {
-    return !inSafetyNet(task.deadline_at!, timezone, now, opts.rolloverTime ?? null)
+    return !inSafetyNet(task.deadline_at!, timezone, now, opts.dayStart)
   }
   return true
 }

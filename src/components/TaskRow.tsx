@@ -49,11 +49,13 @@ import {
   useLabelConfig,
   usePriorityDisplay,
   useTaskQueue,
+  useDayStart,
+  useDayStartKnown,
   useSnoozePreferences,
 } from '@/components/PreferencesProvider'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { LabelBadges } from '@/components/LabelBadges'
-import { computeSnoozeTime } from '@/lib/snooze'
+import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
@@ -268,6 +270,10 @@ export function TaskRow({
   onHighlightDone,
 }: TaskRowProps) {
   const timezone = useTimezone()
+  // The user's day boundary ("Day starts at" PR 2): "Today" / "Tomorrow" on
+  // the row, and the defaults' "tomorrow", are OpenTask days.
+  const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
   const { labelConfig } = useLabelConfig()
   const { priorityDisplay } = usePriorityDisplay()
   const queue = useTaskQueue()
@@ -287,12 +293,27 @@ export function TaskRow({
   // own pointer handlers select, open and long-press the task.
   const openSnoozeMenu = useCallback(() => setSnoozeMenuOpen(true), [])
   const snoozeNow = useCallback(() => {
-    if (!isOverdue) {
+    // Not due yet — or a day-dependent default ("tomorrow") before the
+    // browser knows the user's day start: the menu, not a guess.
+    if (!isOverdue || (!dayKnown && snoozeOptionNeedsDay(defaultSnoozeOption))) {
       setSnoozeMenuOpen(true)
       return
     }
-    onSnooze(task.id, computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots))
-  }, [task.id, defaultSnoozeOption, timezone, morningTime, timeSlots, onSnooze, isOverdue])
+    onSnooze(
+      task.id,
+      computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, dayStart, timeSlots),
+    )
+  }, [
+    task.id,
+    defaultSnoozeOption,
+    timezone,
+    morningTime,
+    dayStart,
+    dayKnown,
+    timeSlots,
+    onSnooze,
+    isOverdue,
+  ])
   const snoozePress = useSimpleLongPress({ onLongPress: openSnoozeMenu, onShortPress: snoozeNow })
 
   /**
@@ -405,7 +426,7 @@ export function TaskRow({
   const queuedOccurrence = queue.enabled ? queuedRepeatOccurrence(task) : null
   const metaSegments = tracked
     ? trackedMetaSegments(task)
-    : buildMetaSegments(task, timezone, isOverdue, queuedOccurrence)
+    : buildMetaSegments(task, timezone, dayStart, isOverdue, queuedOccurrence)
   // ATTEMPTS (spec §7): local days over target, read here with the same rule
   // the server uses, so the row shows "1×" the moment the target passes
   // without a refetch. At 3× the row OFFERS to drop the target (never does it
@@ -794,7 +815,7 @@ export function TaskRow({
               onTargetToday={(t) => onTargetAt?.(t)}
               onTargetAt={(t, at) => onTargetAt?.(t, at)}
               // Faded on a decked row: a target takes it off deck (plan §5).
-              replaces={todayReplaces(task, timezone)}
+              replaces={todayReplaces(task, timezone, dayStart)}
               className={dayControlClasses(dayControlsOnTouch, false)}
               iconClassName="size-4"
             />
@@ -969,6 +990,7 @@ function trackedMetaSegments(task: Task): MetaSegment[] {
 function buildMetaSegments(
   task: Task,
   timezone: string,
+  dayStart: string,
   isOverdue?: boolean,
   queuedOccurrence?: string | null,
 ): MetaSegment[] {
@@ -983,7 +1005,7 @@ function buildMetaSegments(
       text: DateTime.fromISO(queuedOccurrence).setZone(timezone).toFormat('ccc, LLL d, h:mm a'),
     })
   } else if (task.due_at) {
-    const dueParts = formatDueTimeParts(task.due_at, timezone)
+    const dueParts = formatDueTimeParts(task.due_at, timezone, dayStart)
     segments.push({
       text: dueParts.relative,
       className: isOverdue ? 'text-over-target font-medium' : undefined,

@@ -6,6 +6,7 @@
  * words (`deckToastMessage`), the Just now tag for a deck, and the Quick
  * panel's one-request save.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import {
@@ -124,7 +125,7 @@ afterEach(() => {
 
 describe('OD-UI-01: the hold menu days', () => {
   test('Tomorrow, then the next days by name, the check-in Saturday marked', () => {
-    const days = deckMenuDays(TZ, NOW, 6)
+    const days = deckMenuDays(TZ, NOW, CALENDAR_DAY_START, 6)
     expect(days.map((d) => d.label)).toEqual([
       'Tomorrow',
       'Saturday · check-in',
@@ -141,10 +142,10 @@ describe('OD-UI-01: the hold menu days', () => {
   test('check-in tomorrow is marked on Tomorrow; check-in today adds next week’s', () => {
     // Friday Jan 16: tomorrow is Saturday.
     const fri = new Date('2026-01-16T16:00:00Z')
-    expect(deckMenuDays(TZ, fri, 6)[0].label).toBe('Tomorrow · check-in')
+    expect(deckMenuDays(TZ, fri, CALENDAR_DAY_START, 6)[0].label).toBe('Tomorrow · check-in')
     // Saturday Jan 17: the next check-in is a week out.
     const sat = new Date('2026-01-17T16:00:00Z')
-    const days = deckMenuDays(TZ, sat, 6)
+    const days = deckMenuDays(TZ, sat, CALENDAR_DAY_START, 6)
     expect(days).toHaveLength(7)
     expect(days[6]).toEqual({ label: 'Sat Jan 24 · check-in', day: '2026-01-24', disabled: false })
   })
@@ -152,11 +153,11 @@ describe('OD-UI-01: the hold menu days', () => {
   test('between midnight and the rollover, Tomorrow is the next calendar day (A2)', () => {
     // 1 AM Friday Jan 16 Chicago.
     const early = new Date('2026-01-16T07:00:00Z')
-    expect(deckMenuDays(TZ, early, 6)[0].day).toBe('2026-01-17')
+    expect(deckMenuDays(TZ, early, CALENDAR_DAY_START, 6)[0].day).toBe('2026-01-17')
   })
 
   test('the row’s one-tap "On deck tomorrow" sends the menu’s Tomorrow, at any hour', () => {
-    expect(deckTomorrowDay(TZ, NOW)).toBe('2026-01-16')
+    expect(deckTomorrowDay(TZ, NOW, CALENDAR_DAY_START)).toBe('2026-01-16')
     // Just before and after local midnight, a check-in day, and 1 AM (A2).
     for (const iso of [
       '2026-01-16T05:59:00Z',
@@ -165,15 +166,21 @@ describe('OD-UI-01: the hold menu days', () => {
       '2026-01-17T16:00:00Z',
     ]) {
       const at = new Date(iso)
-      expect(deckTomorrowDay(TZ, at), iso).toBe(deckMenuDays(TZ, at, 6)[0].day)
+      expect(deckTomorrowDay(TZ, at, CALENDAR_DAY_START), iso).toBe(
+        deckMenuDays(TZ, at, CALENDAR_DAY_START, 6)[0].day,
+      )
     }
-    expect(deckTomorrowDay(TZ, new Date('2026-01-16T05:59:00Z'))).toBe('2026-01-16')
-    expect(deckTomorrowDay(TZ, new Date('2026-01-16T06:01:00Z'))).toBe('2026-01-17')
+    expect(deckTomorrowDay(TZ, new Date('2026-01-16T05:59:00Z'), CALENDAR_DAY_START)).toBe(
+      '2026-01-16',
+    )
+    expect(deckTomorrowDay(TZ, new Date('2026-01-16T06:01:00Z'), CALENDAR_DAY_START)).toBe(
+      '2026-01-17',
+    )
   })
 
   test('A1: the days after the latest are greyed, with the caption', () => {
     const limit = { latestDay: '2026-01-18', caption: 'deadline reminds from Mon' }
-    const days = deckMenuDays(TZ, NOW, 6, limit)
+    const days = deckMenuDays(TZ, NOW, CALENDAR_DAY_START, 6, limit)
     expect(days.filter((d) => d.disabled).map((d) => d.day)).toEqual([
       '2026-01-19',
       '2026-01-20',
@@ -216,10 +223,10 @@ describe('OD-UI-01: the hold menu days', () => {
 
 describe('OD-UI-02: the tap and the rows that offer it', () => {
   test("a tap takes today's (or a leftover) deck off, else decks for today (A10)", () => {
-    expect(deckTapDay({ on_deck_day: '2026-01-15' }, TZ, NOW)).toBeNull()
-    expect(deckTapDay({ on_deck_day: '2026-01-14' }, TZ, NOW)).toBeNull()
-    expect(deckTapDay({ on_deck_day: '2026-01-17' }, TZ, NOW)).toBeUndefined()
-    expect(deckTapDay({ on_deck_day: null }, TZ, NOW)).toBeUndefined()
+    expect(deckTapDay({ on_deck_day: '2026-01-15' }, TZ, NOW, CALENDAR_DAY_START)).toBeNull()
+    expect(deckTapDay({ on_deck_day: '2026-01-14' }, TZ, NOW, CALENDAR_DAY_START)).toBeNull()
+    expect(deckTapDay({ on_deck_day: '2026-01-17' }, TZ, NOW, CALENDAR_DAY_START)).toBeUndefined()
+    expect(deckTapDay({ on_deck_day: null }, TZ, NOW, CALENDAR_DAY_START)).toBeUndefined()
   })
 
   test('every open task but a reminder or quota (2026-10-22: a picked target too)', () => {
@@ -248,9 +255,13 @@ describe('OD-UI-02b: what a deck or Today replaces (plan §5, the faded buttons)
   })
 
   test('Today replaces a deck', () => {
-    expect(todayReplaces({ on_deck_day: '2026-01-17' }, TZ, NOW)).toBe('On deck Sat')
-    expect(todayReplaces({ on_deck_day: '2026-01-15' }, TZ, NOW)).toBe('On deck today')
-    expect(todayReplaces({ on_deck_day: null }, TZ, NOW)).toBeNull()
+    expect(todayReplaces({ on_deck_day: '2026-01-17' }, TZ, CALENDAR_DAY_START, NOW)).toBe(
+      'On deck Sat',
+    )
+    expect(todayReplaces({ on_deck_day: '2026-01-15' }, TZ, CALENDAR_DAY_START, NOW)).toBe(
+      'On deck today',
+    )
+    expect(todayReplaces({ on_deck_day: null }, TZ, CALENDAR_DAY_START, NOW)).toBeNull()
   })
 })
 
@@ -287,7 +298,12 @@ describe("OD-UI-03: Now's On deck section", () => {
   const sorted = (tasks: Task[]) =>
     sortTaskGroups(buildTaskGroups(tasks, projects, 'project'), 'due_date', false)
   const build = (tasks: Task[]) =>
-    applyNowFolds(withDeckSection(sorted(tasks), TZ, NOW), TZ, NOW, { queue: true })
+    applyNowFolds(
+      withDeckSection(sorted(tasks), TZ, NOW, { dayStart: CALENDAR_DAY_START }),
+      TZ,
+      NOW,
+      { queue: true, dayStart: CALENDAR_DAY_START },
+    )
 
   test("today's decks leave their projects for one section before them, priority then id", () => {
     const low = makeTask({ project_id: 1, on_deck_day: '2026-01-15', priority: 1 })
@@ -316,7 +332,7 @@ describe("OD-UI-03: Now's On deck section", () => {
 
   test('no decks today: no section (no empty chrome), the groups unchanged', () => {
     const groups = sorted([makeTask({ on_deck_day: '2026-01-20' }), makeTask()])
-    expect(withDeckSection(groups, TZ, NOW)).toBe(groups)
+    expect(withDeckSection(groups, TZ, NOW, { dayStart: CALENDAR_DAY_START })).toBe(groups)
   })
 
   test('a deck already over target (its deadline nags) stays in its project', () => {
@@ -326,19 +342,23 @@ describe("OD-UI-03: Now's On deck section", () => {
       target_auto: true,
       deadline_at: local(2, 17),
     })
-    expect(inDeckSection(nagging, TZ, NOW)).toBe(false)
-    expect(inDeckSection(makeTask({ on_deck_day: '2026-01-15' }), TZ, NOW)).toBe(true)
+    expect(inDeckSection(nagging, TZ, NOW, { dayStart: CALENDAR_DAY_START })).toBe(false)
+    expect(
+      inDeckSection(makeTask({ on_deck_day: '2026-01-15' }), TZ, NOW, {
+        dayStart: CALENDAR_DAY_START,
+      }),
+    ).toBe(true)
   })
 
   test('the deadlines page (queue on): a target-less deadline task in its safety net is the page’s, not the section’s', () => {
-    const opts = { queue: true, rolloverTime: null }
+    const opts = { queue: true, dayStart: CALENDAR_DAY_START }
     const inNet = makeTask({ on_deck_day: '2026-01-15', deadline_at: local(1, 17) })
     expect(inDeckSection(inNet, TZ, NOW, opts)).toBe(false)
     // Further out the deck day is the section's (the page suppresses it that day).
     const ahead = makeTask({ on_deck_day: '2026-01-15', deadline_at: local(5, 17) })
     expect(inDeckSection(ahead, TZ, NOW, opts)).toBe(true)
     // Queue off: as before.
-    expect(inDeckSection(inNet, TZ, NOW)).toBe(true)
+    expect(inDeckSection(inNet, TZ, NOW, { dayStart: CALENDAR_DAY_START })).toBe(true)
   })
 })
 
@@ -357,26 +377,36 @@ describe('OD-UI-04: words', () => {
   }
 
   test('a deck, a later deck, an un-deck; nothing changed is null (the summary shows)', () => {
-    expect(deckToastMessage(base, 'Gloves', TZ, NOW)).toBe('On deck for today: “Gloves”')
-    expect(deckToastMessage({ ...base, day: '2026-01-17' }, 'Gloves', TZ, NOW)).toBe(
-      'On deck for Sat Jan 17: “Gloves”',
+    expect(deckToastMessage(base, 'Gloves', TZ, CALENDAR_DAY_START, NOW)).toBe(
+      'On deck for today: “Gloves”',
     )
-    expect(deckToastMessage({ ...base, day: null, decked: 0, undecked: 1 }, 'G', TZ, NOW)).toBe(
-      'Taken off deck: “G”',
-    )
+    expect(
+      deckToastMessage({ ...base, day: '2026-01-17' }, 'Gloves', TZ, CALENDAR_DAY_START, NOW),
+    ).toBe('On deck for Sat Jan 17: “Gloves”')
+    expect(
+      deckToastMessage(
+        { ...base, day: null, decked: 0, undecked: 1 },
+        'G',
+        TZ,
+        CALENDAR_DAY_START,
+        NOW,
+      ),
+    ).toBe('Taken off deck: “G”')
     const refused = {
       ...base,
       decked: 0,
       refused: [{ id: 1, reason: 'deadline_nagging' as const }],
     }
-    expect(deckToastMessage(refused, 'G', TZ, NOW)).toBeNull()
+    expect(deckToastMessage(refused, 'G', TZ, CALENDAR_DAY_START, NOW)).toBeNull()
   })
 
   test('Just now names a deck "On deck", a target "Targeted"', () => {
     const at = new Date(NOW.getTime() - 60_000).toISOString()
     const decked = makeTask({ segment_targeted_at: at, on_deck_day: '2026-01-15' })
-    expect(justAddedTag(decked, +NOW)).toBe('On deck')
-    expect(justAddedTag(makeTask({ segment_targeted_at: at }), +NOW)).toBe('Targeted')
+    expect(justAddedTag(decked, +NOW, undefined, CALENDAR_DAY_START)).toBe('On deck')
+    expect(
+      justAddedTag(makeTask({ segment_targeted_at: at }), +NOW, undefined, CALENDAR_DAY_START),
+    ).toBe('Targeted')
   })
 })
 

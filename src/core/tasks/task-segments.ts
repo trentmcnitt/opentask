@@ -85,8 +85,8 @@ import {
 import { rowToTask, taskColumns, type TaskRow } from './read'
 import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
-import { rolloverTimeForUser } from './rollover-time'
-import { dayStartMoment, latestRollover } from '@/lib/opentask-day'
+import { dayBoundaryForUser, rolloverTimeForUser } from './rollover-time'
+import { dayStartMoment, latestRollover, openTaskDayOf } from '@/lib/opentask-day'
 import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-roster'
 import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
@@ -234,6 +234,10 @@ export function getTaskSegments(
 ): TaskSegment[] {
   const byKind = new Map<SegmentKind, SegmentTask[]>()
   const checkInDay = getCheckInDay(userId)
+  // The user's day boundary ("Day starts at" PR 2): every horizon segment,
+  // Upcoming heads-up day and "considered today" is an OpenTask day — the
+  // day start with the task queue on, midnight off.
+  const dayStart = dayBoundaryForUser(userId)
   const upcoming: (SegmentTask & { target: string })[] = []
   const add = (kind: SegmentKind, entry: SegmentTask) => {
     const list = byKind.get(kind) ?? []
@@ -249,7 +253,7 @@ export function getTaskSegments(
     return queued
   }
   const addUpcoming = (task: Task) => {
-    const heads = upcomingState(task, timezone, now)
+    const heads = upcomingState(task, timezone, now, dayStart)
     if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
   }
   const placeDeadline = deadlinePlacer(userId, timezone, now, deadlineRows, (task, entry) => {
@@ -285,7 +289,7 @@ export function getTaskSegments(
       addUpcoming(task)
       continue
     }
-    const placed = segmentState(task, timezone, now, checkInDay)
+    const placed = segmentState(task, timezone, now, dayStart, checkInDay)
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
   const placeRepeating = (task: Task): void => {
@@ -300,7 +304,7 @@ export function getTaskSegments(
     // horizon segment, the deadline pulling it in — the same truthful, dated
     // degrade as a target-less one-off. Never nowhere.
     if (task.due_at === null && task.deadline_at !== null) {
-      const placed = segmentState(task, timezone, now, checkInDay)
+      const placed = segmentState(task, timezone, now, dayStart, checkInDay)
       if (placed) add(placed.horizon, { task, state: placed.state })
       return
     }
@@ -659,19 +663,23 @@ export function targetTodayTime(userId: number, timezone: string, now = new Date
     },
     slots,
     timezone,
+    dayBoundaryForUser(userId),
     now,
   )
 }
 
 /**
- * Whether `at` may be a segment target: today or later in the user's day. An
- * earlier time TODAY is allowed — it is a commitment for today, over target
- * at once, like Today late in the evening. A past day is refused.
+ * Whether `at` may be a segment target: today or later in the user's day —
+ * OpenTask days (`dayStart`, "Day starts at" PR 2). An earlier time TODAY is
+ * allowed — it is a commitment for today, over target at once, like Today
+ * late in the evening. A past day is refused.
  */
-function assertTargetDay(at: string, timezone: string, now: Date): void {
-  const day = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone).startOf('day')
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
-  if (!day.isValid || day < today) {
+function assertTargetDay(at: string, timezone: string, now: Date, dayStart: string): void {
+  const instant = new Date(at)
+  if (
+    Number.isNaN(instant.getTime()) ||
+    openTaskDayOf(instant, timezone, dayStart) < openTaskDayOf(now, timezone, dayStart)
+  ) {
     throw new ValidationError('The target must be today or later')
   }
 }
@@ -709,7 +717,7 @@ export function targetTasksToday(
 ): { until: string; affected: number; skipped_recurring: number[] } {
   ownOpenTasks(userId, ids)
   const now = new Date()
-  if (at !== undefined) assertTargetDay(at, timezone, now)
+  if (at !== undefined) assertTargetDay(at, timezone, now, dayBoundaryForUser(userId))
   const until = at ?? targetTodayTime(userId, timezone, now)
   const stamp = now.toISOString()
   // Also "considered" (amendment 11): the row finishes on the tap. One bulk

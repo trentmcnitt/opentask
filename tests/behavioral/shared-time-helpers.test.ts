@@ -4,10 +4,11 @@
  * produced — a change here shows up on the Reminders page, the dashboard,
  * Settings, the undo toasts and the AI prompts at once.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, expect, test } from 'vitest'
 import { formatClockTime } from '@/lib/time-utils'
 import { formatMorningTime } from '@/lib/snooze'
-import { calendarDaysBetween } from '@/lib/format-date'
+import { daysBetween } from '@/lib/format-date'
 import { slotGroupKey, slotLabel, UNSLOTTED_KEY, UNSLOTTED_LABEL } from '@/lib/reminder-slots'
 import { sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { quotaPeriodUnit } from '@/lib/track'
@@ -35,21 +36,21 @@ describe('formatClockTime', () => {
   })
 })
 
-describe('calendarDaysBetween', () => {
+describe('daysBetween', () => {
   const tz = 'America/Chicago'
 
   test('counts midnights in the given zone, not 24-hour spans', () => {
     // 23:30 → 00:30 the next local day is one calendar day, one hour apart.
     const a = new Date('2026-01-16T05:30:00Z') // Jan 15 23:30 Chicago
     const b = new Date('2026-01-16T06:30:00Z') // Jan 16 00:30 Chicago
-    expect(calendarDaysBetween(a, b, tz)).toBe(1)
-    expect(calendarDaysBetween(b, a, tz)).toBe(-1)
+    expect(daysBetween(a, b, tz, CALENDAR_DAY_START)).toBe(1)
+    expect(daysBetween(b, a, tz, CALENDAR_DAY_START)).toBe(-1)
   })
 
   test('a DST day is still one day', () => {
     const before = new Date('2026-03-08T06:00:00Z') // Mar 8 00:00 CST
     const after = new Date('2026-03-09T05:00:00Z') // Mar 9 00:00 CDT
-    expect(calendarDaysBetween(before, after, tz)).toBe(1)
+    expect(daysBetween(before, after, tz, CALENDAR_DAY_START)).toBe(1)
   })
 })
 
@@ -66,7 +67,7 @@ describe('reminder slot identity', () => {
 
 describe('slotHasStarted', () => {
   test('an invalid timezone counts as started', () => {
-    expect(slotHasStarted(slot(1, '23:00'), 'Not/AZone', new Date())).toBe(true)
+    expect(slotHasStarted(slot(1, '23:00'), 'Not/AZone', new Date(), CALENDAR_DAY_START)).toBe(true)
   })
 })
 

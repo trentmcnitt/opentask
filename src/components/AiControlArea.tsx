@@ -28,6 +28,7 @@ import { AIStatusModal } from '@/components/AIStatusModal'
 import type { AiMode } from '@/hooks/useAiMode'
 import { useAiSlotState } from '@/hooks/useAiSlotState'
 import { unscoredTasksText } from '@/lib/insights-text'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface AiControlAreaProps {
   mode: AiMode
@@ -112,6 +113,7 @@ export function AiControlArea({
   timezone,
 }: AiControlAreaProps) {
   const isActive = mode !== 'off'
+  const dayStart = useDayStart()
 
   // The status dot beside "AI": the same state and rules as the top bar's
   // AI Status item (useAiSlotState), fetched when the dashboard mounts.
@@ -119,7 +121,11 @@ export function AiControlArea({
   const [aiStatusOpen, setAiStatusOpen] = useState(false)
 
   const insightsFreshnessText = insightsGeneratedAt
-    ? formatRelativeTime(insightsGeneratedAt, undefined, timezone)
+    ? formatRelativeTime(
+        insightsGeneratedAt,
+        timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        dayStart,
+      )
     : null
 
   const handleRefreshAnnotations = useCallback(() => {

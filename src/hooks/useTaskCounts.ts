@@ -9,6 +9,7 @@ import { useMemo } from 'react'
 import type { Task } from '@/types'
 import { countTasks } from '@/lib/task-counts'
 import { applyTaskFilters, type TaskFilterCriteria } from '@/hooks/useFilterState'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface TaskCountsResult {
   overdueCount: number
@@ -24,10 +25,12 @@ interface TaskCountsResult {
  *   counts move when a task crosses its due time, not only when data changes
  */
 export function useTaskCounts(allTasks: Task[], timezone: string, now: Date): TaskCountsResult {
+  // The Today pill's day is the user's OpenTask day ("Day starts at" PR 2).
+  const dayStart = useDayStart()
   return useMemo(() => {
-    const { overdue, today } = countTasks(allTasks, timezone, now)
+    const { overdue, today } = countTasks(allTasks, timezone, dayStart, now)
     return { overdueCount: overdue, todayCount: today }
-  }, [allTasks, timezone, now])
+  }, [allTasks, timezone, dayStart, now])
 }
 
 /**
@@ -62,9 +65,15 @@ export function useDateFacetCounts(
   timezone: string,
   now: Date,
 ): TaskCountsResult {
+  const dayStart = useDayStart()
   return useMemo(() => {
-    const facet = applyTaskFilters(tasks, criteria, { timezone, now, skipGroup: 'dateFilters' })
-    const { overdue, today } = countTasks(facet, timezone, now)
+    const facet = applyTaskFilters(tasks, criteria, {
+      timezone,
+      dayStart,
+      now,
+      skipGroup: 'dateFilters',
+    })
+    const { overdue, today } = countTasks(facet, timezone, dayStart, now)
     return { overdueCount: overdue, todayCount: today }
-  }, [tasks, criteria, timezone, now])
+  }, [tasks, criteria, timezone, dayStart, now])
 }

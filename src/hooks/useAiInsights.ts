@@ -11,6 +11,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { showToast, showAiSuccessToast, showErrorToast } from '@/lib/toast'
 import type { WhatsNextResult } from '@/core/ai/types'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 export interface UseAiInsightsReturn {
   /** taskId -> reason text */
@@ -43,6 +44,7 @@ export interface UseAiInsightsReturn {
  */
 export function useAiInsights(tasks: Task[], enabled = true): UseAiInsightsReturn {
   const timezone = useTimezone()
+  const dayStart = useDayStart()
   const [data, setData] = useState<WhatsNextResult | null>(null)
   const [durationMs, setDurationMs] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -113,7 +115,7 @@ export function useAiInsights(tasks: Task[], enabled = true): UseAiInsightsRetur
 
   const summary = data?.summary || null
   const freshnessText = data?.generated_at
-    ? formatRelativeTime(data.generated_at, undefined, timezone)
+    ? formatRelativeTime(data.generated_at, timezone, dayStart)
     : null
   const hasData = annotationMap.size > 0
 

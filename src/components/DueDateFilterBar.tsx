@@ -11,6 +11,7 @@ import { hasDebtDueDate, isOverdue } from '@/lib/task-counts'
 import { ChipDueBadges, describeChipDueBadges } from '@/components/ChipDueBadges'
 import { useChipInteraction, type ChipState } from '@/hooks/useChipInteraction'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 export type DueDateFilter = 'overdue' | 'soon' | 'today' | 'this_week' | 'later' | 'no_due_date'
 
@@ -105,8 +106,9 @@ export function DueDateFilterBar({
   omitFilters,
   now,
 }: DueDateFilterBarProps) {
+  const dayStart = useDayStart()
   const { filterCounts, todayOverdueCount } = useMemo(() => {
-    const boundaries = getTimezoneDayBoundaries(timezone, now)
+    const boundaries = getTimezoneDayBoundaries(timezone, dayStart, now)
     const counts = new Map<DueDateFilter, number>()
     const todaysTasks: Task[] = []
 
@@ -133,7 +135,7 @@ export function DueDateFilterBar({
     const todayOverdueCount = countChipDueBadges(todaysTasks, now, boundaries).overdue
 
     return { filterCounts, todayOverdueCount }
-  }, [tasks, timezone, now, selectedDateFilters, excludedDateFilters, omitFilters])
+  }, [tasks, timezone, dayStart, now, selectedDateFilters, excludedDateFilters, omitFilters])
 
   const hasActiveFilter = selectedDateFilters.length > 0 || excludedDateFilters.length > 0
   if (filterCounts.length <= 1 && !hasActiveFilter) return null

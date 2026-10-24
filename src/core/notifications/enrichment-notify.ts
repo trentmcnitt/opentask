@@ -69,6 +69,7 @@ import { listTimeSlots } from '@/core/time-slots'
 import { log } from '@/lib/logger'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { deckDayWords } from '@/lib/task-segments'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import { formatRRule } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
 import { JUST_ADDED_WINDOW_MS } from '@/lib/just-added'
@@ -116,9 +117,11 @@ export function buildEnrichedNotificationContent(params: {
   task: Task
   projectName: string
   timezone: string
+  /** The user's day boundary: "Tomorrow 9:00 AM" / "On deck tomorrow" by OpenTask day. */
+  dayStart: string
   slots: TimeSlot[]
 }): { title: string; body: string } {
-  const { task, projectName, timezone, slots } = params
+  const { task, projectName, timezone, dayStart, slots } = params
   const parts: string[] = []
 
   if (task.is_reminder) {
@@ -129,12 +132,12 @@ export function buildEnrichedNotificationContent(params: {
   } else {
     parts.push(`Added to ${projectName}`)
     if (task.due_at) {
-      const due = formatDueTimeParts(task.due_at, timezone)
+      const due = formatDueTimeParts(task.due_at, timezone, dayStart)
       parts.push(due.absolute ? `${due.relative} · ${due.absolute}` : due.relative)
     }
     // On deck (D3): a day with no time — "On deck tomorrow", "On deck Sat Oct 24".
     if (task.on_deck_day) {
-      parts.push(`On deck ${deckDayWords(task.on_deck_day, timezone, new Date())}`)
+      parts.push(`On deck ${deckDayWords(task.on_deck_day, timezone, new Date(), dayStart)}`)
     }
   }
 
@@ -209,6 +212,7 @@ export async function notifyEnrichmentFinished(taskId: number, userId: number): 
     task,
     projectName: project?.name ?? 'Inbox',
     timezone: user.timezone,
+    dayStart: dayBoundaryForUser(userId),
     slots: task.is_reminder ? listTimeSlots(userId) : [],
   })
 

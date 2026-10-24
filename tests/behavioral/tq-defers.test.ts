@@ -10,6 +10,7 @@
  * rollover (6:30) differ, which is what proves the rollover helper is wired.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
@@ -175,7 +176,7 @@ describe('TQ-L: where a sweep lands, for every option', () => {
 
   test('TQ-L08: tomorrow:true (morning_time 8:30) → the 6:30 rollover, marked', () => {
     const t = make({ due_at: at('2026-10-20T15:00') })
-    const until = computeSnoozeTime('tomorrow', tz, '08:30')
+    const until = computeSnoozeTime('tomorrow', tz, '08:30', CALENDAR_DAY_START)
     expect(until).toBe(at('2026-10-21T08:30'))
     sweep([t.id], { until })
     expect(task(t.id).due_at).toBe(at('2026-10-21T06:30'))
@@ -185,7 +186,7 @@ describe('TQ-L: where a sweep lands, for every option', () => {
   test('TQ-L09: a sweep at 23:30, +1h → 00:00 tonight, before the rollover → no mark', () => {
     setClock('2026-10-20T23:30')
     const t = make({ due_at: at('2026-10-20T22:00') })
-    const until = computeSnoozeTime('60', tz, '08:30')
+    const until = computeSnoozeTime('60', tz, '08:30', CALENDAR_DAY_START)
     sweep([t.id], { until })
     expect(task(t.id).due_at).toBe(until)
     expect(task(t.id).queue_mark).toBe(false)
@@ -194,7 +195,7 @@ describe('TQ-L: where a sweep lands, for every option', () => {
   test('TQ-L10: a sweep at 1:00 to "tomorrow" — the rollover is THIS morning 6:30', () => {
     setClock('2026-10-21T01:00')
     const t = make({ due_at: at('2026-10-20T22:00') })
-    sweep([t.id], { until: computeSnoozeTime('tomorrow', tz, '08:30') }) // Oct 22 8:30
+    sweep([t.id], { until: computeSnoozeTime('tomorrow', tz, '08:30', CALENDAR_DAY_START) }) // Oct 22 8:30
     expect(task(t.id).due_at).toBe(at('2026-10-21T06:30'))
     expect(task(t.id).queue_mark).toBe(true)
   })
@@ -202,7 +203,7 @@ describe('TQ-L: where a sweep lands, for every option', () => {
   test('TQ-L11: a sweep at 1:00, +1h → 2:00 → no mark', () => {
     setClock('2026-10-21T01:00')
     const t = make({ due_at: at('2026-10-20T22:00') })
-    sweep([t.id], { until: computeSnoozeTime('60', tz, '08:30') })
+    sweep([t.id], { until: computeSnoozeTime('60', tz, '08:30', CALENDAR_DAY_START) })
     expect(task(t.id).due_at).toBe(at('2026-10-21T02:00'))
     expect(task(t.id).queue_mark).toBe(false)
   })
@@ -210,7 +211,7 @@ describe('TQ-L: where a sweep lands, for every option', () => {
   test('TQ-L12: a sweep at 6:00, +1h → 7:00 lands at 6:30, marked (resolution 12)', () => {
     setClock('2026-10-21T06:00')
     const t = make({ due_at: at('2026-10-21T05:00') })
-    const r = sweep([t.id], { until: computeSnoozeTime('60', tz, '08:30') })
+    const r = sweep([t.id], { until: computeSnoozeTime('60', tz, '08:30', CALENDAR_DAY_START) })
     expect(task(t.id).due_at).toBe(at('2026-10-21T06:30'))
     expect(task(t.id).queue_mark).toBe(true)
     expect(r.summary).toBe('"Task" will move to the Tasks queue at 6:30 AM')
@@ -219,7 +220,7 @@ describe('TQ-L: where a sweep lands, for every option', () => {
   test('TQ-L13: a sweep at 6:31, +1h → 7:31, the next rollover is tomorrow → no mark', () => {
     setClock('2026-10-21T06:31')
     const t = make({ due_at: at('2026-10-21T05:00') })
-    const until = computeSnoozeTime('60', tz, '08:30')
+    const until = computeSnoozeTime('60', tz, '08:30', CALENDAR_DAY_START)
     sweep([t.id], { until })
     expect(task(t.id).due_at).toBe(until)
     expect(task(t.id).queue_mark).toBe(false)

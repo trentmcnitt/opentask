@@ -12,7 +12,7 @@ export interface TaskCounts {
   total: number
   /** due_at in the past. */
   overdue: number
-  /** due_at inside the user's local day (DST-safe boundaries). */
+  /** due_at inside the user's OpenTask day ("Day starts at" PR 2: from the day start to the next). */
   today: number
 }
 
@@ -61,9 +61,11 @@ export function isOverdue(task: CountableTask, now: Date): boolean {
 export function countTasks(
   tasks: CountableTask[],
   timezone: string,
+  /** The user's day boundary (`dayBoundaryForUser` / `useDayStart`): the Today pill's day. */
+  dayStart: string,
   now: Date = new Date(),
 ): TaskCounts {
-  const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(timezone, now)
+  const { todayStart, tomorrowStart } = getTimezoneDayBoundaries(timezone, dayStart, now)
   let overdue = 0
   let today = 0
   for (const t of tasks) {

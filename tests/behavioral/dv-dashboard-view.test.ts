@@ -7,6 +7,7 @@
  * the front door looks identical to an empty day.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { groupBySlot, type TimeSlot } from '@/lib/time-slot-assign'
@@ -37,7 +38,12 @@ function todaysOnly(
   const endOfToday = DateTime.fromJSDate(NOW).setZone(TZ).endOf('day').toJSDate()
   return items.filter((task) => {
     if (!task.due_at && !task.rrule) return true
-    const effective = effectiveDueAt({ ...task, recurrence_mode: 'from_due' }, TZ, NOW)
+    const effective = effectiveDueAt(
+      { ...task, recurrence_mode: 'from_due' },
+      TZ,
+      CALENDAR_DAY_START,
+      NOW,
+    )
     if (!effective) return false
     return effective.getTime() <= endOfToday.getTime()
   })

@@ -10,6 +10,8 @@
  * so it is pure, timezone-driven, and frozen here with `vi.setSystemTime`
  * rather than exercised only through the component.
  */
+import { WEEK_START_DEFAULT } from '@/lib/week-start'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, afterEach, vi } from 'vitest'
 import {
   periodElapsedFraction,
@@ -31,34 +33,82 @@ afterEach(() => {
 describe('periodElapsedFraction', () => {
   test('a day: 0 at local midnight, ~0.5 at noon, close to (but under) 1 late at night', () => {
     // Wed 2026-09-23 America/Chicago. Midnight local is 05:00 UTC (CDT, -5).
-    expect(periodElapsedFraction('DAILY', TZ, new Date('2026-09-23T05:00:00.000Z'))).toBe(0)
-    expect(periodElapsedFraction('DAILY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBeCloseTo(
-      0.5,
-      5,
+    expect(
+      periodElapsedFraction(
+        'DAILY',
+        TZ,
+        new Date('2026-09-23T05:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
+    expect(
+      periodElapsedFraction(
+        'DAILY',
+        TZ,
+        new Date('2026-09-23T17:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBeCloseTo(0.5, 5)
+    const late = periodElapsedFraction(
+      'DAILY',
+      TZ,
+      new Date('2026-09-24T04:59:59.999Z'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )
-    const late = periodElapsedFraction('DAILY', TZ, new Date('2026-09-24T04:59:59.999Z'))
     expect(late).toBeGreaterThan(0.999)
     expect(late).toBeLessThan(1)
   })
 
   test('a week (default Sunday start): 0 at Sunday local midnight, close to 1 just before the next', () => {
     // 2026-09-20 is a Sunday.
-    expect(periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-20T05:00:00.000Z'))).toBe(0)
+    expect(
+      periodElapsedFraction(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-20T05:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
     // Saturday 23:59:59.999 local (2026-09-26), the week's last instant.
-    const saturdayNight = periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-27T04:59:59.999Z'))
+    const saturdayNight = periodElapsedFraction(
+      'WEEKLY',
+      TZ,
+      new Date('2026-09-27T04:59:59.999Z'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(saturdayNight).toBeGreaterThan(0.999)
     expect(saturdayNight).toBeLessThan(1)
     // Midweek (Wed 2026-09-23, noon local) sits partway through, in order.
-    const wed = periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))
+    const wed = periodElapsedFraction(
+      'WEEKLY',
+      TZ,
+      new Date('2026-09-23T17:00:00.000Z'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(wed).toBeGreaterThan(0)
     expect(wed).toBeLessThan(saturdayNight)
     // Sunday 00:00 starts the next week at 0.
-    expect(periodElapsedFraction('WEEKLY', TZ, new Date('2026-09-27T05:00:00.000Z'))).toBe(0)
+    expect(
+      periodElapsedFraction(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-27T05:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
   })
 
   test('a week with a Monday start: 0 at Monday local midnight, close to 1 just before the next Monday', () => {
     // 2026-09-21 is a Monday.
-    const at = (iso: string) => periodElapsedFraction('WEEKLY', TZ, new Date(iso), 'monday')
+    const at = (iso: string) =>
+      periodElapsedFraction('WEEKLY', TZ, new Date(iso), 'monday', CALENDAR_DAY_START)
     expect(at('2026-09-21T05:00:00.000Z')).toBe(0)
     // Sunday 23:59:59.999 local (2026-09-27), the week's last instant.
     const sundayNight = at('2026-09-28T04:59:59.999Z')
@@ -67,18 +117,54 @@ describe('periodElapsedFraction', () => {
   })
 
   test('a month: 0 on the 1st, close to 1 on the last night, resets cleanly across the boundary', () => {
-    expect(periodElapsedFraction('MONTHLY', TZ, new Date('2026-09-01T05:00:00.000Z'))).toBe(0)
+    expect(
+      periodElapsedFraction(
+        'MONTHLY',
+        TZ,
+        new Date('2026-09-01T05:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
     // Sep has 30 days; 23:00 local on the 30th is well into the month.
-    const monthEnd = periodElapsedFraction('MONTHLY', TZ, new Date('2026-10-01T03:00:00.000Z'))
+    const monthEnd = periodElapsedFraction(
+      'MONTHLY',
+      TZ,
+      new Date('2026-10-01T03:00:00.000Z'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(monthEnd).toBeGreaterThan(0.9)
     expect(monthEnd).toBeLessThan(1)
     // One minute later, October has started fresh at 0 — not a continuation.
-    expect(periodElapsedFraction('MONTHLY', TZ, new Date('2026-10-01T05:00:00.000Z'))).toBe(0)
+    expect(
+      periodElapsedFraction(
+        'MONTHLY',
+        TZ,
+        new Date('2026-10-01T05:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
   })
 
   test('a year: 0 on Jan 1, partway through by September', () => {
-    expect(periodElapsedFraction('YEARLY', TZ, new Date('2026-01-01T06:00:00.000Z'))).toBe(0)
-    const sep = periodElapsedFraction('YEARLY', TZ, new Date('2026-09-23T17:00:00.000Z'))
+    expect(
+      periodElapsedFraction(
+        'YEARLY',
+        TZ,
+        new Date('2026-01-01T06:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
+    const sep = periodElapsedFraction(
+      'YEARLY',
+      TZ,
+      new Date('2026-09-23T17:00:00.000Z'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(sep).toBeGreaterThan(0.6)
     expect(sep).toBeLessThan(0.8)
   })
@@ -89,64 +175,170 @@ describe('periodElapsedFraction', () => {
     // hours have elapsed (23 - 2 remain, not 24 - 2): a naive
     // hoursSinceMidnight/24 would say 22/24 ≈ 0.917; the real answer is
     // 21/23 ≈ 0.913 because one clock hour never happened.
-    const at22 = periodElapsedFraction('DAILY', TZ, new Date('2026-03-09T03:00:00.000Z')) // 22:00 CDT
+    const at22 = periodElapsedFraction(
+      'DAILY',
+      TZ,
+      new Date('2026-03-09T03:00:00.000Z'),
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    ) // 22:00 CDT
     expect(at22).toBeCloseTo(21 / 23, 5)
     expect(at22).not.toBeCloseTo(22 / 24, 3)
   })
 
   test('honours the default `now` — a real vi.setSystemTime freeze, not a passed-in clock', () => {
     vi.setSystemTime(new Date('2026-09-23T17:00:00.000Z'))
-    expect(periodElapsedFraction('DAILY', TZ)).toBeCloseTo(0.5, 5)
+    expect(
+      periodElapsedFraction('DAILY', TZ, new Date(), WEEK_START_DEFAULT, CALENDAR_DAY_START),
+    ).toBeCloseTo(0.5, 5)
   })
 })
 
 describe('periodDaysLeft', () => {
   test('a week: Wednesday has 4 days left (Wed, Thu, Fri, Sat), today counted', () => {
     // 2026-09-23 is a Wednesday.
-    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBe(4)
+    expect(
+      periodDaysLeft(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-23T17:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(4)
   })
 
   test('a week: Saturday is the last day (1 left); Sunday starts a fresh 7', () => {
-    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-26T17:00:00.000Z'))).toBe(1)
-    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-27T17:00:00.000Z'))).toBe(7)
+    expect(
+      periodDaysLeft(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-26T17:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(1)
+    expect(
+      periodDaysLeft(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-27T17:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(7)
   })
 
   test('a Monday-start week: Wednesday has 5 days left (Wed, Thu, Fri, Sat, Sun)', () => {
-    expect(periodDaysLeft('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'), 'monday')).toBe(5)
+    expect(
+      periodDaysLeft(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-23T17:00:00.000Z'),
+        'monday',
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(5)
   })
 
   test('a month: the 23rd of a 30-day September has 8 days left', () => {
-    expect(periodDaysLeft('MONTHLY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBe(8)
+    expect(
+      periodDaysLeft(
+        'MONTHLY',
+        TZ,
+        new Date('2026-09-23T17:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(8)
   })
 
   test('the last day of a period has exactly 1 day left, all day', () => {
     // Sep 30, both early morning and late at night — the count moves at
     // midnight, not at the hour the clock happens to read.
-    expect(periodDaysLeft('MONTHLY', TZ, new Date('2026-09-30T06:00:00.000Z'))).toBe(1)
-    expect(periodDaysLeft('MONTHLY', TZ, new Date('2026-10-01T04:00:00.000Z'))).toBe(1)
+    expect(
+      periodDaysLeft(
+        'MONTHLY',
+        TZ,
+        new Date('2026-09-30T06:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(1)
+    expect(
+      periodDaysLeft(
+        'MONTHLY',
+        TZ,
+        new Date('2026-10-01T04:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(1)
   })
 
   test('the first day of a period has every day of it left', () => {
-    expect(periodDaysLeft('MONTHLY', TZ, new Date('2026-09-01T15:00:00.000Z'))).toBe(30)
+    expect(
+      periodDaysLeft(
+        'MONTHLY',
+        TZ,
+        new Date('2026-09-01T15:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(30)
   })
 })
 
 describe('periodTimeLeftText', () => {
   test('a day has no clause — "Today" already says when it ends', () => {
-    expect(periodTimeLeftText('DAILY', TZ, new Date('2026-09-23T05:00:01.000Z'))).toBeNull()
-    expect(periodTimeLeftText('DAILY', TZ, new Date('2026-09-24T04:59:59.999Z'))).toBeNull()
+    expect(
+      periodTimeLeftText(
+        'DAILY',
+        TZ,
+        new Date('2026-09-23T05:00:01.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBeNull()
+    expect(
+      periodTimeLeftText(
+        'DAILY',
+        TZ,
+        new Date('2026-09-24T04:59:59.999Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBeNull()
   })
 
   test('a week or month reads "N days left", pluralised', () => {
-    expect(periodTimeLeftText('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'))).toBe(
-      '4 days left',
-    )
-    expect(periodTimeLeftText('WEEKLY', TZ, new Date('2026-09-23T17:00:00.000Z'), 'monday')).toBe(
-      '5 days left',
-    )
-    expect(periodTimeLeftText('MONTHLY', TZ, new Date('2026-09-30T15:00:00.000Z'))).toBe(
-      '1 day left',
-    )
+    expect(
+      periodTimeLeftText(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-23T17:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe('4 days left')
+    expect(
+      periodTimeLeftText(
+        'WEEKLY',
+        TZ,
+        new Date('2026-09-23T17:00:00.000Z'),
+        'monday',
+        CALENDAR_DAY_START,
+      ),
+    ).toBe('5 days left')
+    expect(
+      periodTimeLeftText(
+        'MONTHLY',
+        TZ,
+        new Date('2026-09-30T15:00:00.000Z'),
+        WEEK_START_DEFAULT,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe('1 day left')
   })
 })
 
@@ -161,7 +353,7 @@ describe('trackSections', () => {
       quota('Taxes', 'FREQ=YEARLY', 0, 1),
       quota('Broccoli', 'FREQ=WEEKLY', 0, 3),
     ]
-    const sections = trackSections(quotas, TZ, NOW)
+    const sections = trackSections(quotas, TZ, NOW, WEEK_START_DEFAULT, CALENDAR_DAY_START)
     expect(sections.map((s) => s.key)).toEqual(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY', 'NONE'])
     expect(sections.map((s) => s.heading)).toEqual([
       'today',
@@ -173,7 +365,7 @@ describe('trackSections', () => {
   })
 
   test('an empty corpus is an empty list of sections', () => {
-    expect(trackSections([], TZ, NOW)).toEqual([])
+    expect(trackSections([], TZ, NOW, WEEK_START_DEFAULT, CALENDAR_DAY_START)).toEqual([])
   })
 
   test('bar fill is partial credit, capped per quota — 3 of 5 pulls the section to 0.6, not more', () => {
@@ -182,13 +374,21 @@ describe('trackSections', () => {
       [quota('Vegetables', 'FREQ=WEEKLY', 3, 5), quota('Overflowed', 'FREQ=WEEKLY', 4, 2)],
       TZ,
       NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )
     // done = min(3,5) + min(4,2) = 3 + 2 = 5; total = 5 + 2 = 7
     expect(section.barFraction).toBeCloseTo(5 / 7, 10)
   })
 
   test('a section is allMet only when every quota in it has reached its target', () => {
-    const [metSection] = trackSections([quota('Done', 'FREQ=DAILY', 2, 2)], TZ, NOW)
+    const [metSection] = trackSections(
+      [quota('Done', 'FREQ=DAILY', 2, 2)],
+      TZ,
+      NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(metSection.allMet).toBe(true)
     expect(metSection.barFraction).toBe(1)
 
@@ -196,12 +396,20 @@ describe('trackSections', () => {
       [quota('Done', 'FREQ=DAILY', 2, 2), quota('Not yet', 'FREQ=DAILY', 0, 1)],
       TZ,
       NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )
     expect(partial.allMet).toBe(false)
   })
 
   test('the no-period section has no clock: no time-left text and no elapsed fraction', () => {
-    const [section] = trackSections([quota('Eggs', null, 0, 1)], TZ, NOW)
+    const [section] = trackSections(
+      [quota('Eggs', null, 0, 1)],
+      TZ,
+      NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(section.freq).toBeNull()
     expect(section.timeLeft).toBeNull()
     expect(section.elapsedFraction).toBeNull()
@@ -210,7 +418,13 @@ describe('trackSections', () => {
 
   test('a dated section carries both halves of the bar description', () => {
     // NOW is noon local — half the day gone — and Walk is 1/2, half done.
-    const [section] = trackSections([quota('Walk', 'FREQ=DAILY', 1, 2)], TZ, NOW)
+    const [section] = trackSections(
+      [quota('Walk', 'FREQ=DAILY', 1, 2)],
+      TZ,
+      NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
+    )
     expect(section.barAriaLabel).toBe('50% done, 50% of the day gone')
   })
 
@@ -219,6 +433,8 @@ describe('trackSections', () => {
       [quota('A', 'FREQ=WEEKLY', 1, 1), quota('B', 'FREQ=WEEKLY', 0, 5)],
       TZ,
       NOW,
+      WEEK_START_DEFAULT,
+      CALENDAR_DAY_START,
     )
     expect(section.summary).toEqual({ count: 2, met: 1 })
   })
