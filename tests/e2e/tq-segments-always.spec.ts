@@ -193,3 +193,80 @@ for (const viewport of VIEWPORTS) {
     })
   })
 }
+
+/**
+ * THE DAY BAR FITS A PHONE (2026-10-24). On real data — five periods of 20-odd
+ * reminders each, every task segment — the bar's thumb-wide minimums pushed
+ * the count beside it 7px off a 375 screen. Six periods of 21 reminders, all
+ * eight segments (the switch on): at 375 and 320 the page never scrolls
+ * sideways and the count is whole and on screen.
+ */
+test('the /reminders day bar fits at 375 and 320 with six full periods and every segment', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  const ids: number[] = []
+  let addedSlot: number | null = null
+  try {
+    // A sixth period (the user has the five defaults).
+    const made = await page.request.post('/api/time-slots', {
+      data: { label: 'Late night', start_time: '22:30' },
+    })
+    expect(made.ok()).toBeTruthy()
+    addedSlot = (await made.json()).data.id as number
+    const slots = (await (await page.request.get('/api/time-slots')).json()).data.time_slots as {
+      start_time: string
+    }[]
+    expect(slots.length).toBeGreaterThanOrEqual(6)
+    for (const slot of slots) {
+      const [h, m] = slot.start_time.split(':').map(Number)
+      const made = await Promise.all(
+        Array.from({ length: 21 }, (_, i) =>
+          create(page, {
+            title: uniqueTitle(`SA fit ${slot.start_time} ${i}`),
+            is_reminder: true,
+            rrule: `FREQ=DAILY;BYHOUR=${h};BYMINUTE=${m}`,
+          }),
+        ),
+      )
+      ids.push(...made)
+    }
+    ids.push(await create(page, { title: uniqueTitle('SA fit daily'), horizon: 'days' }))
+
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 812 })
+      await page.goto('/reminders')
+      const headline = page.locator('[data-reminders-headline]')
+      await expect(headline.locator('[data-day-segment^="tasks:"]')).toHaveCount(ORDER.length)
+      await expect(
+        headline.locator('[data-day-segment]:not([data-day-segment^="tasks:"])'),
+      ).toHaveCount(slots.length)
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      )
+      expect(overflow, `sideways scroll at ${width}`).toBeLessThanOrEqual(0)
+
+      // The count: whole (never clipped) and inside the screen.
+      const count = headline.locator('[data-day-count]')
+      await expect(count).toBeVisible()
+      const box = (await count.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width, `count's right edge at ${width}`).toBeLessThanOrEqual(width)
+      const clipped = await count.evaluate((el) => el.scrollWidth > el.clientWidth)
+      expect(clipped).toBe(false)
+
+      // Every bar on screen too, and none collapsed to nothing.
+      const bars = await headline
+        .locator('[data-day-segment]')
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect()))
+      for (const r of bars) {
+        expect(r.width).toBeGreaterThan(0)
+        expect(r.right).toBeLessThanOrEqual(box.x)
+      }
+    }
+  } finally {
+    await trash(page, ids)
+    if (addedSlot !== null) await page.request.delete(`/api/time-slots/${addedSlot}`)
+  }
+})
