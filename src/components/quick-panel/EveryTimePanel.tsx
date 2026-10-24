@@ -32,7 +32,7 @@ import {
   repeatEndOf,
   ruleWait,
 } from '@/lib/task-segments'
-import { DEADLINE_WORD, TARGET_WORD } from '@/lib/task-model-words'
+import { DEADLINE_WORD, LEAD_WORD, TARGET_WORD } from '@/lib/task-model-words'
 import { HowOftenField } from '@/components/quick-panel/HowOftenField'
 import { EndsField } from '@/components/quick-panel/EndsField'
 import { TimeSelect } from '@/components/quick-panel/TimeSelect'
@@ -658,7 +658,7 @@ function NoTargetRow({
         <span
           className="inline-flex items-center"
           role="group"
-          aria-label="Lead days"
+          aria-label={LEAD_WORD}
           data-every-time-lead
         >
           <button

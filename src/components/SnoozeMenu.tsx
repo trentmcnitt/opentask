@@ -58,7 +58,7 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
 
 /** The menu's Remove target entry (not a snooze option). */
 const REMOVE_TARGET = 'remove-target'
-/** The picker's "Deadline day" (ruling Q8, 2026-10-12). */
+/** The picker's "Morning of the deadline" (ruling Q8, 2026-10-12). */
 const DEADLINE_DAY_OPTION = 'deadline-day'
 
 /** Each option's icon: custom → calendar, Remove target → ✕, else a clock. */
@@ -84,7 +84,7 @@ interface SnoozeMenuProps {
   /** `targetReset(task)`: 'remove' → "Remove target", null → nothing. */
   targetReset?: 'remove' | null
   /**
-   * The task's deadline: while it is ahead the menu offers "Deadline day"
+   * The task's deadline: while it is ahead the menu offers "Morning of the deadline"
    * (ruling Q8 — the morning of its day, or the deadline itself if earlier),
    * and every option stops at it anyway (the server caps, §8.2).
    */

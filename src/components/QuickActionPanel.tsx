@@ -625,7 +625,7 @@ export function QuickActionPanel({
   const showsNoTarget =
     pendingDueAtCleared || deckStaged || (allNoDueDate && !isDateDirty && pendingDueAt === null)
 
-  // The target picker's "Deadline day" (ruling Q8): single task, deadline ahead.
+  // The target picker's "Morning of the deadline" (ruling Q8): single task, deadline ahead.
   const pickerDeadlineDay = isBulkMode
     ? null
     : deadlineDayPick(
