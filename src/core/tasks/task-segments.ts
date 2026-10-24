@@ -176,9 +176,10 @@ function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
 }
 
 /**
- * Today's task segments, in the order the screen walks them (the queue's two
- * panels, days, upcoming, weeks, months, eventually). A segment appears only
- * on a day it has items. Within a horizon segment: priority, then id —
+ * Today's task segments, in the order the screen walks them (`SEGMENT_ORDER`:
+ * the deadlines page, the queue's two panels, days, upcoming, weeks, months,
+ * eventually). A segment appears only on a day it has items — unless the
+ * caller asks for every one (`fill`, the web since 2026-10-24). Within a horizon segment: priority, then id —
  * horizon decides WHETHER a task shows, never where, so acting on one never
  * reorders the rest under the finger (the 09-05 rule). Within Upcoming: the
  * effective target, then id — the order the dates come in. Within a queue
@@ -207,8 +208,21 @@ export function getTaskSegments(
     deckRows = false,
     handledRows = false,
     deadlineRows = false,
+    fill = false,
   }: {
     queuePanels?: boolean
+    /**
+     * EVERY SEGMENT, EVERY DAY (Trent, 2026-10-24: "always show every queue
+     * segment, every day, in fixed positions"; `GET /api/reminders?fill=1`,
+     * the web only). Every kind this caller can draw comes back, in
+     * `SEGMENT_ORDER`, an empty one with no rows: the deadlines page and the
+     * queue's two panels only with the switch on and a caller that draws them
+     * (`deadlineRows`, `queuePanels`), the horizons and Upcoming always.
+     * Display only — which task lands where is the same either way. Without
+     * it (a native build, the day simulator, the golden suite) a segment
+     * appears only on a day it has rows, as before.
+     */
+    fill?: boolean
     /**
      * The deadlines page (2026-10-22): the caller draws the `deadlines`
      * segment and the lead day's Upcoming rows (`GET /api/reminders?deadlines=1`).
@@ -322,8 +336,16 @@ export function getTaskSegments(
       deadlines: deadlineRows && taskQueueEnabled(),
     })
   }
-  return SEGMENT_ORDER.filter((k) => byKind.has(k)).map((kind) => {
-    const tasks = byKind.get(kind)!
+  const queueOn = taskQueueEnabled()
+  const shown = (kind: SegmentKind): boolean => {
+    if (byKind.has(kind)) return true
+    if (!fill) return false
+    if (kind === 'deadlines') return queueOn && deadlineRows
+    if (isQueueKind(kind)) return queueOn && queuePanels
+    return true
+  }
+  return SEGMENT_ORDER.filter(shown).map((kind) => {
+    const tasks = byKind.get(kind) ?? []
     if (kind === 'queue_today' || kind === 'queue_previous') {
       tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
     } else if (kind === 'deadlines') {

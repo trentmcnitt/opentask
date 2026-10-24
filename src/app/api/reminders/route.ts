@@ -41,6 +41,12 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // segment today handled (decked, targeted, done) come back as considered
     // rows with `segment_left`. Without it the segments are as before.
     const handledRows = request.nextUrl.searchParams.get('handled') === '1'
+    // `?fill=1` (2026-10-24, Trent: "always show every queue segment, every
+    // day, in fixed positions"): every segment kind this caller draws comes
+    // back, an empty one with no rows (`fill` in getTaskSegments). The web
+    // sends it; without it (a native build) a segment comes only on a day it
+    // has rows, as before.
+    const fill = request.nextUrl.searchParams.get('fill') === '1'
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)
     const promptsBySlot = getQuotaPromptsBySlot(user.id, user.timezone, now)
@@ -95,6 +101,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         deckRows,
         handledRows,
         deadlineRows,
+        fill,
       }).map((seg) => ({
         horizon: seg.horizon,
         tasks: seg.tasks.map(({ task, state, left, safetyNet, seen }) => ({
