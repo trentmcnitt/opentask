@@ -6523,8 +6523,8 @@ components:
           description: >
             A deadline-anchored repeat's relative target (with `target_time`; see TaskCreate). New
             offsets re-derive this occurrence's target unless it was moved (a moved one is kept,
-            capped at the deadline). The same 400s as on create; `null` only on a target-anchored
-            result.
+            capped at the deadline). The same 400s as on create; on a repeat, `null` only on a
+            target-anchored result (on a one-off, both `null` make the target fixed — below).
 
             On a ONE-OFF with a deadline (2026-10-24): makes its target relative — derived now,
             and again on every later deadline change (a deadline moved before a same-day time
