@@ -2,6 +2,7 @@
  * Pure function tests for the dashboard filter chips' due-today/overdue
  * badges (feat/chip-due-badges, Trent 2026-09-23). No DB, no HTTP.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, afterEach, vi } from 'vitest'
 import { classifyChipDueBadge, countChipDueBadges } from '@/lib/chip-due-badges'
 import { getTimezoneDayBoundaries } from '@/lib/format-date'
@@ -16,7 +17,7 @@ describe('classifyChipDueBadge', () => {
   test('due later today → due_today', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z')) // 6:00 AM CST
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     const badge = classifyChipDueBadge({ due_at: '2025-02-01T18:00:00Z' }, now, boundaries) // noon CST
     expect(badge).toBe('due_today')
   })
@@ -24,7 +25,7 @@ describe('classifyChipDueBadge', () => {
   test('due earlier today (already past) → overdue, not due_today', () => {
     vi.setSystemTime(new Date('2025-02-01T15:00:00Z')) // 9:00 AM CST
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     const badge = classifyChipDueBadge({ due_at: '2025-02-01T12:00:00Z' }, now, boundaries) // 6:00 AM CST
     expect(badge).toBe('overdue')
   })
@@ -32,7 +33,7 @@ describe('classifyChipDueBadge', () => {
   test('due yesterday → overdue', () => {
     vi.setSystemTime(new Date('2025-02-02T12:00:00Z')) // Feb 2, 6:00 AM CST
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     const badge = classifyChipDueBadge({ due_at: '2025-02-01T15:00:00Z' }, now, boundaries) // Feb 1, 9:00 AM CST
     expect(badge).toBe('overdue')
   })
@@ -40,7 +41,7 @@ describe('classifyChipDueBadge', () => {
   test('undated → neither', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     const badge = classifyChipDueBadge({ due_at: null }, now, boundaries)
     expect(badge).toBeNull()
   })
@@ -48,7 +49,7 @@ describe('classifyChipDueBadge', () => {
   test('due later than today (this week) → neither', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z')) // Feb 1, 6:00 AM CST
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     const badge = classifyChipDueBadge({ due_at: '2025-02-03T12:00:00Z' }, now, boundaries) // Feb 3
     expect(badge).toBeNull()
   })
@@ -60,7 +61,7 @@ describe('classifyChipDueBadge', () => {
     test('due after midnight UTC but before midnight Chicago → still due_today', () => {
       vi.setSystemTime(new Date('2025-02-02T05:00:00Z'))
       const now = new Date()
-      const boundaries = getTimezoneDayBoundaries(TZ, now)
+      const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
       // 2025-02-01 11:30 PM CST — UTC date is already Feb 2, Chicago date is still Feb 1.
       const badge = classifyChipDueBadge({ due_at: '2025-02-02T05:30:00Z' }, now, boundaries)
       expect(badge).toBe('due_today')
@@ -69,7 +70,7 @@ describe('classifyChipDueBadge', () => {
     test('due after midnight Chicago → not due_today (it is tomorrow locally)', () => {
       vi.setSystemTime(new Date('2025-02-02T05:00:00Z'))
       const now = new Date()
-      const boundaries = getTimezoneDayBoundaries(TZ, now)
+      const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
       // 2025-02-02 12:30 AM CST — already tomorrow in Chicago.
       const badge = classifyChipDueBadge({ due_at: '2025-02-02T06:30:00Z' }, now, boundaries)
       expect(badge).toBeNull()
@@ -81,7 +82,7 @@ describe('countChipDueBadges', () => {
   test('tallies a mixed list into exclusive due-today and overdue counts', () => {
     vi.setSystemTime(new Date('2025-02-01T15:00:00Z')) // 9:00 AM CST
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     const tasks = [
       { due_at: '2025-02-01T20:00:00Z' }, // 2:00 PM CST — due later today
       { due_at: '2025-02-01T21:00:00Z' }, // 3:00 PM CST — due later today
@@ -96,7 +97,7 @@ describe('countChipDueBadges', () => {
   test('empty list → zero counts', () => {
     vi.setSystemTime(new Date('2025-02-01T12:00:00Z'))
     const now = new Date()
-    const boundaries = getTimezoneDayBoundaries(TZ, now)
+    const boundaries = getTimezoneDayBoundaries(TZ, CALENDAR_DAY_START, now)
     expect(countChipDueBadges([], now, boundaries)).toEqual({ dueToday: 0, overdue: 0 })
   })
 })

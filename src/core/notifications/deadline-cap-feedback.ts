@@ -24,6 +24,7 @@
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { formatSnoozeTarget } from '@/lib/field-labels'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import { APP_URL } from '@/core/notifications/format'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 import {
@@ -38,9 +39,14 @@ export interface DeadlineCapContent {
 }
 
 /** Title and body for a capped snooze. Pure. */
-export function deadlineCapContent(deadlineAt: string, timezone: string): DeadlineCapContent {
+export function deadlineCapContent(
+  deadlineAt: string,
+  timezone: string,
+  /** The user's day boundary: "tomorrow 6:00 PM" by OpenTask day. */
+  dayStart: string,
+): DeadlineCapContent {
   return {
-    title: `Deferred to deadline ${formatSnoozeTarget(deadlineAt, timezone)}`,
+    title: `Deferred to deadline ${formatSnoozeTarget(deadlineAt, timezone, dayStart)}`,
     body: 'A quick defer stops at the deadline',
   }
 }
@@ -82,7 +88,7 @@ export async function sendDeadlineCapFeedback(
     const apns = isApnsConfigured()
     if (!webPush && !apns) return
 
-    const content = deadlineCapContent(deadlineAt, timezone)
+    const content = deadlineCapContent(deadlineAt, timezone, dayBoundaryForUser(userId))
     log.info('notifications', `Deadline cap feedback for user ${userId}: ${content.title}`)
     const sends: Promise<void>[] = []
     if (webPush) {

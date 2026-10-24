@@ -19,6 +19,7 @@
  * Midday 12:00, Afternoon 16:00, Evening 20:30. 03:00 is also the unset
  * default (2026-10-24); several checks pin the contrast with a 07:00 start.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 
@@ -206,7 +207,7 @@ describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () =
     expect(task(q.id)).toMatchObject({ progress_current: 0, completion_count: 1 })
   })
 
-  test('TQ-D05: a daily quota anchored at midnight closes one short period at 03:00, then aligns', () => {
+  test('TQ-D05: a daily quota anchored at midnight keeps its day — it ends at the next 03:00, no short period — then runs 03:00 → 03:00', () => {
     const q = makeAt('2026-01-15T08:00', {
       title: 'Read',
       rrule: 'FREQ=DAILY',
@@ -218,9 +219,27 @@ describe('TQ-D: "Day starts at" 03:00 — the Reminders screen and quotas', () =
       .prepare('UPDATE tasks SET progress_period_start = ? WHERE id = ?')
       .run(new Date(at('2026-01-15T00:00')).toISOString(), q.id)
     expect(task(q.id).progress_period_end).toBe(at('2026-01-16T03:00'))
+    // "Day starts at" PR 2 review: the anchor's DATE (Jan 15) is the period's
+    // identity, so the day in progress runs to the new day start of Jan 16 —
+    // nothing closes early, nothing is a transition.
     clock('2026-01-15T10:00')
+    expect(rolloverTrackedPeriods(new Date(), TEST_USER_ID).rolled).toBe(0)
+    clock('2026-01-16T10:00')
     expect(rolloverTrackedPeriods(new Date(), TEST_USER_ID).rolled).toBe(1)
-    expect(task(q.id).progress_period_start).toBe(new Date(at('2026-01-15T03:00')).toISOString())
+    expect(task(q.id).progress_period_start).toBe(new Date(at('2026-01-16T03:00')).toISOString())
+    expect(
+      getDb()
+        .prepare(
+          'SELECT period_start, period_end, transition FROM progress_periods WHERE task_id = ?',
+        )
+        .all(q.id),
+    ).toEqual([
+      {
+        period_start: new Date(at('2026-01-15T00:00')).toISOString(),
+        period_end: new Date(at('2026-01-16T03:00')).toISOString(),
+        transition: 0,
+      },
+    ])
   })
 })
 
@@ -373,7 +392,7 @@ describe('TQ-D: the web reads the same day (pure)', () => {
     // 03:00: a new day, nothing started before its 07:00 slot.
     expect(slotHasStarted(eveningSlot, tz, local('2026-01-16T03:00'), '03:00')).toBe(false)
     // Midnight (the switch off): as it always was.
-    expect(slotHasStarted(eveningSlot, tz, t0030)).toBe(false)
+    expect(slotHasStarted(eveningSlot, tz, t0030, CALENDAR_DAY_START)).toBe(false)
 
     const groups = [
       { slot: late, reminders: [{ id: 1 }], considered: 0 },
@@ -384,7 +403,7 @@ describe('TQ-D: the web reads the same day (pure)', () => {
     expect(naturalSlotIndex(groups, tz, local('2026-01-16T01:30'), '03:00')).toBe(0) // late night
     expect(naturalSlotIndex(groups, tz, t0030)).toBe(0) // midnight: the 1:00 one ahead → first
     expect(summarizeReminders(groups, tz, t0030, '03:00').waitingSoFar).toBe(1)
-    expect(summarizeReminders(groups, tz, t0030).waitingSoFar).toBe(0)
+    expect(summarizeReminders(groups, tz, t0030, CALENDAR_DAY_START).waitingSoFar).toBe(0)
   })
 
   test("TQ-D13: the dashboard pager walks the day's order — finishing the evening at 00:30 goes to a started slot, not the 1:00 AM one", () => {

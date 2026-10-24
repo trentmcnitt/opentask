@@ -9,6 +9,7 @@
  * exists to prevent, and it only appears once the redesign reduces sweeping.
  */
 
+import { CALENDAR_DAY_START, openTaskDaySpan } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import {
@@ -55,15 +56,17 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-001: a one-off uses due_at directly', () => {
     const t = task({ due_at: localIso(0, 8) })
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 8))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)?.toISOString()).toBe(localIso(0, 8))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 
   /**
    * OC-002: A future one-off is not yet due.
    */
   test('OC-002: a future one-off is not due', () => {
-    expect(isCurrentlyDue(task({ due_at: localIso(0, 18) }), TZ, NOW)).toBe(false)
+    expect(isCurrentlyDue(task({ due_at: localIso(0, 18) }), TZ, CALENDAR_DAY_START, NOW)).toBe(
+      false,
+    )
   })
 
   /**
@@ -72,7 +75,9 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-003: a daily task derives today occurrence from the schedule', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: localIso(-90, 7) })
-    expect(todaysOccurrence(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 7))
+    expect(
+      todaysOccurrence(t, TZ, openTaskDaySpan(NOW, TZ, CALENDAR_DAY_START))?.toISOString(),
+    ).toBe(localIso(0, 7))
   })
 
   /**
@@ -84,8 +89,8 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-004: a daily task with a past due_at has been overdue since then', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: localIso(-90, 7) })
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(-90, 7))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)?.toISOString()).toBe(localIso(-90, 7))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 
   /**
@@ -94,8 +99,8 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-005: a daily task later today is not yet due', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '20:00', due_at: localIso(0, 20) })
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 20))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(false)
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)?.toISOString()).toBe(localIso(0, 20))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(false)
   })
 
   /**
@@ -116,9 +121,9 @@ describe('Read-time occurrence derivation', () => {
       anchor_time: '09:00',
       due_at: localIso(-60, 9),
     })
-    expect(todaysOccurrence(t, TZ, NOW)).toBeNull()
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(-60, 9))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(todaysOccurrence(t, TZ, openTaskDaySpan(NOW, TZ, CALENDAR_DAY_START))).toBeNull()
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)?.toISOString()).toBe(localIso(-60, 9))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 
   /**
@@ -131,8 +136,10 @@ describe('Read-time occurrence derivation', () => {
       anchor_time: '09:00',
       due_at: localIso(-60, 9),
     })
-    expect(todaysOccurrence(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 9))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(
+      todaysOccurrence(t, TZ, openTaskDaySpan(NOW, TZ, CALENDAR_DAY_START))?.toISOString(),
+    ).toBe(localIso(0, 9))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 
   /**
@@ -140,8 +147,8 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-008: a future due_at (snooze) suppresses today occurrence', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: localIso(0, 15) })
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 15))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(false)
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)?.toISOString()).toBe(localIso(0, 15))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(false)
   })
 
   /**
@@ -154,8 +161,8 @@ describe('Read-time occurrence derivation', () => {
   test('OC-009: a snooze that is not honoured leaves the task overdue from the snoozed time', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: localIso(0, 15) })
     const tomorrow = new Date(localIso(1, 10))
-    expect(effectiveDueAt(t, TZ, tomorrow)?.toISOString()).toBe(localIso(0, 15))
-    expect(isCurrentlyDue(t, TZ, tomorrow)).toBe(true)
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, tomorrow)?.toISOString()).toBe(localIso(0, 15))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, tomorrow)).toBe(true)
   })
 
   /**
@@ -170,9 +177,9 @@ describe('Read-time occurrence derivation', () => {
       anchor_time: '07:00',
       due_at: localIso(-5, 7),
     })
-    expect(todaysOccurrence(t, TZ, NOW)).toBeNull()
-    expect(effectiveDueAt(t, TZ, NOW)?.toISOString()).toBe(localIso(-5, 7))
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(todaysOccurrence(t, TZ, openTaskDaySpan(NOW, TZ, CALENDAR_DAY_START))).toBeNull()
+    expect(effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)?.toISOString()).toBe(localIso(-5, 7))
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 
   /**
@@ -181,7 +188,9 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-011: anchor_time supplies time-of-day when BYHOUR is absent', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '06:30', due_at: localIso(-3, 6, 30) })
-    expect(todaysOccurrence(t, TZ, NOW)?.toISOString()).toBe(localIso(0, 6, 30))
+    expect(
+      todaysOccurrence(t, TZ, openTaskDaySpan(NOW, TZ, CALENDAR_DAY_START))?.toISOString(),
+    ).toBe(localIso(0, 6, 30))
   })
 
   /**
@@ -191,7 +200,7 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-012: a recurring task with no due_at still derives an occurrence', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00', due_at: null })
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 
   /**
@@ -200,7 +209,7 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-013: occurrences are derived in the user timezone', () => {
     const t = task({ rrule: 'FREQ=DAILY', anchor_time: '07:00' })
-    const occurrence = todaysOccurrence(t, TZ, NOW)!
+    const occurrence = todaysOccurrence(t, TZ, openTaskDaySpan(NOW, TZ, CALENDAR_DAY_START))!
     expect(DateTime.fromJSDate(occurrence).setZone(TZ).hour).toBe(7)
   })
 
@@ -212,7 +221,7 @@ describe('Read-time occurrence derivation', () => {
    */
   test('OC-014: an unevaluable schedule falls back to due_at instead of going silent', () => {
     const t = task({ rrule: 'FREQ=NONSENSE;BYDAY=ZZ', anchor_time: null, due_at: localIso(-1, 9) })
-    expect(() => effectiveDueAt(t, TZ, NOW)).not.toThrow()
-    expect(isCurrentlyDue(t, TZ, NOW)).toBe(true)
+    expect(() => effectiveDueAt(t, TZ, CALENDAR_DAY_START, NOW)).not.toThrow()
+    expect(isCurrentlyDue(t, TZ, CALENDAR_DAY_START, NOW)).toBe(true)
   })
 })

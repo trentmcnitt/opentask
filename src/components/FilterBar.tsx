@@ -22,6 +22,7 @@ import {
 } from '@/hooks/useFilterState'
 import type { AiMode } from '@/hooks/useAiMode'
 import type { Task, Project } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 /** Solid fill classes for selected signal chips */
 function getSignalSelectedClass(key: string): string {
@@ -195,6 +196,7 @@ export function FilterBar({
   onSignalClick?: (key: string, e: React.MouseEvent) => void
   onSignalLongPress?: (key: string) => void
 }) {
+  const dayStart = useDayStart()
   const hasLabels =
     tasks.some((t) => t.labels.length > 0) || selectedLabels.length > 0 || excludedLabels.length > 0
 
@@ -204,7 +206,7 @@ export function FilterBar({
     // Always show if date filters are actively selected or excluded
     if (selectedDateFilters.length > 0 || excludedDateFilters.length > 0) return true
     if (tasks.length === 0) return false
-    const boundaries = getTimezoneDayBoundaries(timezone, now)
+    const boundaries = getTimezoneDayBoundaries(timezone, dayStart, now)
     const allBuckets = new Set<string>()
     for (const task of tasks) {
       for (const bucket of classifyTaskDueDate(task, now, boundaries)) {
@@ -248,10 +250,15 @@ export function FilterBar({
   const facetTasks = useMemo(() => {
     const result = {} as Record<FilterGroup, Task[]>
     for (const group of FILTER_GROUPS) {
-      result[group] = applyTaskFilters(tasks, filterCriteria, { timezone, now, skipGroup: group })
+      result[group] = applyTaskFilters(tasks, filterCriteria, {
+        timezone,
+        dayStart,
+        now,
+        skipGroup: group,
+      })
     }
     return result
-  }, [tasks, filterCriteria, timezone, now])
+  }, [tasks, filterCriteria, timezone, dayStart, now])
 
   if (tasks.length === 0) return null
 

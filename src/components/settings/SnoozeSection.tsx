@@ -117,7 +117,7 @@ export function SnoozeSection({
             />
             <AnchorTimeRow
               label="Wake time"
-              description="When your day starts (used by AI for time-of-day context)"
+              description="When you wake (used by AI for time-of-day context)"
               target="wake"
               timeSlots={timeSlots}
             />
@@ -133,9 +133,14 @@ export function SnoozeSection({
                 widget updates run all day.
               </p>
             )}
-            {/* Trent, 2026-10-23: one day boundary everywhere, his at 3:00 AM. */}
+            {/* Trent, 2026-10-23: one day boundary everywhere, his at 3:00 AM.
+                "Day starts at" PR 2 (10-24): everything uses it — Today, Upcoming,
+                quota weeks and months, decks, History. The copy covers both
+                directions (the naming convention, opentask-day.ts): before noon
+                the late night keeps the day before; after noon the next day
+                starts early. Midnight is the calendar day. */}
             <DayStartRow
-              description="When a new day begins: today’s reminders and quota prompts, daily quotas, and the task rollover. A time after midnight keeps a late night with the day before."
+              description="When a new day begins — for Today, reminders, quotas, decks and the task rollover. Before noon, a late night counts as the day before; after noon, the next day starts early (at 11 PM, Sunday 11:30 PM is Monday)."
               timeSlots={timeSlots}
             />
           </>

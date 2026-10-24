@@ -25,6 +25,7 @@ import { NextRequest } from 'next/server'
 import { requireAuth, AuthError, extractBearerToken } from '@/core/auth'
 import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
 import { bulkSnooze } from '@/core/tasks'
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import { bulkSnoozeCountSummary, taskQueueFields } from '@/core/tasks/bulk'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
@@ -79,7 +80,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
 
       const slots = listTimeSlots(user.id)
       const morning = getAnchorTimes(user.id, slots).morning.time
-      until = computeSnoozeTime(option, user.timezone, morning, slots)
+      until = computeSnoozeTime(option, user.timezone, morning, dayBoundaryForUser(user.id), slots)
     }
 
     // Which tasks are actually due now (§4.6). A recurring task's due_at
@@ -158,6 +159,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       },
       until,
       timezone: user.timezone,
+      dayStart: dayBoundaryForUser(user.id),
       totalOverdueCount: dueNow.filter((id) => !snoozed.has(id)).length,
       // The task queue: the push's title is the summary line with counts
       // only — never a title on the lock screen.

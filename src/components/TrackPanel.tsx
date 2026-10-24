@@ -39,7 +39,7 @@ import { SlotHairline } from '@/components/reminders/ReminderSlotGroup'
 import { QuotaSelectionBar } from '@/components/QuotaSelectionBar'
 import { useQuotaChipSelection, type QuotaChipSelection } from '@/hooks/useQuotaChipSelection'
 import { usePromptSetup } from '@/components/QuotaPromptField'
-import { useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
+import { useDayStart, useLabelConfig, useWeekStart } from '@/components/PreferencesProvider'
 import { movedPromptConfig, numbersLabel, quotaPeriodRows } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
@@ -486,6 +486,9 @@ export function TrackPanel({
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
   const { weekStart } = useWeekStart()
+  // Periods run on OpenTask dates ("Day starts at" PR 2): "% of the week
+  // gone" and "N days left" turn at the day start.
+  const dayStart = useDayStart()
   const now = useTrackNow()
   const panelRef = useRef<HTMLElement>(null)
   // Selecting chips — the Quotas page only (`useQuotaChipSelection`).
@@ -529,7 +532,7 @@ export function TrackPanel({
   const searching = query.length > 0
   const shown = searching ? lensed.filter((q) => matchesTaskSearch(q, query)) : lensed
 
-  const sections = trackSections(shown, timezone, now, weekStart)
+  const sections = trackSections(shown, timezone, now, weekStart, dayStart)
   // What each cluster's shut header says. Keyed the same way the DOM is (one
   // key per period+label), so a heading and its summary can never be looking
   // at different groups.

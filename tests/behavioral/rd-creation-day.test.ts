@@ -9,6 +9,7 @@
  * Rules that pin their own phase (FREQ=DAILY, BYDAY=SU, BYMONTHDAY=1 at
  * INTERVAL=1) are exactly as before. Every date is LOCAL America/Chicago.
  */
+import { CALENDAR_DAY_START, openTaskDaySpan } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
@@ -161,8 +162,20 @@ describe('RD-CDAY: rules that pin their own phase are exactly as before (regress
     // anchor at, so "is there one today?" is the epoch's answer, as before.
     const row = { rrule: 'FREQ=WEEKLY', anchor_time: null, due_at: null, occurrence_at: null }
     // Jan 1 2020 was a Wednesday.
-    expect(todaysOccurrence(row, tz, new Date(at('2026-10-14T12:00')))).not.toBeNull()
-    expect(todaysOccurrence(row, tz, new Date(at('2026-10-11T12:00')))).toBeNull()
+    expect(
+      todaysOccurrence(
+        row,
+        tz,
+        openTaskDaySpan(new Date(at('2026-10-14T12:00')), tz, CALENDAR_DAY_START),
+      ),
+    ).not.toBeNull()
+    expect(
+      todaysOccurrence(
+        row,
+        tz,
+        openTaskDaySpan(new Date(at('2026-10-11T12:00')), tz, CALENDAR_DAY_START),
+      ),
+    ).toBeNull()
   })
 })
 
@@ -210,7 +223,8 @@ describe('RD-CDAY: every path that sets a rule without a date', () => {
     })
     expect(local(r.due_at)).toBe('2026-10-12T18:00')
     // Its today follows the grid from there: Oct 12, 15, 18.
-    const on = (day: string) => todaysOccurrence(r, tz, new Date(at(`${day}T12:00`)))
+    const on = (day: string) =>
+      todaysOccurrence(r, tz, openTaskDaySpan(new Date(at(`${day}T12:00`)), tz, CALENDAR_DAY_START))
     expect(on('2026-10-13')).toBeNull()
     expect(local(on('2026-10-15'))).toBe('2026-10-15T18:00')
   })

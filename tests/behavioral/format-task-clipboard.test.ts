@@ -6,6 +6,7 @@
  * screen grouping (time buckets or projects) with sort context.
  */
 
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { formatTasksForClipboard, type ClipboardGroup } from '@/lib/format-task'
 import type { Task } from '@/types'
@@ -102,7 +103,7 @@ function makeGroup(
 
 describe('formatTasksForClipboard', () => {
   test('empty groups returns empty string', () => {
-    expect(formatTasksForClipboard([], TIMEZONE)).toBe('')
+    expect(formatTasksForClipboard([], TIMEZONE, CALENDAR_DAY_START)).toBe('')
   })
 
   test('single task with no metadata', () => {
@@ -112,7 +113,7 @@ describe('formatTasksForClipboard', () => {
         tasks: [makeTask({ id: 1, title: 'Clean kitchen' })],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toBe('Today (Soonest First):\nClean kitchen')
   })
 
@@ -129,7 +130,7 @@ describe('formatTasksForClipboard', () => {
         ],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toBe('Tomorrow (Soonest First):\nBuy groceries (Tomorrow 3:00 PM)')
   })
 
@@ -150,7 +151,7 @@ describe('formatTasksForClipboard', () => {
         ],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toContain('Today (Soonest First):')
     expect(result).toContain('Team standup (')
     expect(result).toContain('Daily at 9:00 AM')
@@ -165,7 +166,7 @@ describe('formatTasksForClipboard', () => {
         tasks: [makeTask({ id: 1, title: 'Task A' }), makeTask({ id: 2, title: 'Task B' })],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toBe('Work (Soonest First):\n- Task A\n- Task B')
   })
 
@@ -180,7 +181,7 @@ describe('formatTasksForClipboard', () => {
         tasks: [makeTask({ id: 3, title: 'Buy groceries' })],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     const lines = result.split('\n')
     expect(lines[0]).toBe('Overdue (Soonest First):')
     expect(lines[1]).toBe('- Review PR')
@@ -197,7 +198,7 @@ describe('formatTasksForClipboard', () => {
         tasks: [makeTask({ id: 1, title: 'Task', priority: 0 })],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toBe('Today (Soonest First):\nTask')
   })
 
@@ -213,7 +214,7 @@ describe('formatTasksForClipboard', () => {
         ],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toContain('Low task (Low)')
     expect(result).toContain('Medium task (Medium)')
     expect(result).toContain('High task (High)')
@@ -233,7 +234,7 @@ describe('formatTasksForClipboard', () => {
         ],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toBe('Home (Soonest First):\nBuy groceries (groceries, errands)')
   })
 
@@ -253,7 +254,7 @@ describe('formatTasksForClipboard', () => {
         ],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     const match = result.match(/\((.+)\)$/)
     expect(match).toBeTruthy()
     const parts = match![1].split(', ')
@@ -272,7 +273,7 @@ describe('formatTasksForClipboard', () => {
       }),
       makeGroup({ label: 'Tomorrow', tasks: [] }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toBe('Today (Soonest First):\nOnly task')
   })
 
@@ -290,7 +291,7 @@ describe('formatTasksForClipboard', () => {
         ],
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     expect(result).toContain('Weekly on Friday at 2:00 PM')
   })
 
@@ -304,7 +305,7 @@ describe('formatTasksForClipboard', () => {
           reversed: false,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Today \(Soonest First\):/)
     })
 
@@ -317,7 +318,7 @@ describe('formatTasksForClipboard', () => {
           reversed: true,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Today \(Latest First\):/)
     })
 
@@ -330,7 +331,7 @@ describe('formatTasksForClipboard', () => {
           reversed: false,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Work \(Highest Priority\):/)
     })
 
@@ -343,7 +344,7 @@ describe('formatTasksForClipboard', () => {
           reversed: true,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Work \(Lowest Priority\):/)
     })
 
@@ -356,7 +357,7 @@ describe('formatTasksForClipboard', () => {
           reversed: false,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Home \(A-Z\):/)
     })
 
@@ -369,7 +370,7 @@ describe('formatTasksForClipboard', () => {
           reversed: true,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Home \(Z-A\):/)
     })
 
@@ -382,7 +383,7 @@ describe('formatTasksForClipboard', () => {
           reversed: false,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^No Date \(Newest First\):/)
     })
 
@@ -395,7 +396,7 @@ describe('formatTasksForClipboard', () => {
           reversed: true,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^No Date \(Oldest First\):/)
     })
 
@@ -408,7 +409,7 @@ describe('formatTasksForClipboard', () => {
           reversed: false,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Overdue \(Recently Modified\):/)
     })
 
@@ -421,7 +422,7 @@ describe('formatTasksForClipboard', () => {
           reversed: true,
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toMatch(/^Overdue \(Least Recently Modified\):/)
     })
   })
@@ -441,7 +442,7 @@ describe('formatTasksForClipboard', () => {
         reversed: false,
       }),
     ]
-    const result = formatTasksForClipboard(groups, TIMEZONE)
+    const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
     const lines = result.split('\n')
     expect(lines[0]).toBe('Overdue (Highest Priority):')
     expect(lines[3]).toBe('Today (Soonest First):')
@@ -461,7 +462,7 @@ describe('formatTasksForClipboard', () => {
           ],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       const lines = result.split('\n')
       expect(lines[0]).toBe('Today (Soonest First):')
       expect(lines[1]).toBe('Call insurance company')
@@ -477,7 +478,7 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Long notes task', notes: longNote })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       const lines = result.split('\n')
       expect(lines[2]).toMatch(/^    .{97}\.\.\.$/)
       expect(lines[2].length).toBe(4 + 100) // 4-space indent + 97 chars + "..."
@@ -496,7 +497,7 @@ describe('formatTasksForClipboard', () => {
           ],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toContain('    First line of notes')
       expect(result).not.toContain('Second line')
     })
@@ -508,7 +509,7 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'No notes task' })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toBe('Today (Soonest First):\nNo notes task')
     })
   })
@@ -522,7 +523,7 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Buy groceries', project_id: 1 })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, projectMap)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START, projectMap)
       expect(result).toContain('Buy groceries [Shopping List]')
     })
 
@@ -541,7 +542,7 @@ describe('formatTasksForClipboard', () => {
           ],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, projectMap)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START, projectMap)
       expect(result).toContain('Fix bug [Work] (High)')
     })
 
@@ -553,7 +554,7 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Simple task', project_id: 1 })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, projectMap)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START, projectMap)
       expect(result).toBe('Today (Soonest First):\nSimple task')
     })
 
@@ -564,7 +565,7 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Simple task' })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).toBe('Today (Soonest First):\nSimple task')
     })
   })
@@ -578,7 +579,13 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Fix broken link' })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      const result = formatTasksForClipboard(
+        groups,
+        TIMEZONE,
+        CALENDAR_DAY_START,
+        undefined,
+        annotationMap,
+      )
       const lines = result.split('\n')
       expect(lines[0]).toBe('Overdue (Soonest First):')
       expect(lines[1]).toBe('Fix broken link')
@@ -599,7 +606,13 @@ describe('formatTasksForClipboard', () => {
           ],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      const result = formatTasksForClipboard(
+        groups,
+        TIMEZONE,
+        CALENDAR_DAY_START,
+        undefined,
+        annotationMap,
+      )
       const lines = result.split('\n')
       expect(lines[1]).toBe('Reply to email')
       expect(lines[2]).toBe('    ✨ Quick win — takes 5 minutes')
@@ -617,7 +630,13 @@ describe('formatTasksForClipboard', () => {
           ],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      const result = formatTasksForClipboard(
+        groups,
+        TIMEZONE,
+        CALENDAR_DAY_START,
+        undefined,
+        annotationMap,
+      )
       expect(result).toContain('- Annotated task')
       expect(result).toContain('    ✨ High priority item')
       expect(result).toContain('- Regular task')
@@ -631,7 +650,7 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Simple task' })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE)
+      const result = formatTasksForClipboard(groups, TIMEZONE, CALENDAR_DAY_START)
       expect(result).not.toContain('✨')
     })
 
@@ -643,7 +662,13 @@ describe('formatTasksForClipboard', () => {
           tasks: [makeTask({ id: 1, title: 'Simple task' })],
         }),
       ]
-      const result = formatTasksForClipboard(groups, TIMEZONE, undefined, annotationMap)
+      const result = formatTasksForClipboard(
+        groups,
+        TIMEZONE,
+        CALENDAR_DAY_START,
+        undefined,
+        annotationMap,
+      )
       expect(result).not.toContain('✨')
     })
   })

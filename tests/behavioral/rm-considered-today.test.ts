@@ -7,6 +7,7 @@
  * count, for recurring and one-off reminders alike, and that yesterday's
  * considerations do not leak into today.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { getDb } from '@/core/db'
 import { createTask, markDone, markUndone, updateTask } from '@/core/tasks'
@@ -204,7 +205,12 @@ describe('Reminders considered today', () => {
 
     const groups = getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE)
     // 10:00 local: Early morning has started, Midday has not.
-    const s = summarizeReminders(groups, TEST_TIMEZONE, new Date('2026-01-15T16:00:00Z'))
+    const s = summarizeReminders(
+      groups,
+      TEST_TIMEZONE,
+      new Date('2026-01-15T16:00:00Z'),
+      CALENDAR_DAY_START,
+    )
     expect(s.waitingSoFar).toBe(3) // Early 1, Early 2, Anytime
     expect(s.waitingLater).toBe(1) // Noon
     expect(s.consideredTotal).toBe(1)
@@ -213,7 +219,12 @@ describe('Reminders considered today', () => {
     expect(s.nextUp?.waiting).toBe(1)
 
     // 12:30 local: Midday has started too.
-    const later = summarizeReminders(groups, TEST_TIMEZONE, new Date('2026-01-15T18:30:00Z'))
+    const later = summarizeReminders(
+      groups,
+      TEST_TIMEZONE,
+      new Date('2026-01-15T18:30:00Z'),
+      CALENDAR_DAY_START,
+    )
     expect(later.waitingSoFar).toBe(4)
     expect(later.nextUp).toBeNull()
   })

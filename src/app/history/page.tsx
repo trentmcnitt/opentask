@@ -26,7 +26,8 @@ const BatchUndoDialog = dynamic(() =>
 import { useUndoRedo } from '@/hooks/useUndoRedo'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
-import { useAiFeatureInfo } from '@/components/PreferencesProvider'
+import { useAiFeatureInfo, useDayStart } from '@/components/PreferencesProvider'
+import { openTaskDateSpan, openTaskDayOf } from '@/lib/opentask-day'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -64,6 +65,9 @@ type TabId = 'completions' | 'activity' | 'ai'
 export default function HistoryPage() {
   const { ready } = useRequireSession()
   const timezone = useTimezone()
+  // The user's day boundary ("Day starts at" PR 2): a History day is an
+  // OpenTask day — with a 3:00 AM start, 01:30's completions are the day before's.
+  const dayStart = useDayStart()
   const [tab, setTab] = useState<TabId>('activity')
   const [completions, setCompletions] = useState<CompletionEntry[]>([])
   const [activities, setActivities] = useState<UndoEntry[]>([])
@@ -83,12 +87,12 @@ export default function HistoryPage() {
   }, [])
   const [activityFetchedAt, setActivityFetchedAt] = useState(0)
   const [loading, setLoading] = useState(true)
-  // The Completions tab's day (YYYY-MM-DD), in the account's timezone. null
-  // means "today": it is resolved at render because useTimezone() returns the
-  // browser's zone until the session loads, and a value captured on the first
-  // render would keep that zone's date.
+  // The Completions tab's day (YYYY-MM-DD), an OpenTask date in the account's
+  // timezone. null means "today": it is resolved at render because
+  // useTimezone() returns the browser's zone until the session loads, and a
+  // value captured on the first render would keep that zone's date.
   const [pickedDate, setDate] = useState<string | null>(null)
-  const date = pickedDate ?? DateTime.now().setZone(timezone).toISODate()!
+  const date = pickedDate ?? openTaskDayOf(new Date(), timezone, dayStart)
 
   const fetchActivity = useCallback(async () => {
     setLoading(true)
@@ -113,12 +117,13 @@ export default function HistoryPage() {
       setLoading(true)
       try {
         if (tab === 'completions') {
-          // Ask for the account-timezone day as an instant range. The API's
-          // ?date= filter matches the UTC calendar date, which files an
-          // evening completion west of UTC under the next day.
-          const day = DateTime.fromISO(date, { zone: timezone }).startOf('day')
-          const since = encodeURIComponent(day.toUTC().toISO()!)
-          const until = encodeURIComponent(day.plus({ days: 1 }).toUTC().toISO()!)
+          // Ask for the account-timezone OpenTask day as an instant range, its
+          // day start to the next. The API's ?date= filter matches the UTC
+          // calendar date, which files an evening completion west of UTC
+          // under the next day.
+          const span = openTaskDateSpan(date, timezone, dayStart)
+          const since = encodeURIComponent(span.start.toISOString())
+          const until = encodeURIComponent(span.end.toISOString())
           const res = await fetch(`/api/completions?since=${since}&until=${until}`)
           if (res.ok) {
             const data = await res.json()
@@ -136,7 +141,7 @@ export default function HistoryPage() {
     }
 
     fetchData()
-  }, [ready, tab, date, timezone, fetchActivity])
+  }, [ready, tab, date, timezone, dayStart, fetchActivity])
 
   if (!ready) return <PageLoading />
 
@@ -207,6 +212,7 @@ export default function HistoryPage() {
               loading={loading}
               activities={activities}
               timezone={timezone}
+              dayStart={dayStart}
               onRefresh={fetchActivity}
               now={activityFetchedAt}
             />
@@ -595,7 +601,12 @@ function shouldShowSeparator(prev: UndoEntry, current: UndoEntry, now: number): 
  * - 5–7 days: "Feb 3 3:15 PM"       (date + time)
  * - > 7 days: "Feb 3"               (date only)
  */
-function formatTimeAgoLabel(entry: UndoEntry, now: number, timezone: string): string {
+function formatTimeAgoLabel(
+  entry: UndoEntry,
+  now: number,
+  timezone: string,
+  dayStart: string,
+): string {
   const entryTime = new Date(entry.created_at).getTime()
   const entryDate = new Date(entry.created_at)
   const age = now - entryTime
@@ -621,9 +632,8 @@ function formatTimeAgoLabel(entry: UndoEntry, now: number, timezone: string): st
     return `${formatTime()} (${hours}h ago)`
   }
 
-  // Use precise day boundaries to detect "Yesterday" vs weekday
-  const { todayStart } = getTimezoneDayBoundaries(timezone)
-  const yesterdayStart = new Date(todayStart.getTime() - ONE_DAY)
+  // The OpenTask day boundaries tell "Yesterday" from a weekday
+  const { todayStart, yesterdayStart } = getTimezoneDayBoundaries(timezone, dayStart, new Date(now))
 
   if (entryTime >= yesterdayStart.getTime() && entryTime < todayStart.getTime()) {
     return `Yesterday ${formatTime()}`
@@ -661,12 +671,14 @@ function ActivityTab({
   loading,
   activities,
   timezone,
+  dayStart,
   onRefresh,
   now,
 }: {
   loading: boolean
   activities: UndoEntry[]
   timezone: string
+  dayStart: string
   onRefresh: () => void
   /** Timestamp captured when activities were fetched — used for time-ago separator labels. */
   now: number
@@ -755,7 +767,7 @@ function ActivityTab({
                   <div className="flex items-end gap-2 pt-1.5 pb-4">
                     <div className="border-border/60 h-1.5 flex-1 rounded-bl-md border-b border-l" />
                     <span className="text-muted-foreground/70 translate-y-[5px] text-[11px] leading-none">
-                      {formatTimeAgoLabel(activities[i - 1], now, timezone)}
+                      {formatTimeAgoLabel(activities[i - 1], now, timezone, dayStart)}
                     </span>
                     <div className="border-border/60 h-1.5 flex-1 rounded-br-md border-r border-b" />
                   </div>

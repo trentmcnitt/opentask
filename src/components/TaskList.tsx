@@ -29,8 +29,13 @@ import {
 import { isOverdue } from '@/lib/task-counts'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import { useProjectPreviewCount, useSnoozePreferences } from '@/components/PreferencesProvider'
-import { computeSnoozeTime } from '@/lib/snooze'
+import {
+  useDayStart,
+  useDayStartKnown,
+  useProjectPreviewCount,
+  useSnoozePreferences,
+} from '@/components/PreferencesProvider'
+import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { HorizonValue } from '@/lib/task-segments'
 import { justAddedTag } from '@/lib/just-added'
@@ -283,6 +288,8 @@ export function TaskList({
   // saved `sortOption`/`reversed` only label the dropdown, which New hides.
   const selection = useSelection()
   const timezone = useTimezone()
+  const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
   const isMobile = useIsMobile()
   const { projectPreviewCount } = useProjectPreviewCount()
   // Project groups preview the user's setting; no cap at all while
@@ -369,13 +376,31 @@ export function TaskList({
   const handleSwipeLeft = useCallback(
     (task: Task) => {
       if (isOverdue(task, now)) {
-        const until = computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, timeSlots)
+        // A day-dependent default waits for the user's day start.
+        if (!dayKnown && snoozeOptionNeedsDay(defaultSnoozeOption)) return
+        const until = computeSnoozeTime(
+          defaultSnoozeOption,
+          timezone,
+          morningTime,
+          dayStart,
+          timeSlots,
+        )
         requestSnooze(task, until)
       } else {
         onDoubleClick?.(task)
       }
     },
-    [defaultSnoozeOption, timezone, morningTime, timeSlots, requestSnooze, onDoubleClick, now],
+    [
+      defaultSnoozeOption,
+      timezone,
+      morningTime,
+      dayStart,
+      dayKnown,
+      timeSlots,
+      requestSnooze,
+      onDoubleClick,
+      now,
+    ],
   )
 
   /**
@@ -444,7 +469,7 @@ export function TaskList({
   const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
   const newBadge = (task: Task) =>
-    justAddedSource ? justAddedTag(task, justAddedNow, timezone) : undefined
+    justAddedSource ? justAddedTag(task, justAddedNow, timezone, dayStart) : undefined
 
   /**
    * `inDeck`: a row of Now's On deck section — no "On deck" just-now pill

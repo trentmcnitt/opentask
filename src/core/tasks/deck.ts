@@ -40,7 +40,6 @@ import { getDb } from '@/core/db'
 import { AppError, ValidationError } from '@/core/errors'
 import type { Task } from '@/types'
 import {
-  calendarToday,
   deckDayProblem,
   deckRefusal,
   deckSkip,
@@ -55,7 +54,8 @@ import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
 import { getTargetContext } from './target-context'
 import { taskQueueEnabled } from './task-queue'
 import { deckRolloverTime } from './deck-clear'
-import { rolloverTimeForUser } from './rollover-time'
+import { dayBoundaryForUser, rolloverTimeForUser } from './rollover-time'
+import { openTaskDayOf } from '@/lib/opentask-day'
 
 export interface DeckTasksOptions {
   userId: number
@@ -91,9 +91,12 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
   }
   const now = opts.now ?? new Date()
   if (opts.ids.length === 0) throw new ValidationError('At least one task ID required')
-  const day = opts.day === undefined ? calendarToday(opts.timezone, now) : opts.day
+  // "Today" is the user's OpenTask day ("Day starts at" PR 2): at 01:30 with
+  // a 3:00 AM start, the day that is ending — the late night's deck is Tomorrow.
+  const dayStart = dayBoundaryForUser(opts.userId)
+  const day = opts.day === undefined ? openTaskDayOf(now, opts.timezone, dayStart) : opts.day
   if (day !== null) {
-    const problem = deckDayProblem(day, opts.timezone, now)
+    const problem = deckDayProblem(day, opts.timezone, now, dayStart)
     if (problem) throw new ValidationError(problem)
   }
   const tasks = ownTasks(opts.userId, opts.ids)
@@ -141,7 +144,12 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
       undo: {
         action: 'deck',
         description: (n) =>
-          deckSummary({ ...result, [day === null ? 'undecked' : 'decked']: n }, opts.timezone, now),
+          deckSummary(
+            { ...result, [day === null ? 'undecked' : 'decked']: n },
+            opts.timezone,
+            now,
+            dayStart,
+          ),
       },
     })
     if (day === null) result.undecked = edit.tasksAffected
@@ -154,15 +162,14 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
       cancelPendingEnrichment(eligible)
     }
   }
-  result.summary = deckSummary(result, opts.timezone, now)
+  result.summary = deckSummary(result, opts.timezone, now, dayStart)
   return result
 }
 
 /**
  * TODAY'S DECKS (A13; the On deck section D2 draws, and the slot push's
- * count): the user's own open tasks on deck for the calendar today or an
- * earlier day not yet stripped (A2: the leftovers between midnight and the
- * rollover). Priority, highest first, then id. Belt and braces (A1, strict):
+ * count): the user's own open tasks on deck for today's OpenTask date or an
+ * earlier day not yet stripped (a rollover that has not run yet). Priority, highest first, then id. Belt and braces (A1, strict):
  * a row whose target has ARRIVED is left out — it is nagging, so it is over
  * target on the dashboard, not on deck (the A1 checks keep this from
  * happening; a deck can only meet its deadline's automatic target in the
@@ -177,7 +184,11 @@ export function onDeckToday(userId: number, timezone: string, now: Date = new Da
           AND (due_at IS NULL OR due_at > ?)
         ORDER BY priority DESC, id ASC`,
     )
-    .all(userId, calendarToday(timezone, now), now.toISOString()) as TaskRow[]
+    .all(
+      userId,
+      openTaskDayOf(now, timezone, dayBoundaryForUser(userId)),
+      now.toISOString(),
+    ) as TaskRow[]
   const tasks = rows.map(rowToTask)
   // The deadlines page (2026-10-22, plan §4): in its SAFETY NET a target-less
   // deadline task is on the page, deck or not — never in both places.

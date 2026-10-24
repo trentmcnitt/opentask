@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { DateTime } from 'luxon'
 import {
   formatQuickSelectHeader,
   formatRelativeTime,
@@ -9,6 +8,8 @@ import {
   getDayLabel,
 } from '@/lib/quick-select-dates'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
+import { openTaskDayOf } from '@/lib/opentask-day'
 
 interface UseBulkQuickSelectDateOptions {
   tasks: Task[]
@@ -66,6 +67,8 @@ interface UseBulkQuickSelectDateResult {
 export function computeInitialDisplay(
   tasks: Task[],
   timezone: string,
+  /** The user's day boundary (`useDayStart`): "Today" / "Tomorrow" are OpenTask days. */
+  dayStart: string,
 ): {
   headerText: string
   hasMixedDates: boolean
@@ -102,7 +105,7 @@ export function computeInitialDisplay(
   if (unique.size === 1) {
     const dueAt = dueDates[0]
     return {
-      headerText: formatQuickSelectHeader(dueAt, timezone),
+      headerText: formatQuickSelectHeader(dueAt, timezone, dayStart),
       hasMixedDates: false,
       earliestDueAt: dueAt,
       allSame: true,
@@ -110,15 +113,15 @@ export function computeInitialDisplay(
   }
 
   // Mixed dates - check what parts match
-  const dateTimes = dueDates.map((d) => DateTime.fromISO(d, { zone: timezone }))
   const sortedDueDates = [...dueDates].sort()
   const earliest = sortedDueDates[0]
-  // Check if all are on the same calendar day
-  const allSameDay = dateTimes.every((dt) => dt.hasSame(dateTimes[0], 'day'))
+  // Check if all are on the same (OpenTask) day
+  const days = dueDates.map((d) => openTaskDayOf(new Date(d), timezone, dayStart))
+  const allSameDay = days.every((day) => day === days[0])
 
   if (allSameDay) {
     // Same day, different times: "Today, —" or "Tomorrow, —"
-    const dayLabel = getDayLabel(earliest, timezone)
+    const dayLabel = getDayLabel(earliest, timezone, dayStart)
     const datePart = new Date(earliest).toLocaleDateString('en-US', {
       timeZone: timezone,
       month: 'short',
@@ -145,6 +148,7 @@ export function useBulkQuickSelectDate({
   tasks,
   timezone,
 }: UseBulkQuickSelectDateOptions): UseBulkQuickSelectDateResult {
+  const dayStart = useDayStart()
   const [tick, setTick] = useState(0)
   const [operationType, setOperationType] = useState<OperationType>(null)
   const [deltaMinutes, setDeltaMinutes] = useState(0)
@@ -152,7 +156,10 @@ export function useBulkQuickSelectDate({
   const presetTimeRef = useRef<string | null>(null)
 
   // Compute initial display state from tasks
-  const initialDisplay = useMemo(() => computeInitialDisplay(tasks, timezone), [tasks, timezone])
+  const initialDisplay = useMemo(
+    () => computeInitialDisplay(tasks, timezone, dayStart),
+    [tasks, timezone, dayStart],
+  )
 
   // Auto-refresh relative time every 15 seconds
   useEffect(() => {
@@ -282,14 +289,14 @@ export function useBulkQuickSelectDate({
     }
     if (allSame) {
       return {
-        relativeText: formatRelativeTime(earliestDueAt, now, timezone),
+        relativeText: formatRelativeTime(earliestDueAt, timezone, dayStart, now),
         isPast: new Date(earliestDueAt) < now,
       }
     }
     // Mixed dates - show "Earliest:" prefix so users know it's not all tasks
     const dueDates = tasks.map((t) => t.due_at).filter((d): d is string => d !== null)
     return {
-      relativeText: `Earliest: ${formatRelativeTime(earliestDueAt, now, timezone)}`,
+      relativeText: `Earliest: ${formatRelativeTime(earliestDueAt, timezone, dayStart, now)}`,
       isPast: hasMixedDates && dueDates.some((d) => new Date(d) < now),
     }
   }
@@ -300,8 +307,8 @@ export function useBulkQuickSelectDate({
 
   if (operationType === 'preset' && presetTime) {
     // Show the absolute target time
-    headerText = formatQuickSelectHeader(presetTime, timezone)
-    relativeText = formatRelativeTime(presetTime, now, timezone)
+    headerText = formatQuickSelectHeader(presetTime, timezone, dayStart)
+    relativeText = formatRelativeTime(presetTime, timezone, dayStart, now)
     isPast = new Date(presetTime) < now
   } else if (operationType === 'delta' && deltaMinutes !== 0) {
     // Delta mode: show actual new time if all tasks share the same due date,
@@ -312,9 +319,9 @@ export function useBulkQuickSelectDate({
       // Single task or all tasks have same due date: show the computed new time
       const newTime = new Date(new Date(earliestDueAt).getTime() + deltaMinutes * 60 * 1000)
       const newTimeIso = newTime.toISOString()
-      headerText = formatQuickSelectHeader(newTimeIso, timezone)
+      headerText = formatQuickSelectHeader(newTimeIso, timezone, dayStart)
       // Show relative time only; delta is displayed separately below
-      relativeText = formatRelativeTime(newTimeIso, now, timezone)
+      relativeText = formatRelativeTime(newTimeIso, timezone, dayStart, now)
       isPast = newTime < now
     } else {
       // Mixed dates: show original header with "+Xh from each"

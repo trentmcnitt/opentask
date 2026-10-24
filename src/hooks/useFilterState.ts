@@ -5,6 +5,7 @@ import { getTimezoneDayBoundaries } from '@/lib/format-date'
 import { classifyTaskDueDate, type DueDateFilter } from '@/components/DueDateFilterBar'
 import { filterByLabels } from '@/lib/label-filter'
 import type { Task } from '@/types'
+import { useDayStart } from '@/components/PreferencesProvider'
 
 interface UseFilterStateOptions {
   tasks: Task[]
@@ -43,6 +44,11 @@ export interface TaskFilterCriteria {
 interface ApplyTaskFiltersOptions {
   timezone?: string
   /**
+   * The user's day boundary (`useDayStart`): the Today / Tomorrow chips are
+   * OpenTask days ("Day starts at" PR 2). Read only with `timezone`.
+   */
+  dayStart: string
+  /**
    * The instant the date filters classify against. The dashboard passes its
    * one clock (`useDashboardNow`) so the list, the chips and the pills agree;
    * omitted, it is the current time.
@@ -79,13 +85,14 @@ function filterByPriorities(tasks: Task[], c: TaskFilterCriteria): Task[] {
 function filterByDateFilters(
   tasks: Task[],
   c: TaskFilterCriteria,
-  timezone?: string,
+  timezone: string | undefined,
+  dayStart: string,
   now: Date = new Date(),
 ): Task[] {
   if (!timezone) return tasks
   if (c.selectedDateFilters.length === 0 && c.excludedDateFilters.length === 0) return tasks
   let filtered = tasks
-  const boundaries = getTimezoneDayBoundaries(timezone, now)
+  const boundaries = getTimezoneDayBoundaries(timezone, dayStart, now)
   if (c.selectedDateFilters.length > 0) {
     filtered = filtered.filter((t) => {
       const buckets = classifyTaskDueDate(t, now, boundaries)
@@ -144,14 +151,15 @@ function filterByProjects(tasks: Task[], c: TaskFilterCriteria): Task[] {
 export function applyTaskFilters(
   tasks: Task[],
   criteria: TaskFilterCriteria,
-  options: ApplyTaskFiltersOptions = {},
+  options: ApplyTaskFiltersOptions,
 ): Task[] {
-  const { timezone, now, skipGroup } = options
+  const { timezone, dayStart, now, skipGroup } = options
   let filtered = tasks
   // The label rules are shared with the Quotas page's label chips: src/lib/label-filter.ts.
   if (skipGroup !== 'labels') filtered = filterByLabels(filtered, criteria)
   if (skipGroup !== 'priorities') filtered = filterByPriorities(filtered, criteria)
-  if (skipGroup !== 'dateFilters') filtered = filterByDateFilters(filtered, criteria, timezone, now)
+  if (skipGroup !== 'dateFilters')
+    filtered = filterByDateFilters(filtered, criteria, timezone, dayStart, now)
   if (skipGroup !== 'attributes') filtered = filterByAttributes(filtered, criteria)
   if (skipGroup !== 'projects') filtered = filterByProjects(filtered, criteria)
   return filtered
@@ -174,6 +182,7 @@ export function useFilterState({
   now,
   initialDateFilters,
 }: UseFilterStateOptions) {
+  const dayStart = useDayStart()
   // Include state
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const [selectedPriorities, setSelectedPriorities] = useState<number[]>([])
@@ -365,8 +374,8 @@ export function useFilterState({
   )
 
   const filteredTasks = useMemo(
-    () => applyTaskFilters(tasks, criteria, { timezone, now }),
-    [tasks, criteria, timezone, now],
+    () => applyTaskFilters(tasks, criteria, { timezone, dayStart, now }),
+    [tasks, criteria, timezone, dayStart, now],
   )
 
   // How many include/exclude selections are active across every group — the
