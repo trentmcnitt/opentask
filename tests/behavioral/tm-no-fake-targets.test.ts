@@ -116,7 +116,7 @@ const SCAN_DIRS = ['src/core', 'src/app/api']
 const RESOLVE =
   'its value is `resolveTarget(…, { leads: taskQueueEnabled() })`.auto — with the switch on an automatic target is only ever KEPT (an existing one, unchanged), never turned on'
 const UNDO =
-  'undo/redo write a snapshot back; with the switch on `restoresAutoTarget` (auto-target-fence.ts) skips every snapshot that would write a truthy target_auto'
+  'undo/redo write a snapshot back; with the switch on `withoutAutoTarget` (auto-target-fence.ts) applies every snapshot that would write a truthy target_auto WITHOUT it: due_at / original_due_at NULL, target_auto 0'
 
 /** `file: trimmed line` → [occurrences, reason, gate — a string that must occur in that file]. */
 const ALLOWLIST: Record<string, [number, string, string]> = {
@@ -154,6 +154,12 @@ const ALLOWLIST: Record<string, [number, string, string]> = {
   ],
   "src/core/undo/apply-fields.ts: const FLAG_COLUMNS = new Set(['deadline_nag_off', 'target_auto', 'queue_mark', 'try_tomorrow'])":
     [1, `the undo/redo boolean columns: ${UNDO}`, 'target_auto'],
+  "src/core/undo/auto-target-fence.ts: const DROPPED = ['due_at', 'original_due_at', 'target_auto'] as const":
+    [
+      1,
+      "the undo fence's drop: these columns are written as NULL / 0 in place of a snapshot's automatic target — never 1",
+      'target_auto: false',
+    ],
   "src/core/undo/auto-target-fence.ts: fieldsChanged.includes('target_auto') &&": [
     1,
     'not a write: the undo fence itself, reading whether a snapshot would write target_auto',

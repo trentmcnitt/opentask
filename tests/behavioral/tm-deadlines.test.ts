@@ -893,17 +893,15 @@ describe('DL-F: migration and rollback (switch off at build time)', () => {
     expect(task(trashedAuto.id)).toMatchObject({ due_at: null, target_auto: false })
     expect(task(trashedAuto.id).lead_from).not.toBeNull()
     // The restore's undo would put the automatic target back (its before is
-    // `target_auto: true`): with the switch on it is skipped (2026-10-24,
-    // `auto-target-fence.ts` — nothing writes target_auto = 1), so the task
-    // stays restored on its lead day. Until 10-24 it went back whole.
-    const lead = task(trashedAuto.id).lead_from
+    // `target_auto: true`): with the switch on it is applied WITHOUT it
+    // (2026-10-24, `auto-target-fence.ts` — nothing writes target_auto = 1):
+    // the task goes back to the trash with no target, and the lead day its
+    // before lacked is derived. Until 10-24 it went back whole.
     executeUndo(TEST_USER_ID)
-    expect(task(trashedAuto.id)).toMatchObject({
-      deleted_at: null,
-      due_at: null,
-      target_auto: false,
-      lead_from: lead,
-    })
+    const undone = task(trashedAuto.id)
+    expect(undone.deleted_at).not.toBeNull()
+    expect(undone).toMatchObject({ due_at: null, original_due_at: null, target_auto: false })
+    expect(undone.lead_from).not.toBeNull()
 
     // A later start writes a row with no lead day: it fences that row only.
     const late = make({ deadline_at: at('2026-11-30T17:00') })

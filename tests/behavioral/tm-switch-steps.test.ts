@@ -175,6 +175,10 @@ describe('SW-U: undo and redo never write target_auto = 1 with the switch on', (
     expect(task(t.id)).toMatchObject({ due_at: at('2026-10-22T15:00'), target_auto: false })
     return t
   }
+  /** The clock moves on, so a stamp from the undo itself would show. */
+  function later() {
+    vi.setSystemTime(new Date(at('2026-10-21T11:00')))
+  }
 
   test('SW-U01: switch off — undo puts the automatic target back, redo the pick (as before)', () => {
     const t = pickedOverAuto()
@@ -184,14 +188,24 @@ describe('SW-U: undo and redo never write target_auto = 1 with the switch on', (
     expect(task(t.id)).toMatchObject({ due_at: at('2026-10-22T15:00'), target_auto: false })
   })
 
-  test('SW-U02: switch on — the undo that would restore the automatic target is skipped', () => {
+  test('SW-U02: switch on — the undo applies WITHOUT the automatic target: no target, on the page', () => {
     const t = pickedOverAuto()
+    const setAt = task(t.id).target_set_at
     queue(true)
+    later()
     executeUndo(TEST_USER_ID)
+    const after = task(t.id)
+    // Not a picked target either: no due_at, target_auto 0, target_set_at not stamped.
+    expect(after).toMatchObject({ due_at: null, original_due_at: null, target_auto: false })
+    expect(after.target_set_at).not.toBe(new Date().toISOString())
+    expect([setAt, t.target_set_at]).toContain(after.target_set_at)
+    expect(after.lead_from).not.toBeNull()
+    // Redo puts the pick back (its after has no automatic target).
+    executeRedo(TEST_USER_ID)
     expect(task(t.id)).toMatchObject({ due_at: at('2026-10-22T15:00'), target_auto: false })
   })
 
-  test('SW-U03: switch on — the redo that would restore it is skipped too', () => {
+  test('SW-U03: switch on — the redo that would restore it applies without it too', () => {
     // Switch off: "Back to auto" (clear the picked target) is an entry whose AFTER is automatic.
     const t = pickedOverAuto()
     updateTask({ ...u, taskId: t.id, input: { due_at: null } })
@@ -199,7 +213,25 @@ describe('SW-U: undo and redo never write target_auto = 1 with the switch on', (
     executeUndo(TEST_USER_ID)
     expect(task(t.id)).toMatchObject({ due_at: at('2026-10-22T15:00'), target_auto: false })
     queue(true)
+    later()
     executeRedo(TEST_USER_ID)
-    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-22T15:00'), target_auto: false })
+    expect(task(t.id)).toMatchObject({ due_at: null, original_due_at: null, target_auto: false })
+    expect(task(t.id).lead_from).not.toBeNull()
+  })
+
+  test('SW-U04: switch on — a lead day left NULL by the restore is derived, as the startup step does', () => {
+    const t = pickedOverAuto()
+    // The entry's before predates the deadlines page: no lead day in it.
+    getDb()
+      .prepare(
+        `UPDATE undo_log SET snapshot = json_set(snapshot, '$[0].before_state.lead_from', NULL),
+                fields_changed = json_insert(fields_changed, '$[#]', 'lead_from')
+          WHERE id = (SELECT MAX(id) FROM undo_log)`,
+      )
+      .run()
+    queue(true)
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ due_at: null, target_auto: false })
+    expect(task(t.id).lead_from).not.toBeNull()
   })
 })

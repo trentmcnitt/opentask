@@ -24,9 +24,16 @@ export interface AutoTargetConversion {
   after: Partial<Task>
 }
 
-export function autoTargetToLead(task: Task, now: Date = new Date()): AutoTargetConversion | null {
-  if (!taskQueueEnabled() || !task.target_auto || task.rrule || !task.deadline_at) return null
-  const leadFrom = leadFor(
+/**
+ * The lead day the deadlines page derives for a deadline one-off (`leadFor`,
+ * in the owner's zone and OpenTask day), as `migrateDeadlineLeads` does at
+ * startup. Shared with the undo fence (`auto-target-fence.ts`).
+ */
+export function oneOffLeadFrom(
+  task: Pick<Task, 'user_id' | 'lead_days'> & { deadline_at: string },
+  now: Date = new Date(),
+): string | null {
+  return leadFor(
     {
       rrule: null,
       repeat_anchor: null,
@@ -38,6 +45,11 @@ export function autoTargetToLead(task: Task, now: Date = new Date()): AutoTarget
     getTargetContext(task.user_id).timezone,
     { rolloverTime: rolloverTimeForUser(task.user_id), now },
   )
+}
+
+export function autoTargetToLead(task: Task, now: Date = new Date()): AutoTargetConversion | null {
+  if (!taskQueueEnabled() || !task.target_auto || task.rrule || !task.deadline_at) return null
+  const leadFrom = oneOffLeadFrom({ ...task, deadline_at: task.deadline_at }, now)
   const after: Partial<Task> = {
     due_at: null,
     original_due_at: null,

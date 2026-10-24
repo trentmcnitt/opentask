@@ -9,17 +9,30 @@
  * converted a pre-10-22 automatic target (`autoTargetToLead`: its truthful
  * before is `target_auto: true`), or either side of an entry written with the
  * switch off. `migrateDeadlineLeads` fences the entries that existed when it
- * ran (`rolled_over_at`); this fence covers every entry, whenever written.
+ * ran (`rolled_over_at`); this covers every entry, whenever written.
  *
- * So with the switch on, undo and redo SKIP a snapshot that would write a
- * truthy `target_auto` (the field is in the entry's `fieldsChanged`), exactly
- * as `rolledOverSince` and `periodMoved` skip theirs: the task stays as it is
- * (a reopened task stays open, on its lead day), the rest of the entry still
- * applies, and the entry is marked undone (or redone) as usual — never a
- * throw, which would wedge the stack. Switch off: undo restores it, as before.
+ * So with the switch on, a snapshot that would write a truthy `target_auto`
+ * (the field is in the entry's `fieldsChanged`) is applied WITHOUT the
+ * automatic target (`withoutAutoTarget`): `due_at`, `original_due_at` → NULL
+ * and `target_auto` → 0 are written in place of the snapshot's values, and
+ * every other field is restored as usual — the task comes back done, trashed
+ * or open, exactly as the undo means, with no target. Undo over a dead Undo
+ * (Trent's rule): the user's Undo always does what it says. The dropped
+ * target never becomes a picked one: `target_auto` stays 0, `due_at` NULL,
+ * and `target_set_at` is not stamped (only restored, if the entry holds it).
+ *
+ * A deadline one-off with no target belongs on the deadlines page, so if the
+ * restore leaves it without a lead day (`lead_from` NULL: the snapshot's
+ * before predates the page), it gets the one the page derives (`leadFor`,
+ * via `oneOffLeadFrom`) — the same as the startup step — rather than waiting
+ * for the next restart (`ensureLead`).
+ *
+ * Switch off: undo restores the automatic target, as before.
  */
 
+import type Database from 'better-sqlite3'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
+import { oneOffLeadFrom } from '@/core/tasks/auto-target-lead'
 
 /** Whether applying `state` would write `target_auto = 1` while the switch is on. */
 export function restoresAutoTarget(state: object, fieldsChanged: string[]): boolean {
@@ -28,4 +41,50 @@ export function restoresAutoTarget(state: object, fieldsChanged: string[]): bool
     fieldsChanged.includes('target_auto') &&
     Boolean((state as { target_auto?: unknown }).target_auto)
   )
+}
+
+const DROPPED = ['due_at', 'original_due_at', 'target_auto'] as const
+
+/**
+ * The state and fields to apply: as given, or — when it would restore an
+ * automatic target with the switch on — the same with the target dropped.
+ */
+export function withoutAutoTarget<S extends object>(
+  state: S,
+  fieldsChanged: string[],
+): { state: S; fields: string[]; dropped: boolean } {
+  if (!restoresAutoTarget(state, fieldsChanged)) {
+    return { state, fields: fieldsChanged, dropped: false }
+  }
+  return {
+    state: { ...state, due_at: null, original_due_at: null, target_auto: false },
+    fields: [...new Set([...fieldsChanged, ...DROPPED])],
+    dropped: true,
+  }
+}
+
+interface LeadRow {
+  user_id: number
+  deadline_at: string | null
+  due_at: string | null
+  rrule: string | null
+  lead_from: string | null
+  lead_days: number | null
+  is_reminder: number
+  is_tracked: number
+  progress_target: number
+}
+
+/** After a dropped automatic target: a deadline one-off with no lead day gets one. */
+export function ensureLead(tx: Database.Database, taskId: number, now: Date = new Date()): void {
+  const row = tx
+    .prepare(
+      `SELECT user_id, deadline_at, due_at, rrule, lead_from, lead_days, is_reminder, is_tracked,
+              progress_target FROM tasks WHERE id = ?`,
+    )
+    .get(taskId) as LeadRow | undefined
+  if (!row || !row.deadline_at || row.due_at || row.rrule || row.lead_from) return
+  if (row.is_reminder || row.is_tracked || row.progress_target > 1) return
+  const leadFrom = oneOffLeadFrom({ ...row, deadline_at: row.deadline_at }, now)
+  if (leadFrom) tx.prepare('UPDATE tasks SET lead_from = ? WHERE id = ?').run(leadFrom, taskId)
 }
