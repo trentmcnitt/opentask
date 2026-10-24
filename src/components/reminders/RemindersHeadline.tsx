@@ -68,6 +68,17 @@ export function RemindersHeadline({
   }
 
   const segments = [...summary.started, ...summary.later]
+  // THE BAR FITS, THE COUNT NEVER MOVES (2026-10-24). With every task
+  // segment on the bar every day, five or six periods and eight segments at
+  // their thumb-wide minimum are wider than a phone — the bar pushed the
+  // count off the screen (7px sideways scroll at 375 on real data). So the
+  // count keeps its width, the bar takes what is left (`flex-1 min-w-0`,
+  // measured as a size container), and each segment's minimum is its thumb
+  // width OR its even share of the bar, whichever is smaller (`fitShare`):
+  // with room, nothing changes; without, every segment gives way evenly and
+  // the minimums never add up to more than the bar.
+  const showDivider = taskSegments.length > 0 && segments.length > 0
+  const share = fitShare(segments.length + taskSegments.length, showDivider)
   const dayDone = summary.dayTotal > 0 && summary.consideredTotal >= summary.dayTotal
 
   return (
@@ -103,7 +114,13 @@ export function RemindersHeadline({
             worry about that bar. The hit area is also taller than the 8px bar (padding, cancelled by the
             negative margin) so a thumb can land on it; hover only darkens the
             track a shade, since the fill is the thing to read. */}
-        <div className="-my-1.5 flex w-full gap-[3px]" role="group" aria-label="Go to a period">
+        <div
+          className="-my-1.5 flex min-w-0 flex-1 gap-[3px]"
+          style={{ containerType: 'inline-size' }}
+          role="group"
+          aria-label="Go to a period"
+          data-day-bar
+        >
           {segments.map((g) => {
             const considered = groupConsidered(g)
             const key = slotGroupKey(g)
@@ -115,11 +132,12 @@ export function RemindersHeadline({
                 considered={considered}
                 total={groupWaiting(g) + considered}
                 started={summary.started.includes(g)}
+                share={share}
                 onClick={() => onGoToSlot(key)}
               />
             )
           })}
-          {taskSegments.length > 0 && segments.length > 0 && (
+          {showDivider && (
             <span className="flex items-center self-center">
               <SegmentDivider />
             </span>
@@ -137,13 +155,15 @@ export function RemindersHeadline({
                 started
                 color={segmentColor(segment.horizon)}
                 emptyDone
+                share={share}
                 onClick={() => onGoToSlot(key)}
               />
             )
           })}
         </div>
         <span
-          className="ml-3 shrink-0 text-xs tabular-nums"
+          className="ml-3 shrink-0 text-xs whitespace-nowrap tabular-nums"
+          data-day-count
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={summary.dayTotal}
@@ -173,6 +193,22 @@ export function RemindersHeadline({
 /** How narrow an empty task segment's bar may get when the day bar runs out of room. */
 const EMPTY_SEGMENT_MIN_PX = 12
 
+/** The bar's `gap-[3px]`, and the divider's width with its `mx-1` (`SegmentDivider`). */
+const BAR_GAP_PX = 3
+const DIVIDER_PX = 9
+
+/**
+ * One segment's even share of the day bar (a CSS length, in the bar's own
+ * `cqw` — it is a size container): the bar's width less its gaps and the
+ * divider, over the number of segments. A segment's minimum is never more
+ * than this, so the minimums always add up to no more than the bar.
+ */
+function fitShare(count: number, divider: boolean): string {
+  const children = count + (divider ? 1 : 0)
+  const fixed = Math.max(0, children - 1) * BAR_GAP_PX + (divider ? DIVIDER_PX : 0)
+  return `calc((100cqw - ${fixed}px) / ${Math.max(1, count)})`
+}
+
 /**
  * One segment of the day bar: a slot, or a task segment in its teal. Blue (a
  * task segment: its teal) while still filling, green the moment it's done —
@@ -187,6 +223,7 @@ function DayBarButton({
   started,
   color,
   emptyDone = false,
+  share,
   onClick,
 }: {
   id: string
@@ -197,6 +234,8 @@ function DayBarButton({
   color?: string
   /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
   emptyDone?: boolean
+  /** Its even share of the bar (`fitShare`): the most its minimum may be. */
+  share: string
   onClick: () => void
 }) {
   const done = total > 0 ? considered >= total : emptyDone
@@ -220,9 +259,9 @@ function DayBarButton({
               flexGrow: 0,
               flexShrink: 1,
               flexBasis: MIN_SEGMENT_PX,
-              minWidth: EMPTY_SEGMENT_MIN_PX,
+              minWidth: `min(${EMPTY_SEGMENT_MIN_PX}px, ${share})`,
             }
-          : { flexGrow: total, flexBasis: 0, minWidth: MIN_SEGMENT_PX }
+          : { flexGrow: total, flexBasis: 0, minWidth: `min(${MIN_SEGMENT_PX}px, ${share})` }
       }
       className="group rounded-full py-1.5 focus-visible:outline-none"
     >
