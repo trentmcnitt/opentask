@@ -13,6 +13,7 @@ import { nowUtc } from '@/core/recurrence'
 import { applyFieldsToTask } from './apply-fields'
 import { periodMoved } from './log-action'
 import { rolledOverSince } from './rollover-fence'
+import { restoresAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
 import { applyPromptDefault, applySlotRow, applyUserSettings } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
@@ -51,6 +52,9 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
       // The task queue's rollover changed this task after the entry was
       // written (B5): leave it as the rollover left it (`rollover-fence.ts`).
       if (rolledOverSince(tx, snapshot, entry.createdAt)) continue
+      // The task-queue switch is on and this would put an automatic target
+      // back (`auto-target-fence.ts`): leave the task as it is.
+      if (restoresAutoTarget(snapshot.before_state, entry.fieldsChanged)) continue
       const count = countBefore(tx, snapshot, entry.fieldsChanged)
       applyFieldsToTask(snapshot.task_id, snapshot.before_state, entry.fieldsChanged)
       // A count moved back is logged as the opposite event (`compensate`).

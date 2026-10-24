@@ -892,9 +892,18 @@ describe('DL-F: migration and rollback (switch off at build time)', () => {
     restoreTask({ userId: TEST_USER_ID, taskId: trashedAuto.id })
     expect(task(trashedAuto.id)).toMatchObject({ due_at: null, target_auto: false })
     expect(task(trashedAuto.id).lead_from).not.toBeNull()
-    // One undo puts the reopen back whole (done, the automatic target).
+    // The restore's undo would put the automatic target back (its before is
+    // `target_auto: true`): with the switch on it is skipped (2026-10-24,
+    // `auto-target-fence.ts` — nothing writes target_auto = 1), so the task
+    // stays restored on its lead day. Until 10-24 it went back whole.
+    const lead = task(trashedAuto.id).lead_from
     executeUndo(TEST_USER_ID)
-    expect(task(trashedAuto.id)).toMatchObject({ target_auto: true })
+    expect(task(trashedAuto.id)).toMatchObject({
+      deleted_at: null,
+      due_at: null,
+      target_auto: false,
+      lead_from: lead,
+    })
 
     // A later start writes a row with no lead day: it fences that row only.
     const late = make({ deadline_at: at('2026-11-30T17:00') })
