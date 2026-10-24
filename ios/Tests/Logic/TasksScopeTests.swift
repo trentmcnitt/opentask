@@ -8,6 +8,9 @@ import XCTest
 final class TasksScopeTests: WidgetStoreTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_768_492_800) // 2026-01-15T16:00:00Z
+    /// Midnight in the machine's zone: these cases are about the pages, not
+    /// the day start.
+    private let day = OpenTaskDay.midnight(timeZone: .current)
 
     /// Server order: Inbox, Work, Home, Garden.
     private let projects = [
@@ -38,7 +41,7 @@ final class TasksScopeTests: WidgetStoreTestCase {
     }
 
     private func state(_ tasks: [TaskDTO], projects: [ProjectDTO]? = nil) -> TasksTimeline.ScopeState {
-        TasksTimeline.scopeState(tasks: tasks, projects: projects ?? self.projects, now: now)
+        TasksTimeline.scopeState(tasks: tasks, projects: projects ?? self.projects, now: now, day: day)
     }
 
     // MARK: The over-target list

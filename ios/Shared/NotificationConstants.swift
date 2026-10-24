@@ -287,19 +287,17 @@ func refreshBadgeFromServer() async {
 /// categories already registered (from the cache, or a previous successful
 /// fetch) are left exactly as they are.
 ///
-/// On iOS it also refreshes the snooze pad's preset times (`PadPresetStore`,
-/// from `GET /api/user/preferences` `pad_presets`, 2026-10-21) for the
-/// notification content extension's grid, fetched alongside the slots; each
-/// half fails on its own. iOS only because only the content extension reads
-/// that cache — the watch and the Mac have no snooze grid, so they skip the
-/// extra request. No other launch-time code fetches preferences in the app
-/// process (the label-config readers are the widget and watch processes),
-/// so this is the one preferences GET per launch/foreground.
+/// It also fetches the preferences alongside the slots (each half fails on
+/// its own), for two caches: the day boundary every native "today" runs on
+/// (`DayStartStore`, written by `fetchPreferencesPage()` itself — "Day
+/// starts at" PR 3, on every platform: the iPhone's and the Mac's widgets
+/// and the watch read it), and on iOS the snooze pad's preset times
+/// (`PadPresetStore`, `pad_presets`, 2026-10-21) for the notification
+/// content extension's grid — the watch and the Mac have no snooze grid.
+/// This is the app process's one preferences GET per launch/foreground.
 func refreshSlotActions() async {
     guard APIClient.shared.isConfigured else { return }
-    #if os(iOS)
     async let page = try? APIClient.shared.fetchPreferencesPage()
-    #endif
     let slots = try? await APIClient.shared.fetchTimeSlots()
     if let slots {
         TimeSlotStore.save(slots)
@@ -311,5 +309,9 @@ func refreshSlotActions() async {
     if let presets = await page?.padPresets {
         PadPresetStore.save(presets)
     }
+    #else
+    // Awaited all the same: an `async let` left unawaited is cancelled at the
+    // end of the scope, and its decode is what writes the day boundary.
+    _ = await page
     #endif
 }

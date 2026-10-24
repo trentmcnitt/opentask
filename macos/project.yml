@@ -276,6 +276,7 @@ targets:
       - path: ../ios/WatchShared/WatchQuotaLogic.swift
       - path: ../ios/WatchShared/WatchSlotLogic.swift
       - path: ../ios/WatchShared/WatchWidgetState.swift
+      - path: ../ios/WatchShared/WatchFormatting.swift
       - path: ../ios/Tests/Logic
       - path: ../tests/fixtures/contract
         buildPhase: resources

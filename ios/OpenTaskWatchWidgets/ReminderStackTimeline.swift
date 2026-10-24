@@ -328,9 +328,14 @@ enum ReminderStackTimeline {
         return now >= start && now.timeIntervalSince(start) < 30 * 60
     }
 
-    static func startDate(of group: ReminderGroupDTO, on day: Date) -> Date? {
+    /// When `group`'s slot opens in the OpenTask day `instant` is in ("Day
+    /// starts at" PR 3, `periodOpensAt`): with the day starting at 3:00, a
+    /// 1:00 AM slot opens at the END of the day, after the evening's.
+    static func startDate(
+        of group: ReminderGroupDTO, on instant: Date, day: OpenTaskDay = DayStartStore.current
+    ) -> Date? {
         guard let minutes = group.slot?.startMinutes else { return nil }
-        return date(minutes: minutes, on: day)
+        return day.periodOpensAt(day.openTaskDay(of: instant), startMinutes: minutes)
     }
 
     private static func date(minutes: Int, on day: Date) -> Date? {
@@ -415,6 +420,9 @@ enum ReminderStackTimeline {
     ) -> [Date] {
         let horizon = now.addingTimeInterval(12 * 3600)
         var dates = groups.compactMap { startDate(of: $0, on: now) }
+        // The day start: every slot is "not started" again and the card's
+        // subject resets (the next fetch brings the new day's roster).
+        dates.append(DayStartStore.current.nextRollover(after: now))
         // Filter to the future BEFORE capping: `upNextTasks` is soonest-first,
         // so already-overdue tasks lead the list and would eat the cap.
         dates += WatchSlotLogic.upNextTasks(from: tasks).compactMap(\.dueDate).filter { $0 > now }.prefix(12)
@@ -438,10 +446,10 @@ enum ReminderStackTimeline {
 
     /// When the timeline's `.after` policy should ask for a REAL fetch (as
     /// opposed to `changeDates`, which only re-render cached data):
-    /// whichever comes first of the cadence above and the next slot start —
-    /// a new slot is where the card's subject changes, so it is worth one
-    /// fetch to open it with current data rather than whatever was cached up
-    /// to 20 min earlier.
+    /// whichever comes first of the cadence above, the next slot start and
+    /// the day start — a new slot (or a new day) is where the card's subject
+    /// changes, so it is worth one fetch to open it with current data rather
+    /// than whatever was cached up to 20 min earlier.
     ///
     /// Only the last resort for changes made elsewhere: WidgetKit push
     /// (watchOS 26, `WatchWidgetPushHandler`) and the watch app's own
@@ -451,8 +459,8 @@ enum ReminderStackTimeline {
         let anyOverdue = !WatchSlotLogic.overdueTasks(from: tasks, now: now).isEmpty
         let cadence = now.addingTimeInterval(anyOverdue ? overdueRefreshInterval : calmRefreshInterval)
         // +1s, same as `changeDates`: land just inside the new slot.
-        let nextSlotStart = groups
-            .compactMap { startDate(of: $0, on: now) }
+        let nextSlotStart = (groups.compactMap { startDate(of: $0, on: now) }
+            + [DayStartStore.current.nextRollover(after: now)])
             .map { $0.addingTimeInterval(1) }
             .filter { $0 > now }
             .min()
@@ -469,24 +477,30 @@ enum ReminderStackTimeline {
     /// invalidates it, so tomorrow morning must already be on file tonight);
     /// right now for 3h while anything snoozable is overdue; and 2h from each
     /// upcoming due time in the next day, when it will be.
+    ///
+    /// Days are OpenTask days ("Day starts at" PR 3): each slot runs to the
+    /// next slot in the day's order, and the day's last slot to the day
+    /// start — with 3:00 AM, the evening's window ends at 1:00 AM if a 1:00
+    /// AM slot exists, else at 3:00, not at midnight.
     static func relevantIntervals(
-        groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date
+        groups: [ReminderGroupDTO], tasks: [TaskDTO], now: Date, day: OpenTaskDay = DayStartStore.current
     ) -> [DateInterval] {
         var intervals: [DateInterval] = []
         let slotted = groups.filter { $0.slot != nil && ($0.consideredCount + $0.waitingCount) > 0 }
-        let starts = groups.compactMap { $0.slot?.startMinutes }.sorted()
+        let starts = day.orderedByDay(groups.compactMap { $0.slot?.startMinutes }) { $0 }
+        let today = day.openTaskDay(of: now)
 
         for dayOffset in 0...1 {
-            guard let day = Calendar.current.date(byAdding: .day, value: dayOffset, to: now) else { continue }
+            let date = today.adding(days: dayOffset)
             for group in slotted {
                 // Today: only slots still waiting (a finished slot isn't worth
                 // surfacing). Tomorrow: every slot that had reminders today.
                 if dayOffset == 0 && group.hasNothingWaiting { continue }
-                guard let minutes = group.slot?.startMinutes,
-                      let start = date(minutes: minutes, on: day) else { continue }
-                let nextMinutes = starts.first { $0 > minutes }
-                let end = nextMinutes.flatMap { date(minutes: $0, on: day) }
-                    ?? Calendar.current.startOfDay(for: day).addingTimeInterval(24 * 3600)
+                guard let minutes = group.slot?.startMinutes else { continue }
+                let start = day.periodOpensAt(date, startMinutes: minutes)
+                let nextMinutes = starts.first { day.minutesIntoDay($0) > day.minutesIntoDay(minutes) }
+                let end = nextMinutes.map { day.periodOpensAt(date, startMinutes: $0) }
+                    ?? day.dayStart(of: date.adding(days: 1))
                 guard end > now, end > start else { continue }
                 intervals.append(DateInterval(start: max(start, now), end: end))
             }

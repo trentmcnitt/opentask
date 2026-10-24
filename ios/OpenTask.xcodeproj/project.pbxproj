@@ -12,8 +12,10 @@
 		017812E3F6E013E37B5A85D2 /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
 		017B2AD4779CA5016C0A44BB /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */; };
 		029411004C797D95E55FEF91 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214D7F74FAF79F1D94BCD4B8 /* WebView.swift */; };
+		02DCBE7803EAD9E08B629885 /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */; };
 		03EA0EED0718664A1BF29E0B /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91C682ED4122397787BE5C5 /* PromptDeepLink.swift */; };
 		04D5F48AF04D4A2DECBE8251 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
+		04EB75DE765103068FEE008B /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */; };
 		05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */; };
 		090BDAC92D0ED9521975CE8F /* RowCornerStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ED06548C82290E9B06DF766 /* RowCornerStrip.swift */; };
 		0A155E4978B3662FFF375686 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
@@ -46,6 +48,7 @@
 		26A55E9DA6CDC26283B92798 /* QuotaSegments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9928122A0EB9B27DAD0395F9 /* QuotaSegments.swift */; };
 		279DB126E6C0EC81AE819A21 /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED94027914BC15E39E2469B /* SweepSummary.swift */; };
 		2AC5963DD54A1D95A436110D /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFC9734B17BD64A979BFC41 /* WidgetPushRegistration.swift */; };
+		2ADB78B527680E826ECEF971 /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */; };
 		2B3E674998F009A2213CB0A4 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		2B8635ACDF698F724D100E26 /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
 		2BA83247EF4C7595D9EB9F7A /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD187F0B86DA225EEF35BC1C /* TaskDayProgress.swift */; };
@@ -57,6 +60,7 @@
 		30A04A4C38D5FAF494A37485 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 479167B600656D8A1F161597 /* TargetAge.swift */; };
 		30B390DAF8ECF549A07386B3 /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B303AA099FBF21D29C23EEAA /* ReminderDayProgress.swift */; };
 		322E0D073D55A99C4FB4314F /* WatchFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA310D3214806920A653F67 /* WatchFormatting.swift */; };
+		330C94030E730302AEAF8A60 /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */; };
 		355629C29D6E350718288BE6 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B38C9B52B08A3A90460BB365 /* WidgetKit.framework */; };
 		367EEA68FADA85088354EB99 /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD187F0B86DA225EEF35BC1C /* TaskDayProgress.swift */; };
 		36C7D39BA81306080BF05B28 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 479167B600656D8A1F161597 /* TargetAge.swift */; };
@@ -67,6 +71,8 @@
 		3BAE5E1D16A5F50149DA1980 /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED94027914BC15E39E2469B /* SweepSummary.swift */; };
 		3C4DEB282467E655E35E605E /* PadPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC753D086C4403EADE7AF2D /* PadPresetStore.swift */; };
 		3CE33CEE2597EB15240789FA /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */; };
+		3DF9483D1DC45B41DF27B1ED /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */; };
+		3ED9F0A8414F14F81B62EB78 /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */; };
 		40250523F9652DF204D34640 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */; };
 		404E2AB3E5A246F4DC81C588 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
 		415F064E92065922D65E02A2 /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE3C1FB9B2F70EE6B3B55B5 /* QuotaCount.swift */; };
@@ -119,6 +125,7 @@
 		6486F44B9FEDBE2EF01A6F73 /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91C682ED4122397787BE5C5 /* PromptDeepLink.swift */; };
 		64E6410CDCE13D1F7BB429EC /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99D9B9B9BF27B9E628E6BDF /* WidgetStore.swift */; };
 		6584870887B82D220D7BCE59 /* WatchQuotaLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61BDD6279D23873E3415B90A /* WatchQuotaLogic.swift */; };
+		66AE3B83643094B85A70B83F /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */; };
 		67BBCD29E3F75D5609165FFA /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 317DDB89B049D99ED2C24FD6 /* NotificationConstants.swift */; };
 		6823A0BD862E6F01501EFB4B /* WatchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9681162F97176C33B61407A /* WatchCache.swift */; };
 		69CD400797F009F654304E4A /* PageAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201595A236BD4BBDA3770A3A /* PageAnchor.swift */; };
@@ -144,6 +151,7 @@
 		809C9E642210FD09C8F3C252 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		82EA36BF0E82EAEC6B1D7BF0 /* TasksPageControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA682B46C289703BC8248086 /* TasksPageControl.swift */; };
 		82FAA4498E122C139AD7181A /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED94027914BC15E39E2469B /* SweepSummary.swift */; };
+		8372B4120DE5F4AEC136C95C /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */; };
 		84510D78CF71B00F52B48EA3 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */; };
 		88C77707E12180F739E46FE6 /* WatchWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9080749DBD681AAA6C5C8BD4 /* WatchWidgetIntents.swift */; };
 		896C7265B3976900820FF4C1 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
@@ -178,12 +186,14 @@
 		AB8D0452DEB7878EACF33CFE /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
 		AC145999D20E953F89BD693D /* RowCorner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E682262161055A496C984E98 /* RowCorner.swift */; };
 		AD56C73ABE6D862EFD583906 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
+		AED0DB03C5DAC29C5C08BCFA /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */; };
 		B0380A8B01CC9C814D5AD05C /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFC9734B17BD64A979BFC41 /* WidgetPushRegistration.swift */; };
 		B0D49DF12F194CC2657DBB9B /* QuotaSegments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9928122A0EB9B27DAD0395F9 /* QuotaSegments.swift */; };
 		B1F907C2ED2B1FA30E7551D6 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8814A68EB77D7A79413494F9 /* SweepDismissal.swift */; };
 		B24D0A4002F39E49DFAA36F7 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		B44AC055BB27E89C6E8CBC2E /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		B5848AF766A5FA0EF47669EF /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33DDC195A96CA5F91F8A98 /* WebBridge.swift */; };
+		B5BAB819BDA5EF868500277C /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */; };
 		B62DF22E75C0C29296CE8408 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */; };
 		BA800074867155F9D688713D /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B761D724E9EABFA497BD0CF3 /* AppConfig.swift */; };
 		BC06179715F5A71D37A6C991 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34F38A2233E6C7AD5D02FD9 /* AppDelegate.swift */; };
@@ -382,6 +392,7 @@
 		A9681162F97176C33B61407A /* WatchCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCache.swift; sourceTree = "<group>"; };
 		A9DE5729A90E0CE58D2894BC /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
 		AC9CA2A1A06FD7409B74AF07 /* WatchTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
+		ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaPeriodBounds.swift; sourceTree = "<group>"; };
 		B0BA880E80F8E982F77B4147 /* NotesGlyphPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesGlyphPreviews.swift; sourceTree = "<group>"; };
 		B1A737E1E1E5CCDFBB3EAC37 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		B303AA099FBF21D29C23EEAA /* ReminderDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderDayProgress.swift; sourceTree = "<group>"; };
@@ -395,6 +406,7 @@
 		BC01B2E657B37EAE25114C60 /* TasksWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidget.swift; sourceTree = "<group>"; };
 		BC4AA3D7BA53FB714D8109DB /* TaskLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskLists.swift; sourceTree = "<group>"; };
 		BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayStartStore.swift; sourceTree = "<group>"; };
 		C2691657DEC3A30B3BCD14CA /* WidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
 		C2FA710A65047564F35B53D2 /* OpenTaskDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskDay.swift; sourceTree = "<group>"; };
 		C36650F41A76D5F4FEA0ECE8 /* OpenTaskWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenTaskWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -568,6 +580,7 @@
 				65AA422DED4654FD15D0C535 /* APIClient.swift */,
 				40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */,
 				D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */,
+				C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */,
 				681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */,
 				BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */,
 				A64F4684B1F08B3D0E9C8FA7 /* NotificationActionRunner.swift */,
@@ -581,6 +594,7 @@
 				232562C1B05EE04ACD36161F /* ProgressSource.swift */,
 				B91C682ED4122397787BE5C5 /* PromptDeepLink.swift */,
 				4DE3C1FB9B2F70EE6B3B55B5 /* QuotaCount.swift */,
+				ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */,
 				745EFD099B17F5A9EF43899C /* QuotaRules.swift */,
 				9928122A0EB9B27DAD0395F9 /* QuotaSegments.swift */,
 				E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */,
@@ -813,6 +827,7 @@
 				6A018F73275ACE3FF6F8C162 /* ApsEnvironment.swift in Sources */,
 				94220B779E8200B698FED4D1 /* ContentView.swift in Sources */,
 				51E6296F83B4E9B84CA333C3 /* DateHelpers.swift in Sources */,
+				3ED9F0A8414F14F81B62EB78 /* DayStartStore.swift in Sources */,
 				809C9E642210FD09C8F3C252 /* DeepLinkRouter.swift in Sources */,
 				904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */,
 				F872076B2B9491D810F3DF1B /* NotificationActionRunner.swift in Sources */,
@@ -829,6 +844,7 @@
 				7F1AD10C5C1C4461BE3BFBC5 /* QuickActionHandler.swift in Sources */,
 				12DB40DFAC48488361ADE990 /* QuickActionSceneDelegate.swift in Sources */,
 				C198F5CB29D0C8ADE6797C38 /* QuotaCount.swift in Sources */,
+				2ADB78B527680E826ECEF971 /* QuotaPeriodBounds.swift in Sources */,
 				474DE8E3DCA60AA567966C9D /* QuotaRules.swift in Sources */,
 				98CB15AFB07C0E8A42B6259F /* QuotaSegments.swift in Sources */,
 				FAB2788D1C7090627B23C655 /* RecurrenceSummary.swift in Sources */,
@@ -861,6 +877,7 @@
 				04D5F48AF04D4A2DECBE8251 /* ApsEnvironment.swift in Sources */,
 				C60DB58FC123FB9A62331E11 /* BulkSnoozeSheetView.swift in Sources */,
 				63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */,
+				B5BAB819BDA5EF868500277C /* DayStartStore.swift in Sources */,
 				8C70BF6641FA52C27AEE830B /* DeepLinkRouter.swift in Sources */,
 				E51D8D6F02BEB9BEE1486257 /* KeychainHelper.swift in Sources */,
 				1CAB42AC5D11B1626BDEE014 /* NotificationActionRunner.swift in Sources */,
@@ -875,6 +892,7 @@
 				C999133C4C6036F6ACF62636 /* ProgressSource.swift in Sources */,
 				03EA0EED0718664A1BF29E0B /* PromptDeepLink.swift in Sources */,
 				F45E589E12BB4D99FEF3D437 /* QuotaCount.swift in Sources */,
+				04EB75DE765103068FEE008B /* QuotaPeriodBounds.swift in Sources */,
 				74F89484C1A845E89C760DD7 /* QuotaRules.swift in Sources */,
 				F3BCC7730AF2912311C329CD /* QuotaSegments.swift in Sources */,
 				57F9EC8914D8E01DE7893C91 /* QuotasPageView.swift in Sources */,
@@ -917,6 +935,7 @@
 				ECB0FD5F24B460DCF051564A /* APIClient.swift in Sources */,
 				896C7265B3976900820FF4C1 /* ApsEnvironment.swift in Sources */,
 				EACE06C9E8EB63FF815818AD /* DateHelpers.swift in Sources */,
+				AED0DB03C5DAC29C5C08BCFA /* DayStartStore.swift in Sources */,
 				1193D251741F3BE8F46CAF04 /* DeepLinkRouter.swift in Sources */,
 				5D948F2336DBDB3B71925E84 /* DueLabel.swift in Sources */,
 				4D721AFB724370814CF5D477 /* KeychainHelper.swift in Sources */,
@@ -933,6 +952,7 @@
 				443E1625CF00F30F60A4DEA6 /* ProgressSource.swift in Sources */,
 				A852C9E09C4B2B91B98C41C5 /* PromptDeepLink.swift in Sources */,
 				4CD6B738761136FEF9C3BAF6 /* QuotaCount.swift in Sources */,
+				3DF9483D1DC45B41DF27B1ED /* QuotaPeriodBounds.swift in Sources */,
 				4A6E1467539DCA234BB4D10B /* QuotaRules.swift in Sources */,
 				221BA88F89AE9F422DDDAD1B /* QuotaSegments.swift in Sources */,
 				76EA5A4B242F069CB8E9D904 /* QuotaSegmentsPreviews.swift in Sources */,
@@ -977,6 +997,7 @@
 				6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */,
 				3B38D9F33860B8973B5F4624 /* ApsEnvironment.swift in Sources */,
 				D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */,
+				330C94030E730302AEAF8A60 /* DayStartStore.swift in Sources */,
 				FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */,
 				1135A613B9BE637CBD113074 /* KeychainHelper.swift in Sources */,
 				4F244E673051D059F9A37A35 /* NotificationActionRunner.swift in Sources */,
@@ -991,6 +1012,7 @@
 				7D875014177D998BA2E32866 /* ProgressSource.swift in Sources */,
 				1504EA7CACA0440C5ECF51CF /* PromptDeepLink.swift in Sources */,
 				482D47CDBCB19ABB028184ED /* QuotaCount.swift in Sources */,
+				66AE3B83643094B85A70B83F /* QuotaPeriodBounds.swift in Sources */,
 				0A155E4978B3662FFF375686 /* QuotaRules.swift in Sources */,
 				B0D49DF12F194CC2657DBB9B /* QuotaSegments.swift in Sources */,
 				C1A6A67E1E39A36852B76B7C /* RecurrenceSummary.swift in Sources */,
@@ -1020,6 +1042,7 @@
 				AB8D0452DEB7878EACF33CFE /* APIClient.swift in Sources */,
 				AD56C73ABE6D862EFD583906 /* ApsEnvironment.swift in Sources */,
 				5481CB0C47BEEEA103C88576 /* DateHelpers.swift in Sources */,
+				02DCBE7803EAD9E08B629885 /* DayStartStore.swift in Sources */,
 				F347EBEE087F2C516D1A9D31 /* DeepLinkRouter.swift in Sources */,
 				F177F1DE946BA6A9DDE51027 /* KeychainHelper.swift in Sources */,
 				6EF7EFC511B1AFD5175DDA42 /* NotificationActionRunner.swift in Sources */,
@@ -1034,6 +1057,7 @@
 				5EA461B55BE4CB10812D35B4 /* ProgressSource.swift in Sources */,
 				6486F44B9FEDBE2EF01A6F73 /* PromptDeepLink.swift in Sources */,
 				415F064E92065922D65E02A2 /* QuotaCount.swift in Sources */,
+				8372B4120DE5F4AEC136C95C /* QuotaPeriodBounds.swift in Sources */,
 				404E2AB3E5A246F4DC81C588 /* QuotaRules.swift in Sources */,
 				26A55E9DA6CDC26283B92798 /* QuotaSegments.swift in Sources */,
 				57379086E2833F35E1327B75 /* RecurrenceSummary.swift in Sources */,

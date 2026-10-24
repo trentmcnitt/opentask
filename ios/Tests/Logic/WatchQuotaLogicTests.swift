@@ -104,7 +104,7 @@ final class WatchQuotaLogicTests: XCTestCase {
     }
 }
 
-final class WatchSlotLogicTests: XCTestCase {
+final class WatchSlotLogicTests: WidgetStoreTestCase {
 
     private func at(_ hour: Int, _ minute: Int = 0) -> Date {
         Calendar.current.date(from: DateComponents(year: 2026, month: 1, day: 15, hour: hour, minute: minute))!

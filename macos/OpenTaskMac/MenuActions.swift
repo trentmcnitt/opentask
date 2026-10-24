@@ -121,7 +121,7 @@ enum MenuActions {
         var total = 0
         for line in result.summaryLines {
             switch line {
-            case .includedHigh: break  // zero here: nothing moved
+            case .includedHigh, .queued: break  // zero here: nothing moved
             case .highStillOverdue(let n):
                 parts.append("\(n) High")
                 total += n

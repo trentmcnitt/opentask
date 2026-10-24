@@ -468,7 +468,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).pageKey, -15)
 
         let bars = ReminderDayProgress.stripBars(
-            groups: [], segments: [TaskSegmentDTO(horizon: "days", tasks: [row(1)]), upcoming], now: t0
+            groups: [], segments: [TaskSegmentDTO(horizon: "days", tasks: [row(1)]), upcoming], now: t0,
+            day: .midnight(timeZone: .current)
         )
         XCTAssertEqual(bars.map(\.segment), [.horizon(.days), .upcoming])
         XCTAssertEqual(bars.map(\.label), ["Tasks · Days", "Tasks · Upcoming"])
