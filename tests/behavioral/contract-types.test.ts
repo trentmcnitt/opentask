@@ -113,6 +113,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   repeat_anchor: STR_N,
   target_days_before: INT_N,
   target_time: STR_N,
+  target_slot_id: INT_N,
   repeat_count: INT_N,
   repeat_count_used: INT,
   repeat_until: STR_N,

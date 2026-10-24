@@ -37,6 +37,9 @@ const VALID_TASK_COLUMNS = new Set([
   'repeat_anchor',
   'target_days_before',
   'target_time',
+  // Relative targets (2026-10-24): the period a relative target follows —
+  // every link, unlink and retime puts it in a snapshot.
+  'target_slot_id',
   // Repeat ends (2026-10-22): done, skip and the end edits write these, and
   // their undo puts them back — missing here would throw and wedge the stack.
   'repeat_count',

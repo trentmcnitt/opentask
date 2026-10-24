@@ -20,8 +20,9 @@
  *    deadlines page from its lead day (`lead_from`). Validated (`relativeTargetProblem`): never after the deadline,
  *    never on or before the previous deadline;
  *  - never on a reminder or a quota (their date is their occurrence / they
- *    have none), never without a rule or a deadline; the offsets only with
- *    the 'deadline' anchor, and together.
+ *    have none), never without a rule or a deadline; on a REPEAT the offsets
+ *    only with the 'deadline' anchor, and together (a one-off with a deadline
+ *    may carry them since 2026-10-24 — relative targets, `relative-target.ts`).
  * A PATCH also reschedules this occurrence (a deadline sent), switches the
  * anchor (with its rule), keeps a moved target (capped) and a deck (PR 4a,
  * `occurrenceIsPersonal`) and refuses clearing the deadline or the target —
@@ -103,7 +104,9 @@ export function createAnchor(
     throw new ValidationError(TARGET_ANCHORED_DEADLINE_MESSAGE)
   }
   const sentOffsets = [input.target_days_before, input.target_time].filter((v) => v !== undefined)
-  if (sentOffsets.length > 0 && anchor !== 'deadline') {
+  // A target-anchored REPEAT has no offsets. A one-off may (relative targets,
+  // 2026-10-24): `assertOneOffRelative` judges them in `createTask`.
+  if (sentOffsets.length > 0 && anchor !== 'deadline' && rrule) {
     throw new ValidationError(RELATIVE_TARGET_NEEDS_DEADLINE_MESSAGE)
   }
   if (sentOffsets.length === 1) throw new ValidationError(RELATIVE_TARGET_PAIR_MESSAGE)
@@ -179,7 +182,7 @@ export const DEADLINE_CLEAR_MESSAGE =
 export const REPEAT_TARGET_CLEAR_MESSAGE =
   'A repeating task anchored on its deadline always has a target: move it instead'
 export const DECK_WITH_SCHEDULE_MESSAGE =
-  'Send on_deck_day without a schedule change (rrule, deadline_at, repeat_anchor, target_days_before, target_time): it sets its own date, which takes a task off deck'
+  'Send on_deck_day without a schedule change (rrule, deadline_at, repeat_anchor, target_days_before, target_time, target_slot_id): it sets its own date, which takes a task off deck'
 
 /** The schedule fields of a PATCH (or a bulk edit's `changes`). */
 export interface ScheduleInput {
@@ -190,6 +193,7 @@ export interface ScheduleInput {
   repeat_anchor?: RepeatAnchor
   target_days_before?: number | null
   target_time?: string | null
+  target_slot_id?: number | null
   on_deck_day?: string | null
 }
 
@@ -322,6 +326,7 @@ function assertNoDeckWithSchedule(input: ScheduleInput): void {
     input.repeat_anchor,
     input.target_days_before,
     input.target_time,
+    input.target_slot_id,
     input.deadline_at,
   ]
   if (schedule.some((v) => v !== undefined)) throw new ValidationError(DECK_WITH_SCHEDULE_MESSAGE)
@@ -335,7 +340,9 @@ function assertNoDeckWithSchedule(input: ScheduleInput): void {
  * deadline in the same write; one losing its rule keeps it, as a one-off.
  */
 function planTargetAnchored({ task, input, rule, ordinary, wasDeadline }: Request): RepeatPlan {
-  if (input.target_days_before != null || input.target_time != null) {
+  // A target-anchored REPEAT has no offsets; a ONE-OFF (no rule left) may —
+  // relative targets, 2026-10-24, judged by `assertOneOffRelative`.
+  if (rule && (input.target_days_before != null || input.target_time != null)) {
     throw new ValidationError(RELATIVE_TARGET_NEEDS_DEADLINE_MESSAGE)
   }
   const switching = wasDeadline && !!rule && ordinary

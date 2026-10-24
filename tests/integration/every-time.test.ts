@@ -200,8 +200,11 @@ describe('Every-time mode over HTTP', () => {
     expect(r.body.data.rrule).toBeNull()
     expect(r.body.data.deadline_at).toBe(before.deadline_at)
     expect(r.body.data.target_at).toBe(before.target_at)
-    // Kept as a picked target, not an automatic one.
+    // Kept as a picked target, not an automatic one — and, since 2026-10-24
+    // (relative targets, ruling 6), still relative: its target unmoved, the
+    // one-off keeps the offsets and moves with its deadline.
     expect(r.body.data.target_auto).toBe(false)
-    expect(r.body.data.target_days_before).toBeNull()
+    expect(r.body.data.target_days_before).toBe(1)
+    expect(r.body.data.target_time).toBe('18:00')
   })
 })

@@ -939,6 +939,16 @@ paths:
         (`time_slot_edit`) that also restores the slot; `undo_id` names it.
         A rename alone moves nothing and returns `undo_id: null`.
 
+        Relative targets linked to the slot (`target_slot_id`, 2026-10-24)
+        follow its new start in the same entry: an open one-off re-derives its
+        target, a deadline-anchored repeat its unmoved one (a moved one is
+        kept) — `targets_moved`, without restamping `target_set_at`. A task the
+        new time would be refused for (after its deadline on the deadline day,
+        or on or before the previous occurrence's deadline on a short rule) is
+        unlinked and keeps its old time (`targets_kept`): the retime never
+        fails because of a task. Done, archived and trashed tasks get the new
+        `target_time` only (their target is re-derived when reopened).
+
         `start_time` must be unique among the user's slots. There is no
         reordering: slots are always ordered by `start_time`.
       parameters:
@@ -991,11 +1001,14 @@ paths:
         last remaining slot cannot be removed (400). The user's settings
         linked to the slot (Morning, Wake, Sleep, number-pad buttons — see
         `UserPreferences`) keep its start as a custom time
-        (`settings_converted`, 2026-10-21). Always an undo entry
-        (`time_slot_delete`, `undo_id`): undo restores the slot under its
-        original id together with its reminders and prompt placements, and
-        puts each converted setting's link back unless the user has changed
-        that setting since.
+        (`settings_converted`, 2026-10-21), and so do the relative targets
+        linked to it (`target_slot_id` → null, `target_time` and the target
+        unchanged; `targets_converted` counts the open ones, 2026-10-24).
+        Always an undo entry (`time_slot_delete`, `undo_id`): undo restores
+        the slot under its original id together with its reminders and prompt
+        placements, and puts each converted setting's link back unless the
+        user has changed that setting since — likewise each target's link,
+        unless its time has changed since.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       responses:
@@ -1599,10 +1612,13 @@ paths:
                       type: [integer, 'null']
                       minimum: 0
                       maximum: 366
-                      description: See TaskUpdate; validated per task, a refusal refuses the batch.
+                      description: See TaskUpdate — on a deadline-anchored repeat or a one-off with a deadline (2026-10-24, ruling 8); validated per task, a refusal refuses the batch.
                     target_time:
                       type: [string, 'null']
                       pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+                    target_slot_id:
+                      type: [integer, 'null']
+                      description: See TaskUpdate — checked against each task's OWNER's periods.
                     horizon:
                       type: [string, 'null']
                       enum: [days, weeks, months, eventually, null]
@@ -5678,14 +5694,24 @@ components:
           minimum: 0
           maximum: 366
           description: >
-            A deadline-anchored repeat's target: local calendar days from the deadline's date back
-            to the target's date (0 = the same day). Null unless `repeat_anchor` is `deadline`.
+            A RELATIVE target: local calendar days from the deadline's date back to the target's
+            date (0 = the same day), with `target_time`. On a deadline-anchored repeat it places
+            each occurrence's target; on a ONE-OFF with a deadline (2026-10-24) the target is
+            derived from the deadline the same way and moves with it — `target_at` is that derived
+            target, and a picked date makes it fixed again (both null). Null otherwise.
         target_time:
           type: [string, 'null']
           pattern: '^([01]\d|2[0-3]):[0-5]\d$'
           description: >
-            A deadline-anchored repeat's target time of day (HH:MM, the owner's local time). Null
-            unless `repeat_anchor` is `deadline`.
+            A relative target's time of day (HH:MM, the owner's local time); with
+            `target_slot_id` set, that period's current start. Null with `target_days_before`.
+        target_slot_id:
+          type: [integer, 'null']
+          description: >
+            The reminder period a relative target's time follows (2026-10-24), or null for a custom
+            time. When set, `target_time` is that period's current start: retiming the period
+            moves the target with it, removing the period leaves the time as a custom one. The
+            task OWNER's period, on a shared task too.
         repeat_count:
           type: [integer, 'null']
           minimum: 1
@@ -6170,10 +6196,23 @@ components:
             occurrence's deadline (checked over the next 60 occurrences or a year) — e.g. a DAILY
             rule with a `deadline_at` three days out and a `target_at` today (a 3-day lead on a
             1-day rule) is a 400: send the deadline the rule repeats (tomorrow's), or no target.
+
+            On a ONE-OFF with a `deadline_at` (relative targets, 2026-10-24): the target is
+            derived — `target_days_before` local days before the deadline at `target_time` —
+            and moves with the deadline; already past, the task is over target at once. 400s:
+            no `deadline_at`; only one of the pair; `target_at` in the same body (a picked date
+            is a fixed target); the same day at a time after the deadline's; a reminder or a
+            quota; `on_deck_day` in the same body.
         target_time:
           type: string
           pattern: '^([01]\d|2[0-3]):[0-5]\d$'
           description: The target's local time of day (HH:MM), with `target_days_before`.
+        target_slot_id:
+          type: [integer, 'null']
+          description: >
+            A relative target's time as one of the creator's reminder periods (2026-10-24): sets
+            `target_time` to the period's start and keeps it there (a retime moves the target).
+            With a different `target_time` in the same body, or a period that isn't yours: 400.
         repeat_count:
           type: integer
           minimum: 1
@@ -6314,6 +6353,21 @@ components:
             The user's settings that were linked to a deleted slot and now keep
             its start as a custom time (DELETE only; always empty for PATCH — a
             linked setting follows a retimed slot on its own).
+        targets_moved:
+          type: integer
+          description: >
+            Relative targets (2026-10-24, PATCH only): open tasks whose target follows the slot
+            and moved to its new start.
+        targets_kept:
+          type: integer
+          description: >
+            PATCH only: open linked tasks the new start would have put after their deadline (or
+            over the previous occurrence) — unlinked, keeping their old time.
+        targets_converted:
+          type: integer
+          description: >
+            DELETE only: open tasks whose relative target followed the slot and now keeps its start
+            as a custom time.
         undo_id:
           type: [integer, 'null']
           description: The undo_log entry for this change (POST /api/undo/batch with through_id undoes exactly it); null for a rename.
@@ -6359,7 +6413,8 @@ components:
             rule's anchors are derived from it (a re-schedule). A quota has no
             due date. On a deadline-anchored repeat (2026-10-21) a move is this
             occurrence's only (done and skip re-derive the next), and `null` is a
-            400: it always has a target.
+            400: it always has a target. Any date — or `null` — makes a relative
+            target (`target_days_before`) fixed (2026-10-24).
         target_at:
           type: [string, 'null']
           format: date-time
@@ -6468,12 +6523,31 @@ components:
           description: >
             A deadline-anchored repeat's relative target (with `target_time`; see TaskCreate). New
             offsets re-derive this occurrence's target unless it was moved (a moved one is kept,
-            capped at the deadline). The same 400s as on create; `null` only on a target-anchored
-            result.
+            capped at the deadline). The same 400s as on create; on a repeat, `null` only on a
+            target-anchored result (on a one-off, both `null` make the target fixed — below).
+
+            On a ONE-OFF with a deadline (2026-10-24): makes its target relative — derived now,
+            and again on every later deadline change (a deadline moved before a same-day time
+            clamps the target to the deadline). These make it FIXED again (offsets and link
+            cleared): any `target_at` (a pick, every snooze / defer / Today — sending it WITH
+            offsets is a 400), `target_at: null` (Remove target: no target at all), and
+            `deadline_at: null` (the target stays where it is; with offsets in the same body, a
+            400). `{target_days_before: null, target_time: null}` alone makes it fixed where it
+            is. `rrule: null` on a deadline-anchored repeat (Stop repeating) keeps its relative
+            target, as a one-off, when this occurrence's target wasn't moved and it isn't on deck.
         target_time:
           type: [string, 'null']
           pattern: '^([01]\d|2[0-3]):[0-5]\d$'
-          description: The relative target's local time of day (HH:MM); see `target_days_before`.
+          description: >
+            The relative target's local time of day (HH:MM); see `target_days_before`. Sent
+            without `target_slot_id`, it is a custom time and unlinks the target from its period.
+        target_slot_id:
+          type: [integer, 'null']
+          description: >
+            Link the relative target's time to one of the task OWNER's reminder periods (2026-10-24):
+            `target_time` becomes the period's start (a different `target_time` in the same body is
+            a 400; another user's period — a collaborator's own, on a shared task — is a 400).
+            `null` unlinks it, keeping the time.
         repeat_count:
           type: [integer, 'null']
           minimum: 1

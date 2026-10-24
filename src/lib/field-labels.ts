@@ -46,6 +46,8 @@ export const FIELD_LABELS: Record<string, string> = {
   repeat_anchor: 'what repeats',
   target_days_before: 'target',
   target_time: 'target',
+  // Relative targets (2026-10-24): the period the target's time follows.
+  target_slot_id: 'target',
 }
 
 /**
@@ -138,6 +140,12 @@ export interface EditDescriptionContext {
   projectName?: string
   /** A3 (2026-10-11): the snooze stopped AT the deadline — "Deferred to deadline …". */
   cappedAtDeadline?: boolean
+  /**
+   * Relative targets (2026-10-24): the label of the period the target's time
+   * follows (`target_slot_id`, looked up by the caller) — "Target the day
+   * before at Evening (8:30 PM)".
+   */
+  targetSlotLabel?: string
 }
 
 /**
@@ -168,14 +176,20 @@ export function formatEditDescription(
 
   // Get user-facing fields only. The repeat end's two columns are one setting
   // (setting one clears the other): one fragment, from `repeat_count`'s case.
-  // The relative target's two columns, likewise (from `target_days_before`'s);
+  // The relative target's columns, likewise (from `target_days_before`'s);
   // the target they move (`due_at`) is derived from them, so it isn't its own.
-  const relative = ['target_days_before', 'target_time', 'repeat_anchor']
-  const derivedTarget = fieldsChanged.some((f) => relative.includes(f))
+  // A FIXED pick that clears them (relative targets, 2026-10-24) is the
+  // reverse: the date said is the pick, and the cleared offsets say nothing.
+  const offsetColumns = ['target_days_before', 'target_time', 'target_slot_id']
+  const relative = [...offsetColumns, 'repeat_anchor']
+  const cleared = relativeCleared(fieldsChanged, afterState)
+  const derivedTarget = !cleared && fieldsChanged.some((f) => relative.includes(f))
   const userFields = fieldsChanged
     .filter((f) => FIELD_LABELS[f])
+    .filter((f) => !cleared || !offsetColumns.includes(f))
     .filter((f) => f !== 'repeat_until' || !fieldsChanged.includes('repeat_count'))
     .filter((f) => f !== 'target_time' || !fieldsChanged.includes('target_days_before'))
+    .filter((f) => f !== 'target_slot_id' || !fieldsChanged.includes('target_days_before'))
     .filter((f) => f !== 'due_at' || !derivedTarget)
 
   if (userFields.length === 0) {
@@ -208,6 +222,24 @@ export function formatEditDescription(
   // For rename + another field, the rename fragment already has the title info
   // but we still use em dash format with the current title for consistency
   return `${fragments.join(', ')} \u2014 "${truncateTitle(title)}"`
+}
+
+/**
+ * Whether a write CLEARED a relative target while the target itself was
+ * written (a pick, a defer — relative targets, 2026-10-24): the offsets went
+ * to null beside a `due_at` change, with no anchor switch.
+ */
+function relativeCleared(
+  fieldsChanged: string[],
+  afterState: Partial<Record<string, unknown>>,
+): boolean {
+  return (
+    fieldsChanged.includes('target_days_before') &&
+    afterState.target_days_before === null &&
+    afterState.target_time === null &&
+    fieldsChanged.includes('due_at') &&
+    !fieldsChanged.includes('repeat_anchor')
+  )
 }
 
 /**
@@ -274,7 +306,7 @@ function buildFieldFragment(
         : 'Repeats on its target'
     case 'target_days_before':
     case 'target_time':
-      return buildRelativeTargetFragment(afterState)
+      return buildRelativeTargetFragment(afterState, context.targetSlotLabel)
     default:
       return null
   }
@@ -296,10 +328,22 @@ function buildRepeatEndFragment(afterState: Partial<Record<string, unknown>>): s
 }
 
 /**
- * A deadline-anchored repeat's target (2026-10-22): "Target the day before at
- * 6:00 PM" — the pair the write leaves (either may be the one that changed).
+ * A relative target (a deadline-anchored repeat's, 2026-10-22; a one-off's,
+ * 2026-10-24): "Target the day before at 6:00 PM" — the pair the write leaves
+ * (either may be the one that changed) — or, linked to a period, "Target the
+ * day before at Evening (8:30 PM)". Cleared: "Target fixed".
  */
-function buildRelativeTargetFragment(afterState: Partial<Record<string, unknown>>): string {
+function buildRelativeTargetFragment(
+  afterState: Partial<Record<string, unknown>>,
+  slotLabel?: string,
+): string {
+  if (
+    'target_days_before' in afterState &&
+    afterState.target_days_before === null &&
+    afterState.target_time === null
+  ) {
+    return 'Target fixed'
+  }
   // Only the changed column is in `afterState`: say what is known.
   const days = afterState.target_days_before
   const time = afterState.target_time
@@ -315,6 +359,7 @@ function buildRelativeTargetFragment(afterState: Partial<Record<string, unknown>
     typeof time === 'string'
       ? DateTime.fromFormat(time, 'HH:mm', { zone: 'utc' }).toFormat('h:mm a')
       : null
+  if (when && at && slotLabel) return `Target ${when} at ${slotLabel} (${at})`
   if (when && at) return `Target ${when} at ${at}`
   if (when) return `Target ${when}`
   return at ? `Target at ${at}` : 'Target updated'

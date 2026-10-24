@@ -14,7 +14,8 @@ import { periodMoved } from './log-action'
 import { rolledOverSince } from './rollover-fence'
 import { ensureLead, withoutAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
-import { applyPromptDefault, applySlotRow, applyUserSettings } from './slot-row'
+import { healRelativeLinks, rowsLinkedTo } from '@/core/tasks/relative-link-heal'
+import { applyPromptDefault, applySlotRow, applyTargetRows, applyUserSettings } from './slot-row'
 import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
@@ -28,6 +29,7 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
     applySlotRow(tx, entry.slotState.before, entry.slotState.after)
     applyPromptDefault(tx, entry.slotState, 'after')
     applyUserSettings(tx, entry.slotState, 'after', entry.id)
+    applyTargetRows(tx, entry.slotState, 'after', entry.id)
   }
 
   // Handle special case: redoing a 'create' means restoring the task from trash
@@ -70,6 +72,21 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   }
 
   // Mark the action as not undone (redo = undo the undo)
+  // A restored link is always re-validated against the current period
+  // (relative targets, 2026-10-24): every task this entry touched — a
+  // snapshot applied or skipped by a fence — and a period entry's linked rows.
+  healRelativeLinks(tx, [
+    ...entry.snapshots.map((s) => s.task_id),
+    ...(entry.slotState
+      ? rowsLinkedTo(
+          tx,
+          [entry.slotState.before?.id, entry.slotState.after?.id].filter(
+            (id): id is number => id !== undefined,
+          ),
+        )
+      : []),
+  ])
+
   tx.prepare('UPDATE undo_log SET undone = 0 WHERE id = ?').run(entry.id)
 }
 

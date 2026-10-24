@@ -13,7 +13,20 @@
  * Candidates are the user's own undone, non-deleted reminders (`is_reminder`),
  * every one of them, not just today's: a Tue/Thu reminder must move on a
  * Monday too. Ordinary tasks are never touched — their due time is a real
- * time, and they simply regroup on the dashboard.
+ * time, and they simply regroup on the dashboard — EXCEPT a relative target
+ * linked to the period (2026-10-24, `target_slot_id`; see RELATIVE TARGETS
+ * below and docs/TASK-MODEL.md § Relative targets).
+ *
+ * RELATIVE TARGETS (2026-10-24): a task whose relative target's time follows
+ * the period (`target_slot_id`) keeps `target_time` equal to the period's
+ * start. A RETIME moves every open linked row in the same transaction and
+ * undo entry (a one-off re-derives its target; a deadline-anchored repeat its
+ * unmoved one) without restamping `target_set_at`; a row the new time would
+ * be refused for is unlinked and keeps its old time instead. CLOSED rows
+ * (done, archived, trashed) take the new time in ONE compare-and-set
+ * statement recorded in `slot_state.target_times`. A DELETE unlinks every
+ * linked row, keeping its time (closed rows' ids in `slot_state.target_unlinked`).
+ * Undo and redo of both: `applyTargetRows` in src/core/undo/slot-row.ts.
  *
  * Changing a slot's START (old → new):
  *   1. A reminder ON the old boundary (its time == old start) moves to the new
@@ -81,6 +94,11 @@ import {
   type FieldChangesInput,
 } from '@/core/tasks/helpers'
 import { getTaskById } from '@/core/tasks/create'
+import { rowToTask, taskColumns, type TaskRow } from '@/core/tasks/read'
+import { getTargetContext } from '@/core/tasks/target-context'
+import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
+import { retimeRefused } from '@/core/tasks/relative-target'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { nowUtc } from '@/core/recurrence'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
@@ -276,6 +294,115 @@ function promptInputs(userId: number, fromId: number, toId: number): TaskChange[
 }
 
 /**
+ * RELATIVE TARGETS (2026-10-24; docs/TASK-MODEL.md § Relative targets): the
+ * OPEN rows whose target follows this period (`target_slot_id`) — the
+ * owner's own (a link names the owner's period), one query, ordinary tasks
+ * only (a reminder or a quota never has a relative target).
+ */
+function loadLinkedTargets(userId: number, slotId: number): Task[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT ${taskColumns()} FROM tasks
+        WHERE user_id = ? AND target_slot_id = ? AND done = 0
+          AND deleted_at IS NULL AND archived_at IS NULL
+          AND is_reminder = 0 AND is_tracked = 0 AND progress_target <= 1`,
+    )
+    .all(userId, slotId) as TaskRow[]
+  return rows.map(rowToTask)
+}
+
+/** A row is CLOSED for the period hooks: done, archived or trashed. */
+const CLOSED_SQL = '(done = 1 OR archived_at IS NOT NULL OR deleted_at IS NOT NULL)'
+
+/**
+ * THE RETIME'S LINKED TARGETS: each follows the period to its new start —
+ * sent as the period again (`target_slot_id`, which sets `target_time`), so
+ * a one-off re-derives its target and a deadline-anchored repeat its unmoved
+ * one (a moved one is kept) — unless the new time would be REFUSED for it
+ * (`retimeRefused`: after its deadline on the deadline day, or overlapping
+ * the previous occurrence on a daily rule): that row is UNLINKED and keeps
+ * its old time as a custom one (decision 13), so the retime never fails
+ * because of a task. Both as `retime` writes: no `target_set_at` restamp
+ * (decision 11), attempts checkpointed.
+ */
+function retimeTargetInputs(
+  linked: Task[],
+  slotId: number,
+  startTime: string,
+  timezone: string,
+): { changes: TaskChange[]; kept: Set<number> } {
+  const kept = new Set<number>()
+  const changes = linked.map((task) => {
+    if (retimeRefused(task, startTime, timezone)) {
+      kept.add(task.id)
+      return { task, input: { target_slot_id: null, retime: true } }
+    }
+    return { task, input: { target_slot_id: slotId, retime: true } }
+  })
+  return { changes, kept }
+}
+
+/**
+ * The CLOSED linked rows (done, archived, trashed) follow the period too —
+ * their `target_time` only, ONE compare-and-set statement (decision 14),
+ * recorded in the entry's `slot_state.target_times` so undo and redo apply
+ * the mirror (`applyTargetRows`). `due_at` stays: a reopen re-derives it.
+ */
+function retimeClosedTargets(
+  tx: Database,
+  userId: number,
+  slotId: number,
+  before: string,
+  after: string,
+): number {
+  return tx
+    .prepare(
+      `UPDATE tasks SET target_time = ?
+        WHERE user_id = ? AND target_slot_id = ? AND target_time = ? AND ${CLOSED_SQL}`,
+    )
+    .run(after, userId, slotId, before).changes
+}
+
+/**
+ * A removed period's CLOSED linked rows lose the link and keep their time
+ * (one statement); their ids go in `slot_state.target_unlinked`, for undo's
+ * compare-and-set re-link (`applyTargetRows`).
+ */
+function unlinkClosedTargets(tx: Database, userId: number, slotId: number): number[] {
+  const ids = (
+    tx
+      .prepare(`SELECT id FROM tasks WHERE user_id = ? AND target_slot_id = ? AND ${CLOSED_SQL}`)
+      .all(userId, slotId) as { id: number }[]
+  ).map((r) => r.id)
+  if (ids.length > 0) {
+    tx.prepare(
+      `UPDATE tasks SET target_slot_id = NULL WHERE user_id = ? AND target_slot_id = ? AND ${CLOSED_SQL}`,
+    ).run(userId, slotId)
+  }
+  return ids
+}
+
+/** What `applyChanges` may share across rows (one owner's context, read once). */
+interface ApplyContext {
+  targetCtx?: ReturnType<typeof getTargetContext>
+  rolloverTime?: string
+  slotsFor?: (ownerId: number) => readonly TimeSlot[]
+}
+
+/** Two outcomes, as one entry's snapshots and fields. */
+function mergeOutcomes(a: MoveOutcome, b: MoveOutcome): MoveOutcome {
+  return {
+    snapshots: [...a.snapshots, ...b.snapshots],
+    fields: [...new Set([...a.fields, ...b.fields])],
+  }
+}
+
+/** Whether a snapshot moved its task's target (its notification is stale). */
+function movedTarget(snapshot: UndoSnapshot): boolean {
+  return 'due_at' in snapshot.after_state
+}
+
+/**
  * Apply planned changes inside the caller's transaction. The same per-task
  * step as bulkEdit (collectFieldChanges → `applyFieldChanges`: UPDATE →
  * snapshot + activity), minus its snooze/quota filters, which cannot apply to
@@ -288,6 +415,7 @@ function applyChanges(
   userId: number,
   timezone: string,
   changes: TaskChange[],
+  shared: ApplyContext = {},
 ): MoveOutcome {
   const now = new Date()
   const nowStr = nowUtc()
@@ -304,6 +432,7 @@ function applyChanges(
       userTimezone: timezone,
       now,
       skipProjectValidation: true,
+      ...shared,
     })
     if (data.fieldsChanged.length === 0) continue
 
@@ -319,6 +448,9 @@ function applyChanges(
 
 function notifyMoved(userId: number, timezone: string, outcome: MoveOutcome): void {
   emitSyncEvent(userId)
+  // A linked target the period moved: its delivered notification is stale.
+  const moved = outcome.snapshots.filter(movedTarget).map((s) => s.task_id)
+  if (moved.length > 0) dismissNotificationsForTasks(userId, moved)
   for (const snapshot of outcome.snapshots) {
     const fresh = getTaskById(snapshot.task_id)
     if (fresh) {
@@ -338,6 +470,34 @@ function reminderCount(n: number): string {
   return `${n} reminder${n === 1 ? '' : 's'}`
 }
 
+function targetCount(n: number): string {
+  return `${n} target${n === 1 ? '' : 's'}`
+}
+
+/**
+ * `Moved "Evening" to 9:00 PM (2 reminders, 5 targets; 1 kept its time)` —
+ * the retime's undo entry and toast (relative targets, 2026-10-24).
+ */
+export function retimeDescription(
+  label: string,
+  startTime: string,
+  counts: { reminders: number; targets: number; kept: number },
+): string {
+  const moved = [
+    counts.reminders > 0 ? reminderCount(counts.reminders) : null,
+    counts.targets > 0 ? targetCount(counts.targets) : null,
+  ].filter((p): p is string => p !== null)
+  const keptWords =
+    counts.kept === 0
+      ? null
+      : `${moved.length > 0 ? counts.kept : targetCount(counts.kept)} kept ${counts.kept === 1 ? 'its' : 'their'} time`
+  const parts = [moved.join(', '), keptWords].filter((p): p is string => !!p)
+  return (
+    `Moved "${label}" to ${formatClockTime(startTime)}` +
+    (parts.length ? ` (${parts.join('; ')})` : '')
+  )
+}
+
 export interface TimeSlotChangeResult {
   /** The slot after the change (for a delete, the slot as it was). */
   slot: TimeSlot
@@ -354,6 +514,16 @@ export interface TimeSlotChangeResult {
    * a retime keeps the period, and linked settings follow it on their own.
    */
   settings_converted: string[]
+  /**
+   * Relative targets (2026-10-24) — a retime: the open tasks whose target
+   * followed the period to its new start (`targets_moved`), and the ones the
+   * new time would put after their deadline (or over the previous occurrence),
+   * unlinked and kept at their old time (`targets_kept`). A delete: the open
+   * tasks unlinked, keeping the removed period's start (`targets_converted`).
+   */
+  targets_moved: number
+  targets_kept: number
+  targets_converted: number
   /** The undo_log entry for this change, or null when nothing undoable happened (a rename). */
   undo_id: number | null
 }
@@ -384,11 +554,17 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
       reminders_moved: 0,
       quotas_moved: 0,
       settings_converted: [],
+      targets_moved: 0,
+      targets_kept: 0,
+      targets_converted: 0,
       undo_id: null,
     }
   }
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
+  let remindersMoved = 0
+  let targetsMoved = 0
+  let targetsKept = 0
   const undoId = withTransaction((tx) => {
     if (retimed) assertStartTimeFree(userId, startTime, slotId)
     const oldSlots = listTimeSlots(userId)
@@ -401,26 +577,64 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     if (!retimed) return null
 
     const newSlots = oldSlots.map((s) => (s.id === slotId ? after : s))
+    // One owner, read once (after the UPDATE: a Morning linked to this
+    // period already reads its new start).
+    const shared: ApplyContext = {
+      targetCtx: getTargetContext(userId),
+      rolloverTime: rolloverTimeForUser(userId),
+      slotsFor: () => newSlots,
+    }
     const reminders = loadReminders(userId)
     const moves = planSlotRetime(reminders, oldSlots, newSlots, slotId, userTimezone)
-    outcome = applyChanges(tx, userId, userTimezone, moveInputs(reminders, moves, userTimezone))
+    const reminderOutcome = applyChanges(
+      tx,
+      userId,
+      userTimezone,
+      moveInputs(reminders, moves, userTimezone),
+      shared,
+    )
+    remindersMoved = reminderOutcome.snapshots.length
 
-    const moved = outcome.snapshots.length
-    const description =
-      `Moved "${label}" to ${formatClockTime(startTime)}` +
-      (moved > 0 ? ` (${reminderCount(moved)})` : '')
-    return logAction(userId, 'time_slot_edit', description, outcome.fields, outcome.snapshots, {
-      before,
-      after,
+    // Relative targets (2026-10-24): the targets that follow this period.
+    const plan = retimeTargetInputs(
+      loadLinkedTargets(userId, slotId),
+      slotId,
+      startTime,
+      shared.targetCtx!.timezone,
+    )
+    const targetOutcome = applyChanges(tx, userId, userTimezone, plan.changes, shared)
+    targetsKept = targetOutcome.snapshots.filter((s) => plan.kept.has(s.task_id)).length
+    targetsMoved = targetOutcome.snapshots.length - targetsKept
+    outcome = mergeOutcomes(reminderOutcome, targetOutcome)
+    const slotState: SlotUndoState = { before, after }
+    if (retimeClosedTargets(tx, userId, slotId, before.start_time, startTime) > 0) {
+      slotState.target_times = { slot_id: slotId, before: before.start_time, after: startTime }
+    }
+
+    const description = retimeDescription(label, startTime, {
+      reminders: remindersMoved,
+      targets: targetsMoved,
+      kept: targetsKept,
     })
+    return logAction(
+      userId,
+      'time_slot_edit',
+      description,
+      outcome.fields,
+      outcome.snapshots,
+      slotState,
+    )
   })
 
   notifyMoved(userId, userTimezone, outcome)
   return {
     slot: after,
-    reminders_moved: outcome.snapshots.length,
+    reminders_moved: remindersMoved,
     quotas_moved: 0,
     settings_converted: [],
+    targets_moved: targetsMoved,
+    targets_kept: targetsKept,
+    targets_converted: 0,
     undo_id: undoId,
   }
 }
@@ -462,7 +676,10 @@ export function deleteDescription(
   reminders: number,
   quotas: number,
   settings: readonly string[] = [],
+  /** Relative targets (2026-10-24): tasks whose target kept the period's start. */
+  targets = 0,
 ): string {
+  const kept = targets > 0 ? [...settings, targetCount(targets)] : settings
   const parts = [
     reminders > 0 ? reminderCount(reminders) : null,
     quotas > 0 ? `${quotas} quota${quotas === 1 ? '' : 's'}` : null,
@@ -470,9 +687,7 @@ export function deleteDescription(
   return (
     `Removed "${slot.label}"` +
     (parts.length > 0 ? ` (moved ${parts.join(', ')})` : '') +
-    (settings.length > 0
-      ? `; kept ${settings.join(', ')} at ${formatClockTime(slot.start_time)}`
-      : '')
+    (kept.length > 0 ? `; kept ${kept.join(', ')} at ${formatClockTime(slot.start_time)}` : '')
   )
 }
 
@@ -483,6 +698,8 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
 
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
   let remindersMoved = 0
+  let quotasMoved = 0
+  let targetsConverted = 0
   let converted: string[] = []
   const undoId = withTransaction((tx) => {
     const oldSlots = listTimeSlots(userId)
@@ -498,13 +715,31 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
     // the user's slots and the removed one as gone.
     const reminderChanges = moveInputs(reminders, moves, userTimezone)
     const quotaChanges = promptTarget ? promptInputs(userId, slotId, promptTarget.id) : []
-    outcome = applyChanges(tx, userId, userTimezone, [...reminderChanges, ...quotaChanges])
+    const shared: ApplyContext = {
+      targetCtx: getTargetContext(userId),
+      rolloverTime: rolloverTimeForUser(userId),
+    }
+    outcome = applyChanges(tx, userId, userTimezone, [...reminderChanges, ...quotaChanges], shared)
     const quotaIds = new Set(quotaChanges.map((c) => c.task.id))
     remindersMoved = outcome.snapshots.filter((s) => !quotaIds.has(s.task_id)).length
+    quotasMoved = outcome.snapshots.length - remindersMoved
+
+    // Relative targets (2026-10-24): a target following the period keeps its
+    // start as a custom time — like the settings below, not the nearest
+    // period. Open rows through the snapshots; closed ones in one statement.
+    const targetChanges = loadLinkedTargets(userId, slotId).map((task) => ({
+      task,
+      input: { target_slot_id: null },
+    }))
+    const targetOutcome = applyChanges(tx, userId, userTimezone, targetChanges, shared)
+    targetsConverted = targetOutcome.snapshots.length
+    outcome = mergeOutcomes(outcome, targetOutcome)
 
     // The user's default prompt period follows too. It is not a task field,
     // so the entry carries it beside the slot row (`applyPromptDefault`).
     const slotState: SlotUndoState = { before, after: null }
+    const unlinked = unlinkClosedTargets(tx, userId, slotId)
+    if (unlinked.length > 0) slotState.target_unlinked = unlinked
     if (promptTarget && readPromptDefault(userId) === slotId) {
       tx.prepare('UPDATE users SET quota_prompt_slot_id = ? WHERE id = ?').run(
         promptTarget.id,
@@ -527,8 +762,9 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
     const description = deleteDescription(
       before,
       remindersMoved,
-      outcome.snapshots.length - remindersMoved,
+      quotasMoved,
       converted,
+      targetsConverted,
     )
     return logAction(
       userId,
@@ -544,8 +780,11 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
   return {
     slot: before,
     reminders_moved: remindersMoved,
-    quotas_moved: outcome.snapshots.length - remindersMoved,
+    quotas_moved: quotasMoved,
     settings_converted: converted,
+    targets_moved: 0,
+    targets_kept: 0,
+    targets_converted: targetsConverted,
     undo_id: undoId,
   }
 }

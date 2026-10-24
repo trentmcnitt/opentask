@@ -172,9 +172,21 @@ CREATE TABLE IF NOT EXISTS tasks (
   --               (HH:MM, local). Both are set iff the anchor is 'deadline'.
   -- One pure function derives the dates of an occurrence (`occurrenceDates`
   -- in src/lib/task-segments.ts). Never on a reminder or a quota.
+  --
+  -- RELATIVE TARGETS (2026-10-24, docs/TASK-MODEL.md § Relative targets): a
+  -- ONE-OFF with a deadline may carry the same pair — its target is then
+  -- derived from its deadline (`relativeTargetAt`, the one derivation both
+  -- shapes share) and moves with it. On a one-off both are set or neither;
+  -- any picked date makes the target fixed again (both NULL).
+  --  target_slot_id  the reminder period the target's TIME follows (a link,
+  --                  no foreign key — the `quota_prompt_slot_id` precedent),
+  --                  or NULL for a custom time. Invariant: when set,
+  --                  `target_time` equals that period's current `start_time`
+  --                  (the period retime rewrites both, src/core/time-slots/edit.ts).
   repeat_anchor TEXT NOT NULL DEFAULT 'target' CHECK (repeat_anchor IN ('target', 'deadline')),
   target_days_before INTEGER DEFAULT NULL,
   target_time   TEXT DEFAULT NULL,
+  target_slot_id INTEGER DEFAULT NULL,
   -- REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends). The stored
   -- rrule never carries COUNT or UNTIL: the end lives here, read by ONE pure
   -- judge (`repeatStep` in src/lib/task-segments.ts).
@@ -410,6 +422,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks(archived_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_active ON tasks(user_id, done, deleted_at, archived_at);
+-- Relative targets (2026-10-24): a period retime or delete finds its linked rows.
+CREATE INDEX IF NOT EXISTS idx_tasks_target_slot ON tasks(target_slot_id) WHERE target_slot_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_completions_task_id ON completions(task_id);
 CREATE INDEX IF NOT EXISTS idx_completions_user_id ON completions(user_id);

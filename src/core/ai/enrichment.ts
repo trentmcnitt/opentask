@@ -64,8 +64,10 @@ import {
   deckSkip,
   hasPickedTarget,
   leadFor,
+  relativeOf,
   resolveTarget,
   type CheckInDay,
+  type RelativeTarget,
 } from '@/lib/task-segments'
 import { isLateNight, openTaskDayOf } from '@/lib/opentask-day'
 import { dayBoundaryForUser, rolloverTimeForUser } from '@/core/tasks/rollover-time'
@@ -2631,6 +2633,7 @@ function collectEnrichmentTarget(
   const targetCtx = getTargetContext(opts.userId)
   const deck = collectEnrichmentDeck(task, enrichment, opts.tracked, changes)
   const dropPick = deck.dropPick
+  const autoEligible = !rrule && !task.is_reminder && !opts.tracked
   const resolved = resolveTarget(
     {
       dueAt: dropPick ? null : (opts.proposedDue ?? task.due_at),
@@ -2638,11 +2641,12 @@ function collectEnrichmentTarget(
       wasAuto: task.target_auto,
       deadlineAt,
       deadlineChanged: deadlineAt !== task.deadline_at,
-      autoEligible: !rrule && !task.is_reminder && !opts.tracked,
+      autoEligible,
       // The deadlines page (task-queue switch on, 2026-10-22): no automatic
       // target — "by Friday" leaves the task target-less, on the page from
       // its lead day.
       leads: taskQueueEnabled(),
+      ...enrichmentRelative(task, autoEligible),
     },
     targetCtx,
   )
@@ -2651,6 +2655,7 @@ function collectEnrichmentTarget(
     changes.values.push(resolved.dueAt)
     changes.fieldsChanged.push('due_at')
   }
+  collectEnrichmentRelativeClear(task, resolved.relative, changes)
   if (resolved.auto !== task.target_auto) {
     changes.setClauses.push('target_auto = ?')
     changes.values.push(resolved.auto ? 1 : 0)
@@ -2696,6 +2701,30 @@ function collectEnrichmentTarget(
     changes.fieldsChanged.push('occurrence_at')
   }
   return deck.decked
+}
+
+/**
+ * Relative targets (2026-10-24): a relative one-off's target follows a
+ * deadline the AI moves, and a date the AI picks makes it fixed — the same
+ * `resolveTarget` rules as every writer. (Enrichment SETTING offsets is PR C.)
+ */
+function enrichmentRelative(task: Task, autoEligible: boolean) {
+  if (!autoEligible) return {}
+  return { relative: task.rrule ? null : relativeOf(task) }
+}
+
+/**
+ * A relative target the write made fixed (or a row no longer a one-off): the
+ * offsets and the link go with it, in the same snapshot.
+ */
+function collectEnrichmentRelativeClear(
+  task: Task,
+  left: RelativeTarget | null | undefined,
+  changes: FieldChanges,
+): void {
+  if (task.rrule || !relativeOf(task) || left) return
+  changes.setClauses.push('target_days_before = NULL, target_time = NULL, target_slot_id = NULL')
+  changes.fieldsChanged.push('target_days_before', 'target_time', 'target_slot_id')
 }
 
 /**

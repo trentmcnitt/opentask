@@ -295,6 +295,12 @@ const targetDaysBefore = z.number().int().min(0).max(366)
  */
 const leadDays = z.number().int().min(1).max(90)
 const targetTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected a time (HH:MM)')
+/**
+ * Relative targets (2026-10-24): the reminder period a relative target's time
+ * follows — one of the task OWNER's (checked in core, which knows the owner);
+ * it sets `target_time` to the period's start. Null = a custom time.
+ */
+const targetSlotId = z.number().int().positive()
 
 /**
  * REPEAT ENDS (2026-10-22, docs/TASK-MODEL.md § Repeat ends): "After N
@@ -349,9 +355,12 @@ export const taskCreateSchema = z
     recurrence_mode: recurrenceMode.default('from_due').optional(),
     // 2026-10-21: a rule with a deadline_at is deadline-anchored unless this
     // says otherwise; target_days_before / target_time default (`createTask`).
+    // 2026-10-24: on a one-off with a deadline, they make its target relative.
     repeat_anchor: repeatAnchor.optional(),
     target_days_before: targetDaysBefore.optional(),
     target_time: targetTime.optional(),
+    // Relative targets (2026-10-24): the period the time follows (`target_slot_id`).
+    target_slot_id: targetSlotId.nullable().optional(),
     // The deadlines page (2026-10-22): the lead override; null = the default.
     lead_days: leadDays.nullable().optional(),
     // Repeat ends (2026-10-22): one or the other; checked in `createTask`.
@@ -416,6 +425,9 @@ export const taskUpdateSchema = z
     repeat_anchor: repeatAnchor.optional(),
     target_days_before: targetDaysBefore.nullable().optional(),
     target_time: targetTime.nullable().optional(),
+    // Relative targets (2026-10-24): on a one-off with a deadline too. The
+    // period the time follows; `target_time` alone is a custom time.
+    target_slot_id: targetSlotId.nullable().optional(),
     // The deadlines page (2026-10-22): the lead override (series-level on a
     // repeat); null = the default table. Re-derives `lead_from`.
     lead_days: leadDays.nullable().optional(),
