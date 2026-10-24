@@ -45,6 +45,12 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
 import { log as logger } from '@/lib/logger'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
+import {
+  EMPTY_LABEL_FILTER,
+  filterByLabels,
+  labelFilterCount,
+  type LabelFilterCriteria,
+} from '@/lib/label-filter'
 import type { LabelColor, LabelConfig, Task } from '@/types'
 
 /**
@@ -389,6 +395,11 @@ interface TrackPanelProps {
   highlightId?: number | null
   /** The flash has played; it must not play again on a remount. */
   onHighlightDone?: () => void
+  /**
+   * The /quotas label chips (standalone only, 2026-10-24 — `QuotasSummary`
+   * owns them). See "THE LABEL FILTER" in the body.
+   */
+  labelFilter?: LabelFilterCriteria
 }
 
 /**
@@ -434,6 +445,17 @@ const SEARCH_CLUSTERS: ReturnType<typeof useResponsiveFolds> = {
   toggle: () => {},
 }
 
+/** The label filter over `quotas`, letting the deep-linked chip through — see "THE LABEL FILTER". */
+function filterByLabelsKeeping(
+  quotas: Task[],
+  labelFilter: LabelFilterCriteria,
+  highlightId: number | null | undefined,
+): Task[] {
+  if (labelFilterCount(labelFilter) === 0) return quotas
+  const passing = new Set(filterByLabels(quotas, labelFilter).map((q) => q.id))
+  return quotas.filter((q) => passing.has(q.id) || q.id === highlightId)
+}
+
 /**
  * "Now," for the period sections' math — refreshed every minute, not the 15s
  * convention elsewhere in the app (`useQuickSelectDate`, `QuickActionPanel`).
@@ -459,6 +481,7 @@ export function TrackPanel({
   searchQuery,
   highlightId,
   onHighlightDone,
+  labelFilter = EMPTY_LABEL_FILTER,
 }: TrackPanelProps) {
   const { labelConfig } = useLabelConfig()
   const timezone = useTimezone()
@@ -469,6 +492,7 @@ export function TrackPanel({
   const selection = useQuotaChipSelection({
     enabled: standalone,
     query: normalizeTaskSearch(searchQuery),
+    filterKey: JSON.stringify([labelFilter.selectedLabels, labelFilter.excludedLabels]),
     panelRef,
   })
   const detail = useTrackChipDetail({ onUndo, onCompleted, onRefresh, onWritten: selection.clear })
@@ -487,10 +511,23 @@ export function TrackPanel({
   // - every label cluster renders open (`SEARCH_CLUSTERS`), since a folded
   //   result is a result nobody can see — without touching the fold store;
   // - met quotas are shown even with "Show met" off, for the same reason.
-  // The header's overall count stays the whole set's: it describes the page.
+  // The header's overall count stays the whole set's — the set the label
+  // filter lets through, when there is one: it describes the page.
+  //
+  // THE LABEL FILTER (standalone only, 2026-10-24) is a lens rather than a
+  // hunt, so it narrows more than a search does: the period sections, their
+  // "N of M" and bars, AND the header's overall "met of total" all count only
+  // the quotas it lets through — the dashboard's precedent, whose top-bar
+  // pills count with its label filter applied (`useDateFacetCounts`). The
+  // page's own h1 and `QuotasSummary`'s "Showing N of M · Clear filter" line
+  // keep the whole number in sight. Folds and "Show met" behave as usual
+  // under it. Like search, it never reaches `useMetPutAway` (fed every quota
+  // below). The deep-linked chip is let through while it flashes, so a kept
+  // filter cannot swallow a widget's tap on a quota outside it.
+  const lensed = filterByLabelsKeeping(quotas, labelFilter, highlightId)
   const query = normalizeTaskSearch(searchQuery)
   const searching = query.length > 0
-  const shown = searching ? quotas.filter((q) => matchesTaskSearch(q, query)) : quotas
+  const shown = searching ? lensed.filter((q) => matchesTaskSearch(q, query)) : lensed
 
   const sections = trackSections(shown, timezone, now, weekStart)
   // What each cluster's shut header says. Keyed the same way the DOM is (one
@@ -512,7 +549,7 @@ export function TrackPanel({
   // last match closes the editor anyway.
   if (quotas.length === 0 || sections.length === 0) return null
 
-  const overall = quotaGroupSummary(quotas)
+  const overall = quotaGroupSummary(lensed)
 
   return (
     <section
