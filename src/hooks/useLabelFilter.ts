@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   EMPTY_LABEL_FILTER,
   excludeLabelIn,
@@ -52,13 +52,8 @@ export function useLabelFilter(storageKey: string) {
   const clearLabels = useCallback(() => setCriteria(EMPTY_LABEL_FILTER), [])
 
   const activeCount = labelFilterCount(criteria)
-  // One string per selection, for "reset when the filter changes" effects.
-  const key = useMemo(
-    () => JSON.stringify([criteria.selectedLabels, criteria.excludedLabels]),
-    [criteria],
-  )
 
-  return { criteria, activeCount, key, toggleLabel, excludeLabel, exclusiveLabel, clearLabels }
+  return { criteria, activeCount, toggleLabel, excludeLabel, exclusiveLabel, clearLabels }
 }
 
 function readStored(key: string): LabelFilterCriteria {
