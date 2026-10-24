@@ -13,6 +13,15 @@ import type { LabelConfig } from '@/types'
  * dashboard). The first two labels in their registry colours, then "+N".
  * `ai-to-process` is never shown (the row's shimmer says it). An `ai-failed`
  * chip gets a retry button when the row can reprocess.
+ *
+ * A chip is NEVER cut (Trent, 2026-10-24). The group sits in a row's
+ * `flex-wrap` meta line and moves there as a whole to the next line when it
+ * doesn't fit what the line has left; when the group is wider than a whole
+ * line (two long labels in the dashboard's narrow panel), it wraps itself, a
+ * whole chip at a time (`flex-wrap`, `max-w-full`). A single label longer than
+ * the line (labels allow 100 characters) breaks inside its chip rather than
+ * overflow it (`max-w-full`, `whitespace-normal`, `overflow-wrap: anywhere` —
+ * at its natural width a chip still never wraps, since it fits).
  */
 export function LabelBadges({
   labels,
@@ -31,7 +40,10 @@ export function LabelBadges({
   const visibleLabels = labels.filter((l) => l !== 'ai-to-process')
 
   return (
-    <div data-label-badges className={cn('flex flex-shrink-0 items-center gap-1', className)}>
+    <div
+      data-label-badges
+      className={cn('flex max-w-full min-w-0 flex-wrap items-center gap-1', className)}
+    >
       {visibleLabels.slice(0, 2).map((label) => {
         const colorClasses = getLabelClasses(label, labelConfig)
         const isAiFailed = label === 'ai-failed'
@@ -39,14 +51,14 @@ export function LabelBadges({
           <span
             key={label}
             className={cn(
-              'inline-flex items-center gap-0.5',
+              'inline-flex max-w-full min-w-0 items-center gap-0.5',
               isAiFailed && onReprocess && 'group/retry',
             )}
           >
             <Badge
               variant={colorClasses ? undefined : 'secondary'}
               className={cn(
-                'px-1.5 py-0 text-xs',
+                'max-w-full min-w-0 shrink px-1.5 py-0 text-xs [overflow-wrap:anywhere] whitespace-normal',
                 colorClasses && `${colorClasses} border-0`,
                 onLabelClick && 'cursor-pointer',
               )}
