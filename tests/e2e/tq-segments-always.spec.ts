@@ -114,7 +114,7 @@ for (const viewport of VIEWPORTS) {
         }
         await expect(prev).toBeDisabled()
         await expect(card.locator('[data-segment-empty]')).toHaveText('Nothing today')
-        await expect(card.getByLabel('0 of 0 considered')).toBeVisible()
+        await expect(card.getByLabel('0 of 0 considered', { exact: true })).toBeVisible()
 
         // Forward through every page, in order, to the last.
         for (const key of KEYS.slice(1)) {

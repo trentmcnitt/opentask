@@ -74,7 +74,7 @@ for (const size of [
       await page.goto('/')
       const card = page.locator('[data-tasks-panel]')
       await expect(card).toHaveAttribute('data-tasks-page', 'tasks:days')
-      await expect(card.getByLabel('0 of 4 considered')).toBeVisible()
+      await expect(card.getByLabel('0 of 4 considered', { exact: true })).toBeVisible()
 
       await segRow(page, decked).locator('[data-deck-tomorrow]').click()
       await expect(toast(page, /On deck for tomorrow/)).toBeVisible()
