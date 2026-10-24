@@ -441,7 +441,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // optimistically) — and a reload takes the server's values for those seven
   // fields (and "Day starts at") only, leaving every other field and the dirty set alone. Reloaded
   // after a period edit or undo in Settings (`TimeSlotSettings`), and when
-  // Settings opens or its window regains focus (`SnoozeSection`). Deliberately
+  // Settings opens or its window regains focus (`useFreshAnchorTimes`). Deliberately
   // NOT on sync events: every page already holds its own stream, and a second
   // stream plus a preferences GET after every task change in every tab costs
   // latency for a value that only Settings edits. Other pages read the new

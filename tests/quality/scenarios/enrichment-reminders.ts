@@ -10,7 +10,7 @@
  * at 8:30pm — the whole reason the slots are in the prompt.
  *
  * A thought that states no time of day goes in the user's DEFAULT reminder
- * slot (Settings → Default period; `defaultSlotLabel` here, marked
+ * slot (Settings → Default reminder period; `defaultSlotLabel` here, marked
  * "← default slot" in the prompt) — Trent, 2026-09-28. It used to be the slot
  * current at the moment of adding.
  *

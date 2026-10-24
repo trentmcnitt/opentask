@@ -102,6 +102,7 @@ import { DEFAULT_TIME_SLOTS, parseHHMM, type TimeSlot } from '@/lib/time-slot-as
 import type { QuotaPromptConfig } from '@/types'
 import { resolvePromptSlot } from '@/lib/quota-prompts'
 import { buildSchedule, parseCadence } from '@/lib/reminder-rule'
+import { ANCHOR_COLUMNS, newAccountLinks, type AnchorRow } from '@/lib/anchor-times'
 
 export function listTimeSlots(userId: number): TimeSlot[] {
   return getDb()
@@ -196,20 +197,55 @@ export function assertPromptSlotsOwned(
  * Install the default slots for a user. Idempotent — a user who already has
  * slots keeps them, so this can be called at login or on startup without
  * clobbering customised boundaries.
+ *
+ * A NEW ACCOUNT (2026-10-24): every user-creation path calls this
+ * (scripts/create-user.ts, the seed scripts, the test helpers), so it also
+ * links the anchor times that sit at a new period's start to that period —
+ * Default task time → Morning, Wake → Early morning, the pad → Morning /
+ * Midday / Afternoon / Evening (`newAccountLinks`; same times, nothing moves).
+ * Existing users never pass through here with slots to install (the startup
+ * backfill for slot-less users, `backfillTimeSlots`, installs slots only), so
+ * their settings stay as they are.
+ *
+ * `linkAnchors: false` installs the slots alone: the test seeds
+ * (tests/helpers/setup.ts, scripts/seed-test.ts) keep their user on the
+ * schema defaults (`DEFAULT_ANCHOR_ROW`, every setting custom), the baseline
+ * their tests write `morning_time` and the pad against directly.
  */
-export function seedDefaultTimeSlots(userId: number): void {
+export function seedDefaultTimeSlots(
+  userId: number,
+  { linkAnchors = true }: { linkAnchors?: boolean } = {},
+): void {
   const db = getDb()
-  const existing = db
-    .prepare('SELECT COUNT(*) as c FROM time_slots WHERE user_id = ?')
-    .get(userId) as { c: number }
-  if (existing.c > 0) return
+  db.transaction(() => {
+    const existing = db
+      .prepare('SELECT COUNT(*) as c FROM time_slots WHERE user_id = ?')
+      .get(userId) as { c: number }
+    if (existing.c > 0) return
 
-  const insert = db.prepare(
-    'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
-  )
-  DEFAULT_TIME_SLOTS.forEach((slot, index) => {
-    insert.run(userId, slot.label, slot.start_time, index)
-  })
+    const insert = db.prepare(
+      'INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, ?, ?, ?)',
+    )
+    const slots = DEFAULT_TIME_SLOTS.map((slot, index) => ({
+      id: Number(insert.run(userId, slot.label, slot.start_time, index).lastInsertRowid),
+      start_time: slot.start_time,
+    }))
+    if (!linkAnchors) return
+
+    // Read here, not through src/core/users/anchor-times.ts, which imports
+    // this module (a cycle at module-init time).
+    const row = db
+      .prepare(`SELECT ${ANCHOR_COLUMNS.join(', ')} FROM users WHERE id = ?`)
+      .get(userId) as AnchorRow | undefined
+    if (!row) return
+    const writes = newAccountLinks(row, slots)
+    const cols = Object.keys(writes) as (keyof AnchorRow)[]
+    if (cols.length === 0) return
+    db.prepare(`UPDATE users SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`).run(
+      ...cols.map((c) => writes[c]),
+      userId,
+    )
+  })()
 }
 
 /**

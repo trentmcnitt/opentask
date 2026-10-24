@@ -5260,7 +5260,7 @@ components:
           type: [integer, 'null']
           description: |
             The user's default reminder slot (a time slot id; Settings ->
-            Reminder periods -> Default period). A reminder with no stated time
+            Reminder periods -> Default reminder period). A reminder with no stated time
             goes here: one created without a schedule, and one whose text AI
             enrichment finds no time cue in. Quotas that have not chosen a
             period prompt here too. `null` means the first period of the day
@@ -5341,8 +5341,9 @@ components:
           type: string
           example: '09:00'
           description: |
-            The user's Morning time (HH:MM): the default task time — a
-            timeless rule's time, a deadline's automatic target, "Tomorrow".
+            The user's Default task time (HH:MM; "Morning time" in Settings
+            until 2026-10-24) — a timeless rule's time, a deadline's automatic
+            target (task queue off), "Tomorrow".
             Always the RESOLVED time: when `morning_slot_id` links it to a
             reminder period, the period's current start (anchor times,
             2026-10-21). PATCH alone sets a custom time and unlinks; sent with
@@ -6105,7 +6106,7 @@ components:
             Every repeating task or reminder has a time of day (2026-10-12). A
             rule sent without `BYHOUR` is stored with `BYHOUR`/`BYMINUTE` added:
             the local time of a `due_at` sent in the same request, else the
-            user's Morning time (`morning_time` in the user preferences) - e.g.
+            user's Default task time (`morning_time` in the user preferences) - e.g.
             `FREQ=DAILY` becomes `FREQ=DAILY;BYHOUR=8;BYMINUTE=30`. A quota
             (`progress_target` > 1 or `is_tracked`) is exempt: its rule is a bare
             period rule (`FREQ=WEEKLY`) and is stored as sent.
@@ -6294,7 +6295,7 @@ components:
           type: array
           items:
             type: string
-          example: ['Morning time', 'Number pad button 2']
+          example: ['Default task time', 'Number pad button 2']
           description: >
             The user's settings that were linked to a deleted slot and now keep
             its start as a custom time (DELETE only; always empty for PATCH — a
@@ -6428,7 +6429,7 @@ components:
             or reminder is stored with `BYHOUR`/`BYMINUTE` added (2026-10-12):
             the local time of a `due_at` sent with it, else the task's
             `anchor_time`, else its current `due_at`'s time, else the user's
-            Morning time. A rule identical to the stored one is no change. A
+            Default task time. A rule identical to the stored one is no change. A
             quota's bare period rule is stored as sent - judged on the task the
             request leaves (a request that makes it a quota keeps the bare rule).
             A deadline-anchored repeat's rule walks its deadline: a new one

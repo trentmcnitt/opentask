@@ -15,10 +15,10 @@ import { formatMinutes } from '@/lib/reminder-rule'
 import { showToast } from '@/lib/toast'
 
 /**
- * Settings → Reminder periods → Default period, and the quota-reminders switch.
+ * Settings → Reminder periods → Default reminder period, and the quota-reminders switch.
  *
- * DEFAULT PERIOD (Trent, 2026-09-28): the period a reminder goes in when
- * nothing says when — a reminder added with just its words (the Reminders
+ * DEFAULT REMINDER PERIOD (Trent, 2026-09-28; "Default period" until
+ * 2026-10-24): the period a reminder goes in when nothing says when — a reminder added with just its words (the Reminders
  * quick add, an Apple Shortcut's title-only POST), and one whose text AI
  * enrichment finds no time cue in (`defaultReminderSlot` on the server). It is
  * also where unmet quotas prompt when a quota has not chosen a period, which
@@ -65,7 +65,7 @@ export function QuotaPromptSettings({ timeSlots }: { timeSlots: TimeSlot[] }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <label htmlFor="default-reminder-slot" className="text-sm">
-              Default period
+              Default reminder period
             </label>
             <div className="text-xs text-zinc-500 dark:text-zinc-400">
               Where a reminder goes when you don&rsquo;t say when
@@ -82,7 +82,7 @@ export function QuotaPromptSettings({ timeSlots }: { timeSlots: TimeSlot[] }) {
             <SelectTrigger
               id="default-reminder-slot"
               className="w-auto min-w-48"
-              aria-label="Default period"
+              aria-label="Default reminder period"
               data-default-reminder-slot
             >
               <SelectValue placeholder="Choose a period" />
@@ -104,8 +104,8 @@ export function QuotaPromptSettings({ timeSlots }: { timeSlots: TimeSlot[] }) {
         <div>
           <div className="text-sm">Quota reminders</div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            Unmet quotas also show up among your reminders each day, in the default period unless a
-            quota picks its own
+            Unmet quotas also show up among your reminders each day, in the default reminder period
+            unless a quota picks its own
           </div>
         </div>
         <Switch

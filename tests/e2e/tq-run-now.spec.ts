@@ -1,6 +1,6 @@
 /**
- * Task queue: "Roll over now" from Settings (src/components/settings/
- * RolloverNowRow.tsx, POST /api/rollover/run-now), and the task-segment
+ * Task queue: "Roll over now" from Settings → Advanced (src/components/
+ * settings/RolloverNowRow.tsx, POST /api/rollover/run-now), and the task-segment
  * rows' hover boxes staying inside their rows (the Today button's grey block
  * poked out of the row, 2026-10-20).
  *
@@ -66,6 +66,15 @@ function weekdayCode(iso: string): string {
   return ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][day - 1]
 }
 
+/** Settings, with the Advanced fold (closed on every visit) opened. */
+async function openAdvanced(page: Page) {
+  await page.goto('/settings')
+  const toggle = page.getByRole('button', { name: 'Advanced' })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+}
+
 const tasks = (n: number) => `${n} ${n === 1 ? 'task' : 'tasks'}`
 const segRow = (scope: Page | Locator, id: number) => scope.locator(`[data-segment-task="${id}"]`)
 
@@ -108,7 +117,7 @@ test('Settings → Roll over now: confirm names the count, Undo puts it back, th
     expect(dry.ids.waiting).toEqual([weekly])
     expect(dry.rolled + dry.released).toBe(0)
 
-    await page.goto('/settings')
+    await openAdvanced(page)
     const button = page.locator('[data-rollover-now]')
     await button.click()
     const dialog = page.getByRole('alertdialog')
@@ -150,7 +159,7 @@ test('Roll over now with nothing to move says so, without a dialog', async ({ pa
     // Clear anything eligible first (a real run), then ask again.
     await page.request.post('/api/rollover/run-now')
     ids.push(await create(page, { title: uniqueTitle('RN later'), due_at: daysFromNow(2) }))
-    await page.goto('/settings')
+    await openAdvanced(page)
     await page.locator('[data-rollover-now]').click()
     await expect(page.locator('[data-sonner-toast]')).toContainText('Nothing to roll over')
     await expect(page.getByRole('alertdialog')).toHaveCount(0)

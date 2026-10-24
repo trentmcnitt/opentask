@@ -44,7 +44,9 @@ export function seedTestUser(
   // Register the system label vocabulary (§7.2). The startup backfill runs at
   // schema-init, before this user exists, so it can't cover them.
   seedSystemLabels(userId)
-  seedDefaultTimeSlots(userId)
+  // The schema-default baseline (every anchor custom), not a new account's
+  // links: tests set morning_time and the pad straight in the row.
+  seedDefaultTimeSlots(userId, { linkAnchors: false })
 }
 
 /**

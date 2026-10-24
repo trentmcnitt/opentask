@@ -79,7 +79,7 @@ function remindersMoved(n: number): string {
 
 /**
  * What a removal did besides removing: the reminders and quotas it moved to
- * the nearest period, and the settings that followed it (Morning time, a pad
+ * the nearest period, and the settings that followed it (Default task time, a pad
  * button…), which keep its start as their own time.
  */
 function removalSummary(result: SlotChange): string {
@@ -110,7 +110,7 @@ export function TimeSlotSettings({
   refresh: () => Promise<void>
 }) {
   // The section's one `useTimeSlots()` list (settings/ScheduleSection.tsx),
-  // shared with the Default period picker. Each change re-reads it, so both
+  // shared with the Default reminder period picker. Each change re-reads it, so both
   // show what the server stored.
   const slots = sortSlotsByStart(timeSlots)
   // A period change can move the anchor times that follow it (Morning, Wake,
