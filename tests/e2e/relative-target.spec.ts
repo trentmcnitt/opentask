@@ -119,6 +119,22 @@ async function pick(page: Page, select: Locator, option: string | RegExp) {
   await page.getByRole('option', { name: option }).click()
 }
 
+/**
+ * "-1 day" on the pad makes a relative target FIXED (ruling 1), counted from
+ * the date the row shows; Save stores it with the offsets and the link gone.
+ * (A day on from the day before would stop at the deadline.)
+ */
+async function padTapMakesFixed(page: Page, dialog: Locator, id: number, expected: DateTime) {
+  await dialog.getByRole('button', { name: '-1 day', exact: true }).click()
+  await expect(dialog.locator('[data-target-relative]')).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect.poll(async () => (await stateOf(page, id)).target_slot_id).toBeNull()
+  const after = await stateOf(page, id)
+  expect(after.target_days_before).toBeNull()
+  expect(Date.parse(after.target_at!)).toBe(expected.toMillis())
+}
+
 test.describe('Relative targets — desktop, light', () => {
   test.use({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' })
 
@@ -178,7 +194,7 @@ test.describe('Relative targets — desktop, light', () => {
         await expect(dialog).toHaveCount(0)
         await expect.poll(() => sent.length).toBe(1)
         expect(sent[0].postDataJSON()).toEqual({ target_days_before: 1, target_slot_id: period.id })
-        let after = await stateOf(page, id)
+        const after = await stateOf(page, id)
         expect(after).toMatchObject({
           target_days_before: 1,
           target_time: '19:15',
@@ -212,15 +228,7 @@ test.describe('Relative targets — desktop, light', () => {
         expect((await stateOf(page, id)).target_slot_id).toBe(period.id)
 
         // A pad tap makes it fixed (ruling 1): from the date the row shows.
-        dialog = await openPanel(page, id)
-        await dialog.getByRole('button', { name: '-1 day', exact: true }).click()
-        await expect(dialog.locator('[data-target-relative]')).toHaveCount(0)
-        await dialog.getByRole('button', { name: 'Save', exact: true }).click()
-        await expect(dialog).toHaveCount(0)
-        await expect.poll(async () => (await stateOf(page, id)).target_slot_id).toBeNull()
-        after = await stateOf(page, id)
-        expect(after.target_days_before).toBeNull()
-        expect(Date.parse(after.target_at!)).toBe(follows.minus({ days: 1 }).toMillis())
+        await padTapMakesFixed(page, await openPanel(page, id), id, follows.minus({ days: 1 }))
       })
     } finally {
       await trash(page, [id])
