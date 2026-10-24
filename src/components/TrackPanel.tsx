@@ -1274,6 +1274,7 @@ function TrackMetCount({
     <button
       type="button"
       data-track-met-toggle
+      data-track-overall={countText}
       onClick={showMet.toggle}
       aria-expanded={showMet.shown}
       aria-label={`${countText} met — ${showMet.shown ? 'hide' : 'show'} the met ones`}
@@ -1289,6 +1290,7 @@ function TrackMetCount({
     </button>
   ) : (
     <span
+      data-track-overall={countText}
       aria-label={`${countText} met`}
       className={cn(
         'text-muted-foreground shrink-0 px-1.5 text-xs whitespace-nowrap tabular-nums',

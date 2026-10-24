@@ -123,6 +123,8 @@ function LabelChipBadge({
     <Badge
       variant={variant}
       className={cn('flex-shrink-0 cursor-pointer select-none', className)}
+      data-label-chip={label}
+      data-chip-state={chipState}
       onClick={handlers.onClick}
       onPointerDown={handlers.onPointerDown}
       onPointerUp={handlers.onPointerUp}
