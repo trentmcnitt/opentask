@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
-import { createTask, snoozeTask } from '@/core/tasks'
+import { createTask, snoozeTask, updateTask } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { deckTasks } from '@/core/tasks/deck'
 import { runTaskRollover } from '@/core/tasks/task-rollover'
@@ -186,6 +186,56 @@ describe('RT-H: a collaborator’s undo restores a link from before the owner’
       target_slot_id: null,
       target_time: '20:30',
       due_at: at('2026-11-03T20:30'),
+    })
+  })
+
+  test('RT-H13: the collaborator’s undo moves the deadline back before a linked target — unlinked, clamped, re-derived', () => {
+    // Deadline Tue 20:45; the target that day at Evening (20:30).
+    const t = sharedLinked('2026-11-03T20:45', 0)
+    expect(t.due_at).toBe(at('2026-11-03T20:30'))
+    updateTask({ ...COLLABORATOR, taskId: t.id, input: { deadline_at: at('2026-11-03T22:00') } })
+    retime('21:00') // allowed against 22:00: the target follows to 21:00
+    expect(getTaskById(t.id)!.due_at).toBe(at('2026-11-03T21:00'))
+    executeUndo(2) // the deadline back to 20:45
+    expect(getTaskById(t.id)).toMatchObject({
+      deadline_at: at('2026-11-03T20:45'),
+      target_slot_id: null,
+      target_days_before: 0,
+      target_time: '20:45',
+      due_at: at('2026-11-03T20:45'),
+    })
+    executeRedo(2)
+    expect(getTaskById(t.id)).toMatchObject({
+      deadline_at: at('2026-11-03T22:00'),
+      target_time: '20:45',
+      due_at: at('2026-11-03T20:45'),
+    })
+  })
+
+  test('RT-H14: the same with a custom time — clamped to the deadline and re-derived', () => {
+    const t = createTask({
+      ...OWNER,
+      input: {
+        title: 'Shared custom',
+        project_id: 2,
+        deadline_at: at('2026-11-03T20:45'),
+        target_days_before: 0,
+        target_time: '20:30',
+      },
+    })
+    updateTask({ ...COLLABORATOR, taskId: t.id, input: { deadline_at: at('2026-11-03T22:00') } })
+    updateTask({ ...OWNER, taskId: t.id, input: { target_time: '21:00' } })
+    expect(getTaskById(t.id)!.due_at).toBe(at('2026-11-03T21:00'))
+    executeUndo(2)
+    expect(getTaskById(t.id)).toMatchObject({
+      deadline_at: at('2026-11-03T20:45'),
+      target_time: '20:45',
+      due_at: at('2026-11-03T20:45'),
+    })
+    executeRedo(2)
+    expect(getTaskById(t.id)).toMatchObject({
+      deadline_at: at('2026-11-03T22:00'),
+      due_at: at('2026-11-03T20:45'),
     })
   })
 })

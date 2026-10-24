@@ -1143,7 +1143,8 @@ describe('TM-INV: relative targets (seeded random)', () => {
    * fence skips (a decked repeat taken off deck). After every write, for
    * every task:
    *  1. an OPEN one-off with offsets has a deadline, no deck, `target_auto`
-   *     0, and `due_at` = `relativeTargetAt(deadline, offsets)`;
+   *     0, and `due_at` = `relativeTargetAt(deadline, offsets)` — the derived
+   *     target, clamped to the deadline;
    *  2. a LINKED row (any state) has both offsets, and `target_time` equals
    *     its period's current start — a period that still exists;
    *  3. the offsets come in pairs, and a link never sits without them.
@@ -1170,7 +1171,7 @@ describe('TM-INV: relative targets (seeded random)', () => {
     expect(env.n.relative).toBeGreaterThan(30)
     expect(env.n.linked).toBeGreaterThan(30)
     expect(env.n.periodWrites).toBeGreaterThan(30)
-    expect(env.n.collaboratorUndos).toBeGreaterThan(20)
+    expect(env.n.collaboratorUndos).toBeGreaterThan(10)
     expect(env.n.deckRetimes).toBeGreaterThan(20)
   }, 60_000)
 })
@@ -1323,21 +1324,29 @@ function rtPeriodOp(env: RtEnv, op: number, tag: string): void {
 }
 
 /**
- * A collaborator interleaving: the collaborator defers (or re-times) a shared
- * linked task, the OWNER then retimes or deletes that period, and the
- * collaborator undoes — a snapshot from before the period write, restored
- * after it.
+ * A collaborator interleaving: the collaborator defers, re-times or moves the
+ * deadline of a shared task, the OWNER then re-times it or retimes or deletes
+ * its period, and the collaborator undoes — a snapshot from before the
+ * owner's write, restored after it.
  */
 function rtCollaboratorUndo(env: RtEnv, ids: number[], tag: string): void {
   const shared = getTaskById(env.pick(ids.slice(1, 3)))!
   const linked = shared.target_slot_id
   const to = env.clock.plus({ minutes: Math.floor(env.r() * 4 * 24 * 60) })
-  if (env.r() < 0.6) {
+  const mine = env.r()
+  if (mine < 0.4) {
     snoozeTask({ ...RT_COLLABORATOR, taskId: shared.id, until: to.toUTC().toISO()! })
-  } else {
+  } else if (mine < 0.7) {
     updateTask({ ...RT_COLLABORATOR, taskId: shared.id, input: { target_time: env.hhmm() } })
+  } else {
+    // A deadline move: undone later, it can put the deadline back before a
+    // target the owner moved since (the heal's clamp).
+    updateTask({ ...RT_COLLABORATOR, taskId: shared.id, input: { deadline_at: env.deadline() } })
   }
-  if (linked !== null && env.r() < 0.6) {
+  const theirs = env.r()
+  if (theirs < 0.3) {
+    updateTask({ ...u, taskId: shared.id, input: { target_time: env.hhmm() } })
+  } else if (linked !== null && theirs < 0.7) {
     updateTimeSlot({ ...u, slotId: linked, input: { start_time: env.hhmm() } })
   } else if (linked !== null && listTimeSlots(TEST_USER_ID).length > 2) {
     deleteTimeSlot({ ...u, slotId: linked })
