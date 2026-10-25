@@ -47,8 +47,9 @@
  * so emitting here would loop.
  */
 
+import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
-import { openTaskDayOf, openTaskLocalDay } from '@/lib/opentask-day'
+import { dayStartMoment, openTaskDayOf } from '@/lib/opentask-day'
 import {
   localDay,
   parseDeckDay,
@@ -59,7 +60,7 @@ import {
 } from '@/lib/task-segments'
 import { rowToTask, taskColumns, type TaskRow } from './read'
 import { dayBoundaryForUser } from './rollover-time'
-import type { Task } from '@/types'
+import type { Task, UndoSnapshot } from '@/types'
 
 export type { SegmentLeft }
 
@@ -141,6 +142,17 @@ export function rosterLeftRows(
       return [task.id, task] as const
     }),
   )
+  // Deploy day only: the state each NULL-section Upcoming row had before it
+  // was handled (one read, only when there is such a row).
+  const nullUpcoming = missing.filter((r) => r.kind === 'upcoming' && r.section === null)
+  const before =
+    nullUpcoming.length > 0
+      ? beforeHandled(
+          userId,
+          new Set(nullUpcoming.map((r) => r.task_id)),
+          dayStartMoment(today, timezone, dayStart),
+        )
+      : new Map<number, Partial<Task>>()
   for (const r of missing) {
     const task = tasks.get(r.task_id)
     // Trashed: gone from M. (Not `archived_at`: done archives a one-off.)
@@ -152,7 +164,10 @@ export function rosterLeftRows(
     )
     if (!left) continue
     const section =
-      r.kind === 'upcoming' ? (r.section ?? fallbackSection(task, timezone, now, dayStart)) : null
+      r.kind === 'upcoming'
+        ? (r.section ??
+          fallbackSection(task, before.get(task.id) ?? null, today, timezone, now, dayStart))
+        : null
     const list = out.get(r.kind) ?? []
     list.push({ task, left, section })
     out.set(r.kind, list)
@@ -162,27 +177,76 @@ export function rosterLeftRows(
 
 /**
  * A left Upcoming row with no remembered section (remembered before the
- * column, deploy day): the section it would be in now, if it still has one
- * (`upcomingState`, read as unconsidered); else the rule's own test — Tomorrow
- * when its anchor (deck day, else target) is tomorrow, otherwise Later. A done
- * or targeted-today row usually has no anchor ahead: Later.
+ * column — deploy day only), judged by the anchor it had WHEN LISTED, relative
+ * to the roster's day:
+ *  1. the section it would be in now, if the handling left its anchor alone
+ *     (a done one-off; `upcomingState`, read as unconsidered);
+ *  2. else the state before the handling — "Today" moves the target to today
+ *     and restamps `target_set_at`, a deck replaces it — from today's undo
+ *     entry for the task (`beforeHandled`), read the same way;
+ *  3. else the rule's own test on whatever anchor is known (the before one,
+ *     else the current one): Tomorrow when it is the day after the roster's
+ *     day; otherwise Later.
  */
 function fallbackSection(
   task: Task,
+  before: Partial<Task> | null,
+  day: string,
   timezone: string,
   now: Date,
   dayStart: string,
 ): UpcomingSection {
-  const fresh = { ...task, last_considered_at: null, segment_deferred_at: null }
-  const placed = upcomingState(fresh, timezone, now, dayStart)
+  const unconsidered = { last_considered_at: null, segment_deferred_at: null }
+  const placed = upcomingState({ ...task, ...unconsidered }, timezone, now, dayStart)
   if (placed) return placed.section
-  const tomorrow = openTaskLocalDay(now, timezone, dayStart).plus({ days: 1 })
-  const anchor = task.on_deck_day
-    ? parseDeckDay(task.on_deck_day, timezone)
-    : task.due_at
-      ? localDay(task.due_at, timezone, dayStart)
+  const prior = before ? { ...task, ...before, ...unconsidered } : null
+  const placedBefore = prior ? upcomingState(prior, timezone, now, dayStart) : null
+  if (placedBefore) return placedBefore.section
+  const t = prior ?? task
+  const anchor = t.on_deck_day
+    ? parseDeckDay(t.on_deck_day, timezone)
+    : t.due_at
+      ? localDay(t.due_at, timezone, dayStart)
       : null
-  return anchor && +anchor === +tomorrow ? 'tomorrow' : 'later'
+  const next = DateTime.fromISO(day, { zone: timezone }).plus({ days: 1 })
+  return anchor && +anchor === +next ? 'tomorrow' : 'later'
+}
+
+/**
+ * Each task's state just before its LATEST undo entry since `since` (the
+ * start of the roster's OpenTask day) — the handling that took it out of
+ * Upcoming. One query over the user's entries; an undone entry is skipped.
+ */
+function beforeHandled(
+  userId: number,
+  taskIds: Set<number>,
+  since: Date,
+): Map<number, Partial<Task>> {
+  const rows = getDb()
+    .prepare(
+      `SELECT snapshot, created_at FROM undo_log
+        WHERE user_id = ? AND undone = 0 AND created_at >= ? ORDER BY id ASC`,
+    )
+    // A second's slack in SQL (stamps may carry milliseconds); exact below.
+    .all(userId, new Date(since.getTime() - 1000).toISOString()) as {
+    snapshot: string
+    created_at: string
+  }[]
+  const out = new Map<number, Partial<Task>>()
+  for (const row of rows) {
+    if (Date.parse(row.created_at) < since.getTime()) continue
+    let snaps: UndoSnapshot[]
+    try {
+      snaps = JSON.parse(row.snapshot) as UndoSnapshot[]
+    } catch {
+      continue
+    }
+    if (!Array.isArray(snaps)) continue
+    for (const snap of snaps) {
+      if (taskIds.has(snap.task_id)) out.set(snap.task_id, snap.before_state)
+    }
+  }
+  return out
 }
 
 /**

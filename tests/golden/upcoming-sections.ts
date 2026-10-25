@@ -15,7 +15,9 @@
  *  - a move restamps `target_set_at`: a fresh plan.
  * Read at 21:00 local, America/Chicago (Sun Nov 1 2026 is the DST change).
  */
+import { expect } from 'vitest'
 import { updateTask } from '@/core/tasks'
+import { getTaskById } from '@/core/tasks/read'
 import type { GoldenScenario } from './types'
 import { iso, upcoming } from './helpers'
 
@@ -87,48 +89,58 @@ export const upcomingSectionsScenarios: GoldenScenario[] = [
   {
     id: 'us-relative-one-off-deadline-moves',
     title:
-      'A relative one-off (the day before at 9:00) with a lead of 7: the deadline moves, the plan follows',
+      'A relative one-off (the day before at 9:00) with a lead of 10: the deadline moves, the restamp clamps Later',
     source:
       'plan-upcoming-split-1024 § Golden timelines ("a relative one-off whose deadline moves")',
     from: '2026-10-12',
-    to: '2026-11-05',
+    to: '2026-11-04',
     policy: ['tap'],
     tasks: [
       {
         name: 'task',
         created: '2026-10-12T10:00',
-        // Deadline Fri Oct 30 17:00 → target Thu Oct 29 9:00 (wait 17);
-        // lead 7 → Later Thu Oct 22 — counted from the TARGET, not the
-        // deadline.
+        // Deadline Fri Oct 30 17:00 → target Thu Oct 29 9:00 (wait 17); lead
+        // 10 → Later Mon Oct 19 — counted from the TARGET (from the deadline
+        // it would be Tue Oct 20). Tapped there: seen.
         input: {
           title: 'Synthetic filing',
           deadline_at: iso('2026-10-30T17:00'),
           target_days_before: 1,
           target_time: '09:00',
-          lead_days: 7,
+          lead_days: 10,
         },
       },
     ],
     events: [
       {
-        // Tue Oct 20, before the Later day: the deadline moves to Fri Nov 6
-        // 17:00 → target Thu Nov 5 9:00, `target_set_at` restamped (wait 16).
-        // Lead 7 → Later Thu Oct 29; Tomorrow Wed Nov 4. Oct 22 and Oct 28
-        // are quiet now.
-        at: '2026-10-20T10:00',
+        // Wed Oct 28 10:00 (the old plan's Tomorrow day): the deadline moves
+        // to Thu Nov 5 17:00 → target Wed Nov 4 9:00, and `target_set_at` is
+        // RESTAMPED to Oct 28. Later = max(Nov 4 − 10 = Oct 25, set day + 1 =
+        // Oct 29) = Thu Oct 29; Tomorrow Tue Nov 3. Without the restamp the
+        // Later day would be Oct 25 — already come and unseen since Oct 19, so
+        // Oct 28 would show "later": it is quiet instead.
+        at: '2026-10-28T10:00',
         run: (ctx) =>
           void updateTask({
             userId: ctx.userId,
             userTimezone: ctx.timezone,
             taskId: ctx.ids.task,
-            input: { deadline_at: iso('2026-11-06T17:00') },
+            input: { deadline_at: iso('2026-11-05T17:00') },
           }),
+      },
+      {
+        at: '2026-10-28T10:01',
+        run: (ctx) => {
+          const t = getTaskById(ctx.ids.task)!
+          expect(t.due_at).toBe(iso('2026-11-04T09:00'))
+          expect(t.target_set_at).toBe(iso('2026-10-28T10:00'))
+        },
       },
     ],
     expect: {
       task: {
-        ...upcoming({ later: ['2026-10-29'], tomorrow: ['2026-11-04'] }),
-        '2026-11-05': 'over 1×',
+        ...upcoming({ later: ['2026-10-19', '2026-10-29'], tomorrow: ['2026-11-03'] }),
+        '2026-11-04': 'over 1×',
       },
     },
   },

@@ -873,6 +873,10 @@ describe('Upcoming sections: repeat leads and the day roster (2026-10-25)', () =
   test('UP-113: a repeat’s lead must be shorter than its rule’s wait — every repeat (400)', () => {
     const weekly = { rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0' }
     expect(() => make({ ...weekly, lead_days: 7 })).toThrow(ValidationError)
+    // The words fit a target-anchored repeat with no deadline too.
+    expect(() => make({ ...weekly, lead_days: 7 })).toThrow(
+      'Lead time (lead_days) must be shorter than the time between occurrences',
+    )
     const ok = make({ ...weekly, lead_days: 6 })
     expect(getTaskById(ok.id)!.lead_days).toBe(6)
     expect(() =>
@@ -950,6 +954,21 @@ describe('Upcoming sections: repeat leads and the day roster (2026-10-25)', () =
       state: 'considered',
       section: 'tomorrow',
       left: 'done',
+    })
+    // Left Tomorrow via "Today" with a NULL section: its target is now TODAY
+    // and `target_set_at` restamped, so the task alone no longer says where it
+    // was — the state before the move (today's undo entry) does: Tomorrow.
+    const c = make({ due_at: at('2026-10-20T15:00') }) // made Oct 19: wait 1, none
+    getDb()
+      .prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
+      .run(at('2026-10-12T10:00'), c.id) // set a week ago: Tomorrow on Oct 19
+    expect(upcomingRow(c.id, { handledRows: true })).toMatchObject({ section: 'tomorrow' })
+    getDb().prepare('UPDATE segment_roster SET section = NULL WHERE task_id = ?').run(c.id)
+    targetTasksToday(TEST_USER_ID, tz, [c.id])
+    expect(upcomingRow(c.id, { handledRows: true })).toEqual({
+      state: 'considered',
+      section: 'tomorrow',
+      left: 'target',
     })
   })
 })
