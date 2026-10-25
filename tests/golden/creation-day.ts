@@ -23,7 +23,7 @@
 import { markDone } from '@/core/tasks/mark-done'
 import type { SimContext } from '@/core/sim/day-simulator'
 import type { GoldenScenario } from './types'
-import { headsUps, iso } from './helpers'
+import { headsUps, iso, upcoming } from './helpers'
 
 const EVERY_7_DAYS = 'FREQ=DAILY;INTERVAL=7;BYHOUR=12;BYMINUTE=0'
 const BARE_WEEKLY = 'FREQ=WEEKLY;BYHOUR=12;BYMINUTE=0'
@@ -40,7 +40,7 @@ function doneAt(at: string): NonNullable<GoldenScenario['events']>[number] {
 /**
  * Made Sun Oct 11 at 10:00 for noon, done Thu Oct 15 at 18:00 → Sun Oct 18.
  * Sun–Wed over target (1×–4×); Thursday's completion makes the wait to
- * Sunday 3 days: Saturday's heads-up.
+ * Sunday 3 days: Tomorrow on Saturday (no Later: lead 1).
  */
 function sundayDoneThursday(id: string, rrule: string, what: string): GoldenScenario {
   return {
@@ -64,7 +64,7 @@ function sundayDoneThursday(id: string, rrule: string, what: string): GoldenScen
         '2026-10-12': 'over 2×',
         '2026-10-13': 'over 3×',
         '2026-10-14': 'over 4×',
-        '2026-10-17': 'upcoming',
+        '2026-10-17': 'tomorrow',
         '2026-10-18': 'over 1×',
       },
     },
@@ -92,10 +92,13 @@ export const creationDayScenarios: GoldenScenario[] = [
       },
     ],
     // Each occurrence done on its day (21:00): the wait to the next is 22 —
-    // 4 days before and the day before.
+    // Later 4 days before, Tomorrow the day before.
     expect: {
       task: {
-        ...headsUps(['2026-10-30', '2026-11-02', '2026-11-21', '2026-11-24']),
+        ...upcoming({
+          later: ['2026-10-30', '2026-11-21'],
+          tomorrow: ['2026-11-02', '2026-11-24'],
+        }),
         ...headsUps(['2026-10-12', '2026-11-03', '2026-11-25'], 'over 1×'),
       },
     },
@@ -120,7 +123,10 @@ export const creationDayScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        ...headsUps(['2026-10-30', '2026-11-02', '2026-11-21', '2026-11-24']),
+        ...upcoming({
+          later: ['2026-10-30', '2026-11-21'],
+          tomorrow: ['2026-11-02', '2026-11-24'],
+        }),
         ...headsUps(['2026-11-03', '2026-11-25'], 'over 1×'),
       },
     },
@@ -140,15 +146,15 @@ export const creationDayScenarios: GoldenScenario[] = [
         input: { title: 'Synthetic every-week task', rrule: BARE_WEEKLY },
       },
     ],
-    // Oct 11 done 14:00 → Oct 18 (wait 7: Saturday). Oct 18 missed; done Tue
-    // Oct 20 → Sun Oct 25, not Tue Oct 27 (wait 5: Saturday).
+    // Oct 11 done 14:00 → Oct 18 (wait 7: Tomorrow Saturday). Oct 18 missed;
+    // done Tue Oct 20 → Sun Oct 25, not Tue Oct 27 (wait 5: Tomorrow Saturday).
     events: [doneAt('2026-10-11T14:00'), doneAt('2026-10-20T15:00')],
     expect: {
       task: {
-        '2026-10-17': 'upcoming',
+        '2026-10-17': 'tomorrow',
         '2026-10-18': 'over 1×',
         '2026-10-19': 'over 2×',
-        '2026-10-24': 'upcoming',
+        '2026-10-24': 'tomorrow',
         '2026-10-25': 'over 1×',
       },
     },
@@ -168,12 +174,13 @@ export const creationDayScenarios: GoldenScenario[] = [
       },
     ],
     // Oct 11 done 14:00 → Oct 18. Done Fri Oct 16 (before Oct 18) → Oct 25:
-    // Saturday Oct 17's heads-up never comes; the wait Fri → Sun is 9 (Thu, Sat).
+    // Saturday Oct 17's heads-up never comes; the wait Fri → Sun is 9 (Later
+    // Thu, Tomorrow Sat).
     events: [doneAt('2026-10-11T14:00'), doneAt('2026-10-16T18:00')],
     expect: {
       task: {
-        '2026-10-22': 'upcoming',
-        '2026-10-24': 'upcoming',
+        '2026-10-22': 'later',
+        '2026-10-24': 'tomorrow',
         '2026-10-25': 'over 1×',
       },
     },
@@ -200,8 +207,8 @@ export const creationDayScenarios: GoldenScenario[] = [
       },
     ],
     // Not over target the evening it is made. The wait to Oct 23 is under 7
-    // days: the day-before heads-up only.
-    expect: { task: { '2026-10-22': 'upcoming', '2026-10-23': 'over 1×' } },
+    // days: Tomorrow only.
+    expect: { task: { '2026-10-22': 'tomorrow', '2026-10-23': 'over 1×' } },
   },
   {
     id: 'cd-weekly-friday-dated-made-before-its-time',
@@ -244,11 +251,11 @@ export const creationDayScenarios: GoldenScenario[] = [
         },
       },
     ],
-    // Not over target at birth. The wait to Nov 15 is 30 days: heads-ups 4
-    // days before and the day before.
+    // Not over target at birth. The wait to Nov 15 is 30 days: Later 4 days
+    // before, Tomorrow the day before.
     expect: {
       task: {
-        ...headsUps(['2026-11-11', '2026-11-14']),
+        ...upcoming({ later: ['2026-11-11'], tomorrow: ['2026-11-14'] }),
         '2026-11-15': 'over 1×',
       },
     },

@@ -267,18 +267,7 @@ function targetAnchoredDates(
     ? null
     : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, timezone)
   const deadlineAt = tracked ? null : (input.deadline_at ?? null)
-  // A target-anchored repeat's lead override (the Later day ahead of each
-  // occurrence, 2026-10-25) must be shorter than its rule's wait, walked
-  // from its first occurrence (`leadDaysProblem`, a 400).
-  if (rrule && dueAt && !tracked && !input.is_reminder) {
-    const leadProblem = leadDaysProblem(
-      input.lead_days ?? null,
-      { rrule, recurrence_mode: input.recurrence_mode ?? 'from_due', anchor_time: null },
-      dueAt,
-      timezone,
-    )
-    if (leadProblem) throw new ValidationError(leadProblem)
-  }
+  assertRepeatLead(input, rrule, dueAt, tracked, timezone)
   const autoEligible = !rrule && !tracked && !input.is_reminder
   const relative = createRelative(input, rrule, !tracked && !input.is_reminder, deadlineAt, ctx)
   const target = resolveTarget(
@@ -315,6 +304,29 @@ function targetAnchoredDates(
     leadFrom,
     leadDays: tracked || input.is_reminder ? null : (input.lead_days ?? null),
   }
+}
+
+/**
+ * A target-anchored repeat's lead override (the Later day ahead of each
+ * occurrence, 2026-10-25) must be shorter than its rule's wait, walked from
+ * its first occurrence (`leadDaysProblem`, a 400). Nothing to judge on a
+ * one-off, a quota, a reminder or a rule with no date.
+ */
+function assertRepeatLead(
+  input: TaskCreateInput,
+  rrule: string | null | undefined,
+  first: string | null,
+  tracked: boolean,
+  timezone: string,
+): void {
+  if (!rrule || !first || tracked || input.is_reminder) return
+  const problem = leadDaysProblem(
+    input.lead_days ?? null,
+    { rrule, recurrence_mode: input.recurrence_mode ?? 'from_due', anchor_time: null },
+    first,
+    timezone,
+  )
+  if (problem) throw new ValidationError(problem)
 }
 
 /**

@@ -11,9 +11,11 @@
  *    (`deadlineLeadDays(wait)`: wait < 2 → 0, ≤ 7 → 1, < 16 → 3, else 4;
  *    a one-off's wait counts from the day it is written, a repeat's is its
  *    rule's smallest gap), clamped to [today, D−1];
- *  - before the lead day: Upcoming heads-ups counted TO the lead day from
- *    `target_set_at` (`headsUpDays`: the day before when that wait ≥ 2, and
- *    3/4 days before when it is > 7), carried over until considered;
+ *  - before the lead day: quiet — never in Upcoming, a future deck's row
+ *    included (RULE 3 of the Upcoming split, 2026-10-25; until then
+ *    heads-ups counted to the lead day). A deadline-anchored repeat WITH a
+ *    relative target has a real target: Upcoming as any target
+ *    (`dl-relative-target`);
  *  - from the lead day: "deadlines" (the page); "seen" once considered this
  *    OpenTask day — the considered state;
  *  - from D−1 on, past the deadline too: "deadlines net" — the safety net;
@@ -107,8 +109,7 @@ export const deadlinesScenarios: GoldenScenario[] = [
         at: '2026-10-27T10:01',
         run: onPage('task', { state: 'considered', safetyNet: false, seen: true }),
       },
-      // Defer Tue → Wed (≤ D−2 = Wed): off the page today. The defer stamps
-      // target_set_at, so a one-day wait gives no heads-up.
+      // Defer Tue → Wed (≤ D−2 = Wed): off the page today, back Wed.
       { at: '2026-10-27T12:00', run: defer('task', '2026-10-28') },
       { at: '2026-10-27T12:01', run: check('task', { lead_from: '2026-10-28' }) },
       // Wed: Thu is D−1, the safety net — the menu has no later day.
@@ -135,7 +136,7 @@ export const deadlinesScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        '2026-10-26': 'upcoming',
+        // Quiet before its lead day Tue Oct 27 (rule 3: no heads-up).
         '2026-10-28': 'deadlines',
         '2026-10-29': 'over 1×',
         '2026-10-30': 'over 2×',
@@ -145,7 +146,7 @@ export const deadlinesScenarios: GoldenScenario[] = [
   {
     id: 'dl-deck',
     title:
-      'The same, on deck Wed Oct 28: deck heads-ups, page, On deck, cleared (never queued), net',
+      'The same, on deck Wed Oct 28: no deck Upcoming row (rule 3), page, On deck, cleared (never queued), net',
     source: 'plan §10.2; §4, §5 (rule 7); A8',
     from: '2026-10-20',
     to: '2026-10-31',
@@ -171,8 +172,8 @@ export const deadlinesScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        // The deck's own heads-ups (wait 8 from Oct 20 to Oct 28), carried over.
-        '2026-10-25..2026-10-26': 'upcoming',
+        // Rule 3, strict (2026-10-25): no Upcoming row for the deck of a
+        // target-less deadline task — quiet until its lead day.
         '2026-10-27': 'deadlines',
         '2026-10-28': 'deck',
         '2026-10-29..2026-10-31': 'deadlines net',
@@ -219,10 +220,9 @@ export const deadlinesScenarios: GoldenScenario[] = [
       },
     ],
     expect: {
+      // Quiet before each lead day (rule 3).
       weekly: {
-        '2026-10-22': 'upcoming',
         '2026-10-23': 'deadlines net',
-        '2026-10-29': 'upcoming',
         '2026-10-30..2026-10-31': 'deadlines net',
       },
     },
@@ -254,13 +254,11 @@ export const deadlinesScenarios: GoldenScenario[] = [
     ],
     expect: {
       monthly: {
-        // Deferred at 10:00 with a two-day wait: the day-before heads-up.
-        '2026-11-12': 'upcoming',
+        // Deferred at 10:00 to the 13th: quiet until then (rule 3).
         '2026-11-13': 'deadlines',
         '2026-11-14': 'deadlines net',
-        // Done at 19:00 on the 15th: the next occurrence, lead Dec 11, wait
-        // 26 from the done → heads-ups Dec 7 (carried over) and Dec 10.
-        '2026-12-07..2026-12-10': 'upcoming',
+        // Done at 19:00 on the 15th: the next occurrence, lead Dec 11; quiet
+        // until it.
         '2026-12-11..2026-12-12': 'deadlines',
       },
     },
@@ -287,10 +285,13 @@ export const deadlinesScenarios: GoldenScenario[] = [
       },
     ],
     expect: {
+      // A real target (Fri 18:00) each occurrence: Tomorrow the day before
+      // (made Mon, wait 4; then done Fri for the next Fri, wait 7 — lead 1, no
+      // Later).
       store: {
-        '2026-10-22': 'upcoming',
+        '2026-10-22': 'tomorrow',
         '2026-10-23': 'over 1×',
-        '2026-10-29': 'upcoming',
+        '2026-10-29': 'tomorrow',
         '2026-10-30': 'over 1×',
       },
     },
@@ -320,10 +321,9 @@ export const deadlinesScenarios: GoldenScenario[] = [
       { at: '2026-10-31T10:00', run: done('twice') },
     ],
     expect: {
+      // Quiet before each lead day (rule 3).
       twice: {
-        '2026-10-22': 'upcoming',
         '2026-10-23': 'deadlines net',
-        '2026-10-29': 'upcoming',
         '2026-10-30': 'deadlines net',
         '2026-10-31..2026-11-01': 'done',
       },
@@ -347,9 +347,7 @@ export const deadlinesScenarios: GoldenScenario[] = [
     events: [{ at: '2026-10-26T09:01', run: check('task', { lead_from: '2026-11-04' }) }],
     expect: {
       task: {
-        // wait 12 (Oct 26 → Nov 7) → lead 3 → Nov 4; its heads-ups (wait 9
-        // from Oct 26): Nov 1 (carried over) and Nov 3.
-        '2026-11-01..2026-11-03': 'upcoming',
+        // wait 12 (Oct 26 → Nov 7) → lead 3 → Nov 4; quiet until then (rule 3).
         '2026-11-04..2026-11-05': 'deadlines',
         '2026-11-06..2026-11-08': 'deadlines net',
       },
@@ -419,8 +417,7 @@ export const deadlinesScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        // Heads-ups to Oct 27 from the create (wait 8): Oct 24, carried, Oct 26.
-        '2026-10-24..2026-10-26': 'upcoming',
+        // Quiet until its lead day Oct 27 (rule 3).
         '2026-10-27..2026-10-28': 'deadlines',
         '2026-10-29..2026-10-30': 'deadlines net',
       },

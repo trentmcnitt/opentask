@@ -249,8 +249,8 @@ export const onDeckRepeatingScenarios: GoldenScenario[] = [
     expect: {
       task: {
         '2026-10-19': 'over 1×',
-        // Done Tue for Mon (wait 6): the day-before heads-up only.
-        '2026-10-25': 'upcoming',
+        // Done Tue for Mon (wait 6): Tomorrow only (lead 1, no Later).
+        '2026-10-25': 'tomorrow',
         '2026-10-26': 'over 1×',
       },
     },
@@ -304,9 +304,9 @@ export const onDeckRepeatingScenarios: GoldenScenario[] = [
       },
     ],
     expect: {
-      // Decked Mon for Thu (wait 3): the day-before heads-up, Wed.
-      missed: { '2026-10-21': 'upcoming', '2026-10-22': 'deck', '2026-10-23': 'over 1×' },
-      done: { '2026-10-21': 'upcoming', '2026-10-23': 'over 1×' },
+      // Decked Mon for Thu (wait 3): Tomorrow on Wed.
+      missed: { '2026-10-21': 'tomorrow', '2026-10-22': 'deck', '2026-10-23': 'over 1×' },
+      done: { '2026-10-21': 'tomorrow', '2026-10-23': 'over 1×' },
     },
   },
   {

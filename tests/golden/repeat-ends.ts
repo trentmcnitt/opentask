@@ -81,12 +81,12 @@ export const repeatEndsScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Mon for Fri (wait 4): the day before.
-        '2026-10-22': 'upcoming',
+        '2026-10-22': 'tomorrow',
         '2026-10-23': 'over 1×',
         // Done Fri 21:00 for the next Friday (wait 7): Thursday only.
-        '2026-10-29': 'upcoming',
+        '2026-10-29': 'tomorrow',
         '2026-10-30': 'over 1×',
-        '2026-11-05': 'upcoming',
+        '2026-11-05': 'tomorrow',
         '2026-11-06': 'over 1×',
         // The third done ended the series.
         '2026-11-07..2026-11-09': 'done',
@@ -195,13 +195,13 @@ export const repeatEndsScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Mon for Thu's target (wait 3): the day before.
-        '2026-10-21': 'upcoming',
+        '2026-10-21': 'tomorrow',
         // Over target on Thursday, done that night (complete-repeating).
         '2026-10-22': 'over 1×',
         // Done Thu 21:00 for the next Thursday (wait 7): Wednesday only.
-        '2026-10-28': 'upcoming',
+        '2026-10-28': 'tomorrow',
         '2026-10-29': 'over 1×',
-        '2026-11-04': 'upcoming',
+        '2026-11-04': 'tomorrow',
         '2026-11-05': 'over 1×',
         '2026-11-06..2026-11-08': 'done',
       },
@@ -253,13 +253,13 @@ export const repeatEndsScenarios: GoldenScenario[] = [
         '2026-10-20': 'over 1×',
         '2026-10-21': 'over 2×',
         // Done Thu Oct 22 for Sun Nov 1 (wait 10): 3 days before, and the day before.
-        '2026-10-29': 'upcoming',
-        '2026-10-31': 'upcoming',
+        '2026-10-29': 'later',
+        '2026-10-31': 'tomorrow',
         '2026-11-01': 'over 1×',
         '2026-11-02': 'over 2×',
         // Done Tue Nov 3 for Fri Nov 13 (wait 10).
-        '2026-11-10': 'upcoming',
-        '2026-11-12': 'upcoming',
+        '2026-11-10': 'later',
+        '2026-11-12': 'tomorrow',
         '2026-11-13': 'over 1×',
         '2026-11-14..2026-11-15': 'done',
       },

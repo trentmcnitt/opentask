@@ -181,7 +181,7 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
       places,
       segmentState: segment.get(id)?.[0]?.state ?? null,
       deadlines: deadlinesRow(segment.get(id)),
-      section: segment.get(id)?.find((r) => r.kind === 'upcoming')?.section ?? null,
+      section: upcomingSectionOf(segment.get(id)),
       hasTarget: task.due_at !== null,
       queued: task.queued_at !== null,
       attempts: task.attempts,
@@ -190,6 +190,13 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
     })
   }
   return out
+}
+
+/** An Upcoming row's section, when the task is in Upcoming. */
+function upcomingSectionOf(
+  rows: { kind: SegmentKind; section?: UpcomingSection }[] | undefined,
+): UpcomingSection | null {
+  return rows?.find((r) => r.kind === 'upcoming')?.section ?? null
 }
 
 /** A deadlines-page row's flags, when the task is on the page. */
