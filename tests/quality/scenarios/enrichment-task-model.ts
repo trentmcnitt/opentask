@@ -1004,7 +1004,7 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
       },
       quality_notes:
         'The trip has no date, so there is no deadline and nothing to count back from: deadline_at, due_at, on_deck_day and the three target_* ' +
-        'fields all null. "the night before the trip" should stay in the title or the notes. Title like "Pack the chargers".',
+        'fields all null. "the night before the trip" should stay in the title or the notes, in the user\'s words — an added explanation or advice ("no trip date given", "set a deadline…") is a never-add failure. Title like "Pack the chargers".',
     },
   },
 ]
