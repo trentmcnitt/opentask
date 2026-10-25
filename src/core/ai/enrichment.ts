@@ -1107,7 +1107,7 @@ function sanitizeRelativeOffsets(
  * `sanitizeTaskModelFields` turned into what is stored — the time and the
  * period link (`relativeTargetTime`, the table in relative-wording.ts) —
  * after every date step, so the deadline is the one written. Dropped, logged,
- * when the deadline did not survive those steps, or when the same-day time
+ * when the deadline did not survive those steps, or when a time on the deadline day
  * falls after the deadline's (the API's `after_deadline` 400 — enrichment
  * never fails a task for it: the deadline stands alone). Local values, like
  * the rest of the post-process.
@@ -1130,7 +1130,7 @@ export function resolveEnrichmentRelative(
   if (days === 0 && deadlineClock && at.time > deadlineClock) {
     log.info(
       'ai',
-      `Enrichment[${taskId ?? '-'}]: dropped a relative target (${at.time} the same day is after the deadline)`,
+      `Enrichment[${taskId ?? '-'}]: dropped a relative target (${at.time} on the deadline day is after the deadline)`,
     )
     return { ...enrichment, ...NO_RELATIVE }
   }
@@ -2867,7 +2867,7 @@ interface AiRelative {
  * WRITE time like every writer's (`linkTargetTime`, through `resolveTime`):
  * the period's start now, and the OWNER's period — a period deleted since the
  * prompt leaves the mapped time as a custom one. Null — the deadline alone
- * stands — when the same-day time is after the deadline (the API's
+ * stands — when a time on the deadline day is after the deadline (the API's
  * `after_deadline` 400; enrichment never fails a task for it).
  */
 function enrichmentRelativeWrite(

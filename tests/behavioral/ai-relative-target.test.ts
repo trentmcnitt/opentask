@@ -7,7 +7,7 @@
  *   part of the day → the Default task time copied (linked or custom), a
  *   period's exact name → linked, any other part of the day → a custom time;
  * - `sanitizeTaskModelFields` / `resolveEnrichmentRelative`: dropped with no
- *   cue, no deadline, a rule, or a same-day time after the deadline; when
+ *   cue, no deadline, a rule, or a time on the deadline day after the deadline; when
  *   kept, due_at and the deck day go;
  * - the write: the three columns and the derived target, linked at write time.
  */
@@ -325,7 +325,7 @@ describe('resolveEnrichmentRelative: the mapped result', () => {
     expect(out).toMatchObject({ target_days_before: 1, target_time: '20:30', target_slot_id: 3 })
   })
 
-  test('a same-day time after the deadline is dropped (never a failure)', () => {
+  test('a time on the deadline day after the deadline is dropped (never a failure)', () => {
     const out = resolveEnrichmentRelative(
       answer({
         deadline_at: '2026-10-13T08:30:00',
