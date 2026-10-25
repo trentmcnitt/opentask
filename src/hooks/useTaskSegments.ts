@@ -10,6 +10,7 @@ import {
   type SegmentKind,
   type SegmentLeft,
   type SegmentState,
+  type UpcomingSection,
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
@@ -110,6 +111,12 @@ export interface SegmentRow {
   safetyNet?: boolean
   /** The deadlines page: seen (considered) this OpenTask day. */
   seen?: boolean
+  /**
+   * Upcoming's section (2026-10-25, the Upcoming split): 'tomorrow' (the day
+   * before its anchor) or 'later'. Only on Upcoming rows; a row the server
+   * sent without one (it always sends it) reads as Later.
+   */
+  section?: UpcomingSection
 }
 
 export interface SegmentView {
@@ -335,6 +342,7 @@ function segmentViews(
           ...(left ? { left } : {}),
           ...(t.safety_net ? { safetyNet: true } : {}),
           ...(obj?.seen || t.seen ? { seen: true } : {}),
+          ...(seg.horizon === 'upcoming' ? { section: t.upcoming_section ?? 'later' } : {}),
         }
       })
       .filter((r): r is SegmentRow => r.state !== 'gone')
