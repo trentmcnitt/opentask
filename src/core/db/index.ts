@@ -458,6 +458,11 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'segment_roster', 'left_how')) {
     database.exec('ALTER TABLE segment_roster ADD COLUMN left_how TEXT DEFAULT NULL')
   }
+  // The day roster's Upcoming section (2026-10-25, the Upcoming split). No
+  // backfill: a NULL reads as the section computed now.
+  if (!hasColumn(database, 'segment_roster', 'section')) {
+    database.exec('ALTER TABLE segment_roster ADD COLUMN section TEXT DEFAULT NULL')
+  }
   // The deadlines page (2026-10-22). Backfilled by `migrateDeadlineLeads`
   // (task-queue switch on).
   if (!hasColumn(database, 'tasks', 'lead_days')) {

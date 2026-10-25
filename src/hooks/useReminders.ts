@@ -1,6 +1,6 @@
 'use client'
 
-import type { SegmentKind, SegmentLeft, SegmentState } from '@/lib/task-segments'
+import type { SegmentKind, SegmentLeft, SegmentState, UpcomingSection } from '@/lib/task-segments'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -229,13 +229,16 @@ export interface TaskSegmentPayload {
    *  `segment_left`: how a row that left the segment today was handled (`?handled=1`).
    *  `safety_net` / `seen` (the deadlines page only, `?deadlines=1`): from the day before the
    *  deadline seeing the row does not silence it — it stays `waiting`, `seen` says it was seen
-   *  this OpenTask day. */
+   *  this OpenTask day.
+   *  `upcoming_section` (Upcoming rows only, 2026-10-25): 'tomorrow' (the day before the
+   *  anchor) or 'later' — Tomorrow's rows first. Read by the sections (PR B). */
   tasks: (Task & {
     segment_state: SegmentState
     recurring?: boolean
     segment_left?: SegmentLeft
     safety_net?: boolean
     seen?: boolean
+    upcoming_section?: UpcomingSection
   })[]
   waiting: number
   considered: number

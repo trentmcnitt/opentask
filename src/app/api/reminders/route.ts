@@ -104,7 +104,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         fill,
       }).map((seg) => ({
         horizon: seg.horizon,
-        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen }) => ({
+        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen, section }) => ({
           ...formatTaskResponse(task, user.timezone),
           segment_state: state,
           // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
@@ -121,6 +121,13 @@ export const GET = withLogging(async function GET(request: NextRequest) {
           // silence it (draw the circle non-silencing; Defer hidden); `seen`
           // — considered this OpenTask day.
           ...(seg.horizon === 'deadlines' ? { safety_net: !!safetyNet, seen: !!seen } : {}),
+          // Upcoming's section (2026-10-25, the Upcoming split; always sent on
+          // an Upcoming row): 'tomorrow' — the day before its anchor — or
+          // 'later'. Tomorrow's rows come first. A left row (`segment_left`)
+          // carries the section the day roster remembered. One kind, no new
+          // kinds: a shipped native build lists both sections' rows as one
+          // Upcoming page and ignores the key.
+          ...(seg.horizon === 'upcoming' ? { upcoming_section: section ?? 'later' } : {}),
         })),
         waiting: seg.waiting,
         considered: seg.considered,

@@ -727,5 +727,11 @@ CREATE TABLE IF NOT EXISTS segment_roster (
   -- How the row left, when the writer says so itself (2026-10-22): 'deferred'
   -- from the deadlines page's Defer (`deferLeads`). NULL = judged from the task.
   left_how TEXT DEFAULT NULL,
+  -- Upcoming rows only (2026-10-25, the Upcoming split): the section the row
+  -- was listed in, 'tomorrow' | 'later', kept current while it is listed. NULL
+  -- on every other segment, and on a row remembered before the column (read
+  -- as the section computed now). Added by runMigrations too: never index it
+  -- here (DI-S01).
+  section  TEXT DEFAULT NULL,
   PRIMARY KEY (user_id, day, kind, task_id)
 );
