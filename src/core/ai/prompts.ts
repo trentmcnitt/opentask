@@ -906,8 +906,7 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Resolve names from user context when the user references people by relationship ("my wife" → name from context)
 - Resolve work-schedule phrases ("after work", "before work", "at lunch") to times from user context when a schedule is provided. Defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm.
 - Do NOT inject user context the user didn't reference — context resolves explicit references only
-- Return valid JSON only (no markdown fences, no text outside the JSON object)
-- quota_target, quota_period, quota_interval, quota_prompt_time and quota_prompt_enabled are for quotas only: for a task they are all null`
+- Return valid JSON only (no markdown fences, no text outside the JSON object)`
 
 // ---------------------------------------------------------------------------
 // Enrichment user prompt builder
@@ -1124,8 +1123,6 @@ ${taskText}
 - priority follows the same signals as a task: a stated one lands, otherwise 0.
 - The title is the thought itself, with the schedule words removed. Whatever
   the title cannot carry goes to notes.
-- quota_target, quota_period, quota_interval, quota_prompt_time and
-  quota_prompt_enabled are null: they are for quotas, and this is a reminder.
 
 Parse the reminder above and return the structured result.`
 }
