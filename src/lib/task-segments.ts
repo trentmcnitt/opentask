@@ -1836,12 +1836,15 @@ function repeatLeadFrom(
 
 /**
  * A repeat's lead override must be SHORTER than its rule's wait (the smallest
- * gap between deadlines): a weekly rule with a lead of 10 would put every
- * occurrence on the page from the moment the last one was done. Refused like
- * `overlaps_previous` (a 400, never a clamp). Null when it is fine.
+ * gap between occurrences — deadlines on a deadline-anchored rule, targets on
+ * a target-anchored one): a weekly rule with a lead of 10 would put every
+ * occurrence on the page, or in Upcoming's Later, from the moment the last one
+ * was done. Refused like `overlaps_previous` (a 400, never a clamp). Null when
+ * it is fine. The words fit every repeat (2026-10-25: target-anchored repeats
+ * with no deadline are judged too).
  */
 export const LEAD_DAYS_TOO_LONG_MESSAGE =
-  'lead_days must be fewer than the days between this rule’s deadlines'
+  'Lead time (lead_days) must be shorter than the time between occurrences'
 
 export function leadDaysProblem(
   leadDays: number | null,
