@@ -35,9 +35,15 @@ function task(over: Partial<UpcomingLeadTask> = {}): UpcomingLeadTask {
   }
 }
 
-const nothing = { anchor: undefined, restamp: false, leadDays: undefined }
+type Staged = Parameters<typeof upcomingLeadLine>[1]
+const nothing: Staged = { anchor: undefined, restamp: false, leadDays: undefined }
 
-function words(t: UpcomingLeadTask, staged = nothing, today = '2026-10-17', dayStart?: string) {
+function words(
+  t: UpcomingLeadTask,
+  staged: Staged = nothing,
+  today = '2026-10-17',
+  dayStart?: string,
+) {
   const line = upcomingLeadLine(t, staged, TZ, dayStart ?? CALENDAR_DAY_START, noon(today))
   return line ? upcomingLeadWords(line, TZ, today) : null
 }
@@ -146,7 +152,7 @@ describe('upcomingLeadLine — the Lead time row, Upcoming form (2026-10-25)', (
   })
 
   test('UP-135: nothing to say — no target, an automatic one, a target today or past, removed', () => {
-    const none = (t: UpcomingLeadTask, staged = nothing, today = '2026-10-17') =>
+    const none = (t: UpcomingLeadTask, staged: Staged = nothing, today = '2026-10-17') =>
       upcomingLeadLine(t, staged, TZ, CALENDAR_DAY_START, noon(today))
     expect(none(task({ due_at: null }))).toBeNull()
     expect(none(task({ target_auto: true, deadline_at: at('2026-10-26T17:00') }))).toBeNull()
