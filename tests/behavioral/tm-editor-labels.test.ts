@@ -150,7 +150,7 @@ describe('deadlineRepeatLabel', () => {
   }
 
   test('says where the target sits before the deadline', () => {
-    expect(deadlineRepeatLabel(task)).toBe('target the same day at 12:00 PM')
+    expect(deadlineRepeatLabel(task)).toBe('target the deadline day at 12:00 PM')
     expect(deadlineRepeatLabel({ ...task, target_days_before: 1, target_time: '18:00' })).toBe(
       'target the day before at 6:00 PM',
     )
@@ -167,7 +167,7 @@ describe('deadlineRepeatLabel', () => {
 
 describe('relativeTargetWords (2026-10-22, editor plan §2.1)', () => {
   test('the words the deadline line and every-time mode share', () => {
-    expect(relativeTargetWords(0, '12:00')).toBe('the same day at 12:00 PM')
+    expect(relativeTargetWords(0, '12:00')).toBe('the deadline day at 12:00 PM')
     expect(relativeTargetWords(1, '18:00')).toBe('the day before at 6:00 PM')
     expect(relativeTargetWords(4, '09:30')).toBe('4 days before at 9:30 AM')
     expect(relativeDaysWords(2)).toBe('2 days before')

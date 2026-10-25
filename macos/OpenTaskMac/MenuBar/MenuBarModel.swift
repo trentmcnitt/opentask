@@ -71,9 +71,11 @@ final class MenuBarModel: ObservableObject {
 
     var overdue: [TaskDTO] { TaskLists.overdue(tasks, now: now) }
 
-    /// With nothing overdue: the rest of today, soonest first.
+    /// With nothing overdue: the rest of today (the OpenTask day,
+    /// `DayStartStore`), soonest first.
     var nextUp: [TaskDTO] {
-        Array(TaskLists.dueToday(tasks, now: now).filter { !$0.isOverdue(now: now) }.prefix(Self.maxNextUp))
+        let today = TaskLists.dueToday(tasks, now: now, day: DayStartStore.current)
+        return Array(today.filter { !$0.isOverdue(now: now) }.prefix(Self.maxNextUp))
     }
 
     var sweepCount: Int { TaskLists.overdueSweepEligibleCount(tasks, now: now) }
@@ -189,6 +191,9 @@ final class MenuBarModel: ObservableObject {
     }
 
     static func sweepSummary(_ result: APIClient.BulkSnoozeResult) -> String {
+        // The server's own line when it sends one (the web toast's words,
+        // which say what went to the Tasks queue at the day start).
+        if let summary = result.summary { return summary }
         var parts: [String] = []
         let n = result.tasksAffected
         parts.append(n == 0 ? "Nothing to defer" : "Deferred \(n) \(n == 1 ? "task" : "tasks")")
@@ -196,6 +201,8 @@ final class MenuBarModel: ObservableObject {
         // "Included N High" is left out: the headline already counts them.
         for line in result.summaryLines {
             switch line {
+            case .queued(let n, let at):
+                parts.append(at.map { "\(n) to the queue at \(SweepLine.timeWords($0))" } ?? "\(n) to the queue")
             case .includedHigh: break
             case .highStillOverdue(let n): parts.append("\(n) High left")
             case .urgentStillOverdue(let n): parts.append("\(n) Urgent left")

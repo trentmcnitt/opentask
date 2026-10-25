@@ -513,10 +513,18 @@ function formatEditDetails(
         }
         break
       }
+      // A relative target (a deadline-anchored repeat's; a one-off's since
+      // 2026-10-24): its days before, time and the period it follows are one
+      // setting; cleared beside a picked date, the target became fixed.
       case 'target_days_before':
       case 'target_time':
-        if (!parts.includes('changed target lead')) parts.push('changed target lead')
+      case 'target_slot_id': {
+        const cleared =
+          after_state.target_days_before === null && before_state.target_days_before != null
+        const word = cleared ? 'target fixed' : 'target before deadline'
+        if (!parts.includes(word)) parts.push(word)
         break
+      }
       // The deadlines page (2026-10-22): the lead override, and this
       // instance's lead day (moved by the page's Defer, re-derived on a
       // deadline write — said only when it is the whole change).

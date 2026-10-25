@@ -57,12 +57,12 @@ enum TaskLists {
         sortedSoonestFirst(eligible(tasks).filter { $0.isOverdue(now: now) })
     }
 
-    /// Due or overdue by the end of the local day.
-    static func dueToday(_ tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
-        let calendar = Calendar.current
-        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else {
-            return []
-        }
+    /// Due or overdue by the end of the OpenTask day `now` is in ("Day starts
+    /// at" PR 3): with the day starting at 3:00 AM, a 1:30 AM target tonight
+    /// is still today's, and at 1:00 AM tomorrow's 9:00 AM is not yet — the
+    /// web's Today pill and `GET /api/tasks/counts`' `today`.
+    static func dueToday(_ tasks: [TaskDTO], now: Date = Date(), day: OpenTaskDay) -> [TaskDTO] {
+        let endOfDay = day.daySpan(containing: now).end
         return sortedSoonestFirst(eligible(tasks).filter { ($0.dueDate ?? .distantFuture) < endOfDay })
     }
 

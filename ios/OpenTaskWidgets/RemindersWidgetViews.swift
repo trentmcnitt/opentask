@@ -832,12 +832,9 @@ private struct RemindersListView: View {
     /// still implies which period is live (`ReminderSlotStrip`). "Anytime"
     /// has no start time and gets only the count.
     private var subtitleLabel: String {
-        guard let group = entry.group, let minutes = group.slot?.startMinutes,
-              let start = Calendar.current.date(
-                  byAdding: .minute, value: minutes, to: Calendar.current.startOfDay(for: entry.date)
-              )
-        else { return countLabel }
-        let time = WidgetTheme.shortTime(start)
+        guard let group = entry.group, let minutes = group.slot?.startMinutes else { return countLabel }
+        let day = DayStartStore.current
+        let time = WidgetTheme.shortTime(day.periodOpensAt(day.openTaskDay(of: entry.date), startMinutes: minutes))
         let count = countLabel
         return count == "all clear" ? time : "\(time) · \(count)"
     }
@@ -988,7 +985,7 @@ private struct ReminderSlotStrip: View {
     /// stripBars` (tested in `ReminderDayProgressTests`): which bars, their
     /// order, state, fill and width weight. This view only draws them.
     private var bars: [ReminderDayProgress.StripBar] {
-        ReminderDayProgress.stripBars(groups: groups, segments: segments, now: now)
+        ReminderDayProgress.stripBars(groups: groups, segments: segments, now: now, day: DayStartStore.current)
     }
 
     /// Half of `WidgetTheme.rowSpacing` — the same bleed `ReminderRow`'s

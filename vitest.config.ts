@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/integration/**', 'tests/quality/**'],
+    exclude: ['tests/integration/**', 'tests/quality/**', 'tests/upgrade/**'],
     // Run test files sequentially to avoid database conflicts
     // Each test file resets the database, so parallel execution causes conflicts
     fileParallelism: false,

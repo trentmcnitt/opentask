@@ -405,8 +405,8 @@ private struct SnoozedCardView: View {
                     .foregroundStyle(result.tasksAffected > 0 ? WatchTheme.done : .secondary)
                     .widgetAccentable()
             }
-            if result.tasksAffected > 0, let target = result.targetLabel {
-                Text("Moved to \(target)")
+            if let moved = result.movedToLabel {
+                Text(moved)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

@@ -77,14 +77,21 @@ enum DueLabel {
     /// `isOverdue` is passed in (`TaskDTO.isOverdue(now:)`) rather than
     /// recomputed, so this function reads the clock for one job only:
     /// bucketing days.
-    static func parts(for due: Date, now: Date = Date(), isOverdue: Bool) -> Parts {
-        let calendar = Calendar.current
-        let isDateOnly =
-            calendar.component(.hour, from: due) == 0 && calendar.component(.minute, from: due) == 0
+    ///
+    /// THE DAYS ARE OPENTASK DAYS ("Day starts at" PR 3, the web's
+    /// `formatDueTimeParts`): with the day starting at 3:00 AM, a 1:30 AM
+    /// target tonight is today's ("1:30 am", no day word), and at 1:00 AM
+    /// yesterday evening's 8:00 PM is still today's. The day WORD is still
+    /// the target's own calendar weekday or date ("Sun", "Oct 1"), as on the
+    /// web. A date-only target (local midnight, a legacy shape enrichment no
+    /// longer writes) names a calendar date rather than an instant, so it is
+    /// bucketed by that date — read as an instant, Tuesday 00:00 would be
+    /// Monday's with any day start after midnight.
+    static func parts(for due: Date, now: Date = Date(), isOverdue: Bool, day: OpenTaskDay) -> Parts {
+        let isDateOnly = day.minuteOfDay(due) == 0
         let time = isDateOnly ? nil : shortTime(due)
-        let days = calendar.dateComponents(
-            [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: due)
-        ).day ?? 0
+        let dueDay = isDateOnly ? day.calendarDate(of: due) : day.openTaskDay(of: due)
+        let days = day.openTaskDay(of: now).days(to: dueDay)
 
         let dayWord: String?
         if isOverdue {

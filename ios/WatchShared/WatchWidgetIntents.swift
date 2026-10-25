@@ -296,7 +296,9 @@ private enum OverdueSweep {
                 snoozedHigh: result.snoozedHigh,
                 skippedHigh: result.skippedHigh,
                 skippedUrgent: result.skippedUrgent,
-                targetLabel: label
+                targetLabel: label,
+                queued: result.queued,
+                queuedUntil: result.queuedUntil
             ))
             // Take what the sweep moved out of the cached task list, so a
             // reload whose own fetch fails can't fall back to the pre-snooze

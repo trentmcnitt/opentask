@@ -42,6 +42,7 @@ import {
   scheduleEditable,
   targetTimeRefused,
   thisOneHint,
+  stopKeepsRelativeTarget,
   type DraftAction,
   type EveryTimeContext,
   type EveryTimeDraft,
@@ -851,11 +852,20 @@ describe('TM-EVERY-12: nextDateWords', () => {
 // ===========================================================================
 
 describe('TM-EVERY-07: thisOneHint', () => {
-  test('Stop repeating: what this one stays as', () => {
+  test('Stop repeating: what this one stays as — an unmoved relative target is kept (ruling 6)', () => {
     const d = run(draftFromTask(HOME_DEPOT, ctx), { type: 'stop', stop: true })
     expect(thisOneHint(HOME_DEPOT, d, ctx)).toBe(
-      'This one stays as a one-time task: target Fri Nov 6, 6:00 PM, deadline Sat Nov 7, 8:00 AM.',
+      'This one stays as a one-time task: target Fri Nov 6, 6:00 PM, deadline Sat Nov 7, 8:00 AM. The target stays the day before and moves with the deadline.',
     )
+    // Moved this occurrence (or on deck): the target is fixed where it is.
+    const moved = { ...HOME_DEPOT, due_at: at('2026-11-05T09:00') }
+    const m = run(draftFromTask(moved, ctx), { type: 'stop', stop: true })
+    expect(thisOneHint(moved, m, ctx)).toBe(
+      'This one stays as a one-time task: target Thu Nov 5, 9:00 AM, deadline Sat Nov 7, 8:00 AM.',
+    )
+    expect(stopKeepsRelativeTarget(HOME_DEPOT, TZ)).toEqual({ days_before: 1, time: '18:00' })
+    expect(stopKeepsRelativeTarget(moved, TZ)).toBeNull()
+    expect(stopKeepsRelativeTarget({ ...HOME_DEPOT, on_deck_day: '2026-11-06' }, TZ)).toBeNull()
   })
 
   test('on schedule: changes start with this one, at the target the Save gives it', () => {

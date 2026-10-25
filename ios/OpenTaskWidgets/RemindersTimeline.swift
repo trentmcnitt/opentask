@@ -20,16 +20,25 @@ enum RemindersTimeline {
     /// started yet. That falls back to the first slot rather than to the
     /// trailing "Anytime" group — at 5am the useful answer is "here's what's
     /// coming", not "here's the bucket for items with no time".
-    static func naturalSlotIndex(in groups: [ReminderGroupDTO], now: Date = Date()) -> Int {
+    ///
+    /// Within the OpenTask day ("Day starts at" PR 3, the web's
+    /// `naturalSlotIndex`): every start is counted from the day start
+    /// (`minutesIntoDay`), so at 00:30 with the day starting at 3:00 the
+    /// evening's slot is still the latest started, and from the day start
+    /// until the first slot it is the first.
+    static func naturalSlotIndex(
+        in groups: [ReminderGroupDTO], now: Date = Date(), day: OpenTaskDay = DayStartStore.current
+    ) -> Int {
         guard !groups.isEmpty else { return 0 }
 
-        let comps = Calendar.current.dateComponents([.hour, .minute], from: now)
-        let minutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let minutes = day.minutesIntoDay(of: now)
 
         var best: Int?
         var bestStart = -1
         for (index, group) in groups.enumerated() {
-            guard let start = group.slot?.startMinutes, start <= minutes, start > bestStart else {
+            guard let raw = group.slot?.startMinutes else { continue }
+            let start = day.minutesIntoDay(raw)
+            guard start <= minutes, start > bestStart else {
                 continue
             }
             bestStart = start
@@ -178,30 +187,31 @@ enum RemindersTimeline {
     /// at exactly the right minute without spending any of the refresh budget —
     /// the entries are all delivered by the single timeline WidgetKit already
     /// asked for.
+    ///
+    /// Each slot opens at the one moment of its time inside TODAY's OpenTask
+    /// day (`periodOpensAt`, "Day starts at" PR 3): with the day starting at
+    /// 3:00, a 1:00 AM slot is tonight's, after the evening's. The day
+    /// start itself is the provider's own entry (`nextRollover`).
     static func upcomingBoundaries(
         in groups: [ReminderGroupDTO],
-        now: Date = Date()
+        now: Date = Date(),
+        day: OpenTaskDay = DayStartStore.current
     ) -> [(date: Date, index: Int)] {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: now)
-
+        let today = day.openTaskDay(of: now)
         return groups.enumerated().compactMap { index, group in
-            guard let minutes = group.slot?.startMinutes,
-                  let fire = calendar.date(byAdding: .minute, value: minutes, to: startOfDay),
-                  fire > now
-            else {
-                return nil
-            }
-            return (fire, index)
+            guard let minutes = group.slot?.startMinutes else { return nil }
+            let fire = day.periodOpensAt(today, startMinutes: minutes)
+            return fire > now ? (fire, index) : nil
         }
+        .sorted { $0.date < $1.date }
     }
 
     /// Has this slot's time arrived? Mirrors the web's `ReminderSlotBar.
     /// hasStarted` (`src/components/ReminderSlotBar.tsx`) — the un-slotted
     /// "Anytime" group has no start time and is always available, so it
     /// counts as started rather than "coming up later".
-    static func hasStarted(_ group: ReminderGroupDTO, now: Date = Date()) -> Bool {
-        ReminderDayProgress.hasStarted(group, now: now)
+    static func hasStarted(_ group: ReminderGroupDTO, now: Date = Date(), day: OpenTaskDay = DayStartStore.current) -> Bool {
+        ReminderDayProgress.hasStarted(group, now: now, day: day)
     }
 
     /// After completing an item that leaves the ON-SCREEN slot with nothing

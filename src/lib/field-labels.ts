@@ -351,7 +351,7 @@ function buildRelativeTargetFragment(
     typeof days !== 'number'
       ? null
       : days === 0
-        ? 'the same day'
+        ? 'the deadline day'
         : days === 1
           ? 'the day before'
           : `${days} days before`

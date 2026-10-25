@@ -350,7 +350,7 @@ test('a refused choice is greyed, a problem disables Save, and no request goes o
         'aria-disabled',
         'true',
       )
-      await expect(page.getByRole('option', { name: /^the same day/ })).toHaveAttribute(
+      await expect(page.getByRole('option', { name: /^the deadline day/ })).toHaveAttribute(
         'aria-disabled',
         'true',
       )

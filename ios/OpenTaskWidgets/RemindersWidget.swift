@@ -91,7 +91,7 @@ struct RemindersProvider: TimelineProvider {
                 // is the natural page only while every slot through the
                 // clock's is finished, so a boundary into a slot with
                 // something waiting takes the widget back to that slot.
-                for boundary in RemindersTimeline.upcomingBoundaries(in: entry.groups).prefix(8) {
+                for boundary in RemindersTimeline.upcomingBoundaries(in: entry.groups, now: entry.date).prefix(8) {
                     let page = RemindersTimeline.naturalPage(
                         groups: entry.groups, segments: entry.segments, now: boundary.date
                     )
@@ -151,7 +151,15 @@ struct RemindersProvider: TimelineProvider {
             }
             entries.sort { $0.date < $1.date }
 
-            let next = Date().addingTimeInterval(Self.refreshInterval)
+            // Reload no later than the day start ("Day starts at" PR 3): the
+            // new day's roster and prompt keys are a fetch away, and a key
+            // from before the day turned is refused. The server's rollover
+            // sync push asks for the same reload; this is the budget-free
+            // backstop.
+            let next = min(
+                Date().addingTimeInterval(Self.refreshInterval),
+                DayStartStore.current.nextRollover(after: entry.date)
+            )
             completion(Timeline(entries: entries, policy: .after(next)))
             // Only AFTER the timeline is handed over — never between a tap and
             // its repaint. Every reload is a chance to send what a tap queued

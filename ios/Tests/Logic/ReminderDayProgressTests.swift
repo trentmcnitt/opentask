@@ -150,6 +150,9 @@ final class ReminderDayProgressTests: XCTestCase {
     }
 
     private var noon: Date { Calendar.current.date(bySettingHour: 12, minute: 30, second: 0, of: Date())! }
+    /// Midnight in the machine's zone; the day start has its own cases
+    /// (`testHasStartedWithinTheOpenTaskDay`).
+    private let day = OpenTaskDay.midnight(timeZone: .current)
 
     func testAWaitingTaskSegmentKeepsTheDayOpen() {
         let groups = [period(1, start: "07:00", done: 3), period(2, start: "12:00", done: 2)]
@@ -204,7 +207,7 @@ final class ReminderDayProgressTests: XCTestCase {
             TaskSegmentDTO(horizon: "weeks", tasks: [row(4, .considered)]),
             TaskSegmentDTO(horizon: "months", tasks: [row(5, .deferred)]),  // not listed: no page, no bar
         ]
-        let bars = ReminderDayProgress.stripBars(groups: groups, segments: segments, now: noon)
+        let bars = ReminderDayProgress.stripBars(groups: groups, segments: segments, now: noon, day: day)
         XCTAssertEqual(bars.map(\.key), [1, 3, 4, -10, -11])
         XCTAssertEqual(bars.map(\.kind), [.period, .period, .period, .taskSegment, .taskSegment])
         XCTAssertEqual(bars.map(\.state), [.behind, .done, .upcoming, .behind, .done])
@@ -220,7 +223,7 @@ final class ReminderDayProgressTests: XCTestCase {
         let bars = ReminderDayProgress.stripBars(
             groups: [period(1, start: "07:00", waiting: 2)],
             segments: [TaskSegmentDTO(horizon: "days", tasks: [row(1, .waiting)])],
-            now: early
+            now: early, day: day
         )
         XCTAssertEqual(bars.map(\.state), [.upcoming, .behind])
     }
@@ -235,14 +238,14 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(Set(TaskHorizon.allCases.map { $0.segmentTitleHex.light }), [0x0B7A6F], "one light title teal")
         XCTAssertEqual(TaskHorizon.allCases.map { $0.segmentTitleHex.dark }, dark, "dark titles equal their fills")
         let bars = ReminderDayProgress.stripBars(
-            groups: [], segments: [TaskSegmentDTO(horizon: "months", tasks: [row(1, .waiting)])], now: noon
+            groups: [], segments: [TaskSegmentDTO(horizon: "months", tasks: [row(1, .waiting)])], now: noon, day: day
         )
         XCTAssertEqual(bars.first?.segment, .horizon(.months), "a task bar carries its kind for its teal")
     }
 
     func testAnytimeCountsAsStarted() {
         let early = Calendar.current.date(bySettingHour: 5, minute: 0, second: 0, of: Date())!
-        XCTAssertTrue(ReminderDayProgress.hasStarted(period(-1, start: nil, waiting: 1), now: early))
-        XCTAssertFalse(ReminderDayProgress.hasStarted(period(1, start: "07:00", waiting: 1), now: early))
+        XCTAssertTrue(ReminderDayProgress.hasStarted(period(-1, start: nil, waiting: 1), now: early, day: day))
+        XCTAssertFalse(ReminderDayProgress.hasStarted(period(1, start: "07:00", waiting: 1), now: early, day: day))
     }
 }

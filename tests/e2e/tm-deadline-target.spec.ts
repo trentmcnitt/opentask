@@ -8,7 +8,9 @@
  * - every move stops AT the deadline, and the toast says so;
  * - the editor: a deadline task with no target reads "No target" and a Lead
  *   row — "On the deadlines page from … (N days before)" — whose stepper
- *   saves `lead_days`; Remove target on a picked one brings the Lead row in.
+ *   saves `lead_days`; Remove target on a picked one brings the Lead row in;
+ *   its target picker offers "Before the deadline" (relative targets,
+ *   2026-10-24), not the defer menu's "Morning of the deadline".
  *
  * With the task-queue switch on (the page rides it), as the queue's own user
  * (`queue@opentask.local`, see tq-queue-panels): with the switch on the
@@ -251,13 +253,15 @@ test.describe('Deadline: the editor', () => {
     }
   })
 
-  test('the target picker\'s "Morning of the deadline" says where its time comes from, and fits at 375', async ({
+  test('the target picker offers "Before the deadline" (not "Morning of the deadline"), and fits at 375', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 812 })
     const prefs = (await (await page.request.get('/api/user/preferences')).json()).data
     const morning = String(prefs.morning_time)
-    // Three days out at 5:30 AM: earlier than the morning, so the pick is the deadline's own time.
+    // Three days out at 5:30 AM. The editor's picker replaced its "Morning of
+    // the deadline" pick with the relative-target block (ruling 4, 2026-10-24);
+    // its control opens on the day before at Default task time (ruling 10).
     const deadline = DateTime.now().setZone(TZ).plus({ days: 3 }).set({ hour: 5, minute: 30 })
     const id = await create(page, {
       title: uniqueTitle('TM8 morning of'),
@@ -267,16 +271,17 @@ test.describe('Deadline: the editor', () => {
       await withPreferences(page, { default_grouping: 'new' }, async () => {
         const sheet = await openEditor(page, id)
         await sheet.locator('[data-quick-panel-no-target]').tap()
-        const pick = page.locator('[data-quick-pick]')
+        await expect(page.locator('[data-quick-pick]')).toHaveCount(0)
+        const block = page.locator('[data-before-deadline]')
+        await expect(block).toBeVisible()
         const [h, m] = morning.split(':').map(Number)
-        const morningOf = deadline.set({ hour: h, minute: m })
-        const expected = morningOf < deadline ? morningOf : deadline
-        const source = morningOf < deadline ? 'Default task time' : 'Deadline time'
-        await expect(pick).toHaveText(
-          `Morning of the deadline · ${expected.toFormat('ccc h:mm a')} (${source})`,
-        )
+        const expected = deadline
+          .minus({ days: 1 })
+          .set({ hour: h, minute: m, second: 0, millisecond: 0 })
+        const set = block.locator('[data-relative-set]')
+        await expect(set).toHaveText(`Set ${expected.toFormat('ccc LLL d, h:mm a')}`)
         // It wraps inside the picker rather than widening it past the screen.
-        const box = (await pick.boundingBox())!
+        const box = (await block.boundingBox())!
         expect(box.x).toBeGreaterThanOrEqual(0)
         expect(box.x + box.width).toBeLessThanOrEqual(375)
         expect(
@@ -285,12 +290,14 @@ test.describe('Deadline: the editor', () => {
           ),
         ).toBe(true)
         await settle(page)
-        await page.screenshot({ path: '.tmp/screens/morning-of-deadline-375.png' })
-        await pick.tap()
+        await page.screenshot({ path: '.tmp/screens/before-deadline-375.png' })
+        await set.tap()
+        await expect(sheet.locator('[data-target-relative]')).toContainText('the day before')
         await sheet.getByRole('button', { name: 'Save' }).tap()
         await expect
           .poll(async () => Date.parse(String((await stateOf(page, id)).target_at)))
           .toBe(expected.toMillis())
+        expect((await stateOf(page, id)).target_days_before).toBe(1)
       })
     } finally {
       await remove(page, [id])

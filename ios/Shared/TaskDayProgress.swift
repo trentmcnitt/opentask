@@ -28,15 +28,18 @@ enum TaskDayProgress {
 
     // MARK: Done today
 
-    /// The completions that fall on `now`'s local day. The cached list is
-    /// fetched for the local day (`APIClient.fetchTodaysCompletions`), but a
-    /// cache drawn after midnight still holds yesterday's — and "5 done
-    /// today" at 12:05 am would be a false claim — so the day is checked
-    /// here rather than trusted.
-    static func doneToday(_ completions: [CompletionDTO], now: Date, calendar: Calendar = .current) -> [CompletionDTO] {
-        completions.filter { completion in
+    /// The completions that fall in `now`'s OpenTask day ("Day starts at"
+    /// PR 3: a 1:30 AM check-off, with the day starting at 3:00, is the
+    /// evening's). The cached list is fetched for that day
+    /// (`APIClient.fetchTodaysCompletions`), but a cache drawn after the day
+    /// turns still holds yesterday's — and "5 done today" just after the day
+    /// start would be a false claim — so the day is checked here rather than
+    /// trusted.
+    static func doneToday(_ completions: [CompletionDTO], now: Date, day: OpenTaskDay) -> [CompletionDTO] {
+        let today = day.daySpan(containing: now)
+        return completions.filter { completion in
             guard let date = completion.completedDate else { return false }
-            return calendar.isDate(date, inSameDayAs: now)
+            return today.contains(date)
         }
     }
 
@@ -78,10 +81,8 @@ enum TaskDayProgress {
     /// (`TaskLists.eligible`: undated, reminders, quotas) and the same order
     /// (soonest first, priority breaking ties). Anything due today or
     /// overdue is Today's, not "next", so it is left out.
-    static func upcoming(_ tasks: [TaskDTO], now: Date, limit: Int = upcomingLimit, calendar: Calendar = .current) -> [TaskDTO] {
-        guard let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else {
-            return []
-        }
+    static func upcoming(_ tasks: [TaskDTO], now: Date, limit: Int = upcomingLimit, day: OpenTaskDay) -> [TaskDTO] {
+        let startOfTomorrow = day.nextRollover(after: now)
         let later = TaskLists.eligible(tasks).filter { ($0.dueDate ?? .distantPast) >= startOfTomorrow }
         return Array(TaskLists.sortedSoonestFirst(later).prefix(max(limit, 0)))
     }
