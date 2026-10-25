@@ -26,6 +26,8 @@ import {
   type EveryTimeTask,
   upcomingLeadStep,
   upcomingLeadStepWords,
+  leadResetForRule,
+  LEAD_RESET_FOR_RULE,
 } from '@/lib/every-time'
 import { leadDaysWords, repeatWords } from '@/lib/editor-target-labels'
 import {
@@ -650,8 +652,10 @@ function NoTargetRow({
       return { fallback: 1, max: 90 }
     }
   }, [task, draft, ctx])
-  const lead = Math.min(max, draft.leadDays ?? fallback)
-  const dirty = (draft.leadDays ?? null) !== (initial.leadDays ?? null)
+  // A rule too short for the stored lead resets it (`leadResetForRule`).
+  const reset = leadResetForRule(task, draft, ctx)
+  const lead = reset ? fallback : Math.min(max, draft.leadDays ?? fallback)
+  const dirty = reset || (draft.leadDays ?? null) !== (initial.leadDays ?? null)
   const step = (delta: number) =>
     dispatch({ type: 'leadDays', days: Math.min(max, Math.max(1, lead + delta)) })
   const stepClass =
@@ -659,7 +663,10 @@ function NoTargetRow({
   return (
     <Row label={TARGET_WORD}>
       <div className="flex flex-wrap items-center gap-2" data-every-time-no-target>
-        <span className="text-muted-foreground text-sm">None · on the deadlines page</span>
+        <span className="text-muted-foreground text-sm">
+          None · on the deadlines page
+          {reset && <LeadResetNote />}
+        </span>
         <span
           className="inline-flex items-center"
           role="group"
@@ -694,7 +701,7 @@ function NoTargetRow({
           >
             <Plus className="size-3.5" />
           </button>
-          {draft.leadDays != null && (
+          {draft.leadDays != null && !reset && (
             <button
               type="button"
               aria-label="Default lead"
@@ -746,9 +753,11 @@ function UpcomingLeadRow({
   dispatch: (action: DraftAction) => void
 }) {
   const step = useMemo(() => upcomingLeadStep(task, draft, ctx), [task, draft, ctx])
-  if (!step) return null
+  const reset = useMemo(() => leadResetForRule(task, draft, ctx), [task, draft, ctx])
+  // A rule with no Upcoming (daily) that resets a stored lead: the note alone.
+  if (!step) return reset ? <LeadResetRow /> : null
   const { lead, max } = step
-  const dirty = (draft.leadDays ?? null) !== (initial.leadDays ?? null)
+  const dirty = reset || (draft.leadDays ?? null) !== (initial.leadDays ?? null)
   const move = (delta: number) =>
     dispatch({ type: 'leadDays', days: Math.min(max, Math.max(1, lead + delta)) })
   const stepClass =
@@ -761,6 +770,7 @@ function UpcomingLeadRow({
           className={cn('text-sm', dirty ? 'font-medium text-blue-500' : 'text-muted-foreground')}
         >
           {upcomingLeadStepWords(lead)}
+          {reset && <LeadResetNote />}
         </span>
         <span className="inline-flex items-center" role="group" aria-label={LEAD_WORD}>
           <button
@@ -791,7 +801,7 @@ function UpcomingLeadRow({
           >
             <Plus className="size-3.5" />
           </button>
-          {draft.leadDays != null && (
+          {draft.leadDays != null && !reset && (
             <button
               type="button"
               aria-label="Default lead"
@@ -804,6 +814,27 @@ function UpcomingLeadRow({
           )}
         </span>
       </div>
+    </Row>
+  )
+}
+
+/** " · Lead time back to default for the new rule" (`leadResetForRule`), staged blue. */
+function LeadResetNote() {
+  return (
+    <span data-every-time-lead-reset>
+      {' · '}
+      {LEAD_RESET_FOR_RULE}
+    </span>
+  )
+}
+
+/** The Lead time row with the note alone: the new rule has no Upcoming (daily). */
+function LeadResetRow() {
+  return (
+    <Row label={LEAD_WORD}>
+      <span data-every-time-lead-reset className="text-sm font-medium text-blue-500">
+        {LEAD_RESET_FOR_RULE}
+      </span>
     </Row>
   )
 }

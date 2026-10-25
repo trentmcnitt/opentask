@@ -45,6 +45,8 @@ import {
   stopKeepsRelativeTarget,
   upcomingLeadStep,
   upcomingLeadStepWords,
+  leadResetForRule,
+  LEAD_RESET_FOR_RULE,
   type DraftAction,
   type EveryTimeContext,
   type EveryTimeDraft,
@@ -1168,7 +1170,12 @@ describe('Upcoming’s lead on a repeat with a target (2026-10-25, the Upcoming 
   test('UP-140: target-anchored weekly — the day before by default, up to 6 days; a step saves lead_days alone', () => {
     const d = draftFromTask(FRIDAYS, ctx)
     expect(d.leadDays).toBeNull()
-    expect(upcomingLeadStep(FRIDAYS, d, ctx)).toEqual({ lead: 1, fallback: 1, max: 6 })
+    expect(upcomingLeadStep(FRIDAYS, d, ctx)).toEqual({
+      lead: 1,
+      fallback: 1,
+      max: 6,
+      reset: false,
+    })
     expect(upcomingLeadStepWords(1)).toBe('Tomorrow the day before each one')
     const stepped = draftReducer(d, { type: 'leadDays', days: 3 })
     expect(draftsEqual(d, stepped)).toBe(false)
@@ -1192,6 +1199,31 @@ describe('Upcoming’s lead on a repeat with a target (2026-10-25, the Upcoming 
   test('UP-142: a daily rule has no Upcoming at all — no row (any override would be refused)', () => {
     const daily = draftReducer(draftFromTask(FRIDAYS, ctx), { type: 'freq', freq: 'DAILY' })
     expect(upcomingLeadStep(FRIDAYS, daily, ctx)).toBeNull()
+  })
+
+  test('UP-144: a shorter rule resets a lead it makes too long — the same Save sends lead_days null, never a 400', () => {
+    // A weekly with a lead of 3, made daily: no Upcoming at all, the lead goes.
+    const stored = { ...FRIDAYS, lead_days: 3 }
+    const daily = draftReducer(draftFromTask(stored, ctx), { type: 'freq', freq: 'DAILY' })
+    expect(leadResetForRule(stored, daily, ctx)).toBe(true)
+    expect(upcomingLeadStep(stored, daily, ctx)).toBeNull()
+    expect(draftToPatch(stored, daily, ctx)).toMatchObject({ lead_days: null })
+    expect(draftToPatch(stored, daily, ctx).rrule).toMatch(/^FREQ=DAILY/)
+    // Every 2 days (a wait of 2): the stepper shows the default (1), Default staged.
+    const everyOther = draftReducer(daily, { type: 'interval', interval: 2 })
+    expect(upcomingLeadStep(stored, everyOther, ctx)).toMatchObject({ lead: 1, reset: true })
+    expect(draftToPatch(stored, everyOther, ctx)).toMatchObject({ lead_days: null })
+    // Back to weekly: the lead fits again and is kept (nothing sent).
+    const back = draftReducer(daily, { type: 'freq', freq: 'WEEKLY' })
+    expect(leadResetForRule(stored, back, ctx)).toBe(false)
+    expect(draftToPatch(stored, back, ctx)).not.toHaveProperty('lead_days')
+    // A STAGED lead the new rule can't take: not sent (the stored one is already the default).
+    const staged = draftReducer(draftFromTask(FRIDAYS, ctx), { type: 'leadDays', days: 5 })
+    const shorter = draftReducer(staged, { type: 'freq', freq: 'DAILY' })
+    expect(draftToPatch(FRIDAYS, shorter, ctx)).not.toHaveProperty('lead_days')
+    // The patch the server takes: validated like any PATCH.
+    expect(() => validateTaskUpdate(draftToPatch(stored, daily, ctx))).not.toThrow()
+    expect(LEAD_RESET_FOR_RULE).toBe('Lead time back to default for the new rule')
   })
 
   test('UP-143: a one-off made to repeat carries its own lead into the draft', () => {

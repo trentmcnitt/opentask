@@ -294,17 +294,35 @@ function firstFromNow(rrule: string, ctx: EveryTimeContext): string | null {
  * or when the rule can't be read.
  */
 export function upcomingLeadStep(
+  task: Pick<EveryTimeTask, 'occurrence_at' | 'due_at' | 'deadline_at' | 'lead_days'>,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+): { lead: number; fallback: number; max: number; reset: boolean } | null {
+  if (draft.noTarget) return null
+  const wait = draftWait(task, draft, ctx)
+  if (wait === null || wait < HEADS_UP_DAY_BEFORE_MIN_WAIT) return null
+  const max = Math.max(1, Math.min(90, wait - 1))
+  const fallback = Math.max(1, deadlineLeadDays(wait))
+  const reset = leadResetForRule(task, draft, ctx)
+  return {
+    lead: reset ? fallback : Math.min(max, draft.leadDays ?? fallback),
+    fallback,
+    max,
+    reset,
+  }
+}
+
+/** The draft rule's wait (`ruleWait`) from its first occurrence, or null when it can't be read. */
+function draftWait(
   task: Pick<EveryTimeTask, 'occurrence_at' | 'due_at' | 'deadline_at'>,
   draft: EveryTimeDraft,
   ctx: EveryTimeContext,
-): { lead: number; fallback: number; max: number } | null {
-  if (draft.noTarget) return null
+): number | null {
   const deadline = draft.anchor === 'deadline'
   const first =
     (deadline ? task.deadline_at : (task.occurrence_at ?? task.due_at)) ?? ctx.now.toISOString()
-  let wait: number
   try {
-    wait = ruleWait(
+    return ruleWait(
       {
         rrule: draftRule(draft),
         recurrence_mode: draft.mode,
@@ -316,10 +334,30 @@ export function upcomingLeadStep(
   } catch {
     return null
   }
-  if (wait < HEADS_UP_DAY_BEFORE_MIN_WAIT) return null
-  const max = Math.max(1, Math.min(90, wait - 1))
-  const fallback = Math.max(1, deadlineLeadDays(wait))
-  return { lead: Math.min(max, draft.leadDays ?? fallback), fallback, max }
+}
+
+/** The Lead time row's note when `leadResetForRule` holds (Trent's coordinator, 10-25). */
+export const LEAD_RESET_FOR_RULE = 'Lead time back to default for the new rule'
+
+/**
+ * A SHORTER RULE RESETS THE LEAD (2026-10-25): a repeat's lead must be
+ * shorter than its rule's wait (the server's `leadDaysProblem`, a 400). When
+ * the draft's rule makes the stored or staged lead too long — a weekly with a
+ * lead of 3 made daily — the same Save sends `lead_days: null` (back to the
+ * default) instead of failing, and the Lead time row says so
+ * (`LEAD_RESET_FOR_RULE`). Derived, never written into the draft: change the
+ * rule back and the lead is valid again, kept.
+ */
+export function leadResetForRule(
+  task: Pick<EveryTimeTask, 'occurrence_at' | 'due_at' | 'deadline_at' | 'lead_days'>,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+): boolean {
+  if (draft.stop) return false
+  const lead = draft.leadDays !== undefined ? draft.leadDays : (task.lead_days ?? null)
+  if (lead === null) return false
+  const wait = draftWait(task, draft, ctx)
+  return wait !== null && lead >= wait
 }
 
 /**
@@ -778,10 +816,10 @@ export function draftToPatch(
   if (switching || !task.rrule || rrule !== storedRuleText(task)) patch.rrule = rrule
   if (draft.mode !== storedMode(task)) patch.recurrence_mode = draft.mode
   // The series' lead override (the deadlines page, or Upcoming's Later):
-  // only when it changed.
-  if (draft.leadDays !== undefined && draft.leadDays !== (task.lead_days ?? null)) {
-    patch.lead_days = draft.leadDays
-  }
+  // only when it changed — or back to the default when the rule makes it
+  // too long (`leadResetForRule`; never a 400).
+  const lead = leadResetForRule(task, draft, ctx) ? null : draft.leadDays
+  if (lead !== undefined && lead !== (task.lead_days ?? null)) patch.lead_days = lead
   if (draft.anchor === 'target') {
     if (switching) patch.repeat_anchor = 'target'
     // A field, not SQL: written as a spread so the SQL-writer guards (UP-090) don't read it as one.

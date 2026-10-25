@@ -327,4 +327,45 @@ test.describe('Lead time', () => {
       await trash(page, [id])
     }
   })
+
+  test('a shorter rule resets a lead it makes too long: weekly with lead 3 made daily saves, lead_days null', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await create(page, {
+      title: uniqueTitle('UPL weekly to daily'),
+      rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0',
+      lead_days: 3,
+    })
+    try {
+      const failed: number[] = []
+      page.on('response', (r) => {
+        if (r.request().method() === 'PATCH' && r.url().includes(`/api/tasks/${id}`) && !r.ok())
+          failed.push(r.status())
+      })
+      await page.goto(`/tasks/${id}`)
+      await page.locator('[data-quick-panel-repeat-link]').click()
+      const region = page.getByRole('region', { name: 'Editing every time' })
+      await region.getByRole('combobox', { name: 'How often' }).click()
+      await page.getByRole('option', { name: 'Daily' }).click()
+      await expect(region.locator('[data-every-time-lead-reset]')).toHaveText(
+        'Lead time back to default for the new rule',
+      )
+      // Every 2 days: the stepper shows the default (the day before), no Default button.
+      await region.getByLabel('Every how many days').fill('2')
+      await region.getByLabel('Every how many days').press('Tab')
+      const row = region.locator('[data-every-time-upcoming-lead]')
+      await expect(row.locator('[data-every-time-upcoming-lead-days]')).toHaveText('1 day')
+      await expect(row).toContainText('Lead time back to default for the new rule')
+      await expect(row.getByRole('button', { name: 'Default lead' })).toHaveCount(0)
+      await region.getByLabel('Every how many days').fill('1')
+      await region.getByLabel('Every how many days').press('Tab')
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect.poll(async () => (await stateOf(page, id)).rrule).toMatch(/^FREQ=DAILY/)
+      expect((await stateOf(page, id)).lead_days).toBeNull()
+      expect(failed).toEqual([])
+      await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveCount(0)
+    } finally {
+      await trash(page, [id])
+    }
+  })
 })
