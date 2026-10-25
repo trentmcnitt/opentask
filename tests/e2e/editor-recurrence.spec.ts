@@ -124,7 +124,7 @@ test.describe('Task editor sheet on a phone', () => {
       await withPreferences(page, unified(), async () => {
         let sheet = await openEditor(page, recurring)
         await expect(sheet.locator('[data-quick-panel-deadline-repeat]')).toHaveText(
-          '· target the same day at 12:00 PM',
+          '· target the deadline day at 12:00 PM',
         )
         await expect(sheet.locator('[data-task-model-fields]')).not.toContainText('Horizon')
         // The rule's time is the DEADLINE's: the link says so.
@@ -135,7 +135,7 @@ test.describe('Task editor sheet on a phone', () => {
         const region = everyTime(sheet)
         await expect(region.getByRole('combobox', { name: 'Deadline time' })).toHaveText('11:00 PM')
         await expect(region.getByRole('combobox', { name: 'Days before the deadline' })).toHaveText(
-          'the same day',
+          'the deadline day',
         )
         await expect(region.getByRole('combobox', { name: 'Target time' })).toHaveText('12:00 PM')
 

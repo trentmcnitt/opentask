@@ -133,10 +133,6 @@ function buildCreateBody(fields: QuickActionPanelChanges & { title: string }) {
     // Every-time mode's staged schedule (editor plan §8, `draftToCreateFields`):
     // a deadline-anchored repeat's anchor and target offsets, and an end.
     if (fields.repeat_anchor) body.repeat_anchor = fields.repeat_anchor
-    if (fields.target_days_before !== undefined) {
-      body.target_days_before = fields.target_days_before
-    }
-    if (fields.target_time !== undefined) body.target_time = fields.target_time
     if (fields.repeat_count != null) body.repeat_count = fields.repeat_count
     if (fields.repeat_until != null) body.repeat_until = fields.repeat_until
   }
@@ -151,7 +147,19 @@ function buildCreateBody(fields: QuickActionPanelChanges & { title: string }) {
   // AI never overwrites a deadline or horizon the user set by hand.
   if (fields.deadline_at) body.deadline_at = fields.deadline_at
   if (fields.horizon) body.horizon = fields.horizon
-  return body
+  return { ...body, ...relativeTargetBody(fields) }
+}
+
+/**
+ * A relative target (a deadline-anchored repeat's, or — 2026-10-24 — a
+ * one-off's, from the target picker's "Before the deadline"): the days
+ * before, and the period it follows or its own time (never both).
+ */
+function relativeTargetBody(fields: QuickActionPanelChanges): Record<string, unknown> {
+  if (fields.target_days_before === undefined) return {}
+  return fields.target_slot_id !== undefined
+    ? { target_days_before: fields.target_days_before, target_slot_id: fields.target_slot_id }
+    : { target_days_before: fields.target_days_before, target_time: fields.target_time }
 }
 
 /**

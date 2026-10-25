@@ -15,6 +15,7 @@ import {
 } from '@/lib/task-model-words'
 import { isPastDeadline } from '@/lib/task-segments'
 import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target-labels'
+import { MOVES_WITH_DEADLINE } from '@/lib/relative-target-ui'
 
 /**
  * THE QUICK PANEL'S "THIS ONE" ROWS (2026-10-22, editor plan §3, mock E;
@@ -54,6 +55,12 @@ import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target
  * lead change re-derives the day and drops a deferral). Only with the task
  * queue on, one task, and no target (staged) — a target makes the lead
  * dormant. The Target row then reads "No target", never an automatic one.
+ *
+ * A RELATIVE TARGET (2026-10-24, plan-relative-targets §9) reads "Mon, Nov
+ * 2, 8:30 PM in 9 days · the day before, Evening · moves with the deadline"
+ * (a custom time: "· the day before · moves with the deadline"); a staged
+ * deadline shows the target it gives, in blue. Its picker opens with the
+ * "Before the deadline" block (`BeforeDeadlineBlock`).
  *
  * The Target row's DEADLINE-CAP PREVIEW: a staged target after a deadline
  * that is still ahead reads "Sat Nov 7, 8:00 AM · stops at deadline" — the
@@ -195,6 +202,12 @@ export type TargetValueProps =
       delta: string | null
       /** The deadline-cap preview: the staged target stops at the deadline. */
       capped: string | null
+      /**
+       * A RELATIVE target (2026-10-24): where it sits before the deadline —
+       * "the day before, Evening" — said after the date with "· moves with
+       * the deadline".
+       */
+      relativeWords?: string | null
     }
 
 function TargetValue(props: TargetValueProps) {
@@ -232,6 +245,14 @@ function TargetValue(props: TargetValueProps) {
         {props.relative}
       </span>
       {props.delta && <span className="font-medium text-blue-500">({props.delta})</span>}
+      {props.relativeWords && (
+        <span
+          data-target-relative
+          className={cn(props.dirty ? 'font-medium text-blue-500' : 'text-muted-foreground')}
+        >
+          · {props.relativeWords} · {MOVES_WITH_DEADLINE}
+        </span>
+      )}
     </>
   )
 }

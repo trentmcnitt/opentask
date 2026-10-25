@@ -66,14 +66,21 @@ export function useEveryTime({
   createStaged,
   timezone,
   morningTime,
+  morningSlotId = null,
   leads = false,
 }: {
   variant: EveryTimeVariant
   task: Task | null
   selectedTasks: Task[]
-  createStaged: { dueAt: string | null; deadlineAt: string | null }
+  createStaged: Parameters<typeof createModeTask>[0]
   timezone: string
   morningTime: string
+  /**
+   * The period "Default task time" follows, when the user may link this
+   * task's target to it (they own it) — a default relative target copies it
+   * (ruling 10, `EveryTimeContext.morningSlotId`).
+   */
+  morningSlotId?: number | null
   /**
    * The deadlines page is on (the task-queue switch, 2026-10-22, L1): a
    * deadline-anchored repeat made from a one-off with no target gets no
@@ -91,7 +98,7 @@ export function useEveryTime({
 
   const enter = useCallback(
     (opts?: { focusDeadline?: boolean }) => {
-      const ctx: EveryTimeContext = { timezone, morningTime, now: new Date(), leads }
+      const ctx: EveryTimeContext = { timezone, morningTime, morningSlotId, now: new Date(), leads }
       let checkTask: EveryTimeTask
       let initial: EveryTimeDraft
       let mixed = false
@@ -122,7 +129,17 @@ export function useEveryTime({
       })
       setLeft(false)
     },
-    [variant, task, selectedTasks, createStaged, timezone, morningTime, leads, staged],
+    [
+      variant,
+      task,
+      selectedTasks,
+      createStaged,
+      timezone,
+      morningTime,
+      morningSlotId,
+      leads,
+      staged,
+    ],
   )
 
   const dispatch = useCallback((action: DraftAction) => {
