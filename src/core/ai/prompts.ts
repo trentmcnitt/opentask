@@ -906,7 +906,8 @@ export const ENRICHMENT_REMINDERS = `## Reminders
 - Resolve names from user context when the user references people by relationship ("my wife" → name from context)
 - Resolve work-schedule phrases ("after work", "before work", "at lunch") to times from user context when a schedule is provided. Defaults: "after work" → 5pm, "before work" → 7:30am, "at lunch" → 12pm.
 - Do NOT inject user context the user didn't reference — context resolves explicit references only
-- Return valid JSON only (no markdown fences, no text outside the JSON object)`
+- Return valid JSON only (no markdown fences, no text outside the JSON object)
+- quota_target, quota_period, quota_interval, quota_prompt_time and quota_prompt_enabled are for quotas only: for a task they are all null`
 
 // ---------------------------------------------------------------------------
 // Enrichment user prompt builder
@@ -1123,6 +1124,168 @@ ${taskText}
 - priority follows the same signals as a task: a stated one lands, otherwise 0.
 - The title is the thought itself, with the schedule words removed. Whatever
   the title cannot carry goes to notes.
+- quota_target, quota_period, quota_interval, quota_prompt_time and
+  quota_prompt_enabled are null: they are for quotas, and this is a reminder.
 
 Parse the reminder above and return the structured result.`
+}
+
+// ---------------------------------------------------------------------------
+// Quota enrichment (2026-10-24, .tmp/plan-quota-enrichment-1022.md, APPROVED)
+// ---------------------------------------------------------------------------
+//
+// A quota is a task row with `is_tracked = 1` (or a target above 1): a count
+// of times per period ("eggs twice a week" = 2 per week), with no date, no
+// days and no project. The CALLER declares the kind (`is_tracked: true` on
+// POST /api/tasks — option A of the plan); nothing here classifies a task as a
+// quota from its words, because the same words ("twice a week") are a
+// repeating task, a reminder or a quota depending on what the user meant.
+//
+// Same shape as the reminder prompt, for the same reason: the warm enrichment
+// slot pins ONE system prompt and ONE schema, so everything quota-specific
+// lives in this user turn, and it exists to counteract the task priming the
+// system prompt just gave — above all its "twice a week → BYDAY=TU,TH"
+// example. The count and period travel in their own `quota_*` fields (a bare
+// `FREQ=WEEKLY` is not a valid task rule), and `postProcessQuotaEnrichment`
+// (enrichment.ts) turns them into what is stored, whatever came back.
+//
+// No clock, as with reminders: a quota has no date, so nothing here needs one.
+//
+// Units (Trent, 10-22: "as recommended"): a quota counts TIMES. A measured
+// amount of one doing ("100 pushups", "20 min", "5 miles") stays in the
+// title and the target counts the doings ("100 pushups a day" → "100
+// pushups", 1 per day); separate occasions ("8 glasses of water a day") are
+// the target.
+
+export interface QuotaEnrichmentPromptParams {
+  timezone: string
+  /** The user's editable time slots (reminder periods), in sort order. */
+  slots: Array<{ label: string; start_time: string }>
+  userContext?: string | null
+  taskText: string
+}
+
+/**
+ * Build the quota enrichment user prompt.
+ *
+ * Shared by production (enrichment.ts), quality tests, and dump-prompts so the
+ * template is defined exactly once.
+ */
+export function buildQuotaEnrichmentUserPrompt(params: QuotaEnrichmentPromptParams): string {
+  const { timezone, slots, userContext, taskText } = params
+
+  const slotList = slots
+    .map((slot) => `- ${slot.label} — ${formatMorningTime(slot.start_time)}`)
+    .join('\n')
+
+  const userContextBlock = userContext ? `\nUser context: ${userContext}\n` : ''
+
+  return `## This one is a quota, not a task
+
+A quota is a count the user wants to reach in each period: "fish for dinner
+twice a week" is 2 times per week, "practice Spanish every day" is 1 time per
+day. The user taps +1 each
+time they do it, and the count starts again when the period ends. A quota has
+no due date, no days of the week, no time of day to do it, and no project. So
+the instructions above about due_at, deadlines, pace and repeating rules do
+not apply here: the schedule words become the count and the period below, and
+leave the title.
+
+User's timezone: ${timezone}${userContextBlock}
+
+<quota>
+${taskText}
+</quota>
+
+## The count and the period
+
+- **quota_target** — how many times per period. Only from occurrence words:
+  "once" → 1, "twice" → 2, "3x" / "three times" → 3, "a couple of times" → 2,
+  "a few times" → 3. "Every day" / "daily" / "each morning" → 1 per day.
+  Nothing said about how many → 1.
+- **quota_period** — "day", "week", "month" or "year": what the count is per.
+  null when the text names no period at all ("guitar chords") — the app keeps
+  its own.
+- **quota_interval** — how many periods one count spans, only when the user
+  asked for more than one; otherwise null.
+  - "every other day" → day, interval 2
+  - "every 2 weeks" / "once a fortnight" / "biweekly" → week, interval 2
+  - "quarterly" / "3 times a quarter" → month, interval 3
+  - "every 60 days" → day, interval 60 (write what was said; the app checks it)
+- **Named weekdays** ("yoga Tuesday and Thursday") are a count per week: a
+  quota has no days, so that is 2 per week, and the day names go in notes
+  ("Tue, Thu") so nothing is lost.
+
+## What it counts: times, not amounts
+
+A quota counts TIMES — one +1 per time the user does the thing.
+- A number that measures ONE doing stays in the title, and the target counts
+  the doings: "walk 30 min every day" → title "Walk 30 min", 1 per day; "50
+  squats a day" → title "50 squats", 1 per day; "bike 10 miles 3 times a
+  week" → title "Bike 10 miles", 3 per week.
+- A number of separate occasions spread through the period is the target:
+  "eat 5 servings of vegetables a day" → title "Eat vegetables", 5 per day.
+
+## The title
+
+The thing itself, in the user's words, with the count, the period, the day
+names and the reminder words removed: "lift 3x a week, remind me after work" →
+"Lift"; "fish for dinner twice a week" → "Fish for dinner". Keep bare nouns as
+they are (no added verb), and keep everything else the user said ("story time
+with the kids every day" → "Story time with the kids").
+
+## The reminder period
+
+Each day the app can put the quota in front of the user in one of their
+reminder periods. These are the user's periods:
+${slotList}
+
+- **quota_prompt_time** — ONLY when the user said when to be reminded or when
+  they do it ("remind me at lunch", "in the evening", "after dinner",
+  "at 7am"): the label of the period that time falls in, written exactly as
+  listed. A time word maps to a window, not a clock: "evening" is the user's
+  Evening even if it starts at 8:30 PM, and "lunch" is the window noon falls
+  in. A clock time with no matching window ("at 6:15") may be written as
+  HH:MM, 24-hour. When the user said nothing about when, null — never a
+  period chosen because of what the quota is about.
+- **quota_prompt_enabled** — false when the user asks not to be reminded
+  ("don't remind me", "no reminders", "no nagging"); true only for an explicit
+  "remind me"; otherwise null.
+
+## What else the result carries
+
+- rrule, due_at, deadline_at, horizon, auto_snooze_minutes and recurrence_mode
+  are null. project_name is null.
+- labels: only a label the user explicitly asks for ("label it fitness"), at
+  most one; otherwise [].
+- priority follows the same signals as a task: a stated one lands, otherwise 0.
+- notes: what the title cannot carry (named days, a reason, a detail), or null.
+
+## Example
+
+Input: "lift 3x a week, remind me after work" (with periods Morning 9:00 AM,
+Afternoon 4:00 PM, Evening 8:30 PM)
+\`\`\`json
+{
+  "reasoning": "A quota. '3x a week' → 3 per week. 'remind me after work' → about 5 PM, inside Afternoon (4:00 PM until Evening); an explicit 'remind me'. The title keeps the thing itself: 'Lift'.",
+  "title": "Lift",
+  "due_at": null,
+  "deadline_at": null,
+  "horizon": null,
+  "priority": 0,
+  "labels": [],
+  "project_name": null,
+  "rrule": null,
+  "auto_snooze_minutes": null,
+  "recurrence_mode": null,
+  "notes": null,
+  "quota_target": 3,
+  "quota_period": "week",
+  "quota_interval": null,
+  "quota_prompt_time": "Afternoon",
+  "quota_prompt_enabled": true
+}
+\`\`\`
+
+Parse the quota above and return the structured result.`
 }

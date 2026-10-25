@@ -422,6 +422,13 @@ export interface ApnsEnrichedPayload {
   title: string
   body: string
   taskId: number
+  /**
+   * A quota (quota enrichment, 2026-10-24): sent with NO category, so no
+   * buttons — `TASK_ADDED`'s Done would complete it, which the server refuses
+   * for a quota (its completions are closed periods). The body tap still opens
+   * `/?task=<id>`, which the dashboard forwards to `/quotas?quota=<id>`.
+   */
+  quota?: true
 }
 
 /** Must match `NotificationCategory.taskAdded` in `ios/Shared/NotificationIdentifiers.swift`. */
@@ -467,7 +474,8 @@ export function buildEnrichedNotification(
   return new Notification(deviceToken, {
     alert: { title: payload.title, body: payload.body },
     topic,
-    category: TASK_ADDED_CATEGORY,
+    // A quota gets no buttons (see `ApnsEnrichedPayload.quota`).
+    ...(payload.quota ? {} : { category: TASK_ADDED_CATEGORY }),
     threadId: id,
     collapseId: id,
     priority: Priority.immediate,

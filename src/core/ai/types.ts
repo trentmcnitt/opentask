@@ -83,6 +83,52 @@ export const EnrichmentResultSchema = z.object({
     .string()
     .nullable()
     .describe('Context/details extracted from dictation, separate from the title'),
+  // QUOTA ENRICHMENT (2026-10-24, plan-quota-enrichment §3). A quota is
+  // enriched through this same schema — the warm slot pins one — so its count
+  // and period travel in fields of their own: a bare quota period
+  // (`FREQ=WEEKLY`) is not a valid task rule (`isValidRRule` wants BYDAY), so
+  // it could not ride in `rrule`. Last in the object, and default null like
+  // deadline_at, so a text-fallback answer written without them still parses;
+  // structured output always carries them. Only the quota user prompt
+  // (`buildQuotaEnrichmentUserPrompt`) fills them; the task and reminder
+  // sanitizers null them (`withoutQuotaFields`).
+  quota_target: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .nullable()
+    .default(null)
+    .describe('Quota only: how many times per period. null for a task or reminder'),
+  quota_period: z
+    .enum(['day', 'week', 'month', 'year'])
+    .nullable()
+    .default(null)
+    .describe('Quota only: the period the count is per. null for a task or reminder, or unsaid'),
+  quota_interval: z
+    .number()
+    .int()
+    .min(1)
+    .max(366)
+    .nullable()
+    .default(null)
+    .describe(
+      'Quota only: how many periods one count spans ("every 2 weeks" → 2). null for a task or reminder, or 1',
+    ),
+  quota_prompt_time: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      'Quota only: the time slot label (or HH:MM) the user asked to be reminded at. null if unsaid, and for a task or reminder',
+    ),
+  quota_prompt_enabled: z
+    .boolean()
+    .nullable()
+    .default(null)
+    .describe(
+      'Quota only: false for "don\'t remind me", true for an explicit "remind me". null otherwise, and for a task or reminder',
+    ),
 })
 
 /**
@@ -93,9 +139,25 @@ export const EnrichmentResultSchema = z.object({
  * (yyyy-MM-dd), with `due_at` null. It is NOT in the schema the model sees:
  * the model only ever writes a bare date, and the code decides the deck.
  */
-export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema> & {
+export type EnrichmentResult = OptionalQuotaFields<z.infer<typeof EnrichmentResultSchema>> & {
   on_deck_day?: string | null
 }
+
+/** The quota answer fields (quota enrichment, 2026-10-24). */
+export const QUOTA_ANSWER_FIELDS = [
+  'quota_target',
+  'quota_period',
+  'quota_interval',
+  'quota_prompt_time',
+  'quota_prompt_enabled',
+] as const
+
+/**
+ * The quota fields optional in the TYPE (the schema always fills them, null):
+ * an answer built in code for a task or reminder need not spell them out.
+ */
+type OptionalQuotaFields<T> = Omit<T, (typeof QUOTA_ANSWER_FIELDS)[number]> &
+  Partial<Pick<T, Extract<keyof T, (typeof QUOTA_ANSWER_FIELDS)[number]>>>
 
 /**
  * What's Next recommendation schema.

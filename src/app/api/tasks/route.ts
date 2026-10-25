@@ -9,9 +9,9 @@ import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError, handleZodError } from '@/lib/api-response'
 import { formatTaskResponse, formatTasksResponse } from '@/lib/format-task'
-import { getTasks, createTask, type TaskKind } from '@/core/tasks'
+import { getTasks, getTaskById, createTask, type TaskKind } from '@/core/tasks'
 import { validateTaskCreate } from '@/core/validation'
-import { isAIEnabled, enrichSingleTask } from '@/core/ai'
+import { isAIEnabled, enrichSingleTask, describeEnrichment } from '@/core/ai'
 import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
@@ -30,6 +30,47 @@ function boolParam(params: URLSearchParams, name: string): boolean | undefined {
 function parseKind(raw: string | null): TaskKind | undefined | 'invalid' {
   if (raw === null) return undefined
   return raw === 'task' || raw === 'reminder' || raw === 'quota' ? raw : 'invalid'
+}
+
+/**
+ * WAIT (2026-10-24, quota enrichment): how long `POST /api/tasks` with
+ * `wait: true` holds the response for the enrichment it started. A product
+ * cap, not a tolerance — a Siri Shortcut gives up on a request that takes much
+ * longer, and an enrichment that runs past it still finishes (the per-minute
+ * queue is the safety net); the answer then says `pending`.
+ */
+const WAIT_CAP_MS = 20_000
+
+/**
+ * What `wait` reports: `done` (with the toast's description of what the AI
+ * set — `describeEnrichment`), `pending` (still running or to be retried: the
+ * row keeps `ai-to-process`), `failed` (`ai-failed`), or `skipped` (no
+ * enrichment ran for this create: AI off, the user's mode off, or not
+ * title-only).
+ */
+async function waitForEnrichment(
+  taskId: number,
+  userId: number,
+  enrichment: Promise<string[] | null> | null,
+): Promise<{ status: 'done' | 'pending' | 'failed' | 'skipped'; description: string | null }> {
+  let fields: string[] | null = null
+  if (enrichment) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const capped = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), WAIT_CAP_MS)
+    })
+    fields = await Promise.race([enrichment, capped])
+    clearTimeout(timer)
+  }
+
+  const labels = getTaskById(taskId)?.labels ?? []
+  if (labels.includes('ai-failed')) return { status: 'failed', description: null }
+  if (labels.includes('ai-to-process')) return { status: 'pending', description: null }
+  if (fields === null) return { status: 'skipped', description: null }
+  return {
+    status: 'done',
+    description: describeEnrichment(taskId, userId, fields)?.description ?? null,
+  }
 }
 
 export const GET = withLogging(async function GET(request: NextRequest) {
@@ -121,14 +162,20 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     })
 
     // Fire-and-forget: trigger immediate enrichment if task has the ai-to-process label
+    let enrichment: Promise<string[] | null> | null = null
     if (isAIEnabled() && task.labels.includes('ai-to-process')) {
-      enrichSingleTask(task.id, user.id).catch((err) => {
+      enrichment = enrichSingleTask(task.id, user.id).catch((err) => {
         log.error('api', `Fire-and-forget enrichment failed for task ${task.id}:`, err)
+        return null
       })
     }
 
     notifyDemoEngagement(user.name, 'create')
-    return success(formatTaskResponse(task, user.timezone), 201)
+    if (input.wait !== true) return success(formatTaskResponse(task, user.timezone), 201)
+
+    const ai = await waitForEnrichment(task.id, user.id, enrichment)
+    const current = getTaskById(task.id) ?? task
+    return success({ ...formatTaskResponse(current, user.timezone), ai }, 201)
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)

@@ -200,7 +200,11 @@ paths:
       description: |
         Send a raw title string for AI enrichment, or provide structured fields
         to bypass enrichment. AI enrichment triggers when only `title` is provided
-        (no due_at, priority=0, no labels, no rrule).
+        (no due_at, priority=0, no labels, no rrule). `is_reminder: true` and
+        `is_tracked: true` keep the request title-only and choose the kind: a
+        quota declared with no `rrule` is stored with a provisional weekly period
+        that enrichment replaces (see `is_tracked`). With `wait: true` the
+        response waits for the enrichment and carries `data.ai`.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       requestBody:
@@ -211,14 +215,38 @@ paths:
               $ref: '#/components/schemas/TaskCreate'
       responses:
         '201':
-          description: Created task
+          description: Created task (enriched, when `wait` was sent and enrichment finished in time)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/Task'
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          ai:
+                            type: object
+                            description: >
+                              Only with `wait: true`: what the enrichment did.
+                            required: [status, description]
+                            properties:
+                              status:
+                                type: string
+                                enum: [done, pending, failed, skipped]
+                                description: >
+                                  `done` — finished; `pending` — still running past the
+                                  20-second cap, or to be retried (it finishes in the
+                                  background); `failed` — the task has `ai-failed`;
+                                  `skipped` — no enrichment ran (AI off, the user's mode
+                                  Off, or not title-only).
+                              description:
+                                type: [string, 'null']
+                                description: >
+                                  With `done`: the app toast's words for what the AI set
+                                  ("3× a week · Reminds at Midday"); null otherwise or when
+                                  nothing user-facing changed.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -6262,7 +6290,29 @@ components:
             Set above 1 to track this task as a quota (§5); `is_tracked: true`
             makes a quota with a target of 1. A quota must name its period in
             the same request — `rrule` FREQ=DAILY, WEEKLY, MONTHLY or YEARLY —
-            or the create is a 400 (2026-09-25).
+            or the create is a 400 (2026-09-25), with one exception: see
+            `is_tracked`. A target above 1 counts as structured input, so it
+            is never sent for AI enrichment.
+        is_tracked:
+          type: boolean
+          default: false
+          description: >
+            Create a quota (a count per period, §5). QUOTA FROM WORDS
+            (2026-10-24): `{"title": "eggs twice a week", "is_tracked": true}`
+            with no `rrule` is accepted when AI enrichment will run for it (AI
+            enabled, the user's enrichment mode not Off, title-only): the quota
+            is stored at once with a provisional period, `FREQ=WEEKLY`, target
+            1, and enrichment then sets the count, the period and the reminder
+            period from the words (a measured amount like "20 min" stays in the
+            title; the count is times). When enrichment will not run, it is the
+            400 above. An explicit `rrule: null` is always the 400.
+        wait:
+          type: boolean
+          default: false
+          description: >
+            Hold the response (up to 20 seconds) for the AI enrichment this
+            create starts, and report it in `data.ai` (2026-10-24). For one-shot
+            callers such as an Apple Shortcut. Never stored.
         create_label:
           type: boolean
           description: >

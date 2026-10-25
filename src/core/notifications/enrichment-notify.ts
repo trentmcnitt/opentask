@@ -15,6 +15,8 @@
  *          "Added to Work · Mon 9:00 AM · High · Weekly on Monday at 9:00 AM · errands"
  *          A reminder says its period instead of a project:
  *          "Added to Evening · Daily at 8:30 PM"
+ *          A quota says its count and reminder period:
+ *          "Added to Quotas · 3× a week · Reminds at Midday"
  *          Nothing filled in → just "Added to Inbox".
  *
  * It is a BANNER WITHOUT SOUND: APNs `interruption-level: active`, priority
@@ -53,8 +55,13 @@
  *   Just added window, and has its own collapse id (`ai-failed-<id>`), so the
  *   two never replace each other.
  * - NOT when the user's enrichment mode is off (no model ran — the caller
- *   passes nothing), for quotas (not "added" in the card's sense and the body
- *   would say nothing), or for done/deleted tasks.
+ *   passes nothing), or for done/deleted tasks.
+ * - A QUOTA gets it too since 2026-10-24 (quota enrichment: a Shortcut adds
+ *   one as a provisional weekly count and the AI reads the rest, so this push
+ *   is the confirmation): "Added to Quotas · 3× a week · Reminds at Midday".
+ *   Its APNs push carries no category — no buttons, since Done would try to
+ *   complete a quota (`ApnsEnrichedPayload.quota`); the tap's `/?task=<id>`
+ *   goes on to `/quotas?quota=<id>`.
  *
  * WHO. Users with `notifications_enabled` AND `enrichment_notifications_enabled`
  * (Settings → Notifications → "Notify when AI finishes a new task", default
@@ -75,6 +82,7 @@ import { getPriorityOption } from '@/lib/priority'
 import { JUST_ADDED_WINDOW_MS } from '@/lib/just-added'
 import { assignSlot, type TimeSlot } from '@/lib/time-slot-assign'
 import { isTracked } from '@/lib/track'
+import { quotaCadenceWords, quotaPromptWords } from '@/core/ai/quota-enrichment'
 import { APP_URL } from '@/core/notifications/format'
 import { sendPushNotification, isWebPushConfigured } from '@/core/notifications/web-push'
 import { sendApnsEnrichedNotification, isApnsConfigured } from '@/core/notifications/apns'
@@ -124,6 +132,19 @@ export function buildEnrichedNotificationContent(params: {
   const { task, projectName, timezone, dayStart, slots } = params
   const parts: string[] = []
 
+  // A quota (quota enrichment, 2026-10-24) lives on the Quotas page, not in a
+  // project: "Added to Quotas · 3× a week · Reminds at Midday".
+  if (isTracked(task)) {
+    parts.push('Added to Quotas')
+    const cadence = quotaCadenceWords(task)
+    if (cadence) parts.push(cadence)
+    const prompt = quotaPromptWords(task, slots)
+    if (prompt) parts.push(prompt)
+    const quotaLabels = task.labels.filter((l) => !l.startsWith('ai-'))
+    if (quotaLabels.length > 0) parts.push(quotaLabels.join(', '))
+    return { title: task.title, body: parts.join(' · ') }
+  }
+
   if (task.is_reminder) {
     // A reminder lives in a period, not a project (REDESIGN-V03 §6), and its
     // due_at is bookkeeping for the next occurrence, never a deadline.
@@ -171,7 +192,6 @@ function pruneNotified(now: number): void {
 function claimNotification(task: Task | null, userId: number, now: number): task is Task {
   if (!task || task.user_id !== userId) return false
   if (task.deleted_at || task.done) return false
-  if (isTracked(task)) return false
 
   const created = Date.parse(task.created_at)
   if (Number.isNaN(created) || created <= now - JUST_ADDED_WINDOW_MS) return false
@@ -213,8 +233,9 @@ export async function notifyEnrichmentFinished(taskId: number, userId: number): 
     projectName: project?.name ?? 'Inbox',
     timezone: user.timezone,
     dayStart: dayBoundaryForUser(userId),
-    slots: task.is_reminder ? listTimeSlots(userId) : [],
+    slots: task.is_reminder || isTracked(task) ? listTimeSlots(userId) : [],
   })
+  const quota = isTracked(task)
 
   log.info('notifications', `Enrichment finished: notifying user ${userId} about task ${taskId}`)
 
@@ -234,6 +255,15 @@ export async function notifyEnrichmentFinished(taskId: number, userId: number): 
       ),
     )
   }
-  if (apns) sends.push(sendApnsEnrichedNotification(userId, { title, body, taskId }))
+  if (apns) {
+    sends.push(
+      sendApnsEnrichedNotification(userId, {
+        title,
+        body,
+        taskId,
+        ...(quota ? { quota: true as const } : {}),
+      }),
+    )
+  }
   await Promise.allSettled(sends)
 }

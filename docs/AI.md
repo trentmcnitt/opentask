@@ -283,6 +283,15 @@ Quick Take uses its own system prompt (`QUICK_TAKE_SYSTEM_PROMPT`) defined in `q
 - `alignTaskModelDates()` — rolls a long-past deadline or recurring first date forward a year; drops a target that falls after the deadline
 - `sanitizeTaskModelFields()` — post-parse guard for `deadline_at` (dropped without a cutoff word in the input) and `horizon` (dropped without a pace word); both dropped on a recurring result
 - `sanitizeReminderEnrichment()` — clears every task-shaped field on a reminder, `deadline_at` and `horizon` included
+- `applyQuotaEnrichment()` — a quota's write: the plan as an edit through `collectFieldChanges` + `applyFieldChanges` (2026-10-24)
+- `describeEnrichment(taskId, userId, fields)` — the toast's words for what the AI set; the sync event and `POST /api/tasks` `wait` both use it
+
+### `quota-enrichment.ts`
+
+- `postProcessQuotaEnrichment(parsed, text, slots)` — a quota answer → the stored plan (period rule, target, reminder period, one explicit label); production and the quality harness both call it
+- `withoutQuotaFields()` — nulls the `quota_*` fields on a task or reminder answer
+- `QUOTA_PROVISIONAL_RULE` — `FREQ=WEEKLY`, the period a quota from words starts with
+- `quotaCadenceWords()` / `quotaPromptWords()` — "3× a week", "Reminds at Midday" for the toast and the push
 
 ### `quick-take.ts`
 
@@ -435,6 +444,8 @@ Extracted labels pass through `filterExplicitLabels()` — a post-parse guard th
 - `deadline_at` is the **real cutoff**, set ONLY from stated cutoff wording: "by Friday", "before the 17th", "due to the client Monday 10am", "expires Oct 13", "the deadline is Feb 28", "closes at 9pm". A cutoff day with no time is the end of that day (23:59 local). A cutoff-only date leaves `due_at` null (the app nags from the deadline on its own); "Cancel M365 by Oct 17, do it Wednesday" sets both. Never inferred — not from urgency, topic, or a target date. An AI-guessed deadline is worse than an AI-guessed date because it caps snoozing.
 - `horizon` is the **pace**, set ONLY from explicit pace wording: "today or tomorrow" / "in the next few days" → days, "this week" → weeks, "sometime this month" → months, "eventually" / "someday" → eventually. Otherwise null (unset, read as weeks). Never from topic or size (Trent's 09-28 "no inference from topic" ruling), never from priority words ("no rush" is still priority 1), never from a named day. "By the end of the month" is a deadline, not a horizon. Setting a horizon also stamps `horizon_set_at`.
 - Recurring tasks, reminders and quotas get neither field; a cutoff on a recurring task stays its time in `due_at` ("every Friday by 5pm").
+
+**Quota enrichment** (2026-10-24; plan `.tmp/plan-quota-enrichment-1022.md`, approved 10-22). A quota can be made from free text: `POST /api/tasks {"title": "lift 3x a week, remind me at lunch", "is_tracked": true}` (docs/AUTOMATION.md § Adding a quota). **The caller declares the kind** — the AI never classifies a task as a quota: the same words ("twice a week") are a repeating task, a reminder or a quota depending on what the user meant, and a task misread as a quota goes quiet. `createTask` stores a provisional quota at once (`FREQ=WEEKLY`, target 1, `ai-to-process`) — only when enrichment will run (AI on, the user's enrichment mode not Off, title-only); otherwise the usual "a quota needs a period" 400, saying to send `rrule` or turn AI on. It is part of the **enrichment** feature: the same mode, model, timeout and warm slot, so it is never shelved. The pipeline routes a quota row (`is_tracked`/`progress_target` on the claim) to its own user prompt, `buildQuotaEnrichmentUserPrompt`, beside the reminder's and for the same reason — the warm slot pins one system prompt and one schema, so the user turn counteracts the task priming (above all "twice a week → BYDAY=TU,TH"). The count and period travel in five `quota_*` schema fields (appended last; null for every task and reminder, nulled by `withoutQuotaFields`), because a bare `FREQ=WEEKLY` is not a valid task rule. Rules the prompt states: the target only from occurrence words ("twice", "3x", "a couple"), "every other day" / "once a fortnight" / "quarterly" as intervals, named weekdays as a weekly count with the days in notes, and **units** (Trent, 10-22): a quota counts times, so a measured amount of one doing stays in the title ("100 pushups a day" → "100 pushups", 1 a day; "read 20 min every day" → "Read 20 min") while separate occasions are the target ("8 glasses of water a day" → 8). The reminder period only when the user said when ("at lunch" → the period noon falls in; nothing said → null, the user's default), "don't remind me" → prompt off; labels explicit-only and at most one; no project. `postProcessQuotaEnrichment` makes the stored plan: the period via `quotaRule` (an INTERVAL past `QUOTA_INTERVAL_MAX` is dropped, not clamped; a task-style rule the model wrote anyway gives its FREQ and its day count as a fallback), the slot by label or nearest start. `applyQuotaEnrichment` writes it through `collectFieldChanges` + `applyFieldChanges` (not raw SQL like the task path), after `settleQuotaPeriod`, so every quota invariant, the period re-anchor with its count carry, and the prompt-slot ownership check apply; dropped when the user edited the row meanwhile or it is no longer a quota; no undo entry on the initial enrichment, one on a re-enrichment. The toast and the "AI finished" push say "3× a week · Reminds at Midday" (the push "Added to Quotas · …", with no APNs buttons). `POST /api/tasks` `wait: true` holds the response up to 20 s and reports `data.ai` (`done` / `pending` / `failed` / `skipped`, with the toast's description). Future (not built): one prompt that classifies task / reminder / quota itself (`kind: 'auto'`), with "task" when unsure.
 
 `sanitizeTaskModelFields()` backs the prompt in code: it drops a deadline when the input has no cutoff word, a horizon when it has no pace word, and both on a recurring result. `alignTaskModelDates()` then fixes two date slips the model still made in testing: a deadline (or a recurring task's first date) more than 7 days in the past is a wrong year and moves forward a year, and a target that falls after the deadline is dropped. The guard cannot tell whether a present cue word is used as one ("drop it off before work" is a target) — that stays the prompt's job. Like a target, both fields are set-only: a null from the model never clears what the task already has. The enrichment toast names them ("Deadline Fri 11:59 PM", "Within weeks").
 
@@ -685,6 +696,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `enrichment-projects.ts`             | Project assignment — explicit and name match                | 10    |
 | `enrichment-voice.ts`                | Voice preservation                                          | 8     |
 | `enrichment-reminders.ts`            | Reminder enrichment — cadence and time slots (§6)           | 11    |
+| `enrichment-quotas.ts`               | Quota enrichment — count, period, units, reminder period    | 20    |
 | `enrichment-task-model.ts`           | Target, deadline and horizon (2026-10-10)                   | 31    |
 | `enrichment-soon.ts`                 | Soon today: "now", "in an hour", hour ranges                | 13    |
 | `enrichment-project-descriptions.ts` | Project descriptions settle which project the words mean    | 6     |
@@ -701,7 +713,7 @@ Scenarios live in `tests/quality/scenarios/`, organized by category:
 | `helpers/generate-tasks.ts`          | Realistic task list generator (used by insights-large)      | —     |
 | `index.ts`                           | Barrel export                                               | —     |
 
-**Total: 264 scenarios** (210 enrichment + 11 enrichment_reminder + 13 quick_take + 16 insights + 10 whats_next + 2 process_projects + 2 process_duplicates)
+**Total: 292 scenarios** (217 enrichment + 11 enrichment*reminder + 20 enrichment_quota + 13 quick_take + 17 insights + 10 whats_next + 2 process_projects + 2 process_duplicates; counted 2026-10-24 by `grep -ho "feature: '[a-z*]_'" tests/quality/scenarios/_.ts | sort | uniq -c` — the per-file counts above are older)
 
 Scenarios that need a value the run date decides (a deadline "7 days from now") compute it at load time; `must_include` accepts `~date:YYYY-MM-DD` (a local datetime on that day, any time) and `~notnull`. An enrichment scenario may pin `now` (a local datetime in its timezone): the prompt, the post-processes and the time matchers then all read that minute — `~soon` ("now": 15 minutes out, rounded up to the quarter hour), `~in-hours:N` and `~hours-range:LO-HI` (a quarter hour inside the range). Process scenarios use `process_expectations` (required project per task, groups that must appear, pairs that must not be grouped).
 
@@ -729,10 +741,19 @@ reminder slot** (Settings → Reminder periods → Default reminder period; Tren
 with `defaultSlotLabel`, and the sanitizer falls back to it when the model's
 rule carries no BYHOUR. Before that it was the slot current at enrichment time.
 
+Quota scenarios (`enrichment_quota`, 2026-10-24) are a feature of their own too:
+the quota user prompt (`buildQuotaEnrichmentUserPrompt`), then the same
+`postProcessQuotaEnrichment` production runs, so the output is the stored plan —
+`rrule` (the bare period rule, or null to keep the provisional one),
+`progress_target`, `prompt_slot_label` (null = the user's default),
+`prompt_enabled`, `labels`, `title`, `notes` — plus `model_answer`, the raw
+answer, for the Layer 2 judge only. The harness logs when the answer carried a
+task-style `rrule` (task priming) that the post-process had to fall back on.
+
 Each scenario defines:
 
 - `id` — unique identifier (e.g., `enrich-garbled-dictation`)
-- `feature` — which AI feature (`enrichment`, `enrichment_reminder`, `whats_next`, `insights`, `quick_take`, `process_projects`, `process_duplicates`)
+- `feature` — which AI feature (`enrichment`, `enrichment_reminder`, `enrichment_quota`, `whats_next`, `insights`, `quick_take`, `process_projects`, `process_duplicates`)
 - `input` — feature-specific input data
 - `requirements` — structural checks (`must_include`, `must_not_include`) and qualitative notes (`quality_notes`)
 
@@ -760,6 +781,7 @@ The main `AGENTS.md` has a condensed AI quality testing section with pointers he
 npm run dump-prompts                              # All prompts (templates only) → .tmp/prompts.txt
 npm run dump-prompts -- --feature enrichment      # Just the enrichment prompt
 npm run dump-prompts -- --feature enrichment_reminder  # The reminder variant (slots instead of workday times)
+npm run dump-prompts -- --feature enrichment_quota     # The quota variant (count, period, reminder period)
 npm run dump-prompts -- --feature insights         # Just the insights prompt
 npm run dump-prompts -- --feature whats_next       # Just the what's next prompt
 npm run dump-prompts -- --feature quick_take       # Just the quick take prompt (shows static system prompt and per-request dynamic slot separately)

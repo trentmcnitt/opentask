@@ -75,13 +75,28 @@ import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { log } from '@/lib/logger'
 import { notifyError } from '@/lib/error-notify'
 import { isAIEnabled } from './sdk'
-import { buildEnrichmentUserPrompt, buildReminderEnrichmentUserPrompt } from './prompts'
+import {
+  buildEnrichmentUserPrompt,
+  buildQuotaEnrichmentUserPrompt,
+  buildReminderEnrichmentUserPrompt,
+} from './prompts'
 import { defaultReminderSlot, listTimeSlots } from '@/core/time-slots'
 import { nearestSlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
 import { isTracked } from '@/lib/track'
 import { EnrichmentResultSchema } from './types'
 import { stripRepeatPhrase } from './repeat-title'
+import { filterExplicitLabels } from './explicit-labels'
+import {
+  postProcessQuotaEnrichment,
+  quotaCadenceWords,
+  quotaPromptConfigFor,
+  quotaPromptWords,
+  withoutQuotaFields,
+  type QuotaEnrichmentPlan,
+} from './quota-enrichment'
+import { applyFieldChanges, collectFieldChanges, settleQuotaPeriod } from '@/core/tasks/helpers'
+import type { FieldChangesInput } from '@/core/tasks/helpers/collect-field-changes'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
 import { enrichmentApiQuery } from './enrichment-api'
@@ -294,7 +309,8 @@ function claimTask(taskId: number, userId: number): PendingTaskRow | null {
 
   const row = getDb()
     .prepare(
-      `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder
+      `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder,
+              is_tracked, progress_target
        FROM tasks
        WHERE id = ? AND user_id = ?
          AND deleted_at IS NULL
@@ -340,7 +356,8 @@ export async function processEnrichmentQueue(): Promise<void> {
     // the ai-to-process label when both labels are present).
     const pendingTasks = db
       .prepare(
-        `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder
+        `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder,
+                is_tracked, progress_target
          FROM tasks
          WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-to-process')
            AND deleted_at IS NULL
@@ -400,7 +417,9 @@ export async function processEnrichmentQueue(): Promise<void> {
         // and when the AI moves it the surface has to say so. Whenever the warm
         // slot is unavailable the on-demand call fails and this cycle is what
         // actually does the work, so without this the explanation is simply lost.
-        if (row.is_reminder === 1) emitEnrichmentComplete(row.id, row.user_id, enrichedFields)
+        // A quota likewise (2026-10-24): it was added as a provisional weekly
+        // count, often by a Shortcut, and the cron is what usually finishes it.
+        if (isReminderOrQuota(row)) emitEnrichmentComplete(row.id, row.user_id, enrichedFields)
       } catch (err) {
         log.error('ai', `Enrichment failed for task ${row.id}:`, err)
         markedFailed = handleFailure(row.id)
@@ -511,16 +530,21 @@ function buildEnrichmentDescription(
  * Runs as the system (`runAsSystem`): the route only starts it, and the AI's
  * edit is not the client's — without this the request context would follow
  * the fire-and-forget promise and stamp the AI's undo entry `web` or `ios`.
+ *
+ * Resolves with the user-facing fields the enrichment changed, or null when
+ * no model ran here (AI or the user's mode off, or another path holds the
+ * task) or the run failed — what `POST /api/tasks` with `wait` describes
+ * (`describeEnrichment`, 2026-10-24); the fire-and-forget caller ignores it.
  */
-export function enrichSingleTask(taskId: number, userId: number): Promise<void> {
+export function enrichSingleTask(taskId: number, userId: number): Promise<string[] | null> {
   return runAsSystem(() => enrichSingleTaskAsSystem(taskId, userId))
 }
 
-async function enrichSingleTaskAsSystem(taskId: number, userId: number): Promise<void> {
-  if (!isAIEnabled()) return
+async function enrichSingleTaskAsSystem(taskId: number, userId: number): Promise<string[] | null> {
+  if (!isAIEnabled()) return null
 
   const row = claimTask(taskId, userId)
-  if (!row) return
+  if (!row) return null
 
   let enrichmentSucceeded = false
   let modelRan = false
@@ -548,6 +572,7 @@ async function enrichSingleTaskAsSystem(taskId: number, userId: number): Promise
   if (enrichmentSucceeded) emitEnrichmentComplete(taskId, userId, enrichedFields)
   if (enrichmentSucceeded && modelRan) announceEnrichmentFinished(taskId, userId)
   if (markedFailed) announceEnrichmentFailed(taskId, userId)
+  return modelRan ? enrichedFields : null
 }
 
 /**
@@ -591,9 +616,38 @@ function announceEnrichmentFailed(taskId: number, userId: number): void {
  * bug rather than as the AI doing its job.
  */
 function emitEnrichmentComplete(taskId: number, userId: number, enrichedFields: string[]): void {
+  const described = describeEnrichment(taskId, userId, enrichedFields)
+  if (!described) return
+  const { task: enrichedTask, description } = described
+  emitEnrichmentCompleteEvent(userId, {
+    taskId,
+    title: enrichedTask.title,
+    description,
+    due_at: enrichedTask.due_at,
+    priority: enrichedTask.priority,
+  })
+}
+
+/**
+ * The task as enriched, and the toast's words for what the AI changed
+ * (`buildEnrichmentDescription`; a quota's in `quotaEnrichmentDescription`).
+ * The sync event's payload, and `POST /api/tasks` with `wait` (2026-10-24),
+ * whose `ai.description` is the same string. Null when the task is gone.
+ */
+export function describeEnrichment(
+  taskId: number,
+  userId: number,
+  enrichedFields: string[],
+): { task: Task; description: string | undefined } | null {
   const db = getDb()
   const enrichedTask = getTaskById(taskId)
-  if (!enrichedTask) return
+  if (!enrichedTask) return null
+  if (isTracked(enrichedTask)) {
+    return {
+      task: enrichedTask,
+      description: quotaEnrichmentDescription(enrichedTask, enrichedFields, listTimeSlots(userId)),
+    }
+  }
 
   const userRow = db.prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
     | { timezone: string }
@@ -606,9 +660,8 @@ function emitEnrichmentComplete(taskId: number, userId: number, enrichedFields: 
       )?.name
     : undefined
 
-  emitEnrichmentCompleteEvent(userId, {
-    taskId,
-    title: enrichedTask.title,
+  return {
+    task: enrichedTask,
     description: buildEnrichmentDescription(
       enrichedTask,
       enrichedFields,
@@ -616,9 +669,36 @@ function emitEnrichmentComplete(taskId: number, userId: number, enrichedFields: 
       dayBoundaryForUser(userId),
       projectName,
     ),
-    due_at: enrichedTask.due_at,
-    priority: enrichedTask.priority,
-  })
+  }
+}
+
+/**
+ * A quota's toast (2026-10-24): "3× a week · Reminds at Midday · fitness" —
+ * the count and period when either changed, the reminder setting when it did,
+ * then priority and labels as for a task.
+ */
+function quotaEnrichmentDescription(
+  task: Task,
+  fieldsChanged: string[],
+  slots: TimeSlot[],
+): string | undefined {
+  const parts: string[] = []
+  if (fieldsChanged.includes('rrule') || fieldsChanged.includes('progress_target')) {
+    const cadence = quotaCadenceWords(task)
+    if (cadence) parts.push(cadence)
+  }
+  if (fieldsChanged.includes('quota_prompt_config')) {
+    const prompt = quotaPromptWords(task, slots)
+    if (prompt) parts.push(prompt)
+  }
+  if (fieldsChanged.includes('priority') && task.priority > 0) {
+    parts.push(getPriorityOption(task.priority).label)
+  }
+  if (fieldsChanged.includes('labels')) {
+    const displayLabels = task.labels.filter((l) => !l.startsWith('ai-'))
+    if (displayLabels.length > 0) parts.push(displayLabels.join(', '))
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined
 }
 
 /**
@@ -680,6 +760,29 @@ function buildPromptFor(
 }
 
 /**
+ * The quota prompt (2026-10-24, `buildQuotaEnrichmentUserPrompt`): against
+ * the user's periods, which come back with it because the post-process maps
+ * the reminder period the model names onto the same list.
+ */
+function quotaPromptFor(
+  user: { id: number; timezone: string; ai_context: string | null },
+  textToEnrich: string,
+): { prompt: string; isReminder: boolean; slots: TimeSlot[]; defaultSlotLabel: string | null } {
+  const slots = listTimeSlots(user.id)
+  return {
+    isReminder: false,
+    slots,
+    defaultSlotLabel: null,
+    prompt: buildQuotaEnrichmentUserPrompt({
+      timezone: user.timezone,
+      slots,
+      userContext: user.ai_context,
+      taskText: textToEnrich,
+    }),
+  }
+}
+
+/**
  * Enrich a single task via the warm enrichment slot.
  *
  * Sends the raw title text with the user's timezone to the model,
@@ -724,12 +827,11 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   // Legacy tasks with null original_title fall back to current title.
   const textToEnrich = row.original_title || row.title
 
-  const { prompt, isReminder, slots, defaultSlotLabel } = buildPromptFor(
-    row,
-    user,
-    projects,
-    textToEnrich,
-  )
+  // A quota (2026-10-24) has a prompt of its own, against the user's periods.
+  const quota = rowIsQuota(row)
+  const { prompt, isReminder, slots, defaultSlotLabel } = quota
+    ? quotaPromptFor(user, textToEnrich)
+    : buildPromptFor(row, user, projects, textToEnrich)
 
   const modes = getUserFeatureModes(row.user_id)
   if (modes.enrichment === 'off') {
@@ -788,6 +890,11 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
 
   if (!parsed) {
     throw new Error('Failed to parse enrichment result')
+  }
+
+  // A quota has no dates: its own post-process and its own write.
+  if (quota) {
+    return applyQuotaEnrichment(row, postProcessQuotaEnrichment(parsed, textToEnrich, slots), user)
   }
 
   if (isReminder) {
@@ -877,7 +984,10 @@ export function postProcessTaskEnrichment(
   timezone: string,
   opts: PostProcessOptions,
 ): EnrichmentResult {
-  const result = postProcessTaskDates(withNormalizedRule(parsed), inputText, timezone, opts)
+  // A task never uses the quota fields (quota enrichment, 2026-10-24).
+  const result = withoutQuotaFields(
+    postProcessTaskDates(withNormalizedRule(parsed), inputText, timezone, opts),
+  )
   const title = stripRepeatPhrase(result.title, result.rrule)
   if (title === result.title) return result
   log.info('ai', 'Enrichment: removed a repeat phrase from the title that the rule already says')
@@ -2259,7 +2369,7 @@ export function sanitizeReminderEnrichment(
 ): EnrichmentResult {
   // Everything a reminder does not carry, cleared regardless of what came back.
   const base: EnrichmentResult = {
-    ...enrichment,
+    ...withoutQuotaFields(enrichment),
     due_at: null,
     deadline_at: null,
     horizon: null,
@@ -2424,14 +2534,6 @@ export function allowProjectMove(params: {
 }): boolean {
   if (params.currentIsInbox) return true
   return !projectNameWordIn(params.projectName, params.enrichedTitle)
-}
-
-function filterExplicitLabels(labels: string[], inputText: string): string[] {
-  const labelIntentPattern = /\b(label\s+it|tag\s+it|mark\s+it\s+as|add\s+the\s+\w+\s+label)\b/i
-  if (labelIntentPattern.test(inputText)) {
-    return labels
-  }
-  return []
 }
 
 interface FieldChanges {
@@ -3076,23 +3178,7 @@ function applyEnrichment(
     return []
   }
 
-  // Check if this is the initial enrichment of a newly created task.
-  // If so, skip the undo log entry — undoing the 'create' action will
-  // soft-delete the task (removing the enriched version entirely).
-  // Re-enrichment (user manually adds ai-to-process) still logs normally
-  // because the manual edit creates a second undo entry (count > 1).
-  const db = getDb()
-  const taskUndoCount = db
-    .prepare(
-      `SELECT COUNT(*) as count FROM undo_log
-       WHERE user_id = ?
-       AND EXISTS (
-         SELECT 1 FROM json_each(snapshot)
-         WHERE json_extract(value, '$.task_id') = ?
-       )`,
-    )
-    .get(user.id, row.id) as { count: number }
-  const isInitialEnrichment = taskUndoCount.count === 1
+  const initial = isInitialEnrichment(user.id, row.id)
 
   // Add updated_at to the SET clauses
   changes.setClauses.push('updated_at = ?')
@@ -3103,7 +3189,7 @@ function applyEnrichment(
     const sql = `UPDATE tasks SET ${changes.setClauses.join(', ')} WHERE id = ?`
     txDb.prepare(sql).run(...changes.values)
 
-    if (!isInitialEnrichment) {
+    if (!initial) {
       const updatedTask = getTaskById(row.id)
       if (!updatedTask) throw new Error('Failed to retrieve enriched task')
 
@@ -3121,6 +3207,117 @@ function applyEnrichment(
 
   // Return user-facing fields (filter out anchor internals) for toast description
   return changes.fieldsChanged.filter((f) => !INTERNAL_FIELDS.includes(f))
+}
+
+/**
+ * Is this the initial enrichment of a newly created task? Then the write gets
+ * no undo entry of its own — undoing the 'create' soft-deletes the task, the
+ * enriched version with it. A re-enrichment (the user adds `ai-to-process`
+ * by hand) logs normally: that edit made a second undo entry (count > 1).
+ */
+function isInitialEnrichment(userId: number, taskId: number): boolean {
+  const taskUndoCount = getDb()
+    .prepare(
+      `SELECT COUNT(*) as count FROM undo_log
+       WHERE user_id = ?
+       AND EXISTS (
+         SELECT 1 FROM json_each(snapshot)
+         WHERE json_extract(value, '$.task_id') = ?
+       )`,
+    )
+    .get(userId, taskId) as { count: number }
+  return taskUndoCount.count === 1
+}
+
+/**
+ * Apply a QUOTA's enrichment (2026-10-24; plan §6). Not raw SQL like
+ * `applyEnrichment`: the plan becomes an ordinary edit through
+ * `collectFieldChanges` + `applyFieldChanges` — the same path a PATCH takes —
+ * so every quota guard applies (`assertQuotaInvariants`, the re-anchor of a
+ * changed period that carries a +1 logged meanwhile, `collectQuotaDateClear`,
+ * `assertPromptSlotsOwned`), and the period is settled first
+ * (`settleQuotaPeriod`) as `updateTask` does. A `ValidationError` from them
+ * fails the enrichment (`handleFailure`: a retry, then `ai-failed`).
+ *
+ * Dropped whole when the user edited the row while the model ran (the label
+ * is gone, `racedByUser`), and when the row is no longer a quota (converted
+ * meanwhile: the answer was read for a kind it no longer is). No undo entry
+ * on the initial enrichment, one on a re-enrichment — as `applyEnrichment`.
+ * The callers emit the sync event, as they do for `applyEnrichment`.
+ */
+function applyQuotaEnrichment(
+  row: PendingTaskRow,
+  plan: QuotaEnrichmentPlan,
+  user: { id: number; timezone: string },
+): string[] {
+  const found = getTaskById(row.id)
+  if (!found) return []
+  if (racedByUser(row, found) === 'edited') {
+    log.info('ai', `Task ${row.id}: edited by the user while the model ran — not applied`)
+    return []
+  }
+  if (!isTracked(found)) {
+    log.info('ai', `Task ${row.id}: no longer a quota — its quota enrichment not applied`)
+    removeLabel(row.id, 'ai-to-process')
+    return []
+  }
+
+  const input = quotaEditFor(found, plan, user.id)
+  const task = settleQuotaPeriod(found, input)
+  const data = collectFieldChanges({ task, input, userId: user.id, userTimezone: user.timezone })
+  if (data.fieldsChanged.length === 0) {
+    removeLabel(row.id, 'ai-to-process')
+    log.info('ai', `Task ${row.id} enriched — no changes needed`)
+    return []
+  }
+
+  const initial = isInitialEnrichment(user.id, row.id)
+  withTransaction((tx) => {
+    const { snapshot } = applyFieldChanges(tx, task, data, nowUtc())
+    if (!initial) {
+      const changeList = data.fieldsChanged.filter((f) => !INTERNAL_FIELDS.includes(f)).join(', ')
+      logAction(user.id, 'edit', `AI: Enriched quota — set ${changeList}`, data.fieldsChanged, [
+        snapshot,
+      ])
+    }
+  })
+
+  log.info('ai', `Quota ${row.id} enriched: ${data.fieldsChanged.join(', ')}`)
+  return data.fieldsChanged.filter((f) => !INTERNAL_FIELDS.includes(f))
+}
+
+/**
+ * The quota plan as an edit of the stored row: only what differs, never a
+ * clear (set-only). Labels merge (the trigger label always leaves; a label the
+ * user stated is registered, as on the task path); the count comes with
+ * `is_tracked: true`, so a target of 1 keeps it a quota; the reminder settings
+ * merge over the stored config (`quotaPromptConfigFor`).
+ */
+function quotaEditFor(task: Task, plan: QuotaEnrichmentPlan, userId: number): FieldChangesInput {
+  const input: FieldChangesInput = {}
+  if (plan.title && plan.title !== task.title) input.title = plan.title
+  if (plan.notes && plan.notes !== task.notes) input.notes = plan.notes
+  if (plan.priority > 0 && plan.priority !== task.priority) input.priority = plan.priority
+
+  const existing = new Set(task.labels)
+  const creatable = filterAutoCreatableLabels(
+    userId,
+    plan.labels.filter((l) => !existing.has(l)),
+  )
+  validateLabelsExist(userId, creatable, [], true)
+  const labels = [...task.labels, ...creatable].filter((l) => l !== 'ai-to-process')
+  if (JSON.stringify(labels) !== JSON.stringify(task.labels)) input.labels = labels
+
+  if (plan.rrule && plan.rrule !== task.rrule) input.rrule = plan.rrule
+  if (plan.progress_target !== null && plan.progress_target !== task.progress_target) {
+    input.progress_target = plan.progress_target
+    input.is_tracked = true
+  }
+  const config = quotaPromptConfigFor(task.quota_prompt_config, plan)
+  if (config && JSON.stringify(config) !== JSON.stringify(task.quota_prompt_config)) {
+    input.quota_prompt_config = config
+  }
+  return input
 }
 
 /**
@@ -3160,4 +3357,17 @@ interface PendingTaskRow {
   on_deck_day?: string | null
   rrule: string | null
   is_reminder: number
+  /** Quota enrichment (2026-10-24): routes the row to the quota prompt (`rowIsQuota`). */
+  is_tracked: number
+  progress_target: number
+}
+
+/** Is the claimed row a quota (`isTracked`, on the raw 0/1 column)? */
+function rowIsQuota(row: Pick<PendingTaskRow, 'is_tracked' | 'progress_target'>): boolean {
+  return isTracked({ is_tracked: row.is_tracked === 1, progress_target: row.progress_target })
+}
+
+/** The rows whose queue enrichment is announced to open tabs (`processEnrichmentQueue`). */
+function isReminderOrQuota(row: PendingTaskRow): boolean {
+  return row.is_reminder === 1 || rowIsQuota(row)
 }

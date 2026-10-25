@@ -28,6 +28,7 @@ import {
   ENRICHMENT_SYSTEM_PROMPT,
   buildEnrichmentUserPrompt,
   buildReminderEnrichmentUserPrompt,
+  buildQuotaEnrichmentUserPrompt,
 } from '../src/core/ai/prompts'
 import { buildWhatsNextFullPrompt } from '../src/core/ai/whats-next'
 import { buildInsightsFullPrompt } from '../src/core/ai/insights'
@@ -153,6 +154,23 @@ ${separator('REMINDER ENRICHMENT — User Prompt ' + charCount(userPrompt))}
 ${userPrompt}`
 }
 
+function renderQuotaEnrichmentPrompt(scenario?: ScenarioInput): string {
+  const userPrompt = buildQuotaEnrichmentUserPrompt({
+    timezone: scenario?.input.timezone || DEFAULTS.timezone,
+    slots: scenario?.input.slots ?? [...DEFAULT_TIME_SLOTS],
+    userContext: scenario?.input.userContext,
+    taskText: scenario?.input.text || '<raw quota text would appear here>',
+  })
+
+  const systemPrompt = ENRICHMENT_SYSTEM_PROMPT
+
+  return `${separator('QUOTA ENRICHMENT — System Prompt (shared) ' + charCount(systemPrompt))}
+${systemPrompt}
+
+${separator('QUOTA ENRICHMENT — User Prompt ' + charCount(userPrompt))}
+${userPrompt}`
+}
+
 function renderWhatsNextPrompt(scenario?: ScenarioInput): string {
   const timezone = scenario?.input.timezone || DEFAULTS.timezone
   const now = DateTime.now().setZone(timezone)
@@ -262,7 +280,14 @@ ${userPrompt}`
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-const VALID_FEATURES = ['enrichment', 'enrichment_reminder', 'insights', 'whats_next', 'quick_take']
+const VALID_FEATURES = [
+  'enrichment',
+  'enrichment_reminder',
+  'enrichment_quota',
+  'insights',
+  'whats_next',
+  'quick_take',
+]
 
 async function listScenarios(): Promise<void> {
   const scenarios = await loadScenarios()
@@ -316,22 +341,20 @@ function renderPrompts(
     output += `Feature filter: ${featureFilter}\n`
   }
 
-  if (featuresToRender.includes('enrichment')) {
-    output += renderEnrichmentPrompt(scenario?.feature === 'enrichment' ? scenario : undefined)
-  }
-  if (featuresToRender.includes('enrichment_reminder')) {
-    output += renderReminderEnrichmentPrompt(
-      scenario?.feature === 'enrichment_reminder' ? scenario : undefined,
-    )
-  }
-  if (featuresToRender.includes('whats_next')) {
-    output += renderWhatsNextPrompt(scenario?.feature === 'whats_next' ? scenario : undefined)
-  }
-  if (featuresToRender.includes('insights')) {
-    output += renderInsightsPrompt(scenario?.feature === 'insights' ? scenario : undefined)
-  }
-  if (featuresToRender.includes('quick_take')) {
-    output += renderQuickTakePrompt(scenario?.feature === 'quick_take' ? scenario : undefined)
+  // One renderer per feature, in this order; each gets the scenario only when
+  // it is that feature's.
+  const renderers: Array<[string, (scenario?: ScenarioInput) => string]> = [
+    ['enrichment', renderEnrichmentPrompt],
+    ['enrichment_reminder', renderReminderEnrichmentPrompt],
+    ['enrichment_quota', renderQuotaEnrichmentPrompt],
+    ['whats_next', renderWhatsNextPrompt],
+    ['insights', renderInsightsPrompt],
+    ['quick_take', renderQuickTakePrompt],
+  ]
+  for (const [feature, render] of renderers) {
+    if (featuresToRender.includes(feature)) {
+      output += render(scenario?.feature === feature ? scenario : undefined)
+    }
   }
 
   return output

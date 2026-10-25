@@ -36,6 +36,7 @@ import type {
   AITestScenario,
   EnrichmentInput,
   ReminderEnrichmentInput,
+  QuotaEnrichmentInput,
   WhatsNextInput,
   InsightsInput,
   QuickTakeInput,
@@ -221,6 +222,20 @@ describe('AI Quality — Layer 1', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Quota enrichment scenarios (2026-10-24)
+  // -------------------------------------------------------------------------
+
+  describe('Quota enrichment', () => {
+    const quotaTests = allScenarios.filter((s) => s.feature === 'enrichment_quota')
+
+    for (const scenario of quotaTests) {
+      test.skipIf(!AI_ENABLED)(scenario.id, async () => {
+        await runScenario(scenario)
+      })
+    }
+  })
+
+  // -------------------------------------------------------------------------
   // What's Next scenarios
   // -------------------------------------------------------------------------
 
@@ -337,6 +352,9 @@ async function runScenario(scenario: AITestScenario): Promise<void> {
         ;({ output, durationMs } = await runReminderEnrichment(
           scenario.input as ReminderEnrichmentInput,
         ))
+        break
+      case 'enrichment_quota':
+        ;({ output, durationMs } = await runQuotaEnrichment(scenario.input as QuotaEnrichmentInput))
         break
       case 'whats_next':
         ;({ output, durationMs } = await runWhatsNext(scenario.input as WhatsNextInput))
@@ -637,6 +655,89 @@ async function runReminderEnrichment(
   )
 
   return { output: sanitized as unknown as Record<string, unknown>, durationMs: result.durationMs }
+}
+
+/**
+ * Quota enrichment (2026-10-24) — the same production builder and schema as a
+ * task, but the quota user prompt and the ONE post-process production runs on
+ * its answer (`postProcessQuotaEnrichment`), so only the model call is
+ * duplicated here. The output is that plan in stored shapes (`rrule`,
+ * `progress_target`, the prompt period's label), so `must_include` asserts what
+ * the database would receive.
+ */
+async function runQuotaEnrichment(
+  input: QuotaEnrichmentInput,
+): Promise<{ output: Record<string, unknown>; durationMs: number }> {
+  const { ENRICHMENT_SYSTEM_PROMPT, buildQuotaEnrichmentUserPrompt } =
+    await import('@/core/ai/prompts')
+  const { aiQuery } = await import('@/core/ai/sdk')
+  const { EnrichmentResultSchema } = await import('@/core/ai/types')
+  const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
+  const { postProcessQuotaEnrichment } = await import('@/core/ai/quota-enrichment')
+  const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
+  const { z } = await import('zod')
+
+  const slots = input.slots ?? [...DEFAULT_TIME_SLOTS]
+  const prompt = buildQuotaEnrichmentUserPrompt({
+    timezone: input.timezone,
+    slots,
+    userContext: input.userContext,
+    taskText: input.text,
+  })
+
+  const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
+  const provider = getTestProvider()
+  const maxTurns = provider === 'sdk' ? 3 : 1
+  const result = await aiQuery({
+    prompt,
+    systemPrompt: ENRICHMENT_SYSTEM_PROMPT,
+    outputSchema: jsonSchema,
+    model: getModelForFeature('enrichment'),
+    maxTurns,
+    userId: QUALITY_TEST_USER_ID,
+    action: 'quality_test_enrich_quota',
+    inputText: input.text,
+    provider,
+  })
+
+  const parsed = parseAIResponse(result, EnrichmentResultSchema, 'Enrichment', (text) => {
+    const json = extractJsonFromText(text)
+    if (!json) return null
+    const attempt = EnrichmentResultSchema.safeParse(json)
+    return attempt.success ? attempt.data : null
+  })
+
+  if (!parsed) {
+    throw new Error(`AI query failed: ${result.error || 'No output'}`)
+  }
+
+  // The model's own period fields, logged when the post-process had to fall
+  // back on a task-style rule — so a prompt miss the fallback hides still shows.
+  if (parsed.rrule) {
+    console.log(`[quality] quota answer carried a task rule "${parsed.rrule}" for: ${input.text}`)
+  }
+
+  const plan = postProcessQuotaEnrichment(
+    parsed,
+    input.text,
+    slots.map((slot, index) => ({ id: index + 1, label: slot.label, start_time: slot.start_time })),
+  )
+
+  return {
+    output: {
+      title: plan.title,
+      notes: plan.notes,
+      priority: plan.priority,
+      labels: plan.labels,
+      rrule: plan.rrule,
+      progress_target: plan.progress_target,
+      prompt_slot_label: plan.prompt_slot_label,
+      prompt_enabled: plan.prompt_enabled,
+      // The raw answer, for the Layer 2 judge (never asserted on).
+      model_answer: parsed,
+    },
+    durationMs: result.durationMs,
+  }
 }
 
 async function runWhatsNext(
@@ -1158,10 +1259,40 @@ function validateStructure(
 }
 
 /** Feature-specific schema validation. */
+/**
+ * A quota plan is stored as it is: a non-empty title, a canonical period rule
+ * (`FREQ=X[;INTERVAL=N]`) or null, a target of 1..1000 or null, at most one label.
+ */
+function validateQuotaSchema(id: string, output: Record<string, unknown>): void {
+  if (typeof output.title !== 'string' || output.title.trim() === '') {
+    throw new Error(`[${id}] quota title must be a non-empty string`)
+  }
+  const rrule = output.rrule
+  if (
+    rrule !== null &&
+    !(
+      typeof rrule === 'string' &&
+      /^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;INTERVAL=\d+)?$/.test(rrule)
+    )
+  ) {
+    throw new Error(`[${id}] quota rrule must be a bare period rule, got ${JSON.stringify(rrule)}`)
+  }
+  const target = output.progress_target
+  if (target !== null && !(typeof target === 'number' && target >= 1 && target <= 1000)) {
+    throw new Error(`[${id}] quota progress_target out of range: ${JSON.stringify(target)}`)
+  }
+  if (!Array.isArray(output.labels) || output.labels.length > 1) {
+    throw new Error(`[${id}] a quota has at most one label, got ${JSON.stringify(output.labels)}`)
+  }
+}
+
 function validateFeatureSchema(scenario: AITestScenario, output: Record<string, unknown>): void {
   switch (scenario.feature) {
     case 'enrichment':
       validateEnrichmentSchema(scenario.id, output)
+      break
+    case 'enrichment_quota':
+      validateQuotaSchema(scenario.id, output)
       break
     case 'whats_next':
       validateWhatsNextSchema(scenario.id, output)
