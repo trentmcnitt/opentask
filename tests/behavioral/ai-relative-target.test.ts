@@ -51,6 +51,11 @@ import {
   type RelativeTimeContext,
 } from '@/core/ai/relative-wording'
 import { enrichmentQuery } from '@/core/ai/enrichment-slot'
+import {
+  offEnrichmentCompleteEvent,
+  onEnrichmentCompleteEvent,
+  type EnrichmentCompletePayload,
+} from '@/lib/sync-events'
 import type { EnrichmentResult } from '@/core/ai/types'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
@@ -459,6 +464,33 @@ describe('the write (enrichSingleTask)', () => {
     expect(after.target_days_before).toBeNull()
     expect(after.target_time).toBeNull()
     expect(after.due_at).toBe('2026-10-12T14:00:00.000Z')
+  })
+
+  test('the toast for a 0-day offset reads "the deadline day" (the shared words, PR B)', async () => {
+    const descriptions: string[] = []
+    const listener = (_userId: number, payload: EnrichmentCompletePayload) => {
+      if (payload.description) descriptions.push(payload.description)
+    }
+    onEnrichmentCompleteEvent(listener)
+    try {
+      const task = titleOnly('pay the registration fee, due Tuesday, target the morning of')
+      mockEnrichmentQuery.mockResolvedValueOnce(
+        modelAnswer({
+          title: 'Pay the registration fee',
+          deadline_at: '2026-10-13T23:59:00',
+          target_days_before: 0,
+          target_period: 'morning',
+        }),
+      )
+
+      await enrichSingleTask(task.id, TEST_USER_ID)
+
+      expect(getTaskById(task.id)!.target_days_before).toBe(0)
+      expect(descriptions.join(' | ')).toMatch(/the deadline day at \d{1,2}:\d{2} [AP]M/)
+      expect(descriptions.join(' | ')).not.toMatch(/same day/)
+    } finally {
+      offEnrichmentCompleteEvent(listener)
+    }
   })
 
   test('a relative target the AI sets takes a deck off (a pick, plan §3)', async () => {
