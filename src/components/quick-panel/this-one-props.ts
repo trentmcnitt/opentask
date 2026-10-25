@@ -9,7 +9,15 @@ import { DateTime } from 'luxon'
 import { capAtDeadline, capsAt, openTaskToday } from '@/lib/task-segments'
 import { planRepeatSchedule } from '@/core/tasks/repeat-schedule'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
-import { deadlineRepeatLabel, leadLine, repeatWords } from '@/lib/editor-target-labels'
+import {
+  deadlineRepeatLabel,
+  leadLine,
+  leadLineWords,
+  repeatWords,
+  upcomingLeadLine,
+  upcomingLeadWords,
+} from '@/lib/editor-target-labels'
+import { openTaskDayOf } from '@/lib/opentask-day'
 import { bulkEveryTimeGate, draftEnd, draftRule } from '@/lib/every-time'
 import type { StagedSchedule } from '@/hooks/useEveryTime'
 import type {
@@ -239,23 +247,69 @@ export function targetValueFor(s: {
 }
 
 /**
- * THE LEAD ROW's props (the deadlines page, 2026-10-22; `ThisOneFields`):
- * shown with the task queue on, for one task with no target (staged) and a
- * deadline (staged) that has a lead (`leadLine` — not a reminder or quota, not
- * a repeat with a relative target). Null otherwise.
+ * THE LEAD TIME ROW's props (`ThisOneFields`), in one of two forms, for one
+ * existing task (not bulk, not create, not a reminder or quota, not done —
+ * `show`):
+ *
+ * - UPCOMING (2026-10-25, the Upcoming split): the task has a target the user
+ *   picked — stored or staged, a relative target and a repeat's occurrence
+ *   included — or a deck day, still ahead: when it shows in Upcoming's Later
+ *   and Tomorrow sections (`upcomingLeadLine`). Whatever the task-queue
+ *   switch says (decision 10).
+ * - DEADLINE (the deadlines page, 2026-10-22): with the task queue on, no
+ *   target (staged) and a deadline (staged) that has a lead (`leadLine` — not
+ *   a repeat with a relative target): when it goes on the deadlines page.
+ *
+ * Null otherwise (a target today or overdue: not in Upcoming, nothing to say).
+ * `upcomingAnchor`: the STAGED anchor (undefined: the stored one; null: none
+ * — a target staged for removal, a queued occurrence); `restamp`: Save will
+ * restamp `target_set_at` (a staged target, deck or deadline).
  */
 export function leadRowFor(s: {
   show: boolean
   task: Task | null
+  queueEnabled: boolean
+  showsNoTarget: boolean
+  upcomingAnchor: { target: string } | { deck: string } | null | undefined
+  restamp: boolean
   pendingDeadline: string | null | undefined
   pendingLeadDays: number | null | undefined
   timezone: string
   rolloverTime: string | null
+  dayStart: string
   onLeadDays: (days: number | null) => void
   disabled: boolean
 }): LeadRowProps | null {
   if (!s.show || !s.task) return null
   const now = new Date()
+  const shared = {
+    // A repeat's lead is series-wide: every-time mode's (Trent, 10-22).
+    editable: !s.task.rrule,
+    onLeadDays: s.onLeadDays,
+    disabled: s.disabled,
+  }
+  const upcoming = upcomingLeadLine(
+    s.task,
+    { anchor: s.upcomingAnchor, restamp: s.restamp, leadDays: s.pendingLeadDays },
+    s.timezone,
+    s.dayStart,
+    now,
+  )
+  if (upcoming) {
+    const today = openTaskDayOf(now, s.timezone, s.dayStart)
+    return {
+      ...shared,
+      form: 'upcoming',
+      words: upcomingLeadWords(upcoming, s.timezone, today),
+      deferred: null,
+      staged: upcoming.staged,
+      leadDays: upcoming.leadDays,
+      clamped: upcoming.clamped,
+      override: upcoming.override,
+      max: upcoming.max,
+    }
+  }
+  if (!s.queueEnabled || !s.showsNoTarget) return null
   const line = leadLine(
     s.task,
     { deadline: s.pendingDeadline, leadDays: s.pendingLeadDays },
@@ -265,13 +319,52 @@ export function leadRowFor(s: {
   )
   if (!line) return null
   return {
-    line,
-    today: openTaskToday(s.timezone, now, s.rolloverTime),
-    // A repeat's lead is series-wide: every-time mode's (Trent, 10-22).
-    editable: !s.task.rrule,
-    onLeadDays: s.onLeadDays,
-    disabled: s.disabled,
+    ...shared,
+    form: 'deadline',
+    words: leadLineWords(line, s.timezone, openTaskToday(s.timezone, now, s.rolloverTime)),
+    deferred: line.deferredTo
+      ? DateTime.fromISO(line.deferredTo, { zone: s.timezone }).toFormat('ccc')
+      : null,
+    staged: line.staged,
+    leadDays: line.leadDays,
+    clamped: line.clamped,
+    override: line.override,
+    max: line.max,
   }
+}
+
+/**
+ * The Lead time row's STAGED Upcoming anchor (`leadRowFor`), from the panel's
+ * staged state — what Save would leave the task anchored on:
+ * - a staged deck day: the deck (it drops a staged target, rule 1);
+ * - a target staged for removal: none;
+ * - a staged fixed target: it, stopped at the deadline (`capAtDeadline`, the
+ *   server's own cap, as the Target row previews);
+ * - a waiting (queued) repeat with nothing else staged: none (no live target);
+ * - a staged relative target, or one a staged deadline moves: its preview;
+ * - a deadline-anchored repeat's target a staged deadline re-derives;
+ * - nothing staged: undefined (the stored anchor).
+ */
+export function stagedUpcomingAnchor(s: {
+  queued: boolean
+  deck: string | null
+  cleared: boolean
+  fixed: string | null
+  deadline: string | null
+  relative: string | null
+  derived: string | null
+}): { target: string } | { deck: string } | null | undefined {
+  if (s.deck) return { deck: s.deck }
+  if (s.cleared) return null
+  if (s.fixed) {
+    const capped =
+      s.deadline && capsAt(s.fixed, s.deadline) ? capAtDeadline(s.fixed, s.deadline) : s.fixed
+    return { target: capped }
+  }
+  if (s.queued) return null
+  if (s.relative) return { target: s.relative }
+  if (s.derived) return { target: s.derived }
+  return undefined
 }
 
 /**

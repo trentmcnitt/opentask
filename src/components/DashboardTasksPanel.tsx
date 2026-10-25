@@ -27,6 +27,7 @@ import {
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import { usePanelPager } from '@/hooks/usePanelPager'
+import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
@@ -289,7 +290,8 @@ function TasksDoneLine({
  * A task segment's page: the same body as a slot's, with the segment's rows
  * (circle = consider, Today, horizon chip, done square — the panel row
  * geometry), its considered and deferred rows behind the count with their
- * put-back, and the slot pages' row cap and "Show more".
+ * put-back, and the slot pages' row cap and "Show more". Upcoming's page
+ * (2026-10-25) is two sections, Tomorrow then Later (`UpcomingSections`).
  */
 function TaskPageBody({
   segment,
@@ -310,10 +312,23 @@ function TaskPageBody({
   const rows = waitingRows(segment)
   const handled = handledRows(segment)
   const visible = expanded ? rows : rows.slice(0, WIDE_CAP)
+  const upcoming = segment.horizon === 'upcoming'
   return (
     <>
       <SegmentNudge segment={segment} className="mx-3" />
-      {segmentEmpty(segment) ? (
+      {upcoming ? (
+        // Tomorrow, then Later (2026-10-25): the page's row cap spent on
+        // Tomorrow first; each section's considered rows under it.
+        <UpcomingSections
+          segment={segment}
+          actions={actions}
+          timezone={timezone}
+          panel
+          cap={expanded ? null : WIDE_CAP}
+          narrowCap={expanded ? null : NARROW_CAP}
+          showConsidered={showConsidered}
+        />
+      ) : segmentEmpty(segment) ? (
         <EmptySegmentLine className="px-3 pb-3" />
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
@@ -332,7 +347,7 @@ function TaskPageBody({
           ))}
         </ul>
       )}
-      {showConsidered && handled.length > 0 && (
+      {!upcoming && showConsidered && handled.length > 0 && (
         <ul className="space-y-0.5 px-2 pb-1" aria-label={`Considered in ${label}`}>
           {handled.map((row) => (
             <ConsideredSegmentRow

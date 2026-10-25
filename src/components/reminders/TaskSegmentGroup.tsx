@@ -27,6 +27,7 @@ import {
   waitingRows,
 } from '@/components/TaskSegmentRow'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 
 /**
  * One task segment on /reminders, as a SECTION shaped exactly like a slot's
@@ -54,6 +55,9 @@ import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/u
  *   its place, finished from the start of the day — "0 of 0 ✓", a green
  *   hairline, and "Nothing today ✓" where its rows would be. An empty slot
  *   is never drawn at all.
+ * - UPCOMING (2026-10-25) has two sub-lists under its one header, Tomorrow
+ *   then Later (`UpcomingSections`); the header's count, Considered all and
+ *   Defer all stay the segment's.
  */
 export function TaskSegmentGroup({
   segment,
@@ -157,7 +161,15 @@ export function TaskSegmentGroup({
         fraction={empty ? 1 : undefined}
       />
 
-      {open && (
+      {open && segment.horizon === 'upcoming' && (
+        <>
+          <SegmentNudge segment={segment} className="mx-3" />
+          {/* Tomorrow, then Later (2026-10-25): each with its own count,
+              "Nothing today ✓" and "Show N considered". */}
+          <UpcomingSections segment={segment} actions={actions} timezone={timezone} panel={false} />
+        </>
+      )}
+      {open && segment.horizon !== 'upcoming' && (
         <>
           <SegmentNudge segment={segment} className="mx-3" />
           {empty && <EmptySegmentLine className="px-3 pb-1" />}

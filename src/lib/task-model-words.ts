@@ -6,7 +6,7 @@
  * follows. The native apps keep their own copy (see ios/AGENTS.md). API field
  * names (`due_at`/`target_at`, `horizon`) are not words and do not change.
  */
-import type { CheckInDay, HorizonValue } from '@/lib/task-segments'
+import type { CheckInDay, HorizonValue, UpcomingSection } from '@/lib/task-segments'
 
 /** A task whose target has arrived (ruled 2026-10-21; "Over target" from 2026-10-10). */
 export const OVERDUE_WORD = 'Overdue'
@@ -72,6 +72,18 @@ export function horizonHints(checkInDay: CheckInDay): Record<HorizonValue, strin
  * went with the others' (2026-10-20).
  */
 export const UPCOMING_LABEL = 'Upcoming'
+
+/**
+ * Upcoming's two sections (2026-10-25, the Upcoming split; plan
+ * `plan-upcoming-split-1024.md`), in the order the page lists them: Tomorrow
+ * (the day before a target or deck day) first, then Later (the lead-time
+ * heads-up, carried over until seen). The API's `upcoming_section` values do
+ * not change with these words.
+ */
+export const UPCOMING_SECTION_TITLES: Record<UpcomingSection, string> = {
+  tomorrow: 'Tomorrow',
+  later: 'Later',
+}
 
 /**
  * THE TASK QUEUE (task queue PR 3, 2026-10-19; spec rule 6): the two panels'

@@ -2279,17 +2279,27 @@ export function upcomingState(
 export function upcomingGap(
   task: Pick<TargetFields, 'due_at' | 'deadline_at'> & { on_deck_day?: string | null },
   timezone: string,
+  /**
+   * The row's section (2026-10-25): a TOMORROW row's day goes without saying
+   * (it is tomorrow), so it says only the time — "Target 9:00 AM", or "On
+   * deck" for a deck (a deck has no time). A Later row (or no section) says
+   * the day as before. The deadline keeps its date either way.
+   */
+  section?: UpcomingSection,
 ): { target: string | null; deadline: string | null } {
   const fmt = (iso: string) =>
     DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
+  const tomorrow = section === 'tomorrow'
   // On deck (2026-10-20): "On deck Sat Oct 24" — the day, no time. It wins
   // over a deadline's automatic target, which is not the plan.
   let target: string | null = null
   const deck = task.on_deck_day ? parseDeckDay(task.on_deck_day, timezone) : null
   if (deck) {
-    target = `On deck ${deck.toFormat('ccc LLL d')}`
+    target = tomorrow ? 'On deck' : `On deck ${deck.toFormat('ccc LLL d')}`
   } else if (task.due_at) {
-    target = `Target ${fmt(task.due_at)}`
+    target = tomorrow
+      ? `Target ${DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone).toFormat('h:mm a')}`
+      : `Target ${fmt(task.due_at)}`
   }
   if (!task.deadline_at) return { target, deadline: null }
   return { target, deadline: `deadline ${fmt(task.deadline_at)}` }
