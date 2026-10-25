@@ -76,6 +76,8 @@ test.describe('Upcoming: Tomorrow and Later', () => {
       await page.setViewportSize({ width: 1280, height: 900 })
       await page.emulateMedia({ colorScheme: 'light' })
       await page.goto('/reminders')
+      // Wait for the sections to draw before reading their order.
+      await expect(upcoming(page).locator('[data-upcoming-section]')).toHaveCount(2)
       const names = await upcoming(page)
         .locator('[data-upcoming-section]')
         .evaluateAll((els) => els.map((e) => e.getAttribute('data-upcoming-section')))

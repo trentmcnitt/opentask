@@ -897,9 +897,15 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     )
     await page.reload()
     const u = segRow(segment(page, 'upcoming'), id)
-    const day = DateTime.fromISO(calendarDay(1)).toFormat('ccc LLL d')
-    // A repeating row's chip goes on with its schedule ("· every Fri at …").
-    await expect(u.locator('[data-target-chip]')).toHaveText(new RegExp(`^On deck ${day} · every `))
+    // On deck tomorrow: Upcoming's Tomorrow section (2026-10-25), whose rows
+    // say no day — "On deck"; a repeating row's chip goes on with its
+    // schedule ("· every Fri at …").
+    await expect(
+      segment(page, 'upcoming')
+        .locator('[data-upcoming-section="tomorrow"]')
+        .locator(`[data-segment-task="${id}"]`),
+    ).toBeVisible()
+    await expect(u.locator('[data-target-chip]')).toHaveText(/^On deck · every /)
     await expect(u.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     await page.screenshot({ path: '.tmp/od-repeating-upcoming-1280.png' })
     // Faded on a decked row, it asks first (2026-10-22, plan §5).
