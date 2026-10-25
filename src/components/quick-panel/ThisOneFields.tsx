@@ -72,6 +72,16 @@ import { MOVES_WITH_DEADLINE } from '@/lib/relative-target-ui'
  * The Target row's DEADLINE-CAP PREVIEW: a staged target after a deadline
  * that is still ahead reads "Sat Nov 7, 8:00 AM · stops at deadline" — the
  * server's own cap (`capAtDeadline`), so the preview is the saved value.
+ *
+ * EVERY META LINE IS ONE INLINE RUN (2026-10-25): the Target and Deadline
+ * values, the On deck words, "Horizon not in effect · Target set: quiet
+ * until …" and "↻ Make it repeat › · since Tue" are each plain text flow —
+ * fragments are inline spans joined by a space, never flex or grid items. As
+ * flex items, a narrow phone column (the value column is ~250px at 375) made
+ * each fragment a cell that wrapped on its own, side by side: "Not on / deck"
+ * beside "· a deck replaces / target Tue 10 AM". Controls (the On deck
+ * button, the Lead time stepper, the repeat link's box) stay boxes of their
+ * own; text after them wraps like prose. Guarded by editor-meta-lines.spec.ts.
  */
 export function ThisOneFields({
   occurrence,
@@ -137,16 +147,18 @@ export function ThisOneFields({
         {quietUntil && (
           <span
             data-quick-panel-horizon-quiet
-            className="text-muted-foreground/60 col-start-2 inline-flex items-center gap-1"
+            className="text-muted-foreground/60 col-start-2"
             title="A target makes a task quiet until its date. Remove the target to use its horizon."
           >
-            <span className="text-muted-foreground/50">{HORIZON_WORD} not in effect ·</span>
+            <span className="text-muted-foreground/50">{HORIZON_WORD} not in effect ·</span>{' '}
             {targetQuietUntil(DateTime.fromISO(quietUntil).setZone(timezone).toFormat('LLL d'))}
           </span>
         )}
       </div>
       {(link || since) && (
-        <p className="flex flex-wrap items-center gap-x-1 text-xs">
+        // One run: the link is an inline box and `SinceAge` brings its own
+        // " · since …", so on a narrow screen "since" wraps like a word.
+        <p data-quick-panel-repeat-line className="text-xs">
           {link && <RepeatLink ref={linkRef} {...link} />}
           {since}
         </p>
@@ -190,7 +202,7 @@ function TargetRow({ picker, value, readonlyText }: TargetRowProps) {
         type="button"
         data-quick-panel-date
         aria-label={`${TARGET_WORD}: change`}
-        className="inline-flex min-w-0 cursor-pointer flex-wrap items-center gap-x-1 text-left select-text"
+        className="min-w-0 cursor-pointer text-left select-text"
       >
         <TargetValue {...value} />
       </button>
@@ -235,11 +247,12 @@ function TargetValue(props: TargetValueProps) {
       </span>
     )
   }
+  // One inline run (see `ThisOneFields`): the spaces join the fragments.
   return (
     <>
       <span className={cn(props.dirty ? 'font-bold text-blue-500' : 'text-foreground')}>
         {props.header}
-      </span>
+      </span>{' '}
       <span
         className={cn(
           props.dirty
@@ -251,7 +264,13 @@ function TargetValue(props: TargetValueProps) {
       >
         {props.relative}
       </span>
-      {props.delta && <span className="font-medium text-blue-500">({props.delta})</span>}
+      {props.delta && (
+        <>
+          {' '}
+          <span className="font-medium text-blue-500">({props.delta})</span>
+        </>
+      )}
+      {props.relativeWords && ' '}
       {props.relativeWords && (
         <span
           data-target-relative
@@ -325,7 +344,7 @@ function DeadlineRow(props: DeadlineRowProps & { timezone: string }) {
         type="button"
         data-quick-panel-deadline
         aria-label={`${DEADLINE_WORD}: change`}
-        className="inline-flex min-w-0 cursor-pointer flex-wrap items-center gap-x-1 text-left"
+        className="min-w-0 cursor-pointer text-left"
       >
         <span
           className={cn(
@@ -340,6 +359,7 @@ function DeadlineRow(props: DeadlineRowProps & { timezone: string }) {
         >
           {when ? `${when}${past ? ' · past deadline' : ''}` : 'None'}
         </span>
+        {when && props.repeatLabel && ' '}
         {when && props.repeatLabel && (
           <span
             data-quick-panel-deadline-repeat
@@ -524,7 +544,9 @@ export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(functio
       title={disabledReason ?? undefined}
       aria-label={label}
       className={cn(
-        '-mx-1.5 inline-flex flex-wrap items-center gap-x-1 rounded px-1.5 py-0.5 text-left transition-colors',
+        // Out to the left only, so the text lines up with the rows above; a
+        // right overhang would pull the "· since" after it into the box.
+        '-ml-1.5 inline-flex flex-wrap items-center gap-x-1 rounded px-1.5 py-0.5 text-left align-middle transition-colors',
         'bg-muted/60 hover:bg-accent active:bg-accent disabled:cursor-not-allowed disabled:opacity-60',
         dirty ? 'font-medium text-blue-500' : 'text-muted-foreground',
       )}
