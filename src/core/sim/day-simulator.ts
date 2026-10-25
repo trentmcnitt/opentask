@@ -25,7 +25,12 @@ import { considerTasks, getTaskSegments } from '@/core/tasks/task-segments'
 import { getTaskById } from '@/core/tasks/read'
 import { markDone } from '@/core/tasks/mark-done'
 import { onDeckToday } from '@/core/tasks/deck'
-import { ageLabel, attemptsOffer, type SegmentKind } from '@/lib/task-segments'
+import {
+  ageLabel,
+  attemptsOffer,
+  type SegmentKind,
+  type UpcomingSection,
+} from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser, runTaskRollover } from '@/core/tasks/task-rollover'
 import { dayStartOnDate } from '@/lib/opentask-day'
@@ -73,6 +78,8 @@ export interface SimTaskDay {
   segmentState: string | null
   /** On the deadlines page (2026-10-22): its safety net and seen flags. */
   deadlines: { safetyNet: boolean; seen: boolean } | null
+  /** In Upcoming (2026-10-25, the Upcoming split): its section. */
+  section: UpcomingSection | null
   hasTarget: boolean
   /** In the task queue (`queued_at`, task-queue PR 2): stripped, or a repeating task waiting. */
   queued: boolean
@@ -127,7 +134,13 @@ const ORDER: Place[] = ['done', 'over']
 export function readTick(userId: number, timezone: string, ids: number[], now: Date): SimTaskDay[] {
   const segment = new Map<
     number,
-    { kind: SegmentKind; state: string; safetyNet?: boolean; seen?: boolean }[]
+    {
+      kind: SegmentKind
+      state: string
+      safetyNet?: boolean
+      seen?: boolean
+      section?: UpcomingSection
+    }[]
   >()
   for (const seg of getTaskSegments(userId, timezone, now, {
     queuePanels: true,
@@ -136,7 +149,13 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
   })) {
     for (const row of seg.tasks) {
       const list = segment.get(row.task.id) ?? []
-      list.push({ kind: seg.horizon, state: row.state, safetyNet: row.safetyNet, seen: row.seen })
+      list.push({
+        kind: seg.horizon,
+        state: row.state,
+        safetyNet: row.safetyNet,
+        seen: row.seen,
+        section: row.section,
+      })
       segment.set(row.task.id, list)
     }
   }
@@ -162,6 +181,7 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
       places,
       segmentState: segment.get(id)?.[0]?.state ?? null,
       deadlines: deadlinesRow(segment.get(id)),
+      section: segment.get(id)?.find((r) => r.kind === 'upcoming')?.section ?? null,
       hasTarget: task.due_at !== null,
       queued: task.queued_at !== null,
       attempts: task.attempts,
@@ -187,6 +207,7 @@ function blank(id: number, place: Place): SimTaskDay {
     places: [place],
     segmentState: null,
     deadlines: null,
+    section: null,
     hasTarget: false,
     queued: false,
     attempts: 0,
@@ -197,13 +218,16 @@ function blank(id: number, place: Place): SimTaskDay {
 
 /**
  * The one-line form a golden timeline states: the place, then the badges
- * the row would draw — "over 3× →remove", "upcoming", "weeks >1 mo",
+ * the row would draw — "over 3× →remove", "tomorrow", "weeks >1 mo",
  * "quiet 1×" (a target moved ahead after a miss). A task in the task queue
  * (task-queue PR 2) adds "queued" after the place, and keeps showing its
  * attempts with no target (B7: a strip never resets them): "weeks queued 2×".
  */
 export function dayLine(t: SimTaskDay): string {
-  const parts: string[] = [t.place]
+  // Upcoming (2026-10-25, the Upcoming split): its SECTION is the place a
+  // line states — "tomorrow" (the day before the anchor) or "later". The
+  // counts still say `upcoming` (both sections).
+  const parts: string[] = [t.place === 'upcoming' && t.section ? t.section : t.place]
   // The deadlines page (2026-10-22): "deadlines net" in the safety net, and
   // "seen" once considered this OpenTask day ("deadlines seen" outside the
   // net is the considered state; "deadlines net seen" still nags).

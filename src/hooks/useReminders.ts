@@ -177,8 +177,8 @@ export interface UseRemindersReturn {
  * considered rows with `segment_left` (src/core/tasks/segment-roster.ts).
  * And it draws the DEADLINES page (`?deadlines=1`, 2026-10-22): a deadline
  * task with no target from its lead day, with `safety_net` and `seen` on each
- * row, and the lead day's Upcoming heads-ups — without it (and with the task
- * queue on) such a task would fall back into its horizon segment.
+ * row, quiet before its lead day (rule 3, 2026-10-25) — without it (and with
+ * the task queue on) such a task would fall back into its horizon segment.
  * And it shows EVERY segment, every day, in fixed positions (`?fill=1`,
  * Trent 2026-10-24): an empty one comes back with no rows and reads as done
  * ("Nothing today ✓").

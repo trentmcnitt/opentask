@@ -32,7 +32,8 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // absent from Upcoming — a shipped native build would draw a dateless row.
     const deckRows = request.nextUrl.searchParams.get('deck') === '1'
     // `?deadlines=1` (the deadlines page, 2026-10-22): this client draws the
-    // `deadlines` segment and the lead day's Upcoming rows. Without it (a
+    // `deadlines` segment (and leaves such tasks out of Upcoming: rule 3,
+    // 2026-10-25). Without it (a
     // shipped native build, whose SegmentKind would list an unknown kind as a
     // page) a target-less deadline one-off stays in its horizon segment.
     const deadlineRows = request.nextUrl.searchParams.get('deadlines') === '1'

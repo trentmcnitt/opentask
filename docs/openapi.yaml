@@ -2253,7 +2253,7 @@ paths:
         The deadlines page (2026-10-22; task-queue switch on, else 409): moves THIS instance's
         lead day (`lead_from`) to `day`, so the row leaves the `deadlines` segment until then
         (the next advance of a repeat re-derives it; a deadline change drops the deferral).
-        Also stamps `target_set_at`, so the lead day's Upcoming heads-ups count from the defer.
+        Also stamps `target_set_at`, as every target write does.
         `day` is an OpenTask day (yyyy-MM-dd) from tomorrow to two days before the deadline's
         day; omitted = tomorrow. Refused PER TASK (never the whole request) once the safety net
         holds it (from the day before the deadline), for a later day, or for a task that is not
@@ -2518,13 +2518,13 @@ paths:
             enum: ['1']
           description: >
             `1` (the deadlines page, 2026-10-22; task-queue switch on): this client draws the
-            `deadlines` segment — FIRST in `task_segments` — and the lead day's Upcoming rows. A
+            `deadlines` segment — FIRST in `task_segments`. A
             deadline task with NO target (a one-off, or a deadline-anchored repeat with no
             relative target) is on it from its lead day (`lead_from`); from the day before its
             deadline's OpenTask day, and after the deadline, in the SAFETY NET (`safety_net`:
             seeing it does not silence it). Sorted priority, then the nearest deadline, then id.
-            Before its lead day it shows in Upcoming on the heads-up days counted to the lead
-            day. Omitted: a target-less deadline one-off stays in its horizon segment (the
+            Before its lead day it is quiet: never in Upcoming, a future deck's row included
+            (rule 3 of the Upcoming split, 2026-10-25). Omitted: a target-less deadline one-off stays in its horizon segment (the
             deadline pulling it in) and no `deadlines` kind is sent (a client that predates the
             page would list it as a page of its own).
         - name: handled
@@ -2591,13 +2591,19 @@ paths:
                           by default; months the first check-in day of the
                           month; eventually the first one of Jan, Apr, Jul,
                           Oct) — plus UPCOMING (2026-10-12, `horizon:
-                          "upcoming"`, after `days`): targeted one-offs and
-                          repeating tasks' next occurrences on their heads-up
-                          days (the day before the target when the wait since
-                          `target_set_at` is 2+ local days; also 3 days before
-                          at a wait of 8–15, 4 days before at 16+), ordered by
-                          target. A task not considered since its segment (or
-                          heads-up day) came round shows daily until it is.
+                          "upcoming"`, after `days`): targeted one-offs,
+                          repeating tasks' next occurrences and (with
+                          `?deck=1`) future decks, in two SECTIONS
+                          (2026-10-25, each row's `upcoming_section`):
+                          TOMORROW on the day before the anchor when the wait
+                          since `target_set_at` is 2+ OpenTask days; LATER
+                          from `lead_days` (else the default table: 3 days at
+                          a wait of 8–15, 4 at 16+, none up to 7) before the
+                          anchor, never before the day after it was set and
+                          only up to two days before it — carried over until
+                          seen. Tomorrow's rows first, then by anchor, then
+                          id. A task not considered since its segment (or
+                          Later day) came round shows daily until it is.
                           TOP-LEVEL, never inside `groups`; never counted in
                           `total`, the nav badge or the slot notifications.
 
@@ -2671,6 +2677,17 @@ paths:
                                         description: >
                                           `deadlines` rows only: considered this OpenTask day
                                           (outside the safety net that is the `considered` state).
+                                      upcoming_section:
+                                        type: string
+                                        enum: [tomorrow, later]
+                                        description: >
+                                          `upcoming` rows only, always sent (2026-10-25, the Upcoming
+                                          split): `tomorrow` — the day before the row's anchor (its
+                                          target, or its deck day) — or `later`. Tomorrow's rows
+                                          come first. A row with `segment_left` carries the section
+                                          it was listed in today. One `upcoming` kind, no new kinds:
+                                          a client that predates the split lists both sections as
+                                          one page.
                                       segment_left:
                                         type: string
                                         enum: [done, deck, target, considered, deferred]
@@ -5918,11 +5935,14 @@ components:
           minimum: 1
           maximum: 90
           description: >
-            The deadlines page (2026-10-22): the user's override of the lead — local days before
-            the deadline's day a deadline task with no target goes on the deadlines page.
-            Series-level on a repeat. Null = the default table (by the wait: under 2 days the
-            day before the deadline, up to a week the day before, then 3 days, from 16 days 4).
-            Writable on create, PATCH and bulk edit.
+            The user's override of the LEAD, in local days ahead of the task's anchor
+            (2026-10-22; widened 2026-10-25): its target (a relative target too) or deck day —
+            the day Upcoming's Later section shows it — else, for a deadline task with no
+            target, its deadline's day — the day it goes on the deadlines page. Series-level on a
+            repeat, applied to each occurrence, and fewer than the days between the rule's
+            occurrences (else 400). Null = the default table (by the wait: under 2 days none, up
+            to a week the day before — no Later — then 3 days, from 16 days 4). Writable on
+            create, PATCH and bulk edit.
         lead_from:
           type: [string, 'null']
           format: date
@@ -6114,8 +6134,10 @@ components:
           minimum: 1
           maximum: 90
           description: >
-            The deadlines page (2026-10-22): the lead override (days before the deadline's day);
-            null = the default table. Re-derives `lead_from`.
+            The lead override (2026-10-22; widened 2026-10-25): days ahead of the anchor — the
+            target or deck day (Upcoming's Later day), else the deadline's day (the deadlines
+            page). Null = the default table. On a repeat it must be fewer than the days between
+            the rule's occurrences (400). Re-derives `lead_from`.
         deadline_at:
           type: [string, 'null']
           format: date-time
@@ -6463,8 +6485,10 @@ components:
           minimum: 1
           maximum: 90
           description: >
-            The deadlines page (2026-10-22): the lead override (days before the deadline's day);
-            null = the default table. Re-derives `lead_from`.
+            The lead override (2026-10-22; widened 2026-10-25): days ahead of the anchor — the
+            target or deck day (Upcoming's Later day), else the deadline's day (the deadlines
+            page). Null = the default table. On a repeat it must be fewer than the days between
+            the rule's occurrences (400). Re-derives `lead_from`.
         allow_past_deadline:
           type: boolean
           deprecated: true

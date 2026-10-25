@@ -2296,8 +2296,8 @@ export function upcomingGap(
  * Whether a target can be removed ("Remove target", 2026-10-22 — it replaced
  * "Back to auto"): a one-off with a target the user picked, deadline or not.
  * Removed, a task with no deadline goes back to its horizon segment, and one
- * with a deadline onto the deadlines page from its lead day (Upcoming before
- * it). Null: nothing to offer — no target, a repeating task (its target goes
+ * with a deadline onto the deadlines page from its lead day (quiet before it,
+ * rule 3). Null: nothing to offer — no target, a repeating task (its target goes
  * with its recurrence, in the editor's own menu), or, with the task queue
  * off, the deadline's automatic target (`target_auto`, still written there
  * for one release, A1). Every surface that offers it reads it here: the row

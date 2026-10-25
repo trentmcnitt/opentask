@@ -234,8 +234,9 @@ export function getTaskSegments(
     fill?: boolean
     /**
      * The deadlines page (2026-10-22): the caller draws the `deadlines`
-     * segment and the lead day's Upcoming rows (`GET /api/reminders?deadlines=1`).
-     * Only with the task-queue switch on.
+     * segment (`GET /api/reminders?deadlines=1`); a target-less deadline task
+     * is then never in Upcoming (rule 3, 2026-10-25). Only with the
+     * task-queue switch on.
      */
     deadlineRows?: boolean
     /**

@@ -219,34 +219,44 @@ Each task is a full `formatTaskResponse` row plus `segment_state` and `recurring
 
 ## Upcoming
 
-The heads-up segment (2026-10-12; spec rev 3 §2). The rules live with every other date rule in `src/lib/task-segments.ts` (`headsUpDays`, `upcomingState`, `upcomingGap`), each constant named once; `tests/behavioral/up-upcoming.test.ts` has the reference dates, the DST day and a day-by-day golden timeline.
+The heads-up segment (2026-10-12; spec rev 3 §2), split into two **sections**, **Tomorrow** and **Later**, on 2026-10-25 (plan `plan-upcoming-split-1024.md`, APPROVED 10-25; PR A the server, PR B the web, PR C native). The rules live with every other date rule in `src/lib/task-segments.ts` (`upcomingDays`, `upcomingState`, `upcomingGap`), each constant named once; `tests/behavioral/up-upcoming.test.ts` has the reference dates, the DST day and a day-by-day golden timeline, `tests/golden/upcoming-sections.ts` the sections' timelines.
 
-**Which tasks.** One-offs with a target the user **picked** whose target hasn't arrived, and repeating tasks' next occurrences — `rrule` set, `is_reminder = 0`, not a quota (`isTracked`). Reminders and quotas never appear, and neither does a deadline's **automatic** target (§8.5): its task stays in its horizon segment. A target is never after its deadline (§8.2). **A future deck** (2026-10-20) is one more, with the same heads-up rule counted to its day from `target_set_at` ("On deck Sat Oct 24") — only for a client that sends `?deck=1` (see [On deck](#on-deck)).
+**Which tasks.** One-offs with a target the user **picked** (a [relative target](#relative-targets) counts — it is a real target) whose target hasn't arrived, and repeating tasks' next occurrences — `rrule` set, `is_reminder = 0`, not a quota (`isTracked`). Reminders and quotas never appear, and neither does a deadline's **automatic** target (§8.5): its task stays in its horizon segment. A target is never after its deadline (§8.2). **A future deck** (2026-10-20) is one more, its day the anchor ("On deck Sat Oct 24") — only for a client that sends `?deck=1` (see [On deck](#on-deck)). **Rule 3** (2026-10-25, `?deadlines=1` only): a deadline task with no target is never in Upcoming — the [deadlines page](#the-deadlines-page) alone holds it, from its lead day; strictly, a future deck on one gets no Upcoming row either (on the deck day the On deck section holds it).
 
-**The rule.** _Wait_ = the target's local day − the local day of `target_set_at`. Then:
+**The rule** (`upcomingDays(anchorDay, setDay, leadDays) → { later, tomorrow }`). **A** = the anchor's OpenTask day: the picked target (one-off, relative target, a repeat's occurrence), else the future deck day. **Set day** = the OpenTask day of `target_set_at`. **Wait** = A − set day. **Lead** = `lead_days` ?? `deadlineLeadDays(wait)` — the one lead table (under 2 → 0, up to 7 → 1, under 16 → 3, else 4). Then:
 
-1. **The day before the target**, if the wait is at least 2 days (`HEADS_UP_DAY_BEFORE_MIN_WAIT`). Made today for tomorrow: none.
-2. **If the wait is more than 7 days** (`HEADS_UP_EARLY_AFTER_WAIT`), one earlier heads-up: 3 days before when the wait is under 16 (`HEADS_UP_LONG_WAIT`), 4 days before at 16 or more.
+1. **Tomorrow = A − 1**, only when the wait is at least 2 (`HEADS_UP_DAY_BEFORE_MIN_WAIT`). Made today for tomorrow: none (otherwise every defer sweep to tomorrow would fill Tomorrow).
+2. **Later = max(A − lead, set day + 1)**, only when that day is ≤ A − 2. An override longer than the wait is clamped to the day after the target was set; a lead of 1 has no Later.
 
-Local days throughout, Luxon calendar days in the user's zone — UTC days and 24-hour math get DST and late-night waits wrong. At most two heads-ups per occurrence; the check-in day plays no part.
+**Under the default leads no day moved**: Later is the old early heads-up (3 days before when the wait is 8–15, 4 at 16 or more; none up to 7) and Tomorrow the old day-before one — UP-001..021 pass unchanged on `upcomingDays(…, null)`. OpenTask days throughout (Luxon calendar days in the user's zone, cut at the day start) — UTC days and 24-hour math get DST and late-night waits wrong. At most one row a day.
 
-| Task (made Mon Oct 12 unless noted) | Wait | Upcoming               |
-| ----------------------------------- | ---- | ---------------------- |
-| Made Sat Oct 10, target Tue Oct 13  | 3    | Mon Oct 12             |
-| Made today, target tomorrow         | 1    | none                   |
-| Target Tue Oct 20                   | 8    | Sat Oct 17, Mon Oct 19 |
-| Every 2 weeks, Mon Oct 26           | 14   | Fri Oct 23, Sun Oct 25 |
-| Sun Nov 1                           | 20   | Wed Oct 28, Sat Oct 31 |
-| Monthly, Tue Dec 1 (done Nov 1)     | 30   | Fri Nov 27, Mon Nov 30 |
-| Weekly Sun, done on its day         | 7    | Sat                    |
-| Weekly Sun, done Fri                | 9    | Thu, Sat               |
-| Daily                               | 1    | none                   |
+**Lead time** (`lead_days`, 1–90): days ahead of the anchor — the target, else the deck day, else (a target-less deadline task) the deadline, for the deadlines page as before. One column, two anchors; derived on read, no backfill (`lead_from` keeps its deadline-only meaning). On a repeat it is series-level, applied to each occurrence, and must be shorter than the rule's wait (the smallest gap between occurrences, `leadDaysProblem` — a 400 on create, PATCH and bulk edit, for every repeat since 2026-10-25); the default wait still counts from the set day. A lead change does not restamp `target_set_at`. PATCH, bulk edit and create take it.
 
-**Carry-over.** An untapped heads-up shows again the next day as the **same single row**, until it is considered or the target's day comes: it shows while the latest heads-up day on or before today is later than the local day of `last_considered_at`. Considered today it is listed as `considered` (so "X of Y" and put-back work); Defer all is `segment_deferred_at` as everywhere. On the target's day it leaves Upcoming and is over target. Never counted over target, never notified. A move restamps `target_set_at`, so an over-target task moved a week on gets a day-before row.
+| Task (made Mon Oct 12 unless noted) | Wait | Later      | Tomorrow   |
+| ----------------------------------- | ---- | ---------- | ---------- |
+| Made Sat Oct 10, target Tue Oct 13  | 3    | —          | Mon Oct 12 |
+| Made today, target tomorrow         | 1    | —          | —          |
+| Target Tue Oct 20                   | 8    | Sat Oct 17 | Mon Oct 19 |
+| Every 2 weeks, Mon Oct 26           | 14   | Fri Oct 23 | Sun Oct 25 |
+| Sun Nov 1                           | 20   | Wed Oct 28 | Sat Oct 31 |
+| Sun Nov 1, lead 10                  | 20   | Thu Oct 22 | Sat Oct 31 |
+| Sun Nov 1, lead 1                   | 20   | —          | Sat Oct 31 |
+| Fri Oct 16, lead 10 (clamped)       | 4    | Tue Oct 13 | Thu Oct 15 |
+| Monthly, Tue Dec 1 (done Nov 1)     | 30   | Fri Nov 27 | Mon Nov 30 |
+| Weekly Sun, done on its day         | 7    | —          | Sat        |
+| Weekly Sun, done Fri                | 9    | Thu        | Sat        |
+| Weekly Sun, lead 3, done on its day | 7    | Thu        | Sat        |
+| Daily                               | 1    | —          | —          |
+
+**Placement and carry-over.** A Tomorrow row shows only **on A − 1**. A Later row shows from the Later day and **carries over** — the same single row, day after day — until it is **seen** (`last_considered_at` on or after the Later day), at the latest to A − 2: on A − 1 the task is in Tomorrow whatever Later said. Seen is **per section** with no new state: seeing a row in Later does not silence Tomorrow (Tomorrow's day comes after that stamp). Considered today it is listed as `considered` in its section (so "X of Y" and put-back work); Defer all is `segment_deferred_at` as everywhere. On A it leaves Upcoming and is over target (or on deck). Never counted over target, never notified. A move restamps `target_set_at`, so a target moved after its Later day was seen gets a fresh plan (a period retime keeps the days).
+
+**One place a day** (precedence): the queue, the deadlines page, On deck, over target, Upcoming (Tomorrow, then Later), the horizon segments.
+
+**In the API.** One kind, `horizon: "upcoming"` — no new kinds (a shipped native build would list an unknown kind as a page of its own). Every row of it carries `upcoming_section: "tomorrow" | "later"`, and the server sorts Tomorrow's rows first (then the anchor, then id). Native builds ignore the key and draw one Upcoming page with both sections' rows — on the same days as before under the default leads. With `?handled=1` a left row carries the section the day roster remembered (`segment_roster.section`, kept current while the row is listed; NULL — a row remembered before the column — reads as the section computed now). The page's "N of M" counts both sections; each section heading (PR B) has its own.
 
 **`target_set_at`** is when the target was last set, by any path: create (every task gets it), any move (PATCH, bulk edit, bulk snooze, snooze-overdue, the snooze endpoint, native quick snoozes), Today and its picker, a completion advance, skip, put-back, AI enrichment, and any change to `deadline_at` (it can move the target: an automatic one follows it, a picked one is pulled back). Every writer goes through `src/core/tasks/target-set.ts`; a guard test fails when a file writes `due_at`/`deadline_at` in SQL without importing it. It is in every undo snapshot, so undo and redo restore it. Seeded once on migration with `created_at` (a repeating task: the later of that and `last_completed_at`); a null reads the same way. On the first day a heads-up day already past shows as carry-over — expected. Distinct from `segment_targeted_at`.
 
-**The row.** Circle (considered), the done square, and the gap text: "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" ("Target Tue Nov 3" with no deadline; "(same day)"). Every row has Today and its hold/right-click picker (with **Deadline day** when the task has one) — repeating rows too since §6 (`upcomingRowActions`). A one-off's target chip opens a one-item menu (`targetReset`): **Remove target** with no deadline (back to its horizon segment) — and since 2026-10-22 with one too (no target: the deadlines page from its lead day, Upcoming before it; switch off, the server re-derives the automatic target). Undo on the toast. A repeating row's chip says "repeats" and offers nothing. No horizon chip: a targeted task's horizon decides nothing. Header "Upcoming" (one word, no hint since 2026-10-20); a strip bar on the dashboard Tasks card and the Reminders day bar, the over-50 nudge and Defer all, like every segment.
+**The row.** Circle (considered), the done square, and the gap text: "Target Tue Nov 3 · deadline Sat Nov 7 (+4d)" ("Target Tue Nov 3" with no deadline; "(same day)"). Every row has Today and its hold/right-click picker (with **Deadline day** when the task has one) — repeating rows too since §6 (`upcomingRowActions`). A one-off's target chip opens a one-item menu (`targetReset`): **Remove target** with no deadline (back to its horizon segment) — and since 2026-10-22 with one too (no target: the deadlines page from its lead day, quiet before it (rule 3); switch off, the server re-derives the automatic target). Undo on the toast. A repeating row's chip says "repeats" and offers nothing. No horizon chip: a targeted task's horizon decides nothing. Header "Upcoming" (one word, no hint since 2026-10-20); a strip bar on the dashboard Tasks card and the Reminders day bar, the over-50 nudge and Defer all, like every segment.
 
 **The editor** greys the Horizon row on a one-off with its own target: "Target set: quiet until Nov 1".
 
@@ -535,12 +545,12 @@ Taking a one-off off deck stamps nothing and changes nothing else: it goes back 
 
 **Placement** (`deadlinePlace`; every "today" is the OpenTask day, A7 and nag-map ruling 3):
 
-| Day                                   | Where it shows                                                                                                                                                                          |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Before the lead day                   | Upcoming, on the heads-up days counted TO the lead day from `target_set_at` (ruling 3; counting to the deadline would land inside the window). A future deck: its own deck Upcoming row |
-| From the lead day                     | The page. `considered` once seen this OpenTask day (the circle, `/consider`); waiting again after the rollover                                                                          |
-| From D−1, and after the deadline (A8) | The page, in the **safety net** (`safety_net: true`): `waiting` even when seen (`seen: true`) — only a target or done takes it off. Defer is refused                                    |
-| On a deck day outside the safety net  | The On deck section (not the page that day — rule 7's de-duplication). In the safety net the page always shows it and the On deck section leaves it out                                 |
+| Day                                   | Where it shows                                                                                                                                                                   |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Before the lead day                   | Quiet: never in Upcoming (rule 3 of the [Upcoming split](#upcoming), 2026-10-25 — until then heads-ups counted to the lead day). A future deck on it gets no Upcoming row either |
+| From the lead day                     | The page. `considered` once seen this OpenTask day (the circle, `/consider`); waiting again after the rollover                                                                   |
+| From D−1, and after the deadline (A8) | The page, in the **safety net** (`safety_net: true`): `waiting` even when seen (`seen: true`) — only a target or done takes it off. Defer is refused                             |
+| On a deck day outside the safety net  | The On deck section (not the page that day — rule 7's de-duplication). In the safety net the page always shows it and the On deck section leaves it out                          |
 
 Sorted priority, then the NEAREST deadline, then id (A4). Rows carry `segment_state`, `recurring`, `safety_net`, `seen` and the task (`deck_day` is its `on_deck_day`). Never on the page and over target, or in Upcoming, on the same day (TM-INV-10); a future lead day is never after D−1 (TM-INV-11).
 
