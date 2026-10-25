@@ -43,6 +43,8 @@ import {
   targetTimeRefused,
   thisOneHint,
   stopKeepsRelativeTarget,
+  upcomingLeadStep,
+  upcomingLeadStepWords,
   type DraftAction,
   type EveryTimeContext,
   type EveryTimeDraft,
@@ -1152,9 +1154,54 @@ describe('the lead override of a target-less deadline repeat (the deadlines page
     expect(draftToPatch(stored, back, ctx)).toEqual({ lead_days: null })
   })
 
-  test('a draft WITH a target has no lead to step', () => {
+  test('a draft WITH a target steps Upcoming’s lead instead (2026-10-25); never the deadlines page’s row', () => {
     const d = draftFromTask(HOME_DEPOT, ctx)
-    expect(d.leadDays).toBeUndefined()
-    expect(draftReducer(d, { type: 'leadDays', days: 5 })).toEqual(d)
+    expect(d.leadDays).toBeNull()
+    expect(upcomingLeadStep(TARGETLESS, draftFromTask(TARGETLESS, ctx), ctx)).toBeNull()
+    expect(draftToPatch(HOME_DEPOT, draftReducer(d, { type: 'leadDays', days: 5 }), ctx)).toEqual({
+      lead_days: 5,
+    })
+  })
+})
+
+describe('Upcoming’s lead on a repeat with a target (2026-10-25, the Upcoming split)', () => {
+  test('UP-140: target-anchored weekly — the day before by default, up to 6 days; a step saves lead_days alone', () => {
+    const d = draftFromTask(FRIDAYS, ctx)
+    expect(d.leadDays).toBeNull()
+    expect(upcomingLeadStep(FRIDAYS, d, ctx)).toEqual({ lead: 1, fallback: 1, max: 6 })
+    expect(upcomingLeadStepWords(1)).toBe('Tomorrow the day before each one')
+    const stepped = draftReducer(d, { type: 'leadDays', days: 3 })
+    expect(draftsEqual(d, stepped)).toBe(false)
+    expect(upcomingLeadStep(FRIDAYS, stepped, ctx)!.lead).toBe(3)
+    expect(upcomingLeadStepWords(3)).toBe('Later 3 days before each one · Tomorrow the day before')
+    expect(draftToPatch(FRIDAYS, stepped, ctx)).toEqual({ lead_days: 3 })
+    // Back to Default: null, sent only when the stored one differs.
+    const stored = { ...FRIDAYS, lead_days: 3 }
+    expect(draftFromTask(stored, ctx).leadDays).toBe(3)
+    const back = draftReducer(draftFromTask(stored, ctx), { type: 'leadDays', days: null })
+    expect(draftToPatch(stored, back, ctx)).toEqual({ lead_days: null })
+  })
+
+  test('UP-141: a relative-target (deadline-anchored) monthly — the default 4, a long top', () => {
+    const step = upcomingLeadStep(HOME_DEPOT, draftFromTask(HOME_DEPOT, ctx), ctx)!
+    expect(step.fallback).toBe(4)
+    expect(step.lead).toBe(4)
+    expect(step.max).toBeGreaterThanOrEqual(27)
+  })
+
+  test('UP-142: a daily rule has no Upcoming at all — no row (any override would be refused)', () => {
+    const daily = draftReducer(draftFromTask(FRIDAYS, ctx), { type: 'freq', freq: 'DAILY' })
+    expect(upcomingLeadStep(FRIDAYS, daily, ctx)).toBeNull()
+  })
+
+  test('UP-143: a one-off made to repeat carries its own lead into the draft', () => {
+    expect(draftFromTask({ ...ONE_OFF, lead_days: 2 }, ctx).leadDays).toBe(2)
+    expect(
+      draftToPatch(
+        { ...ONE_OFF, lead_days: 2 },
+        draftFromTask({ ...ONE_OFF, lead_days: 2 }, ctx),
+        ctx,
+      ),
+    ).not.toHaveProperty('lead_days')
   })
 })

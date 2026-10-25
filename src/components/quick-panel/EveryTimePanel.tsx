@@ -24,6 +24,8 @@ import {
   type EveryTimeContext,
   type EveryTimeDraft,
   type EveryTimeTask,
+  upcomingLeadStep,
+  upcomingLeadStepWords,
 } from '@/lib/every-time'
 import { leadDaysWords, repeatWords } from '@/lib/editor-target-labels'
 import {
@@ -360,6 +362,17 @@ function ScheduleRows({
             onPick={(time) => dispatch({ type: 'addDeadline', time, ctx })}
           />
         </Row>
+      )}
+      {/* Upcoming's lead (2026-10-25): any repeat with a target; the
+          deadlines page's draft (no target) has its own, in NoTargetRow. */}
+      {variant !== 'bulk' && (
+        <UpcomingLeadRow
+          task={task}
+          draft={draft}
+          initial={initial}
+          ctx={ctx}
+          dispatch={dispatch}
+        />
       )}
       {variant !== 'bulk' && (
         <Row label="Ends">
@@ -702,6 +715,94 @@ function NoTargetRow({
         >
           + Add target
         </button>
+      </div>
+    </Row>
+  )
+}
+
+/**
+ * THE UPCOMING LEAD ROW (2026-10-25, the Upcoming split): on a repeat WITH a
+ * target — target-anchored, or deadline-anchored with a relative target —
+ * how many days before each occurrence's target it shows in Upcoming's Later
+ * section: "Later 3 days before each one · Tomorrow the day before" (a lead
+ * of 1: "Tomorrow the day before each one"), and the deadline form's stepper
+ * "− 3 days +" with "Default" while an override is staged or stored. The
+ * series' lead, so here and never in this-one mode (Trent, 10-22). It stops
+ * below the rule's wait (the server refuses a lead as long as the gap
+ * between occurrences, `leadDaysProblem`); a daily rule has no row (no
+ * Upcoming at all). `upcomingLeadStep` has the numbers.
+ */
+function UpcomingLeadRow({
+  task,
+  draft,
+  initial,
+  ctx,
+  dispatch,
+}: {
+  task: EveryTimeTask
+  draft: EveryTimeDraft
+  initial: EveryTimeDraft
+  ctx: EveryTimeContext
+  dispatch: (action: DraftAction) => void
+}) {
+  const step = useMemo(() => upcomingLeadStep(task, draft, ctx), [task, draft, ctx])
+  if (!step) return null
+  const { lead, max } = step
+  const dirty = (draft.leadDays ?? null) !== (initial.leadDays ?? null)
+  const move = (delta: number) =>
+    dispatch({ type: 'leadDays', days: Math.min(max, Math.max(1, lead + delta)) })
+  const stepClass =
+    'text-muted-foreground hover:text-foreground hover:bg-foreground/5 inline-flex size-8 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40'
+  return (
+    <Row label={LEAD_WORD}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-every-time-upcoming-lead>
+        <span
+          data-every-time-upcoming-lead-words
+          className={cn('text-sm', dirty ? 'font-medium text-blue-500' : 'text-muted-foreground')}
+        >
+          {upcomingLeadStepWords(lead)}
+        </span>
+        <span className="inline-flex items-center" role="group" aria-label={LEAD_WORD}>
+          <button
+            type="button"
+            className={stepClass}
+            disabled={draft.stop || lead <= 1}
+            onClick={() => move(-1)}
+            aria-label="One day less"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <span
+            data-every-time-upcoming-lead-days={lead}
+            aria-live="polite"
+            className={cn(
+              'min-w-[3.5rem] text-center text-sm tabular-nums',
+              dirty && 'font-medium text-blue-500',
+            )}
+          >
+            {lead} {lead === 1 ? 'day' : 'days'}
+          </span>
+          <button
+            type="button"
+            className={stepClass}
+            disabled={draft.stop || lead >= max}
+            onClick={() => move(1)}
+            aria-label="One day more"
+          >
+            <Plus className="size-3.5" />
+          </button>
+          {draft.leadDays != null && (
+            <button
+              type="button"
+              aria-label="Default lead"
+              disabled={draft.stop}
+              onClick={() => dispatch({ type: 'leadDays', days: null })}
+              className="text-muted-foreground hover:text-foreground hover:bg-foreground/5 ml-1 rounded px-1.5 py-1 text-xs"
+            >
+              Default
+            </button>
+          )}
+        </span>
       </div>
     </Row>
   )
