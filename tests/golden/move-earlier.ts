@@ -15,7 +15,7 @@ import { markDone } from '@/core/tasks/mark-done'
 import { updateTask } from '@/core/tasks'
 import type { SimContext } from '@/core/sim/day-simulator'
 import type { GoldenScenario } from './types'
-import { iso, headsUps } from './helpers'
+import { iso, upcoming } from './helpers'
 
 function moveTarget(ctx: SimContext, local: string): void {
   updateTask({
@@ -48,13 +48,14 @@ export const moveEarlierScenarios: GoldenScenario[] = [
     events: [{ at: '2026-10-15T10:00', run: (ctx) => moveTarget(ctx, '2026-10-17T09:00') }],
     expect: {
       task: {
-        // Wait Thu → Sat is 2: a heads-up Friday. Over Saturday; done that
+        // Wait Thu → Sat is 2: Tomorrow on Friday. Over Saturday; done that
         // night by the policy.
-        '2026-10-16': 'upcoming',
+        '2026-10-16': 'tomorrow',
         '2026-10-17': 'over 1×',
         // Sun Oct 18 is quiet: the moved occurrence WAS the week's. The next
-        // is Oct 25 — wait 8 from the Saturday completion: Thu and Sat.
-        ...headsUps(['2026-10-22', '2026-10-24']),
+        // is Oct 25 — wait 8 from the Saturday completion: Later Thu,
+        // Tomorrow Sat.
+        ...upcoming({ later: ['2026-10-22'], tomorrow: ['2026-10-24'] }),
         '2026-10-25': 'over 1×',
       },
     },

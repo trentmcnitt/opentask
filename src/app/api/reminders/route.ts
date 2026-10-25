@@ -32,7 +32,8 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // absent from Upcoming — a shipped native build would draw a dateless row.
     const deckRows = request.nextUrl.searchParams.get('deck') === '1'
     // `?deadlines=1` (the deadlines page, 2026-10-22): this client draws the
-    // `deadlines` segment and the lead day's Upcoming rows. Without it (a
+    // `deadlines` segment (and leaves such tasks out of Upcoming: rule 3,
+    // 2026-10-25). Without it (a
     // shipped native build, whose SegmentKind would list an unknown kind as a
     // page) a target-less deadline one-off stays in its horizon segment.
     const deadlineRows = request.nextUrl.searchParams.get('deadlines') === '1'
@@ -104,7 +105,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         fill,
       }).map((seg) => ({
         horizon: seg.horizon,
-        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen }) => ({
+        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen, section }) => ({
           ...formatTaskResponse(task, user.timezone),
           segment_state: state,
           // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
@@ -121,6 +122,13 @@ export const GET = withLogging(async function GET(request: NextRequest) {
           // silence it (draw the circle non-silencing; Defer hidden); `seen`
           // — considered this OpenTask day.
           ...(seg.horizon === 'deadlines' ? { safety_net: !!safetyNet, seen: !!seen } : {}),
+          // Upcoming's section (2026-10-25, the Upcoming split; always sent on
+          // an Upcoming row): 'tomorrow' — the day before its anchor — or
+          // 'later'. Tomorrow's rows come first. A left row (`segment_left`)
+          // carries the section the day roster remembered. One kind, no new
+          // kinds: a shipped native build lists both sections' rows as one
+          // Upcoming page and ignores the key.
+          ...(seg.horizon === 'upcoming' ? { upcoming_section: section ?? 'later' } : {}),
         })),
         waiting: seg.waiting,
         considered: seg.considered,

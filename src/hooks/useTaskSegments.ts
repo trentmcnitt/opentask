@@ -38,7 +38,7 @@ import { openTaskDaysBetween } from '@/lib/opentask-day'
  * - Remove target (Upcoming's one-off rows, 2026-10-12) →
  *   `PATCH { target_at: null }`; the task goes back to its horizon segment —
  *   or, with a deadline (2026-10-22, it replaced "Back to auto"), onto the
- *   deadlines page from its lead day (Upcoming before it)
+ *   deadlines page from its lead day (quiet before it, rule 3)
  * - Repeating Upcoming rows have Today and its picker too (§6: moving the
  *   target leaves the occurrence where it was), but no target reset
  * - Defer All → everything still waiting in that segment, back tomorrow

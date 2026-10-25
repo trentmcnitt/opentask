@@ -799,7 +799,7 @@ function collectLead(
   const targetLess = row.deadline_at !== null && after('due_at') === null
   const removedRepeatTarget = ordinary && targetLess && removesRepeatTarget(data, task, input, row)
   if (!changed && !removedRepeatTarget && !(targetLess && task.lead_from === null)) return
-  if (changed) assertLeadDays(row, left.timezone)
+  if (changed) assertLeadDays(row, after('due_at'), left.timezone)
   const rolloverTime = left.rolloverTime ?? rolloverTimeForUser(task.user_id)
   const lead = { rolloverTime, now: left.now }
   const next = removedRepeatTarget
@@ -811,17 +811,24 @@ function collectLead(
 /**
  * A repeat's lead override must be shorter than its rule's wait (a 400, like
  * `overlaps_previous` — `leadDaysProblem`). Judged on the row the write leaves.
+ * EVERY repeat since the Upcoming split (2026-10-25): the lead is also the
+ * Later day ahead of each occurrence's target, so a weekly rule with a lead
+ * of 10 would put every occurrence in Upcoming the moment the last was done.
+ * The walk starts at the occurrence (a deadline-anchored rule's is its
+ * deadline; a target-anchored one's its target).
  */
-function assertLeadDays(row: LeadFields, timezone: string): void {
-  if (!row.rrule || !isDeadlineAnchored(row) || hasRelativeTarget(row)) return
+function assertLeadDays(row: LeadFields, dueAt: string | null, timezone: string): void {
+  if (!row.rrule || row.lead_days == null) return
+  const first = row.occurrence_at ?? (isDeadlineAnchored(row) ? row.deadline_at : dueAt)
+  if (!first) return
   const problem = leadDaysProblem(
-    row.lead_days ?? null,
+    row.lead_days,
     {
       rrule: row.rrule,
       recurrence_mode: row.recurrence_mode ?? 'from_due',
       anchor_time: row.anchor_time ?? null,
     },
-    row.occurrence_at ?? row.deadline_at!,
+    first,
     timezone,
   )
   if (problem) throw new ValidationError(problem)

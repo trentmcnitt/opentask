@@ -16,7 +16,7 @@
 import { markDone } from '@/core/tasks/mark-done'
 import type { SimContext } from '@/core/sim/day-simulator'
 import type { GoldenScenario, GoldenTask } from './types'
-import { iso, backdate, headsUps } from './helpers'
+import { iso, backdate, headsUps, upcoming } from './helpers'
 
 function repeating(
   id: string,
@@ -41,9 +41,17 @@ function repeating(
   }
 }
 
-/** Heads-up days and the occurrence days ("over 1×", then done by the policy). */
-function cycles(heads: string[], occurrences: string[]): Record<string, string> {
-  return { ...headsUps(heads), ...headsUps(occurrences, 'over 1×') }
+/**
+ * Upcoming's days by section and the occurrence days ("over 1×", then done by
+ * the policy). Sections (2026-10-25): Tomorrow is each occurrence's day
+ * before (wait ≥ 2); Later its default lead (3 days before at a wait of
+ * 8–15, 4 at 16+, none up to 7) — the 10-12 heads-up days, unmoved.
+ */
+function cycles(
+  heads: { later?: string[]; tomorrow?: string[] },
+  occurrences: string[],
+): Record<string, string> {
+  return { ...upcoming(heads), ...headsUps(occurrences, 'over 1×') }
 }
 
 const SUNDAY_NOON = 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0'
@@ -60,7 +68,7 @@ export const repeatingScenarios: GoldenScenario[] = [
       created: '2026-10-12T08:00',
       input: { title: 'Synthetic daily', rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0' },
     },
-    cycles([], ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15']),
+    cycles({}, ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15']),
   ),
   repeating(
     'rep-codes-blog-on-the-day',
@@ -73,7 +81,11 @@ export const repeatingScenarios: GoldenScenario[] = [
       created: '2026-10-11T13:00',
       input: { title: 'Synthetic weekly post', rrule: SUNDAY_NOON },
     },
-    cycles(['2026-10-17', '2026-10-24', '2026-10-31'], ['2026-10-18', '2026-10-25', '2026-11-01']),
+    cycles({ tomorrow: ['2026-10-17', '2026-10-24', '2026-10-31'] }, [
+      '2026-10-18',
+      '2026-10-25',
+      '2026-11-01',
+    ]),
   ),
   repeating(
     'rep-codes-blog-early',
@@ -88,7 +100,7 @@ export const repeatingScenarios: GoldenScenario[] = [
     },
     // Done Fri Oct 16 18:00: Sat Oct 17's heads-up never comes; the Oct 25
     // occurrence's wait is Fri → Sun, 9 days.
-    cycles(['2026-10-22', '2026-10-24'], ['2026-10-25']),
+    cycles({ later: ['2026-10-22'], tomorrow: ['2026-10-24'] }, ['2026-10-25']),
     [
       {
         at: '2026-10-16T18:00',
@@ -109,7 +121,7 @@ export const repeatingScenarios: GoldenScenario[] = [
       created: '2026-10-09T17:00',
       input: { title: 'Synthetic Friday task', rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0' },
     },
-    cycles(['2026-10-15', '2026-10-22'], ['2026-10-16', '2026-10-23']),
+    cycles({ tomorrow: ['2026-10-15', '2026-10-22'] }, ['2026-10-16', '2026-10-23']),
   ),
   repeating(
     'rep-every-2-weeks-monday',
@@ -127,7 +139,10 @@ export const repeatingScenarios: GoldenScenario[] = [
       },
     },
     cycles(
-      ['2026-10-23', '2026-10-25', '2026-11-06', '2026-11-08', '2026-11-20', '2026-11-22'],
+      {
+        later: ['2026-10-23', '2026-11-06', '2026-11-20'],
+        tomorrow: ['2026-10-25', '2026-11-08', '2026-11-22'],
+      },
       ['2026-10-26', '2026-11-09', '2026-11-23'],
     ),
   ),
@@ -152,18 +167,10 @@ export const repeatingScenarios: GoldenScenario[] = [
       },
     },
     cycles(
-      [
-        '2026-10-15',
-        '2026-10-17',
-        '2026-10-25',
-        '2026-10-27',
-        '2026-11-04',
-        '2026-11-06',
-        '2026-11-14',
-        '2026-11-16',
-        '2026-11-24',
-        '2026-11-26',
-      ],
+      {
+        later: ['2026-10-15', '2026-10-25', '2026-11-04', '2026-11-14', '2026-11-24'],
+        tomorrow: ['2026-10-17', '2026-10-27', '2026-11-06', '2026-11-16', '2026-11-26'],
+      },
       ['2026-10-18', '2026-10-28', '2026-11-07', '2026-11-17', '2026-11-27'],
     ),
   ),
@@ -187,7 +194,10 @@ export const repeatingScenarios: GoldenScenario[] = [
       },
     },
     cycles(
-      ['2026-10-30', '2026-11-02', '2026-11-21', '2026-11-24', '2026-12-13', '2026-12-16'],
+      {
+        later: ['2026-10-30', '2026-11-21', '2026-12-13'],
+        tomorrow: ['2026-11-02', '2026-11-24', '2026-12-16'],
+      },
       ['2026-11-03', '2026-11-25', '2026-12-17'],
     ),
   ),
@@ -206,7 +216,10 @@ export const repeatingScenarios: GoldenScenario[] = [
       },
     },
     cycles(
-      ['2026-10-28', '2026-10-31', '2026-11-27', '2026-11-30', '2026-12-28', '2026-12-31'],
+      {
+        later: ['2026-10-28', '2026-11-27', '2026-12-28'],
+        tomorrow: ['2026-10-31', '2026-11-30', '2026-12-31'],
+      },
       ['2026-11-01', '2026-12-01', '2027-01-01'],
     ),
   ),
@@ -225,7 +238,7 @@ export const repeatingScenarios: GoldenScenario[] = [
         due_at: iso('2027-04-17T09:00'),
       },
     },
-    cycles(['2027-04-13', '2027-04-16'], ['2027-04-17']),
+    cycles({ later: ['2027-04-13'], tomorrow: ['2027-04-16'] }, ['2027-04-17']),
   ),
   repeating(
     'rep-taxes-yearly',
@@ -244,7 +257,7 @@ export const repeatingScenarios: GoldenScenario[] = [
       // Last done Feb 1 2026: the wait counts from that completion.
       after: (id) => backdate(id, 'target_set_at', '2026-02-01T09:30'),
     },
-    cycles(['2027-01-28', '2027-01-31'], ['2027-02-01']),
+    cycles({ later: ['2027-01-28'], tomorrow: ['2027-01-31'] }, ['2027-02-01']),
   ),
   repeating(
     'rep-weekly-across-march-dst',
@@ -257,7 +270,7 @@ export const repeatingScenarios: GoldenScenario[] = [
       created: '2027-03-07T10:00',
       input: { title: 'Synthetic Sunday task', rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=9;BYMINUTE=0' },
     },
-    cycles(['2027-03-13', '2027-03-20'], ['2027-03-14', '2027-03-21']),
+    cycles({ tomorrow: ['2027-03-13', '2027-03-20'] }, ['2027-03-14', '2027-03-21']),
   ),
 ]
 

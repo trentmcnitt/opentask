@@ -159,6 +159,7 @@
 		7F708353B1540BED9E328245 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BEA167B70531B2904292843 /* SweepDismissal.swift */; };
 		818379AA1A07C71D74720E37 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		82562B5A8F022AC08C0033AF /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03744B394D091E76B95FDE0C /* SweepSummary.swift */; };
+		83375F24C0845280383F7FAB /* reminders-upcoming-sections.json in Resources */ = {isa = PBXBuildFile; fileRef = 21C9C1F6EE89A0790476BF77 /* reminders-upcoming-sections.json */; };
 		8465F733F4E375E70C51CEA8 /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */; };
 		8572FB55A8FC3CE966EEF5F1 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
 		859499321A21C46AB2727916 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */; };
@@ -347,6 +348,7 @@
 		20094FA70C6D6907002B24FA /* reminders-segments.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-segments.json"; sourceTree = "<group>"; };
 		203EF948683C146898ECCD57 /* WidgetKindShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetKindShims.swift; sourceTree = "<group>"; };
 		2119584EB998870DDE92BBC9 /* task-segments-defer-lead.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-segments-defer-lead.json"; sourceTree = "<group>"; };
+		21C9C1F6EE89A0790476BF77 /* reminders-upcoming-sections.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-upcoming-sections.json"; sourceTree = "<group>"; };
 		225E098B934AE9962181E731 /* task-progress.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-progress.json"; sourceTree = "<group>"; };
 		243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApsEnvironment.swift; sourceTree = "<group>"; };
 		258C97ABC8DDDAB88EB2BB6C /* TaskSegmentsWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSegmentsWidgetTests.swift; sourceTree = "<group>"; };
@@ -521,6 +523,7 @@
 				A3976D6271B79475E88E8901 /* reminders-interval.json */,
 				9692247898AD0E30DCD14FCD /* reminders-queue.json */,
 				20094FA70C6D6907002B24FA /* reminders-segments.json */,
+				21C9C1F6EE89A0790476BF77 /* reminders-upcoming-sections.json */,
 				856BA6012C3EE066B5DC79B7 /* reminders-upcoming.json */,
 				880F73DD5EB836E40BCA134A /* reminders.json */,
 				E3290E5D7B8A509F3BA310ED /* task-badges.json */,
@@ -930,6 +933,7 @@
 				416BA9F4F61DED457A9F058E /* reminders-interval.json in Resources */,
 				0C23FC92332C00DEA90A64AD /* reminders-queue.json in Resources */,
 				A7A7013390BB2D8ED7765AAB /* reminders-segments.json in Resources */,
+				83375F24C0845280383F7FAB /* reminders-upcoming-sections.json in Resources */,
 				53DC4A6371D2C3721B05CAC8 /* reminders-upcoming.json in Resources */,
 				BB6F0A2B90AC043C0B979A14 /* reminders.json in Resources */,
 				FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */,

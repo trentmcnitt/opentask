@@ -20,6 +20,7 @@ import { markUndone } from '@/core/tasks/mark-done'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { getTaskById } from '@/core/tasks/read'
+import { ValidationError } from '@/core/errors'
 import { executeUndo, executeRedo } from '@/core/undo'
 import { updateTimeSlot } from '@/core/time-slots/edit'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
@@ -31,7 +32,7 @@ import {
   type SegmentKind,
 } from '@/core/tasks/task-segments'
 import { latestSegmentDay } from '@/lib/task-segments'
-import { headsUpDays, upcomingGap, upcomingRowActions, waitDays } from '@/lib/task-segments'
+import { upcomingDays, upcomingGap, upcomingRowActions, waitDays } from '@/lib/task-segments'
 import { horizonHints } from '@/lib/task-model-words'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -94,7 +95,7 @@ function walk(
 }
 
 /** The Upcoming days of a walk, as ISO dates. */
-function upcomingDays(id: number, from: string, to: string): string[] {
+function shownUpcoming(id: number, from: string, to: string): string[] {
   return walk(id, from, to)
     .filter(([, kind]) => kind === 'upcoming')
     .map(([d]) => d)
@@ -111,8 +112,12 @@ describe('Upcoming', () => {
   describe('the rule', () => {
     test('UP-001: wait in local days; T−1 at wait ≥ 2; T−3 (wait 8–15) or T−4 (wait ≥ 16)', () => {
       const d = (iso: string) => DateTime.fromISO(iso, { zone: tz }).startOf('day')
-      const heads = (target: string, set: string) =>
-        headsUpDays(d(target), d(set)).map((x) => x.toISODate())
+      // The default leads (`upcomingDays(…, null)`): the same days as the
+      // 2026-10-12 heads-ups — Later, then Tomorrow, earliest first.
+      const heads = (target: string, set: string) => {
+        const { later, tomorrow } = upcomingDays(d(target), d(set), null)
+        return [later, tomorrow].filter((x) => x !== null).map((x) => x.toISODate())
+      }
       expect(heads('2026-10-13', '2026-10-12')).toEqual([])
       expect(heads('2026-10-14', '2026-10-12')).toEqual(['2026-10-13'])
       expect(heads('2026-10-19', '2026-10-12')).toEqual(['2026-10-18']) // wait 7
@@ -129,7 +134,7 @@ describe('Upcoming', () => {
       // wait 2 → a Tuesday row. UTC-day math would say wait 1, no row.
       setClock('2026-10-12T23:00')
       const t = make({ due_at: at('2026-10-14T00:30') })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-14')).toEqual(['2026-10-13'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-14')).toEqual(['2026-10-13'])
     })
   })
 
@@ -137,17 +142,17 @@ describe('Upcoming', () => {
     test('UP-010: made Sat Oct 10, target Tue Oct 13 → Mon Oct 12', () => {
       setClock('2026-10-10T10:00')
       const t = make({ due_at: at('2026-10-13T09:00') })
-      expect(upcomingDays(t.id, '2026-10-10', '2026-10-13')).toEqual(['2026-10-12'])
+      expect(shownUpcoming(t.id, '2026-10-10', '2026-10-13')).toEqual(['2026-10-12'])
     })
 
     test('UP-011: made today, target tomorrow → none', () => {
       const t = make({ due_at: at('2026-10-13T09:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-13')).toEqual([])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-13')).toEqual([])
     })
 
     test('UP-012: target Tue Oct 20 (wait 8) → Sat Oct 17, Mon Oct 19', () => {
       const t = make({ due_at: at('2026-10-20T09:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-20')).toEqual(['2026-10-17', '2026-10-19'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-20')).toEqual(['2026-10-17', '2026-10-19'])
     })
 
     test('UP-013: every 2 weeks, done Mon Oct 12 → Mon Oct 26 (wait 14) → Fri Oct 23, Sun Oct 25', () => {
@@ -156,12 +161,12 @@ describe('Upcoming', () => {
       setClock('2026-10-12T10:00')
       done(t.id)
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-26T09:00'))
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-26')).toEqual(['2026-10-23', '2026-10-25'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-26')).toEqual(['2026-10-23', '2026-10-25'])
     })
 
     test('UP-014: snowmobile, Sun Nov 1 (wait 20) → Wed Oct 28, Sat Oct 31', () => {
       const t = make({ due_at: at('2026-11-01T09:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-11-01')).toEqual(['2026-10-28', '2026-10-31'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-11-01')).toEqual(['2026-10-28', '2026-10-31'])
     })
 
     test('UP-015: monthly, done Sun Nov 1 → Tue Dec 1 (wait 30) → Fri Nov 27, Mon Nov 30', () => {
@@ -170,7 +175,7 @@ describe('Upcoming', () => {
       setClock('2026-11-01T10:00')
       done(t.id)
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-12-01T09:00'))
-      expect(upcomingDays(t.id, '2026-11-01', '2026-12-01')).toEqual(['2026-11-27', '2026-11-30'])
+      expect(shownUpcoming(t.id, '2026-11-01', '2026-12-01')).toEqual(['2026-11-27', '2026-11-30'])
     })
 
     test('UP-016: monthly, done Tue Dec 1 → Fri Jan 1 (wait 31) → Mon Dec 28, Thu Dec 31', () => {
@@ -179,17 +184,17 @@ describe('Upcoming', () => {
       setClock('2026-12-01T10:00')
       done(t.id)
       expect(getTaskById(t.id)!.due_at).toBe(at('2027-01-01T09:00'))
-      expect(upcomingDays(t.id, '2026-12-01', '2027-01-01')).toEqual(['2026-12-28', '2026-12-31'])
+      expect(shownUpcoming(t.id, '2026-12-01', '2027-01-01')).toEqual(['2026-12-28', '2026-12-31'])
     })
 
     test('UP-017: taxes, Mon Feb 1 (wait 112) → Thu Jan 28, Sun Jan 31', () => {
       const t = make({ due_at: at('2027-02-01T09:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2027-02-01')).toEqual(['2027-01-28', '2027-01-31'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2027-02-01')).toEqual(['2027-01-28', '2027-01-31'])
     })
 
     test('UP-018: gutters, Sat Apr 17 (wait 187) → Tue Apr 13, Fri Apr 16', () => {
       const t = make({ due_at: at('2027-04-17T09:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2027-04-17')).toEqual(['2027-04-13', '2027-04-16'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2027-04-17')).toEqual(['2027-04-13', '2027-04-16'])
     })
 
     test('UP-019: weekly Sunday done on its day (wait 7) → Saturday', () => {
@@ -198,7 +203,7 @@ describe('Upcoming', () => {
       setClock('2026-10-18T13:00')
       done(t.id)
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-25T12:00'))
-      expect(upcomingDays(t.id, '2026-10-18', '2026-10-25')).toEqual(['2026-10-24'])
+      expect(shownUpcoming(t.id, '2026-10-18', '2026-10-25')).toEqual(['2026-10-24'])
     })
 
     test('UP-020: codes-blog done Fri for Sun (wait 9) → Thu, Sat', () => {
@@ -208,7 +213,7 @@ describe('Upcoming', () => {
       done(t.id)
       // Done early is safe: max(Sun, Fri) = Sun, so the next one is Oct 25.
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-25T12:00'))
-      expect(upcomingDays(t.id, '2026-10-17', '2026-10-25')).toEqual(['2026-10-22', '2026-10-24'])
+      expect(shownUpcoming(t.id, '2026-10-17', '2026-10-25')).toEqual(['2026-10-22', '2026-10-24'])
     })
 
     test('UP-021: daily (wait 1) → none', () => {
@@ -217,7 +222,7 @@ describe('Upcoming', () => {
       setClock('2026-10-12T10:00')
       done(t.id)
       expect(getTaskById(t.id)!.due_at).toBe(at('2026-10-13T09:00'))
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-13')).toEqual([])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-13')).toEqual([])
     })
   })
 
@@ -320,7 +325,7 @@ describe('Upcoming', () => {
         taskId: t.id,
         until: at('2026-10-19T09:00'),
       })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-19')).toEqual(['2026-10-18'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-19')).toEqual(['2026-10-18'])
     })
 
     test('UP-033: a target past its deadline is stored AT the deadline; Upcoming counts to it', () => {
@@ -331,7 +336,7 @@ describe('Upcoming', () => {
       const stored = getTaskById(t.id)!
       expect(stored.due_at).toBe(at('2026-10-23T00:00'))
       expect(stored.target_auto).toBe(false)
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-23')).toEqual(['2026-10-20', '2026-10-22'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-23')).toEqual(['2026-10-20', '2026-10-22'])
       expect(upcomingGap(stored, tz)).toEqual({
         target: 'Target Fri Oct 23',
         deadline: 'deadline Fri Oct 23',
@@ -536,7 +541,7 @@ describe('Upcoming', () => {
     test('UP-061: Upcoming is unchanged by the check-in day', () => {
       checkIn(2)
       const t = make({ due_at: at('2026-10-20T09:00') })
-      expect(upcomingDays(t.id, '2026-10-12', '2026-10-20')).toEqual(['2026-10-17', '2026-10-19'])
+      expect(shownUpcoming(t.id, '2026-10-12', '2026-10-20')).toEqual(['2026-10-17', '2026-10-19'])
     })
 
     test('UP-062: the header hints are derived from it', () => {
@@ -744,5 +749,226 @@ describe('target_set_at guard', () => {
         (f) => !/from '(\.\.?\/|@\/core\/tasks\/)target-set'/.test(fs.readFileSync(f, 'utf8')),
       )
     expect(offenders).toEqual([])
+  })
+})
+
+// ===========================================================================
+// UP-110+: Upcoming's two sections (2026-10-25, plan-upcoming-split-1024)
+// ===========================================================================
+
+const d = (iso: string) => DateTime.fromISO(iso, { zone: tz }).startOf('day')
+const days = (a: string, set: string, lead: number | null) => {
+  const { later, tomorrow } = upcomingDays(d(a), d(set), lead)
+  return { later: later?.toISODate() ?? null, tomorrow: tomorrow?.toISODate() ?? null }
+}
+
+/** The task's Upcoming row today (state and section), or null. */
+function upcomingRow(id: number, opts: { handledRows?: boolean } = {}) {
+  const seg = getTaskSegments(TEST_USER_ID, tz, new Date(), opts).find(
+    (s) => s.horizon === 'upcoming',
+  )
+  const row = seg?.tasks.find((t) => t.task.id === id)
+  return row ? { state: row.state, section: row.section, left: row.left } : null
+}
+
+describe('Upcoming sections (2026-10-25)', () => {
+  afterAll(() => teardownTestDb())
+  beforeEach(() => {
+    setClock('2026-10-12T10:00')
+    setupTestDb()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  test('UP-110: the two days — Tomorrow = A − 1 (wait ≥ 2); Later = max(A − lead, set + 1) ≤ A − 2', () => {
+    // Defaults: the 10-12 days (UP-001), named.
+    expect(days('2026-10-13', '2026-10-12', null)).toEqual({ later: null, tomorrow: null })
+    expect(days('2026-10-14', '2026-10-12', null)).toEqual({ later: null, tomorrow: '2026-10-13' })
+    expect(days('2026-10-20', '2026-10-12', null)).toEqual({
+      later: '2026-10-17',
+      tomorrow: '2026-10-19',
+    })
+    // An override counts from the anchor.
+    expect(days('2026-11-01', '2026-10-12', 10)).toEqual({
+      later: '2026-10-22',
+      tomorrow: '2026-10-31',
+    })
+    // Lead 1: no Later at all; lead 2: Later on A − 2.
+    expect(days('2026-11-01', '2026-10-12', 1)).toEqual({ later: null, tomorrow: '2026-10-31' })
+    expect(days('2026-11-01', '2026-10-12', 2)).toEqual({
+      later: '2026-10-30',
+      tomorrow: '2026-10-31',
+    })
+    // Longer than the wait: clamped to the day after it was set (Q6)…
+    expect(days('2026-10-16', '2026-10-12', 10)).toEqual({
+      later: '2026-10-13',
+      tomorrow: '2026-10-15',
+    })
+    // …and none when even that is not two days ahead (wait 2).
+    expect(days('2026-10-14', '2026-10-12', 10)).toEqual({ later: null, tomorrow: '2026-10-13' })
+    // A short lead on a short wait, and across the DST change (calendar days).
+    expect(days('2026-10-15', '2026-10-12', 2)).toEqual({
+      later: '2026-10-13',
+      tomorrow: '2026-10-14',
+    })
+    expect(days('2026-11-03', '2026-10-20', 3)).toEqual({
+      later: '2026-10-31',
+      tomorrow: '2026-11-02',
+    })
+  })
+
+  test('UP-111: each row carries its section; seeing it in Later does not silence Tomorrow', () => {
+    const t = make({ due_at: at('2026-11-01T09:00'), lead_days: 10 })
+    setClock('2026-10-21T12:00')
+    expect(upcomingRow(t.id)).toBeNull()
+    setClock('2026-10-22T12:00')
+    expect(upcomingRow(t.id)).toMatchObject({ state: 'waiting', section: 'later' })
+    considerTasks(TEST_USER_ID, [t.id])
+    expect(upcomingRow(t.id)).toMatchObject({ state: 'considered', section: 'later' })
+    // Seen in Later: gone until Tomorrow.
+    setClock('2026-10-23T12:00')
+    expect(upcomingRow(t.id)).toBeNull()
+    setClock('2026-10-30T12:00')
+    expect(upcomingRow(t.id)).toBeNull()
+    setClock('2026-10-31T12:00')
+    expect(upcomingRow(t.id)).toMatchObject({ state: 'waiting', section: 'tomorrow' })
+    setClock('2026-11-01T12:00')
+    expect(upcomingRow(t.id)).toBeNull()
+  })
+
+  test('UP-112: Tomorrow rows come first, then by anchor; a target with a deadline counts its lead from the target', () => {
+    // Three targets on Tue Oct 20 (wait 8): Tomorrow on Mon Oct 19.
+    const later = make({ due_at: at('2026-10-20T08:00') })
+    const lateTomorrow = make({ due_at: at('2026-10-20T23:00') })
+    // With a deadline Oct 30 and a lead of 5: Later Oct 15 — 5 days before
+    // the TARGET (Oct 20), not the deadline.
+    const withDeadline = make({
+      due_at: at('2026-10-20T12:00'),
+      deadline_at: at('2026-10-30T17:00'),
+      lead_days: 5,
+    })
+    // Wed Oct 21 with a lead of 3: Later on Sun Oct 18, carried over to Mon.
+    const farther = make({ due_at: at('2026-10-21T09:00'), lead_days: 3 })
+    setClock('2026-10-15T12:00')
+    expect(upcomingRow(withDeadline.id)).toMatchObject({ section: 'later' })
+    expect(upcomingRow(later.id)).toBeNull()
+    setClock('2026-10-19T12:00')
+    const seg = getTaskSegments(TEST_USER_ID, tz).find((s) => s.horizon === 'upcoming')!
+    expect(seg.tasks.map((r) => [r.task.id, r.section])).toEqual([
+      [later.id, 'tomorrow'],
+      [withDeadline.id, 'tomorrow'],
+      [lateTomorrow.id, 'tomorrow'],
+      [farther.id, 'later'],
+    ])
+  })
+})
+
+describe('Upcoming sections: repeat leads and the day roster (2026-10-25)', () => {
+  afterAll(() => teardownTestDb())
+  beforeEach(() => {
+    setClock('2026-10-12T10:00')
+    setupTestDb()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  test('UP-113: a repeat’s lead must be shorter than its rule’s wait — every repeat (400)', () => {
+    const weekly = { rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0' }
+    expect(() => make({ ...weekly, lead_days: 7 })).toThrow(ValidationError)
+    // The words fit a target-anchored repeat with no deadline too.
+    expect(() => make({ ...weekly, lead_days: 7 })).toThrow(
+      'Lead time (lead_days) must be shorter than the time between occurrences',
+    )
+    const ok = make({ ...weekly, lead_days: 6 })
+    expect(getTaskById(ok.id)!.lead_days).toBe(6)
+    expect(() =>
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: ok.id,
+        input: { lead_days: 8 },
+      }),
+    ).toThrow(ValidationError)
+    // A rule change judged against the lead it keeps: daily with a lead of 6.
+    expect(() =>
+      updateTask({
+        userId: TEST_USER_ID,
+        userTimezone: tz,
+        taskId: ok.id,
+        input: { rrule: 'FREQ=DAILY;BYHOUR=12;BYMINUTE=0' },
+      }),
+    ).toThrow(ValidationError)
+    // A monthly takes a long lead; a one-off takes any (1–90).
+    expect(
+      make({ rrule: 'FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0', lead_days: 20 }).lead_days,
+    ).toBe(20)
+    expect(make({ due_at: at('2026-10-14T09:00'), lead_days: 90 }).lead_days).toBe(90)
+    // A deadline-anchored repeat WITH a relative target too (its lead is the
+    // Later day ahead of each target now).
+    expect(() =>
+      make({
+        rrule: 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=12;BYMINUTE=0',
+        deadline_at: at('2026-10-17T12:00'),
+        target_days_before: 1,
+        target_time: '18:00',
+        lead_days: 7,
+      }),
+    ).toThrow(ValidationError)
+  })
+
+  test('UP-114: a weekly with a lead of 3 — Later Thursday, Tomorrow Saturday, every occurrence', () => {
+    setClock('2026-10-11T13:00')
+    const t = make({ rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=12;BYMINUTE=0', lead_days: 3 })
+    setClock('2026-10-15T12:00')
+    expect(upcomingRow(t.id)).toMatchObject({ section: 'later' })
+    setClock('2026-10-17T12:00')
+    expect(upcomingRow(t.id)).toMatchObject({ section: 'tomorrow' })
+    setClock('2026-10-18T13:00')
+    done(t.id)
+    setClock('2026-10-22T12:00')
+    expect(upcomingRow(t.id)).toMatchObject({ section: 'later' })
+  })
+
+  test('UP-115: the day roster remembers the section; a NULL one falls back to the computed one', () => {
+    setClock('2026-10-12T10:00')
+    const a = make({ due_at: at('2026-10-14T09:00') }) // Tomorrow on Oct 13
+    const b = make({ due_at: at('2026-10-20T09:00') }) // wait 8 → Tomorrow Oct 19
+    setClock('2026-10-13T12:00')
+    expect(upcomingRow(a.id, { handledRows: true })).toMatchObject({ section: 'tomorrow' })
+    targetTasksToday(TEST_USER_ID, tz, [a.id])
+    // Targeted today: left Upcoming, handled — in the section it was listed in.
+    expect(upcomingRow(a.id, { handledRows: true })).toEqual({
+      state: 'considered',
+      section: 'tomorrow',
+      left: 'target',
+    })
+    const stored = getDb()
+      .prepare("SELECT section FROM segment_roster WHERE task_id = ? AND kind = 'upcoming'")
+      .get(a.id) as { section: string | null }
+    expect(stored.section).toBe('tomorrow')
+    // A row remembered before the column (deploy day): NULL → the section
+    // computed now from the task — Tomorrow, not the 'later' default.
+    setClock('2026-10-19T12:00')
+    expect(upcomingRow(b.id, { handledRows: true })).toMatchObject({ section: 'tomorrow' })
+    getDb().prepare('UPDATE segment_roster SET section = NULL WHERE task_id = ?').run(b.id)
+    markDone({ userId: TEST_USER_ID, userTimezone: tz, taskId: b.id })
+    expect(upcomingRow(b.id, { handledRows: true })).toEqual({
+      state: 'considered',
+      section: 'tomorrow',
+      left: 'done',
+    })
+    // Left Tomorrow via "Today" with a NULL section: its target is now TODAY
+    // and `target_set_at` restamped, so the task alone no longer says where it
+    // was — the state before the move (today's undo entry) does: Tomorrow.
+    const c = make({ due_at: at('2026-10-20T15:00') }) // made Oct 19: wait 1, none
+    getDb()
+      .prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
+      .run(at('2026-10-12T10:00'), c.id) // set a week ago: Tomorrow on Oct 19
+    expect(upcomingRow(c.id, { handledRows: true })).toMatchObject({ section: 'tomorrow' })
+    getDb().prepare('UPDATE segment_roster SET section = NULL WHERE task_id = ?').run(c.id)
+    targetTasksToday(TEST_USER_ID, tz, [c.id])
+    expect(upcomingRow(c.id, { handledRows: true })).toEqual({
+      state: 'considered',
+      section: 'tomorrow',
+      left: 'target',
+    })
   })
 })
