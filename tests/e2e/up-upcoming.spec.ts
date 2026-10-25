@@ -115,14 +115,24 @@ test.describe('Upcoming', () => {
       await expect(gap.locator('> *').nth(0)).toHaveAttribute('data-segment-project')
       await expect(gap.locator('> *').nth(1)).toHaveAttribute('data-deadline-chip', 'ahead')
       await expect(gap.locator('[data-deadline-chip]')).toHaveText(/^Deadline \w+/)
-      await expect(gap).toContainText(/Target \w{3} \w{3} \d+/)
+      // A Tomorrow row (2026-10-25, the Upcoming split): just the time.
+      await expect(gap).toContainText('Target 9:00 AM')
+      await expect(gap).not.toContainText(/Target \w{3} \w{3} \d+/)
       // The repeating row names its schedule, never a bare "repeats".
       await expect(row(page, t.repeating).locator('[data-upcoming-gap]')).not.toContainText(
         'repeats',
       )
       await expect(row(page, t.plain).locator('[data-upcoming-gap]')).toContainText(
-        /Target \w{3} \w{3} \d+/,
+        'Target 10:00 AM',
       )
+      // All three are due tomorrow: in the Tomorrow section.
+      for (const id of Object.values(t)) {
+        await expect(
+          section
+            .locator('[data-upcoming-section="tomorrow"]')
+            .locator(`[data-segment-task="${id}"]`),
+        ).toBeVisible()
+      }
       // Every row has Today — the repeating one too since §6 (its occurrence
       // stays put; only the target moves) — plus circle and done.
       await expect(row(page, t.withDeadline).locator('[data-target-today]')).toHaveCount(1)

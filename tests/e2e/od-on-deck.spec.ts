@@ -327,7 +327,9 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
   }
 })
 
-test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', async ({ page }) => {
+test('an Upcoming deck row reads "On deck" in Tomorrow (the day goes without saying), and Today on it is a pick', async ({
+  page,
+}) => {
   const ids: number[] = []
   try {
     const id = await create(page, { title: uniqueTitle('OD upcoming') })
@@ -343,8 +345,14 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     )
     await page.goto('/reminders')
     const r = segRow(segment(page, 'upcoming'), id)
-    const day = DateTime.fromISO(calendarDay(1)).toFormat('ccc LLL d')
-    await expect(r.locator('[data-target-chip]')).toHaveText(`On deck ${day}`)
+    // On deck tomorrow: in Upcoming's Tomorrow section (2026-10-25), whose
+    // rows say no day — "On deck" (a Later row says "On deck Mon Oct 26").
+    await expect(
+      segment(page, 'upcoming')
+        .locator('[data-upcoming-section="tomorrow"]')
+        .locator(`[data-segment-task="${id}"]`),
+    ).toBeVisible()
+    await expect(r.locator('[data-target-chip]')).toHaveText('On deck')
     await expect(r.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     // An Upcoming row reads like every segment row (2026-10-21).
     expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
