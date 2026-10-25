@@ -17,7 +17,7 @@ import {
   upcomingLeadLine,
   upcomingLeadWords,
 } from '@/lib/editor-target-labels'
-import { openTaskLocalDay } from '@/lib/opentask-day'
+import { openTaskDayOf } from '@/lib/opentask-day'
 import { bulkEveryTimeGate, draftEnd, draftRule } from '@/lib/every-time'
 import type { StagedSchedule } from '@/hooks/useEveryTime'
 import type {
@@ -296,7 +296,7 @@ export function leadRowFor(s: {
     now,
   )
   if (upcoming) {
-    const today = openTaskLocalDay(now, s.timezone, s.dayStart).toFormat('yyyy-MM-dd')
+    const today = openTaskDayOf(now, s.timezone, s.dayStart)
     return {
       ...shared,
       form: 'upcoming',
