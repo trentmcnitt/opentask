@@ -29,7 +29,9 @@ import {
   type EveryTimeContext,
   type EveryTimeTask,
 } from '@/lib/every-time'
-import { deadlineRepeatLabel } from '@/lib/editor-target-labels'
+import { deadlineRepeatLabel, relativeDaysWords } from '@/lib/editor-target-labels'
+import { formatEditDescription } from '@/lib/field-labels'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TZ = 'America/Chicago'
 const at = (local: string) => DateTime.fromISO(local, { zone: TZ }).toUTC().toISO()!
@@ -120,7 +122,9 @@ describe('RT-WEB-02: the pick — default, wire, words', () => {
       'the day before, Evening',
     )
     expect(pickWords({ days: 1, time: '18:00', slot_id: null }, SLOTS)).toBe('the day before')
-    expect(pickWords({ days: 0, time: '06:30', slot_id: 11 }, SLOTS)).toBe('the same day, Morning')
+    expect(pickWords({ days: 0, time: '06:30', slot_id: 11 }, SLOTS)).toBe(
+      'the deadline day, Morning',
+    )
     // A collaborator sees no periods: the owner's link reads as its time.
     expect(pickWords({ days: 3, time: '20:30', slot_id: 13 }, [])).toBe('3 days before')
   })
@@ -296,6 +300,25 @@ describe('RT-WEB-04: every-time mode keeps one shape — the offsets and the lin
     })
     // No deadline staged: the pick is not carried.
     expect(createModeTask({ ...staged, deadlineAt: null }).target_days_before).toBeNull()
+  })
+
+  test('0 days reads "the deadline day" everywhere (Trent, 2026-10-24)', () => {
+    expect(relativeDaysWords(0)).toBe('the deadline day')
+    expect(pickWords({ days: 0, time: '06:30', slot_id: null }, SLOTS)).toBe('the deadline day')
+    expect(
+      deadlineRepeatLabel({ ...LINKED_REPEAT, target_days_before: 0, target_time: '06:30' }),
+    ).toBe('target the deadline day at 6:30 AM')
+    // The activity / undo description.
+    expect(
+      formatEditDescription('Task', ['target_days_before', 'target_time'], {
+        beforeState: { id: 1, target_days_before: 1, target_time: '20:30' },
+        afterState: { id: 1, target_days_before: 0, target_time: '06:30' },
+        userTimezone: TZ,
+        isSnooze: false,
+        dayStart: CALENDAR_DAY_START,
+        targetSlotLabel: 'Morning',
+      }),
+    ).toBe('Target the deadline day at Morning (6:30 AM) — "Task"')
   })
 
   test("the repeat's Deadline line names the period it follows", () => {

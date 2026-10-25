@@ -208,7 +208,7 @@ export function deadlineDayPick(
  * A DEADLINE-ANCHORED repeat's target, in words, on its deadline line
  * (2026-10-21): the deadline IS the schedule, so the line says where the
  * target sits before it — "target the day before at 6:00 PM", "target 3 days
- * before at 9:00 AM", "target the same day at 12:00 PM". Null for anything
+ * before at 9:00 AM", "target the deadline day at 12:00 PM". Null for anything
  * else: a target-anchored repeat has no deadline, a one-off no rule.
  */
 export function deadlineRepeatLabel(
@@ -235,7 +235,7 @@ export function deadlineRepeatLabel(
 }
 
 /**
- * A relative target in words (2026-10-22, editor plan §2.1): "the same day at
+ * A relative target in words (2026-10-22, editor plan §2.1): "the deadline day at
  * 12:00 PM", "the day before at 6:00 PM", "3 days before at 9:00 AM". Shared
  * by the deadline line (`deadlineRepeatLabel`) and every-time mode's Target
  * row, so both say it the same way.
@@ -245,9 +245,9 @@ export function relativeTargetWords(daysBefore: number, time: string): string {
   return `${relativeDaysWords(daysBefore)} at ${at}`
 }
 
-/** "the same day", "the day before", "3 days before" — the days-before select's choices. */
+/** "the deadline day", "the day before", "3 days before" — the days-before select's choices. */
 export function relativeDaysWords(daysBefore: number): string {
-  if (daysBefore === 0) return 'the same day'
+  if (daysBefore === 0) return 'the deadline day'
   return daysBefore === 1 ? 'the day before' : `${daysBefore} days before`
 }
 
