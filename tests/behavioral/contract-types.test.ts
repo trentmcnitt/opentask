@@ -366,41 +366,6 @@ describe('contract fixtures match the TS types', () => {
     expect(seg.waiting).toBe(2)
   })
 
-  test('Upcoming sections (2026-10-25): every Upcoming row carries upcoming_section, Tomorrow first', () => {
-    // One `upcoming` kind (a shipped native build would list a new kind as a
-    // page of its own); each row says its section. No other kind carries it.
-    const captures = [
-      'reminders-upcoming',
-      'reminders-upcoming-sections',
-      'reminders-deck',
-      'reminders-queue',
-      'reminders-interval',
-      'reminders-deadlines',
-      'reminders-deadlines-plain',
-    ]
-    for (const name of captures) {
-      for (const seg of data(name).task_segments as Obj[]) {
-        const rows = seg.tasks as Obj[]
-        if (seg.horizon !== 'upcoming') {
-          for (const r of rows) expect(r.upcoming_section, `${name} ${seg.horizon}`).toBeUndefined()
-          continue
-        }
-        const sections = rows.map((r) => r.upcoming_section)
-        for (const v of sections) expect(['tomorrow', 'later'], name).toContain(v)
-        // Tomorrow's rows first.
-        expect(sections, name).toEqual(
-          [...sections].sort((a, b) => (a === b ? 0 : a === 'tomorrow' ? -1 : 1)),
-        )
-      }
-    }
-    const seg = (data('reminders-upcoming-sections').task_segments as Obj[]).find(
-      (s) => s.horizon === 'upcoming',
-    )!
-    const sections = (seg.tasks as Obj[]).map((r) => r.upcoming_section)
-    expect(sections).toContain('tomorrow')
-    expect(sections).toContain('later')
-  })
-
   test('target-today moves a repeating task too; skipped_recurring stays, always empty (§6)', () => {
     const d = data('task-segments-target-today-repeating')
     expect(d.affected).toBe(1)
@@ -462,6 +427,43 @@ describe('contract fixtures match the TS types', () => {
     // User B's seeded task (due tomorrow) and the one three days late; the
     // quotas and reminders are not counted.
     expect(counts).toEqual({ total: 2, overdue: 1, today: 0 })
+  })
+})
+
+describe('contract fixtures: Upcoming sections (2026-10-25)', () => {
+  test('Upcoming sections (2026-10-25): every Upcoming row carries upcoming_section, Tomorrow first', () => {
+    // One `upcoming` kind (a shipped native build would list a new kind as a
+    // page of its own); each row says its section. No other kind carries it.
+    const captures = [
+      'reminders-upcoming',
+      'reminders-upcoming-sections',
+      'reminders-deck',
+      'reminders-queue',
+      'reminders-interval',
+      'reminders-deadlines',
+      'reminders-deadlines-plain',
+    ]
+    for (const name of captures) {
+      for (const seg of data(name).task_segments as Obj[]) {
+        const rows = seg.tasks as Obj[]
+        if (seg.horizon !== 'upcoming') {
+          for (const r of rows) expect(r.upcoming_section, `${name} ${seg.horizon}`).toBeUndefined()
+          continue
+        }
+        const sections = rows.map((r) => r.upcoming_section)
+        for (const v of sections) expect(['tomorrow', 'later'], name).toContain(v)
+        // Tomorrow's rows first.
+        expect(sections, name).toEqual(
+          [...sections].sort((a, b) => (a === b ? 0 : a === 'tomorrow' ? -1 : 1)),
+        )
+      }
+    }
+    const seg = (data('reminders-upcoming-sections').task_segments as Obj[]).find(
+      (s) => s.horizon === 'upcoming',
+    )!
+    const sections = (seg.tasks as Obj[]).map((r) => r.upcoming_section)
+    expect(sections).toContain('tomorrow')
+    expect(sections).toContain('later')
   })
 })
 
