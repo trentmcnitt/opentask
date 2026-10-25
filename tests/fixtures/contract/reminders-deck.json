@@ -866,7 +866,8 @@
             "attempts_offer": null,
             "age_label": null,
             "segment_state": "waiting",
-            "recurring": false
+            "recurring": false,
+            "upcoming_section": "tomorrow"
           },
           {
             "id": 122,
@@ -946,7 +947,8 @@
             "attempts_offer": null,
             "age_label": null,
             "segment_state": "waiting",
-            "recurring": true
+            "recurring": true,
+            "upcoming_section": "tomorrow"
           },
           {
             "id": 111,
@@ -1026,7 +1028,8 @@
             "attempts_offer": null,
             "age_label": null,
             "segment_state": "waiting",
-            "recurring": false
+            "recurring": false,
+            "upcoming_section": "tomorrow"
           }
         ],
         "waiting": 3,

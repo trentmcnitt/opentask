@@ -173,6 +173,12 @@ const TASK: Record<keyof FormattedTask, Field> = {
   is_recurring: BOOL,
 }
 
+/**
+ * The keys a task segment row adds to a FormattedTask: its state, `recurring`
+ * and — Upcoming rows only (2026-10-25) — `upcoming_section`.
+ */
+const SEGMENT_ROW_EXTRAS = new Set(['segment_state', 'recurring', 'upcoming_section'])
+
 const TASK_COUNTS: Record<keyof TaskCounts, Field> = {
   total: INT,
   overdue: INT,
@@ -340,7 +346,7 @@ describe('contract fixtures match the TS types', () => {
         expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
         expect(typeof row.recurring).toBe('boolean')
         const task = Object.fromEntries(
-          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+          Object.entries(row).filter(([k]) => !SEGMENT_ROW_EXTRAS.has(k)),
         )
         expectShape(task, TASK, `segment task ${row.id}`)
       }
@@ -358,6 +364,41 @@ describe('contract fixtures match the TS types', () => {
     expect(rows[1].rrule).not.toBeNull()
     for (const r of rows) expect(r.segment_state).toBe('waiting')
     expect(seg.waiting).toBe(2)
+  })
+
+  test('Upcoming sections (2026-10-25): every Upcoming row carries upcoming_section, Tomorrow first', () => {
+    // One `upcoming` kind (a shipped native build would list a new kind as a
+    // page of its own); each row says its section. No other kind carries it.
+    const captures = [
+      'reminders-upcoming',
+      'reminders-upcoming-sections',
+      'reminders-deck',
+      'reminders-queue',
+      'reminders-interval',
+      'reminders-deadlines',
+      'reminders-deadlines-plain',
+    ]
+    for (const name of captures) {
+      for (const seg of data(name).task_segments as Obj[]) {
+        const rows = seg.tasks as Obj[]
+        if (seg.horizon !== 'upcoming') {
+          for (const r of rows) expect(r.upcoming_section, `${name} ${seg.horizon}`).toBeUndefined()
+          continue
+        }
+        const sections = rows.map((r) => r.upcoming_section)
+        for (const v of sections) expect(['tomorrow', 'later'], name).toContain(v)
+        // Tomorrow's rows first.
+        expect(sections, name).toEqual(
+          [...sections].sort((a, b) => (a === b ? 0 : a === 'tomorrow' ? -1 : 1)),
+        )
+      }
+    }
+    const seg = (data('reminders-upcoming-sections').task_segments as Obj[]).find(
+      (s) => s.horizon === 'upcoming',
+    )!
+    const sections = (seg.tasks as Obj[]).map((r) => r.upcoming_section)
+    expect(sections).toContain('tomorrow')
+    expect(sections).toContain('later')
   })
 
   test('target-today moves a repeating task too; skipped_recurring stays, always empty (§6)', () => {
@@ -447,7 +488,7 @@ describe('contract fixtures: the task queue (PR 3)', () => {
       for (const row of seg.tasks as Obj[]) {
         expect(['waiting', 'considered', 'deferred']).toContain(row.segment_state)
         const task = Object.fromEntries(
-          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+          Object.entries(row).filter(([k]) => !SEGMENT_ROW_EXTRAS.has(k)),
         )
         expectShape(task, TASK, `queue task ${row.id}`)
       }
@@ -514,7 +555,7 @@ describe('contract fixtures: on deck (2026-10-20)', () => {
     for (const seg of segs) {
       for (const row of seg.tasks as Obj[]) {
         const task = Object.fromEntries(
-          Object.entries(row).filter(([k]) => k !== 'segment_state' && k !== 'recurring'),
+          Object.entries(row).filter(([k]) => !SEGMENT_ROW_EXTRAS.has(k)),
         )
         expectShape(task, TASK, `deck fixture task ${row.id}`)
       }
@@ -544,7 +585,7 @@ describe('contract fixtures: the deadlines page (2026-10-22)', () => {
     }
     for (const seg of segs) {
       for (const row of seg.tasks as Obj[]) {
-        const extras = new Set(['segment_state', 'recurring', 'safety_net', 'seen'])
+        const extras = new Set([...SEGMENT_ROW_EXTRAS, 'safety_net', 'seen'])
         if (seg.horizon !== 'deadlines') {
           expect(row.safety_net, 'only deadlines rows carry safety_net').toBeUndefined()
         }
