@@ -280,6 +280,21 @@ For scenarios with 50+ tasks, evaluate these additional criteria:
 
 ---
 
+## Quota Enrichment Evaluation Criteria (`enrichment_quota`, 2026-10-24)
+
+The output is the stored PLAN, not the raw answer: `title`, `notes`, `priority`, `labels`, `rrule` (the bare period rule `FREQ=X[;INTERVAL=N]`, or null = the provisional weekly period stays), `progress_target`, `prompt_slot_label` (null = the user's default reminder period), `prompt_enabled`. `model_answer` is the raw answer, for context only.
+
+1. **Count** — the target comes only from occurrence words ("twice" = 2, "3x" = 3, "a couple" = 2); "every day" = 1 per day; nothing said = 1.
+2. **Period and interval** — "every other day" = `FREQ=DAILY;INTERVAL=2`, "once a fortnight" = `FREQ=WEEKLY;INTERVAL=2`, "quarterly" = `FREQ=MONTHLY;INTERVAL=3`. No period in the words → null (correct). A stated period past the cap (more than 30 days, 12 weeks, 12 months) → null (dropped by code; the model should still have written what was said).
+3. **Units (Trent, 10-22)** — a quota counts TIMES. A measured amount of one doing stays in the title with a count of 1 per period ("100 pushups a day" → "100 pushups", 1). Separate occasions are the count ("8 glasses of water a day" → 8). A target equal to the amount ("100", "20" for minutes) is a failure.
+4. **No task priming** — the model should not answer with a task rule (`model_answer.rrule` with BYDAY) or a due date. A fallback the code caught is a minor deduction, not a failure, when the stored plan is right.
+5. **Title** — the thing itself in the user's words, count/period/reminder words removed, no invented verb on a bare noun, everything else kept ("for the kids").
+6. **Reminder period** — only when the user said when; the time word maps to the user's window ("evening" = their Evening). Unsaid → null; a period picked from the topic is a failure. "Don't remind me" → `prompt_enabled` false.
+7. **Labels** — explicit only, at most one; none inferred from the topic.
+8. **Nothing lost** — named days and other details the title cannot carry go to notes.
+
+---
+
 ## Process Evaluation Criteria (2026-10-10)
 
 ### Project recommendations (`process_projects`)

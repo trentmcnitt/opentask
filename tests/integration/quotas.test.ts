@@ -384,6 +384,36 @@ describe('A quota needs a period', () => {
     }
   })
 
+  test('a quota from words with AI off is refused, saying to send rrule or turn AI on (2026-10-24)', async () => {
+    const res = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'eggs twice a week', is_tracked: true },
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/quota needs a period.*turn on AI enrichment/i)
+  })
+
+  test('wait: true with no enrichment to wait for answers at once, ai.status skipped (2026-10-24)', async () => {
+    const res = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: {
+        title: 'Lift',
+        is_tracked: true,
+        progress_target: 3,
+        rrule: 'FREQ=WEEKLY',
+        wait: true,
+      },
+    })
+    expect(res.status).toBe(201)
+    const { data } = await res.json()
+    expect(data).toMatchObject({ title: 'Lift', progress_target: 3, rrule: 'FREQ=WEEKLY' })
+    expect(data.ai).toEqual({ status: 'skipped', description: null })
+
+    // Without wait the response is as before: no `ai` field.
+    const plain = await create({ title: 'Plain wait probe' })
+    expect(plain).not.toHaveProperty('ai')
+  })
+
   test("PATCH /api/tasks/:id refuses clearing a quota's rule, and making a period-less quota", async () => {
     const quota = await create({ title: 'Period probe', progress_target: 3, rrule: 'FREQ=WEEKLY' })
     await expectPeriodRefusal(
