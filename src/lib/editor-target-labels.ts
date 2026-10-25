@@ -11,17 +11,24 @@ import { DateTime } from 'luxon'
 import {
   deadlineDay,
   deadlineDayTarget,
+  hasPickedTarget,
   leadFor,
+  localDay,
   occurrenceDates,
+  parseDeckDay,
   ruleWait,
   scheduleBase,
   targetMoved,
+  targetSetAtOf,
+  upcomingDays,
+  waitDays,
   type LeadFields,
   type TargetContext,
+  type UpcomingTaskFields,
 } from '@/lib/task-segments'
-import { DEADLINE_MORNING } from '@/lib/task-model-words'
+import { DEADLINE_MORNING, UPCOMING_SECTION_TITLES } from '@/lib/task-model-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
-import { addDays, calendarDateOf } from '@/lib/opentask-day'
+import { addDays, calendarDateOf, openTaskLocalDay } from '@/lib/opentask-day'
 import type { RepeatAnchor } from '@/types'
 
 /** The Lead line's facts (`leadLine`). */
@@ -162,6 +169,171 @@ export function leadLineWords(line: LeadLine, timezone: string, today: string): 
   const when =
     line.from === today ? 'from today' : line.from < today ? `since ${day}` : `from ${day}`
   return `On the deadlines page ${when} (${leadDaysWords(line.daysBefore)})`
+}
+
+// ===========================================================================
+// THE LEAD TIME ROW'S UPCOMING FORM (2026-10-25, the Upcoming split, PR B)
+// ===========================================================================
+
+/**
+ * The Lead time row's facts for a task with a TARGET or a DECK DAY
+ * (`upcomingLeadLine`): when it shows in Upcoming's two sections. Days are
+ * yyyy-MM-dd OpenTask days.
+ */
+export interface UpcomingLeadLine {
+  /** What the lead counts from: the target, or the deck day. */
+  anchor: 'target' | 'deck'
+  /** The Later day (`upcomingDays`), or null: none (a lead of 1, or a short wait). */
+  later: string | null
+  /** Local days from `later` to the anchor's day (null with no Later). */
+  laterDaysBefore: number | null
+  /** The Tomorrow day (the day before the anchor), or null: made today for tomorrow. */
+  tomorrow: string | null
+  /**
+   * The stepper's value: the EFFECTIVE lead — the Later day's distance from
+   * the anchor, or 1 (the day before) with no Later.
+   */
+  leadDays: number
+  /**
+   * An override longer than the wait allows (Q6): the Later day is clamped to
+   * the day after the target was set, "as early as it can be".
+   */
+  clamped: boolean
+  /** The user's override (`lead_days`), staged or stored; null = the default table. */
+  override: number | null
+  /** The stepper's top: 90, or on a repeat one less than its rule's wait (`leadDaysProblem`). */
+  max: number
+  /** A staged anchor, deadline or lead produced it (drawn blue): a preview of Save. */
+  staged: boolean
+}
+
+/** The fields `upcomingLeadLine` reads. */
+export type UpcomingLeadTask = Pick<
+  UpcomingTaskFields,
+  | 'due_at'
+  | 'deadline_at'
+  | 'target_auto'
+  | 'rrule'
+  | 'target_set_at'
+  | 'created_at'
+  | 'last_completed_at'
+  | 'on_deck_day'
+  | 'lead_days'
+> & {
+  occurrence_at?: string | null
+  recurrence_mode?: 'from_due' | 'from_completion' | null
+  anchor_time?: string | null
+}
+
+/**
+ * THE EDITOR'S LEAD TIME ROW, UPCOMING FORM (2026-10-25; plan
+ * `plan-upcoming-split-1024.md` § Web): for ANY task with a target the user
+ * picked (a relative target and a repeat's occurrence count) or a future
+ * deck day — whatever the task-queue switch says (decision 10) — the two
+ * Upcoming days the rule gives it (`upcomingDays`, read here, never
+ * restated), with the lead override `lead_days` as a stepper.
+ *
+ * `staged.anchor`: the staged target (`{ target }`, already capped at the
+ * deadline) or deck day (`{ deck }`); undefined → the stored one; null → none
+ * (the target is staged for removal). A staged anchor, or `staged.restamp`
+ * (a staged deadline — it moves or may move the target), means Save will
+ * restamp `target_set_at`, so the wait counts from TODAY; a lead change alone
+ * never restamps (decision 12), so it counts from the stored set day.
+ *
+ * Null when there is nothing to say: no anchor, or one on or before today
+ * (the task is overdue, targeted today or on deck today — not in Upcoming).
+ */
+export function upcomingLeadLine(
+  task: UpcomingLeadTask,
+  staged: {
+    anchor: { target: string } | { deck: string } | null | undefined
+    restamp: boolean
+    leadDays: number | null | undefined
+  },
+  timezone: string,
+  dayStart: string,
+  now: Date = new Date(),
+): UpcomingLeadLine | null {
+  const anchor = staged.anchor === undefined ? storedUpcomingAnchor(task) : staged.anchor
+  if (!anchor) return null
+  const today = openTaskLocalDay(now, timezone, dayStart)
+  const isDeck = 'deck' in anchor
+  const day = isDeck
+    ? parseDeckDay(anchor.deck, timezone)
+    : localDay(anchor.target, timezone, dayStart)
+  if (!day || day <= today) return null
+  const override = staged.leadDays !== undefined ? staged.leadDays : (task.lead_days ?? null)
+  // A staged anchor restamps on Save as surely as a staged deadline does.
+  const setDay =
+    staged.restamp || staged.anchor !== undefined
+      ? today
+      : localDay(targetSetAtOf(task as UpcomingTaskFields), timezone, dayStart)
+  const { later, tomorrow } = upcomingDays(day, setDay, override)
+  const laterDaysBefore = later ? waitDays(day, later) : null
+  const shown = laterDaysBefore ?? 1
+  const max = upcomingLeadMax(task, isDeck ? null : anchor.target, timezone)
+  const iso = (d: DateTime | null) => (d ? d.toFormat('yyyy-MM-dd') : null)
+  const leadStagedNow =
+    staged.leadDays !== undefined && staged.leadDays !== (task.lead_days ?? null)
+  return {
+    anchor: isDeck ? 'deck' : 'target',
+    later: iso(later),
+    laterDaysBefore,
+    tomorrow: iso(tomorrow),
+    leadDays: Math.min(max, shown),
+    clamped: override !== null && override > shown,
+    override,
+    max,
+    staged: staged.anchor !== undefined || staged.restamp || leadStagedNow,
+  }
+}
+
+/** The task's stored Upcoming anchor: a deck day, else a target the user picked. */
+function storedUpcomingAnchor(
+  task: UpcomingLeadTask,
+): { target: string } | { deck: string } | null {
+  if (task.on_deck_day) return { deck: task.on_deck_day }
+  return hasPickedTarget(task) ? { target: task.due_at! } : null
+}
+
+/** The stepper's top: 90, or a repeat's rule's wait − 1 (the server's `leadDaysProblem`). */
+function upcomingLeadMax(task: UpcomingLeadTask, target: string | null, timezone: string): number {
+  const first = task.occurrence_at ?? target ?? task.due_at
+  if (!task.rrule || !first) return LEAD_DAYS_MAX
+  const wait = ruleWait(
+    {
+      rrule: task.rrule,
+      recurrence_mode: task.recurrence_mode ?? 'from_due',
+      anchor_time: task.anchor_time ?? null,
+    },
+    first,
+    timezone,
+  )
+  return Math.max(LEAD_DAYS_MIN, Math.min(LEAD_DAYS_MAX, wait - 1))
+}
+
+/**
+ * The row's words (Trent's, plan § Web):
+ *   "Later on Tue Oct 20 (3 days before) · Tomorrow on Thu Oct 22"
+ *   "Later since Tue Oct 20 (3 days before) · Tomorrow on Thu Oct 22" (the Later day has passed)
+ *   "Tomorrow on Thu Oct 22 (the day before)"                          (no Later)
+ *   "Not in Upcoming (the target is tomorrow)"                         (made today for tomorrow)
+ *   "Not in Upcoming (on deck tomorrow)"                               (the same, a deck)
+ * The clamp's "(as early as it can be)" is the stepper's, as on the
+ * deadline form.
+ */
+export function upcomingLeadWords(line: UpcomingLeadLine, timezone: string, today: string): string {
+  const fmt = (day: string) => DateTime.fromISO(day, { zone: timezone }).toFormat('ccc LLL d')
+  if (!line.tomorrow) {
+    return line.anchor === 'deck'
+      ? 'Not in Upcoming (on deck tomorrow)'
+      : 'Not in Upcoming (the target is tomorrow)'
+  }
+  const tomorrow = `${UPCOMING_SECTION_TITLES.tomorrow} on ${fmt(line.tomorrow)}`
+  if (!line.later || line.laterDaysBefore === null) return `${tomorrow} (the day before)`
+  const when = line.later < today ? 'since' : 'on'
+  const later = `${UPCOMING_SECTION_TITLES.later} ${when} ${fmt(line.later)}`
+  return `${later} (${leadDaysWords(line.laterDaysBefore)}) · ${tomorrow}`
 }
 
 /**
