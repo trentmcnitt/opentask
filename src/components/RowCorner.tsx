@@ -92,6 +92,29 @@ export function PriorityTabMark({
 }
 
 /**
+ * "Show right border" on a row with no border of its own (the reminder and
+ * quota prompt rows): a 3px bar on the row's right edge in the priority's
+ * colour — the mirror of the prompt row's label-colour stripe on the left,
+ * same width, inset and rounding, so the two read as one family and never
+ * meet. The row must be `relative`. `panel`: the dashboard card's compact
+ * rows, whose stripes sit out in the list's gutter.
+ */
+export function PriorityEdgeBar({ bar, panel = false }: { bar: string | null; panel?: boolean }) {
+  if (!bar) return null
+  return (
+    <span
+      aria-hidden="true"
+      data-priority-edge
+      className={cn(
+        'absolute w-[3px] rounded-full',
+        panel ? 'inset-y-1.5 -right-1.5' : 'inset-y-2.5 right-0',
+        bar,
+      )}
+    />
+  )
+}
+
+/**
  * The tab inline after a title (reminder, prompt and quota-chip rows), or
  * nothing. Spaced from the title by half its text size, so it sits the same
  * distance after a 16px /reminders title as after a 13px chip's.

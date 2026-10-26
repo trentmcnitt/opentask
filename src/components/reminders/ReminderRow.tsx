@@ -7,7 +7,7 @@ import { cadenceMark } from '@/lib/reminder-rule'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import type { QuotaPrompt } from '@/lib/quota-prompts'
 import { NotesMarker } from '@/components/NotesMarker'
-import { InlinePriorityTab } from '@/components/RowCorner'
+import { InlinePriorityTab, PriorityEdgeBar } from '@/components/RowCorner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
@@ -66,24 +66,16 @@ function reminderRowClasses({
   selected,
   highlighted,
   aiProcessing,
-  priorityBorder,
 }: {
   completing: boolean
   selected: boolean
   highlighted: boolean
   aiProcessing: boolean
-  /** "Show right border" (`priorityRowStyles(...).border`), or null. */
-  priorityBorder: string | null
 }): string {
   return cn(
     // The border is always there, transparent, so the processing pulse has
     // something to color without the row shifting by a pixel.
-    'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
-    // Priority Display's "Show right border" — the task row's 4px right
-    // border, in the same colours, with the same give-back (8px - 3px = 5px)
-    // so the row's text keeps its width. It is the only border these rows
-    // draw: the left edge is free (a quota prompt's label stripe sits there).
-    priorityBorder && cn('border-r-4 pr-[5px]', priorityBorder),
+    'group relative flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
     'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
     selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
     completing && 'animate-reminder-leaving pointer-events-none',
@@ -401,10 +393,11 @@ export function ReminderRow({
         selected,
         highlighted,
         aiProcessing,
-        priorityBorder: pri.border,
       })}
       data-ai-state={aiProcessing ? 'processing' : aiFailed ? 'failed' : undefined}
     >
+      {/* "Show right border": a bar on the right edge (`PriorityEdgeBar`). */}
+      <PriorityEdgeBar bar={pri.bar} />
       <ReminderRowMarker
         reminder={reminder}
         completing={completing}

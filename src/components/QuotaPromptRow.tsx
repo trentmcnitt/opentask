@@ -10,7 +10,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { NotesMarker } from '@/components/NotesMarker'
-import { InlinePriorityTab } from '@/components/RowCorner'
+import { InlinePriorityTab, PriorityEdgeBar } from '@/components/RowCorner'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import type { PriorityRowStyles } from '@/lib/priority-display'
 import { QuotaSegments } from '@/components/QuotaSegments'
@@ -213,7 +213,6 @@ export function QuotaPromptRow({
         hiddenWhenNarrow,
         completing,
         highlighted: !!highlighted,
-        priorityBorder: pri.border,
       })}
     >
       {/* The label-colour stripe, the quota chip's own (3px, green never).
@@ -227,6 +226,8 @@ export function QuotaPromptRow({
           trackStripeClass(prompt.stripe_color),
         )}
       />
+      {/* "Show right border": the stripe's mirror on the right edge. */}
+      <PriorityEdgeBar bar={pri.bar} panel={panel} />
       {/* The bubble's anchor: an inert box over the whole row. The wrapper
           stops the bubble's own events (it renders in a portal, but React
           still bubbles them through here) from reaching the row, where a
@@ -600,15 +601,12 @@ function promptRowClasses({
   hiddenWhenNarrow,
   completing,
   highlighted,
-  priorityBorder,
 }: {
   panel: boolean
   selected: boolean
   hiddenWhenNarrow: boolean
   completing: boolean
   highlighted: boolean
-  /** "Show right border" (`priorityRowStyles(...).border`), or null. */
-  priorityBorder: string | null
 }): string {
   const hover = panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'
   return cn(
@@ -617,10 +615,6 @@ function promptRowClasses({
     panel ? 'gap-2.5 px-1 py-1.5 transition-colors' : 'gap-3 px-2 py-2.5',
     selected ? 'ring-ring bg-accent ring-2' : hover,
     hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-    // "Show right border": the reminder row's (`reminderRowClasses`), on the
-    // RIGHT — the left edge is the label-colour stripe's, so the two never
-    // meet. The give-back keeps the text's width (px-2: 5px; px-1: 1px).
-    priorityBorder && cn('border-r-4', panel ? 'pr-px' : 'pr-[5px]', priorityBorder),
     completing && 'animate-reminder-leaving pointer-events-none',
     !completing && highlighted && 'animate-row-highlight',
   )

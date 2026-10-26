@@ -17,7 +17,7 @@ import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import { NotesMarker } from '@/components/NotesMarker'
-import { InlinePriorityTab } from '@/components/RowCorner'
+import { InlinePriorityTab, PriorityEdgeBar } from '@/components/RowCorner'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { DashboardTasksPanel } from '@/components/DashboardTasksPanel'
@@ -553,10 +553,8 @@ function PanelRow({
       <li
         data-reminder-id={reminder.id}
         className={cn(
-          'hover:bg-foreground/5 cursor-pointer items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5 transition-colors select-none',
+          'hover:bg-foreground/5 relative cursor-pointer items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5 transition-colors select-none',
           hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-          // "Show right border": 4px, with the give-back (4px - 3px = 1px).
-          pri.border && cn('border-r-4 pr-px', pri.border),
         )}
         onClick={(e) => {
           if (press.didFire()) {
@@ -572,6 +570,8 @@ function PanelRow({
         onPointerLeave={press.onPointerLeave}
         onPointerCancel={press.onPointerUp}
       >
+        {/* "Show right border": a bar on the right edge (`PriorityEdgeBar`). */}
+        <PriorityEdgeBar bar={pri.bar} panel />
         <button
           type="button"
           onClick={onComplete}
