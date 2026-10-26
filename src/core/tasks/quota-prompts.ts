@@ -67,6 +67,7 @@ import { listTimeSlots } from '@/core/time-slots'
 import { getLabelColor } from '@/lib/label-colors'
 import {
   assignDailyNumbers,
+  comparePrompts,
   dayStateFor,
   isDailyQuota,
   promptDate,
@@ -235,17 +236,10 @@ export function getQuotaPromptsBySlot(
     })
   }
 
-  // Frozen alphabetical order, the Quotas surface's own (`trackedItems`), so
-  // acting on one never reorders the rest under the finger.
-  for (const [slotId, prompts] of bySlot) {
-    bySlot.set(
-      slotId,
-      prompts.sort(
-        (a, b) =>
-          a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
-          a.task_id - b.task_id,
-      ),
-    )
-  }
+  // Priority first, Urgent to None, like the period's reminders (Trent,
+  // 2026-10-26), then title, then id. Frozen: no action on a prompt changes
+  // any of the three, so acting on one never reorders the rest under the
+  // finger. See `comparePrompts`.
+  for (const [slotId, prompts] of bySlot) bySlot.set(slotId, prompts.sort(comparePrompts))
   return bySlot
 }

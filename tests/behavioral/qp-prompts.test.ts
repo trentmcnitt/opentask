@@ -305,6 +305,34 @@ describe('Quota prompts — which quotas prompt', () => {
     expect(flags).toEqual({ Cook: true, Stretch: false, Read: false })
   })
 
+  test('QP-085: a period lists its prompts Urgent→None, alphabetical within a priority, and acting on one never reorders the rest', () => {
+    // Titles chosen so alphabetical order is the reverse of priority order.
+    quota('Apple', 'FREQ=WEEKLY', 3) // None
+    quota('Zebra', 'FREQ=WEEKLY', 3, { priority: 4 }) // Urgent
+    quota('Mango', 'FREQ=WEEKLY', 3, { priority: 3 }) // High
+    quota('Banana', 'FREQ=WEEKLY', 3, { priority: 4 }) // Urgent, before Zebra
+    const order = () => prompts().map((p) => [p.slot, p.title, p.priority])
+    const expected = [
+      ['Early morning', 'Banana', 4],
+      ['Early morning', 'Zebra', 4],
+      ['Early morning', 'Mango', 3],
+      ['Early morning', 'Apple', 0],
+    ]
+    expect(order()).toEqual(expected)
+
+    // Considering one, a did-it on another and a +1 on a third leave every
+    // row where it was: none of them touches priority, title or id.
+    const byTitle = (title: string) => prompts().find((p) => p.title === title)!
+    act(byTitle('Zebra').prompt_key, false)
+    expect(byTitle('Zebra').considered).toBe(true)
+    expect(order()).toEqual(expected)
+    act(byTitle('Apple').prompt_key, true)
+    expect(byTitle('Apple').done).toBe(true)
+    expect(order()).toEqual(expected)
+    incrementProgress({ userId: TEST_USER_ID, taskId: byTitle('Mango').task_id })
+    expect(order()).toEqual(expected)
+  })
+
   test("QP-022: at 00:02, before the cron, yesterday's met daily reads 0 and is not done", () => {
     const q = quota('Daily Stretch', 'FREQ=DAILY', 1)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id }) // anchors + met Thursday
