@@ -32,6 +32,7 @@
 
 import { DateTime } from 'luxon'
 import { ValidationError } from '@/core/errors'
+import { openTaskLocalDay } from '@/lib/opentask-day'
 import {
   computeFirstOccurrence,
   ensureRuleTime,
@@ -242,6 +243,8 @@ interface PlanContext extends RowKind {
   timezone: string
   morningTime: string
   now: Date
+  /** The user's day boundary (`dayBoundaryForUser` / `useDayStart`): a new rule's day 0. */
+  dayStart: string
   /**
    * The deadlines page (task-queue switch on, 2026-10-22): no default
    * relative target (L1), and `target_at: null` removes THIS occurrence's
@@ -453,6 +456,7 @@ function occurrenceFor(
     formatAnchorTime(hour, minute),
     ctx.timezone,
     ctx.now,
+    ctx.dayStart,
   ).toISOString()
 }
 
@@ -622,6 +626,8 @@ export function repeatEndProblem(
   check: RepeatEndCheck,
   timezone: string,
   now: Date,
+  /** The user's day boundary: "today or later" is the OpenTask day's. */
+  dayStart: string,
 ): RepeatEndProblem | null {
   const { count, until } = check
   if (count !== null && until !== null) return 'both_ends'
@@ -629,7 +635,7 @@ export function repeatEndProblem(
   if (!check.hasRule) return 'ends_need_rule'
   if (check.isReminder || check.isTracked) return 'ends_kind'
   if (count !== null) return check.countWritten ? countProblem(count, check.used) : null
-  return untilProblem(until!, check, timezone, now)
+  return untilProblem(until!, check, timezone, now, dayStart)
 }
 
 /** A count written: 1..999, and more than the occurrences already used (A7). */
@@ -638,17 +644,22 @@ function countProblem(count: number, used: number): RepeatEndProblem | null {
   return count <= used ? 'count_spent' : null
 }
 
-/** A date end: a real day, today or later, not too far; not before the occurrence. */
+/**
+ * A date end: a real day, today or later, not too far; not before the
+ * occurrence. "Today" is the OpenTask day ("OpenTask day everywhere" part 2):
+ * at 00:30 with a 3:00 AM start a repeat can still end on the day before.
+ */
 function untilProblem(
   until: string,
   check: RepeatEndCheck,
   timezone: string,
   now: Date,
+  dayStart: string,
 ): RepeatEndProblem | null {
   if (check.untilWritten) {
     const day = parseLocalDay(until, timezone)
     if (!day) return 'until_invalid'
-    const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+    const today = openTaskLocalDay(now, timezone, dayStart)
     if (day < today) return 'until_past'
     if (day > today.plus({ years: MAX_REPEAT_UNTIL_YEARS })) return 'until_too_far'
   }

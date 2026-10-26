@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useDayStart } from '@/components/PreferencesProvider'
+import { openTaskDateLabel } from '@/lib/format-date'
 import { useRequireSession } from '@/hooks/useRequireSession'
 import { PageLoading } from '@/components/PageLoading'
 import type { Project } from '@/types'
@@ -16,6 +18,8 @@ interface ArchivedTask {
 export default function ArchivePage() {
   const { ready } = useRequireSession()
   const timezone = useTimezone()
+  // A date alone is the OpenTask date (History's day): 00:30 is the day before's.
+  const dayStart = useDayStart()
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -124,11 +128,7 @@ export default function ArchivePage() {
                     <p className="text-xs text-zinc-400">
                       {projectName && <span>{projectName} · </span>}
                       {task.done_at
-                        ? `Completed ${new Date(task.done_at).toLocaleDateString('en-US', {
-                            timeZone: timezone,
-                            month: 'short',
-                            day: 'numeric',
-                          })}`
+                        ? `Completed ${openTaskDateLabel(task.done_at, timezone, dayStart)}`
                         : 'Completed'}
                     </p>
                   </div>

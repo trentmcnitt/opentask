@@ -401,7 +401,7 @@ describe('TQ-D: the web reads the same day (pure)', () => {
     ]
     expect(naturalSlotIndex(groups, tz, t0030, '03:00')).toBe(2) // the evening
     expect(naturalSlotIndex(groups, tz, local('2026-01-16T01:30'), '03:00')).toBe(0) // late night
-    expect(naturalSlotIndex(groups, tz, t0030)).toBe(0) // midnight: the 1:00 one ahead → first
+    expect(naturalSlotIndex(groups, tz, t0030, CALENDAR_DAY_START)).toBe(0) // midnight: the 1:00 one ahead → first
     expect(summarizeReminders(groups, tz, t0030, '03:00').waitingSoFar).toBe(1)
     expect(summarizeReminders(groups, tz, t0030, CALENDAR_DAY_START).waitingSoFar).toBe(0)
   })

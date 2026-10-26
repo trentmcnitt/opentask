@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useTimezone } from '@/hooks/useTimezone'
-import { formatLastLogged } from '@/lib/format-date'
+import { formatLastLogged, openTaskDateLabel } from '@/lib/format-date'
 import { cn } from '@/lib/utils'
 import type { TrackState } from '@/lib/track'
 import type { QuotaStats } from '@/core/tasks/quotas'
@@ -84,7 +84,7 @@ export function QuotaRecord({
       </div>
       <div>
         <dt className="text-muted-foreground">Tracking since</dt>
-        <dd>{formatDay(task.created_at)}</dd>
+        <dd>{openTaskDateLabel(task.created_at, timezone, dayStart, { year: true })}</dd>
       </div>
       {/* When the last tap that still stands was logged (2026-10-16) — the
           server's `last_logged_at`, which skips a tap that was undone or
@@ -119,11 +119,4 @@ function useQuotaStats(taskId: number): QuotaStats | null | undefined {
     }
   }, [taskId])
   return stats?.id === taskId ? stats.data : undefined
-}
-
-/** "Mar 4, 2026" — the day it was made. */
-function formatDay(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }

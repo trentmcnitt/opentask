@@ -394,6 +394,9 @@ function DeckDatePicker({
             }}
             defaultMonth={month}
             disabled={disabled}
+            // The "today" ring is the OpenTask day, not the browser's calendar
+            // day: at 00:30 with a 3:00 AM start, still yesterday's date.
+            today={toLocal(today)}
           />
         </div>
         <Button

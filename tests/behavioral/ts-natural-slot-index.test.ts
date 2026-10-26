@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { naturalSlotIndex, type SlotIndexed, type TimeSlot } from '@/lib/time-slot-assign'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 /**
  * `naturalSlotIndex` picks the GROUP index the day is naturally in right now —
@@ -29,35 +30,50 @@ const CHICAGO = 'America/Chicago'
 describe('naturalSlotIndex', () => {
   test('NSI-001: mid-window picks the group whose slot started most recently', () => {
     // 10:15 AM Chicago
-    expect(naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-04T15:15:00Z'))).toBe(1) // Morning
+    expect(
+      naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-04T15:15:00Z'), CALENDAR_DAY_START),
+    ).toBe(1) // Morning
   })
 
   test('NSI-002: exactly at a boundary belongs to the slot that starts then', () => {
     // 12:00 PM Chicago
-    expect(naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-04T17:00:00Z'))).toBe(2) // Midday
+    expect(
+      naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-04T17:00:00Z'), CALENDAR_DAY_START),
+    ).toBe(2) // Midday
   })
 
   test('NSI-003: before the first boundary falls back to the first slotted group, never the trailing un-slotted one', () => {
     // 6:30 AM Chicago — before Early morning starts
-    expect(naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-04T11:30:00Z'))).toBe(0)
+    expect(
+      naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-04T11:30:00Z'), CALENDAR_DAY_START),
+    ).toBe(0)
   })
 
   test('NSI-004: late night stays in the last slot of the day', () => {
     // 11:45 PM Chicago
-    expect(naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-05T04:45:00Z'))).toBe(4) // Evening
+    expect(
+      naturalSlotIndex(GROUPS, CHICAGO, new Date('2026-09-05T04:45:00Z'), CALENDAR_DAY_START),
+    ).toBe(4) // Evening
   })
 
   test('NSI-005: the timezone decides, not the machine clock', () => {
     const at = new Date('2026-09-04T15:15:00Z') // 10:15 Chicago, 16:15 London
-    expect(naturalSlotIndex(GROUPS, 'Europe/London', at)).toBe(3) // Afternoon
-    expect(naturalSlotIndex(GROUPS, CHICAGO, at)).toBe(1) // Morning
+    expect(naturalSlotIndex(GROUPS, 'Europe/London', at, CALENDAR_DAY_START)).toBe(3) // Afternoon
+    expect(naturalSlotIndex(GROUPS, CHICAGO, at, CALENDAR_DAY_START)).toBe(1) // Morning
   })
 
   test('NSI-006: only the un-slotted group exists — nothing slotted to fall back to', () => {
-    expect(naturalSlotIndex([{ slot: null }], CHICAGO, new Date('2026-09-04T11:30:00Z'))).toBe(0)
+    expect(
+      naturalSlotIndex(
+        [{ slot: null }],
+        CHICAGO,
+        new Date('2026-09-04T11:30:00Z'),
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(0)
   })
 
   test('NSI-007: no groups at all yields 0', () => {
-    expect(naturalSlotIndex([], CHICAGO)).toBe(0)
+    expect(naturalSlotIndex([], CHICAGO, new Date(), CALENDAR_DAY_START)).toBe(0)
   })
 })

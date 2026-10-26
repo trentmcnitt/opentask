@@ -157,7 +157,7 @@ export function SnoozeMenu({
   slotOptions.sort((a, b) => a.until.localeCompare(b.until))
   const [nextPeriod, ...laterSlots] = slotOptions
   const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
-  const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now)
+  const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now, dayStart)
   const resetLabel = onRemoveTarget && targetReset ? REMOVE_TARGET_LABEL : null
   const options = [
     ...(nextPeriod

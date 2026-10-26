@@ -1226,7 +1226,7 @@ export function QuickActionPanel({
     relativeBaseRef.current = relativeAt
   })
   const derivedTarget = deadlineAnchored
-    ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime })
+    ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime, dayStart })
     : null
   const targetValue = targetValueFor({
     timezone,

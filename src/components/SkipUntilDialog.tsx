@@ -13,7 +13,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { formatDateTime } from '@/lib/format-date'
-import { occurrenceTarget } from '@/lib/task-segments'
+import { occurrenceTarget, skipUntilFirstDay } from '@/lib/task-segments'
+import { useDayStart } from '@/components/PreferencesProvider'
 import { taskWord } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -55,7 +56,10 @@ export function SkipUntilDialog({
   const [picked, setPicked] = useState<Date | undefined>(undefined)
   const [busy, setBusy] = useState(false)
 
-  const tomorrow = DateTime.now().setZone(timezone).plus({ days: 1 })
+  const dayStart = useDayStart()
+  // The first pickable day: the OpenTask day after today's (`skipUntilFirstDay`,
+  // the server's floor too) — at 00:30 with a 3:00 AM start, the calendar today.
+  const tomorrow = DateTime.fromISO(skipUntilFirstDay(timezone, new Date(), dayStart))
   const firstDay = new Date(tomorrow.year, tomorrow.month - 1, tomorrow.day)
   const pickedDay = picked
     ? DateTime.fromObject({

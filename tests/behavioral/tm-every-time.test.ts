@@ -54,11 +54,17 @@ import {
 } from '@/lib/every-time'
 import { RELATIVE_TARGET_MESSAGES } from '@/lib/task-segments'
 import { ruleDraftable } from '@/lib/rrule-draft'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TZ = 'America/Chicago'
 /** Thu Oct 22 2026, 10:00 AM Chicago (CDT). */
 const NOW = new Date('2026-10-22T15:00:00Z')
-const ctx: EveryTimeContext = { timezone: TZ, morningTime: '09:00', now: NOW }
+const ctx: EveryTimeContext = {
+  timezone: TZ,
+  morningTime: '09:00',
+  now: NOW,
+  dayStart: CALENDAR_DAY_START,
+}
 
 const at = (local: string) => DateTime.fromISO(local, { zone: TZ }).toUTC().toISO()!
 

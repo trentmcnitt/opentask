@@ -28,7 +28,7 @@ import {
 } from '@/lib/task-segments'
 import { DEADLINE_MORNING, UPCOMING_SECTION_TITLES } from '@/lib/task-model-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
-import { addDays, calendarDateOf, openTaskLocalDay } from '@/lib/opentask-day'
+import { addDays, openTaskDayOf, openTaskLocalDay } from '@/lib/opentask-day'
 import type { RepeatAnchor } from '@/types'
 
 /** The Lead line's facts (`leadLine`). */
@@ -355,16 +355,19 @@ export function upcomingLeadWords(line: UpcomingLeadLine, timezone: string, toda
 export function deadlineDayPick(
   deadlineAt: string | null | undefined,
   ctx: TargetContext,
-  now: Date = new Date(),
+  now: Date,
+  /** The user's day boundary (`useDayStart`): "today or tomorrow" are OpenTask days. */
+  dayStart: string,
 ): { label: string; at: string } | null {
   // Never once the deadline has passed (Trent's ruling, 2026-10-12).
   if (!deadlineAt || Date.parse(deadlineAt) <= now.getTime()) return null
-  const at = deadlineDayTarget(deadlineAt, ctx)
+  const at = deadlineDayTarget(deadlineAt, ctx, dayStart)
   if (Date.parse(at) <= now.getTime()) return null
   const target = DateTime.fromISO(at, { zone: 'utc' }).setZone(ctx.timezone)
-  // Calendar days (the deadline's own day, not the OpenTask day).
-  const today = calendarDateOf(now, ctx.timezone)
-  const day = calendarDateOf(new Date(at), ctx.timezone)
+  // OpenTask days (part 2, 2026-10-26): at 00:30 Monday with a 3:00 AM start
+  // "tomorrow" is Monday, as at 23:30 Sunday.
+  const today = openTaskDayOf(now, ctx.timezone, dayStart)
+  const day = openTaskDayOf(new Date(at), ctx.timezone, dayStart)
   const near = day === today || day === addDays(today, 1)
   const when = target.toFormat(near ? 'h:mm a' : 'ccc h:mm a')
   // The deadline itself (earlier than the morning), unless the two coincide.

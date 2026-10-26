@@ -17,11 +17,18 @@ import { computeFirstOccurrence } from '@/core/recurrence/compute-next'
  *
  * @param rruleStr The RRULE string (e.g., "FREQ=DAILY;BYHOUR=9;BYMINUTE=0")
  * @param timezone The user's IANA timezone (e.g., "America/Chicago")
+ * @param dayStart The user's day boundary
  * @returns ISO string of the next occurrence in `timezone`, or null for an RRULE the engine rejects
  */
-export function computeRecurrencePreview(rruleStr: string, timezone: string): string | null {
+export function computeRecurrencePreview(
+  rruleStr: string,
+  timezone: string,
+  /** The user's day boundary (`useDayStart`): a floating rule's day 0 is the OpenTask day. */
+  dayStart: string,
+  now: Date = new Date(),
+): string | null {
   try {
-    const next = computeFirstOccurrence(rruleStr, null, timezone)
+    const next = computeFirstOccurrence(rruleStr, null, timezone, now, dayStart)
     return DateTime.fromJSDate(next).setZone(timezone).toISO()
   } catch {
     // Invalid rrule - don't show preview

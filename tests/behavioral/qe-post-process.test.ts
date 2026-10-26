@@ -18,6 +18,7 @@ import {
 import { postProcessTaskEnrichment, sanitizeReminderEnrichment } from '@/core/ai/enrichment'
 import { DEFAULT_TIME_SLOTS, type TimeSlot } from '@/lib/time-slot-assign'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const SLOTS: TimeSlot[] = DEFAULT_TIME_SLOTS.map((slot, index) => ({
   id: index + 1,
@@ -252,6 +253,7 @@ describe('the task and reminder paths never carry quota fields', () => {
     const task = postProcessTaskEnrichment(filled, 'call the dentist', 'America/Chicago', {
       morningTime: '09:00',
       todayTarget: '09:00',
+      dayStart: CALENDAR_DAY_START,
     })
     expect(task.quota_target).toBeNull()
     expect(task.quota_period).toBeNull()

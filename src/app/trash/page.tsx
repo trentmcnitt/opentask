@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useDayStart } from '@/components/PreferencesProvider'
+import { openTaskDateLabel } from '@/lib/format-date'
 import { useRequireSession } from '@/hooks/useRequireSession'
 import { PageLoading } from '@/components/PageLoading'
 import { showToast } from '@/lib/toast'
@@ -59,6 +61,8 @@ function EmptyTrashConfirm({
 export default function TrashPage() {
   const { ready } = useRequireSession()
   const timezone = useTimezone()
+  // A date alone is the OpenTask date (History's day): 00:30 is the day before's.
+  const dayStart = useDayStart()
   const [tasks, setTasks] = useState<TrashedTask[]>([])
   const [projects, setProjects] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -157,11 +161,7 @@ export default function TrashPage() {
                       <p className="text-muted-foreground text-xs">
                         {projectName && <span>{projectName} · </span>}
                         {task.deleted_at
-                          ? `Deleted ${new Date(task.deleted_at).toLocaleDateString('en-US', {
-                              timeZone: timezone,
-                              month: 'short',
-                              day: 'numeric',
-                            })}`
+                          ? `Deleted ${openTaskDateLabel(task.deleted_at, timezone, dayStart)}`
                           : 'Deleted'}
                       </p>
                     </div>

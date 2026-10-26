@@ -456,6 +456,7 @@ async function runEnrichment(
   const { EnrichmentResultSchema } = await import('@/core/ai/types')
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { z } = await import('zod')
+  const { DEFAULT_DAY_START } = await import('@/lib/anchor-times')
 
   const now = scenarioNow(input)
   // The user's periods (2026-10-24): listed in the prompt for a relative
@@ -473,6 +474,8 @@ async function runEnrichment(
     userContext: input.userContext,
     taskText: input.text,
     now,
+    // A default user's day (3:00 AM, the task queue on), like the post-process.
+    dayStart: DEFAULT_DAY_START,
   })
 
   const jsonSchema = z.toJSONSchema(EnrichmentResultSchema)
@@ -512,7 +515,6 @@ async function runEnrichment(
   // regression the guard is hiding still shows up in the run output.
   const { filterProjectMatch, postProcessTaskEnrichment } = await import('@/core/ai/enrichment')
   const { targetTodayTime } = await import('@/core/tasks/task-segments')
-  const { DEFAULT_DAY_START } = await import('@/lib/anchor-times')
   const guarded = filterProjectMatch(parsed.project_name ?? null, input.text)
   if (guarded !== (parsed.project_name ?? null)) {
     console.log(
@@ -538,6 +540,7 @@ async function runEnrichment(
     // check-in day is the default Saturday (`checkInDay` left out), as for a
     // default user.
     rolloverTime: DEFAULT_DAY_START,
+    dayStart: DEFAULT_DAY_START,
     now,
     // Every scenario is a new task's first enrichment, as in production.
     newTask: true,
@@ -657,6 +660,7 @@ async function runReminderEnrichment(
   const { parseAIResponse, extractJsonFromText } = await import('@/core/ai/parse-helpers')
   const { sanitizeReminderEnrichment, pinUnnamedDay } = await import('@/core/ai/enrichment')
   const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
+  const { DEFAULT_DAY_START } = await import('@/lib/anchor-times')
   const { z } = await import('zod')
 
   const slots = input.slots ?? [...DEFAULT_TIME_SLOTS]
@@ -696,7 +700,7 @@ async function runReminderEnrichment(
 
   // Production order: the day pin (`pinUnnamedDay`), then the reminder sanitizer.
   const sanitized = sanitizeReminderEnrichment(
-    pinUnnamedDay(parsed, input.text, input.timezone),
+    pinUnnamedDay(parsed, input.text, input.timezone, new Date(), DEFAULT_DAY_START),
     slotRows(slots),
     input.defaultSlotLabel ?? null,
   )

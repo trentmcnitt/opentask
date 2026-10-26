@@ -15,6 +15,7 @@
 import { describe, test, expect } from 'vitest'
 import { resolveSameDayPast, dropNowPhraseTarget, postProcessTaskDates } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 function result(overrides: Partial<EnrichmentResult>): EnrichmentResult {
   return {
@@ -161,6 +162,7 @@ describe('dropNowPhraseTarget', () => {
 describe('through postProcessTaskDates', () => {
   const run = (text: string, overrides: Partial<EnrichmentResult>, now: string) =>
     postProcessTaskDates(result(overrides), text, TZ, {
+      dayStart: CALENDAR_DAY_START,
       morningTime: '09:00',
       todayTarget: '2026-10-17T01:30:00.000Z',
       now: at(now),
