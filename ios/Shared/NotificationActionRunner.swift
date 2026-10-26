@@ -31,6 +31,18 @@ import Foundation
 ///   not a task notification: the task branch would honour +1hr, the sweeps
 ///   and Delete, which a reminder banner never offers. A body tap opens the
 ///   task (`.openTask`), which the web forwards to /reminders.
+/// - `QUOTA_NAG` (the named quota-prompt push, Push PR 4b, 2026-10-26): two
+///   buttons, Considered (`POST /api/quota-prompts/consider`) and Did it
+///   (`/did`, with the device's `ProgressSource`), each with the payload's
+///   `prompt_key` — never the task id: a daily quota's prompts in two periods
+///   share it. Both routes are idempotent per key. A 400 means another day's
+///   key (yesterday's banner, or a quota no longer the user's): for
+///   Considered that is nothing to do (`.promptConsidered`, quiet); for Did
+///   it the +1 was NOT logged, so it is `.promptDidStale`, and each device
+///   says "That was yesterday's — open OpenTask to log it" (the web's words,
+///   `public/sw.js`). Any other error propagates as for every action. A body
+///   tap opens the prompt's row on /reminders (`.openPrompt`). Its own case,
+///   not the task branch, which would honour Done, +1hr and the sweeps.
 /// - anything else is a task notification and needs `taskId`: Done, +1hr,
 ///   the custom time, and the bulk snoozes — which pass the task as
 ///   `include_task_ids`, so the task whose banner was tapped moves even when
@@ -78,6 +90,22 @@ enum NotificationActionRunner {
         /// answer: `false` means it changed nothing (another day's banner, or
         /// a reminder already considered elsewhere) — a success all the same.
         case reminderConsidered(taskId: Int, considered: Bool)
+        /// Considered on a named quota-prompt push. Also the answer to the
+        /// server's 400 (another day's key): there was nothing to consider,
+        /// and the banner just goes — quietly.
+        case promptConsidered(promptKey: String)
+        /// Did it on a named quota-prompt push: the server logged the +1 (or
+        /// had already, for this key — the route is idempotent). The widgets
+        /// are asked to reload (`reloadWidgetsAfterPromptDid`).
+        case promptDid(promptKey: String)
+        /// Did it on another day's banner: the server refused the key (400)
+        /// and logged NOTHING. The banner goes, and the device says so with
+        /// `staleDidMessage`.
+        case promptDidStale(promptKey: String)
+        /// Body tap on a named quota-prompt push: the phone and Mac load
+        /// `PromptDeepLink.webPath(promptKey:)` (`/reminders?prompt=<key>`),
+        /// which brings that prompt's row into view on /reminders.
+        case openPrompt(promptKey: String)
         /// Body tap on a summary or slot notification: open the dashboard.
         /// (Not /reminders for a slot: a slot push can arrive on a build
         /// older than the web /reminders route, and the dashboard is never a
@@ -97,6 +125,10 @@ enum NotificationActionRunner {
     /// src/core/notifications/apns.ts). It has no category, no `taskId` and
     /// no buttons, so only its body tap means anything.
     static let deadlinesKind = "deadlines"
+
+    /// What a device says when Did it hit another day's quota prompt (the
+    /// server's 400): the web's words for the same case (`public/sw.js`).
+    static let staleDidMessage = "That was yesterday's \u{2014} open OpenTask to log it"
 
 
     /// Make the server call for `action` on a notification of `category`.
@@ -154,6 +186,9 @@ enum NotificationActionRunner {
                 return .ignored
             }
 
+        case NotificationCategory.quotaNag:
+            return try await performQuotaNag(action: action, userInfo: userInfo, api: api)
+
         default:
             // Before the taskId guard: the deadlines nag is about a page, not
             // a task. A build without this case ends at `.missingTaskId`, so
@@ -169,6 +204,45 @@ enum NotificationActionRunner {
                 api: api,
                 dismissAfterSweep: dismissAfterSweep
             )
+        }
+    }
+
+    /// The named quota-prompt push: Considered and Did it, by `prompt_key`.
+    ///
+    /// No key, no call: both routes take keys only (an empty list is a silent
+    /// no-op in `APIClient`, which would look handled). A body tap without a
+    /// key falls back to the quota by `taskId`, as a build without this case
+    /// would open it.
+    private static func performQuotaNag(
+        action: Action,
+        userInfo: [AnyHashable: Any],
+        api: NotificationActionAPI
+    ) async throws -> Outcome {
+        let promptKey = (userInfo[QuotaNagKey.promptKey] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        switch action {
+        case .bodyTap:
+            if let promptKey { return .openPrompt(promptKey: promptKey) }
+            guard let taskId = userInfo["taskId"] as? Int else { return .missingTaskId }
+            return .openTask(taskId: taskId)
+        case .button(NotificationAction.considered):
+            guard let promptKey else { return .ignored }
+            do {
+                // No `source`: a consider logs no progress (`promptAction`).
+                _ = try await api.considerPrompts(keys: [promptKey])
+            } catch APIError.serverError(statusCode: 400) {
+                // Another day's key: nothing to consider. Quiet.
+            }
+            return .promptConsidered(promptKey: promptKey)
+        case .button(NotificationAction.didIt):
+            guard let promptKey else { return .ignored }
+            do {
+                _ = try await api.didPrompts(keys: [promptKey], source: ProgressSource.forNotificationActions)
+            } catch APIError.serverError(statusCode: 400) {
+                return .promptDidStale(promptKey: promptKey)
+            }
+            return .promptDid(promptKey: promptKey)
+        case .button:
+            return .ignored
         }
     }
 
@@ -251,6 +325,10 @@ protocol NotificationActionAPI {
     func snoozeOverdue(until: String, includeTaskId: Int?) async throws -> APIClient.BulkSnoozeResult
     func snoozeOverdue(slot: String, includeTaskId: Int?) async throws -> APIClient.BulkSnoozeResult
     func completeSlotReminders(slotId: Int, didKeys: Set<String>, source: ProgressSource?) async throws -> Int
+    /// `POST /api/quota-prompts/consider` (the named quota-prompt push).
+    func considerPrompts(keys: [String]) async throws -> APIClient.PromptActionResult
+    /// `POST /api/quota-prompts/did` (the named quota-prompt push).
+    func didPrompts(keys: [String], source: ProgressSource?) async throws -> APIClient.PromptActionResult
 }
 
 /// The three sweep requirements are spelled out because `APIClient`'s own

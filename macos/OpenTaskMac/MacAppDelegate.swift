@@ -212,8 +212,10 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
 
         case "dismiss":
             guard let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else { return }
+            // With `promptKeys`, a quota-prompt banner closes only by its key.
+            let promptKeys = userInfo[QuotaNagKey.dismissPromptKeys] as? [String]
             Task {
-                let removed = await removeDeliveredNotifications(forTaskIds: taskIds)
+                let removed = await removeDeliveredNotifications(forTaskIds: taskIds, promptKeys: promptKeys)
                 if removed > 0 {
                     print("[OpenTask] Dismissed \(removed) notifications for tasks \(taskIds)")
                 }
@@ -267,13 +269,30 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 case .openDeadlines:
                     // The deadlines nag: the Tasks card on the deadlines page.
                     await WebViewManager.shared.navigate(path: DeepLinkRouter.notificationDeadlinesPath)
+                case .openPrompt(let promptKey):
+                    // A quota-prompt push: its row on /reminders.
+                    await WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
+                case .promptDid:
+                    // The desktop widgets show the count: rebuild them from
+                    // the server (the app has no WidgetStore to write through;
+                    // macOS app reloads are free, ios/AGENTS.md § Widgets).
+                    WidgetCenter.shared.reloadAllTimelines()
+                case .promptDidStale(let promptKey):
+                    // Nothing was logged: say so, as the web does.
+                    postLocalNotice(
+                        NotificationActionRunner.staleDidMessage, identifier: "prompt-stale-\(promptKey)"
+                    )
                 default:
                     break
                 }
             } catch {
                 print("[OpenTask] Notification action error (\(categoryId)): \(error)")
             }
-            if categoryId != NotificationCategory.slotReminder, outcome != .missingTaskId {
+            // A quota is never in the badge, so its push skips the refresh,
+            // as a slot's does.
+            if categoryId != NotificationCategory.slotReminder,
+               categoryId != NotificationCategory.quotaNag,
+               outcome != .missingTaskId {
                 await refreshBadgeFromServer()
             }
             completionHandler()

@@ -79,6 +79,10 @@ enum Fixtures {
     /// `notification-action-not-waiting.json` (2026-10-26, the named reminder
     /// push's Considered button), created last of all.
     static let namedReminder = 131
+    /// The Medium weekly quota of `quota-prompts-consider.json` (Push PR 4b,
+    /// 2026-10-26, the named quota-prompt push's Considered), created after
+    /// the named reminder.
+    static let namedQuota = 132
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }

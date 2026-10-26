@@ -25,6 +25,17 @@ enum NotificationCategory {
     /// the day). Not in the content extension's category list, so it gets the
     /// system's expanded view.
     static let reminderNag = "REMINDER_NAG"
+    /// The named quota-prompt push (Push PR 4, 2026-10-26,
+    /// `buildPromptNagNotification` in `src/core/notifications/apns.ts`): one
+    /// waiting prompt of a Medium+ quota, titled with the quota's short title,
+    /// its body count-first ("Morning · 1/3 this week"); thread
+    /// `ot-reminders`, collapse id `prompt-<prompt_key>`. Its payload carries
+    /// `taskId` (the quota) and `prompt_key` (`QuotaNagKey.promptKey`) and NO
+    /// `priority`. Two buttons, "Considered" and "Did it"
+    /// (`NotificationAction.considered` / `.didIt`), both sent by key. Not in
+    /// the content extension's category list, so it gets the system's
+    /// expanded view.
+    static let quotaNag = "QUOTA_NAG"
 }
 
 /// Payload keys of a `REMINDER_NAG` push.
@@ -35,12 +46,32 @@ enum ReminderNagKey {
     static let day = "reminder_day"
 }
 
+/// Payload keys of a `QUOTA_NAG` push, and of the silent `dismiss` push that
+/// closes one.
+enum QuotaNagKey {
+    /// The prompt's key (`q:<taskId>:<k>:<OpenTask date>`): what its buttons
+    /// send to `POST /api/quota-prompts/consider` and `/did`, what a body tap
+    /// opens (`/reminders?prompt=<key>`). A daily quota's prompts in two
+    /// periods share one `taskId`, never a key.
+    static let promptKey = "prompt_key"
+    /// The `dismiss` push's list of prompt keys (`dismissPromptNotifications`,
+    /// `src/core/notifications/dismiss.ts`): with it, a banner carrying a
+    /// `prompt_key` closes only when its key is listed (`bannerIdentifiers`).
+    static let dismissPromptKeys = "promptKeys"
+}
+
 enum NotificationAction {
     static let done = "DONE"
     /// Move the task to the trash (`action: "delete"` on
     /// `/api/notifications/actions` — a soft delete, undoable in the app).
     /// Offered only by `TASK_ADDED`.
     static let delete = "DELETE"
+    /// `QUOTA_NAG`'s two buttons (2026-10-26): "Considered" — handled for
+    /// today, nothing logged (`POST /api/quota-prompts/consider`) — and "Did
+    /// it" — +1 and considered (`/did`). Their own identifiers: one category
+    /// can't offer `DONE` twice, and neither is a task's Done.
+    static let considered = "CONSIDERED"
+    static let didIt = "DID_IT"
     static let snooze1hr = "SNOOZE_1HR"
     static let snoozeAll1hr = "SNOOZE_ALL_1HR"
     static let snoozeCustom = "SNOOZE_CUSTOM"

@@ -47,7 +47,7 @@ func slotSnoozeActions() -> [UNNotificationAction] {
 /// Register notification categories for the app.
 /// Called by both AppDelegate (iOS) and WatchAppDelegate (watchOS).
 ///
-/// Five categories:
+/// Six categories:
 /// - TASK_REMINDER: individual task (Done, +1hr, All +1hr, then one
 ///   All → <slot> action per cached time slot — see `slotSnoozeActions()`)
 /// - TASK_ADDED: the "AI finished" notification for a just-added task
@@ -68,6 +68,10 @@ func slotSnoozeActions() -> [UNNotificationAction] {
 ///   category), which `NotificationActionRunner` sends as `done` with the
 ///   payload's `reminder_day`. No snooze and no delete: a reminder is
 ///   considered or left; the server's own nag cadence brings it back.
+/// - QUOTA_NAG: the named push for one prompt of a Medium+ quota (Push PR
+///   4b, 2026-10-26). Two actions, "Considered" and "Did it", sent by the
+///   payload's `prompt_key` (`NotificationActionRunner`). No snooze and no
+///   delete, as for a reminder.
 func registerNotificationCategories() {
     let doneAction = UNNotificationAction(
         identifier: NotificationAction.done,
@@ -139,12 +143,23 @@ func registerNotificationCategories() {
         options: []
     )
 
+    let quotaNagCategory = UNNotificationCategory(
+        identifier: NotificationCategory.quotaNag,
+        actions: [
+            UNNotificationAction(identifier: NotificationAction.considered, title: "Considered", options: []),
+            UNNotificationAction(identifier: NotificationAction.didIt, title: "Did it", options: []),
+        ],
+        intentIdentifiers: [],
+        options: []
+    )
+
     UNUserNotificationCenter.current().setNotificationCategories([
         taskReminderCategory,
         taskSummaryCategory,
         slotReminderCategory,
         taskAddedCategory,
         reminderNagCategory,
+        quotaNagCategory,
     ])
 }
 
@@ -167,20 +182,23 @@ func dismissNotificationsAfterSweep(_ result: APIClient.BulkSnoozeResult) async 
     _ = await removeDeliveredNotifications(forTaskIds: moved)
 }
 
-/// The silent `dismiss` push (`dismissNotificationsForTasks`,
-/// `src/core/notifications/dismiss.ts`): those tasks were handled somewhere
-/// else, so clear their delivered banners here. A banner is matched by its
-/// payload's `taskId`. Returns how many were removed — the phone and Watch
-/// answer their background-fetch handler `.newData`/`.noData` from it.
+/// The silent `dismiss` push (`dismissNotificationsForTasks` and
+/// `dismissPromptNotifications`, `src/core/notifications/dismiss.ts`): those
+/// tasks or quota prompts were handled somewhere else, so clear their
+/// delivered banners here. A banner is matched by its payload's `taskId` —
+/// or, when the push lists `promptKeys`, a quota-prompt banner by its
+/// `prompt_key` (`bannerIdentifiers`, `SweepDismissal.swift`). Returns how
+/// many were removed — the phone and Watch answer their background-fetch
+/// handler `.newData`/`.noData` from it.
 ///
 /// Shared by the phone, Mac and Watch delegates; each keeps its own handling
 /// of the other silent types (`badge-update`, `dismiss-all`).
-func removeDeliveredNotifications(forTaskIds taskIds: [Int]) async -> Int {
+func removeDeliveredNotifications(forTaskIds taskIds: [Int], promptKeys: [String]? = nil) async -> Int {
     let center = UNUserNotificationCenter.current()
     let delivered = await center.deliveredNotifications().map {
         DeliveredBanner(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
     }
-    let idsToRemove = bannerIdentifiers(delivered, forTaskIds: taskIds)
+    let idsToRemove = bannerIdentifiers(delivered, forTaskIds: taskIds, promptKeys: promptKeys)
 
     if !idsToRemove.isEmpty {
         center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
@@ -223,7 +241,11 @@ extension NotificationActionRunner {
 
         let isSlot = category == NotificationCategory.slotReminder
         let isSummary = category == NotificationCategory.taskSummary
-        if isSummary || (!isSlot && userInfo["taskId"] as? Int != nil) {
+        // A quota-prompt banner goes before the call too, whatever the
+        // answer: a success, another day's key (Considered: quiet; Did it:
+        // the device says so) or a failure — as for any task banner.
+        let isPrompt = category == NotificationCategory.quotaNag
+        if isSummary || isPrompt || (!isSlot && userInfo["taskId"] as? Int != nil) {
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
         }
 
@@ -241,7 +263,7 @@ extension NotificationActionRunner {
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
         case .openDashboard where isSlot:
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
-        case .openDashboard, .openTask, .openDeadlines:
+        case .openDashboard, .openTask, .openDeadlines, .openPrompt:
             center.removeAllDeliveredNotifications()
         default:
             break
@@ -249,6 +271,32 @@ extension NotificationActionRunner {
         return outcome
     }
 }
+
+#if os(iOS) || os(macOS)
+/// A one-line local notice from the app itself, delivered at once — on the
+/// iPhone and the Mac, the answer to a notification action whose result the
+/// user has to know (Did it on another day's quota prompt: nothing was
+/// logged, `NotificationActionRunner.staleDidMessage`). The web replaces the
+/// banner with the same words (`public/sw.js`). Before this the phone and Mac
+/// only logged a failed action; the Watch posts its own error banner
+/// (`WatchAppDelegate.postLocalErrorNotification`).
+///
+/// No sound: it answers a tap the user just made. In the `ot-reminders`
+/// thread, beside the prompt banners. If the app is in front, its
+/// `willPresent` suppresses the banner as for any other.
+func postLocalNotice(_ body: String, identifier: String) {
+    let content = UNMutableNotificationContent()
+    content.title = "OpenTask"
+    content.body = body
+    content.threadIdentifier = "ot-reminders"
+    let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+    UNUserNotificationCenter.current().add(request) { error in
+        if let error {
+            print("[OpenTask] Failed to post a local notice: \(error)")
+        }
+    }
+}
+#endif
 
 /// Set the app icon badge (iOS) or the Dock tile badge (macOS) — same call,
 /// same meaning. watchOS has no app icon badge, so neither badge function

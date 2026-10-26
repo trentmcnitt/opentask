@@ -20,6 +20,10 @@ final class SweepDismissalTests: XCTestCase {
         // The "AI finished" push for a just-added task, and the deadlines nag.
         DeliveredBanner(identifier: "added-5", userInfo: ["taskId": 5]),
         DeliveredBanner(identifier: "deadlines", userInfo: ["kind": "deadlines"]),
+        // Two named quota-prompt banners of one daily quota (QUOTA_NAG):
+        // one task id, two prompt keys, no priority.
+        DeliveredBanner(identifier: "prompt-morning", userInfo: ["taskId": 6, "prompt_key": "q:6:1:2026-01-15"]),
+        DeliveredBanner(identifier: "prompt-evening", userInfo: ["taskId": 6, "prompt_key": "q:6:2:2026-01-15"]),
     ]
 
     /// The coordinator's case: a sweep that moved [1, 2] clears banners 1
@@ -46,6 +50,52 @@ final class SweepDismissalTests: XCTestCase {
     func testEveryBannerOfAMovedTaskGoes() {
         let twice = banners + [DeliveredBanner(identifier: "task-1-again", taskId: 1)]
         XCTAssertEqual(bannerIdentifiers(twice, forTaskIds: [1]), ["task-1", "task-1-again"])
+    }
+
+    /// A sweep leaves the quota-prompt banners: it moves only overdue tasks,
+    /// a quota has no target, so its id is never in `moved_ids` — here every
+    /// overdue task's banner goes and both prompt banners stay.
+    func testSweepLeavesQuotaPromptBanners() {
+        let cleared = bannerIdentifiers(banners, forTaskIds: [1, 2, 4])
+        XCTAssertEqual(cleared, ["task-1", "task-2", "task-4"])
+        XCTAssertFalse(cleared.contains("prompt-morning"))
+        XCTAssertFalse(cleared.contains("prompt-evening"))
+    }
+
+    // MARK: - The dismiss push's `promptKeys` (Push PR 4b)
+
+    /// Morning's prompt considered elsewhere: the push lists the quota's id
+    /// AND Morning's key. Only Morning's banner goes; Evening's, which shares
+    /// the task id, stays.
+    func testDismissByPromptKeyClosesOnlyThatPrompt() {
+        let cleared = bannerIdentifiers(banners, forTaskIds: [6], promptKeys: ["q:6:1:2026-01-15"])
+        XCTAssertEqual(cleared, ["prompt-morning"])
+    }
+
+    /// With `promptKeys`, every banner without a key still closes by `taskIds`.
+    func testDismissWithPromptKeysStillClosesTaskBannersById() {
+        let cleared = bannerIdentifiers(banners, forTaskIds: [1, 6], promptKeys: ["q:6:2:2026-01-15"])
+        XCTAssertEqual(cleared, ["task-1", "prompt-evening"])
+    }
+
+    /// A key not up, or another day's: nothing of the quota goes.
+    func testDismissByAnUnlistedKeyClosesNoPromptBanner() {
+        XCTAssertEqual(bannerIdentifiers(banners, forTaskIds: [6], promptKeys: ["q:6:1:2026-01-14"]), [])
+    }
+
+    /// No `promptKeys` (a quota done, deleted or edited — the ordinary task
+    /// path), or an empty list: every banner of the task goes, prompt
+    /// banners included.
+    func testDismissWithoutPromptKeysFallsBackToTaskIds() {
+        XCTAssertEqual(bannerIdentifiers(banners, forTaskIds: [6]), ["prompt-morning", "prompt-evening"])
+        XCTAssertEqual(
+            bannerIdentifiers(banners, forTaskIds: [6], promptKeys: []), ["prompt-morning", "prompt-evening"]
+        )
+    }
+
+    func testBannerPromptKeyFromThePayload() {
+        XCTAssertEqual(DeliveredBanner(identifier: "a", userInfo: ["taskId": 6, "prompt_key": "q:6:1:2026-01-15"]).promptKey, "q:6:1:2026-01-15")
+        XCTAssertNil(DeliveredBanner(identifier: "b", userInfo: ["taskId": 6]).promptKey)
     }
 
     /// The payload's `taskId` is read as the server sends it, an integer; a
