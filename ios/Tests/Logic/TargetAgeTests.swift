@@ -63,9 +63,9 @@ final class TargetAgeTests: XCTestCase {
 
     func testFutureTargetChip() {
         let t = task(due: "2026-11-01T14:00:00.000Z")
-        XCTAssertEqual(TargetAge.futureTargetChip(t, now: now, calendar: calendar), "Nov 1")
-        XCTAssertNil(TargetAge.futureTargetChip(task(due: "2026-10-09T14:00:00.000Z"), now: now, calendar: calendar))
-        XCTAssertNil(TargetAge.futureTargetChip(task(), now: now, calendar: calendar))
+        XCTAssertEqual(TargetAge.futureTargetChip(t, now: now, calendar: calendar, dayStart: OpenTaskDay.calendarDayStart), "Nov 1")
+        XCTAssertNil(TargetAge.futureTargetChip(task(due: "2026-10-09T14:00:00.000Z"), now: now, calendar: calendar, dayStart: OpenTaskDay.calendarDayStart))
+        XCTAssertNil(TargetAge.futureTargetChip(task(), now: now, calendar: calendar, dayStart: OpenTaskDay.calendarDayStart))
     }
 
     func testWordingIsOneConstant() {

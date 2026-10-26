@@ -19,6 +19,7 @@
 		05FC951B11F619E046DCEADA /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA7A0B6F7260FB3D4427285 /* WebBridge.swift */; };
 		06074DBB58EB5164A8770BB3 /* PageAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48C1737B0497AEDC038E7868 /* PageAnchor.swift */; };
 		07BEBE0E92BE17D9A210C4EE /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3E2F1F151ECE60CDFE1524 /* WidgetPushRegistration.swift */; };
+		0942381CD4771BCD2408B78E /* NightDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9D3866BD0E2B5E5982A529 /* NightDay.swift */; };
 		09C50C125EE5772431D0238A /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		0A47FFB83018F02515472B97 /* SweepDismissalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7B22313C4BC57FABC04BA8 /* SweepDismissalTests.swift */; };
 		0B238C882F4EB87F26D4491E /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F4FF273CF89CCE74A5F1534 /* MenuBarPanel.swift */; };
@@ -82,6 +83,7 @@
 		397183022A836A1465189A0C /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E8557A45EA6669C5FDB4B7 /* QuotaPeriodBounds.swift */; };
 		3A8E31C8D6D8E69901C298E0 /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77660CA27D2B28508DE93F7A /* QuotaCount.swift */; };
 		3C737D282AD8A985F064693B /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06CA39C19D4AF5FADD8BA98 /* RecurrenceSummary.swift */; };
+		3DEB0E9B9C5C3865EEE4E4AF /* NightDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9D3866BD0E2B5E5982A529 /* NightDay.swift */; };
 		3EA6CA1B446F4A667F0CDDC2 /* TargetAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39C6CE8DDB5FDB073127D24 /* TargetAge.swift */; };
 		3EE6F7B84B2317550D8CC09A /* SegmentWidthsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */; };
 		3F5F24E827B5E77749258D0F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79B196EB051C2A6103B3CB4E /* WidgetKit.framework */; };
@@ -240,10 +242,12 @@
 		C6BC02FF6A77F21C878ECF45 /* TrackWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E39F4F4D318A4F799F9C29D /* TrackWidget.swift */; };
 		C70DF156998E42097BC9E1FC /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
 		C8A2D931C2EC9D35840F44B7 /* QuotaSegments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1EB276B040F87781D910 /* QuotaSegments.swift */; };
+		C8CEEDB3ADA29C3160FF72FE /* NightDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67F4801FB535177364242D4 /* NightDayTests.swift */; };
 		C9F2AADED434D02D18B53ACF /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BBA7157D64D84DE2038504 /* SetupView.swift */; };
 		CC12526A79711B51FCCDF783 /* WidgetOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10F1EE098B248D10F6E354B /* WidgetOutboxTests.swift */; };
 		CC872E7AB664DA45E1E086FE /* NotificationActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE74638B34B5131EFCBDEF6A /* NotificationActionRunner.swift */; };
 		CC88FF8A161D084268B43BEE /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
+		CD39FF36814200A271E82C35 /* NightDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9D3866BD0E2B5E5982A529 /* NightDay.swift */; };
 		CD60D00E79DF062274372897 /* PadPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9DBFA5C3F04DA1B616E7D4 /* PadPresetStore.swift */; };
 		CD8E81DAEB1E28E56FDFE007 /* task-repeat-ends.json in Resources */ = {isa = PBXBuildFile; fileRef = F52EC97D7A87C3AAC7D4B546 /* task-repeat-ends.json */; };
 		CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */ = {isa = PBXBuildFile; fileRef = 7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */; };
@@ -258,6 +262,8 @@
 		D5E5DBDF3011374CF3EA036F /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
 		D69FFE9776386998102E6583 /* undo-status.json in Resources */ = {isa = PBXBuildFile; fileRef = 8F19FED31D51A4F31E33C37B /* undo-status.json */; };
 		D6B7E878B62AB20FEAE7DC92 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */; };
+		D81D43ABF6A9AD188B24DBE4 /* label-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = D11E6EB02F51D4DF6D8C2367 /* label-cases.json */; };
+		D93BD9E292B891794D85F2F1 /* NightDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9D3866BD0E2B5E5982A529 /* NightDay.swift */; };
 		D93FC3A08DD98A184639520F /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C73F3BEEA0EAE506B12CA4D /* DueLabel.swift */; };
 		D9EF8BAF2B05017FFE43DA89 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
 		DA8FB5A617C614C58D7ABD4C /* RowCornerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DD5A0D38F3F38C3D5EC9D21 /* RowCornerTests.swift */; };
@@ -459,6 +465,7 @@
 		B784D2707D9E3127B216E744 /* MenuBarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarModel.swift; sourceTree = "<group>"; };
 		B7DD47E083E073FE32FA2C34 /* time-slots.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "time-slots.json"; sourceTree = "<group>"; };
 		B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWidths.swift; sourceTree = "<group>"; };
+		BB9D3866BD0E2B5E5982A529 /* NightDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightDay.swift; sourceTree = "<group>"; };
 		BBB728AF67D6A2F6BF7B641A /* WebBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebBridgeTests.swift; sourceTree = "<group>"; };
 		BF62CE079EFE27FAE6A3CCA1 /* WidgetPushRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPushRegistrationTests.swift; sourceTree = "<group>"; };
 		C10F1EE098B248D10F6E354B /* WidgetOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetOutboxTests.swift; sourceTree = "<group>"; };
@@ -471,12 +478,14 @@
 		CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		CF865E3EF02E02F147369E30 /* TargetAgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAgeTests.swift; sourceTree = "<group>"; };
 		CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		D11E6EB02F51D4DF6D8C2367 /* label-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "label-cases.json"; sourceTree = "<group>"; };
 		D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
 		E06CA39C19D4AF5FADD8BA98 /* RecurrenceSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceSummary.swift; sourceTree = "<group>"; };
 		E3290E5D7B8A509F3BA310ED /* task-badges.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-badges.json"; sourceTree = "<group>"; };
 		E640E12BDB31D73C95C23791 /* opentask-day-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "opentask-day-cases.json"; sourceTree = "<group>"; };
+		E67F4801FB535177364242D4 /* NightDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightDayTests.swift; sourceTree = "<group>"; };
 		EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "bulk-complete.json"; sourceTree = "<group>"; };
 		F18E00062C7779D38C364472 /* task-counts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-counts.json"; sourceTree = "<group>"; };
 		F1B46ABD580807D58325D969 /* TaskDayProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDayProgress.swift; sourceTree = "<group>"; };
@@ -561,6 +570,7 @@
 				3E976BDF1943E2A6E03E1BAC /* DayStartStore.swift */,
 				26AD825E02510A2E981723EE /* DeepLinkRouter.swift */,
 				D48B4A75163FF407F49D160B /* KeychainHelper.swift */,
+				BB9D3866BD0E2B5E5982A529 /* NightDay.swift */,
 				FE74638B34B5131EFCBDEF6A /* NotificationActionRunner.swift */,
 				606B27B10869F5EC627043D9 /* NotificationConstants.swift */,
 				4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */,
@@ -652,6 +662,7 @@
 				2BFC62E0F89CD20210B0D6D0 /* DayStartSurfacesTests.swift */,
 				4E4F7502C01897A3B3843EC3 /* DeepLinkRouterTests.swift */,
 				370309049F393EDDAD8042C0 /* DueLabelTests.swift */,
+				E67F4801FB535177364242D4 /* NightDayTests.swift */,
 				4B81BC442517CEF9C27927AF /* NotificationActionRunnerTests.swift */,
 				977F5732E72B529DD4DC88F1 /* OpenTaskDayTests.swift */,
 				0A71580BA2CE66A23CB65D2B /* PadPresetStoreTests.swift */,
@@ -697,6 +708,7 @@
 		87313067AD7D76F667F4EADA /* opentask-day */ = {
 			isa = PBXGroup;
 			children = (
+				D11E6EB02F51D4DF6D8C2367 /* label-cases.json */,
 				E640E12BDB31D73C95C23791 /* opentask-day-cases.json */,
 			);
 			name = "opentask-day";
@@ -928,6 +940,7 @@
 				0F61848EE6DE753BC568EFBB /* bulk-snooze-overdue.json in Resources */,
 				2CB01EC9E23BF96101F784AC /* bulk-snooze.json in Resources */,
 				5B6859B19AF9F1B2FF7324EC /* completions.json in Resources */,
+				D81D43ABF6A9AD188B24DBE4 /* label-cases.json in Resources */,
 				306BDBFCBA2736BBE3ECA5FB /* notification-action-considered.json in Resources */,
 				9A5ED35FB511A89EE8333FA9 /* notification-action-not-waiting.json in Resources */,
 				4FA1D7F2B99CCB19DC1A2CA4 /* opentask-day-cases.json in Resources */,
@@ -1001,6 +1014,7 @@
 				B9189B04DCF70469AF3D7FE1 /* MenuBarModel.swift in Sources */,
 				0B238C882F4EB87F26D4491E /* MenuBarPanel.swift in Sources */,
 				71D0A83961B98489F7734D3C /* MenuBarRenderTests.swift in Sources */,
+				3DEB0E9B9C5C3865EEE4E4AF /* NightDay.swift in Sources */,
 				9BD84A3E2A114B52B41BA9F2 /* NotesGlyphPreviews.swift in Sources */,
 				CC872E7AB664DA45E1E086FE /* NotificationActionRunner.swift in Sources */,
 				89AD80C13AA009D51F316140 /* NotificationConstants.swift in Sources */,
@@ -1077,6 +1091,7 @@
 				E2178CDCEEC7B5AABAD0C9F5 /* MenuBarIcon.swift in Sources */,
 				C32564333DC1B84950067AC0 /* MenuBarModel.swift in Sources */,
 				B82A490F8F2FE0CD2647854C /* MenuBarPanel.swift in Sources */,
+				0942381CD4771BCD2408B78E /* NightDay.swift in Sources */,
 				1E7A850A44554A92F783BB60 /* NotificationActionRunner.swift in Sources */,
 				52209900BB7B38B4D5C46CBE /* NotificationConstants.swift in Sources */,
 				C57F3A12BA319779B8B54921 /* NotificationIdentifiers.swift in Sources */,
@@ -1134,6 +1149,8 @@
 				ACB4019EA2F699F593BDEE05 /* DueLabelTests.swift in Sources */,
 				F4A48262758480B2362DE1B0 /* Fixtures.swift in Sources */,
 				B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */,
+				D93BD9E292B891794D85F2F1 /* NightDay.swift in Sources */,
+				C8CEEDB3ADA29C3160FF72FE /* NightDayTests.swift in Sources */,
 				F5C488564601153E862651E6 /* NotificationActionRunner.swift in Sources */,
 				34EEA76166D64CACDB558593 /* NotificationActionRunnerTests.swift in Sources */,
 				EB455F1DE47DC1A5BE7BC631 /* NotificationIdentifiers.swift in Sources */,
@@ -1212,6 +1229,7 @@
 				FA7BA42783C7FA87612704DB /* DeepLinkRouter.swift in Sources */,
 				A4A51894CF0C3E9B2D7B13D6 /* DueLabel.swift in Sources */,
 				4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */,
+				CD39FF36814200A271E82C35 /* NightDay.swift in Sources */,
 				97469992D329A225F1120702 /* NotesGlyphPreviews.swift in Sources */,
 				02F88181E02FBC25EFE3C842 /* NotificationActionRunner.swift in Sources */,
 				AA8138C1ACDC96A7CC7A0ABC /* NotificationConstants.swift in Sources */,

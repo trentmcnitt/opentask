@@ -218,6 +218,15 @@ private struct TaskRow: View {
     }
 }
 
+// The night rule (2026-10-26): `WatchPreviewData.nightTasks` with a 3:00 AM
+// day start.
+#Preview("Tasks — night labels") {
+    let _ = DayStartStore.seedForPreview("03:00")
+    NavigationStack {
+        TasksPageView(model: .previewTasks(WatchPreviewData.nightTasks))
+    }
+}
+
 #Preview("Tasks — row corner, XXX Large") {
     NavigationStack {
         TasksPageView(model: .previewTasks())

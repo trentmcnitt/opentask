@@ -779,9 +779,9 @@ extension WatchViewModel {
     }
 
     /// The Tasks page with the row-corner sample (`WatchPreviewData.cornerTasks`).
-    static func previewTasks() -> WatchViewModel {
+    static func previewTasks(_ tasks: [TaskDTO] = WatchPreviewData.cornerTasks) -> WatchViewModel {
         let model = WatchViewModel()
-        model.tasks = WatchPreviewData.cornerTasks
+        model.tasks = tasks
         model.projects = WatchPreviewData.cornerProjects
         model.hasLoadedOnce = true
         model.canUndo = true

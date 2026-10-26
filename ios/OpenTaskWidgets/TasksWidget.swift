@@ -548,6 +548,41 @@ private enum TasksPreviewData {
         )
     }
 
+    /// The night rule's labels (2026-10-26) with a 3:00 AM day start, read at
+    /// the sample's 8:45 AM: last night's 1:00 AM ("Last night", overdue),
+    /// tonight's 1:00 AM (today's, the time alone), tomorrow night's 1:30 AM
+    /// ("Tomorrow night"), a later night ("Fri night") and a plain tomorrow.
+    static func nightLabelsEntry() -> TasksEntry {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        func day(_ offset: Int, hour: Int, minute: Int = 0) -> String {
+            let base = calendar.date(byAdding: .day, value: offset, to: today) ?? today
+            return DateHelpers.formatISO(calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base) ?? base)
+        }
+        let all = [
+            TaskDTO(id: 910_001, projectId: 4434, title: "Join the late call with the overseas team", priority: 2, dueAt: day(0, hour: 1)),
+            TaskDTO(id: 910_002, projectId: 6, title: "Check the backup ran", priority: 1, dueAt: day(1, hour: 1)),
+            TaskDTO(id: 910_003, projectId: 4434, title: "Meet the airport shuttle", priority: 1, dueAt: day(2, hour: 1, minute: 30)),
+            TaskDTO(id: 910_004, projectId: 6, title: "Water the lawn", priority: 1, dueAt: day(1, hour: 9)),
+            TaskDTO(id: 910_005, projectId: 4434, title: "Submit the timesheet before the portal closes", priority: 1, dueAt: day(4, hour: 0, minute: 30)),
+        ]
+        return TasksEntry(
+            date: now,
+            tasks: TasksTimeline.upNextTasks(from: all),
+            projects: projects,
+            scope: WidgetStore.upNextScope,
+            staleSince: nil,
+            isSignedOut: false,
+            canUndo: true,
+            canRedo: false,
+            actionDescription: nil,
+            colorProjects: projects,
+            doneTasks: [],
+            overdueSweepCount: TasksTimeline.overdueSweepEligibleCount(from: all),
+            overdueTotalCount: TaskLists.overdue(all).count
+        )
+    }
+
     /// The Overdue page (2026-09-25) — SYNTHETIC titles (the repo is public;
     /// real-data renders are done locally and never committed), long enough
     /// to wrap, overdue by an hour up to four days, most overdue first; the
@@ -606,7 +641,8 @@ private enum TasksPreviewData {
 /// page — previews share the simulator's App Group UserDefaults with each
 /// other and with its real widgets, so anything a prior render left set
 /// would otherwise bleed into the next one.
-private func resetTasksPreviewState(page: Int = 0) {
+private func resetTasksPreviewState(page: Int = 0, dayStart: String = OpenTaskDay.calendarDayStart) {
+    DayStartStore.seedForPreview(dayStart)
     WidgetStore.setTasksPage(page, for: WidgetStore.upNextScope)
     WidgetStore.setTasksSnoozeMode(false)
     WidgetStore.setTasksSelectMode(false)
@@ -639,6 +675,22 @@ private func resetTasksPreviewState(page: Int = 0) {
 } timeline: {
     let _ = resetTasksPreviewState(page: 0)
     TasksPreviewData.dayLabelsEntry()
+}
+
+/// The night rule (2026-10-26) with a 3:00 AM day start — see
+/// `nightLabelsEntry()`.
+#Preview("Tasks Large — night labels, 3:00 AM day start", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 0, dayStart: "03:00")
+    TasksPreviewData.nightLabelsEntry()
+}
+
+#Preview("Tasks Large — night labels page 2", as: .systemLarge) {
+    TasksWidget()
+} timeline: {
+    let _ = resetTasksPreviewState(page: 1, dayStart: "03:00")
+    TasksPreviewData.nightLabelsEntry()
 }
 
 #Preview("Tasks Large — Up next, day labels page 2", as: .systemLarge) {

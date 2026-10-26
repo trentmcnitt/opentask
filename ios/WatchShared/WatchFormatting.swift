@@ -17,13 +17,6 @@ enum WatchFormatting {
         return f
     }()
 
-    private static let weekdayTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "EEE h:mm a"
-        f.timeZone = .current
-        return f
-    }()
-
     private static let monthDayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
@@ -74,29 +67,39 @@ enum WatchFormatting {
     /// today's ("1:30 AM"), and at 1:00 AM last evening's 8:00 PM is today's
     /// too. The words are the date's own (its weekday, its month and day),
     /// as on the web and the phone (`DueLabel.parts`).
+    ///
+    /// THE NIGHT RULE (2026-10-26, native catch-up PR 2; `NightDay`): a
+    /// target between midnight and a before-noon day start names its evening
+    /// — "Tomorrow night 1:00 AM", "Mon night 1:00 AM", "Last night 1:00 AM".
+    /// Outside the night "Tomorrow" / "Yesterday" only where the OpenTask day
+    /// and the target's own date agree (an 11 PM start: at Sat 12:30 a Sat
+    /// 23:30 target reads "Sat 11:30 PM", never "Tomorrow"); a yesterday they
+    /// disagree on reads as its date, since past weekdays are out (above).
     static func dueLine(for date: Date, now: Date = Date(), day: OpenTaskDay = DayStartStore.current) -> String {
         let calendar = Calendar.current
-        let dayDelta = day.daysBetween(now, date)
+        let n = NightDay(at: date, now: now, day: day)
+        let dayDelta = n.gap
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        let time = timeFormatter.string(from: date)
 
         if dayDelta == 0 {
-            return timeFormatter.string(from: date)
+            return time
         }
         if dayDelta == 1 {
-            return "Tomorrow \(timeFormatter.string(from: date))"
+            return "\(NightDay.capitalized(n.words(past: false))) \(time)"
         }
-        if dayDelta == -1 {
-            return "Yesterday \(timeFormatter.string(from: date))"
+        if dayDelta == -1, n.wordsAgree {
+            return "\(NightDay.capitalized(n.words(past: true))) \(time)"
         }
         // Future only, within the next 6 days: a bare weekday reads faster
         // than a date, and — unlike the past — "next Thursday" said as just
         // "Thu" is unambiguous, since there's only one Thursday ahead of now
-        // inside that window.
+        // inside that window. In the night, the evening's: "Mon night".
         if dayDelta > 1 && dayDelta < 7 {
-            return weekdayTimeFormatter.string(from: date)
+            return "\(n.timedWeekday) \(time)"
         }
-        // Older overdue (dayDelta <= -2): explicit date, WITH time — how
-        // overdue is exactly what matters here.
+        // Older overdue (dayDelta <= -2, or a yesterday the words can't name):
+        // explicit date, WITH time — how overdue is exactly what matters here.
         if dayDelta < 0 {
             return sameYear
                 ? monthDayTimeFormatter.string(from: date)

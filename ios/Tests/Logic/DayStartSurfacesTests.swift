@@ -90,7 +90,7 @@ final class DayStartSurfacesTests: WidgetStoreTestCase {
         XCTAssertNil(words("2026-01-14T02:30"), "tonight before the day start is today")
         XCTAssertEqual(words("2026-01-14T09:00"), "Tomorrow")
         XCTAssertNil(words("2026-01-13T20:00"), "last evening is today, overdue: the time alone")
-        XCTAssertEqual(words("2026-01-13T02:00"), "Yesterday")
+        XCTAssertEqual(words("2026-01-13T02:00"), "Last night", "Monday night's (the night rule)")
         // Midnight would call Wednesday 9:00 today, and Tuesday 8 PM yesterday.
         let midnight = OpenTaskDay.midnight(timeZone: .current)
         XCTAssertNil(DueLabel.parts(for: local("2026-01-14T09:00", in: .current), now: now, isOverdue: false, day: midnight).dayWord)
