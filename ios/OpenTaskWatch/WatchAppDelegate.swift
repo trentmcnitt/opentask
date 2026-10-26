@@ -255,7 +255,10 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                 switch outcome {
                 // The single click, never a success chime (2026-10-11 —
                 // the app's taps too); a failure keeps its buzz.
-                case .taskUpdated, .swept:
+                // A reminder's Considered is a success either way: `false`
+                // only means the server had nothing to do (another day's
+                // banner, or considered elsewhere already).
+                case .taskUpdated, .swept, .reminderConsidered:
                     playHaptic(.click)
                 case .slotCompleted(let affected):
                     playHaptic(affected > 0 ? .click : .failure)

@@ -122,6 +122,15 @@
  *     GET  /api/reminders                       → reminders-upcoming-sections.json
  *     (every Upcoming row carries `upcoming_section`; Tomorrow's first)
  *
+ * 22. The named reminder push's Considered button (2026-10-26): a one-time
+ *     High reminder, waiting today
+ *     POST /api/notifications/actions {done, day: yesterday}
+ *                                               → notification-action-not-waiting.json
+ *     (`considered: false`, no `result`: another day's banner changes nothing)
+ *     POST /api/notifications/actions {done, day: today}
+ *                                               → notification-action-considered.json
+ *     (`considered: true` and the done's `result`)
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -1007,6 +1016,43 @@ describe('contract fixtures (native clients)', () => {
     captured['reminders-upcoming-sections'] = await call('/api/reminders')
   })
 
+  // 22. The named reminder push's Considered (2026-10-26). Its own hook, last.
+  beforeAll(async () => {
+    const placeholder = 101 + Object.keys(created).length
+    // `rrule: null`: a one-time thought, waiting until considered.
+    const res = (await call('/api/tasks', {
+      title: 'Stretch before lunch',
+      is_reminder: true,
+      rrule: null,
+      priority: 3,
+    })) as { data: { id: number } }
+    created.namedReminder = res.data.id
+    ids.register('task', res.data.id, placeholder)
+    // User B's day starts at 00:00 here (see the first hook), so the
+    // OpenTask day is the calendar date in New York at any hour.
+    const today = DateTime.now().setZone('America/New_York').toISODate()!
+    const yesterday = DateTime.now().setZone('America/New_York').minus({ days: 1 }).toISODate()!
+    captured['notification-action-not-waiting'] = await call('/api/notifications/actions', {
+      action: 'done',
+      task_id: res.data.id,
+      day: yesterday,
+    })
+    captured['notification-action-considered'] = await call('/api/notifications/actions', {
+      action: 'done',
+      task_id: res.data.id,
+      day: today,
+    })
+  })
+
+  test('Considered with a day: true when waiting today, false (and no result) for another day', () => {
+    type A = { data: Record<string, unknown> }
+    const stale = (captured['notification-action-not-waiting'] as unknown as A).data
+    expect(stale).toEqual({ action: 'done', task_id: created.namedReminder, considered: false })
+    const done = (captured['notification-action-considered'] as unknown as A).data
+    expect(done).toMatchObject({ action: 'done', task_id: created.namedReminder, considered: true })
+    expect(done.result).toBeDefined()
+  })
+
   test('Upcoming sections: every row carries its section, Tomorrow first', () => {
     type Row = { id: number; upcoming_section?: string }
     type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
@@ -1130,6 +1176,8 @@ describe('contract fixtures (native clients)', () => {
     'task-relative-one-off',
     'task-relative-fixed',
     'reminders-upcoming-sections',
+    'notification-action-not-waiting',
+    'notification-action-considered',
   ]
 
   for (const name of names) {
