@@ -20,6 +20,7 @@ import {
   offersDeferAll,
   segmentColor,
   segmentCounts,
+  segmentDoneColor,
   segmentEmpty,
   segmentKey,
   segmentLabel,
@@ -91,6 +92,7 @@ export function DashboardTasksPanel({
       total,
       started: true,
       color: segmentColor(segment.horizon),
+      doneColor: segmentDoneColor(segment.horizon),
       emptyDone: true,
     }
   })
@@ -159,6 +161,7 @@ export function DashboardTasksPanel({
       <SlotPagerHeader
         label={page.label}
         accent={segmentTitleColor(segment.horizon)}
+        doneAccent={segmentDoneColor(segment.horizon)}
         time={null}
         considered={page.considered}
         total={page.total}
@@ -329,7 +332,7 @@ function TaskPageBody({
           showConsidered={showConsidered}
         />
       ) : segmentEmpty(segment) ? (
-        <EmptySegmentLine className="px-3 pb-3" />
+        <EmptySegmentLine className="px-3 pb-3" doneAccent={segmentDoneColor(segment.horizon)} />
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
       ) : (

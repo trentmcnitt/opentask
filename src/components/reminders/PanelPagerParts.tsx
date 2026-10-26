@@ -55,10 +55,14 @@ export function SlotPagerHeader({
   showConsidered,
   onToggleConsidered,
   emptyDone = false,
+  doneAccent,
 }: {
   label: string
   /** A colour for the label — a task segment's teal. */
   accent?: string
+  /** The finished check's colour in place of green: the deadlines page's
+   *  teal (`segmentDoneColor`). */
+  doneAccent?: string
   time: string | null
   considered: number
   total: number
@@ -87,6 +91,15 @@ export function SlotPagerHeader({
   // it's empty, and gets no check mark (no chrome for something that isn't
   // there). An empty task segment is the exception (`emptyDone`).
   const complete = total > 0 ? considered >= total : emptyDone
+  const doneCheck = complete && (
+    <Check
+      data-done-check
+      className={cn('size-3.5', !doneAccent && 'text-green-700 dark:text-green-400')}
+      style={doneAccent ? { color: doneAccent } : undefined}
+      strokeWidth={2.5}
+      aria-hidden="true"
+    />
+  )
   return (
     <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
       <button
@@ -180,13 +193,7 @@ export function SlotPagerHeader({
               compare a fill's length to the end of its track. Small, quiet,
               and only ever present when true — never a greyed-out
               placeholder for "not yet". */}
-          {complete && (
-            <Check
-              className="size-3.5 text-green-700 dark:text-green-400"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          )}
+          {doneCheck}
         </button>
       ) : (
         <span
@@ -196,13 +203,7 @@ export function SlotPagerHeader({
           <span className="text-muted-foreground">
             {considered} of {total}
           </span>
-          {complete && (
-            <Check
-              className="size-3.5 text-green-700 dark:text-green-400"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          )}
+          {doneCheck}
         </span>
       )}
 

@@ -19,6 +19,8 @@ import {
   offersDeferAll,
   segmentCounts,
   segmentColor,
+  segmentDoneColor,
+  segmentDoneTextColor,
   segmentEmpty,
   segmentKey,
   segmentLabel,
@@ -81,6 +83,10 @@ export function TaskSegmentGroup({
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
   const queueOn = useQueueOn(segment.horizon)
   const color = segmentColor(segment.horizon)
+  // Finished in its own colour, not green (the deadlines page only): the
+  // fill teal for the hairline and the ✓ glyphs; the count's numbers take
+  // the text teal (`segmentDoneTextColor`).
+  const doneColor = segmentDoneColor(segment.horizon)
   const label = segmentLabel(segment)
   const waiting = waitingRows(segment)
   const handled = handledRows(segment)
@@ -97,6 +103,8 @@ export function TaskSegmentGroup({
       open={open}
       started
       accent={segmentTitleColor(segment.horizon)}
+      doneAccent={segmentDoneTextColor(segment.horizon)}
+      doneColor={doneColor}
       emptyDone
     />
   )
@@ -157,7 +165,8 @@ export function TaskSegmentGroup({
         considered={handledCount}
         total={total}
         color={color}
-        // Empty is done: a full green line, not an empty track.
+        doneColor={doneColor}
+        // Empty is done: a full green line (`doneColor`'s), not an empty track.
         fraction={empty ? 1 : undefined}
       />
 
@@ -172,7 +181,7 @@ export function TaskSegmentGroup({
       {open && segment.horizon !== 'upcoming' && (
         <>
           <SegmentNudge segment={segment} className="mx-3" />
-          {empty && <EmptySegmentLine className="px-3 pb-1" />}
+          {empty && <EmptySegmentLine className="px-3 pb-1" doneAccent={doneColor} />}
           {waiting.length > 0 && (
             <ul className="space-y-0.5 px-1" aria-label={label}>
               {waiting.map((row) => (
