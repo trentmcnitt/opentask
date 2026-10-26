@@ -254,6 +254,7 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
         return ids.map(idKind(parent), value)
       case 'task_id':
       case 'skipped_recurring': // target-today's skipped repeating tasks (2026-10-12)
+      case 'moved_ids': // a bulk snooze's moved tasks (2026-10-26)
         return ids.map('task', value)
       case 'slot_id':
       case 'quota_prompt_slot_id':

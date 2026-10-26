@@ -266,9 +266,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     /// Which call each button makes is `NotificationActionRunner` — the same
     /// dispatch the phone, Mac and Watch delegates use — given the time picked
     /// in the grid for the custom snoozes. It also clears the banners of the
-    /// tiers a bulk snooze moved (`dismissNotificationsAfterSweep`): P0-P2,
-    /// plus High when the sweep took the High tier. Urgent is never swept, so
-    /// it stays. This notification's own banner goes with `.dismiss`.
+    /// tasks a bulk snooze moved (`dismissNotificationsAfterSweep`, by the
+    /// server's `moved_ids`), and no others. This notification's own banner
+    /// goes with `.dismiss`.
     func didReceive(
         _ response: UNNotificationResponse,
         completionHandler completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void

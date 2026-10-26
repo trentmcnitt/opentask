@@ -118,6 +118,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         snoozed_high_name: null,
         queued_until: null,
         summary: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
+        moved_ids: [],
         feedback_notification: false,
       })
     }
@@ -197,6 +198,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // this field always carried; on, it adds the queue wording and names.
       message: result.summary,
       ...taskQueueFields(result),
+      // The ids this call actually moved (2026-10-26), queued ones included:
+      // a client clears exactly these tasks' banners, nothing else.
+      moved_ids: result.snoozedIds,
       // Whether this call sent the feedback push — so a Shortcut can show
       // `message` only when no notification is coming.
       feedback_notification: feedback !== null,

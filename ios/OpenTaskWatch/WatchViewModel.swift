@@ -710,6 +710,8 @@ final class WatchViewModel: ObservableObject {
             }
             // The click was the feedback; a sweep that moved nothing buzzes.
             if result.tasksAffected == 0 { WKInterfaceDevice.current().play(.failure) }
+            // The moved tasks' banners on the watch, and only theirs.
+            await dismissNotificationsAfterSweep(result)
             WidgetCenter.shared.reloadAllTimelines()
             await load()
             return result

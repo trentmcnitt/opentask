@@ -83,6 +83,8 @@ describe('Task queue: bulk snooze routes (switch on)', () => {
       capped_occurrence: 0,
       snoozed_high_name: null,
     })
+    // A queued task was moved too: its id is in `moved_ids` (2026-10-26).
+    expect(r.json.data.moved_ids).toEqual([id])
     expect(r.json.data.summary).toMatch(
       new RegExp(`^"Call the bank" will move to the Tasks queue at ${TIME}$`),
     )
@@ -112,7 +114,7 @@ describe('Task queue: bulk snooze routes (switch on)', () => {
 
   test('TQ-I05: snooze-overdue is a sweep; message equals summary', async () => {
     const id = await make({ title: 'Renew the card', due_at: daysFromNow(-2) })
-    await make({ title: 'High one', priority: 3, due_at: daysFromNow(-2) })
+    const high = await make({ title: 'High one', priority: 3, due_at: daysFromNow(-2) })
     const r = await post('/api/tasks/bulk/snooze-overdue', { until: daysFromNow(3) })
     expect(r.status).toBe(200)
     expect(r.json.data).toMatchObject({
@@ -127,6 +129,9 @@ describe('Task queue: bulk snooze routes (switch on)', () => {
     )
     expect(r.json.data.message).toBe(r.json.data.summary)
     expect((await getTask(id)).queue_mark).toBe(true)
+    // Only what moved (the queued one); the skipped High is not in it.
+    expect(r.json.data.moved_ids).toEqual([id])
+    expect(r.json.data.moved_ids).not.toContain(high)
   })
 
   test('TQ-I06: snooze-overdue moves ONE High per press, oldest first, and names it', async () => {
@@ -167,6 +172,15 @@ describe('Task queue: bulk snooze routes (switch off)', () => {
       message: 'Deferred 1 task',
     })
     expect(await getTask(a)).toMatchObject({ due_at: until, queue_mark: false })
+    expect(r.json.data.moved_ids).toEqual([a])
+  })
+
+  test('TQ-I10b: moved_ids is [] when nothing moves, on both routes', async () => {
+    const empty = await post('/api/tasks/bulk/snooze-overdue', { until: daysFromNow(3) })
+    expect(empty.json.data).toMatchObject({ tasks_affected: 0, moved_ids: [] })
+    const urgent = await make({ title: 'Urgent', priority: 4, due_at: daysFromNow(-2) })
+    const skipped = await post('/api/tasks/bulk/snooze', { ids: [urgent], until: daysFromNow(3) })
+    expect(skipped.json.data).toMatchObject({ tasks_affected: 0, moved_ids: [] })
   })
 
   test('TQ-I11: a sweep source on bulk/snooze changes nothing with the switch off', async () => {

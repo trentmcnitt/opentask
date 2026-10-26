@@ -1577,6 +1577,15 @@ paths:
                           The standard one-line summary, e.g. "3 will move to the Tasks queue
                           at 6:30 AM · Snoozed 2 tasks (1 urgent skipped)". With the task
                           queue off it is the line `message` always carried.
+                      moved_ids:
+                        type: array
+                        items:
+                          type: integer
+                        description: >-
+                          The ids of the tasks this call moved (2026-10-26), queued ones
+                          included, in the order they were moved; `[]` when nothing
+                          moved. The native apps clear exactly these tasks' delivered
+                          banners after a sweep.
                       feedback_notification:
                         type: boolean
                         description: >-
@@ -7177,6 +7186,14 @@ components:
           description: |
             bulk/snooze only. The standard one-line summary the web toast shows,
             e.g. `"Call the bank" will move to the Tasks queue at 6:30 AM`.
+        moved_ids:
+          type: array
+          items:
+            type: integer
+          description: |
+            bulk/snooze only (2026-10-26). The ids of the tasks this call moved,
+            queued ones included, in the order they were moved; `[]` when nothing
+            moved.
 
     StatsSummary:
       type: object

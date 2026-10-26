@@ -1,54 +1,58 @@
 import Foundation
 
-/// Which delivered notifications a bulk snooze ("sweep") may clear — the
-/// Foundation-only half of `dismissNotificationsAfterSweep(_:)` in
-/// `NotificationConstants.swift`, kept separate so `OpenTaskLogicTests` (which
-/// leaves `NotificationConstants.swift` out to stay off UserNotifications) can
-/// test the rule.
+/// Which delivered notifications a bulk snooze ("sweep") clears: the
+/// Foundation-only rule behind `dismissNotificationsAfterSweep(_:)` and
+/// `removeDeliveredNotifications(forTaskIds:)` in `NotificationConstants.swift`,
+/// kept separate so `OpenTaskLogicTests` (which leaves
+/// `NotificationConstants.swift` out to stay off UserNotifications) can test it.
+///
+/// **The rule (2026-10-26): exactly the banners of the tasks the sweep moved**,
+/// matched by the payload's `taskId` against the server's `moved_ids`
+/// (`APIClient.BulkSnoozeResult.movedIds`; queued tasks are in it — a task sent
+/// to the Tasks queue was moved, and its banner is stale). Nothing else goes: a
+/// period push, the "AI finished" push, the deadlines nag, a named reminder
+/// banner (`REMINDER_NAG`), and the banner of an overdue task the sweep left
+/// where it was all stay.
+///
+/// It replaced a priority ceiling (P0–P2 always, High when the sweep took the
+/// High tier), which cleared every banner at or below the ceiling — reading a
+/// missing priority as P0, so every sweep also cleared the period push, the
+/// "AI finished" push, the deadlines nag and the reminder banners, and any
+/// overdue banner the server held back for its deadline or never reached.
+///
+/// The server sends the same set to every device as the silent `dismiss` push
+/// (`bulkSnooze` → `dismissNotificationsForTasks(userId, snoozedIds)`); this is
+/// the local half, so the device that ran the sweep is clean the moment the
+/// response lands, whether or not that push wakes it. A server from before
+/// `moved_ids` sends none: nothing is cleared locally, and the silent push
+/// still clears the moved ones.
 
-/// Highest priority a sweep ALWAYS includes.
-///
-/// Mirrors `HIGH_PRIORITY_THRESHOLD - 1` in `src/core/tasks/bulk.ts`
-/// (`filterForBulkSnooze`): P0-P2 are always swept; P3 (High) only once no
-/// P0-P2 task is left in the batch; P4 (Urgent) never. Dismissing above the
-/// tier that actually moved would clear the banner for a task that was never
-/// snoozed — it would stay overdue while looking handled, which is the failure
-/// this app exists to prevent.
-///
-/// Keep in sync with the server constant; there is no shared source of truth
-/// across the Swift/TypeScript boundary.
-let bulkSnoozeMaxPriority = 2
+/// A delivered banner, as much of it as the rule reads.
+struct DeliveredBanner: Equatable {
+    /// The request identifier, what `removeDeliveredNotifications` takes.
+    let identifier: String
+    /// The payload's `taskId`; nil for a banner about no single task (a
+    /// period push, an overflow summary, the deadlines nag).
+    let taskId: Int?
 
-/// The priority ceiling to dismiss at after a sweep returned `result`.
-///
-/// 3 when the sweep moved High tasks (`snoozed_high > 0`) and left none
-/// behind (`skipped_high == 0`) — the round where nothing lower was left and
-/// the server swept the High tier too, so their banners are now stale.
-/// Otherwise 2.
-///
-/// The `skippedHigh == 0` half matters for a sweep started from one High
-/// task's own notification: `include_task_ids` rescues that one task while
-/// P0-P2 are still overdue, so `snoozed_high` is 1 but every other High task
-/// was skipped and is still overdue. That task's own banner is removed by
-/// identifier by the action handler, not by this ceiling.
-func sweepDismissCeiling(_ result: APIClient.BulkSnoozeResult) -> Int {
-    result.snoozedHigh > 0 && result.skippedHigh == 0 ? bulkSnoozeMaxPriority + 1 : bulkSnoozeMaxPriority
+    init(identifier: String, taskId: Int?) {
+        self.identifier = identifier
+        self.taskId = taskId
+    }
+
+    init(identifier: String, userInfo: [AnyHashable: Any]) {
+        self.init(identifier: identifier, taskId: userInfo["taskId"] as? Int)
+    }
 }
 
-/// Whether a sweep that dismisses up to `ceiling` clears one delivered banner:
-/// the predicate of `dismissNotifications(atOrBelowPriority:)`.
-///
-/// - A named reminder banner (`REMINDER_NAG`, 2026-10-26) never goes. Its
-///   payload carries no `priority` (`buildReminderNagNotification` in
-///   `src/core/notifications/apns.ts`), so the plain rule would read it as P0
-///   and every sweep would clear it. But a reminder is not an overdue task and
-///   no sweep moves it, so its banner would vanish while it is still waiting.
-///   (Builds before this one do clear it; the reminder's next nag brings it
-///   back.)
-/// - Anything else: its `priority`, a missing one read as 0, at or below
-///   `ceiling`. Other banners without a priority (a period push, "AI
-///   finished", the deadlines nag) keep that reading, as before.
-func sweepClearsBanner(category: String, priority: Int?, ceiling: Int) -> Bool {
-    if category == NotificationCategory.reminderNag { return false }
-    return (priority ?? 0) <= ceiling
+/// The identifiers of the banners that belong to `taskIds`, in delivered
+/// order. The one matching rule for a sweep's `moved_ids` and for the
+/// server's silent `dismiss` push.
+func bannerIdentifiers(_ banners: [DeliveredBanner], forTaskIds taskIds: [Int]) -> [String] {
+    guard !taskIds.isEmpty else { return [] }
+    let ids = Set(taskIds)
+    return banners.compactMap { banner in
+        guard let taskId = banner.taskId, ids.contains(taskId) else { return nil }
+        return banner.identifier
+    }
 }

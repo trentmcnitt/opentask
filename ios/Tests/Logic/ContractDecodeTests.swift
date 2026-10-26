@@ -240,6 +240,10 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(data["skipped_urgent"] as? Int, 1)
         XCTAssertEqual(data["skipped_high"] as? Int, 0)
         XCTAssertEqual(data["snoozed_high"] as? Int, 0)
+        // `moved_ids` (2026-10-26): the two it moved — step 8's overdue task
+        // and step 9's dateless one — not the Urgent one or the reminder.
+        XCTAssertEqual(data["moved_ids"] as? [Int], [107, 108])
+        XCTAssertEqual(APIClient.parseBulkSnoozeResult(try Fixtures.data("bulk-snooze")).movedIds, [107, 108])
     }
 
     /// `POST /api/tasks/bulk/snooze-overdue` with the task queue on: one of
@@ -257,6 +261,18 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(result.summary, raw["summary"] as? String)
         XCTAssertTrue(result.summary?.contains("Tasks queue") ?? false)
         XCTAssertEqual(result.summaryLines.first, .queued(1, at: result.queuedUntil))
+        // Both moved tasks — the queued one included — are in `moved_ids`,
+        // the banners a sweep clears; step 9's Urgent task (skipped) is not.
+        XCTAssertEqual(raw["moved_ids"] as? [Int], [114, 115])
+        XCTAssertEqual(result.movedIds, [114, 115])
+        XCTAssertEqual(result.movedIds.count, result.tasksAffected)
+    }
+
+    /// A server from before `moved_ids` (2026-10-26): no ids, so a sweep
+    /// clears no banner locally.
+    func testBulkSnoozeWithoutMovedIdsDecodesEmpty() {
+        let data = Data(#"{"data":{"tasks_affected":2,"skipped_urgent":0}}"#.utf8)
+        XCTAssertEqual(APIClient.parseBulkSnoozeResult(data).movedIds, [])
     }
 
     // MARK: GET /api/tasks, /api/time-slots, /api/completions, /api/undo/status

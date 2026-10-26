@@ -40,7 +40,7 @@ import Foundation
 ///
 /// After a successful sweep the runner calls `dismissAfterSweep` with the
 /// server's result — `dismissNotificationsAfterSweep` in production, which
-/// clears the banners of the tiers that actually moved. A thrown error
+/// clears the banners of exactly the tasks that moved (`moved_ids`). A thrown error
 /// propagates untouched and nothing is dismissed.
 ///
 /// Foundation-only on purpose (`OpenTaskLogicTests` leaves

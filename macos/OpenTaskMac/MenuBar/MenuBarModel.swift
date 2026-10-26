@@ -182,6 +182,8 @@ final class MenuBarModel: ObservableObject {
                 case .plusOneHour: try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, notify: false)
                 }
                 note = Self.sweepSummary(result)
+                // The moved tasks' banners, and only theirs.
+                await dismissNotificationsAfterSweep(result)
             } catch {
                 note = "Defer failed — try again"
             }

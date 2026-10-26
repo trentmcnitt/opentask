@@ -306,6 +306,8 @@ private enum OverdueSweep {
             // Urgent always stays (never swept); High stays only when the
             // server says it skipped some.
             WatchCache.removeSweptOverdueTasks(keepHigh: result.skippedHigh > 0)
+            // The moved tasks' delivered banners, and only theirs.
+            await dismissNotificationsAfterSweep(result)
         } catch {
             // No result recorded: the card simply stays in overdue mode with
             // the buttons live for a retry.

@@ -148,41 +148,23 @@ func registerNotificationCategories() {
     ])
 }
 
-/// Remove delivered notifications for tasks at or below the given priority.
-/// The general form; after a bulk snooze use `dismissNotificationsAfterSweep`.
-func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
-    let center = UNUserNotificationCenter.current()
-    let notifications = await center.deliveredNotifications()
-    let idsToRemove = notifications
-        .filter { notification in
-            let content = notification.request.content
-            return sweepClearsBanner(
-                category: content.categoryIdentifier,
-                priority: content.userInfo["priority"] as? Int,
-                ceiling: maxPriority
-            )
-        }
-        .map { $0.request.identifier }
-
-    if !idsToRemove.isEmpty {
-        center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
-    }
-}
-
-/// After a bulk snooze: clear the delivered notifications of the tiers the
-/// sweep actually moved. P0-P2 always; P3 (High) too when the sweep took the
-/// High tier (`sweepDismissCeiling`, in `SweepDismissal.swift`); P4 (Urgent)
-/// never, since it is never swept. A sweep that moved nothing clears nothing.
-/// A named reminder banner (`REMINDER_NAG`) never goes: a reminder is not an
-/// overdue task, and no sweep moves it (`sweepClearsBanner`).
+/// After a bulk snooze: clear the delivered banners of exactly the tasks the
+/// sweep moved — the server's `moved_ids`, queued tasks included, matched by
+/// the payload's `taskId` (`bannerIdentifiers`, in `SweepDismissal.swift`,
+/// which has the rule and why). Every other banner stays: a period push, the
+/// "AI finished" push, the deadlines nag, a named reminder banner, and an
+/// overdue task the sweep didn't move. A sweep that moved nothing, or a server
+/// that doesn't send `moved_ids`, clears nothing here.
 ///
-/// Every sweep path calls this — the notification actions on every device
-/// (through `NotificationActionRunner`, which the phone, Mac and Watch
-/// delegates and the content extension share) and the Mac's menu items — so
-/// they can't drift on which banners a sweep clears.
+/// Every sweep path calls this, so they can't drift on which banners a sweep
+/// clears: the notification actions on every device (through
+/// `NotificationActionRunner`, which the phone, Mac and Watch delegates and the
+/// content extension share), the iPhone's Home Screen quick actions, the
+/// Tasks widget's "All overdue" bar (iPhone and Mac), the watch's bulk sheet
+/// and Smart Stack card, and the Mac's menu items and menu-bar panel.
 func dismissNotificationsAfterSweep(_ result: APIClient.BulkSnoozeResult) async {
-    guard result.tasksAffected > 0 else { return }
-    await dismissNotifications(atOrBelowPriority: sweepDismissCeiling(result))
+    guard !result.movedIds.isEmpty else { return }
+    _ = await removeDeliveredNotifications(forTaskIds: result.movedIds)
 }
 
 /// The silent `dismiss` push (`dismissNotificationsForTasks`,
@@ -195,12 +177,10 @@ func dismissNotificationsAfterSweep(_ result: APIClient.BulkSnoozeResult) async 
 /// of the other silent types (`badge-update`, `dismiss-all`).
 func removeDeliveredNotifications(forTaskIds taskIds: [Int]) async -> Int {
     let center = UNUserNotificationCenter.current()
-    let idsToRemove = await center.deliveredNotifications()
-        .filter { notification in
-            guard let id = notification.request.content.userInfo["taskId"] as? Int else { return false }
-            return taskIds.contains(id)
-        }
-        .map(\.request.identifier)
+    let delivered = await center.deliveredNotifications().map {
+        DeliveredBanner(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
+    }
+    let idsToRemove = bannerIdentifiers(delivered, forTaskIds: taskIds)
 
     if !idsToRemove.isEmpty {
         center.removeDeliveredNotifications(withIdentifiers: idsToRemove)
@@ -230,7 +210,7 @@ extension NotificationActionRunner {
     ///   waiting, so it stays.
     /// - body tap: every delivered banner goes for a summary or task (the user
     ///   is opening the app to deal with them); only its own for a slot.
-    /// - after a sweep, the moved tiers' banners (`dismissNotificationsAfterSweep`).
+    /// - after a sweep, the moved tasks' banners (`dismissNotificationsAfterSweep`).
     ///
     /// The caller still owns navigation, haptics, error reporting, the badge
     /// and its completion handler.
