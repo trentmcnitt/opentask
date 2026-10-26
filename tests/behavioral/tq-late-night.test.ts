@@ -21,7 +21,7 @@
  * The scan guards (TQ-G01..G04, tq-day-guard.test.ts) catch the way a day is
  * worked out; this catches what it comes to, through any helper.
  */
-import { describe, test, expect } from 'vitest'
+import { afterEach, describe, test, expect, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
 import { draftFromTask, type EveryTimeContext, type EveryTimeTask } from '@/lib/every-time'
@@ -44,6 +44,8 @@ import {
 import { formatSnoozeTarget } from '@/lib/field-labels'
 import { userDayLine } from '@/core/ai/prompts'
 import { upcomingGap } from '@/lib/task-segments'
+import { computeInitialDisplay } from '@/hooks/useBulkQuickSelectDate'
+import { formatTimeAgoLabel } from '@/lib/history-time-label'
 import type { Task } from '@/types'
 
 const TZ = 'America/Chicago'
@@ -241,13 +243,14 @@ describe.each(NIGHTS)('TQ-LN: $name', (night) => {
       targets.map((t) => formatQuickSelectHeader(t, TZ, DAY_START, now)),
     )
     const date = (n: number) => d.plus({ days: n }).toFormat('LLL d')
-    // With a time: between midnight and the day start, L9's "night" words;
-    // the date stays the moment's own.
+    // With a time: between midnight and the day start, L9's "night" words,
+    // and the date is the evening's too — the word and the date name one day
+    // (2026-10-27; it was the moment's own date: "Mon night, Oct 27").
     expect(headers).toEqual([
-      `Tonight, ${date(1)}, 1:00 AM`,
+      `Tonight, ${date(0)}, 1:00 AM`,
       `Tomorrow, ${date(1)}, 9:00 AM`,
-      `Tomorrow night, ${date(2)}, 1:00 AM`,
-      `${weekday(2)} night, ${date(3)}, 1:00 AM`,
+      `Tomorrow night, ${date(1)}, 1:00 AM`,
+      `${weekday(2)} night, ${date(2)}, 1:00 AM`,
       `${weekday(3)}, ${date(3)}, 9:00 AM`,
     ])
   })
@@ -577,5 +580,198 @@ describe('TQ-LN: a day start after noon (11 PM)', () => {
     expect(first('FREQ=DAILY;INTERVAL=3', sunNight, CALENDAR_DAY_START)).toBe(
       iso('2026-10-28T00:00'),
     )
+  })
+})
+
+/**
+ * TQ-LN21: A LABEL'S WEEKDAY AND DATE ALWAYS NAME THE SAME DAY (2026-10-27;
+ * #354 shipped "Mon night, Oct 27, 1:00 AM" for a Tue Oct 27 01:00 target).
+ * With the night cue both name the evening ("Mon night, Oct 26"); without it
+ * both are the moment's own. Every label path that can show a day beside a
+ * date is asked about a grid of moments around several "now"s, with a 3:00
+ * AM start, an 11 PM start and the switch off (midnight): wherever a label
+ * holds a weekday — or "today" / "tonight" / "tomorrow" / "yesterday" — and a
+ * date, the two are parsed and must be one calendar day.
+ */
+const WEEKDAY_NUMBER: Record<string, number> = {
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+  Sun: 7,
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6,
+  Sunday: 7,
+}
+const WORD_OFFSET: Record<string, number> = { today: 0, tonight: 0, tomorrow: 1, yesterday: -1 }
+const WEEKDAY_RE =
+  /\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/
+const WORD_RE = /\b(today|tonight|tomorrow|yesterday)\b/i
+const DATE_RE = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2})(?:, (\d{4}))?\b/
+
+/**
+ * The problem with `label`'s day pairing, or null. `today` is the user's
+ * day (yyyy-MM-dd) the relative words count from. Returns whether a pair was
+ * checked, so the test can prove it checked something on every path.
+ */
+function pairProblem(
+  label: string,
+  now: DateTime,
+  today: string,
+): { checked: boolean; problem: string | null } {
+  const dateMatch = DATE_RE.exec(label)
+  if (!dateMatch) return { checked: false, problem: null }
+  let date = DateTime.fromFormat(
+    `${dateMatch[1]} ${dateMatch[2]} ${dateMatch[3] ?? now.year}`,
+    'LLL d yyyy',
+    { zone: TZ },
+  )
+  // A date with no year is the nearest one to now.
+  if (!dateMatch[3] && date.diff(now, 'months').months > 6) date = date.minus({ years: 1 })
+  if (!dateMatch[3] && now.diff(date, 'months').months > 6) date = date.plus({ years: 1 })
+  const weekday = WEEKDAY_RE.exec(label)
+  if (weekday) {
+    const ok = date.weekday === WEEKDAY_NUMBER[weekday[1]]
+    return {
+      checked: true,
+      problem: ok ? null : `${weekday[1]} beside ${date.toFormat('ccc LLL d')}`,
+    }
+  }
+  const word = WORD_RE.exec(label)
+  if (word) {
+    const want = DateTime.fromISO(today, { zone: TZ }).plus({
+      days: WORD_OFFSET[word[1].toLowerCase()],
+    })
+    const ok = want.hasSame(date, 'day')
+    return {
+      checked: true,
+      problem: ok ? null : `${word[1]} (${want.toISODate()}) beside ${date.toISODate()}`,
+    }
+  }
+  return { checked: false, problem: null }
+}
+
+describe("TQ-LN21: a label never pairs one day with another day's date", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const NOWS = [
+    '2026-10-24T12:30',
+    '2026-10-25T23:30',
+    '2026-10-26T00:30',
+    '2026-10-26T02:00',
+    '2026-10-31T23:30', // the fall-back night (Sun Nov 1, CDT → CST)
+    '2026-11-01T00:30',
+  ]
+  const TIMES = ['00:30', '01:00', '02:30', '09:00', '22:30', '23:30', '23:47']
+
+  test.each([
+    { name: '3:00 AM start', dayStart: DAY_START },
+    { name: '11 PM start', dayStart: LATE_START },
+    { name: 'the switch off (midnight)', dayStart: CALENDAR_DAY_START },
+  ])('TQ-LN21: $name', ({ dayStart }) => {
+    const problems: string[] = []
+    const checked = new Map<string, number>()
+    const check = (
+      path: string,
+      label: string | null | undefined,
+      now: DateTime,
+      today: string,
+    ) => {
+      if (!label) return
+      const r = pairProblem(label, now, today)
+      if (r.checked) checked.set(path, (checked.get(path) ?? 0) + 1)
+      if (r.problem)
+        problems.push(`${path} @${now.toFormat('ccc LLL d HH:mm')}: "${label}" — ${r.problem}`)
+    }
+    for (const nowLocal of NOWS) {
+      const now = local(nowLocal)
+      const nowDt = DateTime.fromJSDate(now).setZone(TZ)
+      vi.useFakeTimers({ now })
+      const today = openTaskDayOf(now, TZ, dayStart)
+      for (let d = -9; d <= 9; d++) {
+        const day = nowDt.startOf('day').plus({ days: d }).toISODate()!
+        for (const time of TIMES) {
+          const at = iso(`${day}T${time}`)
+          const atMs = Date.parse(at)
+          check('header', formatQuickSelectHeader(at, TZ, dayStart, now), nowDt, today)
+          const parts = formatDueTimeParts(at, TZ, dayStart, now)
+          check('row', `${parts.relative} ${parts.absolute ?? ''}`, nowDt, today)
+          check('defer words', formatSnoozeTarget(at, TZ, dayStart, now), nowDt, today)
+          const chip = deadlineChip(at, TZ, now, dayStart)
+          check('deadline chip', chip.text, nowDt, today)
+          check('deadline chip title', chip.title, nowDt, today)
+          const gap = upcomingGap({ due_at: at, deadline_at: at }, TZ, dayStart, 'later')
+          check('upcoming', gap.target, nowDt, today)
+          check('upcoming', gap.deadline, nowDt, today)
+          const one = { due_at: at } as Task
+          check('bulk header', computeInitialDisplay([one], TZ, dayStart).headerText, nowDt, today)
+          const later = { due_at: new Date(atMs + 30 * 60_000).toISOString() } as Task
+          check(
+            'bulk header',
+            computeInitialDisplay([one, later], TZ, dayStart).headerText,
+            nowDt,
+            today,
+          )
+          if (atMs <= now.getTime()) {
+            check(
+              'history',
+              formatTimeAgoLabel({ created_at: at }, now.getTime(), TZ, dayStart),
+              nowDt,
+              today,
+            )
+            check('quota last', formatLastLogged(at, TZ, dayStart, now), nowDt, today)
+            const since = formatTaskSince(
+              { rrule: null, due_at: null, original_due_at: null, created_at: at },
+              TZ,
+              dayStart,
+              now,
+            )
+            check('since', since?.label, nowDt, today)
+            check('since', since?.fullDate, nowDt, today)
+          }
+        }
+      }
+      vi.useRealTimers()
+    }
+    expect(problems).toEqual([])
+    // Every path that can show a day beside a date was asked about one. The
+    // row, the defer words and History never do (a weekday OR a date):
+    // they are checked above, and must stay that way.
+    for (const path of ['header', 'deadline chip title', 'upcoming', 'bulk header', 'since']) {
+      expect(checked.get(path) ?? 0, path).toBeGreaterThan(0)
+    }
+  })
+
+  test('TQ-LN21b: the night pairs name the evening; overdue in its night is "last night"', () => {
+    // Sun Oct 25 12:30, 3:00 AM start: Tue Oct 27 01:00 is Monday night's.
+    const sunNoon = local('2026-10-25T12:30')
+    expect(formatQuickSelectHeader(iso('2026-10-27T01:00'), TZ, DAY_START, sunNoon)).toBe(
+      'Tomorrow night, Oct 26, 1:00 AM',
+    )
+    expect(formatQuickSelectHeader(iso('2026-10-28T01:00'), TZ, DAY_START, sunNoon)).toBe(
+      'Tue night, Oct 27, 1:00 AM',
+    )
+    // The switch off: the calendar day, no cue.
+    expect(formatQuickSelectHeader(iso('2026-10-28T01:00'), TZ, CALENDAR_DAY_START, sunNoon)).toBe(
+      'Wed, Oct 28, 1:00 AM',
+    )
+    // Overdue, read Mon 10:00: Mon 01:00 was Sunday night's — "last night".
+    const monTen = local('2026-10-26T10:00')
+    expect(formatDueTimeParts(iso('2026-10-26T01:00'), TZ, DAY_START, monTen)).toEqual({
+      relative: 'last night',
+      absolute: '1:00 AM',
+    })
+    expect(formatDueTimeParts(iso('2026-10-26T01:00'), TZ, CALENDAR_DAY_START, monTen)).toEqual({
+      relative: '9h ago',
+      absolute: '1:00 AM',
+    })
   })
 })

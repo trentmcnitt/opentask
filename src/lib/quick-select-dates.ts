@@ -14,7 +14,7 @@ import {
   daysBetween,
 } from '@/lib/format-date'
 import { snapToHour } from '@/lib/snooze'
-import { capitalized, nightDay, nightDayWords } from '@/lib/night-day'
+import { capitalized, nightDay, nightDayWords, timedDay } from '@/lib/night-day'
 
 /** Increment buttons: positive = forward, negative = backward */
 export const INCREMENTS = [
@@ -177,9 +177,11 @@ export function getDayLabel(
  * Returns: "Today, Feb 3, 10:00 AM" or "Tomorrow, Feb 4, 9:00 AM" or "Mon, Feb 10, 6:50 PM".
  *
  * Between midnight and the day start the day word follows L9's night rule
- * (`nightDay`, part 2): "Tonight, Feb 4, 1:00 AM", "Tomorrow night, Feb 5,
- * 1:00 AM", "Thu night, Feb 6, 1:00 AM" — the word names the OpenTask day
- * the time is on, the date stays the moment's own. Out of the night the day
+ * (`nightDay`, part 2): "Tonight, Feb 3, 1:00 AM", "Tomorrow night, Feb 4,
+ * 1:00 AM", "Thu night, Feb 5, 1:00 AM" — the word AND the date name the
+ * OpenTask day the time is on, the evening (2026-10-27: "Mon night, Oct 27"
+ * for a Tue Oct 27 01:00 paired Monday with Tuesday's date; a label's weekday
+ * and date always name the same day, `timedDay`). Out of the night the day
  * is the moment's own (Trent, 2026-10-26): with an 11 PM start a Tue Oct 27
  * 23:47 target is on Wednesday's list but reads "Tue, Oct 27, 11:47 PM", and
  * a word that would contradict the date gives way to the weekday — at Sat
@@ -193,7 +195,8 @@ export function formatQuickSelectHeader(
   now: Date = new Date(),
 ): string {
   const date = new Date(isoUtc)
-  const dayLabel = capitalized(nightDayWords(nightDay(date, timezone, dayStart, now), date < now))
+  const n = nightDay(date, timezone, dayStart, now)
+  const dayLabel = capitalized(nightDayWords(n, date < now))
 
   const timePart = date.toLocaleString('en-US', {
     timeZone: timezone,
@@ -202,11 +205,8 @@ export function formatQuickSelectHeader(
     hour12: true,
   })
 
-  const datePart = date.toLocaleString('en-US', {
-    timeZone: timezone,
-    month: 'short',
-    day: 'numeric',
-  })
+  // The day the words name: the evening's date in its night, else its own.
+  const datePart = timedDay(n).toFormat('LLL d')
 
   return `${dayLabel}, ${datePart}, ${timePart}`
 }
