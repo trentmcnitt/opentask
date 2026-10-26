@@ -743,6 +743,10 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
     /// widget row draws the same small glyph there (`NotesGlyph`). False
     /// from a server that predates the field.
     let hasNotes: Bool
+    /// The quota's priority (0–4, 2026-10-26), sent so the web's Priority
+    /// Display can mark prompt rows. Decoded for the wire contract; no native
+    /// surface draws it yet. Nil from an older server.
+    let priority: Int?
 
     var id: String { promptKey }
 
@@ -758,6 +762,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         case stripeColor = "stripe_color"
         case considered, done
         case hasNotes = "has_notes"
+        case priority
     }
 
     init(from decoder: Decoder) throws {
@@ -779,6 +784,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         considered = try c.decodeIfPresent(Bool.self, forKey: .considered) ?? false
         done = try c.decodeIfPresent(Bool.self, forKey: .done) ?? false
         hasNotes = try c.decodeIfPresent(Bool.self, forKey: .hasNotes) ?? false
+        priority = try c.decodeIfPresent(Int.self, forKey: .priority)
     }
 
     /// `hasNotes` has NO default here, on purpose — `ReminderGroupDTO.
@@ -792,7 +798,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         period: String? = nil, stripeColor: String? = nil, considered: Bool = false, done: Bool = false,
         hasNotes: Bool,
         periodInterval: Int? = nil, periodEnd: String? = nil, periodLastDay: String? = nil,
-        periodLabel: String? = nil
+        periodLabel: String? = nil, priority: Int? = nil
     ) {
         self.promptKey = promptKey
         self.taskId = taskId
@@ -811,6 +817,7 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
         self.considered = considered
         self.done = done
         self.hasNotes = hasNotes
+        self.priority = priority
     }
 
     /// A copy with a new count and handled state — EVERY other field carried
