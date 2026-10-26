@@ -8,7 +8,7 @@
  * edits the selection together (the quota editor's multi-edit) or trashes it,
  * each with one Undo. The full gesture table is `useQuotaChipSelection`'s.
  */
-import { test, expect } from './fixtures'
+import { test, expect, expectClearOnFirstRow } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const made: number[] = []
@@ -202,5 +202,27 @@ test.describe('Quotas page — selecting chips', () => {
 
     await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
     for (const chip of [a, b, c]) await expect(chip).toBeVisible()
+  })
+})
+
+/**
+ * The bar on a phone at the iOS app's 119% text (a 19.04px root,
+ * ios/OpenTask/WebView.swift): "3 selected · Details · trash" and Clear (the
+ * X on the pill's corner) all on one row, as on the dashboard and Reminders
+ * (the shared `SelectionBarShell`, 2026-10-26).
+ */
+test.describe('Quotas page — the selection bar on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('the verbs and Clear sit on one row at a large text size', async ({
+    authenticatedPage: page,
+  }) => {
+    const { chips } = await seedThree(page)
+    await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
+    const [a, , c] = chips
+    await a.click({ modifiers: ['ControlOrMeta'] })
+    await c.click({ modifiers: ['Shift'] })
+    await expect(page.locator('[data-quota-selection-bar]')).toContainText('3 selected')
+    await expectClearOnFirstRow(page, 'three selected', { oneRow: true })
   })
 })

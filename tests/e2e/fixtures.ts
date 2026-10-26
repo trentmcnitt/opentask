@@ -365,8 +365,16 @@ export async function cmdClickRow(row: Locator): Promise<void> {
  * the X wrapped under "3 selected · Done · More · trash", and under Reminders'
  * "Considered · Details · trash"; it sits on the pill's corner now). Its top is
  * above the first verb's bottom edge, its centre no lower, and it is on screen.
+ *
+ * `oneRow`: every verb shares that first row too, the trash included (the
+ * shell's tighter phone padding, 2026-10-26: at 375 and 119% text the trash
+ * had wrapped to a row of its own).
  */
-export async function expectClearOnFirstRow(page: Page, label: string): Promise<void> {
+export async function expectClearOnFirstRow(
+  page: Page,
+  label: string,
+  { oneRow = false }: { oneRow?: boolean } = {},
+): Promise<void> {
   const sheet = page.locator('[data-selection-sheet]')
   const clear = (await sheet.getByRole('button', { name: 'Clear selection' }).boundingBox())!
   const first = (await sheet
@@ -380,6 +388,18 @@ export async function expectClearOnFirstRow(page: Page, label: string): Promise<
   expect(clear.x + clear.width, `Clear's right edge, ${label}`).toBeLessThanOrEqual(
     page.viewportSize()!.width,
   )
+  if (!oneRow) return
+  const verbs = await sheet
+    .locator('button:not([aria-label="Clear selection"])')
+    .evaluateAll((els) =>
+      els.map((el) => ({
+        name: el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '',
+        top: el.getBoundingClientRect().top,
+      })),
+    )
+  for (const verb of verbs) {
+    expect(verb.top, `${verb.name}'s top, ${label}`).toBeLessThan(firstRowBottom)
+  }
 }
 
 /**

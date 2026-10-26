@@ -170,7 +170,7 @@ test.describe('The floating bar on a phone', () => {
         await page.evaluate((size) => (document.documentElement.style.fontSize = size), rootSize)
         for (const id of ids) await cmdClickRow(row(page, id))
         await expect(bar(page)).toContainText('3 selected')
-        await expectClearOnFirstRow(page, `root ${rootSize}`)
+        await expectClearOnFirstRow(page, `root ${rootSize}`, { oneRow: rootSize !== '20px' })
         await bar(page).getByRole('button', { name: 'Clear selection' }).click()
         await expect(bar(page)).toHaveCount(0)
       }
