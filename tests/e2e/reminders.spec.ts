@@ -14,7 +14,13 @@
  * specs assert on.
  */
 
-import { test, expect, hideStraySegmentTasks, waitForGetsSettled } from './fixtures'
+import {
+  test,
+  expect,
+  expectClearOnFirstRow,
+  hideStraySegmentTasks,
+  waitForGetsSettled,
+} from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -998,6 +1004,69 @@ test.describe('Reminders top bar', () => {
       await expect(undo).toHaveAccessibleName('Undo')
     } finally {
       await deleteTasks(page, [id])
+    }
+  })
+})
+
+/**
+ * The selection bar on a phone at the iOS app's 119% text (a 19.04px root,
+ * ios/OpenTask/WebView.swift): "Considered · Details · trash" fills a 375
+ * bar, and Clear, the last item of the wrapping row, fell to a row of its own
+ * (Trent's phone, 2026-10-26). It sits on the pill's corner, level with the
+ * verbs, whether one row or two are selected.
+ */
+test.describe('Reminders selection bar on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('Clear stays level with the first row of verbs at a large text size', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids = [
+      await createReminder(page, { title: 'A thought for the phone bar', due_at: todayAt(7) }),
+      await createReminder(page, { title: 'Another for the phone bar', due_at: todayAt(7) }),
+      await createReminder(page, {
+        title:
+          'Read this thread later https://social.example.com/sample_account/status/1234567890123456789?s=20&t=AbCdEfGhIjKlMnOpQrStUv',
+        due_at: todayAt(7),
+      }),
+    ]
+    try {
+      await openReminders(page)
+      await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
+      await openAllSlots(page)
+      const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
+      await longPressRow(page, row('A thought for the phone bar'))
+      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
+      await expectClearOnFirstRow(page, 'one selected', { oneRow: true })
+      await row('Another for the phone bar').click()
+      await expect(page.getByText('2 selected')).toBeVisible()
+      await expectClearOnFirstRow(page, 'two selected')
+      await page.getByRole('button', { name: 'Clear selection' }).click()
+      await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
+
+      // With a link in a reminder's title on the page, the page stays a
+      // phone's width, and so does the editor sheet opened over it. On Trent's
+      // phone a page wider than the screen let the app be zoomed out, and the
+      // sheet opened in that state squeezed the page to half the screen.
+      await expect(row('Read this thread later')).toBeVisible()
+      await longPressRow(page, row('A thought for the phone bar'))
+      await page.getByRole('button', { name: 'Details', exact: true }).click()
+      const sheet = page.getByRole('dialog', { name: 'Reminder' })
+      await expect(sheet).toBeVisible()
+      const widths = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }))
+      expect(widths.scroll, 'the page scrolls sideways under the sheet').toBeLessThanOrEqual(
+        widths.client,
+      )
+      const box = (await sheet.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(375)
+      await sheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(sheet).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
     }
   })
 })

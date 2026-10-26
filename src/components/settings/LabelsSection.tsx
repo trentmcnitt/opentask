@@ -78,13 +78,17 @@ function LabelEditor({
   return (
     <div className="space-y-2">
       {labels.map((label) => (
+        // The dots wrap and the X keeps its place (2026-10-26): a long label
+        // name beside the eight dots ran the X past a phone's edge at a
+        // large text size, widening the page.
         <div key={label.name} className="flex items-center gap-2">
           <Badge
-            className={`${LABEL_COLORS[label.color].bg} ${LABEL_COLORS[label.color].text} flex-shrink-0 border-0`}
+            className={`${LABEL_COLORS[label.color].bg} ${LABEL_COLORS[label.color].text} max-w-[50%] flex-shrink-0 border-0`}
+            title={label.name}
           >
-            {label.name}
+            <span className="truncate">{label.name}</span>
           </Badge>
-          <div className="flex flex-1 items-center gap-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             {LABEL_COLOR_NAMES.map((c) => (
               <ColorDot
                 key={c}
@@ -97,7 +101,7 @@ function LabelEditor({
           </div>
           <button
             onClick={() => handleRemove(label.name)}
-            className="text-zinc-400 transition-colors hover:text-red-500"
+            className="shrink-0 text-zinc-400 transition-colors hover:text-red-500"
             aria-label={`Remove ${label.name}`}
           >
             <X className="size-4" />

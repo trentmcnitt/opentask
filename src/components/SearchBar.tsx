@@ -101,7 +101,9 @@ export function SearchBar({
 
   return (
     // ml-auto keeps search right-aligned; flex-1 when active gives room for leftward growth
-    <div className="flex min-w-0 items-center justify-end md:flex-1">
+    // shrink-0 on a phone: the icon button is all there is, and squeezing it
+    // only pushed it over the header's section label (see `Header`).
+    <div className="flex min-w-0 shrink-0 items-center justify-end md:flex-1 md:shrink">
       {/* Desktop: ml-4 (16px) for spacing from badges - matches 16px visual gap to clock icon */}
       <div
         className={cn(

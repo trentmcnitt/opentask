@@ -264,12 +264,17 @@ test.describe('The Defer FAB with a selection on a phone', () => {
       await expect(bar(page)).toContainText('2 selected')
       await expect(fab(page)).toBeVisible()
       await expect(fab(page).locator('[data-snooze-selected-count]')).toHaveText('2')
-      // The column lifts clear of the bar instead of sitting on its right end.
+      // The column lifts clear of the bar instead of sitting on its right end
+      // — and of Clear, the X on the bar's top-right corner, which stands
+      // above the bar's box, under the column (2026-10-26).
       await expect
         .poll(async () => {
           const f = (await fab(page).boundingBox())!
           const b = (await bar(page).boundingBox())!
-          return f.y + f.height <= b.y
+          const c = (await bar(page)
+            .getByRole('button', { name: 'Clear selection' })
+            .boundingBox())!
+          return f.y + f.height <= Math.min(b.y, c.y)
         })
         .toBe(true)
     })

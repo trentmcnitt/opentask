@@ -19,6 +19,7 @@ import {
   test,
   expect,
   cmdClickRow,
+  expectClearOnFirstRow,
   holdUntil,
   uniqueTitle,
   waitForPrefsLoaded,
@@ -152,6 +153,24 @@ test.describe('The floating bar on a phone', () => {
           expect(box.x).toBeGreaterThanOrEqual(0)
           expect(box.x + box.width).toBeLessThanOrEqual(width)
         }
+        await bar(page).getByRole('button', { name: 'Clear selection' }).click()
+        await expect(bar(page)).toHaveCount(0)
+      }
+    })
+  })
+
+  test('with three selected, Clear stays level with the first row of verbs', async ({
+    authenticatedPage: page,
+  }) => {
+    // At the iOS app's 119% text (19.04px root, ios/OpenTask/WebView.swift)
+    // "3 selected · Done · More · trash" fills a 375 bar, and Clear, the last
+    // item of the wrapping row, fell to a row of its own (2026-10-26).
+    await withTasks(page, 3, async (ids) => {
+      for (const rootSize of ['16px', '19.04px', '20px']) {
+        await page.evaluate((size) => (document.documentElement.style.fontSize = size), rootSize)
+        for (const id of ids) await cmdClickRow(row(page, id))
+        await expect(bar(page)).toContainText('3 selected')
+        await expectClearOnFirstRow(page, `root ${rootSize}`, { oneRow: rootSize !== '20px' })
         await bar(page).getByRole('button', { name: 'Clear selection' }).click()
         await expect(bar(page)).toHaveCount(0)
       }

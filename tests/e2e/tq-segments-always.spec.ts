@@ -201,15 +201,52 @@ for (const viewport of VIEWPORTS) {
 }
 
 /**
+ * The iOS app's Dynamic Type, as `ios/OpenTask/WebView.swift` applies it: at
+ * document end it sets the root font size to the text size's percentage, and
+ * every rem in the layout grows with it. 119% is "xxxLarge", the largest
+ * size outside the accessibility sizes, and Trent's phone (2026-10-26).
+ */
+async function appTextSize(page: Page, percent: string) {
+  await page.addInitScript((size) => {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.documentElement.style.fontSize = size
+    })
+  }, percent)
+}
+
+/**
+ * A pasted link is one unbreakable word. At 119% a task segment row's four
+ * 52px controls leave its title a ~76px column on a 402px phone, so this
+ * title's link ran ~450px past it (Trent's phone, 2026-10-26: the page 532px
+ * wide, which let iOS zoom the whole app out, and a sheet opened in that state
+ * squeezed the page to half the screen). It must wrap inside its column.
+ */
+const LINK_TITLE =
+  'Read this thread later https://social.example.com/sample_account/status/1234567890123456789?s=20&t=AbCdEfGhIjKlMnOpQrStUv'
+
+/**
  * THE DAY BAR FITS A PHONE (2026-10-24). On real data — five periods of 20-odd
  * reminders each, every task segment — the bar's thumb-wide minimums pushed
  * the count beside it 7px off a 375 screen. Six periods of 21 reminders, all
  * eight segments (the switch on): at 375 and 320 the page never scrolls
  * sideways and the count is whole and on screen.
+ *
+ * And at the iOS app's 119% text size (2026-10-26), with a long link in a task
+ * segment row's title (`LINK_TITLE`): 375 and 402 (an iPhone 17 Pro).
  */
-test('the /reminders day bar fits at 375 and 320 with six full periods and every segment', async ({
-  page,
-}) => {
+for (const { textSize, widths } of [
+  { textSize: '100%', widths: [375, 320] },
+  { textSize: '119%', widths: [375, 402] },
+]) {
+  test(`the /reminders day bar fits at ${widths.join(' and ')} with six full periods and every segment, text ${textSize}`, async ({
+    page,
+  }) => {
+    await appTextSize(page, textSize)
+    await dayBarFits(page, widths)
+  })
+}
+
+async function dayBarFits(page: Page, widths: number[]) {
   test.setTimeout(120_000)
   const ids: number[] = []
   let addedSlot: number | null = null
@@ -238,8 +275,10 @@ test('the /reminders day bar fits at 375 and 320 with six full periods and every
       ids.push(...made)
     }
     ids.push(await create(page, { title: uniqueTitle('SA fit daily'), horizon: 'days' }))
+    const linkId = await create(page, { title: uniqueTitle(LINK_TITLE), horizon: 'days' })
+    ids.push(linkId)
 
-    for (const width of [375, 320]) {
+    for (const width of widths) {
       await page.setViewportSize({ width, height: 812 })
       await page.goto('/reminders')
       const headline = page.locator('[data-reminders-headline]')
@@ -248,10 +287,22 @@ test('the /reminders day bar fits at 375 and 320 with six full periods and every
         headline.locator('[data-day-segment]:not([data-day-segment^="tasks:"])'),
       ).toHaveCount(slots.length)
 
+      // The link's row is on the page.
+      const linkRow = page.locator(`[data-task-segments] [data-segment-task="${linkId}"]`)
+      await expect(linkRow).toBeVisible()
+
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       )
       expect(overflow, `sideways scroll at ${width}`).toBeLessThanOrEqual(0)
+
+      // And its title wraps inside its column (a title spilling over a row
+      // still inside the page is no better).
+      const titleSpills = await linkRow
+        .locator('p')
+        .first()
+        .evaluate((el) => el.scrollWidth > el.clientWidth)
+      expect(titleSpills, `the link's title runs out of its column at ${width}`).toBe(false)
 
       // The count: whole (never clipped) and inside the screen.
       const count = headline.locator('[data-day-count]')
@@ -275,4 +326,4 @@ test('the /reminders day bar fits at 375 and 320 with six full periods and every
     await trash(page, ids)
     if (addedSlot !== null) await page.request.delete(`/api/time-slots/${addedSlot}`)
   }
-})
+}

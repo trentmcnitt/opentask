@@ -66,7 +66,7 @@ export function SelectionBarShell({
     <div
       data-selection-sheet
       {...attrs}
-      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-fit max-w-[calc(100vw-2rem)] md:bottom-6"
+      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-fit max-w-[calc(100vw-32px)] md:bottom-6"
       onClickCapture={(e) => {
         if (e.detail < 2) return
         e.preventDefault()
@@ -75,7 +75,7 @@ export function SelectionBarShell({
       }}
     >
       <div
-        className="bg-primary text-primary-foreground rounded-xl px-3 py-3 shadow-xl sm:px-4"
+        className="bg-primary text-primary-foreground relative rounded-xl px-2 py-3 shadow-xl sm:px-4"
         aria-live="polite"
       >
         {/* Wraps rather than overflowing: the bar is capped at the screen's
@@ -83,24 +83,40 @@ export function SelectionBarShell({
             reach (iPhone at a larger text size, 2026-10-14). Centred with
             `inset-x-0 mx-auto w-fit`, not `left-1/2 -translate-x-1/2`: a
             fixed box at `left: 50%` may only grow to half the screen, so a
-            row allowed to wrap would wrap at half width. */}
-        <div className="flex flex-wrap items-center justify-center gap-2">
+            row allowed to wrap would wrap at half width.
+            CLEAR SITS ON THE CORNER (2026-10-26), out of the row: as the last
+            item of a wrapping row it was the one that fell to a line of its
+            own — an X alone under "Considered · Details · trash" on Trent's
+            phone at 119% text, a whole extra row of bar for one small button.
+            On the pill's top-right corner it costs the verbs no width at all,
+            so at that size the three fit on one line, and when a screen is too
+            narrow even for them, only a verb wraps and Clear stays put. Its
+            hit area is larger than the disc (the `after:` inset).
+            TIGHTER ON A PHONE (2026-10-26): `px-2 gap-1.5` below `sm`. At a
+            375 screen and the app's 119% text, "3 selected · Done · More ·
+            trash" was 11px too wide for one row (Reminders' "Considered ·
+            Details · trash" 3px), so the trash fell to a row of its own; the
+            tighter padding gives back ~16px. The bar's cap keeps a 16px
+            margin in px, not 1rem: a rem margin grew with the text too (19px
+            a side at 119%) and took 6px of that back, leaving the dashboard's
+            verbs half a pixel short of one row. */}
+        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
           {count > 1 && (
             <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
           )}
 
           {children}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClear}
-            aria-label="Clear selection"
-            className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 active:bg-primary-foreground/10 ml-1"
-          >
-            <X className="size-4" />
-          </Button>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClear}
+          aria-label="Clear selection"
+          data-selection-clear
+          className="bg-primary text-primary-foreground/70 hover:bg-primary hover:text-primary-foreground active:bg-primary ring-background absolute -top-2.5 -right-2.5 size-7 rounded-full shadow-md ring-2 after:absolute after:-inset-2 after:content-['']"
+        >
+          <X className="size-3.5" />
+        </Button>
         {hint && (
           <p
             id={SELECTION_BAR_HINT_ID}
