@@ -496,8 +496,9 @@ export interface ApnsReminderNagPayload {
  * - `data`: `taskId` (what the `dismiss` silent push matches, so considering
  *   it anywhere clears it) and `reminder_day`. NO `priority`, on purpose: a
  *   shipped build's sweep clears banners `atOrBelowPriority`, reading a
- *   missing priority as 0, so any sweep clears a reminder banner too. (From
- *   PR 3 the native sweep skips `REMINDER_NAG` banners: `sweepClearsBanner`,
+ *   missing priority as 0, so any sweep clears a reminder banner too. (Since
+ *   2026-10-26 a native sweep clears only the moved tasks' banners, by the
+ *   response's `moved_ids`, and a sweep never moves a reminder:
  *   ios/Shared/SweepDismissal.swift.)
  * - No `badge`: a reminder is never in the badge.
  */
@@ -699,22 +700,22 @@ export const SWEEP_RESULT_COLLAPSE_ID = 'sweep-result'
  * `collapseId` `sweep-result`: a second press that still leaves something
  * behind REPLACES this banner instead of stacking a second one.
  *
- * `priority` IS LOAD-BEARING, and not a task's priority. After every sweep
- * the apps clear the delivered banners of the tiers the sweep moved
- * (`dismissNotificationsAfterSweep` → `dismissNotifications(atOrBelowPriority:)`
- * in `ios/Shared/NotificationConstants.swift`), and a banner with no
- * `priority` counts as 0 there. This push is sent while the response to that
- * very sweep is still on its way back, so without a priority it could land
- * first and be cleared by the sweep it reports. With the highest tier it
- * names, the lifecycle follows the tasks:
- * - the sweep that produced it (ceiling 2) leaves it standing;
- * - a later sweep that takes the High tier (ceiling 3) clears a "High still
- *   overdue" banner, at the moment it goes stale;
- * - one naming Urgent (4) is never cleared by a sweep, since Urgent is never
- *   swept: it goes when replaced, when acted on or tapped (the runner removes
- *   a summary's own banner, a body tap clears all), or with `dismiss-all`
- *   when the app is opened.
- * No `taskId`, so the per-task `dismiss` push never matches it.
+ * `priority` is not a task's priority: the highest tier it names. It was
+ * load-bearing for builds before 2026-10-26, whose sweeps cleared every
+ * delivered banner at or below a priority ceiling (a missing priority read as
+ * 0, so without one this push could be cleared by the sweep it reports, which
+ * is still in flight when it is sent). Those builds: the sweep that produced it
+ * (ceiling 2) leaves it standing, a later sweep that takes the High tier
+ * (ceiling 3) clears a "High still overdue" banner, and one naming Urgent (4)
+ * is never cleared by a sweep.
+ *
+ * Since 2026-10-26 a native sweep clears only the banners of the tasks it
+ * moved (the response's `moved_ids`, ios/Shared/SweepDismissal.swift). This
+ * push has no `taskId`, so no sweep clears it, and the per-task `dismiss`
+ * push never matches it either. It goes when a newer result replaces it (the
+ * collapse id), when acted on or tapped (the runner removes a summary's own
+ * banner, a body tap clears all), or with `dismiss-all` when the app is
+ * opened.
  */
 export function buildSweepResultNotification(
   deviceToken: string,

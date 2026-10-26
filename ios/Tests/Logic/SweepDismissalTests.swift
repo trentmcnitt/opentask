@@ -1,69 +1,58 @@
 import XCTest
 
-/// Which delivered notifications a bulk snooze may clear
-/// (`sweepDismissCeiling`, used by `dismissNotificationsAfterSweep` on every
-/// sweep path). Mirrors the server's High-tier rule in `filterForBulkSnooze`
-/// (`src/core/tasks/bulk.ts`).
+/// Which delivered notifications a bulk snooze clears (`bannerIdentifiers`,
+/// used by `dismissNotificationsAfterSweep` on every sweep path and by the
+/// silent `dismiss` push): exactly the banners of the tasks in the server's
+/// `moved_ids`, matched by the payload's `taskId`, and nothing else.
 final class SweepDismissalTests: XCTestCase {
 
-    private func result(affected: Int, snoozedHigh: Int = 0, skippedHigh: Int = 0, skippedUrgent: Int = 0)
-        -> APIClient.BulkSnoozeResult
-    {
-        APIClient.BulkSnoozeResult(
-            tasksAffected: affected,
-            skippedOnPriority: skippedHigh + skippedUrgent,
-            skippedHigh: skippedHigh,
-            snoozedHigh: snoozedHigh
-        )
+    /// One of each kind of banner that can be up when a sweep runs, as the
+    /// server builds their payloads (`src/core/notifications/apns.ts`).
+    private let banners = [
+        DeliveredBanner(identifier: "task-1", userInfo: ["taskId": 1, "priority": 1]),
+        DeliveredBanner(identifier: "task-2", userInfo: ["taskId": 2, "priority": 3]),
+        // A named reminder banner: a task id, no priority.
+        DeliveredBanner(identifier: "reminder-3", userInfo: ["taskId": 3, "reminder_day": "2026-01-15"]),
+        // A period push: no task id.
+        DeliveredBanner(identifier: "slot-12", userInfo: ["slot_id": 12, "reminder_count": 4]),
+        // Another overdue task, which this sweep did not move.
+        DeliveredBanner(identifier: "task-4", userInfo: ["taskId": 4, "priority": 0]),
+        // The "AI finished" push for a just-added task, and the deadlines nag.
+        DeliveredBanner(identifier: "added-5", userInfo: ["taskId": 5]),
+        DeliveredBanner(identifier: "deadlines", userInfo: ["kind": "deadlines"]),
+    ]
+
+    /// The coordinator's case: a sweep that moved [1, 2] clears banners 1
+    /// and 2 only. The reminder, the period push, the other overdue task, the
+    /// "AI finished" push and the deadlines nag all stay — whatever their
+    /// priority, or lack of one.
+    func testClearsOnlyTheMovedTasksBanners() {
+        XCTAssertEqual(bannerIdentifiers(banners, forTaskIds: [1, 2]), ["task-1", "task-2"])
     }
 
-    /// The usual round: P0-P2 moved, High and Urgent left overdue, so their
-    /// banners must stay.
-    func testLowerTiersOnlyClearsUpToNormal() {
-        XCTAssertEqual(sweepDismissCeiling(result(affected: 3, skippedHigh: 2, skippedUrgent: 1)), 2)
-        XCTAssertEqual(sweepDismissCeiling(result(affected: 3)), 2)
+    /// A sweep that moved nothing, or a server that sends no `moved_ids`,
+    /// clears nothing.
+    func testNothingMovedClearsNothing() {
+        XCTAssertEqual(bannerIdentifiers(banners, forTaskIds: []), [])
     }
 
-    /// Nothing lower was left, so the server swept the High tier too: the
-    /// High banners are now stale and go with the rest. Urgent stays.
-    func testHighTierSweptClearsHighToo() {
-        XCTAssertEqual(sweepDismissCeiling(result(affected: 2, snoozedHigh: 2, skippedUrgent: 1)), 3)
+    /// A moved id with no banner up is fine; the order is the delivered order.
+    func testMovedIdsWithoutABannerAndOrder() {
+        XCTAssertEqual(bannerIdentifiers(banners, forTaskIds: [99, 4, 1]), ["task-1", "task-4"])
     }
 
-    /// A sweep started from one High task's own notification rescues that
-    /// task (`include_task_ids`) while P0-P2 are still overdue: one High moved,
-    /// the other Highs were skipped and are still overdue, so High banners
-    /// must NOT be cleared by tier.
-    func testRescuedHighWithOthersSkippedKeepsHighBanners() {
-        XCTAssertEqual(sweepDismissCeiling(result(affected: 4, snoozedHigh: 1, skippedHigh: 2)), 2)
+    /// Two banners for one task (an overdue push and its re-send under
+    /// another identifier) both go.
+    func testEveryBannerOfAMovedTaskGoes() {
+        let twice = banners + [DeliveredBanner(identifier: "task-1-again", taskId: 1)]
+        XCTAssertEqual(bannerIdentifiers(twice, forTaskIds: [1]), ["task-1", "task-1-again"])
     }
 
-    // MARK: - Which banner goes (`sweepClearsBanner`)
-
-    /// A named reminder banner (`REMINDER_NAG`) carries no priority. Read as
-    /// P0 it would go with every sweep, but a reminder isn't overdue and no
-    /// sweep moves it: it stays at any ceiling, even with a priority present.
-    func testReminderNagBannerIsNeverClearedBySweep() {
-        let reminder = NotificationCategory.reminderNag
-        for ceiling in [2, 3, 4] {
-            XCTAssertFalse(sweepClearsBanner(category: reminder, priority: nil, ceiling: ceiling))
-        }
-        XCTAssertFalse(sweepClearsBanner(category: reminder, priority: 0, ceiling: 3))
-    }
-
-    /// Overdue task banners: by priority against the ceiling, as before.
-    func testTaskBannersGoByPriority() {
-        let task = NotificationCategory.taskReminder
-        XCTAssertTrue(sweepClearsBanner(category: task, priority: 2, ceiling: 2))
-        XCTAssertFalse(sweepClearsBanner(category: task, priority: 3, ceiling: 2))
-        XCTAssertTrue(sweepClearsBanner(category: task, priority: 3, ceiling: 3))
-        XCTAssertFalse(sweepClearsBanner(category: task, priority: 4, ceiling: 3))
-    }
-
-    /// Any other banner without a priority still reads as P0 (unchanged).
-    func testOtherBannersWithoutAPriorityStillGo() {
-        XCTAssertTrue(sweepClearsBanner(category: NotificationCategory.taskReminder, priority: nil, ceiling: 2))
-        XCTAssertTrue(sweepClearsBanner(category: NotificationCategory.slotReminder, priority: nil, ceiling: 2))
-        XCTAssertTrue(sweepClearsBanner(category: "", priority: nil, ceiling: 2))
+    /// The payload's `taskId` is read as the server sends it, an integer; a
+    /// payload without one is never matched.
+    func testBannerTaskIdFromThePayload() {
+        XCTAssertEqual(DeliveredBanner(identifier: "a", userInfo: ["taskId": 7]).taskId, 7)
+        XCTAssertNil(DeliveredBanner(identifier: "b", userInfo: ["slot_id": 7]).taskId)
+        XCTAssertNil(DeliveredBanner(identifier: "c", userInfo: ["taskId": "7"]).taskId)
     }
 }

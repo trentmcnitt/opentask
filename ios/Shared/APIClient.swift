@@ -258,7 +258,8 @@ final class APIClient {
             cappedDeadline: responseData["capped_deadline"] as? Int ?? 0,
             queued: responseData["queued"] as? Int ?? 0,
             queuedUntil: (responseData["queued_until"] as? String).flatMap(DateHelpers.parseISO),
-            summary: (responseData["summary"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            summary: (responseData["summary"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            movedIds: responseData["moved_ids"] as? [Int] ?? []
         )
     }
 
@@ -310,6 +311,12 @@ final class APIClient {
         /// Deferred 2 tasks (1 urgent skipped)") — the web toast's words.
         /// Nil from an older server.
         var summary: String?
+        /// The ids this call moved (`moved_ids`, 2026-10-26), queued ones
+        /// included: after a sweep exactly these tasks' banners are cleared
+        /// (`dismissNotificationsAfterSweep`). Empty when nothing moved, and
+        /// from an older server (which then clears nothing locally; its silent
+        /// `dismiss` push still clears the moved ones).
+        var movedIds: [Int] = []
     }
 
     /// Complete N tasks in ONE request (§6.1 batch checklist).

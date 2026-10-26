@@ -1783,13 +1783,15 @@ struct SnoozeAllOverdueIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         do {
-            switch TaskSnoozeTarget(rawValue: target) {
+            let result = switch TaskSnoozeTarget(rawValue: target) {
             case .nextPeriod, .none:
                 try await APIClient.shared.snoozeOverdue(slot: "next")
             case .plusOneHour:
                 try await APIClient.shared.snoozeOverdue(deltaMinutes: 60)
             }
             WidgetStore.recordLocalMutationForUndoCount()
+            // The moved tasks' delivered banners, and only theirs.
+            await dismissNotificationsAfterSweep(result)
         } catch {
             print("[OpenTaskWidgets] Snooze all overdue failed: \(error)")
         }

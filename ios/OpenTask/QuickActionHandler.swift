@@ -77,6 +77,8 @@ enum QuickActionHandler {
             do {
                 let result = try await call()
                 log.notice("Snoozed \(result.tasksAffected) overdue (\(label, privacy: .public))")
+                // The moved tasks' banners, and only theirs.
+                await dismissNotificationsAfterSweep(result)
                 // The wire field names, so the page reads it like the API's.
                 let json = "{\"tasks_affected\":\(result.tasksAffected),\"snoozed_high\":\(result.snoozedHigh),"
                     + "\"skipped_high\":\(result.skippedHigh),\"skipped_urgent\":\(result.skippedOnPriority)}"

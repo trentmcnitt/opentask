@@ -16,6 +16,7 @@
     "snoozed_high_name": null,
     "queued_until": "2026-01-15T16:00:00.000Z",
     "summary": "\"Oil the hinges\" will move to the Tasks queue at 3:00 AM · Deferred 1 task (1 urgent skipped)",
+    "moved_ids": [114, 115],
     "feedback_notification": false
   }
 }

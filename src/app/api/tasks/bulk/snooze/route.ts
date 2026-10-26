@@ -67,6 +67,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // Snoozed only as far as a deadline still ahead (§8.2).
       capped_deadline: result.deadlineCapped,
       ...taskQueueFields(result),
+      // The ids this call actually moved (2026-10-26), queued ones included:
+      // a client clears exactly these tasks' banners, nothing else.
+      moved_ids: result.snoozedIds,
     })
   } catch (err) {
     if (err instanceof AuthError) {

@@ -638,3 +638,16 @@ describe('contract fixtures: anchor times (2026-10-21)', () => {
     expect(pad.map((p) => p.time)).toEqual(['09:00', '12:00', '16:00', '20:30'])
   })
 })
+
+describe('contract fixtures: a bulk snooze names what it moved (2026-10-26)', () => {
+  test('moved_ids: one integer id per moved task, on both bulk snooze routes', () => {
+    for (const name of ['bulk-snooze', 'bulk-snooze-overdue']) {
+      const d = data(name)
+      expect(Array.isArray(d.moved_ids), name).toBe(true)
+      const ids = d.moved_ids as Json[]
+      for (const id of ids) expect(Number.isInteger(id), name).toBe(true)
+      expect(ids).toHaveLength(d.tasks_affected as number)
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+  })
+})
