@@ -16,6 +16,7 @@ import fs from 'fs'
 import path from 'path'
 import { DateTime } from 'luxon'
 import { hashToken, tokenPreview } from '../../src/core/auth/token-hash'
+import { seedOccurrenceAt } from '../../src/core/db/occurrence-seed'
 
 const DB_PATH = path.join(process.cwd(), 'data', 'test-e2e.db')
 const SCHEMA_PATH = path.join(process.cwd(), 'src', 'core', 'db', 'schema.sql')
@@ -42,6 +43,17 @@ export default async function globalSetup() {
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8')
   db.exec(schema)
 
+  await seedE2eDatabase(db)
+
+  db.close()
+  console.log('[e2e] Database seeded at', DB_PATH)
+}
+
+/**
+ * Everything the E2E database holds, written into `db` (schema applied).
+ * Exported for the seed guard test (tests/behavioral/seed-occurrence-guard.test.ts).
+ */
+export async function seedE2eDatabase(db: Database.Database): Promise<void> {
   // The seeded user's timezone. Slot/reminder assignment is done entirely in
   // this zone (server-side via `user.timezone`, and in specs via each file's
   // own `TEST_TZ` constant) — never via the process's `TZ` env var, which
@@ -198,6 +210,12 @@ export default async function globalSetup() {
   `,
   ).run(7, 1, 1, 'Reply to email', twoHoursAgo, 2)
 
+  // Raw rows, not createTask: the specs pin these ids, the database is opened
+  // here (not through getDb), and the stamps below are set by hand. So the
+  // repeats get `occurrence_at` from the startup data step's own UPDATE —
+  // which the server would otherwise apply at its start.
+  seedOccurrenceAt(db)
+
   // Seeded tasks are not "just added": created a day ago. Left at the schema
   // default (now), every seeded task would also be previewed at the top of
   // the dashboard for the run's first 10 minutes (`src/lib/just-added.ts`).
@@ -241,7 +259,4 @@ export default async function globalSetup() {
   db.prepare(
     `INSERT INTO projects (id, name, owner_id, shared, sort_order) VALUES (?, ?, ?, ?, ?)`,
   ).run(4, 'Inbox', 2, 0, 0)
-
-  db.close()
-  console.log('[e2e] Database seeded at', DB_PATH)
 }

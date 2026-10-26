@@ -39,6 +39,7 @@ import { localToUtc } from '../../src/core/recurrence/timezone'
 import { startOfWeek, WEEK_START_DEFAULT } from '../../src/lib/week-start'
 import type { LabelColor } from '../../src/types'
 import { SCREENSHOT_USER } from './account'
+import { seedTasks as seedOrdinaryTasks, type SeedTaskRow } from '../seed-utils'
 
 const TZ = SCREENSHOT_USER.timezone
 
@@ -596,13 +597,6 @@ function seedTasks(
   userId: number,
   projects: Record<ProjectName, number>,
 ): void {
-  const insertTask = db.prepare(`
-    INSERT INTO tasks (
-      user_id, project_id, title, done, done_at, priority, due_at,
-      rrule, anchor_time, anchor_dow, anchor_dom, original_due_at, archived_at,
-      labels, notes, completion_count, last_completed_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
   const insertCompletion = db.prepare(
     'INSERT INTO completions (task_id, user_id, completed_at, due_at_was, due_at_next) VALUES (?, ?, ?, ?, NULL)',
   )
@@ -612,38 +606,38 @@ function seedTasks(
   )
   const generatedAt = at(0, 3, 30)
 
-  TASKS.forEach((t, index) => {
+  // Through createTask (`seedTasks` in scripts/seed-utils.ts), then aged.
+  const rows: SeedTaskRow[] = TASKS.map((t, index) => {
     const dueAt = t.due ? at(t.due[0], t.due[1], t.due[2] ?? 0) : null
-    const anchors = deriveAnchorFields(t.rrule ?? null, dueAt, TZ)
     const doneAt = t.doneToday ? at(0, t.doneToday[0], t.doneToday[1]) : null
     // Spread creation over the last few weeks, so Newest has a real order.
     const createdAt =
       t.createdMinutesAgo !== undefined
         ? minutesAgo(t.createdMinutesAgo)
         : at(-(2 + ((index * 5) % 26)), 8 + (index % 9), (index * 13) % 60)
-    const result = insertTask.run(
-      userId,
-      projects[t.project],
-      t.title,
-      doneAt ? 1 : 0,
-      doneAt,
-      t.priority ?? P_NONE,
-      dueAt,
-      t.rrule ?? null,
-      anchors.anchor_time,
-      anchors.anchor_dow,
-      anchors.anchor_dom,
-      dueAt,
-      doneAt,
-      JSON.stringify(t.labels ?? []),
-      t.notes ?? null,
-      doneAt ? 1 : 0,
-      doneAt,
+    return {
+      input: {
+        title: t.title,
+        project_id: projects[t.project],
+        priority: t.priority ?? P_NONE,
+        due_at: dueAt,
+        rrule: t.rrule ?? null,
+        labels: t.labels ?? [],
+        notes: t.notes ?? null,
+      },
       createdAt,
-      createdAt,
-    )
-    const taskId = Number(result.lastInsertRowid)
-    if (doneAt) insertCompletion.run(taskId, userId, doneAt, dueAt)
+      doneAt,
+      archivedAt: doneAt,
+      completionCount: doneAt ? 1 : 0,
+      lastCompletedAt: doneAt,
+    }
+  })
+  const taskIds = seedOrdinaryTasks(userId, TZ, rows)
+
+  TASKS.forEach((t, index) => {
+    const taskId = taskIds[index]
+    const doneAt = rows[index].doneAt
+    if (doneAt) insertCompletion.run(taskId, userId, doneAt, rows[index].input.due_at)
     if (t.insight) {
       insertInsight.run(
         userId,
@@ -812,6 +806,24 @@ async function main(): Promise<void> {
 
   const db = getDb()
   const u = SCREENSHOT_USER
+  const userId = await seedScreenshotAccount(db)
+  const count = (
+    db.prepare('SELECT COUNT(*) c FROM tasks WHERE user_id = ?').get(userId) as {
+      c: number
+    }
+  ).c
+  console.log(`Seeded "${u.username}" at ${now().toISO()} — ${count} rows in tasks → ${dbPath}`)
+  closeDb()
+}
+
+/**
+ * The account itself, into the open database (`getDb()`): the user, its
+ * labels, periods, projects, tasks, reminders and quotas. Returns the user's
+ * id. Exported for the seed guard test (tests/behavioral/seed-occurrence-guard.test.ts),
+ * which runs it on the real clock; `main` is what pins the clock.
+ */
+export async function seedScreenshotAccount(db: Database.Database): Promise<number> {
+  const u = SCREENSHOT_USER
   const userId = Number(
     db
       .prepare(
@@ -842,17 +854,17 @@ async function main(): Promise<void> {
   seedTasks(db, userId, projects)
   seedReminders(db, userId, projects)
   seedQuotas(db, userId, projects)
-
-  const count = (
-    db.prepare('SELECT COUNT(*) c FROM tasks WHERE user_id = ?').get(userId) as {
-      c: number
-    }
-  ).c
-  console.log(`Seeded "${u.username}" at ${now().toISO()} — ${count} rows in tasks → ${dbPath}`)
-  closeDb()
+  return userId
 }
 
-main().catch((err) => {
-  console.error('Screenshot seed failed:', err)
-  process.exit(1)
-})
+// Only run main() when executed directly (run.sh), not when imported by the
+// seed guard test.
+const isDirectRun =
+  process.argv[1]?.endsWith(path.join('screenshots', 'seed.ts')) ||
+  process.argv[1]?.endsWith(path.join('screenshots', 'seed.js'))
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error('Screenshot seed failed:', err)
+    process.exit(1)
+  })
+}

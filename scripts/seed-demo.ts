@@ -27,7 +27,7 @@ import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
 import { RRulePatterns, parseRRule } from '../src/core/recurrence/rrule-builder'
-import { localToUtcIso, daysUntilWeekday } from './seed-utils'
+import { localToUtcIso, daysUntilWeekday, seedTasks, type SeedTaskRow } from './seed-utils'
 import { startOfWeek, WEEK_START_DEFAULT } from '../src/lib/week-start'
 import type { LabelColor } from '../src/types'
 
@@ -544,37 +544,12 @@ interface SeededTask {
 
 // ── Task seeding helper ─────────────────────
 
-function seedDemoTasks(
-  db: Database.Database,
-  userId: number,
-  projectMap: ProjectMap,
-): SeededTask[] {
-  const insertTask = db.prepare(`
-    INSERT INTO tasks (
-      user_id, project_id, title, done, done_at, priority, due_at,
-      rrule, anchor_time, anchor_dow, anchor_dom,
-      original_due_at, deleted_at, archived_at, labels, notes,
-      completion_count, snooze_count, first_completed_at, last_completed_at,
-      created_at, updated_at
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?
-    )
-  `)
-
+function seedDemoTasks(userId: number, projectMap: ProjectMap): SeededTask[] {
   const now = DateTime.utc().toISO()!
   const tasks = getDemoTasks()
-  const seededTasks: SeededTask[] = []
 
-  for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i]
-    const projectId = projectMap[task.project]
-    const priority = task.priority ?? UNSET
-    const notes = task.notes ?? null
-
+  // Through createTask (`seedTasks`, scripts/seed-utils.ts), then aged.
+  const rows: SeedTaskRow[] = tasks.map((task) => {
     // Due date computation
     let dueAt: string | null = null
     if (!task.noDue) {
@@ -588,50 +563,31 @@ function seedDemoTasks(
       }
       dueAt = localToUtcIso(offset, h, m)
     }
-
-    const anchors = deriveAnchorFields(task.rrule ?? null, dueAt, TIMEZONE)
-
-    const done = task.done ? 1 : 0
-    const doneAt = task.done ? dueAt : null
-    const archivedAt = task.done ? dueAt : null
-    const deletedAt = task.deleted ? now : null
     const daysAgo = task.createdDaysAgo ?? 3
-    const createdAt = daysAgo === 0 ? now : localToUtcIso(-daysAgo, 10, 0)
+    return {
+      input: {
+        title: task.title,
+        project_id: projectMap[task.project],
+        priority: task.priority ?? UNSET,
+        due_at: dueAt,
+        rrule: task.rrule ?? null,
+        notes: task.notes ?? null,
+      },
+      createdAt: daysAgo === 0 ? now : localToUtcIso(-daysAgo, 10, 0),
+      updatedAt: now,
+      doneAt: task.done ? dueAt : null,
+      archivedAt: task.done ? dueAt : null,
+      deletedAt: task.deleted ? now : null,
+    }
+  })
+  const ids = seedTasks(userId, TIMEZONE, rows)
 
-    const result = insertTask.run(
-      userId,
-      projectId,
-      task.title,
-      done,
-      doneAt,
-      priority,
-      dueAt,
-      task.rrule ?? null,
-      anchors.anchor_time,
-      anchors.anchor_dow,
-      anchors.anchor_dom,
-      dueAt, // original_due_at — matches createTask() behavior
-      deletedAt,
-      archivedAt,
-      '[]', // labels
-      notes,
-      0, // completion_count
-      0, // snooze_count
-      null, // first_completed_at
-      null, // last_completed_at
-      createdAt,
-      now,
-    )
-
-    seededTasks.push({
-      id: Number(result.lastInsertRowid),
-      title: task.title,
-      done: !!task.done,
-      deleted: !!task.deleted,
-    })
-  }
-
-  return seededTasks
+  return tasks.map((task, i) => ({
+    id: ids[i],
+    title: task.title,
+    done: !!task.done,
+    deleted: !!task.deleted,
+  }))
 }
 
 // ── Quota seeding helper ────────────────────
@@ -1083,7 +1039,7 @@ export function seedDemoData(
   console.log(`  Registered ${labelConfig.length} quota labels`)
 
   // Seed tasks
-  const seededTasks = seedDemoTasks(db, userId, projectMap)
+  const seededTasks = seedDemoTasks(userId, projectMap)
   console.log(`  Inserted ${seededTasks.length} tasks`)
 
   // Quotas (§5) and reminders (§6). Deliberately NOT part of `seededTasks`:

@@ -51,6 +51,7 @@
  */
 
 import type Database from 'better-sqlite3'
+import { OCCURRENCE_SEED_WHERE, REPEATING_DATED, seedOccurrenceAt } from './occurrence-seed'
 import {
   autoTargetAt,
   defaultRelativeTarget,
@@ -62,10 +63,6 @@ import {
 const OPEN_ORDINARY = `t.done = 0 AND t.deleted_at IS NULL AND t.archived_at IS NULL
   AND t.is_reminder = 0 AND t.is_tracked = 0 AND t.progress_target <= 1`
 
-/** Repeating ordinary tasks with a date — every one, before the column exists. */
-const REPEATING_DATED = `t.rrule IS NOT NULL AND t.due_at IS NOT NULL
-  AND t.is_reminder = 0 AND t.is_tracked = 0 AND t.progress_target <= 1`
-const OCCURRENCE_SEED_WHERE = `${REPEATING_DATED} AND t.occurrence_at IS NULL`
 const NAG_OFF_NO_TARGET_WHERE = `t.deadline_nag_off = 1 AND t.deadline_at IS NOT NULL
   AND t.due_at IS NULL AND t.rrule IS NULL AND ${OPEN_ORDINARY}`
 const NAG_OFF_KEEP_TARGET_WHERE = `t.deadline_nag_off = 1 AND t.deadline_at IS NOT NULL
@@ -199,13 +196,8 @@ export function migrateDeadlineTargets(
   { leads = false, switchSteps = true }: TargetMigrationOptions = {},
 ): TargetMigrationCounts {
   return db.transaction(() => {
-    // UPDATE … AS t (SQLite 3.33+), so the WHEREs are shared with the plan.
-    const occurrenceSeed = db
-      .prepare(
-        `UPDATE tasks AS t SET occurrence_at = COALESCE(t.original_due_at, t.due_at)
-          WHERE ${OCCURRENCE_SEED_WHERE}`,
-      )
-      .run().changes
+    // Step 1 is shared with the seeds (`./occurrence-seed`).
+    const occurrenceSeed = seedOccurrenceAt(db)
 
     // The automatic target is stored as the target AND its first-target date
     // (`original_due_at`, the age clock old native builds read).

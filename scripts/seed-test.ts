@@ -11,6 +11,7 @@ import bcrypt from 'bcrypt'
 import { seedSystemLabels, createLabel } from '../src/core/labels'
 import { seedDefaultTimeSlots } from '../src/core/time-slots'
 import { getDb } from '../src/core/db'
+import { seedOccurrenceAt } from '../src/core/db/occurrence-seed'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
 import { DateTime } from 'luxon'
 
@@ -212,6 +213,14 @@ export async function seedTestData(): Promise<void> {
     VALUES (?, ?, ?, ?, ?, ?)
   `,
   ).run(8, 1, 1, 'Call dentist', tomorrow, 1)
+
+  // Raw rows, not createTask: the suites pin these ids, the bare rules
+  // ('FREQ=DAILY', which createTask would fill with the time of day) and a
+  // NULL `original_due_at` on the one-offs (undo-redo.test.ts), and expect an
+  // empty undo log. So the one derived column a repeat must have is written
+  // here — `occurrence_at`, by the startup data step's own UPDATE — rather
+  // than left for a server restart that never comes between resets.
+  seedOccurrenceAt(db)
 
   // Register the domain labels the integration and E2E suites use (§7.2).
   // Task writes reject unknown labels, and the startup backfill runs at

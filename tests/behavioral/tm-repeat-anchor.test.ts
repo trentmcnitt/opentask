@@ -681,6 +681,9 @@ describe('TM-G01: every SQL writer of occurrence_at / deadline_at / lead_from de
     // Migrations and backfills: the shape before the column, by construction.
     'src/core/db/index.ts': 'migrations',
     'src/core/db/migrate-deadline-targets.ts': 'migrations',
+    // That migration's step 1 (the occurrence seed), moved out so the raw-SQL
+    // seeds share it (2026-10-26): the same UPDATE, not a new writer.
+    'src/core/db/occurrence-seed.ts': 'migrations (step 1, shared with the seeds)',
     // The deadline-anchor migration: occurrence_at := deadline_at is I2 itself.
     'src/core/db/migrate-repeat-anchor.ts': 'migrations',
     // Writes computeMarkDone's result, which is `occurrenceDates`'.
