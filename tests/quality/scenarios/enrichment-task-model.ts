@@ -19,12 +19,22 @@
  */
 
 import { DateTime } from 'luxon'
-import type { AITestScenario } from '../types'
+import type { AITestScenario, EnrichmentInput } from '../types'
 
 const TZ = 'America/Chicago'
 const INBOX = [{ id: 1, name: 'Inbox', shared: false }]
 
-const today = DateTime.now().setZone(TZ).startOf('day')
+/**
+ * TIME-AGNOSTIC (2026-10-26): every scenario here runs at one pinned moment —
+ * a weekday midday — so none passes or fails by when the run happens (a run
+ * near midnight placed "today" at 12:00 AM tomorrow; one between midnight
+ * and the 3:00 AM rollover read "tomorrow" as the calendar today, A4). The
+ * dates below are counted from it, and `pinNow` (end of file) gives each
+ * scenario without its own `now` this one. Wed Oct 21 2026, 12:00 PM CDT.
+ */
+const REF_NOW = '2026-10-21T12:00'
+const refNow = DateTime.fromISO(REF_NOW, { zone: TZ })
+const today = refNow.startOf('day')
 const day = (n: number) => today.plus({ days: n })
 /** "Oct 17" */
 const monthDay = (n: number) => day(n).toFormat('LLL d')
@@ -49,9 +59,8 @@ const iso = (n: number) => `~date:${day(n).toFormat('yyyy-MM-dd')}`
  * today while still ahead, else tomorrow. "~datetime:2026-10-14T19:00".
  */
 const nextAt = (hour: number, minute = 0) => {
-  const now = DateTime.now().setZone(TZ)
-  let at = now.set({ hour, minute, second: 0, millisecond: 0 })
-  if (at <= now) at = at.plus({ days: 1 })
+  let at = refNow.set({ hour, minute, second: 0, millisecond: 0 })
+  if (at <= refNow) at = at.plus({ days: 1 })
   return `~datetime:${at.toFormat("yyyy-MM-dd'T'HH:mm")}`
 }
 /** Which day `nextAt` picked, for the notes. */
@@ -81,7 +90,7 @@ const AM_PM_NIGHT_SLOTS = [
 const nextFirst = today.day === 1 ? today : today.plus({ months: 1 }).startOf('month')
 const dayIso = (n: number) => day(n).toFormat('yyyy-MM-dd')
 
-export const enrichmentTaskModelScenarios: AITestScenario[] = [
+const scenarios: AITestScenario[] = [
   // ---------------------------------------------------------------------------
   // Explicit deadlines
   // ---------------------------------------------------------------------------
@@ -1008,3 +1017,11 @@ export const enrichmentTaskModelScenarios: AITestScenario[] = [
     },
   },
 ]
+
+/** The pinned moment for every scenario that does not pin its own (`REF_NOW`). */
+function pinNow(scenario: AITestScenario): AITestScenario {
+  const input = scenario.input as EnrichmentInput
+  return { ...scenario, input: { ...input, now: input.now ?? REF_NOW } }
+}
+
+export const enrichmentTaskModelScenarios: AITestScenario[] = scenarios.map(pinNow)
