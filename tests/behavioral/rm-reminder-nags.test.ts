@@ -1,7 +1,8 @@
 /**
  * NAMED REMINDER PUSHES (2026-10-26; src/core/notifications/reminder-nags.ts,
  * plan "named pushes and marks" Part A). `rm-` tests:
- *  - RR-01 eligibility, each condition on its own;
+ *  - RR-01 eligibility, each condition on its own (a reminder's own Nag value
+ *    is ignored: priority is the one dial);
  *  - RR-02 the first push at the period's open (exact), repeats on clock
  *    marks at the slot-nag rung;
  *  - RR-03 it stops when considered and at the end of the OpenTask day
@@ -170,33 +171,47 @@ describe('RR-01 eligibility: every condition', () => {
     expect(pendingReminderNags(at(12))).toHaveLength(1)
   })
 
-  test('its own Nag OFF (auto_snooze_minutes = 0): no named push', () => {
-    const r = reminder(9, 0, 3)
+  /**
+   * Priority is the one dial (Trent, 2026-10-26: "Turn off every
+   * nag-specific option for reminders"). A reminder's stored Nag value is
+   * ignored, and left as stored.
+   */
+  test('a stored Nag 0 on a Medium reminder no longer stops its named push', async () => {
+    const r = reminder(9, 0, 2)
     getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 0 WHERE id = ?').run(r.id)
-    expect(pendingReminderNags(at(9))).toEqual([])
+    expect(pendingReminderNags(at(9))).toMatchObject([{ taskId: r.id, intervalMinutes: 120 }])
+    // Pushed by name, so not the period's: no period push for it.
+    expect(pendingSlotNotifications(at(9))).toEqual([])
+    await runTick([...MINUTE_TICK_SOURCES], at(9), CHANNELS)
+    expect(sendApnsReminderNag).toHaveBeenCalledTimes(1)
+    expect(sendApnsSlotReminder).not.toHaveBeenCalled()
+    // Not rewritten.
+    const stored = getDb()
+      .prepare('SELECT auto_snooze_minutes FROM tasks WHERE id = ?')
+      .get(r.id) as { auto_snooze_minutes: number | null }
+    expect(stored.auto_snooze_minutes).toBe(0)
   })
 
-  /**
-   * Coordinator ruling, 2026-10-26 (on #368): Nag OFF turns off a reminder's
-   * OWN nagging, never every notification of it. A Medium+ reminder with Nag
-   * OFF is the period's again, like a None/Low one — in the period push's
-   * count and the period nag (which its priority paces, as before PR 2).
-   */
-  test('Nag OFF on a Medium+ reminder: it stays in the period push and nag, paced like a Low one', async () => {
-    const r = reminder(9, 0, 3)
-    getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 0 WHERE id = ?').run(r.id)
+  test('a Low reminder with a stored Nag 15 gets no named push; its period paces at Low', () => {
+    const r = reminder(9, 0, 1)
+    getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 15 WHERE id = ?').run(r.id)
+    expect(pendingReminderNags(at(9))).toEqual([])
     expect(pendingSlotNotifications(at(9))).toMatchObject([{ slotLabel: 'Morning', count: 1 }])
-
-    await runTick([...MINUTE_TICK_SOURCES], at(9), CHANNELS)
-    expect(sendApnsReminderNag).not.toHaveBeenCalled()
-    expect(vi.mocked(sendApnsSlotReminder).mock.calls.map(([, p]) => [p.count, p.body])).toEqual([
-      [1, undefined],
-    ])
-    // The Low rung, 480, from the 09:00 push: 17:00 — not the High rung's 09:30.
-    expect(pendingSlotNags(at(9, 30))).toEqual([])
+    planTick([...MINUTE_TICK_SOURCES], at(9), CHANNELS)
+    // The Low rung, 480, from the 09:00 push — never the stored 15.
+    expect(pendingSlotNags(at(9, 15))).toEqual([])
     expect(pendingSlotNags(at(16, 59))).toEqual([])
-    expect(pendingSlotNags(at(17))).toMatchObject([
-      { slotLabel: 'Morning', count: 1, intervalMinutes: 480 },
+    expect(pendingSlotNags(at(17))).toMatchObject([{ count: 1, intervalMinutes: 480 }])
+  })
+
+  test('a task with Nag off still sends no overdue push', () => {
+    const t = overdue(9, 3)
+    getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 0 WHERE id = ?').run(t.id)
+    expect(planTick([...MINUTE_TICK_SOURCES], at(9), CHANNELS).sends).toEqual([])
+    // A second one, Nag on (the default), pushes at its due minute.
+    overdue(9, 3)
+    expect(planTick([...MINUTE_TICK_SOURCES], at(9), CHANNELS).sends).toEqual([
+      expect.objectContaining({ kind: 'overdue_high' }),
     ])
   })
 
@@ -462,13 +477,14 @@ describe('RR-07 the Considered button’s day guard', () => {
 
 /**
  * RR-08 (review of #368): an edit that ENDS a reminder's named push — its
- * push stood (waiting today, in an opened period, Medium+, Nag on) and no
- * longer does — dismisses its banner through `dismissNotificationsForTasks`:
- * priority below Medium, Nag off, converted to a task, moved to Anytime, its
- * schedule moved off today. At 09:05 Morning (09:00) has opened. (The two
+ * push stood (waiting today, in an opened period, Medium+) and no longer
+ * does — dismisses its banner through `dismissNotificationsForTasks`:
+ * priority below Medium, converted to a task, moved to Anytime, its schedule
+ * moved off today. A Nag change on a reminder ends nothing (priority is the
+ * one dial, 2026-10-26). At 09:05 Morning (09:00) has opened. (The two
  * schedule edits also move the stored `due_at`, which dismisses on its own;
- * they pin the outcome. Priority, Nag off and conversion move no date, so
- * they pin `namedPushEndCheck` itself.)
+ * they pin the outcome. Priority and conversion move no date, so they pin
+ * `namedPushEndCheck` itself.)
  */
 describe('RR-08 an edit that ends the named push dismisses the banner', () => {
   const dismissed = () => vi.mocked(dismissNotificationsForTasks).mock.calls.map(([, ids]) => ids)
@@ -490,11 +506,12 @@ describe('RR-08 an edit that ends the named push dismisses the banner', () => {
     expect(dismissed()).toEqual([[a.id]])
   })
 
-  test('Nag turned off dismisses', () => {
+  test('a Nag change on a reminder dismisses nothing: its named push still stands', () => {
     const r = reminder(9, 0, 3)
     vi.clearAllMocks()
     edit(r.id, { auto_snooze_minutes: 0 })
-    expect(dismissed()).toEqual([[r.id]])
+    expect(dismissed()).toEqual([])
+    expect(pendingReminderNags(at(9, 30))).toMatchObject([{ taskId: r.id }])
   })
 
   test('converted to a task dismisses', () => {
@@ -544,7 +561,8 @@ describe('RR-08 an edit that ends the named push dismisses the banner', () => {
       taskIds: [c.id],
       changes: { auto_snooze_minutes: 0 },
     })
-    expect(dismissed()).toEqual([[a.id], [c.id]])
+    // The Nag change on `c` ends nothing: its call dismisses no id.
+    expect(dismissed()).toEqual([[a.id], []])
   })
 })
 
@@ -608,7 +626,7 @@ describe('RR-11 the cheap gate never skips a due push', () => {
     return sent
   }
 
-  test('a day of edits: created mid-period, raised, considered, Nag toggled, moved, off-day', () => {
+  test('a day of edits: created mid-period, raised, considered, Nag value edited, off-day', () => {
     reminder(9, 0, 3, { rrule: 'FREQ=DAILY' })
     const considered = reminder(12, 0, 2, { rrule: 'FREQ=DAILY' })
     const low = reminder(12, 0, 1)
@@ -621,7 +639,7 @@ describe('RR-11 the cheap gate never skips a due push', () => {
     const events = new Map<number, () => void>([
       // A new High reminder in an already-open period: its first push at once.
       [at(10, 17).getTime(), () => reminder(9, 0, 3)],
-      // Urgent Nag off, then on again.
+      // Its Nag value edited (ignored for a reminder): off, then back.
       [at(9, 25).getTime(), () => edit(toggled.id, { auto_snooze_minutes: 0 })],
       [at(11, 3).getTime(), () => edit(toggled.id, { auto_snooze_minutes: null })],
       // Considered after its 12:00 push.

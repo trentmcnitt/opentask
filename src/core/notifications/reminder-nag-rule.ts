@@ -3,18 +3,19 @@
  * marks" Part A). A leaf module — no imports — so the period push, the
  * period nag and the named pushes read one rule.
  *
- * A reminder at Medium or above, with its own Nag on, is pushed BY NAME
+ * PRIORITY IS THE ONE DIAL (Trent, 2026-10-26: "Turn off every nag-specific
+ * option for reminders"). A reminder at Medium or above is pushed BY NAME
  * (reminder-nags.ts) and no longer counted in its period's push or nag
- * (`waitingBySlot`, slot-reminders.ts). Everything else — None and Low, and
- * a Medium+ reminder whose Nag is OFF (`auto_snooze_minutes = 0`) — stays in
- * the period's count. Nag off turns off a reminder's OWN nagging; it never
- * makes a waiting reminder vanish from every notification (coordinator
- * ruling, 2026-10-26, on #368). Such a one paces the period nag like a Low
- * one (`periodPacePriority`).
+ * (`waitingBySlot`, slot-reminders.ts); None and Low stay in the period's
+ * count, and each paces the period nag at its own priority. A reminder's
+ * stored `auto_snooze_minutes` is IGNORED for all of it — not read, not
+ * rewritten — so a task made a reminder and back keeps whatever it had.
+ * (From #368 to this ruling, a Medium+ reminder with Nag off was the
+ * period's instead; that rule is gone.)
  *
  * When a delivered named-push banner goes stale after an edit (priority
- * lowered, Nag off, converted to a task, moved to Anytime or off today), the
- * task mutations dismiss it: `namedPushStands` in reminder-nags.ts.
+ * lowered, converted to a task, moved to Anytime or off today), the task
+ * mutations dismiss it: `namedPushEndCheck` in reminder-nags.ts.
  */
 
 /** The lowest priority whose reminders are pushed by name: Medium. */
@@ -27,30 +28,8 @@ export function isNamedReminderPriority(priority: number | null | undefined): bo
 
 /**
  * Whether a waiting reminder is pushed by name (and so left out of its
- * period's push and nag): Medium or above, and its own Nag not OFF.
+ * period's push and nag): by its priority alone.
  */
-export function getsNamedPush(reminder: {
-  priority: number | null | undefined
-  auto_snooze_minutes: number | null | undefined
-}): boolean {
-  return isNamedReminderPriority(reminder.priority) && reminder.auto_snooze_minutes !== 0
-}
-
-/** Low: the pace a Medium+ reminder with its Nag off gives the period nag. */
-const NAG_OFF_PACE_PRIORITY = 1
-
-/**
- * The priority a reminder counted in its period paces the period nag at:
- * its own — except a Medium+ one with its Nag off, which "behaves like a
- * None/Low reminder" (coordinator ruling, 2026-10-26) and paces like a Low
- * one rather than at its High or Urgent rung.
- */
-export function periodPacePriority(reminder: {
-  priority: number | null | undefined
-  auto_snooze_minutes: number | null | undefined
-}): number {
-  const priority = reminder.priority ?? 0
-  return isNamedReminderPriority(priority) && reminder.auto_snooze_minutes === 0
-    ? NAG_OFF_PACE_PRIORITY
-    : priority
+export function getsNamedPush(reminder: { priority: number | null | undefined }): boolean {
+  return isNamedReminderPriority(reminder.priority)
 }

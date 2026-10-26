@@ -6024,6 +6024,11 @@ components:
             relative target (dormant while it has a target); else null. Server-set.
         auto_snooze_minutes:
           type: [integer, 'null']
+          description: |
+            The task's own nag interval (minutes; 0 = Nag off, null = the
+            user's default for its priority). Ignored for a reminder: its
+            priority alone decides its pushes (2026-10-26). Stored as sent,
+            never rewritten, so a reminder made a task again keeps it.
         deleted_at:
           type: [string, 'null']
           format: date-time
@@ -6346,6 +6351,10 @@ components:
           type: integer
           minimum: 0
           maximum: 1440
+          description: |
+            The nag interval in minutes (0 = Nag off). Ignored for a reminder
+            (stored, never read): a reminder's priority alone decides its
+            pushes (2026-10-26).
         progress_target:
           type: integer
           minimum: 1
@@ -6696,6 +6705,10 @@ components:
           type: integer
           minimum: 0
           maximum: 1440
+          description: |
+            The nag interval in minutes (0 = Nag off). Ignored for a reminder
+            (stored, never read): a reminder's priority alone decides its
+            pushes (2026-10-26).
         progress_target:
           type: integer
           minimum: 1

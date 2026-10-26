@@ -202,7 +202,7 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // A moved date (a snooze, via snoozeTask too) or a completion makes the
   // task's delivered notification stale: dismiss it everywhere and resync the
   // badge. So does an edit that ends a reminder's named push (priority below
-  // Medium, Nag off, converted to a task, moved to Anytime or off today:
+  // Medium, converted to a task, moved to Anytime or off today:
   // `namedPushStands`, reminder-nags.ts). Any other field leaves the
   // notification as true as it was.
   if (
