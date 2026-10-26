@@ -360,6 +360,29 @@ export async function cmdClickRow(row: Locator): Promise<void> {
 }
 
 /**
+ * The floating selection bar's Clear (X) is level with its FIRST row of verbs,
+ * never on a row of its own below them (2026-10-26: at the iOS app's 119% text
+ * the X wrapped under "3 selected · Done · More · trash", and under Reminders'
+ * "Considered · Details · trash"; it sits on the pill's corner now). Its top is
+ * above the first verb's bottom edge, its centre no lower, and it is on screen.
+ */
+export async function expectClearOnFirstRow(page: Page, label: string): Promise<void> {
+  const sheet = page.locator('[data-selection-sheet]')
+  const clear = (await sheet.getByRole('button', { name: 'Clear selection' }).boundingBox())!
+  const first = (await sheet
+    .locator('button:not([aria-label="Clear selection"])')
+    .first()
+    .boundingBox())!
+  const firstRowBottom = first.y + first.height
+  expect(clear.y, `Clear's top, ${label}`).toBeLessThan(firstRowBottom)
+  expect(clear.y + clear.height / 2, `Clear's centre, ${label}`).toBeLessThanOrEqual(firstRowBottom)
+  expect(clear.x, `Clear's left edge, ${label}`).toBeGreaterThanOrEqual(0)
+  expect(clear.x + clear.width, `Clear's right edge, ${label}`).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  )
+}
+
+/**
  * The signed-in user's OpenTask day, `n` days on (yyyy-MM-dd), as the server
  * reckons it with the task-queue switch on: the user's resolved day start
  * (`rollover_time`, 3:00 AM by default) read from the server, and the

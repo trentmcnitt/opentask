@@ -64,9 +64,13 @@ export const metadata: Metadata = {
  * scrollbar and add a 130px right margin to `<body>`, squeezing the page to
  * half the screen. `overflow-x: hidden` on html/body does NOT stop it — in
  * WKWebView the scroll view still takes the overflowing width (measured in
- * the simulator) — so the overflow itself is fixed where it starts (see
- * `Header`, the global `overflow-wrap` in globals.css) and the zoom is shut
- * here as well.
+ * the simulator) — so the overflow itself is fixed where it starts and the
+ * zoom is shut here as well. The 532px was a link in a task segment row's
+ * title on /reminders, unbroken in a 76px column (the global `overflow-wrap`
+ * in globals.css now breaks it); at larger sizes still, the header, the
+ * dashboard's view-toggle row and Settings' label rows had overflowed too
+ * (`Header`, `DashboardClient`, `LabelsSection`). The pages are checked at
+ * 119% in tests/e2e/tq-segments-always.spec.ts.
  *
  * - The iOS app (WKWebView) and a Home Screen web app honour these: the
  *   minimum and maximum scale are both 1 even when content overflows, and the

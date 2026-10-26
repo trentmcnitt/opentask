@@ -230,9 +230,14 @@
     @apply bg-background text-foreground;
     /* A word longer than its line breaks instead of running out of its box
        (2026-10-26). Titles and notes are the user's own text: a pasted URL or
-       file path is one unbreakable "word", and a row title's column on a phone
-       at a large text size is ~130px, so it ran out of its row and widened
-       the page — which lets iOS zoom the app out (see layout.tsx). `break-word`,
+       file path is one unbreakable "word". THE CASE THAT BROKE TRENT'S PHONE:
+       on /reminders a task segment row (`TaskSegmentRow`) with an x.com link
+       in its title; at the iOS app's 119% text the row's four 52px controls
+       leave the title a 76px column on a 402px screen, and the link ran ~450px
+       past it to x=532 — the page's width, which let iOS zoom the whole app
+       out to 0.756 (see layout.tsx; tests/e2e/tq-segments-always.spec.ts runs
+       that row at 119%). Any row title can hold one, so the rule is here and
+       not on that row. `break-word`,
        not `anywhere`: it breaks only a word that does not fit, and leaves
        every box's min-content width (flex and grid sizing) as it was. Text set
        `nowrap` (truncated labels) is unaffected. */

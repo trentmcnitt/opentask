@@ -2488,8 +2488,11 @@ function DashboardView({
             />
           )}
 
-          {/* The front door is Now; Show all and Newest keep the corpus one tap away. */}
-          <div className="mb-3 flex items-center justify-between gap-2">
+          {/* The front door is Now; Show all and Newest keep the corpus one tap away.
+              Wraps: at the iOS app's largest text sizes (a 24px root at 150%,
+              ios/OpenTask/WebView.swift) the toggle and "20 of 134 now · Show
+              all 134" are wider than a phone, and the row ran 12px off it. */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
             {nowSummary && <NowSummary {...nowSummary} />}
           </div>
