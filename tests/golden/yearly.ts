@@ -12,7 +12,7 @@
  * ("over 1×"); done that day advances a whole year, so the days after are quiet.
  */
 import type { GoldenScenario } from './types'
-import { headsUps } from './helpers'
+import { upcoming } from './helpers'
 
 export const yearlyScenarios: GoldenScenario[] = [
   {
@@ -34,7 +34,7 @@ export const yearlyScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        ...headsUps(['2027-02-25', '2027-02-28']),
+        ...upcoming({ later: ['2027-02-25'], tomorrow: ['2027-02-28'] }),
         '2027-03-01': 'over 1×',
       },
     },

@@ -88,6 +88,7 @@ import {
   leadRowFor,
   repeatLinkFor,
   scrollParentToTop,
+  stagedUpcomingAnchor,
   targetValueFor,
 } from '@/components/quick-panel/this-one-props'
 import { SkipUntilDialog } from '@/components/SkipUntilDialog'
@@ -1224,6 +1225,9 @@ export function QuickActionPanel({
   useEffect(() => {
     relativeBaseRef.current = relativeAt
   })
+  const derivedTarget = deadlineAnchored
+    ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime })
+    : null
   const targetValue = targetValueFor({
     timezone,
     queued: !!queuedOccurrence,
@@ -1235,25 +1239,32 @@ export function QuickActionPanel({
     delta: effectiveDeltaDisplay,
     staged: isBulkMode ? null : (pendingDueAt ?? (isDateDirty ? workingDate : null)),
     deadline: stagedDeadlineValue,
-    derived: deadlineAnchored
-      ? derivedTargetFor(effectiveTask, pendingDeadline, { timezone, morningTime })
-      : null,
+    derived: derivedTarget,
     relativeTarget: relativeTarget.targetValue,
   })
-  // THE LEAD ROW (the deadlines page, 2026-10-22): see `leadRowFor`.
+  // THE LEAD TIME ROW (the deadlines page, 2026-10-22; Upcoming's form,
+  // 2026-10-25): see `leadRowFor` and `stagedUpcomingAnchor`.
   const leadRow = leadRowFor({
-    show:
-      queueEnabled &&
-      !isBulkMode &&
-      !isCreateMode &&
-      !isReminderLike &&
-      showsNoTarget &&
-      !effectiveTask?.done,
+    show: !isBulkMode && !isCreateMode && !isReminderLike && !effectiveTask?.done,
     task: effectiveTask,
+    queueEnabled,
+    showsNoTarget,
+    upcomingAnchor: stagedUpcomingAnchor({
+      queued: !!queuedOccurrence && !isDateDirty,
+      deck: deckStaged ? (pendingDeck as string) : null,
+      cleared: pendingDueAtCleared,
+      fixed: isBulkMode ? null : (pendingDueAt ?? (isDateDirty ? workingDate : null)),
+      deadline: stagedDeadlineValue,
+      relative: relativeTarget.targetValue?.dirty ? relativeAt : null,
+      derived: derivedTarget,
+    }),
+    restamp:
+      pendingDeadline !== undefined && pendingDeadline !== (effectiveTask?.deadline_at ?? null),
     pendingDeadline,
     pendingLeadDays,
     timezone,
     rolloverTime,
+    dayStart,
     onLeadDays: setPendingLeadDays,
     disabled: !canEdit,
   })

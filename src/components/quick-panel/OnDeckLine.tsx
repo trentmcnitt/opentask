@@ -73,34 +73,43 @@ export function OnDeckLine({
       ? DateTime.fromISO(task.queued_from_deck_day).toFormat('ccc LLL d')
       : null
   return (
-    <div data-quick-panel-deck className="flex items-center gap-1 text-xs">
+    // The button, then ONE inline run of words (2026-10-25): as separate flex
+    // items, a narrow column wrapped "Not on deck" and "· a deck replaces …"
+    // each on its own, side by side. `items-start` keeps the button on the
+    // first line (its margin box is one 16px line, so one line looks as before).
+    <div data-quick-panel-deck className="flex items-start gap-1 text-xs">
       <OnDeckButton
         task={{ ...task, on_deck_day: shown }}
         timezone={timezone}
         onDeck={(_t, day) => stage(day)}
         limit={limit}
-        className={cn('-my-1 -ml-1 size-6', replaces && 'opacity-45 hover:opacity-100')}
+        className={cn('-my-1 -ml-1 size-6 shrink-0', replaces && 'opacity-45 hover:opacity-100')}
         iconClassName="size-3.5"
       />
-      {showLabel && <span className="text-muted-foreground/70">On deck</span>}
-      <span
-        data-quick-panel-deck-day
-        className={cn(
-          dirty ? 'font-bold text-blue-500' : shown ? 'font-medium' : 'text-muted-foreground/60',
+      <span data-quick-panel-deck-words className="min-w-0">
+        {showLabel && <span className="text-muted-foreground/70">On deck</span>}
+        {showLabel && ' '}
+        <span
+          data-quick-panel-deck-day
+          className={cn(
+            dirty ? 'font-bold text-blue-500' : shown ? 'font-medium' : 'text-muted-foreground/60',
+          )}
+        >
+          {shown ? deckDayWords(shown, timezone, now, dayStart) : 'Not on deck'}
+        </span>
+        {replaces && ' '}
+        {replaces && (
+          <span data-quick-panel-deck-replaces className="text-muted-foreground">
+            · a deck replaces {replaces}
+          </span>
         )}
-      >
-        {shown ? deckDayWords(shown, timezone, now, dayStart) : 'Not on deck'}
+        {wasOnDeck && ' '}
+        {wasOnDeck && (
+          <span data-quick-panel-was-on-deck className="text-muted-foreground">
+            · was on deck {wasOnDeck}
+          </span>
+        )}
       </span>
-      {replaces && (
-        <span data-quick-panel-deck-replaces className="text-muted-foreground">
-          · a deck replaces {replaces}
-        </span>
-      )}
-      {wasOnDeck && (
-        <span data-quick-panel-was-on-deck className="text-muted-foreground">
-          · was on deck {wasOnDeck}
-        </span>
-      )}
     </div>
   )
 }

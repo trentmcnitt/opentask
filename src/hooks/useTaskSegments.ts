@@ -10,6 +10,7 @@ import {
   type SegmentKind,
   type SegmentLeft,
   type SegmentState,
+  type UpcomingSection,
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
@@ -38,7 +39,7 @@ import { openTaskDaysBetween } from '@/lib/opentask-day'
  * - Remove target (Upcoming's one-off rows, 2026-10-12) →
  *   `PATCH { target_at: null }`; the task goes back to its horizon segment —
  *   or, with a deadline (2026-10-22, it replaced "Back to auto"), onto the
- *   deadlines page from its lead day (Upcoming before it)
+ *   deadlines page from its lead day (quiet before it, rule 3)
  * - Repeating Upcoming rows have Today and its picker too (§6: moving the
  *   target leaves the occurrence where it was), but no target reset
  * - Defer All → everything still waiting in that segment, back tomorrow
@@ -110,6 +111,12 @@ export interface SegmentRow {
   safetyNet?: boolean
   /** The deadlines page: seen (considered) this OpenTask day. */
   seen?: boolean
+  /**
+   * Upcoming's section (2026-10-25, the Upcoming split): 'tomorrow' (the day
+   * before its anchor) or 'later'. Only on Upcoming rows; a row the server
+   * sent without one (it always sends it) reads as Later.
+   */
+  section?: UpcomingSection
 }
 
 export interface SegmentView {
@@ -335,6 +342,7 @@ function segmentViews(
           ...(left ? { left } : {}),
           ...(t.safety_net ? { safetyNet: true } : {}),
           ...(obj?.seen || t.seen ? { seen: true } : {}),
+          ...(seg.horizon === 'upcoming' ? { section: t.upcoming_section ?? 'later' } : {}),
         }
       })
       .filter((r): r is SegmentRow => r.state !== 'gone')

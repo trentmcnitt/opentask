@@ -14,7 +14,7 @@ import {
   targetQuietUntil,
 } from '@/lib/task-model-words'
 import { isPastDeadline } from '@/lib/task-segments'
-import { LEAD_DAYS_MIN, leadLineWords, type LeadLine } from '@/lib/editor-target-labels'
+import { LEAD_DAYS_MIN } from '@/lib/editor-target-labels'
 import { MOVES_WITH_DEADLINE } from '@/lib/relative-target-ui'
 
 /**
@@ -53,8 +53,15 @@ import { MOVES_WITH_DEADLINE } from '@/lib/relative-target-ui'
  * carries the lead override as a stepper (1–90 days before; "Default" puts
  * the table back). A change previews in blue what Save stores (a deadline or
  * lead change re-derives the day and drops a deferral). Only with the task
- * queue on, one task, and no target (staged) — a target makes the lead
- * dormant. The Target row then reads "No target", never an automatic one.
+ * queue on, one task, and no target (staged). The Target row then reads "No
+ * target", never an automatic one.
+ *
+ * ITS UPCOMING FORM (2026-10-25, the Upcoming split): a task with a target
+ * (or a deck day) has a lead too — days ahead of the target before it shows
+ * in Upcoming's Later section — whatever the task-queue switch says: "Later
+ * on Tue Oct 20 (3 days before) · Tomorrow on Thu Oct 22", "Tomorrow on Thu
+ * Oct 22 (the day before)", "Not in Upcoming (the target is tomorrow)"
+ * (`upcomingLeadLine` / `upcomingLeadWords`). The same stepper and Default.
  *
  * A RELATIVE TARGET (2026-10-24, plan-relative-targets §9) reads "Mon, Nov
  * 2, 8:30 PM in 9 days · the day before, Evening · moves with the deadline"
@@ -65,6 +72,16 @@ import { MOVES_WITH_DEADLINE } from '@/lib/relative-target-ui'
  * The Target row's DEADLINE-CAP PREVIEW: a staged target after a deadline
  * that is still ahead reads "Sat Nov 7, 8:00 AM · stops at deadline" — the
  * server's own cap (`capAtDeadline`), so the preview is the saved value.
+ *
+ * EVERY META LINE IS ONE INLINE RUN (2026-10-25): the Target and Deadline
+ * values, the On deck words, "Horizon not in effect · Target set: quiet
+ * until …" and "↻ Make it repeat › · since Tue" are each plain text flow —
+ * fragments are inline spans joined by a space, never flex or grid items. As
+ * flex items, a narrow phone column (the value column is ~250px at 375) made
+ * each fragment a cell that wrapped on its own, side by side: "Not on / deck"
+ * beside "· a deck replaces / target Tue 10 AM". Controls (the On deck
+ * button, the Lead time stepper, the repeat link's box) stay boxes of their
+ * own; text after them wraps like prose. Guarded by editor-meta-lines.spec.ts.
  */
 export function ThisOneFields({
   occurrence,
@@ -118,7 +135,7 @@ export function ThisOneFields({
         {lead && (
           <>
             <RowLabel>{LEAD_WORD}</RowLabel>
-            <LeadRow {...lead} timezone={timezone} />
+            <LeadRow {...lead} />
           </>
         )}
         {deck && (
@@ -130,16 +147,18 @@ export function ThisOneFields({
         {quietUntil && (
           <span
             data-quick-panel-horizon-quiet
-            className="text-muted-foreground/60 col-start-2 inline-flex items-center gap-1"
+            className="text-muted-foreground/60 col-start-2"
             title="A target makes a task quiet until its date. Remove the target to use its horizon."
           >
-            <span className="text-muted-foreground/50">{HORIZON_WORD} not in effect ·</span>
+            <span className="text-muted-foreground/50">{HORIZON_WORD} not in effect ·</span>{' '}
             {targetQuietUntil(DateTime.fromISO(quietUntil).setZone(timezone).toFormat('LLL d'))}
           </span>
         )}
       </div>
       {(link || since) && (
-        <p className="flex flex-wrap items-center gap-x-1 text-xs">
+        // One run: the link is an inline box and `SinceAge` brings its own
+        // " · since …", so on a narrow screen "since" wraps like a word.
+        <p data-quick-panel-repeat-line className="text-xs">
           {link && <RepeatLink ref={linkRef} {...link} />}
           {since}
         </p>
@@ -183,7 +202,7 @@ function TargetRow({ picker, value, readonlyText }: TargetRowProps) {
         type="button"
         data-quick-panel-date
         aria-label={`${TARGET_WORD}: change`}
-        className="inline-flex min-w-0 cursor-pointer flex-wrap items-center gap-x-1 text-left select-text"
+        className="min-w-0 cursor-pointer text-left select-text"
       >
         <TargetValue {...value} />
       </button>
@@ -228,11 +247,12 @@ function TargetValue(props: TargetValueProps) {
       </span>
     )
   }
+  // One inline run (see `ThisOneFields`): the spaces join the fragments.
   return (
     <>
       <span className={cn(props.dirty ? 'font-bold text-blue-500' : 'text-foreground')}>
         {props.header}
-      </span>
+      </span>{' '}
       <span
         className={cn(
           props.dirty
@@ -244,7 +264,13 @@ function TargetValue(props: TargetValueProps) {
       >
         {props.relative}
       </span>
-      {props.delta && <span className="font-medium text-blue-500">({props.delta})</span>}
+      {props.delta && (
+        <>
+          {' '}
+          <span className="font-medium text-blue-500">({props.delta})</span>
+        </>
+      )}
+      {props.relativeWords && ' '}
       {props.relativeWords && (
         <span
           data-target-relative
@@ -318,7 +344,7 @@ function DeadlineRow(props: DeadlineRowProps & { timezone: string }) {
         type="button"
         data-quick-panel-deadline
         aria-label={`${DEADLINE_WORD}: change`}
-        className="inline-flex min-w-0 cursor-pointer flex-wrap items-center gap-x-1 text-left"
+        className="min-w-0 cursor-pointer text-left"
       >
         <span
           className={cn(
@@ -333,6 +359,7 @@ function DeadlineRow(props: DeadlineRowProps & { timezone: string }) {
         >
           {when ? `${when}${past ? ' · past deadline' : ''}` : 'None'}
         </span>
+        {when && props.repeatLabel && ' '}
         {when && props.repeatLabel && (
           <span
             data-quick-panel-deadline-repeat
@@ -355,15 +382,30 @@ function deadlineWords(iso: string, timezone: string): string {
 // ---------------------------------------------------------------------------
 
 export interface LeadRowProps {
-  line: LeadLine
+  /**
+   * Which form: the deadlines page's (a deadline task with no target) or
+   * Upcoming's (a task with a target or a deck day, 2026-10-25).
+   */
+  form: 'deadline' | 'upcoming'
+  /** The row's words, worked out by `leadRowFor` (`leadLineWords` / `upcomingLeadWords`). */
+  words: string
+  /** The deadline form: THIS instance was deferred to (a weekday), or null. */
+  deferred: string | null
+  /** A staged change produced it (drawn blue): a preview of Save. */
+  staged: boolean
+  /** The stepper's value, 1–`max` (the EFFECTIVE lead). */
+  leadDays: number
+  /** An override longer than allowed: "(as early as it can be)", and no "+". */
+  clamped: boolean
+  /** The user's override, staged or stored; null = the default ("Default" shows only with one). */
+  override: number | null
+  max: number
   /**
    * The stepper: a one-off's own lead. A REPEAT's lead is series-wide, so
    * this-one mode shows only the words (Trent, 10-22) — the stepper is in
-   * every-time mode, beside the deadline (`NoTargetRow`).
+   * every-time mode.
    */
   editable: boolean
-  /** Today, the OpenTask day (yyyy-MM-dd): "from today" / "since …". */
-  today: string
   /** Stage an override (1–90), or null for the default table. */
   onLeadDays: (days: number | null) => void
   disabled?: boolean
@@ -371,31 +413,37 @@ export interface LeadRowProps {
 
 /**
  * "On the deadlines page from Tue Oct 20 (3 days before) · deferred to Thu"
- * and the stepper "− 3 days +" — the text first, so it wraps under the label
- * on a phone. The stepper's buttons are 28px boxes inside 44px hit targets on
- * a finger (the panel's other small controls' rule). "Default" only while an
+ * or "Later on Tue Oct 20 (3 days before) · Tomorrow on Thu Oct 22", and the
+ * stepper "− 3 days +" — the text first, so it wraps under the label on a
+ * phone. The stepper's buttons are 28px boxes inside 44px hit targets on a
+ * finger (the panel's other small controls' rule). "Default" only while an
  * override is set.
  */
 function LeadRow({
-  line,
-  today,
+  form,
+  words,
+  deferred,
+  staged,
+  leadDays,
+  clamped,
+  override,
+  max,
   onLeadDays,
   editable,
   disabled = false,
-  timezone,
-}: LeadRowProps & { timezone: string }) {
-  const tone = line.staged ? 'font-medium text-blue-500' : 'text-muted-foreground'
-  const deferred = line.deferredTo
-    ? DateTime.fromISO(line.deferredTo, { zone: timezone }).toFormat('ccc')
-    : null
+}: LeadRowProps) {
+  const tone = staged ? 'font-medium text-blue-500' : 'text-muted-foreground'
   const step = (delta: number) =>
-    onLeadDays(Math.min(line.max, Math.max(LEAD_DAYS_MIN, line.leadDays + delta)))
+    onLeadDays(Math.min(max, Math.max(LEAD_DAYS_MIN, leadDays + delta)))
   const stepClass =
     'text-muted-foreground hover:text-foreground hover:bg-foreground/5 inline-flex size-7 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:size-9'
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" data-quick-panel-lead>
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+      data-quick-panel-lead={form}
+    >
       <span className={tone} data-lead-words>
-        {leadLineWords(line, timezone, today)}
+        {words}
         {deferred && (
           <span data-lead-deferred className="text-foreground/70">
             {' '}
@@ -408,22 +456,22 @@ function LeadRow({
           <button
             type="button"
             className={stepClass}
-            disabled={disabled || line.leadDays <= LEAD_DAYS_MIN}
+            disabled={disabled || leadDays <= LEAD_DAYS_MIN}
             onClick={() => step(-1)}
             aria-label="One day less"
           >
             <Minus className="size-3.5" />
           </button>
           <span
-            data-lead-days={line.leadDays}
+            data-lead-days={leadDays}
             aria-live="polite"
             className={cn(
               'min-w-[3.5rem] px-1 text-center tabular-nums',
-              line.staged ? 'font-medium text-blue-500' : 'text-foreground',
+              staged ? 'font-medium text-blue-500' : 'text-foreground',
             )}
           >
-            {line.leadDays} {line.leadDays === 1 ? 'day' : 'days'}
-            {line.clamped && (
+            {leadDays} {leadDays === 1 ? 'day' : 'days'}
+            {clamped && (
               <span data-lead-clamped className="text-muted-foreground ml-1 font-normal">
                 (as early as it can be)
               </span>
@@ -432,13 +480,13 @@ function LeadRow({
           <button
             type="button"
             className={stepClass}
-            disabled={disabled || line.clamped || line.leadDays >= line.max}
+            disabled={disabled || clamped || leadDays >= max}
             onClick={() => step(1)}
             aria-label="One day more"
           >
             <Plus className="size-3.5" />
           </button>
-          {line.override !== null && (
+          {override !== null && (
             <button
               type="button"
               data-lead-default
@@ -496,7 +544,9 @@ export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(functio
       title={disabledReason ?? undefined}
       aria-label={label}
       className={cn(
-        '-mx-1.5 inline-flex flex-wrap items-center gap-x-1 rounded px-1.5 py-0.5 text-left transition-colors',
+        // Out to the left only, so the text lines up with the rows above; a
+        // right overhang would pull the "· since" after it into the box.
+        '-ml-1.5 inline-flex flex-wrap items-center gap-x-1 rounded px-1.5 py-0.5 text-left align-middle transition-colors',
         'bg-muted/60 hover:bg-accent active:bg-accent disabled:cursor-not-allowed disabled:opacity-60',
         dirty ? 'font-medium text-blue-500' : 'text-muted-foreground',
       )}

@@ -35,8 +35,11 @@ const NOV1_WEEKLY: GoldenTask[] = Array.from({ length: 4 }, (_, i) => ({
   },
 }))
 
+// Sections (2026-10-25): Later from Wed Oct 28 (wait 20 → lead 4), carried
+// over untapped through Fri Oct 30 (A − 2); Sat Oct 31 is Tomorrow.
 const oneOffNov1 = {
-  '2026-10-28..2026-10-31': 'upcoming',
+  '2026-10-28..2026-10-30': 'later',
+  '2026-10-31': 'tomorrow',
   '2026-11-01': 'over 1×',
   '2026-11-02': 'over 2×',
   '2026-11-03': 'over 3× →remove',
@@ -97,12 +100,12 @@ export const caseScenarios: GoldenScenario[] = [
       },
     ],
     // Over target Tue 9:00 → 1× (the move at 10:00 keeps it). Moved Tue → Sat
-    // is a wait of 4: the day-before heads-up Fri. Sat over again → 2×; Sun
+    // is a wait of 4: Tomorrow on Fri (no Later: lead 1). Sat over again → 2×; Sun
     // 3× and the row offers "Remove target?".
     expect: {
       door: {
         '2026-10-13..2026-10-15': 'quiet 1×',
-        '2026-10-16': 'upcoming 1×',
+        '2026-10-16': 'tomorrow 1×',
         '2026-10-17': 'over 2×',
         '2026-10-18': 'over 3× →remove',
       },
@@ -122,17 +125,20 @@ export const caseScenarios: GoldenScenario[] = [
       ...Object.fromEntries(
         NOV1_MONTHLY.map((t) => [
           t.name,
-          { '2026-10-28..2026-10-31': 'upcoming', ...repeatingNov1 },
+          // Made Oct 1 after 7/8 AM: Nov 1 is the first, wait 31 → Later Oct
+          // 28, carried over to Oct 30; Tomorrow Oct 31.
+          { '2026-10-28..2026-10-30': 'later', '2026-10-31': 'tomorrow', ...repeatingNov1 },
         ]),
       ),
       ...Object.fromEntries(
-        NOV1_WEEKLY.map((t) => [t.name, { '2026-10-31': 'upcoming', ...repeatingNov1 }]),
+        NOV1_WEEKLY.map((t) => [t.name, { '2026-10-31': 'tomorrow', ...repeatingNov1 }]),
       ),
     },
     counts: {
       '2026-10-27': { upcoming: 0 },
-      // Untapped rows carry over as the same single row: 10 from Wed Oct 28,
-      // 14 on Sat Oct 31 when the four weeklies join.
+      // Untapped rows carry over as the same single row: 10 from Wed Oct 28
+      // (Later), 14 on Sat Oct 31 when the four weeklies join (all Tomorrow).
+      // `upcoming` counts both sections.
       '2026-10-28': { upcoming: 10 },
       '2026-10-30': { upcoming: 10 },
       '2026-10-31': { upcoming: 14 },
@@ -204,7 +210,7 @@ export const caseScenarios: GoldenScenario[] = [
     // lead table of 2026-10-21): the automatic target is Sun Oct 11 9:00;
     // until then the deadline pulls it into Days. Over target Sun–Mon (auto:
     // no offer). Tue 10:00 the picked target — Tuesday already counted (3×).
-    // Wait Tue → Fri 3: Thursday's heads-up. Fri over again (4×). No "Back to
+    // Wait Tue → Fri 3: Tomorrow on Thursday. Fri over again (4×). No "Back to
     // auto?": the deadline has passed.
     expect: {
       task: {
@@ -212,7 +218,7 @@ export const caseScenarios: GoldenScenario[] = [
         '2026-10-11': 'over 1×',
         '2026-10-12': 'over 2×',
         '2026-10-13..2026-10-14': 'quiet 3×',
-        '2026-10-15': 'upcoming 3×',
+        '2026-10-15': 'tomorrow 3×',
         '2026-10-16': 'over 4×',
         '2026-10-17': 'over 5×',
       },

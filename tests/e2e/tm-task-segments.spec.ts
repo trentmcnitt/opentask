@@ -289,10 +289,10 @@ test.describe('Task segments on the dashboard', () => {
       await expect.poll(async () => (await stateOf(page, days[0])).last_considered_at).toBeNull()
 
       // The chevrons page through every segment, an empty one included
-      // ("Nothing today ✓", 0 of 0).
+      // ("Nothing today ✓", 0 of 0 — on Upcoming, in each of its two sections).
       await tasks.getByRole('button', { name: 'Next task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
-      await expect(tasks.locator('[data-segment-empty]')).toHaveText('Nothing today')
+      await expect(tasks.locator('[data-upcoming-section] [data-segment-empty]')).toHaveCount(2)
       await tasks.getByRole('button', { name: 'Next task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
       await tasks.getByRole('button', { name: 'Previous task segment' }).click()

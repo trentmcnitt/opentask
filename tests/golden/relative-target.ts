@@ -131,7 +131,7 @@ export const relativeTargetScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        '2026-11-03': 'upcoming',
+        '2026-11-03': 'tomorrow',
         '2026-11-04': 'over 1×',
       },
     },

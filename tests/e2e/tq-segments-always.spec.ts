@@ -120,8 +120,9 @@ for (const viewport of VIEWPORTS) {
         for (const key of KEYS.slice(1)) {
           await next.click()
           await expect(card).toHaveAttribute('data-tasks-page', key)
+          // Upcoming's two sections (2026-10-25) each read "Nothing today ✓".
           await expect(card.locator('[data-segment-empty]')).toHaveCount(
-            key === 'tasks:days' ? 0 : 1,
+            key === 'tasks:days' ? 0 : key === 'tasks:upcoming' ? 2 : 1,
           )
         }
         await expect(next).toBeDisabled()
@@ -162,6 +163,11 @@ for (const viewport of VIEWPORTS) {
           if (ORDER[i] === 'days') {
             await expect(section.locator(`[data-segment-task="${ids[0]}"]`)).toBeVisible()
             await expect(section.locator('[data-segment-empty]')).toHaveCount(0)
+          } else if (ORDER[i] === 'upcoming') {
+            // Both sections, Tomorrow then Later, each "Nothing today ✓" (2026-10-25).
+            await expect(
+              section.locator('[data-upcoming-section] [data-segment-empty]'),
+            ).toHaveText(['Nothing today', 'Nothing today'])
           } else {
             await expect(section.locator('[data-segment-empty]')).toHaveText('Nothing today')
           }

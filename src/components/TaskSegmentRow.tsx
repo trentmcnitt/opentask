@@ -1252,9 +1252,12 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
 
 /**
  * An UPCOMING row's second line (2026-10-12, spec §2): the project, the
- * deadline chip (2026-10-22), the priority, then "Target Tue Nov 3" —
- * or, for a target-less deadline task before its lead day (the deadlines
- * page's hand-off, plan §4), "on the deadlines page from Tue Oct 20". The "Target …" part is a chip that opens a one-item menu
+ * deadline chip (2026-10-22), the priority, then "Target Tue Nov 3" — on a
+ * TOMORROW row (2026-10-25, the Upcoming split) just the time, "Target 9:00
+ * AM", or "On deck": its section already says the day (`upcomingGap`). A
+ * target-less deadline task is never in Upcoming since rule 3 (2026-10-25:
+ * the deadlines page alone holds it), so the "on the deadlines page from …"
+ * hand-off it used to carry is gone. The "Target …" part is a chip that opens a one-item menu
  * (`targetReset`): "Remove target" — back to its horizon segment, or, with a
  * deadline (2026-10-22, it replaced "Back to auto"), onto the deadlines page
  * from its lead day. Undo on the toast. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
@@ -1275,14 +1278,8 @@ function UpcomingMeta({
   const { projects } = useProjects()
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
-  const gap = upcomingGap(task, timezone)
+  const gap = upcomingGap(task, timezone, row.section)
   const reset = readOnly ? null : upcomingRowActions(row).reset
-  // The deadlines page's hand-off (plan §4): a target-less deadline task's
-  // heads-up counts to its lead day — "on the deadlines page from Tue Oct 20".
-  const leadFrom =
-    !gap.target && task.deadline_at && task.lead_from
-      ? DateTime.fromISO(task.lead_from, { zone: timezone }).toFormat('ccc LLL d')
-      : null
   return (
     <div
       data-upcoming-gap
@@ -1300,11 +1297,6 @@ function UpcomingMeta({
       {priority && (
         <span data-segment-priority className={priority.color}>
           {priority.label}
-        </span>
-      )}
-      {leadFrom && (
-        <span data-lead-from className="text-foreground/70">
-          on the deadlines page from {leadFrom}
         </span>
       )}
       {gap.target &&

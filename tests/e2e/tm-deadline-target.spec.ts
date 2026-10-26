@@ -235,15 +235,20 @@ test.describe('Deadline: the editor', () => {
         await expect.poll(async () => (await stateOf(page, bare)).lead_days).toBe(4)
         await page.keyboard.press('Escape')
 
-        // A picked target: … → Remove target → the Lead row → Save.
+        // A picked target: its Lead row is Upcoming's (2026-10-25) — two days
+        // out, set today: the day before only — never the deadlines page's.
+        // … → Remove target → the deadlines page's Lead row → Save.
         sheet = await openEditor(page, picked)
-        await expect(sheet.locator('[data-quick-panel-lead]')).toHaveCount(0)
+        await expect(sheet.locator('[data-quick-panel-lead="deadline"]')).toHaveCount(0)
+        await expect(
+          sheet.locator('[data-quick-panel-lead="upcoming"] [data-lead-words]'),
+        ).toHaveText(/^Tomorrow on \w{3} \w{3} \d+ \(the day before\)$/)
         await sheet.getByRole('button', { name: 'More options' }).tap()
         const reset = page.locator('[data-target-reset="remove"]')
         await expect(reset).toHaveText('Remove target')
         await reset.tap()
         await expect(sheet.locator('[data-quick-panel-no-target]')).toBeVisible()
-        await expect(sheet.locator('[data-quick-panel-lead]')).toBeVisible()
+        await expect(sheet.locator('[data-quick-panel-lead="deadline"]')).toBeVisible()
         await sheet.getByRole('button', { name: 'Save' }).tap()
         await expect.poll(async () => (await stateOf(page, picked)).target_at).toBeNull()
         expect((await stateOf(page, picked)).target_auto).toBe(false)

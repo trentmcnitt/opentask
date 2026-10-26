@@ -344,17 +344,18 @@ test.describe('the faded On deck on a picked target', () => {
   })
 })
 
-test.describe('the Upcoming hand-off and Remove target', () => {
+test.describe('before the lead day, and Remove target', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('before its lead day a deadline task heads up in Upcoming: "on the deadlines page from …"', async ({
+  test('before its lead day a deadline task is quiet: not in Upcoming, not on the page (rule 3)', async ({
     page,
   }) => {
     const ids: number[] = []
     try {
       // D = today + 4 (OpenTask days, whatever the hour), a 1-day lead → the
-      // page from today + 3; set ten days ago → its early heads-up (3 days
-      // before the lead day) is today.
+      // page from today + 3; set ten days ago. Until 2026-10-25 today was its
+      // early heads-up in Upcoming; rule 3 of the Upcoming split: the
+      // deadlines page alone holds it, from its lead day.
       const id = await create(page, {
         title: uniqueTitle('DL handoff'),
         deadline_at: fromNow(4 * DAY),
@@ -362,13 +363,9 @@ test.describe('the Upcoming hand-off and Remove target', () => {
       })
       ids.push(id)
       backdateTargetSet(id, 10)
-      const lead = String((await stateOf(page, id)).lead_from)
       await page.goto('/reminders')
-      const r = row(page.locator('[data-task-segment="upcoming"]'), id)
-      await expect(r.locator('[data-deadline-chip]')).toHaveAttribute('data-deadline-chip', 'ahead')
-      await expect(r.locator('[data-lead-from]')).toHaveText(
-        `on the deadlines page from ${DateTime.fromISO(lead, { zone: TZ }).toFormat('ccc LLL d')}`,
-      )
+      await expect(page.locator('[data-task-segment]').first()).toBeVisible()
+      await expect(row(page.locator('[data-task-segment="upcoming"]'), id)).toHaveCount(0)
       await expect(row(section(page), id)).toHaveCount(0)
     } finally {
       await trash(page, ids)

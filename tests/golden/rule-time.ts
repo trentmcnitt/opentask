@@ -15,7 +15,7 @@
  *
  * Expected lines, from docs/TASK-MODEL.md: an occurrence is over target from
  * its time ("over 1×"); done advances one cycle, and a 7-day wait gets a
- * heads-up the day before, a 3-day wait too ("upcoming").
+ * Tomorrow the day before, a 3-day wait too ("tomorrow" — no Later: lead 1).
  */
 import { getDb } from '@/core/db'
 import { getTaskById } from '@/core/tasks/read'
@@ -143,13 +143,13 @@ export const ruleTimeScenarios: GoldenScenario[] = [
       // done, then a 7-day wait to Mon Oct 19 (heads-up Sunday).
       before: {
         '2026-10-12': 'over 1×',
-        '2026-10-18': 'upcoming',
+        '2026-10-18': 'tomorrow',
         '2026-10-19': 'over 1×',
       },
       // Made at 08:45 for 08:30: the time has passed, so the first occurrence
       // is one cycle on — Mon Oct 19 (heads-up Sunday), Monday itself quiet.
       after: {
-        '2026-10-18': 'upcoming',
+        '2026-10-18': 'tomorrow',
         '2026-10-19': 'over 1×',
       },
     },
@@ -197,7 +197,7 @@ export const ruleTimeScenarios: GoldenScenario[] = [
       // Morning (09:00, passed) it would have started Thursday instead.
       task: {
         '2026-10-12': 'over 1×',
-        '2026-10-14': 'upcoming',
+        '2026-10-14': 'tomorrow',
         '2026-10-15': 'over 1×',
       },
     },
