@@ -61,9 +61,15 @@ function barClearance(bar: HTMLElement | null, target: HTMLElement | null): numb
   if (!bar || !target || !bar.isConnected) return null
   const box = bar.getBoundingClientRect()
   const mine = target.getBoundingClientRect()
+  // Clear (the X) sits on the pill's top-right corner, past the bar's own box
+  // (2026-10-26) — right under the column's corner. Measured against the bar,
+  // so the slide moving both doesn't matter.
+  const clear = bar.querySelector('[data-selection-clear]')?.getBoundingClientRect()
+  const overhang = clear ? Math.max(0, box.top - clear.top) : 0
+  const right = clear ? Math.max(box.right, clear.right) : box.right
   // Side by side (a wide screen's centred bar): nothing to clear.
-  if (box.right <= mine.left || box.left >= mine.right) return null
+  if (right <= mine.left || box.left >= mine.right) return null
   const restingTop =
     window.innerHeight - parseFloat(getComputedStyle(bar).bottom) - bar.offsetHeight
-  return Math.ceil(window.innerHeight - restingTop + GAP_PX)
+  return Math.ceil(window.innerHeight - restingTop + overhang + GAP_PX)
 }
