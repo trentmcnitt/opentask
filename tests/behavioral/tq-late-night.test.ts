@@ -23,7 +23,7 @@
  */
 import { describe, test, expect } from 'vitest'
 import { DateTime } from 'luxon'
-import { openTaskDayOf } from '@/lib/opentask-day'
+import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
 import { draftFromTask, type EveryTimeContext, type EveryTimeTask } from '@/lib/every-time'
 import { pinUnnamedDay, resolveDeckDay } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
@@ -42,6 +42,7 @@ import {
   openTaskDateLabel,
 } from '@/lib/format-date'
 import { formatSnoozeTarget } from '@/lib/field-labels'
+import { userDayLine } from '@/core/ai/prompts'
 import type { Task } from '@/types'
 
 const TZ = 'America/Chicago'
@@ -373,5 +374,14 @@ describe.each(NIGHTS)('TQ-LN: $name', (night) => {
     const label = (at: Date) => openTaskDateLabel(at.toISOString(), TZ, DAY_START)
     expect(label(night.late)).toBe(label(night.evening))
     expect(label(night.late)).toBe(DateTime.fromISO(night.day).toFormat('LLL d'))
+  })
+
+  test("TQ-LN14: the enrichment prompt states the user's day only in the late night (userDayLine)", () => {
+    const words = DateTime.fromISO(night.day).toFormat('ccc, LLL d')
+    expect(userDayLine(night.late, TZ, DAY_START)).toContain(`User's day: ${words} —`)
+    // At 23:30 the calendar date is the user's day: no line, the prompt as before.
+    expect(userDayLine(night.evening, TZ, DAY_START)).toBe('')
+    // The switch off (midnight): never.
+    expect(userDayLine(night.late, TZ, CALENDAR_DAY_START)).toBe('')
   })
 })
