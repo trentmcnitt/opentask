@@ -259,7 +259,7 @@ final class APIClient {
             queued: responseData["queued"] as? Int ?? 0,
             queuedUntil: (responseData["queued_until"] as? String).flatMap(DateHelpers.parseISO),
             summary: (responseData["summary"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            movedIds: responseData["moved_ids"] as? [Int] ?? []
+            movedIds: responseData["moved_ids"] as? [Int]
         )
     }
 
@@ -313,10 +313,12 @@ final class APIClient {
         var summary: String?
         /// The ids this call moved (`moved_ids`, 2026-10-26), queued ones
         /// included: after a sweep exactly these tasks' banners are cleared
-        /// (`dismissNotificationsAfterSweep`). Empty when nothing moved, and
-        /// from an older server (which then clears nothing locally; its silent
-        /// `dismiss` push still clears the moved ones).
-        var movedIds: [Int] = []
+        /// (`dismissNotificationsAfterSweep`), and exactly these leave the
+        /// watch's cached task list (`tasksLeft(after:)`). Empty when nothing
+        /// moved. NIL from an older server, which doesn't say: then no banner
+        /// is cleared locally (its silent `dismiss` push still clears the
+        /// moved ones) and the cache falls back to guessing from the counts.
+        var movedIds: [Int]?
     }
 
     /// Complete N tasks in ONE request (§6.1 batch checklist).

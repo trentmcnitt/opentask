@@ -163,8 +163,8 @@ func registerNotificationCategories() {
 /// Tasks widget's "All overdue" bar (iPhone and Mac), the watch's bulk sheet
 /// and Smart Stack card, and the Mac's menu items and menu-bar panel.
 func dismissNotificationsAfterSweep(_ result: APIClient.BulkSnoozeResult) async {
-    guard !result.movedIds.isEmpty else { return }
-    _ = await removeDeliveredNotifications(forTaskIds: result.movedIds)
+    guard let moved = result.movedIds, !moved.isEmpty else { return }
+    _ = await removeDeliveredNotifications(forTaskIds: moved)
 }
 
 /// The silent `dismiss` push (`dismissNotificationsForTasks`,
