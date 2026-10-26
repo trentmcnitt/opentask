@@ -159,7 +159,7 @@ enum ReminderDayProgress {
         /// `pageKey` (one Int space, `RemindersTimeline`'s page ring).
         let key: Int
         let kind: Kind
-        /// For VoiceOver: "Morning", "Tasks · Days".
+        /// For VoiceOver: "Morning", "Task queue · Daily".
         let label: String
         let state: State
         let handled: Int
@@ -207,7 +207,7 @@ enum ReminderDayProgress {
             let count = PeriodCount(segment)
             guard segment.isListed, count.total > 0 else { return nil }
             return StripBar(
-                key: segment.pageKey, kind: .taskSegment, label: "Tasks · \(segment.label)",
+                key: segment.pageKey, kind: .taskSegment, label: segment.title,
                 state: segment.hasWaiting ? .behind : .done, handled: count.handled, total: count.total,
                 segment: segment.kind
             )

@@ -220,13 +220,29 @@ private struct ReminderCardView: View {
         }
     }
 
+    /// "Early morning · 3 left", "Task queue · Daily · 2 left". A segment's
+    /// title is the long one (2026-10-26): "Task queue · Upcoming · 1 left"
+    /// ran past the card and lost its count. So the full words when they
+    /// fit, else the segment's word alone ("Upcoming · 1 left" — the
+    /// page's colour already says it's the task queue), and only then the
+    /// old shrink.
     private var header: some View {
-        Text("\(card.slotLabel) · \(card.remainingKeys.count) left")
+        let short = TaskWording.withoutTaskQueuePrefix(card.slotLabel)
+        return ViewThatFits(in: .horizontal) {
+            headerText(card.slotLabel).fixedSize()
+            if let short {
+                headerText(short).fixedSize()
+            }
+            headerText(short ?? card.slotLabel).minimumScaleFactor(0.75)
+        }
+    }
+
+    private func headerText(_ label: String) -> some View {
+        Text("\(label) · \(card.remainingKeys.count) left")
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(WatchTheme.accent)
             .widgetAccentable()
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
     }
 }
 

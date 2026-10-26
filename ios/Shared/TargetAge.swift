@@ -258,4 +258,49 @@ enum TaskWording {
 
     /// The past-deadline marker's word.
     static let pastDeadline = "Past deadline"
+
+    /// Every task segment's title starts with it (Trent, 2026-10-20: one
+    /// format everywhere) — the web's `TASK_QUEUE_PREFIX`.
+    static let taskQueuePrefix = "Task queue"
+
+    /// "Task queue · Daily" — the web's `taskQueueTitle`. A middle dot, never
+    /// an em dash.
+    static func taskQueueTitle(_ word: String) -> String {
+        "\(taskQueuePrefix) · \(word)"
+    }
+
+    /// A title's word without the prefix ("Task queue · Upcoming" →
+    /// "Upcoming"), for a surface too narrow for both (the Smart Stack
+    /// card's header); nil for any other label ("Early morning").
+    static func withoutTaskQueuePrefix(_ title: String) -> String? {
+        let prefix = "\(taskQueuePrefix) · "
+        guard title.hasPrefix(prefix), title.count > prefix.count else { return nil }
+        return String(title.dropFirst(prefix.count))
+    }
+}
+
+/// What the overdue SWEEP says it will move (2026-10-26) — ONE source for the
+/// three places that offer it: the iPhone/Mac Tasks widget's bar, the Mac
+/// menu bar's bulk bar and the watch's Tasks button (and its sheet).
+///
+/// `count` is the sweep's estimate (`TaskLists.overdueSweepEligibleCount`:
+/// never Urgent, High only once nothing lower is left — one High per press
+/// with the task queue on), `total` every overdue task. They differ more
+/// often than not, and a bar reading "All overdue (2)" under a header of
+/// "3 overdue" read as a contradiction (the Mac menu bar, 2026-10-26). So the
+/// words say what the button does: "Defer 2 of 3", or "Defer all 3 overdue"
+/// when they're the same — "overdue" keeps it apart from a task segment's
+/// "Defer all". No colon: the bars add one before their pills, the watch
+/// button is the words alone. Headers and badges keep the total.
+enum OverdueSweepWords {
+    static func label(count: Int, total: Int) -> String {
+        count < total
+            ? "Defer \(count) of \(total)"
+            : "Defer all \(count) \(TaskWording.overdueLower)"
+    }
+
+    /// The bars' form, before their pills: "Defer 2 of 3:".
+    static func barLabel(count: Int, total: Int) -> String {
+        label(count: count, total: total) + ":"
+    }
 }
