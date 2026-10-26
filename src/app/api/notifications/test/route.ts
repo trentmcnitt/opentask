@@ -107,7 +107,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     const userId = user.id
     setTimeout(async () => {
       try {
-        const sends: Promise<void>[] = []
+        const sends: Promise<unknown>[] = []
         const title = `${notificationTitlePrefix(priority)}${task.title}`
 
         // Web Push

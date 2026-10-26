@@ -242,6 +242,7 @@ export function planSlotReminderSends(now: Date, channels: Channels): SourcePlan
 /** The slot-open push as one of the minute tick's sources. */
 export const SLOT_REMINDER_SOURCE: TickSource = {
   name: 'Slot reminder checker',
+  minuteKey: 'tick-slot-open',
   plan: planSlotReminderSends,
 }
 

@@ -301,7 +301,11 @@ export function planSlotNagSends(now: Date, channels: Channels): SourcePlan {
 }
 
 /** The slot nag as one of the minute tick's sources. */
-export const SLOT_NAG_SOURCE: TickSource = { name: 'Slot nag checker', plan: planSlotNagSends }
+export const SLOT_NAG_SOURCE: TickSource = {
+  name: 'Slot nag checker',
+  minuteKey: 'tick-slot-nag',
+  plan: planSlotNagSends,
+}
 
 /** The slot nag on its own (tests): one tick with this source alone. */
 export async function checkSlotNags(nowOverride?: Date): Promise<void> {

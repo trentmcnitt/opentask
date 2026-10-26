@@ -57,6 +57,7 @@ import {
 import { nagIntervalMinutes } from '@/core/notifications/nag-ladder'
 import { isRepeatMinute, minuteIndex } from '@/core/notifications/nag-marks'
 import { notifiableUserSql } from '@/core/notifications/notifiable-users'
+import { mergeSettled, type DeliveryResult } from '@/core/notifications/delivery-result'
 import {
   runTick,
   type Channels,
@@ -213,8 +214,11 @@ function overdueKind(priority: number): PushKind {
 }
 
 /** Send an individual Web Push notification for a single task. */
-async function sendIndividualWebPush(task: OverdueTask, delivery: Delivery): Promise<void> {
-  await sendPushNotification(task.user_id, {
+async function sendIndividualWebPush(
+  task: OverdueTask,
+  delivery: Delivery,
+): Promise<DeliveryResult> {
+  return sendPushNotification(task.user_id, {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
     body: `${OVERDUE_WORD} task${delivery.suffix ?? ''}`,
     data: { url: `${APP_URL}/?task=${task.id}`, taskId: task.id },
@@ -233,8 +237,8 @@ async function sendSummaryWebPush(
   count: number,
   label: string,
   delivery: Delivery,
-): Promise<void> {
-  await sendPushNotification(userId, {
+): Promise<DeliveryResult> {
+  return sendPushNotification(userId, {
     title: `${count} more ${label}`,
     body: `Open app to see all ${OVERDUE_LOWER} tasks${delivery.suffix ?? ''}`,
     data: { url: `${APP_URL}/?filter=overdue` },
@@ -249,8 +253,8 @@ async function sendIndividualApns(
   overdueCount: number,
   badgeCount: number,
   delivery: Delivery,
-): Promise<void> {
-  await sendApnsNotification(task.user_id, {
+): Promise<DeliveryResult> {
+  return sendApnsNotification(task.user_id, {
     title: `${notificationTitlePrefix(task.priority)}${task.title}`,
     body: `${OVERDUE_WORD} task${delivery.suffix ?? ''}`,
     taskId: task.id,
@@ -287,12 +291,12 @@ function bucketSends(
     // Urgent overdue is critical, lead or not (Trent, 2026-10-26).
     alwaysAlerts: task.priority >= URGENT_PRIORITY,
     deliver: async (delivery) => {
-      const sends: Promise<void>[] = []
+      const sends: Promise<DeliveryResult>[] = []
       if (channels.webPush) sends.push(sendIndividualWebPush(task, delivery))
       if (channels.apns) {
         sends.push(sendIndividualApns(task, counts.overdueCount, counts.badgeCount, delivery))
       }
-      await Promise.allSettled(sends)
+      return mergeSettled(await Promise.allSettled(sends))
     },
   }))
 
@@ -303,7 +307,7 @@ function bucketSends(
       kind: bucket.summaryKind,
       items: bucket.overflow,
       deliver: async (delivery) => {
-        const sends: Promise<void>[] = []
+        const sends: Promise<DeliveryResult>[] = []
         if (channels.webPush) {
           sends.push(sendSummaryWebPush(userId, bucket.overflow, bucket.label, delivery))
         }
@@ -319,7 +323,7 @@ function bucketSends(
             ),
           )
         }
-        await Promise.allSettled(sends)
+        return mergeSettled(await Promise.allSettled(sends))
       },
     })
   }
@@ -482,10 +486,14 @@ export function planOverdueSends(now: Date, channels: Channels): SourcePlan {
 }
 
 /** The overdue checker as one of the minute tick's sources (tick.ts). */
-export const OVERDUE_SOURCE: TickSource = { name: 'Overdue checker', plan: planOverdueSends }
+export const OVERDUE_SOURCE: TickSource = {
+  name: 'Overdue checker',
+  minuteKey: 'tick-overdue',
+  plan: planOverdueSends,
+}
 
 /**
- * The overdue checker on its own (the startup check, tests): one tick with
+ * The overdue checker on its own (tests): one tick with
  * this source alone. The minute cron runs every source together
  * (`runMinuteTick`, minute-tick.ts).
  */

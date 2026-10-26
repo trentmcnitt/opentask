@@ -6,9 +6,13 @@
  * nag, the deadlines nag; named reminder pushes from PR 2) PRODUCES its
  * candidate sends instead of sending them. This module then, per user:
  *
- *  1. CLAIMS — each candidate's `claim` runs (the `nag_sends` compare-and-swap
- *     of the nags, the slot-open push's stamp), in source order. A lost claim
- *     drops the candidate: some other tick already sent it.
+ *  1. CLAIMS — first the MINUTE, per sender and user (`claimTickMinute`, a
+ *     persisted compare-and-swap in `nag_sends`, key `tick-<sender>`): a
+ *     second run of the same minute — the startup check beside the cron, a
+ *     deploy's new process overlapping the old one's last tick — sends
+ *     nothing that sender already sent. Then each candidate's own `claim`
+ *     (the `nag_sends` compare-and-swap of the nags, the slot-open push's
+ *     stamp), in source order. A lost claim drops the candidate.
  *  2. PICKS THE LEAD — the candidate highest in `LEAD_ORDER` among those that
  *     would SOUND on their own (a tie: the sender's own order, so the overdue
  *     checker's "highest priority, most overdue first" stands). A send that
@@ -27,7 +31,12 @@
  *     per item, each with its own actions, but APNs `interruption-level:
  *     passive` with no sound, and `silent` on Web Push. EXCEPT Urgent
  *     overdue: critical always, lead or not (`alwaysAlerts`).
- *  4. DELIVERS everything, then each source's after-step (the overdue
+ *  4. DELIVERS the lead FIRST, then the rest. If the lead reached no device
+ *     on any channel (a bad token, the network: `deliveryFailed`), the next
+ *     send that would sound is PROMOTED — delivered as the alert, with its
+ *     own " · N more waiting" — and so on until one gets through; nothing is
+ *     sent twice, and an Urgent overdue (critical anyway) ends the search.
+ *     Then the rest, as planned, and each source's after-step (the overdue
  *     checker's badge-only pushes).
  *
  * A user with one candidate gets exactly what the sender built — no suffix,
@@ -54,6 +63,8 @@
 import { log } from '@/lib/logger'
 import { isApnsConfigured } from '@/core/notifications/apns'
 import { isWebPushConfigured } from '@/core/notifications/web-push'
+import { claimTickMinute } from '@/core/notifications/nag-sends'
+import { deliveryFailed, type DeliveryResult } from '@/core/notifications/delivery-result'
 
 /** Every kind a push can be, for the lead order and the projection's counts. */
 export type PushKind =
@@ -107,11 +118,14 @@ export interface TickSend {
   silent?: boolean
   /** Run before the lead is picked; false drops the send (a lost `nag_sends` claim). */
   claim?: () => boolean
-  deliver: (delivery: Delivery) => Promise<void>
+  /** Send it; the result says whether it reached anything (delivery-result.ts). */
+  deliver: (delivery: Delivery) => Promise<DeliveryResult | void>
 }
 
 export interface PlannedSend extends TickSend {
   delivery: Delivery
+  /** This user's lead this minute (also a send alone in its tick). */
+  lead: boolean
 }
 
 /** Which channels are on. Defaults to the server's configuration. */
@@ -129,6 +143,8 @@ export interface SourcePlan {
 /** One sender, as the coordinator calls it. `plan` is read-only; claims are the coordinator's. */
 export interface TickSource {
   name: string
+  /** The sender's `nag_sends` key for its minute claim (`claimTickMinute`), e.g. `tick-overdue`. */
+  minuteKey: string
   plan: (now: Date, channels: Channels) => SourcePlan
 }
 
@@ -166,19 +182,22 @@ export function assignDeliveries(sends: TickSend[]): PlannedSend[] {
     byUser.set(send.userId, list)
   }
   const deliveries = new Map<TickSend, Delivery>()
+  const leads = new Set<TickSend>()
   for (const list of byUser.values()) {
     if (list.length === 1) {
       deliveries.set(list[0], AS_BUILT)
+      leads.add(list[0])
       continue
     }
     const lead = pickLead(list)
+    leads.add(lead)
     const others = list.reduce((n, s) => (s === lead ? n : n + s.items), 0)
     for (const send of list) {
       if (send === lead) deliveries.set(send, { passive: false, suffix: moreWaitingSuffix(others) })
       else deliveries.set(send, { passive: !send.alwaysAlerts, suffix: null })
     }
   }
-  return sends.map((send) => ({ ...send, delivery: deliveries.get(send)! }))
+  return sends.map((send) => ({ ...send, delivery: deliveries.get(send)!, lead: leads.has(send) }))
 }
 
 export interface TickPlan {
@@ -201,7 +220,15 @@ export function planTick(
   for (const source of sources) {
     try {
       const plan = source.plan(now, channels)
+      const minuteOf = new Map<number, boolean>()
+      const minuteClaimed = (userId: number) => {
+        if (!minuteOf.has(userId)) {
+          minuteOf.set(userId, claimTickMinute(userId, source.minuteKey, now))
+        }
+        return minuteOf.get(userId)!
+      }
       for (const send of plan.sends) {
+        if (!minuteClaimed(send.userId)) continue
         if (!send.claim || send.claim()) claimed.push(send)
       }
       if (plan.after) after.push(plan.after)
@@ -212,17 +239,59 @@ export function planTick(
   return { sends: assignDeliveries(claimed), after }
 }
 
-/** Plan the tick, deliver every send, then the after-steps. Failures are logged per send. */
+/** Deliver one send; a throw is logged and counts as reaching nothing. */
+async function deliverOne(send: TickSend, delivery: Delivery): Promise<DeliveryResult | void> {
+  try {
+    return await send.deliver(delivery)
+  } catch (err) {
+    log.error('notifications', 'Notification send error:', err)
+    return { attempted: 1, delivered: 0 }
+  }
+}
+
+/**
+ * One user's minute: the lead first; if it reached nothing, promote the next
+ * send that would sound (`pickLead` over what is left) until one gets
+ * through — unless an Urgent overdue is left, which alerts anyway. Then the
+ * rest, as planned. Nothing is delivered twice.
+ */
+async function deliverUserSends(list: PlannedSend[]): Promise<void> {
+  const pending: PlannedSend[] = list.filter((s) => !s.lead)
+  let current: { send: TickSend; delivery: Delivery } | null = null
+  const lead = list.find((s) => s.lead)
+  if (lead) current = { send: lead, delivery: lead.delivery }
+  while (current) {
+    if (!deliveryFailed(await deliverOne(current.send, current.delivery))) break
+    if (pending.length === 0 || pending.some((s) => s.alwaysAlerts)) break
+    const next = pickLead(pending) as PlannedSend
+    pending.splice(pending.indexOf(next), 1)
+    const others = pending.reduce((n, s) => n + s.items, 0)
+    log.warn('notifications', `Tick lead reached no device for user ${next.userId}: promoting`)
+    current = {
+      send: next,
+      delivery: { passive: false, suffix: others > 0 ? moreWaitingSuffix(others) : null },
+    }
+  }
+  await Promise.all(pending.map((s) => deliverOne(s, s.delivery)))
+}
+
+/**
+ * Plan the tick, deliver each user's sends (the lead first, `deliverUserSends`),
+ * then the after-steps. Failures are logged per send.
+ */
 export async function runTick(
   sources: TickSource[],
   now: Date = new Date(),
   channels: Channels = configuredChannels(),
 ): Promise<void> {
   const plan = planTick(sources, now, channels)
-  const results = await Promise.allSettled(plan.sends.map((s) => s.deliver(s.delivery)))
-  for (const r of results) {
-    if (r.status === 'rejected') log.error('notifications', 'Notification send error:', r.reason)
+  const byUser = new Map<number, PlannedSend[]>()
+  for (const send of plan.sends) {
+    const list = byUser.get(send.userId) ?? []
+    list.push(send)
+    byUser.set(send.userId, list)
   }
+  await Promise.all([...byUser.values()].map(deliverUserSends))
   for (const step of plan.after) {
     try {
       await step()

@@ -167,7 +167,7 @@ export async function notifyEnrichmentFailed(taskId: number, userId: number): Pr
 
   log.info('notifications', `Enrichment failed: notifying user ${userId} about task ${taskId}`)
 
-  const sends: Promise<void>[] = []
+  const sends: Promise<unknown>[] = []
   if (webPush) {
     sends.push(
       sendPushNotification(

@@ -74,6 +74,7 @@ import { nagIntervalMinutes, userNagTiers, type NagTiers } from './nag-ladder'
 import { claimNagSend, nagPace, nagSendDue } from './nag-sends'
 import { runTick, type Channels, type Delivery, type SourcePlan, type TickSource } from './tick'
 import { notifiableUsers } from './notifiable-users'
+import { mergeSettled, type DeliveryResult } from './delivery-result'
 import { isWebPushConfigured, sendPushNotification } from './web-push'
 import { DEADLINES_NAG_COLLAPSE_ID, isApnsConfigured, sendApnsDeadlinesNag } from './apns'
 import { getTaskSegments, type SegmentTask } from '@/core/tasks/task-segments'
@@ -264,9 +265,9 @@ async function sendDeadlinesNag(
   nagContent: DeadlineNagContent,
   channels: Channels,
   delivery: Delivery,
-): Promise<void> {
+): Promise<DeliveryResult> {
   const content = { ...nagContent, body: nagContent.body + (delivery.suffix ?? '') }
-  const sends: Promise<void>[] = []
+  const sends: Promise<DeliveryResult>[] = []
   if (channels.webPush) {
     sends.push(
       sendPushNotification(
@@ -284,9 +285,11 @@ async function sendDeadlinesNag(
   if (channels.apns) {
     sends.push(sendApnsDeadlinesNag(userId, { ...content, passive: delivery.passive }))
   }
-  for (const r of await Promise.allSettled(sends)) {
+  const settled = await Promise.allSettled(sends)
+  for (const r of settled) {
     if (r.status === 'rejected') log.error('notifications', 'Deadlines nag error:', r.reason)
   }
+  return mergeSettled(settled)
 }
 
 /**
@@ -329,6 +332,7 @@ export function planDeadlineNagSends(now: Date, channels: Channels): SourcePlan 
 /** The deadlines nag as one of the minute tick's sources. */
 export const DEADLINE_NAG_SOURCE: TickSource = {
   name: 'Deadlines nag checker',
+  minuteKey: 'tick-deadlines',
   plan: planDeadlineNagSends,
 }
 

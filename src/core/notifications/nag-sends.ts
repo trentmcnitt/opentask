@@ -115,3 +115,33 @@ export function stampNagSend(userId: number, key: string, now: Date): void {
     )
     .run(userId, key, now.toISOString())
 }
+
+/**
+ * CLAIM A TICK MINUTE for one sender and user (tick.ts): true once per
+ * minute, false for any later claim of the same minute — another run of the
+ * same minute, in this process or another (the startup check, a deploy's
+ * restart overlapping the old process's last tick). Persisted in `nag_sends`
+ * under the sender's `tick-…` key, a compare-and-swap like the nags', so a
+ * minute's pushes go out once whichever process gets there first. Equality,
+ * not order: a clock moved back (the test clock) claims afresh.
+ */
+export function claimTickMinute(userId: number, key: string, now: Date): boolean {
+  const db = getDb()
+  const last = lastSent(userId, key)
+  const at = new Date(minuteIndex(now) * 60_000).toISOString()
+  if (last === null) {
+    return (
+      db
+        .prepare('INSERT OR IGNORE INTO nag_sends (user_id, key, last_sent_at) VALUES (?, ?, ?)')
+        .run(userId, key, at).changes === 1
+    )
+  }
+  if (minuteIndex(last) === minuteIndex(now)) return false
+  return (
+    db
+      .prepare(
+        'UPDATE nag_sends SET last_sent_at = ? WHERE user_id = ? AND key = ? AND last_sent_at = ?',
+      )
+      .run(at, userId, key, last).changes === 1
+  )
+}

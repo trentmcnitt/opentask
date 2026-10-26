@@ -239,6 +239,7 @@ describe('DN-T02 planTick: claims and failures', () => {
   test('a lost claim drops the send, and it is not counted in the lead’s N', () => {
     const source: TickSource = {
       name: 'synthetic',
+      minuteKey: 'tick-synthetic',
       plan: () => ({
         sends: [
           send('overdue_high'),
@@ -257,11 +258,16 @@ describe('DN-T02 planTick: claims and failures', () => {
   test('a source that throws is left out; the others still plan', () => {
     const broken: TickSource = {
       name: 'broken',
+      minuteKey: 'tick-broken',
       plan: () => {
         throw new Error('synthetic failure')
       },
     }
-    const fine: TickSource = { name: 'fine', plan: () => ({ sends: [send('period')] }) }
+    const fine: TickSource = {
+      name: 'fine',
+      minuteKey: 'tick-fine',
+      plan: () => ({ sends: [send('period')] }),
+    }
     const logged = vi.spyOn(log, 'error').mockImplementation(() => {})
     const { sends } = planTick([broken, fine], at(10), CHANNELS)
     expect(sends.map((s) => s.kind)).toEqual(['period'])
@@ -483,5 +489,114 @@ describe('DN-T07 silent senders, end to end', () => {
       passive: true,
       suffix: undefined,
     })
+  })
+})
+
+/**
+ * DN-T08 (review of #362): the lead goes out FIRST. If it reaches no device
+ * on any channel, the next send that would sound is promoted and alerts
+ * instead; nothing is delivered twice. An Urgent overdue left over is
+ * critical anyway, so it ends the search.
+ */
+describe('DN-T08 a lead that reaches nothing', () => {
+  /** APNs reaches nothing for these task ids, every device for the rest. */
+  function apnsFailsFor(ids: number[]) {
+    vi.mocked(sendApnsNotification).mockImplementation(async (_userId, payload) =>
+      ids.includes(payload.taskId)
+        ? { attempted: 1, delivered: 0 }
+        : { attempted: 1, delivered: 1 },
+    )
+  }
+  afterEach(() => vi.mocked(sendApnsNotification).mockResolvedValue({ attempted: 0, delivered: 0 }))
+  const callsOf = () =>
+    vi
+      .mocked(sendApnsNotification)
+      .mock.calls.map(([, p]) => [p.taskId, p.interruptionLevel, p.body])
+
+  test('the lead fails: the next sounding send is promoted, with its own suffix', async () => {
+    const high = overdue(10, 3)
+    const medium = overdue(10, 2)
+    const low = overdue(10, 1)
+    apnsFailsFor([high.id])
+    await runTick(sources(), at(10), { apns: true, webPush: false })
+
+    expect(callsOf()).toEqual([
+      [high.id, 'time-sensitive', 'Overdue task · 2 more waiting'],
+      [medium.id, 'active', 'Overdue task · 1 more waiting'],
+      [low.id, 'passive', 'Overdue task'],
+    ])
+  })
+
+  test('a lead that only throws counts as failed too', async () => {
+    const high = overdue(10, 3)
+    const medium = overdue(10, 2)
+    vi.mocked(sendApnsNotification).mockImplementation(async (_userId, payload) => {
+      if (payload.taskId === high.id) throw new Error('synthetic network error')
+      return { attempted: 1, delivered: 1 }
+    })
+    const logged = vi.spyOn(log, 'error').mockImplementation(() => {})
+    await runTick(sources(), at(10), { apns: true, webPush: false })
+    logged.mockRestore()
+
+    expect(callsOf()).toEqual([
+      [high.id, 'time-sensitive', 'Overdue task · 1 more waiting'],
+      [medium.id, 'active', 'Overdue task'],
+    ])
+  })
+
+  test('the lead gets through: nothing is promoted', async () => {
+    const high = overdue(10, 3)
+    const medium = overdue(10, 2)
+    apnsFailsFor([])
+    await runTick(sources(), at(10), { apns: true, webPush: false })
+    expect(callsOf()).toEqual([
+      [high.id, 'time-sensitive', 'Overdue task · 1 more waiting'],
+      [medium.id, 'passive', 'Overdue task'],
+    ])
+  })
+
+  test('an Urgent lead fails with another Urgent left: that one alerts anyway, nothing promoted', async () => {
+    const first = overdue(10, 4)
+    const second = overdue(10, 4)
+    const high = overdue(10, 3)
+    apnsFailsFor([first.id])
+    await runTick(sources(), at(10), { apns: true, webPush: false })
+    const calls = callsOf()
+    expect(calls[0]).toEqual([first.id, 'critical', 'Overdue task · 2 more waiting'])
+    expect(calls.slice(1)).toEqual(
+      expect.arrayContaining([
+        [second.id, 'critical', 'Overdue task'],
+        [high.id, 'passive', 'Overdue task'],
+      ]),
+    )
+  })
+})
+
+/**
+ * DN-T09 (review of #362): one minute's pushes go out once, however many
+ * runs reach it — the startup check beside the cron, a deploy's new process
+ * overlapping the old one's last tick (`claimTickMinute`, persisted).
+ */
+describe('DN-T09 a minute sends once', () => {
+  test('a second run of the same minute sends nothing again; the next minute is its own', async () => {
+    periods([['Morning', '10:00']])
+    reminder(10)
+    overdue(10, 3)
+    await runTick(sources(), at(10), CHANNELS)
+    // Same minute, 40 s later: the startup check of a process that just booted.
+    await runTick(sources(), new Date(at(10).getTime() + 40_000), CHANNELS)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(1)
+    expect(sendApnsSlotReminder).toHaveBeenCalledTimes(1)
+    expect(sendPushNotification).toHaveBeenCalledTimes(1)
+
+    // 10:15 is the High repeat's mark: a new minute claims afresh.
+    await runTick(sources(), at(10, 15), CHANNELS)
+    expect(sendApnsNotification).toHaveBeenCalledTimes(2)
+  })
+
+  test('planTick: the second plan of a minute is empty', () => {
+    overdue(10, 3)
+    expect(planTick(sources(), at(10), CHANNELS).sends).toHaveLength(1)
+    expect(planTick(sources(), at(10), CHANNELS).sends).toHaveLength(0)
   })
 })

@@ -1,5 +1,5 @@
 /**
- * Clock marks (DN-M01 … DN-M08): where every repeat of a nag lands (Trent,
+ * Clock marks (DN-M01 … DN-M13): where every repeat of a nag lands (Trent,
  * 2026-10-26; src/core/notifications/nag-marks.ts).
  *
  * The next send is the local clock mark nearest `last + I`, a tie to the
@@ -121,5 +121,100 @@ describe('Clock marks', () => {
         }
       }
     }
+  })
+})
+
+/**
+ * DST (review of #362): every mark is judged in the offset that holds at it.
+ * Australia/Lord_Howe shifts by 30 minutes (+10:30 ⇄ +11:00); with a fixed
+ * UTC step its hourly repeats used to land on :30 local forever after. Whole-
+ * hour zones must not move: Chicago keeps real-time spacing through both
+ * changes.
+ */
+describe('Clock marks across DST changes', () => {
+  /** Every repeat minute in `hours` after a first push, as "HH:mm±HH:MM". */
+  function repeats(zone: string, firstIso: string, interval: number, hours: number): string[] {
+    const first = minuteIndex(firstIso)
+    const out: string[] = []
+    for (let m = first + 1; m < first + hours * 60; m++) {
+      const now = new Date(m * 60_000)
+      if (isRepeatMinute(first, interval, now, zone)) {
+        out.push(DateTime.fromJSDate(now).setZone(zone).toFormat('HH:mmZZ'))
+      }
+    }
+    return out
+  }
+  const LORD_HOWE = 'Australia/Lord_Howe'
+
+  test('DN-M09: Lord Howe spring forward (02:00 → 02:30): hourly repeats stay on :00', () => {
+    // First push 2026-10-03T13:20Z = 23:50 +10:30. Local 02:00–02:29 never happens.
+    expect(repeats(LORD_HOWE, '2026-10-03T13:20:00Z', 60, 7)).toEqual([
+      '01:00+10:30',
+      '03:00+11:00',
+      '04:00+11:00',
+      '05:00+11:00',
+      '06:00+11:00',
+      '07:00+11:00',
+    ])
+  })
+
+  test('DN-M10: Lord Howe fall back (02:00 → 01:30): hourly repeats stay on :00', () => {
+    // First push 2026-04-04T12:20Z = 23:20 +11:00.
+    expect(repeats(LORD_HOWE, '2026-04-04T12:20:00Z', 60, 7)).toEqual([
+      '00:00+11:00',
+      '01:00+11:00',
+      '02:00+10:30',
+      '03:00+10:30',
+      '04:00+10:30',
+      '05:00+10:30',
+    ])
+  })
+
+  test('DN-M11: nextNagAt judges the mark in its own offset', () => {
+    // From 14:20Z (00:50 +10:30) at I = 60: the target 15:20Z is 01:50 +10:30,
+    // but 02:00 that night does not exist (02:00 +10:30 is 02:30 +11:00).
+    // The real marks either side: 01:00 (14:30Z, 50 away), 03:00 (16:00Z, 40 away).
+    expect(nextNagAt('2026-10-03T14:20:00Z', 60, LORD_HOWE).toISOString()).toBe(
+      '2026-10-03T16:00:00.000Z',
+    )
+    // After the change, a :30-local target ties :00 either side: the earlier.
+    expect(nextNagAt('2026-10-03T16:30:00Z', 60, LORD_HOWE).toISOString()).toBe(
+      '2026-10-03T17:00:00.000Z',
+    )
+  })
+
+  test('DN-M12: Chicago spring forward: real-time spacing, on the hour', () => {
+    // 02:00 CST → 03:00 CDT on 2026-03-08 (08:00Z).
+    expect(repeats(ZONE, '2026-03-08T06:20:00Z', 60, 5)).toEqual([
+      '01:00-06:00',
+      '03:00-05:00',
+      '04:00-05:00',
+      '05:00-05:00',
+      '06:00-05:00',
+    ])
+    expect(repeats(ZONE, '2026-03-08T04:20:00Z', 120, 8)).toEqual([
+      '00:00-06:00',
+      '03:00-05:00',
+      '05:00-05:00',
+      '07:00-05:00',
+    ])
+  })
+
+  test('DN-M13: Chicago fall back: the repeated hour nags twice, hourly', () => {
+    // 02:00 CDT → 01:00 CST on 2026-11-01 (07:00Z).
+    expect(repeats(ZONE, '2026-11-01T04:20:00Z', 60, 6)).toEqual([
+      '00:00-05:00',
+      '01:00-05:00',
+      '01:00-06:00',
+      '02:00-06:00',
+      '03:00-06:00',
+      '04:00-06:00',
+    ])
+    expect(repeats(ZONE, '2026-11-01T03:20:00Z', 120, 8)).toEqual([
+      '00:00-05:00',
+      '01:00-06:00',
+      '03:00-06:00',
+      '05:00-06:00',
+    ])
   })
 })

@@ -16,6 +16,7 @@ import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { forgetBadgeSent, recordBadgeSent } from '@/core/notifications/badge-state'
 import { OVERDUE_SUMMARY_COLLAPSE_ID, taskCollapseId } from '@/core/notifications/format'
+import { NOTHING_SENT, type DeliveryResult } from '@/core/notifications/delivery-result'
 
 const APNS_KEY_ID = process.env.APNS_KEY_ID || ''
 const APNS_TEAM_ID = process.env.APNS_TEAM_ID || ''
@@ -107,8 +108,11 @@ async function sendTryingBothEnvironments(
  * @param logLabel - Label for failure log messages (e.g., "notification", "badge update")
  * @param preLog - Optional callback for pre-send logging, receives the device list
  * @param includeDevice - Optional filter: only devices it returns true for are sent to
- * @returns true when every device took the push (or there was none to send
- *   to), false when at least one send failed for a reason other than a stale token
+ * @returns `complete`: true when every device took the push (or there was
+ *   none to send to), false when at least one send failed for a reason other
+ *   than a stale token; `attempted` / `delivered`: the devices sent to and the
+ *   ones that took it (delivery-result.ts — the tick promotes a lead that
+ *   reached none)
  */
 async function sendToAllDevices(
   userId: number,
@@ -116,8 +120,8 @@ async function sendToAllDevices(
   logLabel: string,
   preLog?: (devices: ApnsDeviceRow[]) => void,
   includeDevice?: (device: ApnsDeviceRow) => boolean,
-): Promise<boolean> {
-  if (!isApnsConfigured()) return true
+): Promise<DeviceSendOutcome> {
+  if (!isApnsConfigured()) return { complete: true, ...NOTHING_SENT }
 
   const db = getDb()
   const devices = (
@@ -128,7 +132,7 @@ async function sendToAllDevices(
       .all(userId) as ApnsDeviceRow[]
   ).filter((device) => !includeDevice || includeDevice(device))
 
-  if (devices.length === 0) return true
+  if (devices.length === 0) return { complete: true, ...NOTHING_SENT }
 
   if (preLog) preLog(devices)
 
@@ -142,10 +146,12 @@ async function sendToAllDevices(
           db.prepare('UPDATE apns_devices SET environment = ? WHERE id = ?').run(env, device.id)
           log.info('apns', `Device token ${device.id} is ${env}, not ${device.environment} — fixed`)
         }
+        return true
       } catch (err: unknown) {
         if (isStaleTokenError(err)) {
           db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
           log.info('apns', `Removed stale device token ${device.id}`)
+          return false
         } else {
           throw err
         }
@@ -161,7 +167,18 @@ async function sendToAllDevices(
       `Failed to send ${failures.length}/${devices.length} APNs ${logLabel}: ${reasons}`,
     )
   }
-  return failures.length === 0
+  const delivered = results.filter((r) => r.status === 'fulfilled' && r.value).length
+  return { complete: failures.length === 0, attempted: devices.length, delivered }
+}
+
+/** What `sendToAllDevices` reports. */
+interface DeviceSendOutcome extends DeliveryResult {
+  complete: boolean
+}
+
+/** A device fan-out as the tick reads it (delivery-result.ts). */
+function deliveryOf(outcome: DeviceSendOutcome): DeliveryResult {
+  return { attempted: outcome.attempted, delivered: outcome.delivered }
 }
 
 export interface ApnsPushPayload {
@@ -215,7 +232,7 @@ export function threadIdForPriority(priority: number): string {
 export async function sendApnsNotification(
   userId: number,
   payload: ApnsPushPayload,
-): Promise<void> {
+): Promise<DeliveryResult> {
   const isCritical = payload.interruptionLevel === 'critical'
   // A passive banner lands in Notification Center without sound (tick.ts).
   const sound = isCritical
@@ -224,7 +241,7 @@ export async function sendApnsNotification(
       ? undefined
       : 'default'
 
-  const delivered = await sendToAllDevices(
+  const outcome = await sendToAllDevices(
     userId,
     (device) =>
       new Notification(device.device_token, {
@@ -261,9 +278,10 @@ export async function sendApnsNotification(
   // checker's change gate (badge-state.ts) has to know, or it re-sends the
   // same number as a badge-only push a minute later.
   if (payload.badge !== undefined) {
-    if (delivered) recordBadgeSent(userId, payload.badge)
+    if (outcome.complete) recordBadgeSent(userId, payload.badge)
     else forgetBadgeSent(userId)
   }
+  return deliveryOf(outcome)
 }
 
 /**
@@ -282,8 +300,8 @@ export async function sendApnsSummaryNotification(
   overflowCount: number,
   totalOverdueCount: number,
   options: { passive?: boolean } = {},
-): Promise<void> {
-  await sendToAllDevices(
+): Promise<DeliveryResult> {
+  const outcome = await sendToAllDevices(
     userId,
     (device) =>
       new Notification(device.device_token, {
@@ -301,6 +319,7 @@ export async function sendApnsSummaryNotification(
       }),
     'summary notifications',
   )
+  return deliveryOf(outcome)
 }
 
 /**
@@ -421,9 +440,9 @@ export function buildSlotReminderNotification(
 export async function sendApnsSlotReminder(
   userId: number,
   payload: ApnsSlotReminderPayload,
-): Promise<void> {
+): Promise<DeliveryResult> {
   const prompts = payload.promptCount ?? 0
-  await sendToAllDevices(
+  const outcome = await sendToAllDevices(
     userId,
     (device) => buildSlotReminderNotification(device.device_token, device.bundle_id, payload),
     'slot reminders',
@@ -434,6 +453,7 @@ export async function sendApnsSlotReminder(
       )
     },
   )
+  return deliveryOf(outcome)
 }
 
 export interface ApnsEnrichedPayload {
@@ -737,8 +757,8 @@ export function buildDeadlinesNagNotification(
 export async function sendApnsDeadlinesNag(
   userId: number,
   payload: DeadlinesNagPayload,
-): Promise<void> {
-  await sendToAllDevices(
+): Promise<DeliveryResult> {
+  const outcome = await sendToAllDevices(
     userId,
     (device) => buildDeadlinesNagNotification(device.device_token, device.bundle_id, payload),
     'deadlines nags',
@@ -746,6 +766,7 @@ export async function sendApnsDeadlinesNag(
       log.info('apns', `Sending deadlines nag to ${devices.length} device(s)`)
     },
   )
+  return deliveryOf(outcome)
 }
 
 /**
@@ -802,14 +823,14 @@ export function buildBadgeNotification(
  * it when any send failed, so the checker's next tick tries again.
  */
 export async function sendApnsBadgeUpdate(userId: number, badge: number): Promise<void> {
-  const delivered = await sendToAllDevices(
+  const outcome = await sendToAllDevices(
     userId,
     (device) => buildBadgeNotification(device.device_token, device.bundle_id, badge),
     'badge updates',
     undefined,
     deviceShowsBadge,
   )
-  if (delivered) recordBadgeSent(userId, badge)
+  if (outcome.complete) recordBadgeSent(userId, badge)
   else forgetBadgeSent(userId)
 }
 
