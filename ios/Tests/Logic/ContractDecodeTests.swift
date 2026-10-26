@@ -265,14 +265,17 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // the banners a sweep clears; step 9's Urgent task (skipped) is not.
         XCTAssertEqual(raw["moved_ids"] as? [Int], [114, 115])
         XCTAssertEqual(result.movedIds, [114, 115])
-        XCTAssertEqual(result.movedIds.count, result.tasksAffected)
+        XCTAssertEqual(result.movedIds?.count, result.tasksAffected)
     }
 
-    /// A server from before `moved_ids` (2026-10-26): no ids, so a sweep
-    /// clears no banner locally.
-    func testBulkSnoozeWithoutMovedIdsDecodesEmpty() {
-        let data = Data(#"{"data":{"tasks_affected":2,"skipped_urgent":0}}"#.utf8)
-        XCTAssertEqual(APIClient.parseBulkSnoozeResult(data).movedIds, [])
+    /// A server from before `moved_ids` (2026-10-26): nil, not empty — the
+    /// sweep clears no banner locally, and the watch cache falls back to its
+    /// guess. An empty list is a real answer: nothing moved.
+    func testBulkSnoozeWithoutMovedIdsDecodesNil() {
+        let old = Data(#"{"data":{"tasks_affected":2,"skipped_urgent":0}}"#.utf8)
+        XCTAssertNil(APIClient.parseBulkSnoozeResult(old).movedIds)
+        let none = Data(#"{"data":{"tasks_affected":0,"moved_ids":[]}}"#.utf8)
+        XCTAssertEqual(APIClient.parseBulkSnoozeResult(none).movedIds, [])
     }
 
     // MARK: GET /api/tasks, /api/time-slots, /api/completions, /api/undo/status

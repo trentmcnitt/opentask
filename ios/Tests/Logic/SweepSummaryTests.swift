@@ -15,6 +15,60 @@ final class SweepSummaryTests: XCTestCase {
         )
     }
 
+    // MARK: - The cached list after a sweep (`tasksLeft(after:)`)
+
+    private let now = DateHelpers.parseISO("2026-01-15T16:00:00.000Z")!
+
+    private func task(_ id: Int, priority: Int = 1, overdue: Bool = true) -> TaskDTO {
+        let due = now.addingTimeInterval(overdue ? -2 * 3600 : 2 * 3600)
+        return TaskDTO(id: id, projectId: 1, title: "Task \(id)", priority: priority, dueAt: DateHelpers.formatISO(due))
+    }
+
+    /// Overdue P1 (1, 2), a P1 the sweep held back for its passed deadline
+    /// (3), High (4), Urgent (5), an upcoming task (6), and an overdue reminder
+    /// (7) and quota (8).
+    private var cached: [TaskDTO] {
+        [
+            task(1), task(2), task(3), task(4, priority: 3), task(5, priority: 4), task(6, overdue: false),
+            TaskDTO(id: 7, projectId: 1, title: "A reminder", dueAt: DateHelpers.formatISO(now.addingTimeInterval(-3600)), isReminder: true),
+            TaskDTO(id: 8, projectId: 1, title: "A quota", dueAt: DateHelpers.formatISO(now.addingTimeInterval(-3600)), progressTarget: 3),
+        ]
+    }
+
+    /// With `moved_ids`, exactly those leave: the deadline-held task (3) and
+    /// the High one the press didn't take (4) stay, which the count guess
+    /// would have dropped.
+    func testMovedIdsDecideWhatLeavesTheCache() {
+        var swept = result(affected: 2)
+        swept.movedIds = [1, 2]
+        XCTAssertEqual(swept.tasksLeft(after: cached, now: now).map(\.id), [3, 4, 5, 6, 7, 8])
+    }
+
+    /// The press that took the High tier says so by id too.
+    func testMovedIdsIncludingHigh() {
+        var swept = result(affected: 1, snoozedHigh: 1)
+        swept.movedIds = [4]
+        XCTAssertEqual(swept.tasksLeft(after: cached, now: now).map(\.id), [1, 2, 3, 5, 6, 7, 8])
+    }
+
+    /// A sweep that moved nothing (`moved_ids: []`) leaves the cache alone.
+    func testEmptyMovedIdsLeavesEverything() {
+        var swept = result(affected: 0)
+        swept.movedIds = []
+        XCTAssertEqual(swept.tasksLeft(after: cached, now: now).map(\.id), [1, 2, 3, 4, 5, 6, 7, 8])
+    }
+
+    /// An older server sends no `moved_ids`: the guess from the counts, as
+    /// before — every overdue task but Urgent, reminders and quotas, and
+    /// High only when none was skipped.
+    func testWithoutMovedIdsTheGuessStays() {
+        let highSkipped = result(affected: 3, skippedHigh: 1, skippedUrgent: 1)
+        XCTAssertNil(highSkipped.movedIds)
+        XCTAssertEqual(highSkipped.tasksLeft(after: cached, now: now).map(\.id), [4, 5, 6, 7, 8])
+        let highTaken = result(affected: 4, snoozedHigh: 1, skippedUrgent: 1)
+        XCTAssertEqual(highTaken.tasksLeft(after: cached, now: now).map(\.id), [5, 6, 7, 8])
+    }
+
     /// Nothing but P0-P2 moved: no lines at all, not a list of zeros.
     func testCleanSweepHasNoLines() {
         XCTAssertEqual(result(affected: 4).summaryLines, [])

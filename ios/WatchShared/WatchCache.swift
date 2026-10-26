@@ -93,20 +93,14 @@ extension WatchCache {
         })
     }
 
-    /// After a successful overdue sweep: drop the overdue tasks the sweep
-    /// moved from the cached list (P0-P2 always; P3 too unless the server
-    /// reported skipping High). Their new due dates aren't known client-side
-    /// (the server resolved "next"), so they're removed rather than guessed
-    /// at — the next successful fetch puts them back with real dates.
-    static func removeSweptOverdueTasks(keepHigh: Bool, now: Date = Date()) {
+    /// After a successful overdue sweep: drop the tasks the sweep moved from
+    /// the cached list — exactly the server's `moved_ids`, or, from an older
+    /// server that doesn't send them, the guess from the counts
+    /// (`BulkSnoozeResult.tasksLeft(after:)`, in `ios/Shared/SweepSummary.swift`,
+    /// which has both rules and is what `OpenTaskLogicTests` covers).
+    static func removeSweptOverdueTasks(after result: APIClient.BulkSnoozeResult, now: Date = Date()) {
         guard let cached = loadTasks() else { return }
-        let kept = cached.tasks.filter { task in
-            guard task.isOverdue(now: now), !task.isReminder, !task.isTracked else { return true }
-            if task.priority >= 4 { return true }
-            if task.priority == 3 { return keepHigh }
-            return false
-        }
-        saveTasks(kept, projects: cached.projects)
+        saveTasks(result.tasksLeft(after: cached.tasks, now: now), projects: cached.projects)
     }
 }
 

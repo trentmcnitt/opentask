@@ -303,9 +303,9 @@ private enum OverdueSweep {
             // Take what the sweep moved out of the cached task list, so a
             // reload whose own fetch fails can't fall back to the pre-snooze
             // overdue set and flip the card straight back into overdue mode.
-            // Urgent always stays (never swept); High stays only when the
-            // server says it skipped some.
-            WatchCache.removeSweptOverdueTasks(keepHigh: result.skippedHigh > 0)
+            // Exactly the server's `moved_ids`; from an older server, the
+            // guess from the counts (`BulkSnoozeResult.tasksLeft(after:)`).
+            WatchCache.removeSweptOverdueTasks(after: result)
             // The moved tasks' delivered banners, and only theirs.
             await dismissNotificationsAfterSweep(result)
         } catch {

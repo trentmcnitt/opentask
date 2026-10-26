@@ -80,4 +80,33 @@ extension APIClient.BulkSnoozeResult {
             queued: queued, queuedAt: queuedUntil
         )
     }
+
+    /// A cached task list as it stands after this sweep: the tasks it moved
+    /// taken out (their new targets aren't known here — the server resolved
+    /// "next" — so they're removed rather than guessed at, and the next
+    /// successful fetch puts them back with real dates). The watch's
+    /// `WatchCache.removeSweptOverdueTasks` applies it, so a Smart Stack
+    /// reload whose own fetch fails can't fall back to the pre-sweep overdue
+    /// set and flip the card straight back into overdue mode.
+    ///
+    /// - With `moved_ids` (2026-10-26): exactly those ids leave, nothing
+    ///   else — not a task held back for a passed deadline, not a High task
+    ///   the press didn't take, not an Urgent one.
+    /// - From an older server (`movedIds` nil): the old guess from the counts.
+    ///   Every overdue task that isn't a reminder or a quota leaves, except
+    ///   Urgent (never swept) and High while the server reports skipping any
+    ///   (`skippedHigh > 0`).
+    func tasksLeft(after tasks: [TaskDTO], now: Date = Date()) -> [TaskDTO] {
+        if let movedIds {
+            let moved = Set(movedIds)
+            return tasks.filter { !moved.contains($0.id) }
+        }
+        let keepHigh = skippedHigh > 0
+        return tasks.filter { task in
+            guard task.isOverdue(now: now), !task.isReminder, !task.isTracked else { return true }
+            if task.priority >= 4 { return true }
+            if task.priority == 3 { return keepHigh }
+            return false
+        }
+    }
 }
