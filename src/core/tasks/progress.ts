@@ -53,6 +53,7 @@ import { promptDate, withLogged } from '@/lib/quota-prompts'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dismissEndedPromptPushes, promptPushEndCheck } from '@/core/notifications/prompt-nags'
 import { DEFAULT_PROGRESS_SOURCE, type ClientProgressSource } from '@/lib/progress-source'
 
 export interface IncrementProgressOptions {
@@ -90,6 +91,9 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
   }
 
   const nowStr = nowUtc()
+  // A count that makes a named prompt push's prompt done (prompt-nags.ts):
+  // its banner goes. The owner's, since prompts are the owner's.
+  const endedPromptPush = promptPushEndCheck(found.user_id, [taskId])
 
   const { updated, next, task } = withTransaction((tx) => {
     // Close an expired period FIRST, in this transaction, so a +1 at 00:02
@@ -148,6 +152,7 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
   // Other tabs and the widgets learn about the new count the same way they
   // learn about every other mutation.
   emitSyncEvent(userId)
+  dismissEndedPromptPushes(found.user_id, endedPromptPush)
 
   // §5: progress is NOT completion. Firing task.completed here would make every
   // downstream counter over-count by the target.

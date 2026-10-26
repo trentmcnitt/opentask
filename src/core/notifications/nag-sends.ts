@@ -9,7 +9,9 @@
  * Keys: `deadlines-page` (deadline-nags.ts), `slot-nag` (slot-nags.ts — the
  * slot-open push stamps it too, so the nag waits for the mark after a slot's
  * own banner), `reminder-<taskId>` (reminder-nags.ts, one per Medium+
- * reminder, 2026-10-26).
+ * reminder, 2026-10-26), `prompt-<prompt_key>` (prompt-nags.ts, one per
+ * Medium+ quota's prompt per OpenTask day — the key carries its date, Push
+ * PR 4).
  *
  * Several rungs at once (the slot nag's waiting items, the deadlines page's
  * rows): the PACE is the rung whose next mark comes FIRST (`nagPace`). That

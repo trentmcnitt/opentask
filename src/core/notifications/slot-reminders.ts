@@ -32,6 +32,9 @@
  * switches (`users.quota_prompts_enabled`, `OPENTASK_QUOTA_PROMPTS=off`) live
  * inside `getQuotaPromptsBySlot`, so with either one off this module is back
  * to reminders only. Prompts never reach the badge or the overdue count.
+ * Since Push PR 4 (2026-10-26) that is None and Low prompts only: a prompt
+ * whose quota is Medium or above is pushed by name (prompt-nags.ts), exactly
+ * like a Medium+ reminder, and left out of `waitingBySlot`.
  *
  * ON DECK RIDES ALONG (2026-10-20, red-team B10/A12). A push that already
  * fires appends today's undone deck count ("3 reminders waiting · 5 on
@@ -53,7 +56,6 @@
  */
 
 import { DateTime } from 'luxon'
-import { getDb } from '@/core/db'
 import type { QuotaPrompt } from '@/lib/quota-prompts'
 import { sendApnsSlotReminder, isApnsConfigured } from '@/core/notifications/apns'
 import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts'
@@ -65,7 +67,7 @@ import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
 import { SLOT_NAG_KEY, stampNagSend } from '@/core/notifications/nag-sends'
 import { runTick, type Channels, type SourcePlan, type TickSource } from '@/core/notifications/tick'
-import { getsNamedPush } from '@/core/notifications/reminder-nag-rule'
+import { getsNamedPush, promptGetsNamedPush } from '@/core/notifications/reminder-nag-rule'
 
 /** The slots whose start time is the current local minute for this user. */
 export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): TimeSlot[] {
@@ -84,28 +86,15 @@ export interface SlotWaiting {
    * only Medium+ reminders waiting sends no period push and no period nag.
    */
   reminders: number
+  /** None and Low prompts only (by their quota's priority): Medium+ ones are pushed by name (prompt-nags.ts). */
   prompts: number
   /**
-   * The priority of every waiting item — each reminder's own, and each
-   * prompt's quota task's — which the slot nag paces by (the shortest rung
-   * wins, `slot-nags.ts`). One entry per item, reminders first.
+   * The priority of every waiting item it counts — each None/Low reminder's
+   * own, and each None/Low prompt's quota's — which the slot nag paces by
+   * (the rung whose mark comes first, `slot-nags.ts`). One entry per item,
+   * reminders first.
    */
   priorities: number[]
-}
-
-/**
- * The priority of each quota behind a list of prompts, by task id. Read here
- * rather than carried on `QuotaPrompt`, which is the wire shape of
- * `GET /api/reminders` (and the native apps' contract): the slot nag is the
- * only reader, so the API stays as it is.
- */
-function quotaPriorities(taskIds: number[]): Map<number, number> {
-  if (taskIds.length === 0) return new Map()
-  const unique = [...new Set(taskIds)]
-  const rows = getDb()
-    .prepare(`SELECT id, priority FROM tasks WHERE id IN (${unique.map(() => '?').join(',')})`)
-    .all(...unique) as { id: number; priority: number | null }[]
-  return new Map(rows.map((r) => [r.id, r.priority ?? 0]))
 }
 
 /**
@@ -126,15 +115,17 @@ export function waitingBySlot(
   timezone: string,
   now: Date,
 ): Map<number | null, SlotWaiting> {
+  // Prompts with their own named push (Medium+ quotas, prompt-nags.ts) are
+  // not the period's: neither counted nor pacing the nag. A prompt carries
+  // its quota's priority (`QuotaPrompt.priority`).
   const waitingPrompts = new Map<number | null, QuotaPrompt[]>()
   for (const [id, list] of getQuotaPromptsBySlot(userId, timezone, now)) {
-    waitingPrompts.set(id, list.filter(promptWaiting))
+    waitingPrompts.set(
+      id,
+      list.filter((p) => promptWaiting(p) && !promptGetsNamedPush(p)),
+    )
   }
-  const quotaPriority = quotaPriorities(
-    [...waitingPrompts.values()].flatMap((list) => list.map((p) => p.task_id)),
-  )
-  const promptPriorities = (list: QuotaPrompt[]) =>
-    list.map((p) => quotaPriority.get(p.task_id) ?? 0)
+  const promptPriorities = (list: QuotaPrompt[]) => list.map((p) => p.priority ?? 0)
 
   const waiting = new Map<number | null, SlotWaiting>()
   for (const group of getRemindersBySlot(userId, timezone, now)) {

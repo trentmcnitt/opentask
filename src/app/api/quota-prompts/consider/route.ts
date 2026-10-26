@@ -7,11 +7,19 @@
  * considered prompt changes nothing). Keys from another day, or for a quota
  * that is not the caller's own, refuse the whole request. See
  * src/core/tasks/quota-prompt-actions.ts.
+ *
+ * CSRF (Push PR 4, 2026-10-26): the named quota-prompt push's "Considered" button
+ * (public/sw.js) calls this with the session cookie alone, so a request
+ * authenticated by the cookie — or by the proxy header, which rides the
+ * proxy's own cookie — must also be same-origin (`isCrossSiteCookieRequest`,
+ * src/core/auth/same-origin.ts), else 403. Bearer requests (the native apps,
+ * integrations) are not checked.
  */
 
 import { NextRequest } from 'next/server'
 import { requireAuth, AuthError } from '@/core/auth'
-import { success, unauthorized, handleError, handleZodError } from '@/lib/api-response'
+import { isCrossSiteCookieRequest } from '@/core/auth/same-origin'
+import { success, unauthorized, forbidden, handleError, handleZodError } from '@/lib/api-response'
 import { actOnPrompts } from '@/core/tasks/quota-prompt-actions'
 import { validatePromptKeys } from '@/core/validation'
 import { formatTaskResponse } from '@/lib/format-task'
@@ -22,6 +30,15 @@ import { ZodError } from 'zod'
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
+    if (isCrossSiteCookieRequest(request)) {
+      log.warn(
+        'api',
+        `POST /api/quota-prompts/consider refused: cookie or proxy request for user ${user.id} is not same-origin ` +
+          `(Origin ${request.headers.get('origin') ?? 'none'}, ` +
+          `Sec-Fetch-Site ${request.headers.get('sec-fetch-site') ?? 'none'})`,
+      )
+      return forbidden('Cross-site request refused')
+    }
     const { keys } = validatePromptKeys(await request.json())
     const result = actOnPrompts({
       userId: user.id,

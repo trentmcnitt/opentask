@@ -1,7 +1,8 @@
 /**
  * SAME-ORIGIN CHECK for a cookie-authenticated POST (2026-10-26; first used by
  * POST /api/notifications/actions, whose cookie path is the service worker's
- * "Considered" button).
+ * "Considered" button; since Push PR 4 also POST /api/quota-prompts/consider
+ * and /did, the named quota-prompt push's "Considered" and "Did it").
  *
  * The session cookie is SameSite=Lax (NextAuth's default — `auth.ts` sets no
  * cookie options — and the cookie `session-from-token` mints), so a browser
@@ -13,12 +14,19 @@
  *    on every POST): `AUTH_URL`'s origin, or the one the request arrived on
  *    (`X-Forwarded-Proto` / `X-Forwarded-Host` behind the reverse proxy, else
  *    the URL and `Host`).
- * A request with neither is refused. Token and proxy-header requests never
- * come here: they carry no ambient credential a third-party page could ride
- * (the native apps send no Origin).
+ * A request with neither is refused.
+ *
+ * PROXY-HEADER LOGINS ARE CHECKED TOO (review of #377). A proxy-header user
+ * (Authelia, Authentik, Caddy forward_auth) is logged in by the PROXY's own
+ * session cookie — as ambient as ours: a third-party page's cross-site POST
+ * carries it, and the proxy then adds the user header. So a request
+ * authenticated by the proxy header must say it is same-origin as well. Only
+ * a Bearer or body token is exempt: no page can make a browser send one (the
+ * native apps, which send no Origin, use tokens).
  */
 
 import type { NextRequest } from 'next/server'
+import { getRequestContext } from '@/core/request-context'
 
 function originOf(url: string | undefined): string | null {
   if (!url) return null
@@ -51,4 +59,15 @@ export function isSameOriginRequest(request: NextRequest): boolean {
   if (request.headers.get('sec-fetch-site') === 'same-origin') return true
   const origin = request.headers.get('origin')
   return origin !== null && appOrigins(request).has(origin)
+}
+
+/**
+ * Whether an AUTHENTICATED request must be refused as cross-site: it was
+ * authenticated by an ambient credential — the session cookie, or the proxy
+ * header (behind the proxy's own cookie) — not a Bearer or body token (the
+ * request context's `authMethod`, set by the auth step), and it does not say
+ * it is same-origin. Call it after authenticating.
+ */
+export function isCrossSiteCookieRequest(request: NextRequest): boolean {
+  return getRequestContext()?.authMethod !== 'token' && !isSameOriginRequest(request)
 }

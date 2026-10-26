@@ -20,6 +20,10 @@ const testEnv = {
   OPENTASK_TEST_MODE: '1',
   OPENTASK_AI_PROVIDER: 'anthropic',
   AUTH_SECRET: 'test-secret-for-integration-tests',
+  // Reverse-proxy header auth, on so the same-origin check's proxy path is
+  // tested (quota-prompts.test.ts, notification-actions.test.ts). A header
+  // name nothing else sends.
+  OPENTASK_PROXY_AUTH_HEADER: 'X-Test-Proxy-User',
 }
 
 declare global {

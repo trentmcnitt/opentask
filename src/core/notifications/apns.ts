@@ -212,7 +212,7 @@ export interface ApnsPushPayload {
  * stack you can triage by looking at it is the visual half of that.
  */
 export const NOTIFICATION_THREADS = {
-  /** §6 Reminders — the period pushes and nags, and the named Medium+ reminder pushes. */
+  /** §6 Reminders — the period pushes and nags, and the named Medium+ reminder and quota-prompt pushes. */
   reminders: 'ot-reminders',
   /** Ordinary overdue tasks (P0–P3). */
   tasks: 'ot-tasks',
@@ -531,6 +531,86 @@ export async function sendApnsReminderNag(
       log.info(
         'apns',
         `Sending reminder push for task ${payload.taskId} to ${devices.length} device(s)`,
+      )
+    },
+  )
+  return deliveryOf(outcome)
+}
+
+/** The named quota-prompt push's category (prompt-nags.ts). Registered by native builds from PR 4b. */
+export const PROMPT_NAG_CATEGORY = 'QUOTA_NAG'
+
+/** One banner per prompt (`prompt_key`): the APNs collapse id and the Web Push tag. */
+export function promptCollapseId(promptKey: string): string {
+  return `prompt-${promptKey}`
+}
+
+export interface ApnsPromptNagPayload {
+  /** The quota's task id: what the `dismiss` silent push matches. */
+  taskId: number
+  /** The prompt's identity (`q:<taskId>:<k>:<date>`): what Considered and Did it send. */
+  promptKey: string
+  /** The quota's short title (`short_title ?? title`). */
+  title: string
+  /** "Morning · 1/3 this week", plus the tick lead's suffix. */
+  body: string
+  /** High and Urgent sound (`sound: default`); Medium never does. */
+  sound: boolean
+  /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`, no sound. */
+  passive?: boolean
+}
+
+/**
+ * The NAMED QUOTA-PROMPT PUSH (Push PR 4, 2026-10-26, prompt-nags.ts): one
+ * waiting prompt of a Medium+ quota, by the quota's short title. Pure, so the
+ * payload is testable. The named reminder push's twin
+ * (`buildReminderNagNotification`), with a prompt's identity:
+ *
+ * - `interruption-level: active` always (`passive` when another push leads
+ *   the tick); High and Urgent `sound: default`, Medium silent.
+ * - Category `QUOTA_NAG`: native builds from PR 4b register it with
+ *   "Considered" and "Did it" (POST /api/quota-prompts/consider and /did with
+ *   the payload's `prompt_key`). An older build has no such category: it
+ *   shows the banner without buttons, and a tap opens the task by `taskId`
+ *   (`/?task=<id>`, which the web forwards to the quota on /quotas).
+ * - Thread `ot-reminders`, beside the period pushes and the named reminder
+ *   pushes; collapse id `prompt-<prompt_key>`, so a repeat replaces the
+ *   prompt's banner, and a daily quota's prompts in two periods are two.
+ * - `data`: `taskId` (the quota: the `dismiss` silent push matches it) and
+ *   `prompt_key`. NO `priority`, as on a named reminder push: a shipped
+ *   build's sweep reads a missing priority as 0 and clears the banner (since
+ *   2026-10-26 a sweep clears only the moved tasks', and never moves a quota).
+ * - No `badge`: a quota is never in the badge.
+ */
+export function buildPromptNagNotification(
+  deviceToken: string,
+  topic: string,
+  payload: ApnsPromptNagPayload,
+): Notification {
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    category: PROMPT_NAG_CATEGORY,
+    threadId: NOTIFICATION_THREADS.reminders,
+    collapseId: promptCollapseId(payload.promptKey),
+    sound: payload.sound && !payload.passive ? 'default' : undefined,
+    data: { taskId: payload.taskId, prompt_key: payload.promptKey },
+    aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
+  })
+}
+
+export async function sendApnsPromptNag(
+  userId: number,
+  payload: ApnsPromptNagPayload,
+): Promise<DeliveryResult> {
+  const outcome = await sendToAllDevices(
+    userId,
+    (device) => buildPromptNagNotification(device.device_token, device.bundle_id, payload),
+    'prompt pushes',
+    (devices) => {
+      log.info(
+        'apns',
+        `Sending prompt push for ${payload.promptKey} to ${devices.length} device(s)`,
       )
     },
   )
@@ -919,16 +999,27 @@ export async function sendApnsBadgeUpdate(userId: number, badge: number): Promis
  * Dismiss notifications for specific tasks on all iOS devices for a user.
  * Sends a silent push with a dismiss signal that the app handles by clearing
  * matching delivered notifications.
+ *
+ * `promptKeys` (named quota-prompt pushes, review of #377) are added to the
+ * data as `promptKeys`: from native PR 4b a banner with a `prompt_key`
+ * closes only when its key is listed, every other banner by `taskIds`. A
+ * build before 4b reads `taskIds` alone, so it clears every banner of the
+ * quota (both periods' prompt banners) — the old behaviour, never a stale one.
  */
-export async function dismissApnsNotifications(userId: number, taskIds: number[]): Promise<void> {
+export async function dismissApnsNotifications(
+  userId: number,
+  taskIds: number[],
+  promptKeys?: string[],
+): Promise<void> {
   if (taskIds.length === 0) return
+  const data = { type: 'dismiss', taskIds, ...(promptKeys?.length ? { promptKeys } : {}) }
 
   await sendToAllDevices(
     userId,
     (device) =>
       new SilentNotification(device.device_token, {
         topic: device.bundle_id,
-        data: { type: 'dismiss', taskIds },
+        data,
       }),
     'dismiss signals',
     (devices) => {

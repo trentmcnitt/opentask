@@ -18,6 +18,11 @@
  *   reminder whose named push the edit ended — priority below Medium,
  *   converted, moved to Anytime or off today (`namedPushEndCheck`,
  *   reminder-nags.ts).
+ * - dismissPromptNotifications (no badge — a quota is never in it): the
+ *   named quota-prompt pushes a mutation ended (`promptPushEndCheck`,
+ *   prompt-nags.ts) — consider and did it, a count logged, a quota edit, and
+ *   the user-level changes (prompt switch, default period, a period deleted
+ *   or retimed, the day start).
  * - syncBadgeCount alone (the overdue count may change, but no delivered
  *   banner is known to be stale): createTask when the task is born overdue,
  *   restoreTask, and undo/redo (`afterUndoRedo`).
@@ -96,6 +101,32 @@ export function dismissNotificationsForTasks(
     .catch((err) => log.error('notifications', 'APNs dismiss error:', err))
 
   syncBadgeCount(userId, knownOverdueCount)
+}
+
+/**
+ * Dismiss the banners of these quota prompts (named quota-prompt pushes,
+ * prompt-nags.ts) on every device — and only theirs: the `dismiss` push
+ * carries `promptKeys`, and a banner with a `prompt_key` closes only when its
+ * key is listed, so a daily quota's other period's banner stays (review of
+ * #377). `taskIds` (the quotas) go along for every other banner of the quota
+ * and for native builds before PR 4b, which match `taskIds` alone. No badge
+ * sync: a quota is never in the badge. Fire-and-forget.
+ */
+export function dismissPromptNotifications(userId: number, promptKeys: string[]): void {
+  if (promptKeys.length === 0) return
+  const taskIds = [...new Set(promptKeys.map((key) => Number(key.split(':')[1])))].filter(
+    (id) => Number.isSafeInteger(id) && id > 0,
+  )
+  log.info(
+    'notifications',
+    `Dismiss requested for prompts [${promptKeys.join(',')}] user ${userId}`,
+  )
+  dismissTaskNotifications(userId, taskIds, promptKeys).catch((err) =>
+    log.error('notifications', 'Web Push prompt dismiss error:', err),
+  )
+  dismissApnsNotifications(userId, taskIds, promptKeys).catch((err) =>
+    log.error('notifications', 'APNs prompt dismiss error:', err),
+  )
 }
 
 /**

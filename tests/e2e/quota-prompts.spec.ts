@@ -964,8 +964,11 @@ test.describe('Quota prompts — put back', () => {
     )
       .flatMap((g) => g.prompts)
       .filter((p) => p.task_id === id)
+    // A cookie POST must say it is same-origin (Push PR 4, the route's CSRF
+    // check): `page.request` sends no Origin of its own, a browser fetch does.
     const considered = await page.request.post('/api/quota-prompts/consider', {
       data: { keys: [prompt.prompt_key] },
+      headers: { Origin: new URL(page.url()).origin },
     })
     expect(considered.ok()).toBeTruthy()
     await page.reload()

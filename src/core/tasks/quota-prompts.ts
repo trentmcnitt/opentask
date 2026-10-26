@@ -66,13 +66,13 @@ import { getDb } from '@/core/db'
 import { listTimeSlots } from '@/core/time-slots'
 import { getLabelColor } from '@/lib/label-colors'
 import {
-  assignDailyNumbers,
   comparePrompts,
   dayStateFor,
   isDailyQuota,
   promptDate,
   promptEnabled,
   promptKey,
+  promptPlacements,
   resolvePromptSlot,
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
@@ -198,21 +198,16 @@ export function getQuotaPromptsBySlot(
 
     if (isDailyQuota(task)) {
       // One row per period, standing for every number assigned there; it is
-      // keyed and judged by the highest of them.
-      const numbersIn = new Map<number, number[]>()
-      assignDailyNumbers(target, slots, task.quota_prompt_config, settings.defaultSlotId).forEach(
-        (slotIndex, i) => numbersIn.set(slotIndex, [...(numbersIn.get(slotIndex) ?? []), i + 1]),
-      )
-      for (const [slotIndex, numbers] of numbersIn) {
-        const k = numbers[numbers.length - 1]
-        const key = promptKey(task.id, k, date)
-        push(slotIndex, {
+      // keyed and judged by the highest of them (`promptPlacements`).
+      for (const row of promptPlacements(task, slots, settings.defaultSlotId)) {
+        const key = promptKey(task.id, row.number, date)
+        push(row.slotIndex, {
           ...base,
           prompt_key: key,
-          number: k,
-          numbers,
+          number: row.number,
+          numbers: row.numbers,
           considered: day.considered.includes(key),
-          done: current >= k,
+          done: current >= row.number,
         })
       }
       continue
