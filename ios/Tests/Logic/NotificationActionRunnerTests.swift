@@ -20,6 +20,8 @@ final class NotificationActionRunnerTests: XCTestCase {
         case snoozeUntil(String, Int?)
         case snoozeSlot(String, Int?)
         case completeSlot(Int, Set<String>, ProgressSource?)
+        case considerPrompts([String])
+        case didPrompts([String], ProgressSource?)
     }
 
     private struct StubError: Error {}
@@ -33,10 +35,25 @@ final class NotificationActionRunnerTests: XCTestCase {
         var slotAffected = 2
         /// The server's `considered` for a `done` with `day`.
         var considered = true
+        /// What the prompt routes throw, when set (e.g. the 400 for another
+        /// day's key, `APIError.serverError(statusCode: 400)`).
+        var promptError: Error?
 
         private func record(_ call: Call) throws {
             calls.append(call)
             if shouldThrow { throw StubError() }
+        }
+
+        func considerPrompts(keys: [String]) async throws -> APIClient.PromptActionResult {
+            try record(.considerPrompts(keys))
+            if let promptError { throw promptError }
+            return APIClient.PromptActionResult(considered: keys.count, did: 0, tasks: [])
+        }
+
+        func didPrompts(keys: [String], source: ProgressSource?) async throws -> APIClient.PromptActionResult {
+            try record(.didPrompts(keys, source))
+            if let promptError { throw promptError }
+            return APIClient.PromptActionResult(considered: keys.count, did: keys.count, tasks: [])
         }
 
         func markDone(taskId: Int) async throws { try record(.markDone(taskId)) }
@@ -370,6 +387,120 @@ final class NotificationActionRunnerTests: XCTestCase {
         let outcome = try await run(reminder, .button(NotificationAction.done), userInfo: ["reminder_day": "2026-01-15"])
         XCTAssertEqual(outcome, .missingTaskId)
         XCTAssertEqual(api.calls, [])
+    }
+
+    // MARK: - The named quota-prompt push (QUOTA_NAG, Push PR 4b, 2026-10-26)
+
+    private let quota = NotificationCategory.quotaNag
+    private let promptKey = "q:42:1:2026-01-15"
+    /// As `buildPromptNagNotification` sends it: the quota's id and the
+    /// prompt's key, no priority.
+    private var quotaInfo: [AnyHashable: Any] { ["taskId": 42, "prompt_key": promptKey] }
+    private let staleKey = APIError.serverError(statusCode: 400)
+
+    func testQuotaNagIdentifiers() {
+        XCTAssertEqual(NotificationCategory.quotaNag, "QUOTA_NAG")
+        XCTAssertEqual(QuotaNagKey.promptKey, "prompt_key")
+        XCTAssertEqual(QuotaNagKey.dismissPromptKeys, "promptKeys")
+        XCTAssertNotEqual(NotificationAction.considered, NotificationAction.didIt)
+        XCTAssertEqual(NotificationActionRunner.staleDidMessage, "That was yesterday's — open OpenTask to log it")
+    }
+
+    /// Considered sends the key to /consider — no source, no task id.
+    func testPromptConsideredSendsTheKey() async throws {
+        let outcome = try await run(quota, .button(NotificationAction.considered), userInfo: quotaInfo)
+        XCTAssertEqual(api.calls, [.considerPrompts([promptKey])])
+        XCTAssertEqual(outcome, .promptConsidered(promptKey: promptKey))
+        XCTAssertEqual(dismissed, [])
+    }
+
+    /// Did it sends the key to /did with the device's source. This bundle runs
+    /// on macOS, so that is `mac`; the watch build sends `watch` and the
+    /// iPhone none (`ProgressSource.forNotificationActions`,
+    /// `ProgressSourceTests`).
+    func testPromptDidSendsTheKeyAndTheSource() async throws {
+        let outcome = try await run(quota, .button(NotificationAction.didIt), userInfo: quotaInfo)
+        XCTAssertEqual(ProgressSource.forNotificationActions, .mac)
+        XCTAssertEqual(api.calls, [.didPrompts([promptKey], ProgressSource.forNotificationActions)])
+        XCTAssertEqual(outcome, .promptDid(promptKey: promptKey))
+    }
+
+    /// Considered on another day's key: the server's 400 is nothing to do —
+    /// the same quiet outcome as a success, no throw.
+    func testPromptConsideredOnAnotherDaysKeyIsQuiet() async throws {
+        api.promptError = staleKey
+        let outcome = try await run(quota, .button(NotificationAction.considered), userInfo: quotaInfo)
+        XCTAssertEqual(api.calls, [.considerPrompts([promptKey])])
+        XCTAssertEqual(outcome, .promptConsidered(promptKey: promptKey))
+    }
+
+    /// Did it on another day's key: nothing was logged, so its own outcome
+    /// (the device says "That was yesterday's"), not a success and not a throw.
+    func testPromptDidOnAnotherDaysKeyIsStale() async throws {
+        api.promptError = staleKey
+        let outcome = try await run(quota, .button(NotificationAction.didIt), userInfo: quotaInfo)
+        XCTAssertEqual(api.calls, [.didPrompts([promptKey], ProgressSource.forNotificationActions)])
+        XCTAssertEqual(outcome, .promptDidStale(promptKey: promptKey))
+    }
+
+    /// Any other failure (a 500, the network, not configured) propagates for
+    /// both buttons, as every other action's does.
+    func testPromptOtherFailuresPropagate() async {
+        for (button, error) in [
+            (NotificationAction.considered, APIError.serverError(statusCode: 500)),
+            (NotificationAction.didIt, APIError.serverError(statusCode: 500)),
+            (NotificationAction.didIt, APIError.serverError(statusCode: 403)),
+            (NotificationAction.considered, APIError.notConfigured),
+        ] {
+            api.promptError = error
+            do {
+                _ = try await run(quota, .button(button), userInfo: quotaInfo)
+                XCTFail("expected \(error) to propagate from \(button)")
+            } catch {
+                XCTAssertTrue(error is APIError, button)
+            }
+        }
+    }
+
+    /// No key, no call: the routes take keys only.
+    func testPromptWithoutAKeySendsNothing() async throws {
+        for button in [NotificationAction.considered, NotificationAction.didIt] {
+            let none = try await run(quota, .button(button), userInfo: ["taskId": 42])
+            let empty = try await run(quota, .button(button), userInfo: ["taskId": 42, "prompt_key": ""])
+            XCTAssertEqual(none, .ignored, button)
+            XCTAssertEqual(empty, .ignored, button)
+        }
+        XCTAssertEqual(api.calls, [])
+    }
+
+    /// A body tap opens the prompt's row: `/reminders?prompt=<key>`.
+    func testPromptBodyTapOpensItsRow() async throws {
+        let outcome = try await run(quota, .bodyTap, userInfo: quotaInfo)
+        XCTAssertEqual(outcome, .openPrompt(promptKey: promptKey))
+        XCTAssertEqual(api.calls, [])
+        guard case .openPrompt(let key) = outcome else { return XCTFail("not openPrompt") }
+        XCTAssertEqual(PromptDeepLink.webPath(promptKey: key), "/reminders?prompt=q:42:1:2026-01-15")
+    }
+
+    /// Without a key, a body tap opens the quota by its id, as an older build would.
+    func testPromptBodyTapWithoutAKeyOpensTheQuota() async throws {
+        let byId = try await run(quota, .bodyTap, userInfo: ["taskId": 42])
+        let neither = try await run(quota, .bodyTap, userInfo: [:])
+        XCTAssertEqual(byId, .openTask(taskId: 42))
+        XCTAssertEqual(neither, .missingTaskId)
+    }
+
+    /// No Done, snooze, sweep or delete on a quota-prompt banner.
+    func testPromptIgnoresEveryOtherButton() async throws {
+        for id in [
+            NotificationAction.done, NotificationAction.snooze1hr, NotificationAction.snoozeAll1hr,
+            NotificationAction.snoozeAllSlotNext, NotificationAction.delete, NotificationAction.completeAll,
+        ] {
+            let outcome = try await run(quota, .button(id), userInfo: quotaInfo)
+            XCTAssertEqual(outcome, .ignored, id)
+        }
+        XCTAssertEqual(api.calls, [])
+        XCTAssertEqual(dismissed, [])
     }
 
     func testUnknownButtonOnATaskSendsNothing() async throws {

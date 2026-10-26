@@ -153,6 +153,7 @@
 		71D0A83961B98489F7734D3C /* MenuBarRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 828B6B306B2D686ED20A8EA2 /* MenuBarRenderTests.swift */; };
 		729D536092D084F70DBCE60A /* RowCorner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66322EE9B0CF0A477B85DE55 /* RowCorner.swift */; };
 		72AEDE8CAE861EF53AC19CF5 /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3E2F1F151ECE60CDFE1524 /* WidgetPushRegistration.swift */; };
+		73359B56C7D19F2A358AEC85 /* quota-prompts-consider.json in Resources */ = {isa = PBXBuildFile; fileRef = C0E1F368B295526DF984B646 /* quota-prompts-consider.json */; };
 		7685A21956984CBCB2B493FC /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77660CA27D2B28508DE93F7A /* QuotaCount.swift */; };
 		76D29E684F7D200FE06336B4 /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */; };
 		770AE814F23EBC306447A18F /* OpenTaskDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0416FE5790E90F7D67FF1112 /* OpenTaskDay.swift */; };
@@ -473,6 +474,7 @@
 		BB9D3866BD0E2B5E5982A529 /* NightDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightDay.swift; sourceTree = "<group>"; };
 		BBB728AF67D6A2F6BF7B641A /* WebBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebBridgeTests.swift; sourceTree = "<group>"; };
 		BF62CE079EFE27FAE6A3CCA1 /* WidgetPushRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPushRegistrationTests.swift; sourceTree = "<group>"; };
+		C0E1F368B295526DF984B646 /* quota-prompts-consider.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-consider.json"; sourceTree = "<group>"; };
 		C10F1EE098B248D10F6E354B /* WidgetOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetOutboxTests.swift; sourceTree = "<group>"; };
 		C605F50E331B33C23631EE81 /* DateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateHelpers.swift; sourceTree = "<group>"; };
 		C8978A06D1EC922FE90F1F98 /* RemindersTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersTimeline.swift; sourceTree = "<group>"; };
@@ -534,6 +536,7 @@
 				F781F8F4FFD0805CBC5D5068 /* completions.json */,
 				A78C64FF75ACBAAD8C4818F1 /* notification-action-considered.json */,
 				9B67D1CA5EAEFEF18E424B05 /* notification-action-not-waiting.json */,
+				C0E1F368B295526DF984B646 /* quota-prompts-consider.json */,
 				7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */,
 				CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */,
 				016B71AE3B9CC87FC0330F55 /* reminders-after-did.json */,
@@ -952,6 +955,7 @@
 				306BDBFCBA2736BBE3ECA5FB /* notification-action-considered.json in Resources */,
 				9A5ED35FB511A89EE8333FA9 /* notification-action-not-waiting.json in Resources */,
 				4FA1D7F2B99CCB19DC1A2CA4 /* opentask-day-cases.json in Resources */,
+				73359B56C7D19F2A358AEC85 /* quota-prompts-consider.json in Resources */,
 				CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */,
 				D5CFE82513923A9DD0563FB9 /* quota-prompts-restore.json in Resources */,
 				F8F0D6AD1C859834848A661F /* reminders-after-did.json in Resources */,

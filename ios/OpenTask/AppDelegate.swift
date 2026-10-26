@@ -1,6 +1,7 @@
 import UIKit
 import UserNotifications
 import WatchConnectivity
+import WidgetKit
 
 /// Handles APNs registration, notification permission, and push handling.
 ///
@@ -263,15 +264,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        // Dismiss specific tasks
+        // Dismiss specific tasks (and, when listed, specific quota prompts)
         guard type == "dismiss",
               let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
             completionHandler(.noData)
             return
         }
+        let promptKeys = userInfo[QuotaNagKey.dismissPromptKeys] as? [String]
 
         Task {
-            let removed = await removeDeliveredNotifications(forTaskIds: taskIds)
+            let removed = await removeDeliveredNotifications(forTaskIds: taskIds, promptKeys: promptKeys)
             if removed > 0 {
                 print("[OpenTask] Dismissed \(removed) notifications for tasks \(taskIds)")
             }
@@ -329,13 +331,34 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 case .openDeadlines:
                     // The deadlines nag: the Tasks card on the deadlines page.
                     WebViewManager.shared.navigate(path: DeepLinkRouter.notificationDeadlinesPath)
+                case .openPrompt(let promptKey):
+                    // A quota-prompt push: its row on /reminders, the same
+                    // path the Reminders widget's prompt link resolves to.
+                    WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
+                case .promptDid:
+                    // The app can't write the widget cache (WidgetStore lives
+                    // in the widget extension), so ask WidgetKit to rebuild
+                    // the timelines from the server — what every app-side
+                    // change does (`QuickActionHandler`, leaving the app).
+                    // The server's widget push follows too, but it is
+                    // budgeted and can be skipped (ios/AGENTS.md § Widgets).
+                    WidgetCenter.shared.reloadAllTimelines()
+                case .promptDidStale(let promptKey):
+                    // Nothing was logged: say so, as the web does.
+                    postLocalNotice(
+                        NotificationActionRunner.staleDidMessage, identifier: "prompt-stale-\(promptKey)"
+                    )
                 default:
                     break
                 }
             } catch {
                 print("[OpenTask] Notification action error (\(categoryId)): \(error)")
             }
-            if categoryId != NotificationCategory.slotReminder, outcome != .missingTaskId {
+            // A quota is never in the badge, so its push skips the refresh,
+            // as a slot's does.
+            if categoryId != NotificationCategory.slotReminder,
+               categoryId != NotificationCategory.quotaNag,
+               outcome != .missingTaskId {
                 await refreshBadgeFromServer()
             }
             completionHandler()

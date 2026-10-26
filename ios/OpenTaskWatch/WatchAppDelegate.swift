@@ -177,9 +177,11 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             completionHandler(.noData)
             return
         }
+        // With `promptKeys`, a quota-prompt banner closes only by its key.
+        let promptKeys = userInfo[QuotaNagKey.dismissPromptKeys] as? [String]
 
         Task {
-            let removed = await removeDeliveredNotifications(forTaskIds: taskIds)
+            let removed = await removeDeliveredNotifications(forTaskIds: taskIds, promptKeys: promptKeys)
             if removed > 0 {
                 print("[OpenTaskWatch] Dismissed \(removed) notifications for tasks \(taskIds)")
             }
@@ -258,11 +260,23 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                 // A reminder's Considered is a success either way: `false`
                 // only means the server had nothing to do (another day's
                 // banner, or considered elsewhere already).
-                case .taskUpdated, .swept, .reminderConsidered:
+                // A quota prompt's Considered likewise: another day's key
+                // (the server's 400) is nothing to do, quietly.
+                case .taskUpdated, .swept, .reminderConsidered, .promptConsidered:
                     playHaptic(.click)
+                case .promptDid:
+                    playHaptic(.click)
+                    // The Smart Stack card and the complications show the
+                    // count — what the watch app's own did-it does
+                    // (`WatchViewModel.actOnPrompt`).
+                    WidgetCenter.shared.reloadAllTimelines()
+                case .promptDidStale:
+                    // Another day's prompt: nothing was logged. The web's words.
+                    playHaptic(.failure)
+                    postLocalErrorNotification(NotificationActionRunner.staleDidMessage)
                 case .slotCompleted(let affected):
                     playHaptic(affected > 0 ? .click : .failure)
-                case .ignored, .missingTaskId, .openDashboard, .openTask, .openDeadlines:
+                case .ignored, .missingTaskId, .openDashboard, .openTask, .openDeadlines, .openPrompt:
                     break
                 }
             } catch {

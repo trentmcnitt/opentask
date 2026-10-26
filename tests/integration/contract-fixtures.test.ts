@@ -133,6 +133,13 @@
  *                                               → notification-action-considered.json
  *     (`considered: true` and the done's `result`)
  *
+ * 23. The named quota-prompt push's buttons (Push PR 4b, 2026-10-26): a
+ *     Medium weekly quota (target 3), its prompt waiting today
+ *     POST /api/quota-prompts/consider [its key] → quota-prompts-consider.json
+ *     (`considered: 1`, `did: 0`, the quota in `tasks`)
+ *     POST /api/quota-prompts/consider and /did with YESTERDAY's key → 400
+ *     (asserted, not captured: native reads only the status)
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -1051,6 +1058,52 @@ describe('contract fixtures (native clients)', () => {
     })
   })
 
+  // 23. The named quota-prompt push's buttons (Push PR 4b, 2026-10-26). Its
+  //     own hook, after 22, so nothing captured before it moves.
+  let staleStatus: { consider: number; did: number } | null = null
+  beforeAll(async () => {
+    const placeholder = 101 + Object.keys(created).length
+    const res = (await call('/api/tasks', {
+      title: 'Practice guitar',
+      rrule: 'FREQ=WEEKLY',
+      progress_target: 3,
+      is_tracked: true,
+      priority: 2,
+    })) as { data: { id: number } }
+    created.namedQuota = res.data.id
+    ids.register('task', res.data.id, placeholder)
+    const prompt = prompts(await call('/api/reminders')).find((p) => p.task_id === res.data.id)
+    if (!prompt) throw new Error('scenario prompt missing (step 23)')
+    // The banner's Considered, as native sends it: the key, no source.
+    captured['quota-prompts-consider'] = await call('/api/quota-prompts/consider', {
+      keys: [prompt.prompt_key],
+    })
+    // Another day's key (yesterday's banner): the status native branches on.
+    // Not captured — native reads only the status, never this body.
+    const yesterday = DateTime.now().setZone('America/New_York').minus({ days: 1 }).toISODate()!
+    const staleKey = prompt.prompt_key.replace(/:[^:]+$/, `:${yesterday}`)
+    const consider = await apiFetchB('/api/quota-prompts/consider', {
+      method: 'POST',
+      body: { keys: [staleKey] },
+    })
+    const did = await apiFetchB('/api/quota-prompts/did', {
+      method: 'POST',
+      body: { keys: [staleKey], source: 'mac' },
+    })
+    staleStatus = { consider: consider.status, did: did.status }
+  })
+
+  test("quota prompt by key: today's consider answers the quotas, another day's key is a 400", () => {
+    type A = { data: { considered: number; did: number; tasks: { id: number }[] } }
+    const data = (captured['quota-prompts-consider'] as unknown as A).data
+    expect(data.considered).toBe(1)
+    expect(data.did).toBe(0)
+    expect(data.tasks.map((t) => t.id)).toEqual([created.namedQuota])
+    // NotificationActionRunner reads exactly this status as "another day's
+    // key": quiet for Considered, "That was yesterday's" for Did it.
+    expect(staleStatus).toEqual({ consider: 400, did: 400 })
+  })
+
   test('Considered with a day: true when waiting today, false (and no result) for another day', () => {
     type A = { data: Record<string, unknown> }
     const stale = (captured['notification-action-not-waiting'] as unknown as A).data
@@ -1192,6 +1245,7 @@ describe('contract fixtures (native clients)', () => {
     'reminders-upcoming-sections',
     'notification-action-not-waiting',
     'notification-action-considered',
+    'quota-prompts-consider',
   ]
 
   for (const name of names) {

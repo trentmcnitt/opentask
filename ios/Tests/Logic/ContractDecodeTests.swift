@@ -171,6 +171,27 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(cached.map(\.consideredCount), server.map(\.consideredCount))
     }
 
+    // MARK: POST /api/quota-prompts/consider (Push PR 4b, QUOTA_NAG's Considered)
+
+    /// The consider answer: one considered, nothing logged, and the quota as
+    /// the server left it. The raw keys too, since the DTO defaults every
+    /// field: a renamed key would otherwise decode as 0 / [].
+    func testConsiderResponseDecodes() throws {
+        let result = try Fixtures.decode(APIClient.PromptActionResult.self, "quota-prompts-consider")
+        XCTAssertTrue(result.decoded)
+        XCTAssertEqual(result.considered, 1)
+        XCTAssertEqual(result.did, 0)
+        let task = try XCTUnwrap(result.tasks.first)
+        XCTAssertEqual(result.tasks.count, 1)
+        XCTAssertEqual(task.id, Fixtures.namedQuota)
+        XCTAssertEqual(task.priority, 2)
+        XCTAssertTrue(task.isTracked)
+        XCTAssertEqual(task.progressTarget, 3)
+        XCTAssertEqual(task.progressCurrent, 0, "a consider logs nothing")
+        let raw = try Fixtures.object("quota-prompts-consider")
+        XCTAssertEqual(Set(raw.keys), ["considered", "did", "tasks"])
+    }
+
     // MARK: POST /api/quota-prompts/restore (2026-09-25)
 
     func testRestoreResponseDecodes() throws {
