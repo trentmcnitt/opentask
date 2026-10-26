@@ -477,7 +477,9 @@ describe('checkOverdueTasks', () => {
     )
   })
 
-  test('P3 task gets time-sensitive APNs', async () => {
+  // Since 2026-10-26 (Trent) High is `active`, not `time-sensitive`: only
+  // Urgent breaks through Focus; the phone's Sleep mode handles nights.
+  test('P3 task gets an active APNs (never time-sensitive)', async () => {
     insertTask(1, 'High task', '2026-01-15T10:00:00.000Z', 3)
 
     await checkOverdueTasks(new Date('2026-01-15T10:15:00.000Z'))
@@ -487,7 +489,7 @@ describe('checkOverdueTasks', () => {
       TEST_USER_ID,
       expect.objectContaining({
         title: 'HIGH: High task',
-        interruptionLevel: 'time-sensitive',
+        interruptionLevel: 'active',
       }),
     )
     const payload = vi.mocked(sendApnsNotification).mock.calls[0][1]

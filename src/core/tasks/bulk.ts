@@ -30,6 +30,7 @@ import { logActivityBatch } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import { namedPushEndCheck } from '@/core/notifications/reminder-nags'
 import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
@@ -1426,6 +1427,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const batchId = crypto.randomUUID()
   const allFieldsChanged = new Set<string>()
   const perTaskFields = new Map<number, string[]>()
+  /** Per edited task: did the edit end its reminder's named push (`namedPushEndCheck`)? */
+  const endedNamedPush = new Map<number, () => boolean>()
   let totalSnoozedCount = 0
 
   const result = withTransaction((tx) => {
@@ -1459,6 +1462,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
       if (wasCapped(data)) deadlineCapped++
 
       if (data.fieldsChanged.length > 0) {
+        // Read before this task's own change is applied.
+        endedNamedPush.set(task.id, namedPushEndCheck(task, data.fieldsChanged))
         const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
         snapshots.push(snapshot)
         activityEntries.push({ userId, ...activity, source: 'bulk', batchId })
@@ -1501,11 +1506,16 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   })
 
   emitSyncEvent(userId)
-  // Only a task whose date actually moved has a stale notification; a
-  // priority or label edit leaves the banner as true as it was.
+  // Only a task whose date actually moved has a stale notification — or a
+  // reminder whose named push this edit ended (priority below Medium, Nag
+  // off, converted, moved to Anytime or off today: `namedPushStands`). Any
+  // other priority or label edit leaves the banner as true as it was.
+  const pushEnded = (id: number) => endedNamedPush.get(id)?.() === true
   dismissNotificationsForTasks(
     userId,
-    [...perTaskFields].filter(([, fields]) => fields.includes('due_at')).map(([id]) => id),
+    [...perTaskFields]
+      .filter(([id, fields]) => fields.includes('due_at') || pushEnded(id))
+      .map(([id]) => id),
   )
 
   for (const snapshot of snapshots) {

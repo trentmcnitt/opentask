@@ -409,7 +409,8 @@ function overdueTasksAt(now: Date): OverdueTask[] {
         -- currently-due.ts for the rationale).
         AND t.progress_target <= 1
         AND t.is_tracked = 0
-        -- §6: reminders never fire individually — their time slot notifies.
+        -- §6: reminders are never overdue — their period notifies (Medium+
+        -- ones by name, reminder-nags.ts), never this checker.
         AND t.is_reminder = 0
         -- On deck (2026-10-20): a target-less deck never nags (see currently-due.ts).
         AND (t.on_deck_day IS NULL OR t.due_at IS NOT NULL)
