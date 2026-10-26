@@ -35,7 +35,7 @@
  *
  * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces unfinished
  * slots at Trent's request (2026-09-21), paced since 2026-10-22 by the nag
- * ladder at the shortest rung among the waiting items' priorities. It still
+ * ladder (the waiting items' rungs, on clock marks since 2026-10-26). It still
  * writes nothing, still never marks anything overdue or badged, and still
  * never fires for a slot that has not opened. Read that module's header
  * before concluding the "no catch-up" claim above has been violated.
@@ -104,7 +104,7 @@ function quotaPriorities(taskIds: number[]): Map<number, number> {
  * the same test every client uses). Prompts come from the phase-1 computation
  * as-is — one quota query per call, and one more for the waiting prompts'
  * quota priorities. Called only for a user whose slot opens this minute, or
- * whose slot nag could be due by `nag_sends` at its fastest rung; never once
+ * whose slot nag could be due by `nag_sends` (any rung's mark); never once
  * a minute for every user.
  */
 export function waitingBySlot(

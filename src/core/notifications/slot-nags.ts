@@ -30,7 +30,8 @@
  *           the push stamps its clock — no After School nag at 18:00
  *    19:00  nag: Dinnertime, "and 1 earlier slot"
  * The nag no longer comes "one interval after, at any minute" (2026-10-22 to
- * 10-26); a 20:15 period's nag comes at 21:00.
+ * 10-26); a 20:15 period's nag comes at 21:00. tests/behavioral/dn-tick.test.ts
+ * (DN-T05) plays this handover through the whole minute tick.
  *
  * THE 2026-10-22 RULING (Trent): one considering ladder, no special cases.
  * The rules this module used to carry are gone, on purpose:
