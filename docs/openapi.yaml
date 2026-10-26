@@ -4768,7 +4768,9 @@ paths:
         body `token` that is present but invalid is a 401. With no body
         `token` the request is authenticated like any other endpoint — a
         Bearer header, or the web app's session cookie (how the service
-        worker's "Considered" button calls it).
+        worker's "Considered" button calls it). A request authenticated by
+        the session cookie must also be same-origin (`Sec-Fetch-Site:
+        same-origin` or a matching `Origin`), else 403.
 
         - `done` — mark the task done. With `day` (the named reminder push's
           "Considered" button): only a reminder waiting in the user's
@@ -4880,7 +4882,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
-          description: The token's user cannot access this task
+          description: |
+            The caller cannot access this task, or a session-cookie request
+            that is not same-origin (cross-site, or neither `Sec-Fetch-Site`
+            nor a matching `Origin`)
           content:
             application/json:
               schema:

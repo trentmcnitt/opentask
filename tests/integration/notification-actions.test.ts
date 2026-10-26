@@ -18,6 +18,7 @@ import {
   apiFetch,
   apiFetchB,
   apiAnon,
+  baseUrl,
   openTaskToday,
   resetTestData,
   sessionCookieFromToken,
@@ -38,6 +39,9 @@ function act(action: string, taskId: number, token: string | null = TOKEN_A) {
     body: { action, task_id: taskId, ...(token === null ? {} : { token }) },
   })
 }
+
+/** What a same-origin browser fetch (the service worker's) carries. */
+const SAME_ORIGIN = { 'Sec-Fetch-Site': 'same-origin' }
 
 async function getTask(id: number) {
   return (await (await apiFetch(`/api/tasks/${id}`)).json()).data
@@ -129,26 +133,88 @@ describe('POST /api/notifications/actions — delete', () => {
  * ordinary auth chain, so the service worker's "Considered" button can call
  * it with the session cookie alone. A body token that is present but bad is
  * still a 401 — never a fall-through to the cookie.
+ *
+ * CSRF (coordinator ruling, 2026-10-26): a request authenticated by the
+ * cookie alone must also be same-origin — `Sec-Fetch-Site: same-origin`, or
+ * an `Origin` equal to the app's own — else 403. Token requests are not
+ * checked (the native apps send no Origin).
  */
 describe('POST /api/notifications/actions — session auth', () => {
   beforeEach(async () => {
     await resetTestData()
   })
 
-  function actWithCookie(cookie: string, body: Record<string, unknown>) {
+  function actWithCookie(
+    cookie: string,
+    body: Record<string, unknown>,
+    headers: Record<string, string> = SAME_ORIGIN,
+  ) {
     return apiAnon('/api/notifications/actions', {
       method: 'POST',
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, ...headers },
       body,
     })
   }
 
-  test('no body token, a session cookie: authenticated as its user', async () => {
+  test('no body token, a session cookie, same-origin (Sec-Fetch-Site): authenticated', async () => {
     const task = await createTask()
     const cookie = await sessionCookieFromToken(TOKEN_A)
     const res = await actWithCookie(cookie, { action: 'done', task_id: task.id })
     expect(res.status).toBe(200)
     expect((await getTask(task.id)).done).toBe(true)
+  })
+
+  test('a cookie POST whose Origin is the app’s own: 200', async () => {
+    const task = await createTask()
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await actWithCookie(
+      cookie,
+      { action: 'done', task_id: task.id },
+      { Origin: new URL(baseUrl()).origin },
+    )
+    expect(res.status).toBe(200)
+    expect((await getTask(task.id)).done).toBe(true)
+  })
+
+  test('a cookie POST with a cross-site Origin: 403, nothing changes', async () => {
+    const task = await createTask()
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await actWithCookie(
+      cookie,
+      { action: 'done', task_id: task.id },
+      { Origin: 'https://attacker.example', 'Sec-Fetch-Site': 'cross-site' },
+    )
+    expect(res.status).toBe(403)
+    expect((await getTask(task.id)).done).toBe(false)
+  })
+
+  test('a cookie POST with neither Origin nor Sec-Fetch-Site: 403', async () => {
+    const task = await createTask()
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await actWithCookie(cookie, { action: 'done', task_id: task.id }, {})
+    expect(res.status).toBe(403)
+    expect((await getTask(task.id)).done).toBe(false)
+  })
+
+  test('a Bearer POST with a foreign Origin: still 200 (only the cookie is checked)', async () => {
+    const task = await createTask()
+    const res = await apiFetch('/api/notifications/actions', {
+      method: 'POST',
+      headers: { Origin: 'https://attacker.example', 'Sec-Fetch-Site': 'cross-site' },
+      body: { action: 'done', task_id: task.id },
+    })
+    expect(res.status).toBe(200)
+    expect((await getTask(task.id)).done).toBe(true)
+  })
+
+  test('a body-token POST with a foreign Origin: still 200', async () => {
+    const task = await createTask()
+    const res = await apiAnon('/api/notifications/actions', {
+      method: 'POST',
+      headers: { Origin: 'https://attacker.example' },
+      body: { action: 'done', task_id: task.id, token: TOKEN_A },
+    })
+    expect(res.status).toBe(200)
   })
 
   test('a bad body token is a 401 even with a valid cookie', async () => {
@@ -273,7 +339,7 @@ describe('POST /api/notifications/actions — done with day', () => {
     const cookie = await sessionCookieFromToken(TOKEN_A)
     const res = await apiAnon('/api/notifications/actions', {
       method: 'POST',
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, ...SAME_ORIGIN },
       body: { action: 'done', task_id: reminder.id, day: today },
     })
     expect(res.status).toBe(200)

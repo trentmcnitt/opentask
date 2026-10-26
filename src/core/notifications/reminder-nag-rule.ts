@@ -3,21 +3,32 @@
  * marks" Part A). A leaf module — no imports — so the task mutations
  * (update.ts, bulk.ts) and the notification senders read one rule.
  *
- * A reminder at Medium or above is pushed BY NAME (reminder-nags.ts) and no
- * longer counted in its period's push or nag (`waitingBySlot`,
- * slot-reminders.ts); None and Low stay in the period's count. That split is
- * by priority alone: a Medium+ reminder whose own Nag is OFF
- * (`auto_snooze_minutes = 0`) gets no named push AND stays out of the period
- * count — "off means off", as on the deadlines page (coordinator ruling,
- * 2026-10-22).
+ * A reminder at Medium or above, with its own Nag on, is pushed BY NAME
+ * (reminder-nags.ts) and no longer counted in its period's push or nag
+ * (`waitingBySlot`, slot-reminders.ts). Everything else — None and Low, and
+ * a Medium+ reminder whose Nag is OFF (`auto_snooze_minutes = 0`) — stays in
+ * the period's count. Nag off turns off a reminder's OWN nagging; it never
+ * makes a waiting reminder vanish from every notification (coordinator
+ * ruling, 2026-10-26, on #368).
  */
 
 /** The lowest priority whose reminders are pushed by name: Medium. */
 export const NAMED_REMINDER_MIN_PRIORITY = 2
 
-/** Whether a reminder at this priority is pushed by name rather than counted in its period. */
+/** Whether a reminder at this priority is high enough to be pushed by name. */
 export function isNamedReminderPriority(priority: number | null | undefined): boolean {
   return (priority ?? 0) >= NAMED_REMINDER_MIN_PRIORITY
+}
+
+/**
+ * Whether a waiting reminder is pushed by name (and so left out of its
+ * period's push and nag): Medium or above, and its own Nag not OFF.
+ */
+export function getsNamedPush(reminder: {
+  priority: number | null | undefined
+  auto_snooze_minutes: number | null | undefined
+}): boolean {
+  return isNamedReminderPriority(reminder.priority) && reminder.auto_snooze_minutes !== 0
 }
 
 /**

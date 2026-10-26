@@ -58,6 +58,7 @@ import {
   reminderWaitingOn,
 } from '@/core/notifications/reminder-nags'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
 import { sendPushNotification } from '@/core/notifications/web-push'
 import {
   buildReminderNagNotification,
@@ -165,6 +166,28 @@ describe('RR-01 eligibility: every condition', () => {
     const r = reminder(9, 0, 3)
     getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 0 WHERE id = ?').run(r.id)
     expect(pendingReminderNags(at(9))).toEqual([])
+  })
+
+  /**
+   * Coordinator ruling, 2026-10-26 (on #368): Nag OFF turns off a reminder's
+   * OWN nagging, never every notification of it. A Medium+ reminder with Nag
+   * OFF is the period's again, like a None/Low one — in the period push's
+   * count and the period nag (which its priority paces, as before PR 2).
+   */
+  test('Nag OFF on a Medium+ reminder: it stays in the period push and the period nag', async () => {
+    const r = reminder(9, 0, 3)
+    getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 0 WHERE id = ?').run(r.id)
+    expect(pendingSlotNotifications(at(9))).toMatchObject([{ slotLabel: 'Morning', count: 1 }])
+
+    for (let t = at(9).getTime(); t <= at(9, 30).getTime(); t += 60_000) {
+      await runTick([...MINUTE_TICK_SOURCES], new Date(t), CHANNELS)
+    }
+    expect(sendApnsReminderNag).not.toHaveBeenCalled()
+    // 09:00 the period push; 09:30 the nag, at the High rung (30).
+    expect(vi.mocked(sendApnsSlotReminder).mock.calls.map(([, p]) => [p.count, p.body])).toEqual([
+      [1, undefined],
+      [1, '1 reminder waiting'],
+    ])
   })
 
   test('notifications off, or the demo user: nothing', () => {

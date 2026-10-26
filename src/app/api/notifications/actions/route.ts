@@ -18,7 +18,8 @@
  * A body token that is present but invalid is a 401, never a fall-through. With NO
  * body token (2026-10-26) the request is authenticated like any other route —
  * Bearer header, proxy header, then the session cookie — so the service worker's
- * "Considered" button (public/sw.js) can call this with the cookie alone.
+ * "Considered" button (public/sw.js) can call this with the cookie alone. A
+ * cookie-authenticated request must also be same-origin (CSRF; 403 otherwise).
  *
  * `day` (2026-10-26, the named reminder push's "Considered" button): the OpenTask
  * date the push was waiting on (`reminder_day`). With it, `done` only considers a
@@ -31,9 +32,11 @@
 
 import { sendDeadlineCapFeedback } from '@/core/notifications/deadline-cap-feedback'
 import { NextRequest } from 'next/server'
-import { success, unauthorized, badRequest, handleError } from '@/lib/api-response'
+import { success, unauthorized, badRequest, forbidden, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { getAuthUser } from '@/core/auth'
+import { isSameOriginRequest } from '@/core/auth/same-origin'
+import { getRequestContext } from '@/core/request-context'
 import { reminderWaitingOn } from '@/core/notifications/reminder-nags'
 import { markDone, snoozeTask, deleteTask } from '@/core/tasks'
 import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
@@ -54,13 +57,30 @@ const SNOOZE_MINUTES: Record<string, number> = { snooze30: 30, snooze: 60, snooz
  * can't set headers) — present but bad is a 401, never a fall-through; with
  * none, the ordinary chain (Bearer header, proxy, the service worker's
  * session cookie). Returns the 401 response when there is no user.
+ *
+ * CSRF: a request authenticated by the session cookie (not a token or the
+ * proxy header) must also be same-origin (`isSameOriginRequest`:
+ * `Sec-Fetch-Site: same-origin` or a matching `Origin`), else 403. The
+ * cookie is SameSite=Lax already; this is the second wall.
  */
 async function actionUser(request: NextRequest, token: unknown): Promise<AuthUser | Response> {
   if (token !== undefined && token !== null) {
     const user = typeof token === 'string' && token ? validateBearerToken(token) : null
     return user ?? unauthorized('Invalid token')
   }
-  return (await getAuthUser(request)) ?? unauthorized('Token required')
+  const user = await getAuthUser(request)
+  if (!user) return unauthorized('Token required')
+  const method = getRequestContext()?.authMethod
+  if (method !== 'token' && method !== 'proxy' && !isSameOriginRequest(request)) {
+    log.warn(
+      'notifications',
+      `Action refused: cookie-authenticated request for user ${user.id} is not same-origin ` +
+        `(Origin ${request.headers.get('origin') ?? 'none'}, ` +
+        `Sec-Fetch-Site ${request.headers.get('sec-fetch-site') ?? 'none'})`,
+    )
+    return forbidden('Cross-site request refused')
+  }
+  return user
 }
 
 function isLocalDate(value: unknown): value is string {

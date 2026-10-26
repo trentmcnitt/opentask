@@ -145,13 +145,17 @@ self.addEventListener('notificationclick', (event) => {
   // and the other banners stay. It sends the push's `reminder_day` as `day`,
   // so the server changes nothing for another day's push or a reminder that
   // is no longer waiting (200 `considered: false`). Authenticated by the
-  // session cookie (a same-origin fetch from the worker sends it).
+  // session cookie (a same-origin fetch from the worker sends it). The route
+  // refuses a cookie POST that isn't same-origin (CSRF, 403): this fetch
+  // carries `Sec-Fetch-Site: same-origin` and, being a POST, an `Origin` of
+  // the app's own — the route accepts either.
   if (event.action === 'considered') {
     const data = event.notification.data || {}
     if (typeof data.taskId !== 'number') return
     event.waitUntil(
       fetch('/api/notifications/actions', {
         method: 'POST',
+        mode: 'same-origin',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'done', task_id: data.taskId, day: data.reminder_day }),

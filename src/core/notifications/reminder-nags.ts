@@ -5,9 +5,9 @@
  * WHAT. A reminder at Medium or above gets a push of its OWN — its title as
  * the banner's title, "Morning · High reminder" as the body — instead of
  * being one of its period's count. None and Low reminders stay in the period
- * push and the period nag (slot-reminders.ts, slot-nags.ts); Medium+ ones are
- * left out of both (`waitingBySlot`), so a period with only Medium+ waiting
- * sends no period push and no period nag.
+ * push and the period nag (slot-reminders.ts, slot-nags.ts); the ones pushed
+ * by name are left out of both (`waitingBySlot`), so a period with only those
+ * waiting sends no period push and no period nag.
  *
  * WHEN A REMINDER GETS ONE — all of:
  *  - it is waiting in today's roster (`getRemindersBySlot`, the Reminders
@@ -15,7 +15,11 @@
  *  - its priority is Medium (2) or above (reminder-nag-rule.ts);
  *  - it is in a real period, not Anytime (the un-slotted group never opens);
  *  - its period has opened today (`periodOpensAt` within the OpenTask day);
- *  - its own Nag is not OFF (`auto_snooze_minutes` is not 0).
+ *  - its own Nag is not OFF (`auto_snooze_minutes` is not 0). A Medium+
+ *    reminder with Nag OFF is treated like a None/Low one: no named push, no
+ *    repeats, but it STAYS in the period push's count and the period nag —
+ *    Nag off turns off its own nagging, never every notification of it
+ *    (coordinator ruling, 2026-10-26). `getsNamedPush` is the one rule.
  *
  * WHEN IT FIRES.
  *  - FIRST at the period's open, exact (the first tick at or after it).
@@ -74,10 +78,7 @@ import { mergeSettled, type DeliveryResult } from '@/core/notifications/delivery
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
 import { nagIntervalMinutes, userNagTiers } from '@/core/notifications/nag-ladder'
 import { claimNagSend, nagSendDue } from '@/core/notifications/nag-sends'
-import {
-  NAMED_REMINDER_MIN_PRIORITY,
-  isNamedReminderPriority,
-} from '@/core/notifications/reminder-nag-rule'
+import { NAMED_REMINDER_MIN_PRIORITY, getsNamedPush } from '@/core/notifications/reminder-nag-rule'
 import {
   runTick,
   type Channels,
@@ -175,9 +176,8 @@ export function pendingReminderNags(now: Date = new Date()): PendingReminderNag[
       const openedAt = group.slot ? opened.get(group.slot.id) : undefined
       if (!group.slot || !openedAt) continue
       for (const task of group.reminders) {
+        if (!getsNamedPush(task)) continue
         const priority = task.priority ?? 0
-        if (!isNamedReminderPriority(priority)) continue
-        if (task.auto_snooze_minutes === 0) continue
         const interval = nagIntervalMinutes('slot_nag', priority, tiers)
         if (interval <= 0) continue
         const key = reminderNagKey(task.id)
