@@ -49,6 +49,34 @@ private enum QuotaSegmentsPreviewData {
         WidgetStore.setRemindersPage(page, for: slotKey)
     }
 
+    /// NEAR THE WRAP (2026-10-26, the "wee…" hunt): weekly prompts, partly
+    /// filled (a filled run and an empty run, two images), whose titles grow
+    /// one word at a time — so in some row the boxes and "week" land right
+    /// at the column's edge, whatever the text size.
+    static func nearTheWrap(longestFirst: Bool = false) -> RemindersEntry {
+        let stem = ["Practice", "the", "piano", "scales", "slowly", "with", "the", "metronome", "on"]
+        let counts = [(1, 3), (2, 5), (4, 5), (2, 6), (1, 2), (3, 4), (1, 4), (2, 3), (5, 6)]
+        let prompts = counts.indices.map { i in
+            prompt(9200 + i, stem.prefix(i + 1).joined(separator: " "), counts[i].0, counts[i].1, "WEEKLY", "blue")
+        } + [
+            // Longer than the 2×2 and the Lock Screen card hold at XXX
+            // Large: their one-item line has to give way somewhere.
+            prompt(
+                9299, "Make sure the MDX battery toggle is off before leaving the house for the week", 2, 6,
+                "WEEKLY", "purple"
+            ),
+        ]
+        let group = ReminderGroupDTO(
+            slot: TimeSlotDTO(id: slotKey, label: "Morning", startTime: "08:00"),
+            reminders: [], considered: 0, consideredItems: [], prompts: longestFirst ? prompts.reversed() : prompts
+        )
+        let now = Calendar.current.date(bySettingHour: 8, minute: 40, second: 0, of: Date()) ?? Date()
+        return RemindersEntry(
+            date: now, groups: [group], segments: [], slotIndex: 0, segmentIndex: nil, staleSince: nil,
+            isSignedOut: false, canUndo: true, canRedo: false, actionDescription: nil
+        )
+    }
+
     private static func quota(
         _ id: Int, _ title: String, _ current: Int, _ target: Int, _ freq: String, _ labels: [String]
     ) -> TaskDTO {
@@ -111,6 +139,41 @@ private enum QuotaSegmentsPreviewData {
 } timeline: {
     let _ = QuotaSegmentsPreviewData.prepareReminders(showCompleted: false)
     QuotaSegmentsPreviewData.reminders
+}
+
+#Preview("Quota segments — near the wrap, page 1", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = QuotaSegmentsPreviewData.prepareReminders(showCompleted: false)
+    QuotaSegmentsPreviewData.nearTheWrap()
+}
+
+#Preview("Quota segments — near the wrap, page 2", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = QuotaSegmentsPreviewData.prepareReminders(showCompleted: false, page: 1)
+    QuotaSegmentsPreviewData.nearTheWrap()
+}
+
+#Preview("Quota segments — near the wrap, page 3", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = QuotaSegmentsPreviewData.prepareReminders(showCompleted: false, page: 2)
+    QuotaSegmentsPreviewData.nearTheWrap()
+}
+
+#Preview("Quota segments — near the wrap, Medium", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = QuotaSegmentsPreviewData.prepareReminders(showCompleted: false)
+    QuotaSegmentsPreviewData.nearTheWrap()
+}
+
+#Preview("Quota segments — near the wrap, Small", as: .systemSmall) {
+    RemindersWidget()
+} timeline: {
+    let _ = QuotaSegmentsPreviewData.prepareReminders(showCompleted: false)
+    QuotaSegmentsPreviewData.nearTheWrap(longestFirst: true)
 }
 
 #Preview("Quota segments — Quotas Large", as: .systemLarge) {

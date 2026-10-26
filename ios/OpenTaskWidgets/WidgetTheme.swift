@@ -440,6 +440,11 @@ enum WidgetTheme {
         return title + Text("\u{00A0}") + glyph
     }
 
+    /// A measuring stand-in for an inline drawn thing (`MeasuringBox`).
+    static func measuringBox(width: CGFloat) -> NSTextAttachment {
+        MeasuringBox.attachment(width: width)
+    }
+
     /// `measuredLineCount(for:maxWidth:font:)` for a title that ends in the
     /// notes glyph (`notesGlyphSize` set), or exactly that function when it
     /// doesn't.
@@ -455,9 +460,7 @@ enum WidgetTheme {
         guard let notesGlyphSize else { return measuredLineCount(for: text, maxWidth: maxWidth, font: font) }
         guard maxWidth > 0 else { return 1 }
         let string = NSMutableAttributedString(string: text + "\u{00A0}", attributes: [.font: font])
-        let attachment = NSTextAttachment()
-        attachment.bounds = CGRect(x: 0, y: 0, width: notesGlyphWidth(pointSize: notesGlyphSize), height: 1)
-        string.append(NSAttributedString(attachment: attachment))
+        string.append(NSAttributedString(attachment: measuringBox(width: notesGlyphWidth(pointSize: notesGlyphSize))))
         string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
         let bounds = string.boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
@@ -750,6 +753,13 @@ struct RowTitleFit: ViewModifier {
     let lines: Int
     let height: CGFloat
     let shrinks: Bool
+    /// A quota PROMPT row's safety net (2026-10-26, the "wee…" report): if
+    /// the drawn label ever needs more lines than the pager measured (the
+    /// count's boxes and word are drawn as images and text the measurement
+    /// can only model), it shrinks a little to fit its lines rather than
+    /// ending in "…". Off for reminder and task rows, whose plain text the
+    /// measurement draws exactly.
+    var scalesToFit = false
 
     func body(content: Content) -> some View {
         if shrinks {
@@ -761,6 +771,7 @@ struct RowTitleFit: ViewModifier {
         } else {
             content
                 .lineLimit(lines)
+                .minimumScaleFactor(scalesToFit ? WidgetTheme.overflowTitleScale : 1)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
@@ -959,14 +970,11 @@ struct WidgetTextMetrics {
         let string = NSMutableAttributedString(string: prompt.title + " ", attributes: [.font: font])
         switch form {
         case .segments:
-            let box = NSTextAttachment()
-            box.bounds = CGRect(
-                x: 0, y: 0,
+            let box = WidgetTheme.measuringBox(
                 width: QuotaSegmentsDrawing.boxesWidth(
                     current: prompt.current, target: prompt.target, hasWord: word != nil, em: titlePointSize,
                     lead: promptCountLead, scale: displayScale
-                ),
-                height: 1
+                )
             )
             string.append(NSAttributedString(attachment: box))
             string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
@@ -986,8 +994,7 @@ struct WidgetTextMetrics {
         }
         if let glyph = notesGlyphSize(hasNotes: prompt.hasNotes) {
             string.append(NSAttributedString(string: "\u{00A0}", attributes: [.font: font]))
-            let attachment = NSTextAttachment()
-            attachment.bounds = CGRect(x: 0, y: 0, width: WidgetTheme.notesGlyphWidth(pointSize: glyph), height: 1)
+            let attachment = WidgetTheme.measuringBox(width: WidgetTheme.notesGlyphWidth(pointSize: glyph))
             string.append(NSAttributedString(attachment: attachment))
             string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
         }

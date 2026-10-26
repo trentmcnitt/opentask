@@ -158,6 +158,7 @@
 		88C77707E12180F739E46FE6 /* WatchWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9080749DBD681AAA6C5C8BD4 /* WatchWidgetIntents.swift */; };
 		896C7265B3976900820FF4C1 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		8AF9938199A8584D195270F8 /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD187F0B86DA225EEF35BC1C /* TaskDayProgress.swift */; };
+		8B0E062F3E0495845AF8D931 /* MeasuringBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F318F70AC4AC27DEBDA12BFE /* MeasuringBox.swift */; };
 		8B90324E7E11A658DFC17FD0 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */; };
 		8C70BF6641FA52C27AEE830B /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
 		8D79DAE12A0463CA0E754A9A /* OpenTaskWatchWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78853DF57CF91B869B3AFBCB /* OpenTaskWatchWidgetBundle.swift */; };
@@ -433,6 +434,7 @@
 		E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerURL.swift; sourceTree = "<group>"; };
 		EBC0580F954EC226733CA293 /* ReminderStackTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderStackTimeline.swift; sourceTree = "<group>"; };
 		F2AB573F3168D66C992B5783 /* WatchPreviewData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPreviewData.swift; sourceTree = "<group>"; };
+		F318F70AC4AC27DEBDA12BFE /* MeasuringBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasuringBox.swift; sourceTree = "<group>"; };
 		F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeSlotStore.swift; sourceTree = "<group>"; };
 		F99D9B9B9BF27B9E628E6BDF /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		FEC3579E8F57FB1C23A5ADE1 /* WatchAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAppDelegate.swift; sourceTree = "<group>"; };
@@ -547,6 +549,7 @@
 			isa = PBXGroup;
 			children = (
 				9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */,
+				F318F70AC4AC27DEBDA12BFE /* MeasuringBox.swift */,
 				B0BA880E80F8E982F77B4147 /* NotesGlyphPreviews.swift */,
 				5649EA966682B058E64222CB /* OpenTaskWidgetBundle.swift */,
 				58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */,
@@ -948,6 +951,7 @@
 				1193D251741F3BE8F46CAF04 /* DeepLinkRouter.swift in Sources */,
 				5D948F2336DBDB3B71925E84 /* DueLabel.swift in Sources */,
 				4D721AFB724370814CF5D477 /* KeychainHelper.swift in Sources */,
+				8B0E062F3E0495845AF8D931 /* MeasuringBox.swift in Sources */,
 				35DCF7CA9AA1E0E784C31CF3 /* NightDay.swift in Sources */,
 				917AA65E43D8A46805B4E674 /* NotesGlyphPreviews.swift in Sources */,
 				C7402FD42452F9BCB7034518 /* NotificationActionRunner.swift in Sources */,

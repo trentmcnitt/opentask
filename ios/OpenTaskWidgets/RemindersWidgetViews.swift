@@ -156,7 +156,11 @@ private struct RemindersSmallView: View {
                     // No line limit (2026-09-24, never truncate a reminder):
                     // the 2×2 has a fixed card, so a long title SHRINKS into
                     // what's left under the count instead of ending in "…"
-                    // ("Breakfast ( Oatmeal, Berri…" at XXX Large).
+                    // ("Breakfast ( Oatmeal, Berri…" at XXX Large). A
+                    // drop-the-word ladder was tried for the "wee…" report
+                    // (2026-10-26) and rejected on the render: `ViewThatFits`
+                    // can't see that a slight shrink fits, so it dropped the
+                    // count where this shrink keeps it whole.
                     firstItemText(firstItem.text)
                         .font(.caption2)
                         .fontWeight(firstItem.weight)
@@ -1417,7 +1421,7 @@ private struct PromptRow: View {
                         .font(.subheadline)
                         // A P0 reminder title's weight and opacity.
                         .opacity(WidgetTheme.priorityOpacity(0))
-                        .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
+                        .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks, scalesToFit: true))
                         .contentShape(Rectangle())
                         .accessibilityLabel(Text(spokenLabel))
                 }
@@ -1487,7 +1491,7 @@ private struct DonePromptRow: View {
                 Link(destination: WidgetLink.prompt(prompt.promptKey)) {
                     label.text(struck: true)
                         .font(.subheadline)
-                        .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
+                        .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks, scalesToFit: true))
                         .contentShape(Rectangle())
                         .accessibilityLabel(Text(label.spoken))
                 }
@@ -2290,7 +2294,8 @@ private struct RemindersRectangularView: View {
                         .widgetAccentable()
                 }
                 // Shrinks rather than truncating (2026-09-24) — see
-                // `RemindersSmallView`'s title.
+                // `RemindersSmallView`'s title (and why a drop-the-word
+                // ladder was rejected there, 2026-10-26).
                 Text(firstTitle ?? "All clear")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2320,6 +2325,63 @@ private struct RemindersCircularView: View {
         .widgetURL(WidgetLink.reminders)
     }
 }
+
+#if DEBUG
+/// The Lock Screen card in a plain host (2026-10-26): an accessory-family
+/// `#Preview` renders blank in RenderPreview, and a widget extension hosts
+/// widget previews only — so a preview-only widget draws the card's view in
+/// the Lock Screen rectangle's size (iPhone Pro, 172 × 76 pt): the one-item
+/// line with a long weekly prompt, at the default size and XXX Large.
+/// Invented title. Never in the widget bundle.
+struct LockScreenCardPreviewWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "preview.lockScreenCard", provider: RemindersProvider()) { _ in
+            VStack(spacing: 12) {
+                LockScreenCardPreview(size: .large)
+                LockScreenCardPreview(size: .xxxLarge)
+            }
+            .containerBackground(Color.gray, for: .widget)
+        }
+        .supportedFamilies([.systemLarge])
+    }
+}
+
+private struct LockScreenCardPreview: View {
+    let size: DynamicTypeSize
+
+    static var entry: RemindersEntry {
+        let prompt = QuotaPromptDTO(
+            promptKey: "q:9299:0:2026-10-26", taskId: 9299,
+            title: "Make sure the MDX battery toggle is off before leaving the house for the week, and close the garage door",
+            current: 2, target: 6, period: "WEEKLY", stripeColor: "purple", considered: false, done: false,
+            hasNotes: false
+        )
+        let group = ReminderGroupDTO(
+            slot: TimeSlotDTO(id: 9021, label: "Morning", startTime: "08:00"),
+            reminders: [], considered: 0, consideredItems: [], prompts: [prompt]
+        )
+        return RemindersEntry(
+            date: Date(), groups: [group], segments: [], slotIndex: 0, segmentIndex: nil, staleSince: nil,
+            isSignedOut: false, canUndo: false, canRedo: false, actionDescription: nil
+        )
+    }
+
+    var body: some View {
+        RemindersRectangularView(entry: Self.entry)
+            .frame(width: 172, height: 76)
+            .background(Color.black)
+            .foregroundStyle(.white)
+            .environment(\.colorScheme, .dark)
+            .dynamicTypeSize(size)
+    }
+}
+
+#Preview("Lock Screen card — long weekly prompt", as: .systemLarge) {
+    LockScreenCardPreviewWidget()
+} timeline: {
+    LockScreenCardPreview.entry
+}
+#endif
 
 #endif
 
