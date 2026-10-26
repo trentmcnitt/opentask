@@ -5,7 +5,14 @@
  * the same day). Pure: `now` is passed in.
  */
 import { getTimezoneDayBoundaries, openTaskDateLabel } from '@/lib/format-date'
-import { NIGHT_SUFFIX, nightDay, timedDay, wordsAgree } from '@/lib/night-day'
+import {
+  LAST_NIGHT,
+  NIGHT_SUFFIX,
+  capitalized,
+  nightDay,
+  timedDay,
+  wordsAgree,
+} from '@/lib/night-day'
 
 /**
  * Format a label for the separator pill above an activity entry.
@@ -62,7 +69,7 @@ export function formatTimeAgoLabel(
   const weekday = `${timedDay(n).toFormat('cccc')}${night}`
   const yesterday = entryTime >= yesterdayStart.getTime() && entryTime < todayStart.getTime()
   if (yesterday && wordsAgree(n)) {
-    return `Yesterday${night} ${formatTime()}`
+    return `${n.night ? capitalized(LAST_NIGHT) : 'Yesterday'} ${formatTime()}`
   }
 
   // 2–4 days ago: the weekday + time

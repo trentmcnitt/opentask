@@ -217,9 +217,7 @@ function formatOverdue(
   // 10:00 with a 3:00 AM start is Sunday's night), the moment's own weekday
   // where "yesterday" would contradict its date (`nightDayWords`)
   if (due >= yesterdayStart) {
-    const n = nightDay(due, timezone, dayStart, now)
-    const words = n.night && n.gap === -1 ? 'last night' : nightDayWords(n, true)
-    return { relative: words, absolute: time }
+    return { relative: nightDayWords(nightDay(due, timezone, dayStart, now), true), absolute: time }
   }
 
   // Days/weeks/months ago (OpenTask days in timezone)

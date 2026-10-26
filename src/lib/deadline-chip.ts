@@ -26,7 +26,7 @@
  */
 import { DateTime } from 'luxon'
 import { inSafetyNet, isPastDeadline } from '@/lib/task-segments'
-import { nightDay, nightWeekday } from '@/lib/night-day'
+import { LAST_NIGHT, nightDay, nightWeekday } from '@/lib/night-day'
 
 export type DeadlineTone = 'passed' | 'close' | 'ahead'
 
@@ -64,12 +64,12 @@ export function deadlineChip(
   return { text: `Deadline ${words}`, tone, title }
 }
 
-/** "today", "tomorrow", "yesterday", "Fri", "Oct 30" — "… night" on L9's evening-before day. */
+/** "today", "tomorrow", "yesterday", "Fri", "Oct 30" — "… night" on L9's evening-before day ("last night", not "yesterday night"). */
 function dayWords(day: DateTime, gap: number, night: boolean): string {
   const suffix = night ? ' night' : ''
   if (gap === 0) return night ? 'tonight' : 'today'
   if (gap === 1) return `tomorrow${suffix}`
-  if (gap === -1) return `yesterday${suffix}`
+  if (gap === -1) return night ? LAST_NIGHT : 'yesterday'
   if (gap > 1 && gap <= WEEKDAY_WITHIN) return `${day.toFormat('ccc')}${suffix}`
   return `${day.toFormat('LLL d')}${suffix}`
 }

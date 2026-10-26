@@ -609,10 +609,16 @@ const WEEKDAY_NUMBER: Record<string, number> = {
   Saturday: 6,
   Sunday: 7,
 }
-const WORD_OFFSET: Record<string, number> = { today: 0, tonight: 0, tomorrow: 1, yesterday: -1 }
+const WORD_OFFSET: Record<string, number> = {
+  today: 0,
+  tonight: 0,
+  tomorrow: 1,
+  yesterday: -1,
+  'last night': -1,
+}
 const WEEKDAY_RE =
   /\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/
-const WORD_RE = /\b(today|tonight|tomorrow|yesterday)\b/i
+const WORD_RE = /\b(today|tonight|tomorrow|yesterday|last night)\b/i
 const DATE_RE = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2})(?:, (\d{4}))?\b/
 
 /**
@@ -672,11 +678,15 @@ describe("TQ-LN21: a label never pairs one day with another day's date", () => {
   ]
   const TIMES = ['00:30', '01:00', '02:30', '09:00', '22:30', '23:30', '23:47']
 
-  test.each([
+  // One case per day start and "now", so each stays small.
+  const STARTS = [
     { name: '3:00 AM start', dayStart: DAY_START },
     { name: '11 PM start', dayStart: LATE_START },
     { name: 'the switch off (midnight)', dayStart: CALENDAR_DAY_START },
-  ])('TQ-LN21: $name', ({ dayStart }) => {
+  ]
+  const CASES = STARTS.flatMap((start) => NOWS.map((nowLocal) => ({ ...start, nowLocal })))
+
+  test.each(CASES)('TQ-LN21: $name, now $nowLocal', ({ dayStart, nowLocal }) => {
     const problems: string[] = []
     const checked = new Map<string, number>()
     const check = (
@@ -691,7 +701,7 @@ describe("TQ-LN21: a label never pairs one day with another day's date", () => {
       if (r.problem)
         problems.push(`${path} @${now.toFormat('ccc LLL d HH:mm')}: "${label}" — ${r.problem}`)
     }
-    for (const nowLocal of NOWS) {
+    {
       const now = local(nowLocal)
       const nowDt = DateTime.fromJSDate(now).setZone(TZ)
       vi.useFakeTimers({ now })
@@ -750,7 +760,7 @@ describe("TQ-LN21: a label never pairs one day with another day's date", () => {
     }
   })
 
-  test('TQ-LN21b: the night pairs name the evening; overdue in its night is "last night"', () => {
+  test('TQ-LN21b: the night pairs name the evening; yesterday\'s night is "last night" everywhere', () => {
     // Sun Oct 25 12:30, 3:00 AM start: Tue Oct 27 01:00 is Monday night's.
     const sunNoon = local('2026-10-25T12:30')
     expect(formatQuickSelectHeader(iso('2026-10-27T01:00'), TZ, DAY_START, sunNoon)).toBe(
@@ -769,6 +779,27 @@ describe("TQ-LN21: a label never pairs one day with another day's date", () => {
       relative: 'last night',
       absolute: '1:00 AM',
     })
+    // The same night in "Last:", "since", History and the past-deadline chip.
+    const monOne = iso('2026-10-26T01:00')
+    expect(formatLastLogged(monOne, TZ, DAY_START, monTen)).toBe('last night 1:00 AM')
+    expect(
+      formatTaskSince(
+        { rrule: null, due_at: null, original_due_at: null, created_at: monOne },
+        TZ,
+        DAY_START,
+        monTen,
+      )?.label,
+    ).toBe('last night')
+    // History's pill once the entry is a day old (read Tue 02:00, still Monday's day).
+    const tueTwo = local('2026-10-27T02:00')
+    expect(formatTimeAgoLabel({ created_at: monOne }, tueTwo.getTime(), TZ, DAY_START)).toBe(
+      'Last night 1:00 AM',
+    )
+    expect(deadlineChip(monOne, TZ, monTen, DAY_START).text).toBe('Past deadline last night')
+    // The header for a past night moment: "Last night", with the evening's date.
+    expect(formatQuickSelectHeader(monOne, TZ, DAY_START, monTen)).toBe(
+      'Last night, Oct 25, 1:00 AM',
+    )
     expect(formatDueTimeParts(iso('2026-10-26T01:00'), TZ, CALENDAR_DAY_START, monTen)).toEqual({
       relative: '9h ago',
       absolute: '1:00 AM',
