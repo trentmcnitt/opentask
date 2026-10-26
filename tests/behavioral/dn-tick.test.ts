@@ -53,7 +53,11 @@ import {
 } from '@/core/notifications/tick'
 import { MINUTE_TICK_SOURCES } from '@/core/notifications/minute-tick'
 import { sendPushNotification } from '@/core/notifications/web-push'
-import { sendApnsNotification, sendApnsSlotReminder } from '@/core/notifications/apns'
+import {
+  sendApnsDeadlinesNag,
+  sendApnsNotification,
+  sendApnsSlotReminder,
+} from '@/core/notifications/apns'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -184,6 +188,49 @@ describe('DN-T01 the lead pick (assignDeliveries, pure)', () => {
       'reminder_medium',
       'period',
       'deadlines',
+    ])
+  })
+})
+
+/**
+ * Trent, 2026-10-26 (on #362): the lead is the highest-ranked send that would
+ * SOUND on its own. A silent one (period pushes and nags, the deadlines nag
+ * and its safety net) never leads a minute in which something sounds; with
+ * nothing sounding, the highest-ranked leads silently, suffix and all.
+ */
+describe('DN-T06 silent sends never take the lead from a sounding one (pure)', () => {
+  test('a safety net and a Medium overdue: the Medium leads and sounds', () => {
+    const planned = assignDeliveries([
+      send('deadlines_safety_net', { items: 2, silent: true }),
+      send('overdue_medium'),
+    ])
+    expect(planned.map((p) => [p.kind, p.delivery])).toEqual([
+      ['deadlines_safety_net', { passive: true, suffix: null }],
+      ['overdue_medium', { passive: false, suffix: ' · 2 more waiting' }],
+    ])
+  })
+
+  test('an all-silent minute: the highest-ranked leads, silently, with the suffix', () => {
+    const planned = assignDeliveries([
+      send('period', { items: 3, silent: true }),
+      send('deadlines_safety_net', { items: 2, silent: true }),
+    ])
+    expect(planned.map((p) => [p.kind, p.delivery])).toEqual([
+      ['period', { passive: true, suffix: null }],
+      ['deadlines_safety_net', { passive: false, suffix: ' · 3 more waiting' }],
+    ])
+  })
+
+  test('the lowest sounding send still outranks every silent one', () => {
+    const planned = assignDeliveries([
+      send('deadlines_safety_net', { silent: true }),
+      send('period', { items: 2, silent: true }),
+      send('overdue_other'),
+    ])
+    expect(planned.map((p) => p.delivery)).toEqual([
+      { passive: true, suffix: null },
+      { passive: true, suffix: null },
+      { passive: false, suffix: ' · 3 more waiting' },
     ])
   })
 })
@@ -350,5 +397,91 @@ describe('DN-T05 the After School / Dinnertime handover', () => {
       '18:00 Dinnertime: (opens)',
       '19:00 Dinnertime: 1 reminder waiting, and 1 earlier slot',
     ])
+  })
+})
+
+/**
+ * DN-T07: the same ruling through the real senders, with the task queue on
+ * (the deadlines page exists) — the senders themselves mark their sends
+ * silent. Tue 2026-10-20 10:00; a deadline tomorrow puts a row in the
+ * safety net, whose nag has never sent, so it is due at 10:00.
+ */
+describe('DN-T07 silent senders, end to end', () => {
+  const day = (hhmm: string) => DateTime.fromISO(`2026-10-20T${hhmm}`, { zone: tz }).toJSDate()
+  const inNet = (priority: number) =>
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      input: {
+        title: 'Synthetic deadline task',
+        deadline_at: DateTime.fromISO('2026-10-21T23:59', { zone: tz }).toUTC().toISO()!,
+        priority,
+      },
+    })
+
+  beforeEach(() => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    vi.setSystemTime(day('09:00'))
+    setupTestDb()
+    getDb()
+      .prepare(
+        "UPDATE users SET day_start_time = '06:30', last_rollover_date = '2026-10-20' WHERE id = ?",
+      )
+      .run(TEST_USER_ID)
+    vi.clearAllMocks()
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  test('a safety net and a Medium overdue: the Medium leads and sounds; the net goes passive', async () => {
+    periods([['Morning', '06:30']])
+    inNet(2)
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      input: { title: 'Synthetic task', due_at: iso(day('10:00')), priority: 2 },
+    })
+    await runTick(sources(), day('10:00'), CHANNELS)
+
+    expect(vi.mocked(sendApnsNotification).mock.calls[0][1]).toMatchObject({
+      body: 'Overdue task · 1 more waiting',
+      interruptionLevel: 'active',
+    })
+    expect(sendApnsDeadlinesNag).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      expect.objectContaining({ body: 'Deadline tomorrow: 1 unplanned', passive: true }),
+    )
+  })
+
+  test('an all-silent minute: the safety net leads silently with the suffix; the period push goes passive', async () => {
+    periods([
+      ['Morning', '06:30'],
+      ['Late morning', '10:00'],
+    ])
+    inNet(2)
+    createTask({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      input: {
+        title: 'Synthetic reminder',
+        is_reminder: true,
+        rrule: 'FREQ=DAILY',
+        due_at: iso(day('10:00')),
+      },
+    })
+    await runTick(sources(), day('10:00'), CHANNELS)
+
+    expect(sendApnsNotification).not.toHaveBeenCalled()
+    expect(sendApnsDeadlinesNag).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      expect.objectContaining({
+        body: 'Deadline tomorrow: 1 unplanned · 1 more waiting',
+        passive: false,
+      }),
+    )
+    expect(vi.mocked(sendApnsSlotReminder).mock.calls[0][1]).toMatchObject({
+      slotLabel: 'Late morning',
+      passive: true,
+      suffix: undefined,
+    })
   })
 })

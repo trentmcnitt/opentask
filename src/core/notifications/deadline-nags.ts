@@ -55,9 +55,11 @@
  * compare-and-swap), and after downtime the first tick sends. A priority
  * rising mid-interval sends as soon as the new rung's mark has come.
  *
- * ONE ALERT PER TICK (tick.ts): a safety-net nag ranks above Medium overdue,
- * a plain one last of all; when another push leads the minute, the APNs
- * banner goes passive (Web Push is silent anyway).
+ * ONE ALERT PER TICK (tick.ts): the nag is silent by its own rule, so it
+ * never leads a minute in which an overdue push would sound (Trent,
+ * 2026-10-26); it then goes out passive on APNs (Web Push is silent anyway).
+ * Among silent sends only, a safety-net nag ranks above the period pushes, a
+ * plain one last of all.
  *
  * Off: the task-queue switch off (no page), notifications off, the demo user
  * (`notifiableUsers`). Split like slot-nags.ts: a read-only decision
@@ -300,6 +302,9 @@ export function planDeadlineNagSends(now: Date, channels: Channels): SourcePlan 
       userId: nag.userId,
       kind: nag.safetyNet ? 'deadlines_safety_net' : 'deadlines',
       items: nag.count,
+      // Silent on both channels (rulings 4 and 5), the safety net too: never
+      // leads a minute in which something sounds (tick.ts).
+      silent: true,
       claim: () => {
         const won = claimNagSend(
           nag.userId,

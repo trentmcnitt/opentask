@@ -216,6 +216,8 @@ export function planSlotReminderSends(now: Date, channels: Channels): SourcePlan
       userId: item.userId,
       kind: 'period',
       items: item.count + item.promptCount,
+      // A silent banner (ruling 5): never leads a minute something sounds in.
+      silent: true,
       // The slot's own banner counts as the nag's last send (nag-sends.ts):
       // the nag then waits for the mark after it, instead of following it a
       // minute later. Always claimed: a slot opening is not deduped.

@@ -45,8 +45,9 @@
  * Do not add them back without Trent.
  *
  * ONE ALERT PER TICK (2026-10-26, tick.ts). The nag is a `period` send of the
- * minute's tick: when an overdue push (or a deadlines safety net) leads the
- * same minute, the nag still goes out but passive.
+ * minute's tick, silent by its own rule: when an overdue push sounds in the
+ * same minute it leads, and the nag still goes out but passive. Among silent
+ * sends only, a deadlines safety net outranks it.
  *
  * WHY IT LOOKS LIKE A BUG: REDESIGN-V03 §6 says a reminder carries no debt,
  * and `slot-reminders.ts` states the principle outright — "a missed slot is a
@@ -278,6 +279,8 @@ export function planSlotNagSends(now: Date, channels: Channels): SourcePlan {
       userId: nag.userId,
       kind: 'period',
       items: nag.itemCount,
+      // A silent banner (ruling 5): never leads a minute something sounds in.
+      silent: true,
       claim: () => claimNagSend(nag.userId, SLOT_NAG_KEY, nag.intervalMinutes, now, nag.timezone),
       // Same category, same slot identity, same collapse key as the slot's own
       // push — so the long-press checklist, the deep link and the action

@@ -9,24 +9,31 @@
  *  1. CLAIMS — each candidate's `claim` runs (the `nag_sends` compare-and-swap
  *     of the nags, the slot-open push's stamp), in source order. A lost claim
  *     drops the candidate: some other tick already sent it.
- *  2. PICKS THE LEAD — the candidate highest in `LEAD_ORDER` (a tie: the
- *     sender's own order, so the overdue checker's "highest priority, most
- *     overdue first" stands). The lead keeps its level and its sound, and its
+ *  2. PICKS THE LEAD — the candidate highest in `LEAD_ORDER` among those that
+ *     would SOUND on their own (a tie: the sender's own order, so the overdue
+ *     checker's "highest priority, most overdue first" stands). A send that
+ *     is silent by its own rule (`silent`: the slot-open push and the slot
+ *     nag, the deadlines nag and its safety net — ruling 5, sound only on
+ *     overdue) never takes the lead from one that sounds (Trent, 2026-10-26,
+ *     on #362: otherwise a safety net beside a Medium overdue left the minute
+ *     with no sound at all). Only when nothing this minute would sound does
+ *     the highest-ranked silent send lead — silently, as built. The lead
+ *     keeps its level and its sound, and its
  *     body gets " · N more waiting", N being every OTHER thing this tick's
  *     banners speak for (an overdue banner is 1, a summary its overflow, a
  *     period push or nag its waiting items, the deadlines nag its rows).
  *     The suffix is a snapshot and can go stale — accepted (Trent).
- *  3. MARKS THE REST PASSIVE — still one banner per item, each with its own
- *     actions, but APNs `interruption-level: passive` with no sound, and
- *     `silent` on Web Push. EXCEPT Urgent overdue: critical always, lead or
- *     not (`alwaysAlerts`).
+ *  3. MARKS THE REST PASSIVE — the silent ones included: still one banner
+ *     per item, each with its own actions, but APNs `interruption-level:
+ *     passive` with no sound, and `silent` on Web Push. EXCEPT Urgent
+ *     overdue: critical always, lead or not (`alwaysAlerts`).
  *  4. DELIVERS everything, then each source's after-step (the overdue
  *     checker's badge-only pushes).
  *
  * A user with one candidate gets exactly what the sender built — no suffix,
  * nothing passive.
  *
- * THE LEAD ORDER (Trent): Urgent overdue › High overdue › Urgent reminder ›
+ * THE LEAD ORDER (Trent), among the sends that sound: Urgent overdue › High overdue › Urgent reminder ›
  * High reminder › deadlines safety net › Medium overdue › other overdue ›
  * Medium reminder › period › deadlines nag. The reminder kinds are PR 2's
  * named reminder pushes; nothing produces them yet. "Period" is the slot-open
@@ -93,6 +100,11 @@ export interface TickSend {
   items: number
   /** Never passive: Urgent overdue is critical, lead or not. */
   alwaysAlerts?: boolean
+  /**
+   * Makes no sound by its own rule (period pushes and nags, the deadlines nag
+   * and its safety net). Never leads a minute in which something sounds.
+   */
+  silent?: boolean
   /** Run before the lead is picked; false drops the send (a lost `nag_sends` claim). */
   claim?: () => boolean
   deliver: (delivery: Delivery) => Promise<void>
@@ -132,9 +144,19 @@ export function moreWaitingSuffix(n: number): string {
 }
 
 /**
- * Pure: per user, the lead (first in LEAD_ORDER, a tie to the earlier send)
- * keeps its level and gets the "N more" suffix; the rest go passive unless
- * they always alert. Order of the input is kept in the output.
+ * The minute's lead: the highest-ranked send that would sound on its own (a
+ * tie to the earlier send); with nothing sounding, the highest-ranked of all.
+ */
+function pickLead(list: TickSend[]): TickSend {
+  const sounding = list.filter((s) => !s.silent)
+  const pool = sounding.length > 0 ? sounding : list
+  return pool.reduce((best, s) => (rank(s.kind) < rank(best.kind) ? s : best))
+}
+
+/**
+ * Pure: per user, the lead (`pickLead`) keeps its level and gets the "N
+ * more" suffix; the rest go passive unless they always alert. Order of the
+ * input is kept in the output.
  */
 export function assignDeliveries(sends: TickSend[]): PlannedSend[] {
   const byUser = new Map<number, TickSend[]>()
@@ -149,7 +171,7 @@ export function assignDeliveries(sends: TickSend[]): PlannedSend[] {
       deliveries.set(list[0], AS_BUILT)
       continue
     }
-    const lead = list.reduce((best, s) => (rank(s.kind) < rank(best.kind) ? s : best))
+    const lead = pickLead(list)
     const others = list.reduce((n, s) => (s === lead ? n : n + s.items), 0)
     for (const send of list) {
       if (send === lead) deliveries.set(send, { passive: false, suffix: moreWaitingSuffix(others) })
