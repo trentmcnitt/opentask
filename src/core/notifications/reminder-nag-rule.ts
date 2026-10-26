@@ -1,7 +1,14 @@
 /**
- * WHICH REMINDERS GET THEIR OWN PUSH (2026-10-26; plan "named pushes and
- * marks" Part A). A leaf module — no imports — so the period push, the
- * period nag and the named pushes read one rule.
+ * WHICH REMINDERS — AND QUOTA PROMPTS — GET THEIR OWN PUSH (2026-10-26; plan
+ * "named pushes and marks" Part A, and Push PR 4 for prompts). A leaf module
+ * — no imports — so the period push, the period nag and the named pushes
+ * read one rule.
+ *
+ * QUOTA PROMPTS FOLLOW THE SAME RULE (Push PR 4, 2026-10-26): a waiting
+ * prompt whose QUOTA is Medium or above is pushed by name
+ * (prompt-nags.ts) and left out of its period's push and nag; None and Low
+ * prompts stay in the period's count. The quota's priority is the one dial,
+ * as for reminders.
  *
  * PRIORITY IS THE ONE DIAL (Trent, 2026-10-26: "Turn off every nag-specific
  * option for reminders"). A reminder at Medium or above is pushed BY NAME
@@ -32,4 +39,13 @@ export function isNamedReminderPriority(priority: number | null | undefined): bo
  */
 export function getsNamedPush(reminder: { priority: number | null | undefined }): boolean {
   return isNamedReminderPriority(reminder.priority)
+}
+
+/**
+ * Whether a waiting quota prompt is pushed by name (prompt-nags.ts) and so
+ * left out of its period's push and nag: by its quota's priority alone
+ * (`QuotaPrompt.priority` is the quota task's).
+ */
+export function promptGetsNamedPush(prompt: { priority: number | null | undefined }): boolean {
+  return isNamedReminderPriority(prompt.priority)
 }

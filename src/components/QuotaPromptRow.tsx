@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
-import { freqLabel, trackState, trackStripeClass } from '@/lib/track'
-import { movedPromptConfig, ordinal, type QuotaPrompt } from '@/lib/quota-prompts'
+import { trackState, trackStripeClass } from '@/lib/track'
+import { movedPromptConfig, ordinal, promptCountText, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
@@ -127,15 +127,6 @@ export interface QuotaPromptRowProps {
    * anchor nothing to measure, and the bubble opened off screen.
    */
   bubble?: (row: React.ReactElement) => React.ReactNode
-}
-
-/**
- * "3/5 this week" — the prompt's own count and its period, for the did-it
- * button's name. An interval quota's served end ("3/5 by Oct 24") wins.
- */
-function countText(prompt: QuotaPrompt): string {
-  const period = prompt.period_label ?? freqLabel(prompt.period)
-  return `${prompt.current}/${prompt.target}${period ? ` ${period}` : ''}`
 }
 
 export function QuotaPromptRow({
@@ -389,7 +380,7 @@ function PromptDidButton({
       }}
       onPointerDown={(e) => e.stopPropagation()}
       tabIndex={-1}
-      aria-label={`Did "${prompt.title}" (${countText(prompt)})`}
+      aria-label={`Did "${prompt.title}" (${promptCountText(prompt)})`}
       title="Did it — log one"
       data-prompt-did
       // While selecting, the row offers only its checkbox, as a reminder

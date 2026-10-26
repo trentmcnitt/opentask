@@ -166,8 +166,11 @@ function namedReminderCandidates(userId: number): NamedReminderCandidate[] {
     .all(REMINDER_NAG_KEY_PREFIX, userId, NAMED_REMINDER_MIN_PRIORITY) as NamedReminderCandidate[]
 }
 
-/** Today's OpenTask day for a user, and when each of its periods that has opened opened. */
-function openedPeriods(
+/**
+ * Today's OpenTask day for a user, and when each of its periods that has
+ * opened opened. Shared with the named quota-prompt pushes (prompt-nags.ts).
+ */
+export function openedPeriods(
   userId: number,
   timezone: string,
   now: Date,

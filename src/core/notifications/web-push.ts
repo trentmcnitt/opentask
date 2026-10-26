@@ -17,9 +17,10 @@ interface PushPayload {
   /**
    * `taskId` is what a `dismiss` push matches (public/sw.js); `reminder_day`
    * (a named reminder push, reminder-nags.ts) is the OpenTask date the
-   * Considered button sends back as `day`.
+   * Considered button sends back as `day`; `prompt_key` (a named quota-prompt
+   * push, prompt-nags.ts) is what its Considered and Did it buttons send.
    */
-  data?: { url?: string; taskId?: number; reminder_day?: string }
+  data?: { url?: string; taskId?: number; reminder_day?: string; prompt_key?: string }
   tag?: string
   /** Buttons on the banner (`showNotification`'s `actions`); public/sw.js handles each `action`. */
   actions?: { action: string; title: string }[]

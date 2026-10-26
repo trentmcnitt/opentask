@@ -14,6 +14,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { namedPushEndCheck } from '@/core/notifications/reminder-nags'
+import { promptPushEndCheckForEdit } from '@/core/notifications/prompt-nags'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { dayBoundaryForUser } from './rollover-time'
@@ -123,6 +124,9 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // Whether this reminder's named push stands before the edit (only asked of
   // an edit that could end it): if it no longer stands after, its banner goes.
   const endedNamedPush = namedPushEndCheck(task, data.fieldsChanged)
+  // The same for a quota's named prompt pushes (prompt-nags.ts): priority
+  // below Medium, no longer a quota, its prompt moved to another period.
+  const endedPromptPush = promptPushEndCheckForEdit(task, data.fieldsChanged)
 
   // Relative targets (2026-10-24): the period a linked target follows, named
   // in the description ("Target the day before at Evening (8:30 PM)").
@@ -203,12 +207,14 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // task's delivered notification stale: dismiss it everywhere and resync the
   // badge. So does an edit that ends a reminder's named push (priority below
   // Medium, converted to a task, moved to Anytime or off today:
-  // `namedPushStands`, reminder-nags.ts). Any other field leaves the
+  // `namedPushStands`, reminder-nags.ts), or one that ends a quota's named
+  // prompt push (`promptPushEndCheckForEdit`). Any other field leaves the
   // notification as true as it was.
   if (
     result.fieldsChanged.includes('due_at') ||
     result.fieldsChanged.includes('done') ||
-    endedNamedPush()
+    endedNamedPush() ||
+    endedPromptPush()
   ) {
     dismissNotificationsForTasks(userId, [taskId])
   }

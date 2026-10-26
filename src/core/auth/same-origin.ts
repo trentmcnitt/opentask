@@ -1,7 +1,8 @@
 /**
  * SAME-ORIGIN CHECK for a cookie-authenticated POST (2026-10-26; first used by
  * POST /api/notifications/actions, whose cookie path is the service worker's
- * "Considered" button).
+ * "Considered" button; since Push PR 4 also POST /api/quota-prompts/consider
+ * and /did, the named quota-prompt push's "Considered" and "Did it").
  *
  * The session cookie is SameSite=Lax (NextAuth's default — `auth.ts` sets no
  * cookie options — and the cookie `session-from-token` mints), so a browser
@@ -19,6 +20,7 @@
  */
 
 import type { NextRequest } from 'next/server'
+import { getRequestContext } from '@/core/request-context'
 
 function originOf(url: string | undefined): string | null {
   if (!url) return null
@@ -51,4 +53,15 @@ export function isSameOriginRequest(request: NextRequest): boolean {
   if (request.headers.get('sec-fetch-site') === 'same-origin') return true
   const origin = request.headers.get('origin')
   return origin !== null && appOrigins(request).has(origin)
+}
+
+/**
+ * Whether an AUTHENTICATED request must be refused as cross-site: it was
+ * authenticated by the session cookie (not a Bearer or body token, not the
+ * proxy header — the request context's `authMethod`, set by the auth step)
+ * and does not say it is same-origin. Call it after authenticating.
+ */
+export function isCrossSiteCookieRequest(request: NextRequest): boolean {
+  const method = getRequestContext()?.authMethod
+  return method !== 'token' && method !== 'proxy' && !isSameOriginRequest(request)
 }

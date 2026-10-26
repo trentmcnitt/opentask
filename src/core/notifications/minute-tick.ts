@@ -9,7 +9,11 @@
  *     minute rather than putting a second banner beside it;
  *  4. the named reminder pushes (Medium+ reminders, reminder-nags.ts) — their
  *     own `nag_sends` rows, so where they sit only breaks lead-order ties;
- *  5. the deadlines-page nag.
+ *  5. the named quota-prompt pushes (Medium+ quotas' prompts, prompt-nags.ts,
+ *     Push PR 4) — after the reminders on purpose: a prompt ranks with the
+ *     reminder of its priority (tick.ts `SAME_RANK`), and the tie goes to the
+ *     reminder;
+ *  6. the deadlines-page nag.
  *
  * `scripts/count-pushes.ts` plans this same list without delivering.
  */
@@ -18,6 +22,7 @@ import { OVERDUE_SOURCE } from '@/core/notifications/overdue-checker'
 import { SLOT_REMINDER_SOURCE } from '@/core/notifications/slot-reminders'
 import { SLOT_NAG_SOURCE } from '@/core/notifications/slot-nags'
 import { REMINDER_NAG_SOURCE } from '@/core/notifications/reminder-nags'
+import { PROMPT_NAG_SOURCE } from '@/core/notifications/prompt-nags'
 import { DEADLINE_NAG_SOURCE } from '@/core/notifications/deadline-nags'
 import { runTick, type TickSource } from '@/core/notifications/tick'
 
@@ -26,6 +31,7 @@ export const MINUTE_TICK_SOURCES: readonly TickSource[] = [
   SLOT_REMINDER_SOURCE,
   SLOT_NAG_SOURCE,
   REMINDER_NAG_SOURCE,
+  PROMPT_NAG_SOURCE,
   DEADLINE_NAG_SOURCE,
 ]
 

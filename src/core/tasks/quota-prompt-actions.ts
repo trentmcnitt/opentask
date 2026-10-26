@@ -31,6 +31,11 @@
  * `quota_day_state` together, so an undone "did it" brings the prompt back
  * with its count. Each quota's expired period is closed inline first, as a
  * +1 does (`rolloverQuotaNow`), so an action at 00:02 counts for today.
+ *
+ * A prompt pushed by name (Medium+ quotas, prompt-nags.ts) that an action
+ * ends has its delivered banner dismissed after the commit
+ * (`promptPushEndCheck`): consider and did it here, and the mixed batch in
+ * `bulkDone`.
  */
 
 import type Database from 'better-sqlite3'
@@ -39,6 +44,8 @@ import { createQuotaSnapshot, logAction } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import { promptPushEndCheck } from '@/core/notifications/prompt-nags'
 import { ownerTimezone } from './progress'
 import { formatTaskResponse } from '@/lib/format-task'
 import {
@@ -302,6 +309,8 @@ export function actOnPrompts(options: {
   const { userId, userTimezone, actions, now = new Date(), source } = options
   if (actions.length === 0) return { considered: 0, did: 0, tasks: [] }
   const planned = planPromptActions(userId, userTimezone, actions, now)
+  // A prompt pushed by name (prompt-nags.ts) that this ends: its banner goes.
+  const endedPromptPush = promptPushEndCheck(userId, [...new Set(planned.map((p) => p.taskId))])
 
   const result = withTransaction((tx) => {
     const executed = executePromptActions(tx, userId, userTimezone, planned, now, source)
@@ -317,6 +326,11 @@ export function actOnPrompts(options: {
   })
 
   emitSyncEvent(userId)
+  // Considered or did it: a named prompt push it ended is stale everywhere.
+  // Only when one was pushed today and stood (`promptPushEndCheck`), so a
+  // tap on the Reminders screen costs no dismiss push otherwise.
+  const ended = endedPromptPush()
+  if (ended.length > 0) dismissNotificationsForTasks(userId, ended)
   dispatchProgressed(userId, result.progressed)
   const ids = [...new Set(planned.map((p) => p.taskId))]
   return {

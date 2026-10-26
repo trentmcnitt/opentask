@@ -11,7 +11,15 @@
  */
 
 import { describe, test, expect, beforeEach } from 'vitest'
-import { apiFetch, apiFetchB, apiAnon, resetTestData } from './helpers'
+import {
+  apiFetch,
+  apiFetchB,
+  apiAnon,
+  baseUrl,
+  resetTestData,
+  sessionCookieFromToken,
+  TOKEN_A,
+} from './helpers'
 
 interface Prompt {
   prompt_key: string
@@ -308,6 +316,123 @@ describe('POST /api/quota-prompts/consider and /did', () => {
     ).toBe(400)
     const task = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
     expect(task.progress_current).toBe(0)
+  })
+})
+
+/**
+ * CSRF (Push PR 4, 2026-10-26): the named quota-prompt push's "Considered"
+ * and "Did it" buttons (public/sw.js) call these routes with the session
+ * cookie alone, so a request authenticated by the cookie must also say it is
+ * same-origin — `Sec-Fetch-Site: same-origin`, or an `Origin` equal to the
+ * app's own — else 403, nothing changed. Bearer requests (the native apps,
+ * which send no Origin) are not checked. The checks of POST
+ * /api/notifications/actions, made the same way (`isCrossSiteCookieRequest`).
+ */
+describe('POST /api/quota-prompts/consider and /did — session auth', () => {
+  beforeEach(async () => {
+    await resetTestData()
+  })
+
+  function postWithCookie(
+    path: string,
+    cookie: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ) {
+    return apiAnon(path, { method: 'POST', headers: { Cookie: cookie, ...headers }, body })
+  }
+
+  test.each(['consider', 'did'])(
+    '%s: a cookie POST with a cross-site Origin is a 403, nothing changes',
+    async (verb) => {
+      const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+      const [prompt] = await allPrompts()
+      const cookie = await sessionCookieFromToken(TOKEN_A)
+      const res = await postWithCookie(
+        `/api/quota-prompts/${verb}`,
+        cookie,
+        {
+          keys: [prompt.prompt_key],
+        },
+        { Origin: 'https://attacker.example', 'Sec-Fetch-Site': 'cross-site' },
+      )
+      expect(res.status).toBe(403)
+      expect((await allPrompts())[0]).toMatchObject({ considered: false, done: false })
+      const task = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+      expect(task.progress_current).toBe(0)
+    },
+  )
+
+  test.each(['consider', 'did'])(
+    '%s: a cookie POST with neither Origin nor Sec-Fetch-Site is a 403',
+    async (verb) => {
+      await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+      const [prompt] = await allPrompts()
+      const cookie = await sessionCookieFromToken(TOKEN_A)
+      const res = await postWithCookie(
+        `/api/quota-prompts/${verb}`,
+        cookie,
+        { keys: [prompt.prompt_key] },
+        {},
+      )
+      expect(res.status).toBe(403)
+      expect((await allPrompts())[0]).toMatchObject({ considered: false, done: false })
+    },
+  )
+
+  test('consider: a same-origin cookie POST (Sec-Fetch-Site, the service worker’s) is a 200', async () => {
+    await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await postWithCookie(
+      '/api/quota-prompts/consider',
+      cookie,
+      { keys: [prompt.prompt_key] },
+      { 'Sec-Fetch-Site': 'same-origin' },
+    )
+    expect(res.status).toBe(200)
+    expect((await allPrompts())[0]).toMatchObject({ considered: true, done: false })
+  })
+
+  test('did: a cookie POST whose Origin is the app’s own is a 200', async () => {
+    const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await postWithCookie(
+      '/api/quota-prompts/did',
+      cookie,
+      { keys: [prompt.prompt_key], source: 'web' },
+      { Origin: new URL(baseUrl()).origin },
+    )
+    expect(res.status).toBe(200)
+    const task = (await (await apiFetch(`/api/tasks/${quota.id}`)).json()).data
+    expect(task.progress_current).toBe(1)
+  })
+
+  test.each(['consider', 'did'])(
+    '%s: a Bearer POST with a foreign Origin is still a 200 (only the cookie is checked)',
+    async (verb) => {
+      await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+      const [prompt] = await allPrompts()
+      const res = await apiFetch(`/api/quota-prompts/${verb}`, {
+        method: 'POST',
+        headers: { Origin: 'https://attacker.example', 'Sec-Fetch-Site': 'cross-site' },
+        body: { keys: [prompt.prompt_key] },
+      })
+      expect(res.status).toBe(200)
+    },
+  )
+
+  test('another day’s key over the cookie, same-origin: a 400 (the banner’s no-op)', async () => {
+    const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const cookie = await sessionCookieFromToken(TOKEN_A)
+    const res = await postWithCookie(
+      '/api/quota-prompts/consider',
+      cookie,
+      { keys: [`q:${quota.id}:0:2020-01-01`] },
+      { 'Sec-Fetch-Site': 'same-origin' },
+    )
+    expect(res.status).toBe(400)
   })
 })
 

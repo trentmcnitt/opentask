@@ -7,7 +7,7 @@
  * need to agree on: a prompt's identity, and how a day's record reads.
  */
 import { openTaskDayOf } from '@/lib/opentask-day'
-import { quotaPeriodOf } from '@/lib/track'
+import { freqLabel, quotaPeriodOf } from '@/lib/track'
 import type { LabelColor, QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
@@ -100,6 +100,20 @@ export function comparePrompts(
     a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
     a.task_id - b.task_id
   )
+}
+
+/**
+ * "3/5 this week" — a prompt's own count and its period: the did-it button's
+ * name on the prompt row (`QuotaPromptRow`) and the body of a prompt's named
+ * push (prompt-nags.ts, "Morning · 3/5 this week"), so the two always say the
+ * same. An interval quota's served end wins ("3/5 by Oct 24"); a period-less
+ * quota is the count alone.
+ */
+export function promptCountText(
+  prompt: Pick<QuotaPrompt, 'current' | 'target' | 'period' | 'period_label'>,
+): string {
+  const period = prompt.period_label ?? freqLabel(prompt.period)
+  return `${prompt.current}/${prompt.target}${period ? ` ${period}` : ''}`
 }
 
 /** Is a prompt still waiting for today? */
@@ -321,6 +335,52 @@ export function assignDailyNumbers(
     )
   }
   return out
+}
+
+/** One prompt row a quota puts in a period today, before its state is read. */
+export interface PromptPlacement {
+  /** Index into the user's slots (sorted by start); -1 = the un-slotted group. */
+  slotIndex: number
+  /** The key's `k`: a daily quota's highest number in this period, 0 otherwise. */
+  number: number
+  /** Daily: every number this row stands for, ascending; `null` otherwise. */
+  numbers: number[] | null
+}
+
+/**
+ * Where a quota's prompt rows go today — the placement half of
+ * `getQuotaPromptsBySlot`, pure, so the named prompt pushes' cheap gate
+ * (prompt-nags.ts) reads the same rows from a task row alone.
+ *
+ * - Daily: one row per period its numbers 1..N sit in (`assignDailyNumbers`),
+ *   keyed by the highest number there.
+ * - Every other quota: one row, in its period (`resolvePromptSlot`), k = 0.
+ */
+export function promptPlacements(
+  task: Pick<Task, 'rrule' | 'progress_target' | 'quota_prompt_config'>,
+  slots: Pick<TimeSlot, 'id'>[],
+  userDefault: number | null,
+): PromptPlacement[] {
+  const config = task.quota_prompt_config ?? null
+  if (!isDailyQuota(task)) {
+    return [
+      {
+        slotIndex: resolvePromptSlot(slots, config?.slot_id, userDefault),
+        number: 0,
+        numbers: null,
+      },
+    ]
+  }
+  const target = Math.max(1, task.progress_target ?? 1)
+  const numbersIn = new Map<number, number[]>()
+  assignDailyNumbers(target, slots, config, userDefault).forEach((slotIndex, i) =>
+    numbersIn.set(slotIndex, [...(numbersIn.get(slotIndex) ?? []), i + 1]),
+  )
+  return [...numbersIn].map(([slotIndex, numbers]) => ({
+    slotIndex,
+    number: numbers[numbers.length - 1],
+    numbers,
+  }))
 }
 
 /**

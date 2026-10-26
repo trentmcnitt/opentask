@@ -35,8 +35,7 @@ import { NextRequest } from 'next/server'
 import { success, unauthorized, badRequest, forbidden, handleError } from '@/lib/api-response'
 import { validateBearerToken } from '@/core/auth/bearer'
 import { getAuthUser } from '@/core/auth'
-import { isSameOriginRequest } from '@/core/auth/same-origin'
-import { getRequestContext } from '@/core/request-context'
+import { isCrossSiteCookieRequest } from '@/core/auth/same-origin'
 import { reminderWaitingOn } from '@/core/notifications/reminder-nags'
 import { markDone, snoozeTask, deleteTask } from '@/core/tasks'
 import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
@@ -70,8 +69,7 @@ async function actionUser(request: NextRequest, token: unknown): Promise<AuthUse
   }
   const user = await getAuthUser(request)
   if (!user) return unauthorized('Token required')
-  const method = getRequestContext()?.authMethod
-  if (method !== 'token' && method !== 'proxy' && !isSameOriginRequest(request)) {
+  if (isCrossSiteCookieRequest(request)) {
     log.warn(
       'notifications',
       `Action refused: cookie-authenticated request for user ${user.id} is not same-origin ` +

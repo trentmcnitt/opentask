@@ -3,7 +3,8 @@
  * plan "named pushes and marks" Part D).
  *
  * Each minute every sender (the overdue checker, the slot-open push, the slot
- * nag, the named reminder pushes, the deadlines nag) PRODUCES its
+ * nag, the named reminder pushes, the named quota-prompt pushes, the
+ * deadlines nag) PRODUCES its
  * candidate sends instead of sending them. This module then, per user:
  *
  *  1. CLAIMS — first the MINUTE, per sender and user (`claimTickMinute`, a
@@ -17,7 +18,7 @@
  *     would SOUND on their own (a tie: the sender's own order, so the overdue
  *     checker's "highest priority, most overdue first" stands). A send that
  *     is silent by its own rule (`silent`: the slot-open push and the slot
- *     nag, a Medium named reminder push, the deadlines nag and its safety net
+ *     nag, a Medium named reminder or prompt push, the deadlines nag and its safety net
  *     — ruling 5, sound only on overdue) never takes the lead from one that sounds (Trent, 2026-10-26,
  *     on #362: otherwise a safety net beside a Medium overdue left the minute
  *     with no sound at all). Only when nothing this minute would sound does
@@ -46,14 +47,18 @@
  * High reminder › deadlines safety net › Medium overdue › other overdue ›
  * Medium reminder › period › deadlines nag. The reminder kinds are the named
  * reminder pushes (reminder-nags.ts): High and Urgent sound, Medium is silent.
+ * A named quota-prompt push (prompt-nags.ts, Push PR 4) RANKS WITH the
+ * reminder of its quota's priority (`SAME_RANK`): a High prompt ties a High
+ * reminder, and the tie goes to the sender's order (reminders are planned
+ * first). Its own kinds (`prompt_*`) keep the projection's counts apart.
  * "Period" is the slot-open
  * push and the slot nag alike (the nag stands down the minute a slot opens,
  * so the two never meet for one user). An overdue summary ranks with its
  * bucket (High's with High overdue, the regular one with other overdue).
  *
- * WEB PUSH: only the overdue checker, the named reminder pushes and the
- * deadlines nag send there (slot pushes are APNs only), and the deadlines nag
- * and a Medium reminder push are always silent there. So on a tick led by a
+ * WEB PUSH: only the overdue checker, the named reminder and prompt pushes
+ * and the deadlines nag send there (slot pushes are APNs only), and the
+ * deadlines nag and a Medium reminder or prompt push are always silent there. So on a tick led by a
  * period or deadlines push the browser alerts for nothing — one alert per
  * user, not per channel.
  *
@@ -73,27 +78,49 @@ export type PushKind =
   | 'overdue_urgent'
   | 'overdue_high'
   | 'reminder_urgent'
+  | 'prompt_urgent'
   | 'reminder_high'
+  | 'prompt_high'
   | 'deadlines_safety_net'
   | 'overdue_medium'
   | 'overdue_other'
   | 'reminder_medium'
+  | 'prompt_medium'
   | 'period'
   | 'deadlines'
 
-/** Most important first. The `reminder_*` kinds are the named reminder pushes (reminder-nags.ts). */
+/**
+ * Most important first. The `reminder_*` kinds are the named reminder pushes
+ * (reminder-nags.ts), the `prompt_*` kinds the named quota-prompt pushes
+ * (prompt-nags.ts) — each listed after its reminder twin, whose rank it
+ * shares (`SAME_RANK`).
+ */
 export const LEAD_ORDER: readonly PushKind[] = [
   'overdue_urgent',
   'overdue_high',
   'reminder_urgent',
+  'prompt_urgent',
   'reminder_high',
+  'prompt_high',
   'deadlines_safety_net',
   'overdue_medium',
   'overdue_other',
   'reminder_medium',
+  'prompt_medium',
   'period',
   'deadlines',
 ]
+
+/**
+ * Kinds that rank as another (Push PR 4, Trent: "prompts rank with reminders
+ * of the same priority"). A tie keeps the earlier send, so a reminder and a
+ * prompt of one priority lead in the sources' order.
+ */
+const SAME_RANK: Partial<Record<PushKind, PushKind>> = {
+  prompt_urgent: 'reminder_urgent',
+  prompt_high: 'reminder_high',
+  prompt_medium: 'reminder_medium',
+}
 
 /** How one send goes out this tick. */
 export interface Delivery {
@@ -114,8 +141,9 @@ export interface TickSend {
   /** Never passive: Urgent overdue is critical, lead or not. */
   alwaysAlerts?: boolean
   /**
-   * Makes no sound by its own rule (period pushes and nags, the deadlines nag
-   * and its safety net). Never leads a minute in which something sounds.
+   * Makes no sound by its own rule (period pushes and nags, a Medium named
+   * reminder or prompt push, the deadlines nag and its safety net). Never
+   * leads a minute in which something sounds.
    */
   silent?: boolean
   /** Run before the lead is picked; false drops the send (a lost `nag_sends` claim). */
@@ -154,7 +182,7 @@ export function configuredChannels(): Channels {
   return { apns: isApnsConfigured(), webPush: isWebPushConfigured() }
 }
 
-const rank = (kind: PushKind) => LEAD_ORDER.indexOf(kind)
+const rank = (kind: PushKind) => LEAD_ORDER.indexOf(SAME_RANK[kind] ?? kind)
 
 /** " · 4 more waiting". */
 export function moreWaitingSuffix(n: number): string {

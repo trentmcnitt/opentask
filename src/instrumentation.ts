@@ -216,6 +216,7 @@ export async function register() {
     const { runMinuteTick } = await import('@/core/notifications/minute-tick')
     const { purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
     const { purgeGoneReminderNags } = await import('@/core/notifications/reminder-nags')
+    const { purgeOldPromptNags } = await import('@/core/notifications/prompt-nags')
     const { initWidgetPushSync } = await import('@/core/notifications/widget-push')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
@@ -290,9 +291,12 @@ export async function register() {
     cron.schedule('0 4 * * *', () => safeCronRun('completions purge', purgeOldCompletions))
     cron.schedule('30 4 * * 0', () => safeCronRun('daily stats purge', purgeOldStats))
     cron.schedule('45 4 * * 0', () => safeCronRun('slot nag purge', purgeOldSlotNags))
-    cron.schedule('50 4 * * 0', () =>
-      safeCronRun('reminder push record purge', purgeGoneReminderNags),
-    )
+    cron.schedule('50 4 * * 0', () => {
+      safeCronRun('reminder push record purge', purgeGoneReminderNags)
+      // The named quota-prompt pushes' rows (prompt-nags.ts): each names one
+      // OpenTask day, so a row two days old is done with.
+      safeCronRun('prompt push record purge', () => purgeOldPromptNags())
+    })
     cron.schedule('0 5 * * *', () => safeCronRun('AI activity log purge', purgeOldAIActivity))
 
     const { purgeOldDeliveries } = await import('@/core/webhooks/purge')

@@ -89,7 +89,8 @@ self.addEventListener('push', (event) => {
         // APNs collapse id) alerts again only with `renotify`. The browser
         // throws a TypeError for renotify without a tag, or with silent.
         renotify: Boolean(data.tag) && data.renotify === true && data.silent !== true,
-        // Buttons: the named reminder push's "Considered" (2026-10-26),
+        // Buttons: the named reminder push's "Considered" (2026-10-26) and
+        // the named quota-prompt push's "Considered" and "Did it" (Push PR 4),
         // handled in `notificationclick` below.
         actions: Array.isArray(data.actions) ? data.actions : undefined,
       })
@@ -182,9 +183,71 @@ async function considerFromBanner(notification) {
   })
 }
 
+/**
+ * The named quota-prompt push's buttons (Push PR 4, 2026-10-26): "Considered"
+ * POSTs /api/quota-prompts/consider, "Did it" /api/quota-prompts/did, each
+ * with the push's `prompt_key` — in the background, no navigation, the other
+ * banners stay. Both routes are idempotent per key. Authenticated by the
+ * session cookie; like the actions route, they refuse a cookie POST that
+ * isn't same-origin (403), and this same-origin fetch says it is.
+ *
+ * The banner stays up until the server answers, as for a reminder's
+ * Considered (review of #368):
+ *  - 2xx: done (or already done) — close it;
+ *  - 400: close it quietly. This worker always sends a well-formed body, so a
+ *    400 is the server refusing the KEY: another day's (the push outlived
+ *    its OpenTask day) or a quota no longer the user's live one. Nothing to
+ *    do, and nothing the user could fix by opening the app;
+ *  - anything else — 401/403, 5xx, a network error: replace it (same tag,
+ *    silent) with "Couldn't … — open OpenTask", whose tap opens the app.
+ */
+const PROMPT_ACTIONS = {
+  considered: { path: '/api/quota-prompts/consider', failed: "Couldn't mark it considered" },
+  did: { path: '/api/quota-prompts/did', failed: "Couldn't log it" },
+}
+
+async function actOnPromptFromBanner(notification, action) {
+  const data = notification.data || {}
+  const { path, failed } = PROMPT_ACTIONS[action]
+  let status = 0
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      mode: 'same-origin',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        action === 'did' ? { keys: [data.prompt_key], source: 'web' } : { keys: [data.prompt_key] },
+      ),
+    })
+    status = res.status
+  } catch (err) {
+    forwardErrorToClients(`Prompt ${action} failed: ${err}`, err?.stack)
+  }
+  if ((status >= 200 && status < 300) || status === 400) {
+    notification.close()
+    return
+  }
+  await self.registration.showNotification(notification.title || 'OpenTask', {
+    body: `${failed} — open OpenTask`,
+    icon: '/icon-192.png',
+    data: { url: data.url || '/', taskId: data.taskId, prompt_key: data.prompt_key },
+    tag: notification.tag || undefined,
+    silent: true,
+  })
+}
+
 self.addEventListener('notificationclick', (event) => {
-  if (event.action === 'considered') {
-    if (typeof event.notification.data?.taskId !== 'number') {
+  // A quota prompt's banner (it carries `prompt_key`): its own two buttons.
+  if (
+    (event.action === 'considered' || event.action === 'did') &&
+    typeof event.notification.data?.prompt_key === 'string'
+  ) {
+    event.waitUntil(actOnPromptFromBanner(event.notification, event.action))
+    return
+  }
+  if (event.action === 'considered' || event.action === 'did') {
+    if (event.action === 'did' || typeof event.notification.data?.taskId !== 'number') {
       event.notification.close()
       return
     }

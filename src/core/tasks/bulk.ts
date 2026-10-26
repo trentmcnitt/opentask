@@ -31,6 +31,7 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { namedPushEndCheck } from '@/core/notifications/reminder-nags'
+import { promptPushEndCheck, promptPushEndCheckForEdit } from '@/core/notifications/prompt-nags'
 import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
@@ -185,6 +186,10 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
     taskIds.length > 0 ? validateBulkTasks(taskIds, userId, { excludeClosed: true }) : []
   // Prompt keys too: a stale or foreign key refuses the whole batch.
   const plannedPrompts = planPromptActions(userId, userTimezone, prompts, completedAt)
+  // A named prompt push (prompt-nags.ts) this batch ends: its banner goes too.
+  const endedPromptPush = promptPushEndCheck(userId, [
+    ...new Set(plannedPrompts.map((p) => p.taskId)),
+  ])
 
   // §5: `done` on a quota closes its period early and silently zeroes the
   // count (`computeMarkDone`'s period reset). Nothing in the app sends a quota
@@ -302,12 +307,11 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   })
 
   emitSyncEvent(userId)
-  // The completed items are handled, so their banners go too. A prompt-only
-  // batch completes no task and leaves notifications (and the badge) alone.
-  dismissNotificationsForTasks(
-    userId,
-    tasks.map((t) => t.id),
-  )
+  // The completed items are handled, so their banners go too — and a quota
+  // whose named prompt push the batch ended (`promptPushEndCheck`). A
+  // prompt-only batch that ended none leaves notifications (and the badge)
+  // alone.
+  dismissNotificationsForTasks(userId, [...tasks.map((t) => t.id), ...endedPromptPush()])
   dispatchProgressed(userId, result.progressed)
 
   for (const task of tasks) {
@@ -1463,7 +1467,9 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
       if (data.fieldsChanged.length > 0) {
         // Read before this task's own change is applied.
-        endedNamedPush.set(task.id, namedPushEndCheck(task, data.fieldsChanged))
+        const reminderEnd = namedPushEndCheck(task, data.fieldsChanged)
+        const promptEnd = promptPushEndCheckForEdit(task, data.fieldsChanged)
+        endedNamedPush.set(task.id, () => reminderEnd() || promptEnd())
         const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
         snapshots.push(snapshot)
         activityEntries.push({ userId, ...activity, source: 'bulk', batchId })
@@ -1508,7 +1514,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   emitSyncEvent(userId)
   // Only a task whose date actually moved has a stale notification — or a
   // reminder whose named push this edit ended (priority below Medium,
-  // converted, moved to Anytime or off today: `namedPushStands`). Any other
+  // converted, moved to Anytime or off today: `namedPushStands`), or a quota
+  // whose named prompt push it ended (`promptPushEndCheckForEdit`). Any other
   // priority or label edit leaves the banner as true as it was.
   const pushEnded = (id: number) => endedNamedPush.get(id)?.() === true
   dismissNotificationsForTasks(
