@@ -231,7 +231,7 @@ describe('OD-R: the rules', () => {
     expect(on('2026-10-29T10:00')).toBe('waiting') // carry-over
     expect(on('2026-10-30T10:00')).toBe('waiting')
     expect(on('2026-10-31T10:00')).toBeNull() // its day: the On deck section
-    expect(upcomingGap(t, tz).target).toBe('On deck Sat Oct 31')
+    expect(upcomingGap(t, tz, CALENDAR_DAY_START).target).toBe('On deck Sat Oct 31')
     // Decked for tomorrow: no heads-up (wait 1), like a picked target.
     expect(
       upcomingState(bare({ on_deck_day: '2026-10-21' }), tz, tue10, CALENDAR_DAY_START),

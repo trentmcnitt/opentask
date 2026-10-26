@@ -273,10 +273,15 @@ const ALLOWLIST: Record<string, [number, string]> = {
     [1, `${EXACT_MOMENT} (the deadline's exact moment)`],
   "src/lib/format-date.ts: const dateAndTime = `${due.toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric' })} ${time}`":
     [1, `${EXACT_MOMENT} (an overdue target's date + time)`],
-  "src/lib/task-segments.ts: DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')":
+  "src/lib/task-segments.ts: : DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')":
     [
       1,
-      `${EXACT_MOMENT} (Upcoming's two dates — the target and the deadline as dated, 2026-10-12)`,
+      `${EXACT_MOMENT} (Upcoming's two dates — the target and the deadline as dated, 2026-10-12 — outside the night: a night moment goes through isLateNight / nightWords)`,
+    ],
+  "src/lib/task-segments.ts: return `${day.toFormat('ccc')}${NIGHT_SUFFIX} ${day.toFormat('LLL d')}`":
+    [
+      1,
+      `${ON_OPENTASK_DATE} (nightWords: Upcoming's "Thu night Oct 29", the OpenTask date of a night moment)`,
     ],
   // ── Calendar dates on purpose (TQ-G01 v2) ──
   "src/core/ai/enrichment.ts: return local.toFormat('yyyy-MM-dd')": [

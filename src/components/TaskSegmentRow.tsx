@@ -1278,7 +1278,8 @@ function UpcomingMeta({
   const { projects } = useProjects()
   const project = projects.find((p) => p.id === task.project_id)
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
-  const gap = upcomingGap(task, timezone, row.section)
+  const dayStart = useDayStart()
+  const gap = upcomingGap(task, timezone, dayStart, row.section)
   const reset = readOnly ? null : upcomingRowActions(row).reset
   return (
     <div

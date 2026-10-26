@@ -43,6 +43,7 @@ import {
 } from '@/lib/format-date'
 import { formatSnoozeTarget } from '@/lib/field-labels'
 import { userDayLine } from '@/core/ai/prompts'
+import { upcomingGap } from '@/lib/task-segments'
 import type { Task } from '@/types'
 
 const TZ = 'America/Chicago'
@@ -383,5 +384,27 @@ describe.each(NIGHTS)('TQ-LN: $name', (night) => {
     expect(userDayLine(night.evening, TZ, DAY_START)).toBe('')
     // The switch off (midnight): never.
     expect(userDayLine(night.late, TZ, CALENDAR_DAY_START)).toBe('')
+  })
+
+  test('TQ-LN15: Upcoming rows say "night" too — a Fri 01:00 target is "Thu night" (upcomingGap)', () => {
+    const d = DateTime.fromISO(night.day, { zone: TZ })
+    const at = (days: number) => d.plus({ days }).set({ hour: 1 }).toJSDate().toISOString()
+    const word = (days: number) => d.plus({ days }).toFormat('ccc')
+    const date = (days: number) => d.plus({ days }).toFormat('LLL d')
+    // A Later row: a 1:00 AM target and deadline name their OpenTask days.
+    const later = upcomingGap({ due_at: at(5), deadline_at: at(6) }, TZ, DAY_START, 'later')
+    expect(later).toEqual({
+      target: `Target ${word(4)} night ${date(4)}`,
+      deadline: `deadline ${word(5)} night ${date(5)}`,
+    })
+    // A Tomorrow row: tomorrow's 1:00 AM is tomorrow NIGHT, said.
+    expect(
+      upcomingGap({ due_at: at(2), deadline_at: null }, TZ, DAY_START, 'tomorrow').target,
+    ).toBe('Target tomorrow night 1:00 AM')
+    // A daytime target is as before.
+    const nine = d.plus({ days: 5 }).set({ hour: 9 }).toJSDate().toISOString()
+    expect(upcomingGap({ due_at: nine, deadline_at: null }, TZ, DAY_START, 'later').target).toBe(
+      `Target ${word(5)} ${date(5)}`,
+    )
   })
 })

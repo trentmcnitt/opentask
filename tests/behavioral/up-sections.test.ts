@@ -30,6 +30,7 @@ import { UPCOMING_SECTION_TITLES } from '@/lib/task-model-words'
 import type { SegmentRow } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const tz = TEST_TIMEZONE
 
@@ -109,18 +110,18 @@ describe('Upcoming sections on the web (pure)', () => {
 
   test('UP-124: a Tomorrow row says only the time ("Target 9:00 AM", "On deck"); Later says the day', () => {
     const t = { due_at: at('2026-11-03T09:00'), deadline_at: at('2026-11-07T23:59') }
-    expect(upcomingGap(t, tz, 'tomorrow')).toEqual({
+    expect(upcomingGap(t, tz, CALENDAR_DAY_START, 'tomorrow')).toEqual({
       target: 'Target 9:00 AM',
       deadline: 'deadline Sat Nov 7',
     })
-    expect(upcomingGap(t, tz, 'later')).toEqual({
+    expect(upcomingGap(t, tz, CALENDAR_DAY_START, 'later')).toEqual({
       target: 'Target Tue Nov 3',
       deadline: 'deadline Sat Nov 7',
     })
     const deck = { due_at: null, deadline_at: null, on_deck_day: '2026-10-31' }
-    expect(upcomingGap(deck, tz, 'tomorrow').target).toBe('On deck')
-    expect(upcomingGap(deck, tz, 'later').target).toBe('On deck Sat Oct 31')
-    expect(upcomingGap(deck, tz).target).toBe('On deck Sat Oct 31')
+    expect(upcomingGap(deck, tz, CALENDAR_DAY_START, 'tomorrow').target).toBe('On deck')
+    expect(upcomingGap(deck, tz, CALENDAR_DAY_START, 'later').target).toBe('On deck Sat Oct 31')
+    expect(upcomingGap(deck, tz, CALENDAR_DAY_START).target).toBe('On deck Sat Oct 31')
   })
 
   test('UP-125: the section words', () => {
