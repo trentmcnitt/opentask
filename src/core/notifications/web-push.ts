@@ -1,6 +1,7 @@
 import webpush from 'web-push'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
+import { NOTHING_SENT, type DeliveryResult } from '@/core/notifications/delivery-result'
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || ''
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || ''
@@ -56,13 +57,13 @@ async function sendToAllSubscriptions(
   userId: number,
   jsonPayload: string,
   options?: PushSendOptions,
-): Promise<void> {
+): Promise<DeliveryResult> {
   const db = getDb()
   const subscriptions = db
     .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?')
     .all(userId) as PushSubscriptionRow[]
 
-  if (subscriptions.length === 0) return
+  if (subscriptions.length === 0) return NOTHING_SENT
 
   const results = await Promise.allSettled(
     subscriptions.map(async (sub) => {
@@ -75,11 +76,13 @@ async function sendToAllSubscriptions(
           jsonPayload,
           options,
         )
+        return true
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number }).statusCode
         if (statusCode === 410 || statusCode === 404) {
           db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(sub.id)
           log.info('web-push', `Removed stale subscription ${sub.id} (${statusCode})`)
+          return false
         } else {
           throw err
         }
@@ -94,16 +97,18 @@ async function sendToAllSubscriptions(
       `Failed to send ${failures.length}/${subscriptions.length} push notifications`,
     )
   }
+  const delivered = results.filter((r) => r.status === 'fulfilled' && r.value).length
+  return { attempted: subscriptions.length, delivered }
 }
 
 export async function sendPushNotification(
   userId: number,
   payload: PushPayload,
   options?: PushSendOptions,
-): Promise<void> {
+): Promise<DeliveryResult> {
   if (!isWebPushConfigured()) {
     log.warn('web-push', 'VAPID keys not configured, skipping push')
-    return
+    return NOTHING_SENT
   }
   const db = getDb()
   const count = (
@@ -112,7 +117,7 @@ export async function sendPushNotification(
     }
   ).c
   log.info('web-push', `Sending notification to ${count} subscription(s) for user ${userId}`)
-  await sendToAllSubscriptions(userId, JSON.stringify(payload), options)
+  return sendToAllSubscriptions(userId, JSON.stringify(payload), options)
 }
 
 /**

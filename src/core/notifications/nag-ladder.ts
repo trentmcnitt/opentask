@@ -23,10 +23,10 @@
  *  - `overdue` — the overdue checker (overdue-checker.ts), after the per-task
  *    override (`tasks.auto_snooze_minutes`).
  *  - `deadlines` — the deadlines-page nag (deadline-nags.ts), per row, the
- *    shortest wins.
+ *    rung whose next clock mark comes first wins (`nagPace`).
  *  - `slot_nag` — the unfinished-slot nag (slot-nags.ts), per waiting item:
  *    each reminder at its own priority, each quota prompt at its quota's; the
- *    shortest wins (Trent, 2026-10-22 — a reminder's priority is prominence
+ *    soonest mark wins (Trent, 2026-10-22 — a reminder's priority is prominence
  *    AND how often its slot nags, REDESIGN-V03 §6). The slot stays the unit:
  *    one nag per user, never one per item.
  *  - `quota_prompt` — DOCUMENTED ONLY. A quota prompt has no push of its own:

@@ -35,7 +35,7 @@
  *
  * ONE EXCEPTION, and it is deliberate: `slot-nags.ts` re-surfaces unfinished
  * slots at Trent's request (2026-09-21), paced since 2026-10-22 by the nag
- * ladder at the shortest rung among the waiting items' priorities. It still
+ * ladder (the waiting items' rungs, on clock marks since 2026-10-26). It still
  * writes nothing, still never marks anything overdue or badged, and still
  * never fires for a slot that has not opened. Read that module's header
  * before concluding the "no catch-up" claim above has been violated.
@@ -44,7 +44,6 @@
  * push is a silent banner, like the nag (`buildSlotReminderNotification`).
  */
 
-import { log } from '@/lib/logger'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import type { QuotaPrompt } from '@/lib/quota-prompts'
@@ -57,6 +56,7 @@ import { onDeckToday } from '@/core/tasks/deck'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
 import { SLOT_NAG_KEY, stampNagSend } from '@/core/notifications/nag-sends'
+import { runTick, type Channels, type SourcePlan, type TickSource } from '@/core/notifications/tick'
 
 /** The slots whose start time is the current local minute for this user. */
 export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): TimeSlot[] {
@@ -104,7 +104,7 @@ function quotaPriorities(taskIds: number[]): Map<number, number> {
  * the same test every client uses). Prompts come from the phase-1 computation
  * as-is — one quota query per call, and one more for the waiting prompts'
  * quota priorities. Called only for a user whose slot opens this minute, or
- * whose slot nag could be due by `nag_sends` at its fastest rung; never once
+ * whose slot nag could be due by `nag_sends` (any rung's mark); never once
  * a minute for every user.
  */
 export function waitingBySlot(
@@ -205,26 +205,49 @@ export function pendingSlotNotifications(now: Date = new Date()): PendingSlotNot
   return pending
 }
 
-/** Cron entry point — runs alongside the overdue check, every minute. */
+/**
+ * This minute's slot-open pushes as tick sends (tick.ts), APNs only. Kind
+ * `period`; a push speaks for its slot's waiting reminders and prompts.
+ */
+export function planSlotReminderSends(now: Date, channels: Channels): SourcePlan {
+  if (!channels.apns) return { sends: [] }
+  return {
+    sends: pendingSlotNotifications(now).map((item) => ({
+      userId: item.userId,
+      kind: 'period',
+      items: item.count + item.promptCount,
+      // A silent banner (ruling 5): never leads a minute something sounds in.
+      silent: true,
+      // The slot's own banner counts as the nag's last send (nag-sends.ts):
+      // the nag then waits for the mark after it, instead of following it a
+      // minute later. Always claimed: a slot opening is not deduped.
+      claim: () => {
+        stampNagSend(item.userId, SLOT_NAG_KEY, now)
+        return true
+      },
+      deliver: (delivery) =>
+        sendApnsSlotReminder(item.userId, {
+          slotId: item.slotId,
+          slotLabel: item.slotLabel,
+          count: item.count,
+          promptCount: item.promptCount,
+          deckCount: item.deckCount,
+          suffix: delivery.suffix ?? undefined,
+          passive: delivery.passive,
+        }),
+    })),
+  }
+}
+
+/** The slot-open push as one of the minute tick's sources. */
+export const SLOT_REMINDER_SOURCE: TickSource = {
+  name: 'Slot reminder checker',
+  minuteKey: 'tick-slot-open',
+  plan: planSlotReminderSends,
+}
+
+/** The slot-open push on its own (tests): one tick with this source alone. */
 export async function checkSlotReminders(nowOverride?: Date): Promise<void> {
   if (!isApnsConfigured()) return
-
-  try {
-    const now = nowOverride ?? new Date()
-    for (const item of pendingSlotNotifications(now)) {
-      // The slot's own banner counts as the nag's last send (nag-sends.ts):
-      // the nag then waits a full interval after it, instead of following it
-      // a minute later.
-      stampNagSend(item.userId, SLOT_NAG_KEY, now)
-      await sendApnsSlotReminder(item.userId, {
-        slotId: item.slotId,
-        slotLabel: item.slotLabel,
-        count: item.count,
-        promptCount: item.promptCount,
-        deckCount: item.deckCount,
-      })
-    }
-  } catch (err) {
-    log.error('notifications', 'Slot reminder checker error:', err)
-  }
+  await runTick([SLOT_REMINDER_SOURCE], nowOverride ?? new Date())
 }
