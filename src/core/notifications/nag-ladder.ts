@@ -25,10 +25,12 @@
  *  - `deadlines` — the deadlines-page nag (deadline-nags.ts), per row, the
  *    rung whose next clock mark comes first wins (`nagPace`).
  *  - `slot_nag` — the unfinished-slot nag (slot-nags.ts), per waiting item:
- *    each reminder at its own priority, each quota prompt at its quota's; the
- *    soonest mark wins (Trent, 2026-10-22 — a reminder's priority is prominence
- *    AND how often its slot nags, REDESIGN-V03 §6). The slot stays the unit:
- *    one nag per user, never one per item.
+ *    each None/Low reminder at its own priority, each quota prompt at its
+ *    quota's; the soonest mark wins (Trent, 2026-10-22 — a reminder's priority
+ *    is prominence AND how often its slot nags, REDESIGN-V03 §6). One nag per
+ *    user, never one per item. ALSO the named Medium+ reminder pushes
+ *    (reminder-nags.ts, 2026-10-26): each repeats at this row's rung for its
+ *    own priority, and is no longer in the slot nag.
  *  - `quota_prompt` — DOCUMENTED ONLY. A quota prompt has no push of its own:
  *    it rides the slot push and the slot nag, so the `slot_nag` row paces it
  *    (at the quota's priority). The row says where a prompt's own nag would

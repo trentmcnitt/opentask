@@ -107,7 +107,9 @@ export function getTodaysReminders(
  * its own, so importance is expressed by position and weight. Since
  * 2026-10-22 (Trent) priority also sets how often its slot's ONE nag repeats
  * while it waits — the shortest rung among the waiting items
- * (`slot-nags.ts`) — but a reminder still never notifies on its own.
+ * (`slot-nags.ts`). Since 2026-10-26 a Medium+ reminder is pushed on its own,
+ * by name (`reminder-nags.ts`), and leaves its slot's push and nag; None and
+ * Low still never notify on their own.
  */
 export function getRemindersBySlot(
   userId: number,

@@ -3,7 +3,7 @@
  * plan "named pushes and marks" Part D).
  *
  * Each minute every sender (the overdue checker, the slot-open push, the slot
- * nag, the deadlines nag; named reminder pushes from PR 2) PRODUCES its
+ * nag, the named reminder pushes, the deadlines nag) PRODUCES its
  * candidate sends instead of sending them. This module then, per user:
  *
  *  1. CLAIMS — first the MINUTE, per sender and user (`claimTickMinute`, a
@@ -17,8 +17,8 @@
  *     would SOUND on their own (a tie: the sender's own order, so the overdue
  *     checker's "highest priority, most overdue first" stands). A send that
  *     is silent by its own rule (`silent`: the slot-open push and the slot
- *     nag, the deadlines nag and its safety net — ruling 5, sound only on
- *     overdue) never takes the lead from one that sounds (Trent, 2026-10-26,
+ *     nag, a Medium named reminder push, the deadlines nag and its safety net
+ *     — ruling 5, sound only on overdue) never takes the lead from one that sounds (Trent, 2026-10-26,
  *     on #362: otherwise a safety net beside a Medium overdue left the minute
  *     with no sound at all). Only when nothing this minute would sound does
  *     the highest-ranked silent send lead — silently, as built. The lead
@@ -44,16 +44,18 @@
  *
  * THE LEAD ORDER (Trent), among the sends that sound: Urgent overdue › High overdue › Urgent reminder ›
  * High reminder › deadlines safety net › Medium overdue › other overdue ›
- * Medium reminder › period › deadlines nag. The reminder kinds are PR 2's
- * named reminder pushes; nothing produces them yet. "Period" is the slot-open
+ * Medium reminder › period › deadlines nag. The reminder kinds are the named
+ * reminder pushes (reminder-nags.ts): High and Urgent sound, Medium is silent.
+ * "Period" is the slot-open
  * push and the slot nag alike (the nag stands down the minute a slot opens,
  * so the two never meet for one user). An overdue summary ranks with its
  * bucket (High's with High overdue, the regular one with other overdue).
  *
- * WEB PUSH: only the overdue checker and the deadlines nag send there (slot
- * pushes are APNs only), and the deadlines nag is always silent there. So on
- * a tick led by a period or deadlines push the browser alerts for nothing —
- * one alert per user, not per channel.
+ * WEB PUSH: only the overdue checker, the named reminder pushes and the
+ * deadlines nag send there (slot pushes are APNs only), and the deadlines nag
+ * and a Medium reminder push are always silent there. So on a tick led by a
+ * period or deadlines push the browser alerts for nothing — one alert per
+ * user, not per channel.
  *
  * Split so `scripts/count-pushes.ts` can run the real decisions without
  * delivering: `planTick` (produce, claim, assign) and `runTick` (plan, then
@@ -79,7 +81,7 @@ export type PushKind =
   | 'period'
   | 'deadlines'
 
-/** Most important first. The `reminder_*` slots are PR 2's (named reminder pushes). */
+/** Most important first. The `reminder_*` kinds are the named reminder pushes (reminder-nags.ts). */
 export const LEAD_ORDER: readonly PushKind[] = [
   'overdue_urgent',
   'overdue_high',

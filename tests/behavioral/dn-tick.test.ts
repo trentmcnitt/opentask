@@ -10,8 +10,8 @@
  *    through the real minute-tick sources;
  *  - what the delivered payloads say (APNs passive, Web Push silent).
  *
- * Reminder kinds (`reminder_*`) are PR 2's named reminder pushes; nothing
- * produces them yet, so only their place in the lead order is pinned here.
+ * Reminder kinds (`reminder_*`) are the named reminder pushes
+ * (reminder-nags.ts, 2026-10-26); their own suite is rm-reminder-nags.test.ts.
  *
  * Synthetic data only. Clock frozen: Thu 2026-01-15 in the test zone
  * (America/Chicago). The task-queue switch is off: the day turns at midnight.
@@ -34,6 +34,7 @@ vi.mock('@/core/notifications/apns', async (importOriginal) => ({
   isApnsConfigured: vi.fn().mockReturnValue(true),
   sendApnsSlotReminder: vi.fn().mockResolvedValue(undefined),
   sendApnsDeadlinesNag: vi.fn().mockResolvedValue(undefined),
+  sendApnsReminderNag: vi.fn().mockResolvedValue(undefined),
   sendApnsNotification: vi.fn().mockResolvedValue(undefined),
   sendApnsSummaryNotification: vi.fn().mockResolvedValue(undefined),
   sendApnsBadgeUpdate: vi.fn().mockResolvedValue(undefined),
@@ -56,6 +57,7 @@ import { sendPushNotification } from '@/core/notifications/web-push'
 import {
   sendApnsDeadlinesNag,
   sendApnsNotification,
+  sendApnsReminderNag,
   sendApnsSlotReminder,
 } from '@/core/notifications/apns'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -277,41 +279,51 @@ describe('DN-T02 planTick: claims and failures', () => {
 })
 
 /**
- * The plan's worked case at 10:00, in PR 1's terms. Morning (09:00) opened
- * with 3 reminders (2 Medium, 1 Unset) and 1 quota prompt waiting, so its nag
- * comes at 10:00 (the Unset pace, 60, from the 09:00 push). A High task is
- * due at 10:00 too. The overdue High leads, "Overdue task · 4 more waiting";
- * the Morning nag still goes out, passive. (PR 2 moves the two Mediums into
- * their own `reminder_medium` pushes — passive too — and the nag then says
- * "1 reminder · 1 quota waiting"; the lead's N stays 4.)
+ * The plan's worked case at 10:00, with PR 2's named reminder pushes.
+ * Morning (08:00) opened with 3 reminders (2 Medium, 1 Unset) and 1 quota
+ * prompt waiting. The Mediums are pushed by name (reminder-nags.ts) and
+ * repeat at the Medium rung, 120: 08:00, then 10:00. The period's push and
+ * nag count the Unset reminder and the prompt only, at the Unset pace, 60:
+ * 08:00 push, 09:00 and 10:00 nags. A High task is due at 10:00 too. The
+ * overdue High leads, "Overdue task · 4 more waiting" (2 Mediums + the
+ * nag's 2 items); the two Medium pushes and the Morning nag go passive.
  */
 describe('DN-T03 the 10:00 worked case', () => {
   function seed() {
     periods([
-      ['Morning', '09:00'],
+      ['Morning', '08:00'],
       ['Midday', '12:00'],
     ])
-    reminder(9, 0, 2)
-    reminder(9, 0, 2)
-    reminder(9)
+    reminder(8, 0, 2)
+    reminder(8, 0, 2)
+    reminder(8)
     quota()
     overdue(10, 3)
   }
+  const shape = (sends: { kind: string; items: number; delivery: unknown }[]) =>
+    sends.map((s) => [s.kind, s.items, s.delivery])
 
-  test('planned: the overdue High leads; the Morning nag goes passive', () => {
+  test('planned: 08:00 an all-silent minute, 09:00 the nag alone, 10:00 the overdue High leads', () => {
     seed()
-    const opening = planTick(sources(), at(9), CHANNELS).sends
-    expect(opening.map((s) => [s.kind, s.items, s.delivery])).toEqual([['period', 4, AS_BUILT]])
-
-    const { sends } = planTick(sources(), at(10), CHANNELS)
-    expect(sends.map((s) => [s.kind, s.items, s.delivery])).toEqual([
+    // 08:00: everything is silent by its own rule, so the highest-ranked
+    // leads, silently, with the suffix: a Medium reminder outranks a period.
+    expect(shape(planTick(sources(), at(8), CHANNELS).sends)).toEqual([
+      ['period', 2, { passive: true, suffix: null }],
+      ['reminder_medium', 1, { passive: false, suffix: ' · 3 more waiting' }],
+      ['reminder_medium', 1, { passive: true, suffix: null }],
+    ])
+    expect(shape(planTick(sources(), at(9), CHANNELS).sends)).toEqual([['period', 2, AS_BUILT]])
+    expect(shape(planTick(sources(), at(10), CHANNELS).sends)).toEqual([
       ['overdue_high', 1, { passive: false, suffix: ' · 4 more waiting' }],
-      ['period', 4, { passive: true, suffix: null }],
+      ['period', 2, { passive: true, suffix: null }],
+      ['reminder_medium', 1, { passive: true, suffix: null }],
+      ['reminder_medium', 1, { passive: true, suffix: null }],
     ])
   })
 
-  test('delivered: time-sensitive with the suffix; the nag passive and unsuffixed', async () => {
+  test('delivered: the High active with the suffix; the nag and the Mediums passive', async () => {
     seed()
+    await runTick(sources(), at(8), CHANNELS)
     await runTick(sources(), at(9), CHANNELS)
     vi.clearAllMocks()
     await runTick(sources(), at(10), CHANNELS)
@@ -319,7 +331,7 @@ describe('DN-T03 the 10:00 worked case', () => {
     expect(sendApnsNotification).toHaveBeenCalledTimes(1)
     expect(vi.mocked(sendApnsNotification).mock.calls[0][1]).toMatchObject({
       body: 'Overdue task · 4 more waiting',
-      interruptionLevel: 'time-sensitive',
+      interruptionLevel: 'active',
     })
     expect(sendPushNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
@@ -328,10 +340,14 @@ describe('DN-T03 the 10:00 worked case', () => {
     expect(sendApnsSlotReminder).toHaveBeenCalledTimes(1)
     expect(vi.mocked(sendApnsSlotReminder).mock.calls[0][1]).toMatchObject({
       slotLabel: 'Morning',
-      body: '3 reminders · 1 quota waiting',
+      body: '1 reminder · 1 quota waiting',
       passive: true,
       suffix: undefined,
     })
+    expect(sendApnsReminderNag).toHaveBeenCalledTimes(2)
+    for (const [, p] of vi.mocked(sendApnsReminderNag).mock.calls) {
+      expect(p).toMatchObject({ body: 'Morning · Medium reminder', sound: false, passive: true })
+    }
   })
 })
 
@@ -524,7 +540,7 @@ describe('DN-T08 a lead that reaches nothing', () => {
     await runTick(sources(), at(10), { apns: true, webPush: false })
 
     expect(callsOf()).toEqual([
-      [high.id, 'time-sensitive', 'Overdue task · 2 more waiting'],
+      [high.id, 'active', 'Overdue task · 2 more waiting'],
       [medium.id, 'active', 'Overdue task · 1 more waiting'],
       [low.id, 'passive', 'Overdue task'],
     ])
@@ -537,7 +553,7 @@ describe('DN-T08 a lead that reaches nothing', () => {
     vi.mocked(sendPushNotification).mockResolvedValueOnce({ attempted: 1, delivered: 1 })
     await runTick(sources(), at(10), CHANNELS)
     expect(callsOf()).toEqual([
-      [high.id, 'time-sensitive', 'Overdue task · 1 more waiting'],
+      [high.id, 'active', 'Overdue task · 1 more waiting'],
       [medium.id, 'passive', 'Overdue task'],
     ])
   })
@@ -554,7 +570,7 @@ describe('DN-T08 a lead that reaches nothing', () => {
     logged.mockRestore()
 
     expect(callsOf()).toEqual([
-      [high.id, 'time-sensitive', 'Overdue task · 1 more waiting'],
+      [high.id, 'active', 'Overdue task · 1 more waiting'],
       [medium.id, 'active', 'Overdue task'],
     ])
   })
@@ -565,7 +581,7 @@ describe('DN-T08 a lead that reaches nothing', () => {
     apnsFailsFor([])
     await runTick(sources(), at(10), { apns: true, webPush: false })
     expect(callsOf()).toEqual([
-      [high.id, 'time-sensitive', 'Overdue task · 1 more waiting'],
+      [high.id, 'active', 'Overdue task · 1 more waiting'],
       [medium.id, 'passive', 'Overdue task'],
     ])
   })

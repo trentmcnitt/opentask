@@ -89,6 +89,9 @@ self.addEventListener('push', (event) => {
         // APNs collapse id) alerts again only with `renotify`. The browser
         // throws a TypeError for renotify without a tag, or with silent.
         renotify: Boolean(data.tag) && data.renotify === true && data.silent !== true,
+        // Buttons: the named reminder push's "Considered" (2026-10-26),
+        // handled in `notificationclick` below.
+        actions: Array.isArray(data.actions) ? data.actions : undefined,
       })
     }),
   )
@@ -136,6 +139,27 @@ async function handleDismiss(taskIds) {
 // Also clears all remaining delivered notifications since the user is now in the app.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+
+  // The named reminder push's "Considered" button (2026-10-26): consider the
+  // reminder in the background and close only this banner — no navigation,
+  // and the other banners stay. It sends the push's `reminder_day` as `day`,
+  // so the server changes nothing for another day's push or a reminder that
+  // is no longer waiting (200 `considered: false`). Authenticated by the
+  // session cookie (a same-origin fetch from the worker sends it).
+  if (event.action === 'considered') {
+    const data = event.notification.data || {}
+    if (typeof data.taskId !== 'number') return
+    event.waitUntil(
+      fetch('/api/notifications/actions', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'done', task_id: data.taskId, day: data.reminder_day }),
+      }).catch((err) => forwardErrorToClients(`Considered failed: ${err}`, err?.stack)),
+    )
+    return
+  }
+
   const url = event.notification.data?.url || '/'
   event.waitUntil(
     // Clear all remaining OpenTask notifications — the user is opening the app

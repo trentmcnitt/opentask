@@ -13,6 +13,12 @@ export {
   waitingBySlot,
 } from './slot-reminders'
 export { checkSlotNags, pendingSlotNags, purgeOldSlotNags, slotNagBody } from './slot-nags'
+export {
+  checkReminderNags,
+  pendingReminderNags,
+  purgeGoneReminderNags,
+  reminderNagKey,
+} from './reminder-nags'
 export { checkDeadlineNags, pendingDeadlineNags, DEADLINES_NAG_KEY } from './deadline-nags'
 export { claimNagSend, nagPace, nagSendDue, stampNagSend, SLOT_NAG_KEY } from './nag-sends'
 export { nextNagAt, markGridMinutes, markStepMinutes } from './nag-marks'

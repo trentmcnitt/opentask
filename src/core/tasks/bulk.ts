@@ -30,6 +30,7 @@ import { logActivityBatch } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import { leftNamedReminderPush } from '@/core/notifications/reminder-nag-rule'
 import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
@@ -1329,6 +1330,21 @@ function mergePromptConfig(
  * Applies the same changes to all specified tasks. `quota_prompt_config` is
  * the exception that merges per task — see `mergePromptConfig`.
  */
+/**
+ * Note a reminder this edit took below Medium: it leaves the named reminder
+ * pushes (reminder-nag-rule.ts), so its delivered banner is dismissed.
+ */
+function noteLoweredReminder(
+  lowered: Set<number>,
+  task: Task,
+  data: { fieldsChanged: string[]; afterState: Partial<Task> },
+): void {
+  if (!data.fieldsChanged.includes('priority')) return
+  if (leftNamedReminderPush(task.is_reminder, task.priority, data.afterState.priority)) {
+    lowered.add(task.id)
+  }
+}
+
 export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const { userId, userTimezone, taskIds, changes, perTask, deltaMinutes } = options
 
@@ -1412,6 +1428,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const batchId = crypto.randomUUID()
   const allFieldsChanged = new Set<string>()
   const perTaskFields = new Map<number, string[]>()
+  /** Reminders taken below Medium: their named push's banner is dismissed. */
+  const loweredReminders = new Set<number>()
   let totalSnoozedCount = 0
 
   const result = withTransaction((tx) => {
@@ -1451,6 +1469,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
         data.fieldsChanged.forEach((f) => allFieldsChanged.add(f))
         perTaskFields.set(task.id, data.fieldsChanged)
+        noteLoweredReminder(loweredReminders, task, data)
 
         // Track snooze count for stats (handled at end)
         if (data.isSnoozeScenario) {
@@ -1487,11 +1506,15 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   })
 
   emitSyncEvent(userId)
-  // Only a task whose date actually moved has a stale notification; a
+  // Only a task whose date actually moved has a stale notification — or a
+  // reminder whose priority went below Medium, which leaves the named
+  // reminder pushes (reminder-nag-rule.ts) and its banner with them. Any other
   // priority or label edit leaves the banner as true as it was.
   dismissNotificationsForTasks(
     userId,
-    [...perTaskFields].filter(([, fields]) => fields.includes('due_at')).map(([id]) => id),
+    [...perTaskFields]
+      .filter(([id, fields]) => fields.includes('due_at') || loweredReminders.has(id))
+      .map(([id]) => id),
   )
 
   for (const snapshot of snapshots) {

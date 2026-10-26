@@ -191,11 +191,11 @@ export interface ApnsPushPayload {
   /** App icon badge number — total overdue tasks for the user */
   badge?: number
   /**
-   * 'critical' for P4, 'time-sensitive' for P3, 'active' for P0-P2 — or
-   * 'passive' (no sound) when another push leads this minute's tick
-   * (tick.ts: one alert per user per tick).
+   * 'critical' for P4, 'active' for P0-P3 (High too since 2026-10-26: only
+   * Urgent breaks through Focus) — or 'passive' (no sound) when another push
+   * leads this minute's tick (tick.ts: one alert per user per tick).
    */
-  interruptionLevel: 'time-sensitive' | 'active' | 'critical' | 'passive'
+  interruptionLevel: 'active' | 'critical' | 'passive'
   /** Volume for critical alerts (0.0-1.0). Only used when interruptionLevel is 'critical'. */
   criticalAlertVolume?: number
 }
@@ -212,7 +212,7 @@ export interface ApnsPushPayload {
  * stack you can triage by looking at it is the visual half of that.
  */
 export const NOTIFICATION_THREADS = {
-  /** §6 Reminders — the time slot notifies, not the item. */
+  /** §6 Reminders — the period pushes and nags, and the named Medium+ reminder pushes. */
   reminders: 'ot-reminders',
   /** Ordinary overdue tasks (P0–P3). */
   tasks: 'ot-tasks',
@@ -323,7 +323,9 @@ export async function sendApnsSummaryNotification(
 }
 
 /**
- * The §6 time-slot reminder push — one notification per slot, never per item.
+ * The §6 time-slot reminder push — one notification per slot, never per item
+ * (for None and Low reminders; Medium+ ones have their own named push since
+ * 2026-10-26, `buildReminderNagNotification`, and are not in its counts).
  *
  * Carries the slot identity (not the items) because the content extension
  * fetches the live list from `GET /api/reminders` when the user long-presses:
@@ -450,6 +452,82 @@ export async function sendApnsSlotReminder(
       log.info(
         'apns',
         `Sending slot ${payload.body !== undefined ? 'nag' : 'reminder'}"${payload.slotLabel}" (${payload.count} reminders, ${prompts} prompts) to ${devices.length} device(s)`,
+      )
+    },
+  )
+  return deliveryOf(outcome)
+}
+
+/** The named reminder push's category (reminder-nags.ts). Registered by native builds from PR 3. */
+export const REMINDER_NAG_CATEGORY = 'REMINDER_NAG'
+
+/** One banner per reminder: the APNs collapse id and the Web Push tag. */
+export function reminderCollapseId(taskId: number): string {
+  return `reminder-${taskId}`
+}
+
+export interface ApnsReminderNagPayload {
+  taskId: number
+  /** The reminder's own title. */
+  title: string
+  /** "Morning · High reminder", plus the tick lead's suffix. */
+  body: string
+  /** The OpenTask date (yyyy-MM-dd) it was waiting on: the Considered button sends it back as `day`. */
+  reminderDay: string
+  /** High and Urgent sound (`sound: default`); Medium never does. */
+  sound: boolean
+  /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`, no sound. */
+  passive?: boolean
+}
+
+/**
+ * The NAMED REMINDER PUSH (2026-10-26, reminder-nags.ts): one Medium+
+ * reminder, by its own title. Pure, so the payload is testable.
+ *
+ * - `interruption-level: active` always — a banner (and, High and Urgent, a
+ *   sound) that respects Focus and Sleep; never time-sensitive, never
+ *   critical. `passive` when another push leads the tick.
+ * - Category `REMINDER_NAG`: native builds from PR 3 register it with a
+ *   "Considered" button (the DONE action, sending `day`); an older build has
+ *   no such category, shows the banner without buttons, and a tap opens the
+ *   task by `taskId`.
+ * - Thread `ot-reminders`, beside the period pushes; collapse id
+ *   `reminder-<id>`, so a repeat replaces the reminder's banner.
+ * - `data`: `taskId` (what the `dismiss` silent push matches, so considering
+ *   it anywhere clears it) and `reminder_day`. NO `priority`, on purpose: a
+ *   shipped build's sweep clears banners `atOrBelowPriority`, reading a
+ *   missing priority as 0, so any sweep clears a reminder banner too.
+ * - No `badge`: a reminder is never in the badge.
+ */
+export function buildReminderNagNotification(
+  deviceToken: string,
+  topic: string,
+  payload: ApnsReminderNagPayload,
+): Notification {
+  return new Notification(deviceToken, {
+    alert: { title: payload.title, body: payload.body },
+    topic,
+    category: REMINDER_NAG_CATEGORY,
+    threadId: NOTIFICATION_THREADS.reminders,
+    collapseId: reminderCollapseId(payload.taskId),
+    sound: payload.sound && !payload.passive ? 'default' : undefined,
+    data: { taskId: payload.taskId, reminder_day: payload.reminderDay },
+    aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
+  })
+}
+
+export async function sendApnsReminderNag(
+  userId: number,
+  payload: ApnsReminderNagPayload,
+): Promise<DeliveryResult> {
+  const outcome = await sendToAllDevices(
+    userId,
+    (device) => buildReminderNagNotification(device.device_token, device.bundle_id, payload),
+    'reminder pushes',
+    (devices) => {
+      log.info(
+        'apns',
+        `Sending reminder push for task ${payload.taskId} to ${devices.length} device(s)`,
       )
     },
   )
@@ -730,7 +808,7 @@ export interface DeadlinesNagPayload {
 /**
  * The deadlines page's nag (deadline-nags.ts; nag-map rulings 4 and 5): a
  * SILENT banner — no `sound`, `interruption-level: active` whatever the
- * priority (never critical, never time-sensitive) — with counts only, no
+ * priority (never critical) — with counts only, no
  * titles. No `badge` (a nag is never in the badge), no category (nothing to
  * act on from the banner) and no `taskId` (it is about a page, so no per-task
  * `dismiss` push may clear it). `data.kind` tells the app to open the task

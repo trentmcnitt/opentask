@@ -81,6 +81,8 @@ Priority means **importance**, expressed to the user as interruption cadence. Th
 | 3   | High         | 15 min (unchanged)                           | time-sensitive          |
 | 4   | Urgent       | 5 min (unchanged)                            | critical                |
 
+> **Superseded 2026-10-26 (Trent):** High is `active`, not `time-sensitive`. Only Urgent breaks through Focus (as `critical`); nights are the phone's Sleep mode's to handle. See `docs/NOTIFICATIONS.md` § Interruption levels and `interruptionLevelFor` in `src/core/notifications/format.ts`.
+
 Key change is not the intervals — it's **§4.2: repeats replace instead of stack.** The user's correction that shaped this: Medium must NOT be notify-once — one missed glance (phone face-down, in a meeting) loses it permanently, which fails dangerous for something rated moderately important. Nothing goes fully silent by default; the bottom rungs get _slower cadence plus replacement_, so persistence never becomes pile-up.
 
 Implementation (concrete — the schema today has exactly three interval columns, `schema.sql:20-22`):

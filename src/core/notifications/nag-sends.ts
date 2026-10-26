@@ -8,7 +8,8 @@
  *
  * Keys: `deadlines-page` (deadline-nags.ts), `slot-nag` (slot-nags.ts — the
  * slot-open push stamps it too, so the nag waits for the mark after a slot's
- * own banner).
+ * own banner), `reminder-<taskId>` (reminder-nags.ts, one per Medium+
+ * reminder, 2026-10-26).
  *
  * Several rungs at once (the slot nag's waiting items, the deadlines page's
  * rows): the PACE is the rung whose next mark comes FIRST (`nagPace`). That
@@ -29,14 +30,21 @@ function lastSent(userId: number, key: string): string | null {
   return row?.last_sent_at ?? null
 }
 
-/** Whether a nag last sent at `last` (null: never) is due at `now`: its next mark has come. */
+/**
+ * Whether a nag last sent at `last` (null: never) is due at `now`: its next
+ * mark has come — or, with a `since` floor, `last` is from before it (a named
+ * reminder push restarts at its period's open each day, whatever the rung:
+ * reminder-nags.ts).
+ */
 function dueAfter(
   last: string | null,
   intervalMinutes: number,
   now: Date,
   timezone: string,
+  since?: Date,
 ): boolean {
   if (last === null) return true
+  if (since && new Date(last).getTime() < since.getTime()) return true
   return minuteIndex(now) >= minuteIndex(nextNagAt(last, intervalMinutes, timezone))
 }
 
@@ -64,20 +72,25 @@ export function nagPace(
   return best!.interval
 }
 
-/** Whether `key` may send for `userId` at `now`: the mark after its last send has come. */
+/**
+ * Whether `key` may send for `userId` at `now`: the mark after its last send
+ * has come, or (with `since`) its last send is from before `since`.
+ */
 export function nagSendDue(
   userId: number,
   key: string,
   intervalMinutes: number,
   now: Date,
   timezone: string,
+  since?: Date,
 ): boolean {
-  return dueAfter(lastSent(userId, key), intervalMinutes, now, timezone)
+  return dueAfter(lastSent(userId, key), intervalMinutes, now, timezone, since)
 }
 
 /**
  * CLAIM a send: true when this call may send, recording `now` as the last
- * send. A second claim for the same moment — a double tick — loses.
+ * send. A second claim for the same moment — a double tick — loses. `since`
+ * as in `nagSendDue`.
  */
 export function claimNagSend(
   userId: number,
@@ -85,6 +98,7 @@ export function claimNagSend(
   intervalMinutes: number,
   now: Date,
   timezone: string,
+  since?: Date,
 ): boolean {
   const db = getDb()
   const last = lastSent(userId, key)
@@ -96,7 +110,7 @@ export function claimNagSend(
         .run(userId, key, at).changes === 1
     )
   }
-  if (!dueAfter(last, intervalMinutes, now, timezone)) return false
+  if (!dueAfter(last, intervalMinutes, now, timezone, since)) return false
   return (
     db
       .prepare(

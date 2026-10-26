@@ -13,6 +13,7 @@ import { logActivity } from '@/core/activity'
 import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import { leftNamedReminderPush } from '@/core/notifications/reminder-nag-rule'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { dayBoundaryForUser } from './rollover-time'
@@ -196,8 +197,15 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
 
   // A moved date (a snooze, via snoozeTask too) or a completion makes the
   // task's delivered notification stale: dismiss it everywhere and resync the
-  // badge. Any other field leaves the notification as true as it was.
-  if (result.fieldsChanged.includes('due_at') || result.fieldsChanged.includes('done')) {
+  // badge. So does a reminder's priority lowered below Medium: it leaves the
+  // named reminder pushes (reminder-nag-rule.ts), and its banner with them.
+  // Any other field leaves the notification as true as it was.
+  if (
+    result.fieldsChanged.includes('due_at') ||
+    result.fieldsChanged.includes('done') ||
+    (result.fieldsChanged.includes('priority') &&
+      leftNamedReminderPush(task.is_reminder, task.priority, result.task.priority))
+  ) {
     dismissNotificationsForTasks(userId, [taskId])
   }
 

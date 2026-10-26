@@ -9,7 +9,7 @@ Reference for OpenTask's notification system: architecture, platform capabilitie
 Two channels:
 
 - **Web Push** — primary channel for all overdue task notifications. Browser-native via the Push API and VAPID keys. No third-party relay, no rate limit. Tap opens the PWA directly to the task page.
-- **APNs** — iOS native app push notifications. Token-based auth with a p8 key file. P4 (Urgent) tasks use Apple Critical Alerts (`interruption-level: critical`) which bypass mute, DND, and all Focus modes with a user-configurable volume. P3 (High) tasks use `time-sensitive` (breaks through Focus mode). Supports notification coalescing via `collapseId` and cross-device dismissal via silent push.
+- **APNs** — iOS native app push notifications. Token-based auth with a p8 key file. P4 (Urgent) tasks use Apple Critical Alerts (`interruption-level: critical`) which bypass mute, DND, and all Focus modes with a user-configurable volume. Everything else, P3 (High) included, is `active`: a banner and a sound that respect Focus (since 2026-10-26, Trent: only Urgent breaks through; nights are the phone's Sleep mode's to handle — until then High was `time-sensitive`). Supports notification coalescing via `collapseId` and cross-device dismissal via silent push.
 
 ntfy was previously used but removed due to rate limiting. Pushover was previously used for critical alerts but removed — APNs Critical Alerts handle P4 natively.
 
@@ -83,17 +83,17 @@ The first notification goes out on the checker's tick at the due minute (the que
 
 ### One alert per tick (2026-10-26)
 
-`src/core/notifications/tick.ts`, run by `runMinuteTick()` (`minute-tick.ts`). Each minute every sender — the overdue checker, the slot-open push, the slot nag, the deadlines nag, in that order — **plans** its sends instead of sending them. The coordinator then, per user:
+`src/core/notifications/tick.ts`, run by `runMinuteTick()` (`minute-tick.ts`). Each minute every sender — the overdue checker, the slot-open push, the slot nag, the named reminder pushes, the deadlines nag, in that order — **plans** its sends instead of sending them. The coordinator then, per user:
 
-1. **Claims** the minute, per sender and user (`claimTickMinute`: a compare-and-swap in `nag_sends` under the sender's `tick-overdue` / `tick-slot-open` / `tick-slot-nag` / `tick-deadlines` key, holding the minute it last sent), so a second run of the same minute sends nothing that sender already sent — the startup check beside the cron, or a deploy's new process overlapping the old one's last tick. Then each send's own claim, in source order (the nags' `nag_sends` compare-and-swap; the slot-open push's stamp of the slot nag's clock). A lost claim drops the send.
-2. **Picks the lead**: the highest-ranked send that would **sound** on its own. A send that is silent by its own rule — the slot-open push and the slot nag, the deadlines nag and its safety net (ruling 5: sound only on overdue) — never takes the lead in a minute where something would sound (Trent, 2026-10-26, on #362). Only when nothing in the minute would sound does the highest-ranked silent send lead, silently, still with the suffix. The ranking — Urgent overdue › High overdue › Urgent reminder › High reminder › deadlines safety net › Medium overdue › other overdue › Medium reminder › period (the slot-open push and the slot nag) › deadlines nag; a tie goes to the sender's own order. The reminder kinds are reserved for the named reminder pushes (next PR); nothing produces them yet. An overflow summary ranks with its bucket.
+1. **Claims** the minute, per sender and user (`claimTickMinute`: a compare-and-swap in `nag_sends` under the sender's `tick-overdue` / `tick-slot-open` / `tick-slot-nag` / `tick-reminder-nags` / `tick-deadlines` key, holding the minute it last sent), so a second run of the same minute sends nothing that sender already sent — the startup check beside the cron, or a deploy's new process overlapping the old one's last tick. Then each send's own claim, in source order (the nags' `nag_sends` compare-and-swap; the slot-open push's stamp of the slot nag's clock). A lost claim drops the send.
+2. **Picks the lead**: the highest-ranked send that would **sound** on its own. A send that is silent by its own rule — the slot-open push and the slot nag, a Medium named reminder push, the deadlines nag and its safety net (ruling 5: sound only on overdue) — never takes the lead in a minute where something would sound (Trent, 2026-10-26, on #362). Only when nothing in the minute would sound does the highest-ranked silent send lead, silently, still with the suffix. The ranking — Urgent overdue › High overdue › Urgent reminder › High reminder › deadlines safety net › Medium overdue › other overdue › Medium reminder › period (the slot-open push and the slot nag) › deadlines nag; a tie goes to the sender's own order. The reminder kinds are the named reminder pushes (§ Named reminder pushes): High and Urgent sound, so a High reminder leads a Medium overdue; a Medium one is silent and only leads a minute in which nothing sounds. An overflow summary ranks with its bucket.
 3. **The lead keeps its level and sound**, and its body gets **" · N more waiting"**, N being everything the tick's other banners speak for (1 per overdue banner, a summary's overflow, a period push's or nag's waiting items, the deadlines nag's rows). A snapshot; it can go stale (accepted, Trent).
 4. **The rest still go out, the silent ones included, one banner each with its own actions, but passive**: APNs `interruption-level: passive` with no `sound` (the overflow summary gains an `aps.interruption-level` then), Web Push `silent: true` instead of `renotify`. **Except Urgent overdue: critical always**, lead or not.
 5. **Delivers the lead first**, then the rest as planned, then the overdue checker's badge-only pushes. If the lead reached no device on any channel (every APNs device and Web Push subscription it was sent to failed, or the send threw), the next send that would sound is **promoted**: delivered as the alert, with its own " · N more waiting", and so on until one gets through. Nothing is delivered twice, and an Urgent overdue still waiting ends the search (it is critical anyway). A channel the user has nothing registered on is not a failure.
 
-A user with one send this minute gets exactly what the sender built. Slot pushes are APNs only and the deadlines nag is always silent on the web, so in a minute where only those are planned the browser gets no alert at all — one alert per user, not per channel. With an overdue push in the same minute, the overdue push always leads (it sounds), on both channels. No `data` field changed: nothing native or in `public/sw.js` needed to change (`sw.js` already passes `silent` through).
+A user with one send this minute gets exactly what the sender built. Slot pushes are APNs only and the deadlines nag and a Medium reminder push are always silent on the web, so in a minute where only those are planned the browser gets no alert at all — one alert per user, not per channel. With an overdue push in the same minute, the overdue push always leads (it sounds), on both channels. (The tick itself, PR #362, changed no `data` field: nothing native or in `public/sw.js` needed to change for it; `sw.js` already passed `silent` through.)
 
-Each sender's old `check*` entry point (`checkOverdueTasks`, `checkSlotReminders`, `checkSlotNags`, `checkDeadlineNags`) still exists and runs a tick with its own source alone (tests). The startup check (5 s after boot) runs the whole minute tick, through the same one-at-a-time guard as the cron (`makeNotificationTick` in `src/instrumentation.ts`).
+Each sender's old `check*` entry point (`checkOverdueTasks`, `checkSlotReminders`, `checkSlotNags`, `checkReminderNags`, `checkDeadlineNags`) still exists and runs a tick with its own source alone (tests). The startup check (5 s after boot) runs the whole minute tick, through the same one-at-a-time guard as the cron (`makeNotificationTick` in `src/instrumentation.ts`).
 
 **Measuring it: `scripts/count-pushes.ts`.** `npx tsx scripts/count-pushes.ts <db> --user <id> [--day yyyy-MM-dd] [--queue on|off] [--channels apns,web] [--json]` runs the real planners minute by minute over one OpenTask day on a temporary copy (never the input; delivery tables emptied; only that user notified) and prints counts only — per hour, alerting vs passive, by kind. Nothing is considered or done during the projected day; badge-only and non-tick pushes are not counted. Run it on a `.backup` copy of production.
 
@@ -110,6 +110,8 @@ Each sender's old `check*` entry point (`checkOverdueTasks`, `checkSlotReminders
 | `src/core/notifications/badge-state.ts`              | Last badge sent per user — the overdue checker's change gate                                                     |
 | `src/core/notifications/slot-reminders.ts`           | Slot-open push for reminders and quota prompts (`pendingSlotNotifications`, `waitingBySlot`)                     |
 | `src/core/notifications/slot-nags.ts`                | Nag for unfinished slots, paced by priority (`pendingSlotNags`, `slotNagBody`)                                   |
+| `src/core/notifications/reminder-nags.ts`            | Named pushes for Medium+ reminders (`pendingReminderNags`, `reminderWaitingOn`, `purgeGoneReminderNags`)         |
+| `src/core/notifications/reminder-nag-rule.ts`        | Which reminders are pushed by name, not counted in their period (`isNamedReminderPriority`)                      |
 | `src/core/notifications/enrichment-notify.ts`        | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                                      |
 | `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)                       |
 | `src/core/notifications/sweep-feedback.ts`           | Quiet bulk defer feedback push (`planSweepFeedback`, `sendSweepFeedback`)                                        |
@@ -126,7 +128,7 @@ Each sender's old `check*` entry point (`checkOverdueTasks`, `checkSlotReminders
 | `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                                    |
 | `src/app/api/push/subscribe/route.ts`                | Push subscription storage endpoint                                                                               |
 | `src/app/api/push/test/route.ts`                     | Quick push test (sends to current user)                                                                          |
-| `src/app/api/notifications/actions/route.ts`         | Action callback handler (done, snooze30, snooze, snooze2h)                                                       |
+| `src/app/api/notifications/actions/route.ts`         | Action callback handler (done — with `day`, the Considered button — snooze30, snooze, snooze2h, delete)          |
 | `src/app/api/notifications/test/route.ts`            | Test notification endpoint (individual, high, bulk, critical)                                                    |
 | `src/instrumentation.ts`                             | Cron scheduling                                                                                                  |
 
@@ -146,7 +148,7 @@ Browser-native push via the W3C Push API. Uses VAPID (Voluntary Application Serv
 
 ### iOS constraints (Safari)
 
-- No action buttons — silently ignored
+- No action buttons — silently ignored (the named reminder push's Considered button does not show there)
 - No `tag` replacement — broken, stacks instead of replacing (open WebKit bug)
 - No `icon` — always shows PWA icon
 - No silent push — every push must show a notification
@@ -183,7 +185,7 @@ Token-based authentication with Apple's Push Notification service. Requires an A
 
 ### Features
 
-- **Interruption levels**: `active` for P0-P2, `time-sensitive` for P3, `critical` for P4 (bypasses mute/DND with configurable volume)
+- **Interruption levels**: `active` for P0-P3, `critical` for P4 (bypasses mute/DND with configurable volume). P3 was `time-sensitive` until 2026-10-26; only Urgent breaks through Focus now
 - **Collapse ID**: `task-{id}` prevents stacking — same task replaces its previous notification
 - **Silent push dismiss**: Server sends `content-available: 1` with dismiss payload to clear notifications
 - **Stale token cleanup**: Automatically removes device tokens on `BadDeviceToken`/`Unregistered` errors
@@ -234,7 +236,9 @@ The last value sent per user is kept in memory (`badge-state.ts`, on `globalThis
 
 ### Time-slot notifications (reminders and quota prompts)
 
-Reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and a nag re-surfaces unfinished slots (`slot-nags.ts`, § The slot nag below). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. Both are silent banners, with no `sound` (ruling 5, Trent 2026-10-22: sound only on overdue). The long-press checklist fetches the slot's live group from `GET /api/reminders`.
+None and Low reminders never notify individually: a time slot sends one `SLOT_REMINDER` push when it opens (`slot-reminders.ts`), and a nag re-surfaces unfinished slots (`slot-nags.ts`, § The slot nag below). Both are APNs only, `interruption-level: active`, thread `ot-reminders`, `collapseId: slot-<id>`. Both are silent banners, with no `sound` (ruling 5, Trent 2026-10-22: sound only on overdue). The long-press checklist fetches the slot's live group from `GET /api/reminders`.
+
+**Medium and above are pushed by name** since 2026-10-26 (§ Named reminder pushes, below) and are left out of both: `waitingBySlot` counts None/Low reminders plus quota prompts only, so a period with only Medium+ reminders waiting sends no period push and no period nag, and a Medium+ reminder never paces the nag. `reminder_count` in the slot push's userInfo counts the same, while the long-press checklist (live from `GET /api/reminders`) still lists every reminder in the slot, Medium+ included: the count is only the header's placeholder while it loads.
 
 **Quota prompts count exactly like reminders** (2026-09-24, phase 3 of quota reminders). A slot's waiting items are its reminders plus its quota prompts that are neither considered nor done (`waitingBySlot`, reading `getQuotaPromptsBySlot`). So:
 
@@ -429,7 +433,7 @@ Minutes. ONE considering ladder, no special cases (Trent, 2026-10-22): the user'
 
 `src/core/notifications/slot-nags.ts`. While any slot that has opened today still has reminders or quota prompts waiting, ONE push per user names the latest unfinished slot and counts the rest ("3 reminders waiting, and 2 earlier slots"), through the slot's own `SLOT_REMINDER` push (same collapse id, so it replaces that slot's banner; APNs only).
 
-- **Pace: the ladder's `slot_nag` row, by priority** (Trent, 2026-10-22). Every waiting item the nag covers — each reminder at its own priority, each quota prompt at its quota task's priority, in every unfinished opened slot, not only the one it names — has a considering rung (the user's tier ×2: Urgent 10, High 30, Medium 120, Low 480, Unset 60 by default); the rung whose next **clock mark** comes first wins (`nagPace`; with the shipped rungs, the shortest interval). Not highest priority: with the shipped tiers an Unset item (60) outpaces a Medium (120) or Low (480) one. All Unset is hourly; one High reminder waiting makes it every half hour; finishing that High item drops it back to the next rung, counted from the last send. Still one nag per user — priority sets how often, never how many. Paced by `nag_sends` (key `slot-nag`); the slot-open push stamps it too, so the nag waits for the mark after a slot's own banner or the last nag (§ Clock marks). The cheap gate asks whether any rung's mark has come before the roster is read, so the waiting items are only computed for a user whose nag could be due.
+- **Pace: the ladder's `slot_nag` row, by priority** (Trent, 2026-10-22). Every waiting item the nag covers — each None/Low reminder at its own priority (Medium+ ones have their own named push since 2026-10-26 and are not the nag's), each quota prompt at its quota task's priority, in every unfinished opened slot, not only the one it names — has a considering rung (the user's tier ×2: Urgent 10, High 30, Medium 120, Low 480, Unset 60 by default); the rung whose next **clock mark** comes first wins (`nagPace`; with the shipped rungs, the shortest interval). Not highest priority: with the shipped tiers an Unset item (60) outpaces a Medium (120) or Low (480) one. All Unset is hourly; one High quota prompt waiting makes it every half hour; finishing that High item drops it back to the next rung, counted from the last send. Still one nag per user — priority sets how often, never how many. Paced by `nag_sends` (key `slot-nag`); the slot-open push stamps it too, so the nag waits for the mark after a slot's own banner or the last nag (§ Clock marks). The cheap gate asks whether any rung's mark has come before the roster is read, so the waiting items are only computed for a user whose nag could be due.
 - **The handover** (two periods at the Unset pace, both unfinished): 16:30 After School opens and pushes → 17:00 nag (16:30 + 60 = 17:30, a tie → 17:00) → 18:00 Dinnertime opens and pushes; the nag stands down that minute and the push stamps its clock, so there is no After School nag at 18:00 → 19:00 nag naming Dinnertime, "and 1 earlier slot". A period at 20:15 still pushes at 20:15; its nag comes at 21:00.
 - **One alert per tick:** the nag and the slot-open push are `period` sends — when an overdue push (or a deadlines safety net) leads the same minute, they still go out, passive (§ One alert per tick).
 - **Gone (Trent, 2026-10-22):** the 3-a-day cap, the derived gap, the evening reserve and the Wake–Sleep window. OpenTask has no time-of-day behaviour; the phone's sleep mode handles nights. (The old top-of-the-hour alignment went too; the 2026-10-26 clock marks are a different rule — they place every repeat, of every nag, and never hold one back.) An unfinished slot nags until its day ends — midnight with the task queue's switch off, the user's day start ("Day starts at") with it on.
@@ -438,9 +442,42 @@ Minutes. ONE considering ladder, no special cases (Trent, 2026-10-22): the user'
 - Still: never a slot that hasn't opened, never in the badge, never a reminder on its own. A slot opening with items this exact minute stands the nag down (its own banner is up); an empty one doesn't.
 - `slot_nags` (the old per-day claim rows) is no longer written; the weekly purge drains it.
 
+## Named reminder pushes (2026-10-26)
+
+`src/core/notifications/reminder-nags.ts` (Trent, 2026-10-26; plan "named pushes and marks" Part A). A reminder at **Medium or above** gets a push of its own, by name, instead of being one of its period's count.
+
+**When a reminder gets one** — all of:
+
+- it is waiting in today's roster (the Reminders screen's own: `getRemindersBySlot`);
+- its priority is Medium (2) or above (`isNamedReminderPriority`, `reminder-nag-rule.ts`);
+- it is in a real period, not Anytime;
+- its period has opened today (`periodOpensAt`, within the OpenTask day);
+- its own Nag is not OFF (`auto_snooze_minutes` is not 0). A Medium+ reminder with Nag OFF gets nothing at all: no named push, and it is not in the period count either ("off means off", as on the deadlines page).
+
+**When it fires.** The first push at the period's open, exact. Repeats at the slot nag's rung for its priority (`nagIntervalMinutes('slot_nag', priority)`: Medium 120, High 30, Urgent 10 with the shipped tiers), on clock marks (`nextNagAt`, § Clock marks): a High reminder in a 09:15 period pushes 09:15, 09:30, 10:00, 10:30. It stops when considered (it leaves the roster) and at the end of the OpenTask day (the next day's periods have not opened; with the task queue on, an evening reminder sounds until the 3:00 AM day start — the phone's Sleep Focus silences `active`, ruling 8). No extra state.
+
+**`nag_sends`.** One row per reminder, key `reminder-<taskId>`, no date. Due when `last === null || last < periodOpenedAt || now >= nextNagAt(last, I)` (the `since` floor of `claimNagSend`: each day starts afresh at the open, however long the rung), claimed by the compare-and-swap, under the tick's minute claim (`tick-reminder-nags`). The weekly purge (Sunday 4:50 AM UTC, `purgeGoneReminderNags`) drops the rows of reminders that are gone: deleted, in the trash, done, or no longer a reminder.
+
+**The payloads.**
+
+|          | APNs                                                                                                                                                                                                                     | Web Push                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Title    | the reminder's title                                                                                                                                                                                                     | the same                                                                                                   |
+| Body     | `Morning · High reminder` (Medium / Urgent likewise), plus the tick lead's ` · N more waiting`                                                                                                                           | the same                                                                                                   |
+| Level    | `interruption-level: active` always — never time-sensitive, never critical; `passive` when another push leads the tick                                                                                                   | `silent` when passive                                                                                      |
+| Sound    | High and Urgent `sound: default`; Medium none                                                                                                                                                                            | High and Urgent `renotify`; Medium `silent`                                                                |
+| Grouping | category `REMINDER_NAG`, thread `ot-reminders`, collapse id `reminder-<id>`                                                                                                                                              | tag `reminder-<id>`                                                                                        |
+| Data     | `taskId`, `reminder_day` (the OpenTask date) — and **no `priority`**, on purpose: a shipped build's sweep clears banners `atOrBelowPriority`, reading a missing priority as 0, so any sweep clears a reminder banner too | `url` (`/reminders`), `taskId`, `reminder_day`; `actions: [{ action: 'considered', title: 'Considered' }]` |
+
+No `badge`: a reminder is never in the badge. `taskId` is what the `dismiss` push matches, so considering it anywhere clears the banner, and so does lowering its priority below Medium (`updateTask`, `bulkEdit` → `dismissNotificationsForTasks`).
+
+**The tick.** Kinds `reminder_urgent`, `reminder_high`, `reminder_medium` (§ One alert per tick). High and Urgent sound, so a High reminder leads a Medium overdue in the same minute; a Medium reminder is silent by its own rule and only leads a minute in which nothing sounds — silently.
+
+**The Considered button.** `POST /api/notifications/actions { action: 'done', task_id, day }`. With `day` the route considers the reminder only when `day` is the user's current OpenTask day and the reminder is waiting in its roster (`reminderWaitingOn`); otherwise 200 `{ considered: false }` and nothing changes, so a stale push never advances an occurrence. Without `day` (every other button, and native builds before PR 3) `done` is as before. With no body token the route takes the ordinary auth chain, so the service worker calls it with the session cookie: `public/sw.js` handles `event.action === 'considered'` by POSTing with the push's `reminder_day` and closing only that banner (no navigation). Native: PR 3 registers `REMINDER_NAG` (the DONE action titled "Considered", passing `day`); until then a native build shows the banner without buttons, and a tap opens the task.
+
 ## Who the cron senders notify
 
-Every minute-cron sender — overdue, slot opens, the slot nag, the deadlines nag — asks `notifiableUsers()` / `notifiableUserSql()` (`src/core/notifications/notifiable-users.ts`, nag-map fix #10): `notifications_enabled = 1 AND is_demo = 0`. The event-driven pushes (sweep and cap feedback, "AI finished", widget push) already left the demo user out.
+Every minute-cron sender — overdue, slot opens, the slot nag, the named reminder pushes, the deadlines nag — asks `notifiableUsers()` / `notifiableUserSql()` (`src/core/notifications/notifiable-users.ts`, nag-map fix #10): `notifications_enabled = 1 AND is_demo = 0`. The event-driven pushes (sweep and cap feedback, "AI finished", widget push) already left the demo user out.
 
 ## iOS platform constraints
 
@@ -455,7 +492,7 @@ These apply regardless of which notification service is used.
 | Time Sensitive | Immediate, breaks through Focus and Scheduled Summary | Yes (if user allows) | No           |
 | Critical       | Bypasses mute, DND, all Focus modes                   | Yes (always)         | Yes (always) |
 
-Time Sensitive requires the `com.apple.developer.usernotifications.time-sensitive` capability (no Apple review needed). Critical requires `com.apple.developer.usernotifications.critical-alerts` (Apple must approve for App Store apps; works without approval for personal/ad-hoc builds). OpenTask uses Critical for P4 (Urgent) overdue notifications with the user's `critical_alert_volume` preference (0.0-1.0, default 1.0) — and for nothing else (ruling 4, 2026-10-22): the deadlines nag is Active at every priority. Passive (no sound) is used since 2026-10-26 for every banner of a minute but the one that leads it (§ One alert per tick) — never for Urgent overdue.
+Time Sensitive requires the `com.apple.developer.usernotifications.time-sensitive` capability (no Apple review needed). Critical requires `com.apple.developer.usernotifications.critical-alerts` (Apple must approve for App Store apps; works without approval for personal/ad-hoc builds). OpenTask uses Critical for P4 (Urgent) overdue notifications with the user's `critical_alert_volume` preference (0.0-1.0, default 1.0) — and for nothing else (ruling 4, 2026-10-22): the deadlines nag and the named reminder pushes are Active at every priority. Time Sensitive is no longer used (Trent, 2026-10-26): High overdue was `time-sensitive` until then and is `active` now, so only Urgent breaks through Focus and the phone's Sleep mode handles nights. Passive (no sound) is used since 2026-10-26 for every banner of a minute but the one that leads it (§ One alert per tick) — never for Urgent overdue.
 
 ### Notification grouping
 
@@ -473,7 +510,7 @@ Requires the `remote-notification` background mode in the app's entitlements.
 
 ### Notification actions
 
-Native apps can register up to 4 action buttons per notification category. OpenTask registers `TASK_REMINDER` (Done, +1hr, All +1hr, then the All → period actions), `TASK_SUMMARY` (All +1hr and the period actions), `SLOT_REMINDER` (Complete all) and `TASK_ADDED` (Done, Delete — the "AI finished" notification). The content extension (Phase 4) can dynamically replace the first three with a snooze grid. Every button posts to `POST /api/notifications/actions` (`done`, `snooze`, `snooze30`, `snooze2h`, `delete`) or a bulk endpoint, through `NotificationActionRunner`. A single task's snooze button is honored even past a deadline that is still ahead (2026-10-10): one explicit tap leaves no room for the app's confirm. The bulk "All" buttons go through the sweep, which leaves such a task where it is.
+Native apps can register up to 4 action buttons per notification category. OpenTask registers `TASK_REMINDER` (Done, +1hr, All +1hr, then the All → period actions), `TASK_SUMMARY` (All +1hr and the period actions), `SLOT_REMINDER` (Complete all) and `TASK_ADDED` (Done, Delete — the "AI finished" notification). `REMINDER_NAG` (the named reminder push, 2026-10-26) is sent by the server now and registered by the apps in PR 3 (Considered — the DONE action, sending `day`). The content extension (Phase 4) can dynamically replace the first three with a snooze grid. Every button posts to `POST /api/notifications/actions` (`done`, `snooze`, `snooze30`, `snooze2h`, `delete`) or a bulk endpoint, through `NotificationActionRunner`. A single task's snooze button is honored even past a deadline that is still ahead (2026-10-10): one explicit tap leaves no room for the app's confirm. The bulk "All" buttons go through the sweep, which leaves such a task where it is.
 
 ## WidgetKit push (widget sync)
 

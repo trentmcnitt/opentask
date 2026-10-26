@@ -1,9 +1,15 @@
 /**
  * Time-slot reminder notifications (REDESIGN-V03 §6)
  *
- * The SLOT notifies, not the item. A reminder never fires individually, is
- * never counted in overdue, and is never in the badge — so the only moment a
- * reminder can reach the user is when its slot opens, once, with a count.
+ * The SLOT notifies, not the item — for None and Low reminders. A reminder is
+ * never counted in overdue and never in the badge, so for those the only
+ * moment it reaches the user is when its slot opens, once, with a count.
+ *
+ * MEDIUM AND ABOVE ARE PUSHED BY NAME (2026-10-26, Trent; reminder-nags.ts):
+ * their own banner at the period's open, repeating on the slot-nag rung
+ * until considered or the day ends. They are left out of `waitingBySlot`, so
+ * they are never in this push's count or the slot nag's, and a period with
+ * only Medium+ reminders waiting sends neither.
  *
  * Timing is derived, not stored: a slot fires on the minute its `start_time`
  * matches the user's local wall clock. That makes the job stateless and
@@ -57,6 +63,7 @@ import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
 import { SLOT_NAG_KEY, stampNagSend } from '@/core/notifications/nag-sends'
 import { runTick, type Channels, type SourcePlan, type TickSource } from '@/core/notifications/tick'
+import { isNamedReminderPriority } from '@/core/notifications/reminder-nag-rule'
 
 /** The slots whose start time is the current local minute for this user. */
 export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): TimeSlot[] {
@@ -69,6 +76,11 @@ export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): Tim
 
 /** What is still waiting in one slot: reminders, and quota prompts. */
 export interface SlotWaiting {
+  /**
+   * None and Low reminders only (2026-10-26): Medium and above are pushed by
+   * name (reminder-nags.ts) and never counted here — so a period with only
+   * Medium+ reminders waiting sends no period push and no period nag.
+   */
   reminders: number
   prompts: number
   /**
@@ -126,10 +138,13 @@ export function waitingBySlot(
   for (const group of getRemindersBySlot(userId, timezone, now)) {
     const id = group.slot?.id ?? null
     const prompts = waitingPrompts.get(id) ?? []
+    // Medium+ reminders have their own named push (reminder-nag-rule.ts):
+    // they neither count in the period's push or nag nor pace the nag.
+    const counted = group.reminders.filter((t) => !isNamedReminderPriority(t.priority))
     waiting.set(id, {
-      reminders: group.reminders.length,
+      reminders: counted.length,
       prompts: prompts.length,
-      priorities: [...group.reminders.map((t) => t.priority ?? 0), ...promptPriorities(prompts)],
+      priorities: [...counted.map((t) => t.priority ?? 0), ...promptPriorities(prompts)],
     })
   }
   // `getRemindersBySlot` returns every slot plus the un-slotted group, so a

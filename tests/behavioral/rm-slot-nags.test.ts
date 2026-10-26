@@ -413,9 +413,14 @@ function makeQuota(priority: number) {
 /**
  * Trent, 2026-10-22: reminder and quota priority paces the slot nag. The
  * interval is the SHORTEST considering rung (the user's tier ×2: Urgent 10,
- * High 30, Medium 120, Low 480, Unset 60 by default) among the waiting
- * reminders and quota prompts — each prompt at its quota's priority — across
- * every unfinished slot the one nag covers.
+ * High 30, Medium 120, Low 480, Unset 60 by default) among the waiting items
+ * — each prompt at its quota's priority — across every unfinished slot the
+ * one nag covers.
+ *
+ * Since 2026-10-26 (named reminder pushes, reminder-nags.ts) only None and
+ * Low REMINDERS are the nag's: a Medium+ reminder has its own push and
+ * neither counts in nor paces the period's (RN-028, RN-029). Quota prompts
+ * still count at any priority, so the fast rungs below are a quota's.
  */
 describe('Unfinished-slot nag — priority paces it', () => {
   freezeAndSeed()
@@ -431,12 +436,14 @@ describe('Unfinished-slot nag — priority paces it', () => {
     ])
   })
 
-  /** RN-022: one High reminder among Unset ones sets the pace: the High rung, 30. */
-  test('RN-022: one High reminder waiting → every 30', () => {
+  /** RN-022: one High quota prompt among Unset items sets the pace: the High rung, 30. */
+  test('RN-022: one High quota prompt waiting → every 30', () => {
     makeReminder(7)
-    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    makeQuota(3)
     expect(firingMinutes(at(7), at(8, 59))).toEqual(['15 07:30', '15 08:00', '15 08:30'])
-    expect(pendingSlotNags(at(9))).toMatchObject([{ count: 2, intervalMinutes: 30 }])
+    expect(pendingSlotNags(at(9))).toMatchObject([
+      { count: 1, promptCount: 1, intervalMinutes: 30 },
+    ])
   })
 
   /** RN-023: a quota prompt paces at its QUOTA's priority — Urgent, 10. */
@@ -456,21 +463,22 @@ describe('Unfinished-slot nag — priority paces it', () => {
   })
 
   /**
-   * RN-025: finishing the High item drops the pace back to the next rung —
-   * the Unset one left, 60 — counted from the last send, on its mark: from
-   * 07:30 the target 08:30 ties 08:00 and 09:00, so 08:00.
+   * RN-025: finishing the faster item drops the pace back to the next rung —
+   * the Low one left, 480 — counted from the last send: from 08:00 the
+   * target 16:00 is a mark.
    */
-  test('RN-025: finishing the High item drops back to the next rung', () => {
-    makeReminder(7)
-    const high = makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+  test('RN-025: finishing the faster item drops back to the next rung', () => {
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 1 })
+    const unset = makeReminder(7)
     tick(at(7))
-    expect(tick(at(7, 30))).toMatchObject([{ intervalMinutes: 30 }])
+    expect(tick(at(8))).toMatchObject([{ intervalMinutes: 60 }])
 
-    vi.setSystemTime(at(7, 35))
-    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: high.id })
+    vi.setSystemTime(at(8, 5))
+    markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: unset.id })
 
-    expect(pendingSlotNags(at(7, 59))).toHaveLength(0)
-    expect(pendingSlotNags(at(8))).toMatchObject([{ count: 1, intervalMinutes: 60 }])
+    expect(pendingSlotNags(at(9))).toHaveLength(0)
+    expect(pendingSlotNags(at(15, 59))).toHaveLength(0)
+    expect(pendingSlotNags(at(16))).toMatchObject([{ count: 1, intervalMinutes: 480 }])
   })
 
   /**
@@ -479,7 +487,7 @@ describe('Unfinished-slot nag — priority paces it', () => {
    * nearest 07:30.
    */
   test("RN-026: the user's tier change moves the pace", () => {
-    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    makeQuota(3)
     tick(at(7))
     getDb().prepare('UPDATE users SET auto_snooze_high_minutes = 20 WHERE id = ?').run(TEST_USER_ID)
     expect(pendingSlotNags(at(7, 29))).toHaveLength(0)
@@ -488,15 +496,37 @@ describe('Unfinished-slot nag — priority paces it', () => {
 
   /**
    * RN-027: the one nag covers every unfinished slot, so an earlier slot's
-   * High reminder paces it even while the nag names a later slot.
+   * High quota prompt (Early morning, the first period) paces it even while
+   * the nag names a later slot.
    */
   test('RN-027: the shortest rung across every slot the nag covers', () => {
-    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    makeQuota(3)
     makeReminder(12)
     tick(at(12))
     expect(pendingSlotNags(at(12, 29))).toHaveLength(0)
     expect(pendingSlotNags(at(12, 30))).toMatchObject([
       { slotLabel: 'Midday', otherSlots: 1, intervalMinutes: 30 },
     ])
+  })
+
+  /**
+   * RN-028 (2026-10-26): a High reminder beside an Unset one is the named
+   * pushes' (reminder-nags.ts), not the nag's: the nag counts the Unset one
+   * alone and keeps the Unset pace, 60.
+   */
+  test('RN-028: a Medium+ reminder neither counts in nor paces the nag', () => {
+    makeReminder(7)
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
+    expect(pendingSlotNotifications(at(7))).toMatchObject([{ count: 1, promptCount: 0 }])
+    expect(firingMinutes(at(7), at(8, 59))).toEqual(['15 08:00'])
+    expect(pendingSlotNags(at(9))).toMatchObject([{ count: 1, intervalMinutes: 60 }])
+  })
+
+  /** RN-029 (2026-10-26): a period with only Medium+ reminders sends no period push and no nag. */
+  test('RN-029: only Medium+ reminders waiting → no period push, no nag', () => {
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 2 })
+    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 4 })
+    expect(pendingSlotNotifications(at(7))).toEqual([])
+    expect(firingMinutes(at(7), at(23, 59))).toEqual([])
   })
 })

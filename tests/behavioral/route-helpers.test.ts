@@ -41,7 +41,8 @@ describe('notification copy', () => {
   test.each([
     [0, '', 'active'],
     [2, '', 'active'],
-    [3, 'HIGH: ', 'time-sensitive'],
+    // High is `active` since 2026-10-26 (Trent): only Urgent breaks through Focus.
+    [3, 'HIGH: ', 'active'],
     [4, 'URGENT: ', 'critical'],
   ] as const)('P%i → prefix %j, level %s', (priority, prefix, level) => {
     expect(notificationTitlePrefix(priority)).toBe(prefix)
