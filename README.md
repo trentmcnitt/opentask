@@ -76,7 +76,7 @@ Type or dictate a task the way you'd say it, and AI fills in the details. It set
 </p>
 
 - **Natural language input** — "Call the dentist next Tuesday at 2pm to reschedule, it's important" becomes a structured task: AI extracts the title, target, recurrence, priority, project, and notes, plus a deadline when you state one, or a target relative to it ("remind me the evening before").
-- **Reminders and quotas too** — "Every weekday evening, check the back door" becomes a reminder in your evening period. Add a quota as a sentence ("lift 3x a week") and AI sets its count and period.
+- **Reminders and quotas too** — Add a reminder as a sentence ("every weekday evening, check the back door") and AI sets its schedule and puts it in your evening period. Add a quota the same way ("lift 3x a week") and AI sets its count and period.
 - **Process** — One dialog works through your Inbox and backlog: AI suggests a project for each Inbox task and spots likely duplicates, alongside rule-based steps for horizons and old targets. You decide; nothing changes on its own.
 - **Tested, not hoped** — A 250+ scenario eval suite checks every feature: schema and field checks first, then an LLM judge scoring each answer against a rubric.
 - **Entirely optional** — Disabled by default. Turn it off and every trace of AI disappears from the UI. Works with Claude, GPT-4.1-mini, Grok, DeepSeek, Ollama, and others, with a separate model for each feature.
