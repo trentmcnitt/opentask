@@ -245,7 +245,7 @@ describe('Quota prompt moves — the optimistic helper', () => {
   })
   const group = (id: number, prompts: QuotaPrompt[]) => ({ slot: { id }, prompts })
 
-  test('QP-068: a row moves to its period, alphabetically placed, and re-applying is a no-op', () => {
+  test('QP-068: a row moves to its period, alphabetical among its priority, and re-applying is a no-op', () => {
     const cook = p({})
     const art = p({ prompt_key: 'q:2:0:2026-01-15', task_id: 2, title: 'Art', slot_id: 2 })
     const zen = p({ prompt_key: 'q:3:0:2026-01-15', task_id: 3, title: 'Zen', slot_id: 2 })
@@ -261,6 +261,23 @@ describe('Quota prompt moves — the optimistic helper', () => {
       ],
     ])
     expect(applyPromptMoves(moved, moves)).toEqual(moved)
+  })
+
+  test("QP-086: a moved row is placed by the server's order, priority first", () => {
+    const zen = p({ title: 'Zen', priority: 4 })
+    const art = p({ prompt_key: 'q:2:0:2026-01-15', task_id: 2, title: 'Art', slot_id: 2 })
+    const cook = p({
+      prompt_key: 'q:3:0:2026-01-15',
+      task_id: 3,
+      title: 'Cook',
+      slot_id: 2,
+      priority: 3,
+    })
+    const moved = applyPromptMoves(
+      [group(1, [zen]), group(2, [cook, art])],
+      new Map([[zen.prompt_key, 2]]),
+    )
+    expect(moved[1].prompts.map((x) => x.title)).toEqual(['Zen', 'Cook', 'Art'])
   })
 
   test('QP-069: a daily row merges into its sibling in the target period', () => {

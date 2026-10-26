@@ -77,6 +77,31 @@ export interface QuotaPrompt {
   done: boolean
 }
 
+/**
+ * The order of a period's prompts (Trent, 2026-10-26): priority first, Urgent
+ * to None, the key the period's reminders sort by (`getRemindersBySlot`), so
+ * the whole period reads one way: reminders Urgent→None, then the prompts
+ * Urgent→None. Then the title, alphabetically, then the task id.
+ *
+ * It is frozen: considering a prompt, a did-it or a count change touches none
+ * of the three keys, so acting on one never reorders the rest under the
+ * finger. Only editing the quota itself (its priority or title) moves its row.
+ * The server sorts with it (`getQuotaPromptsBySlot`) and so does the web's
+ * optimistic move (`applyPromptMoves`), so a moved row lands where the next
+ * payload puts it. No other surface re-sorts prompts; the native apps show the
+ * server's order.
+ */
+export function comparePrompts(
+  a: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'>,
+  b: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'>,
+): number {
+  return (
+    (b.priority ?? 0) - (a.priority ?? 0) ||
+    a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
+    a.task_id - b.task_id
+  )
+}
+
 /** Is a prompt still waiting for today? */
 export function promptWaiting(prompt: Pick<QuotaPrompt, 'considered' | 'done'>): boolean {
   return !prompt.considered && !prompt.done
@@ -370,12 +395,9 @@ export function applyPromptMoves<G extends PromptGroup>(
       }
       prompts = target.map((p) => (p === sibling ? merged : p))
     } else {
+      // Placed by the server's own order, so the next payload doesn't move it.
       prompts = [...target.filter((p) => p !== sibling), { ...moving, slot_id: toSlotId }]
-      prompts.sort(
-        (a, b) =>
-          a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
-          a.task_id - b.task_id,
-      )
+      prompts.sort(comparePrompts)
     }
     out = out.map((g, i) => {
       if (i === fromIndex) return { ...g, prompts: g.prompts.filter((p) => p !== moving) }
