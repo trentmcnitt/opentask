@@ -289,7 +289,7 @@ private struct SlotProgressStrip: View {
                 Capsule()
                     .fill(segment.hasWaiting ? WatchTheme.taskSegment(segment.kind) : WatchTheme.done)
                     .frame(height: 3)
-                    .accessibilityLabel(Text("Tasks · \(segment.label)"))
+                    .accessibilityLabel(Text(segment.title))
             }
         }
         .frame(height: 8)
@@ -417,7 +417,7 @@ struct PromptRowView: View {
 }
 
 /// One task segment on the Reminders page (2026-10-10, docs/TASK-MODEL.md
-/// § Task segments): headed like a time slot ("Tasks · Days" / "3 left"),
+/// § Task segments): headed like a time slot ("Task queue · Daily" / "3 left"),
 /// its waiting rows in the server's fixed order, and Defer all. Shown only
 /// while something waits — a considered row leaves the list at once (the
 /// toolbar Undo brings it back).
@@ -434,7 +434,7 @@ struct TaskSegmentSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Tasks · \(segment.label)")
+                Text(segment.wrappingTitle)
                     .font(.headline)
                     .foregroundStyle(WatchTheme.taskSegment(segment.kind))
                 Text("\(segment.waitingCount) left")
@@ -656,6 +656,28 @@ private struct PromptRowsPreview: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 }
+
+// The task segments' sections on their own (2026-10-26, "Task queue ·
+// Daily" titles), for the same reason: on the page they sit below every
+// period row, out of a preview's reach.
+private struct SegmentSectionPreview: View {
+    let horizon: String
+    let model = WatchViewModel.previewReminders(segments: true)
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(WatchPreviewData.taskSegments.filter { $0.horizon == horizon }, id: \.horizon) { segment in
+                    TaskSegmentSection(segment: segment, model: model)
+                }
+            }
+            .padding(.horizontal, 4)
+            .frame(width: 184)
+        }
+    }
+}
+
+#Preview("Task segment section — Upcoming") { SegmentSectionPreview(horizon: "upcoming") }
 
 #Preview("Prompt rows 1-5") { PromptRowsPreview(range: 0..<5) }
 #Preview("Prompt rows 6-10") { PromptRowsPreview(range: 5..<10) }

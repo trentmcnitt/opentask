@@ -52,6 +52,7 @@ enum DayStartStore {
 
     private static let dayStartKey = "dayStart.boundary"
     private static let weekStartKey = "dayStart.firstWeekday"
+    private static let taskQueueKey = "dayStart.taskQueue"
 
     // MARK: Reads
 
@@ -77,6 +78,16 @@ enum DayStartStore {
         return value == 1 || value == 2 ? value : nil
     }
 
+    /// Whether the server's task-queue switch was on at the last preferences
+    /// fetch (`task_queue`, 2026-10-26): the overdue sweep's estimate moves
+    /// one High per press with it on (`TaskLists.overdueSweepEligibleCount`).
+    /// Its own flag, not read off the boundary: the switch on with a 00:00
+    /// day start resolves to the same boundary as the switch off. False when
+    /// nothing is known, or the server predates the field.
+    static var cachedTaskQueue: Bool {
+        defaults?.bool(forKey: taskQueueKey) ?? false
+    }
+
     // MARK: Writes
 
     /// Remember what a decoded preferences page says. Best-effort, like every
@@ -86,6 +97,7 @@ enum DayStartStore {
             resolvedDayStart(taskQueue: page.taskQueue, rolloverTime: page.rolloverTime),
             forKey: dayStartKey
         )
+        defaults?.set(page.taskQueue == true, forKey: taskQueueKey)
         if let weekday = firstWeekday(for: page.weekStart) {
             defaults?.set(weekday, forKey: weekStartKey)
         }

@@ -186,12 +186,19 @@ struct ReminderStackWidget: Widget {
         }
     }
 
+    /// A plain `String`, never an interpolated literal: an interpolated
+    /// literal is a formatted `LocalizedStringKey`, and watchOS WidgetKit
+    /// stops on it ("Formatted text for `description` is not supported",
+    /// a fatal error in the widget preview agent, 2026-10-26).
+    private static let galleryDescription: String =
+        "Check off the current slot's reminders, or defer what's " + TaskWording.overdueLower + "."
+
     private var configuration: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: ReminderStackProvider()) { entry in
             ReminderStackWidgetView(entry: entry)
         }
         .configurationDisplayName("OpenTask")
-        .description("Check off the current slot's reminders, or defer what's \(TaskWording.overdueLower).")
+        .description(Self.galleryDescription)
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryCorner])
     }
 }

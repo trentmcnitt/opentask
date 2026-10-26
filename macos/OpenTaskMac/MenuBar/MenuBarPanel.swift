@@ -6,7 +6,8 @@ import SwiftUI
 ///
 /// Row controls mirror the phone Tasks widget's snooze mode: a circle to
 /// complete, "⏭" for the next period, "+1h". The bulk bar is the widget's
-/// "All overdue (N): ⏭ 4:30 PM · +1h".
+/// "Defer 2 of 3: ⏭ 4:30 PM · +1h" (`OverdueSweepWords`, 2026-10-26: it
+/// read "All overdue (2)" under a header of "3 overdue").
 struct MenuBarPanel: View {
     /// Over target (2026-10-11): the calm plum the widgets and the web use
     /// (`WidgetTheme.overTarget`, `--over-target`) — never red. Lifted in
@@ -212,7 +213,7 @@ struct MenuBarPanel: View {
 
     private var bulkBar: some View {
         HStack(spacing: 6) {
-            Text("All \(TaskWording.overdueLower) (\(model.sweepCount)):")
+            Text(OverdueSweepWords.barLabel(count: model.sweepCount, total: model.overdue.count))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 4)

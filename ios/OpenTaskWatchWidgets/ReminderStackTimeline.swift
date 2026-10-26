@@ -290,7 +290,7 @@ enum ReminderStackTimeline {
         return rows.map { row in
             WatchWidgetEntry.ReminderCard(
                 itemKey: segmentItemKey(row.id), taskId: row.id, promptKey: nil, title: row.task.title,
-                stripeColor: nil, slotLabel: "Tasks · \(segment.label)", slotKey: segment.pageKey,
+                stripeColor: nil, slotLabel: segment.title, slotKey: segment.pageKey,
                 remainingKeys: keys, urgentOverdue: urgent,
                 segmentTaskId: row.id,
                 // Plain spaces so the card's few words a line can break
