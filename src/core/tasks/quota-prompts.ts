@@ -192,6 +192,7 @@ export function getQuotaPromptsBySlot(
       ...promptPeriodFields(task),
       stripe_color: stripeColor(task, settings.labelConfig),
       has_notes: !!task.notes?.trim(),
+      priority: task.priority,
     }
 
     if (isDailyQuota(task)) {

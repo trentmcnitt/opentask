@@ -17,6 +17,8 @@ import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
 import { NotesMarker } from '@/components/NotesMarker'
+import { InlinePriorityTab } from '@/components/RowCorner'
+import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import { ConsideredPromptRow, usePromptRows } from '@/components/QuotaPromptRow'
 import { DashboardTasksPanel } from '@/components/DashboardTasksPanel'
 import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
@@ -527,6 +529,9 @@ function PanelRow({
   timezone: string
 }) {
   const press = useLongPress({ onLongPress: onPeek })
+  // Settings → Priority Display, the task rows' own rule (2026-10-26) — as
+  // on the /reminders row (`ReminderRow`), in this card's sizes.
+  const pri = usePriorityRowStyles(reminder.priority)
 
   return (
     <ReminderRowPopover
@@ -550,6 +555,8 @@ function PanelRow({
         className={cn(
           'hover:bg-foreground/5 cursor-pointer items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5 transition-colors select-none',
           hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
+          // "Show right border": 4px, with the give-back (4px - 3px = 1px).
+          pri.border && cn('border-r-4 pr-px', pri.border),
         )}
         onClick={(e) => {
           if (press.didFire()) {
@@ -575,7 +582,14 @@ function PanelRow({
           // centre on their own. The `mt-0.5` this used to carry pushed the
           // circle ~2px below it — Trent, 2026-09-21: "the text is a little
           // higher than the center line of the circle."
-          className="border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex size-[19px] shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors"
+          // "Color checkbox": the task row's circle colours (this circle draws
+          // no check mark, so only its border and hover).
+          className={cn(
+            'flex size-[19px] shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
+            pri.check
+              ? cn(pri.check.checkbox, pri.check.checkboxHover)
+              : 'border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5',
+          )}
         />
         {/* NEVER TRUNCATED. Trent, 2026-09-21: "reminders can't be truncated.
             They have to show the full thing... It needs to line wrap somehow."
@@ -585,8 +599,13 @@ function PanelRow({
             taller panel; accepted deliberately ("maybe we should just not care
             about it") over a height-based cap, which would make the number of
             visible rows change with the length of their text. */}
-        <p className="min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty">
+        <p
+          data-row-title
+          className={cn('min-w-0 flex-1 text-[13.5px] leading-[1.42] text-pretty', pri.title)}
+        >
           {reminder.title}
+          {/* "Show priority indicator": the tab, inline (`ReminderRow`). */}
+          <InlinePriorityTab tab={pri.tab} />
           {/* The Reminders surface's own notes mark (2026-09-25): without it
               the only way to learn a thought had a note was to hold it. */}
           {!!reminder.notes?.trim() && <NotesMarker />}

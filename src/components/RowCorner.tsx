@@ -92,6 +92,16 @@ export function PriorityTabMark({
 }
 
 /**
+ * The tab inline after a title (reminder, prompt and quota-chip rows), or
+ * nothing. Spaced from the title by half its text size, so it sits the same
+ * distance after a 16px /reminders title as after a 13px chip's.
+ */
+export function InlinePriorityTab({ tab }: { tab: PriorityTab | null }) {
+  if (!tab) return null
+  return <PriorityTabMark tab={tab} inline className="ml-[0.5em]" />
+}
+
+/**
  * ATTEMPTS (spec §7, 2026-10-12; replaced the "2d" target-age tab): local days
  * over target ("3×"), on any row with a target and at least one attempt. A
  * moved-ahead task keeps it, so the row still says it has slipped. Shown past

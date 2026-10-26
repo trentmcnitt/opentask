@@ -90,6 +90,7 @@ const QUOTA_PROMPT: Record<keyof QuotaPrompt, Field> = {
   period_label: STR_N,
   stripe_color: STR_N,
   has_notes: BOOL,
+  priority: INT,
   considered: BOOL,
   done: BOOL,
 }
