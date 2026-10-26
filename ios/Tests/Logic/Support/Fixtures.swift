@@ -70,6 +70,10 @@ enum Fixtures {
     /// created after the repeat-ends task (124): a one-off in its window, a
     /// one-off past its deadline (the safety net), a target-less repeat.
     static let deadlineWindow = 125, deadlinePassed = 126, deadlineRepeatTargetless = 127
+    /// The one-time High reminder of `notification-action-considered.json` and
+    /// `notification-action-not-waiting.json` (2026-10-26, the named reminder
+    /// push's Considered button), created last of all.
+    static let namedReminder = 130
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }

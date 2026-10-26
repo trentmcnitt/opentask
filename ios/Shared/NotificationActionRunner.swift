@@ -22,6 +22,15 @@ import Foundation
 ///   request (`commitSlotChecklist`) and never reaches this runner.
 /// - the deadlines-page nag (`kind: "deadlines"`, no category): a body tap
 ///   opens the deadlines page; it has no buttons.
+/// - `REMINDER_NAG` (the named reminder push, 2026-10-26): one button,
+///   Considered (the `DONE` identifier), which sends `done` with the
+///   payload's `reminder_day` as `day`. The server answers
+///   `considered: false` and changes nothing when that day is not today or
+///   the reminder isn't waiting any more — still a success here
+///   (`.reminderConsidered(considered: false)`), never an error. Its own case,
+///   not a task notification: the task branch would honour +1hr, the sweeps
+///   and Delete, which a reminder banner never offers. A body tap opens the
+///   task (`.openTask`), which the web forwards to /reminders.
 /// - anything else is a task notification and needs `taskId`: Done, +1hr,
 ///   the custom time, and the bulk snoozes — which pass the task as
 ///   `include_task_ids`, so the task whose banner was tapped moves even when
@@ -65,6 +74,10 @@ enum NotificationActionRunner {
         /// "Complete all" on a §6 slot; how many the server completed. Zero
         /// means the slot's reminders are still waiting, so its banner stays.
         case slotCompleted(affected: Int)
+        /// Considered on a named reminder push. `considered` is the server's
+        /// answer: `false` means it changed nothing (another day's banner, or
+        /// a reminder already considered elsewhere) — a success all the same.
+        case reminderConsidered(taskId: Int, considered: Bool)
         /// Body tap on a summary or slot notification: open the dashboard.
         /// (Not /reminders for a slot: a slot push can arrive on a build
         /// older than the web /reminders route, and the dashboard is never a
@@ -121,6 +134,22 @@ enum NotificationActionRunner {
                     slotId: slotId, didKeys: [], source: ProgressSource.forNotificationActions
                 )
                 return .slotCompleted(affected: affected)
+            case .button:
+                return .ignored
+            }
+
+        case NotificationCategory.reminderNag:
+            guard let taskId = userInfo["taskId"] as? Int else { return .missingTaskId }
+            switch action {
+            case .bodyTap:
+                return .openTask(taskId: taskId)
+            case .button(NotificationAction.done):
+                // No day, no call: a plain done is exactly the stale advance
+                // the day guard exists to prevent. Every REMINDER_NAG push
+                // carries one.
+                guard let day = userInfo[ReminderNagKey.day] as? String, !day.isEmpty else { return .ignored }
+                let considered = try await api.markDone(taskId: taskId, day: day)
+                return .reminderConsidered(taskId: taskId, considered: considered)
             case .button:
                 return .ignored
             }
@@ -212,6 +241,9 @@ enum NotificationActionRunner {
 /// them with a stub instead of hitting the network.
 protocol NotificationActionAPI {
     func markDone(taskId: Int) async throws
+    /// `done` for one OpenTask `day` (the named reminder push); returns the
+    /// server's `considered`.
+    func markDone(taskId: Int, day: String?) async throws -> Bool
     func deleteTask(taskId: Int) async throws
     func snoozeNextHour(taskId: Int) async throws
     func snoozeTo(taskId: Int, dueAt: String) async throws

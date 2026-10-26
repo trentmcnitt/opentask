@@ -74,13 +74,25 @@ function addDevice(token: string, bundleId: string) {
     .run(USER, token, bundleId)
 }
 
+/**
+ * THE CLOCK, frozen (since the 2026-10-26 clock marks): Thu 2026-01-15 10:07
+ * America/Chicago. The overdue checker's repeats land on clock marks
+ * (nag-marks.ts) — for a P0 (30 min) the :00 and :30 of the hour — so on the
+ * real clock a run that landed on a repeat mark of a seeded task sent it a
+ * visible notification, which carries the badge, and the badge-only push
+ * these tests count never went out. 10:07 is no repeat mark for any task
+ * below (due 10, 20 or 5 minutes and 30 s before it: first pushes 09:57,
+ * 09:47, 10:02, first repeats at 10:30), so each test asserts the same thing
+ * at any hour. The clock stands still, so every check in a test is the same
+ * minute, as the tests mean.
+ */
+const FROZEN = new Date('2026-01-15T16:07:00.000Z')
+
 let nextTaskId = 1
 /**
- * A P0 task that went overdue `minutesAgo` (+30s) minutes ago. With P0's
- * 30-minute cadence, anything but a multiple of 30 is not a notification
- * boundary, so the checker sends it no visible notification — only the badge
- * path runs. Times are relative to the real clock because `getOverdueCount`
- * asks SQLite for `datetime('now')`.
+ * A P0 task that went overdue `minutesAgo` (+30s) minutes before the frozen
+ * clock — not on a notification minute at 10:07 (see FROZEN), so the checker
+ * sends it no visible notification and only the badge path runs.
  */
 function addOverdueTask(minutesAgo: number): number {
   const id = nextTaskId++
@@ -163,7 +175,11 @@ describe('the badge-only payload', () => {
 })
 
 describe('the overdue checker sends a badge only when the count changes', () => {
-  beforeEach(() => addDevice('phone', 'io.mcnitt.opentask'))
+  beforeEach(() => {
+    vi.setSystemTime(FROZEN)
+    addDevice('phone', 'io.mcnitt.opentask')
+  })
+  afterEach(() => vi.useRealTimers())
 
   test('an unchanged count is sent once, not every minute', async () => {
     addOverdueTask(10)
@@ -208,9 +224,10 @@ describe('the overdue checker sends a badge only when the count changes', () => 
   })
 
   test('a visible notification carries the badge, and the checker does not repeat it', async () => {
-    // Due 30 minutes before the latest half-hour mark: a P0 (30 min) repeats
-    // on the half-hour grid (nag-marks.ts), so the tick at that mark sends
-    // the task's visible notification with aps.badge.
+    // Due 09:30, 30 minutes before the latest half-hour mark (10:00, before
+    // the frozen 10:07): a P0 (30 min) repeats on the half-hour grid
+    // (nag-marks.ts), so the tick at that mark sends the task's visible
+    // notification with aps.badge.
     const halfHour = 30 * 60 * 1000
     const mark = Math.floor(Date.now() / halfHour) * halfHour
     const dueAt = new Date(mark - halfHour)

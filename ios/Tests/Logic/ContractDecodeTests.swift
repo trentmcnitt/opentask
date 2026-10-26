@@ -770,4 +770,40 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let raw = try Fixtures.object("task-counts")
         XCTAssertEqual(Set(raw.keys), ["total", "overdue", "today"])
     }
+
+    // MARK: POST /api/notifications/actions — done with day (REMINDER_NAG's Considered)
+
+    /// Another day's banner: `considered: false`, and nothing else — no
+    /// `result`. The DTO defaults a missing `considered` to `true` (an older
+    /// server ignores `day`), so the raw key is asserted too: a renamed field
+    /// would otherwise read as a success that changed something.
+    func testNotificationActionNotWaiting() throws {
+        let result = try Fixtures.decode(APIClient.ReminderConsiderResult.self, "notification-action-not-waiting")
+        XCTAssertFalse(result.considered)
+        let raw = try Fixtures.object("notification-action-not-waiting")
+        XCTAssertEqual(Set(raw.keys), ["action", "task_id", "considered"])
+        XCTAssertEqual(raw["considered"] as? Bool, false)
+        XCTAssertEqual(raw["task_id"] as? Int, Fixtures.namedReminder)
+    }
+
+    /// Today's day, waiting: `considered: true`, with the done's `result`.
+    func testNotificationActionConsidered() throws {
+        let result = try Fixtures.decode(APIClient.ReminderConsiderResult.self, "notification-action-considered")
+        XCTAssertTrue(result.considered)
+        let raw = try Fixtures.object("notification-action-considered")
+        XCTAssertEqual(raw["considered"] as? Bool, true)
+        XCTAssertEqual(raw["action"] as? String, "done")
+        XCTAssertEqual(raw["task_id"] as? Int, Fixtures.namedReminder)
+        let task = try XCTUnwrap((raw["result"] as? [String: Any])?["task"] as? [String: Any])
+        XCTAssertEqual(task["id"] as? Int, Fixtures.namedReminder)
+        XCTAssertEqual(task["done"] as? Bool, true)
+    }
+
+    /// A body with no `considered` (a server from before the day guard, which
+    /// ignores `day` and does a plain done) reads as `true`: it acted.
+    func testReminderConsiderResultWithoutTheFieldIsTrue() throws {
+        let data = Data(#"{"data":{"action":"done","task_id":1}}"#.utf8)
+        let result = try JSONDecoder().decode(APIEnvelope<APIClient.ReminderConsiderResult>.self, from: data).data
+        XCTAssertTrue(result.considered)
+    }
 }

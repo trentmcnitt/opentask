@@ -74,12 +74,51 @@ final class APIClient {
 
     /// Mark a task as done via the notification actions endpoint.
     func markDone(taskId: Int) async throws {
+        try await markDone(taskId: taskId, day: nil)
+    }
+
+    /// `POST /api/notifications/actions` `done` with `day` → `{ "considered": Bool }`.
+    ///
+    /// `considered: false` means the server changed nothing: the push was for
+    /// another OpenTask day, or the reminder is no longer waiting (considered
+    /// somewhere else). A missing field reads as `true`: a server from before
+    /// the day guard ignores `day` and does a plain done, so it acted.
+    struct ReminderConsiderResult: Decodable, Equatable {
+        let considered: Bool
+
+        init(considered: Bool) {
+            self.considered = considered
+        }
+
+        private enum CodingKeys: String, CodingKey { case considered }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            considered = try c.decodeIfPresent(Bool.self, forKey: .considered) ?? true
+        }
+    }
+
+    /// Mark a task as done via the notification actions endpoint, optionally
+    /// for one OpenTask `day` — the named reminder push's Considered button
+    /// (`REMINDER_NAG`, 2026-10-26) sends its payload's `reminder_day`, and the
+    /// server considers the reminder only if it is waiting on that day, today.
+    /// Returns the server's `considered` (always `true` with no `day`). A 2xx
+    /// whose body doesn't decode still means the server acted: `true`.
+    ///
+    /// `markDone(taskId:)` above is this with no day; it stays its own method
+    /// because `WidgetOutboxTransport` requires that exact Void signature.
+    @discardableResult
+    func markDone(taskId: Int, day: String?) async throws -> Bool {
         guard let token = bearerToken else { throw APIError.notConfigured }
-        try await post(path: "/api/notifications/actions", body: [
+        var body: [String: Any] = [
             "action": "done",
             "task_id": taskId,
             "token": token,
-        ] as [String: Any])
+        ]
+        if let day { body["day"] = day }
+        let data = try await post(path: "/api/notifications/actions", body: body)
+        guard day != nil else { return true }
+        return (try? JSONDecoder().decode(APIEnvelope<ReminderConsiderResult>.self, from: data).data.considered) ?? true
     }
 
     /// Move a task to the trash from a notification's Delete button
