@@ -181,6 +181,23 @@ cd macos && xcodegen generate && \
 - `xcrun simctl push` delivers banners but does not invoke service or content extensions.
 - iOS 18.2 simulator: apps don't appear in Settings (known bug, fixed in 18.4+).
 
+## Installing on devices (2026-10-26)
+
+**Installs go through the scripts, never a hand-typed `xcodebuild` + `devicectl`.** On 10-26 several Mac builds went out without the push entitlements and the installed app got no push for hours, with nothing failing. The scripts build Release, check every bundle's SIGNED entitlements for `aps-environment` with `codesign`, and stop loudly before installing a build that would not get push.
+
+```bash
+# iPhone (the watch app rides along). UDIDs from `xcrun devicectl list devices`.
+OPENTASK_DD_IOS=<scratchpad>/dd-ios ios/scripts/install-iphone.sh <iphone-udid> [<iphone-udid> ...]
+ios/scripts/install-iphone.sh --verify-only     # build and check, install nothing
+
+# Mac (~/Applications/OpenTask.app)
+OPENTASK_DD_MAC=<scratchpad>/dd-mac macos/scripts/install-mac.sh
+```
+
+- **iPhone** (`ios/scripts/install-iphone.sh`): Release for `generic/platform=iOS`, scheme `OpenTask` (embeds `Watch/OpenTaskWatch.app`). Checks `aps-environment` on `OpenTask.app`, `OpenTaskWidgets.appex`, `OpenTaskWatch.app` and `OpenTaskWatchWidgets.appex`. `OpenTaskNotification.appex` is checked for its signature and App Group only: a content extension draws a notification the app already received and never registers for push, so it has no `aps-environment` and its App ID has no Push capability. Then it installs on each UDID it is given, skips one devicectl doesn't list as available (and says why), and prints the commit and installed/skipped/failed per device. It never launches the app (see below). No device ids live in the script; the caller passes them.
+- **Mac** (`macos/scripts/install-mac.sh`): see `macos/README.md` § Installing.
+- Derived data defaults to `ios/build` / `macos/build` (gitignored); builders sharing one dir across worktrees set `OPENTASK_DD_IOS` / `OPENTASK_DD_MAC`. Shared helpers: `ios/scripts/native-install-lib.sh`.
+
 ## Physical Device Caution
 
 - **Avoid `devicectl device process launch` on a physical device** unless specifically needed. It kills the running app process, which can reset app state and force re-entry of credentials. Prefer letting the user launch the app themselves after install.
