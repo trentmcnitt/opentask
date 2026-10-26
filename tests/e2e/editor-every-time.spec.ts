@@ -18,8 +18,36 @@ import {
   withPreferences,
 } from './fixtures'
 import type { Locator, Page, Request } from '@playwright/test'
+import { createModeTask, draftFromTask } from '@/lib/every-time'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
+
+const WEEKDAY_NAMES: Record<string, string> = {
+  MO: 'Monday',
+  TU: 'Tuesday',
+  WE: 'Wednesday',
+  TH: 'Thursday',
+  FR: 'Friday',
+  SA: 'Saturday',
+  SU: 'Sunday',
+}
+
+/**
+ * A weekday that is NOT already in a fresh rule's placeholder (weekly on
+ * "today's" weekday), read through the product's own rule
+ * (`draftFromTask(createModeTask({}))`, src/lib/every-time.ts), so clicking it
+ * is always a change: a hard-coded "Monday" was a no-op every Monday. It
+ * follows the product if its notion of "today" changes.
+ */
+function weekdayOtherThanPlaceholder(): string {
+  const draft = draftFromTask(createModeTask({}), {
+    timezone: TZ,
+    morningTime: '09:00',
+    now: new Date(),
+  })
+  const code = Object.keys(WEEKDAY_NAMES).find((d) => !draft.rule.days.includes(d))!
+  return WEEKDAY_NAMES[code]
+}
 test.use({ timezoneId: TZ })
 
 const FRIDAYS_4PM = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0'
@@ -580,7 +608,7 @@ test('bulk with different rules reads "Repeats — mixed"; an untouched placehol
       const region = dialog.getByRole('region', { name: 'Editing every time' })
       const save = region.getByRole('button', { name: 'Save', exact: true })
       await expect(save).toBeDisabled()
-      await region.getByRole('button', { name: 'Monday' }).click()
+      await region.getByRole('button', { name: weekdayOtherThanPlaceholder() }).click()
       await expect(save).toBeEnabled()
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
       await page.getByRole('alertdialog').getByRole('button', { name: 'Discard' }).click()

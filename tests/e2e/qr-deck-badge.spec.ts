@@ -12,11 +12,10 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle, withPreferences } from './fixtures'
+import { test, expect, openTaskDay, uniqueTitle, withPreferences } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
-const calendarDay = (n = 0) => DateTime.now().setZone(TZ).plus({ days: n }).toFormat('yyyy-MM-dd')
 
 async function signIn(page: Page) {
   await page.goto('/login')
@@ -74,10 +73,10 @@ test('a future deck\'s tag says the day: "On deck tomorrow", "On deck Nov 15"', 
     const later = await create(page, { title: uniqueTitle('DB later') })
     ids.push(today, tomorrow, later)
     madeAnHourAgo(ids)
-    await deck(page, [today], calendarDay(0))
-    await deck(page, [tomorrow], calendarDay(1))
-    await deck(page, [later], calendarDay(5))
-    const laterWords = DateTime.fromISO(calendarDay(5), { zone: TZ }).toFormat('LLL d')
+    await deck(page, [today], await openTaskDay(page, 0))
+    await deck(page, [tomorrow], await openTaskDay(page, 1))
+    await deck(page, [later], await openTaskDay(page, 5))
+    const laterWords = DateTime.fromISO(await openTaskDay(page, 5), { zone: TZ }).toFormat('LLL d')
 
     await withPreferences(page, { default_grouping: 'new' }, async () => {
       for (const size of [

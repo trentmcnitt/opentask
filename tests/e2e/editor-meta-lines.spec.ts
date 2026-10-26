@@ -22,14 +22,12 @@
  */
 import path from 'path'
 import Database from 'better-sqlite3'
-import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle, withPreferences } from './fixtures'
+import { test, expect, openTaskDay, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 const DAY = 24 * 60 * 60 * 1000
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString()
-const calendarDay = (n = 0) => DateTime.now().setZone(TZ).plus({ days: n }).toFormat('yyyy-MM-dd')
 
 test.use({ timezoneId: TZ })
 
@@ -81,7 +79,7 @@ async function makeTasks(page: Page): Promise<Made> {
   })
   const decked = await create(page, { title: uniqueTitle('Meta decked'), horizon: 'weeks' })
   const deck = await page.request.post('/api/tasks/deck', {
-    data: { ids: [decked], day: calendarDay(5) },
+    data: { ids: [decked], day: await openTaskDay(page, 5) },
   })
   expect(deck.ok(), await deck.text()).toBeTruthy()
   const plain = await create(page, { title: uniqueTitle('Meta plain'), horizon: 'weeks' })
@@ -89,7 +87,7 @@ async function makeTasks(page: Page): Promise<Made> {
   sql(
     'UPDATE tasks SET queued_at = ?, queued_from_deck_day = ? WHERE id = ?',
     new Date().toISOString(),
-    calendarDay(-1),
+    await openTaskDay(page, -1),
     wasDecked,
   )
   return { targeted, decked, plain, wasDecked }
