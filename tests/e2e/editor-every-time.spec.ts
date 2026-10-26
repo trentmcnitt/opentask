@@ -19,6 +19,7 @@ import {
 } from './fixtures'
 import type { Locator, Page, Request } from '@playwright/test'
 import { createModeTask, draftFromTask } from '@/lib/every-time'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 
@@ -44,6 +45,9 @@ function weekdayOtherThanPlaceholder(): string {
     timezone: TZ,
     morningTime: '09:00',
     now: new Date(),
+    // The E2E server runs with the task queue off, so the browser's day is
+    // the calendar day (`useDayStart` → midnight).
+    dayStart: CALENDAR_DAY_START,
   })
   const code = Object.keys(WEEKDAY_NAMES).find((d) => !draft.rule.days.includes(d))!
   return WEEKDAY_NAMES[code]

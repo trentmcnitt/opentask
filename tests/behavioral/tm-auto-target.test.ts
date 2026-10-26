@@ -26,6 +26,7 @@ import {
   HEADS_UP_LONG_WAIT,
 } from '@/lib/task-segments'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
 const tz = TEST_TIMEZONE
@@ -248,37 +249,52 @@ describe("TM8: the deadline's automatic target", () => {
     })
 
     test('TM8-015: "Morning of the deadline" — the deadline\'s morning, or the deadline itself if earlier', () => {
-      expect(local(deadlineDayTarget(at('2026-10-16T17:00'), ctx))).toBe('Fri Oct 16 09:00')
-      expect(local(deadlineDayTarget(at('2026-10-16T07:30'), ctx))).toBe('Fri Oct 16 07:30')
+      expect(local(deadlineDayTarget(at('2026-10-16T17:00'), ctx, CALENDAR_DAY_START))).toBe(
+        'Fri Oct 16 09:00',
+      )
+      expect(local(deadlineDayTarget(at('2026-10-16T07:30'), ctx, CALENDAR_DAY_START))).toBe(
+        'Fri Oct 16 07:30',
+      )
       // The label says where the time comes from; the weekday only past tomorrow.
-      expect(deadlineDayPick(at('2026-10-16T17:00'), ctx)).toEqual({
+      expect(deadlineDayPick(at('2026-10-16T17:00'), ctx, new Date(), CALENDAR_DAY_START)).toEqual({
         label: 'Morning of the deadline · Fri 9:00 AM (Default task time)',
         at: at('2026-10-16T09:00'),
       })
-      expect(deadlineDayPick(at('2026-10-16T07:30'), ctx)).toEqual({
+      expect(deadlineDayPick(at('2026-10-16T07:30'), ctx, new Date(), CALENDAR_DAY_START)).toEqual({
         label: 'Morning of the deadline · Fri 7:30 AM (Deadline time)',
         at: at('2026-10-16T07:30'),
       })
-      expect(deadlineDayPick(at('2026-10-13T17:00'), ctx)?.label).toBe(
-        'Morning of the deadline · 9:00 AM (Default task time)',
-      )
-      expect(deadlineDayPick(at('2026-10-13T08:30'), ctx)?.label).toBe(
-        'Morning of the deadline · 8:30 AM (Deadline time)',
-      )
+      expect(
+        deadlineDayPick(at('2026-10-13T17:00'), ctx, new Date(), CALENDAR_DAY_START)?.label,
+      ).toBe('Morning of the deadline · 9:00 AM (Default task time)')
+      expect(
+        deadlineDayPick(at('2026-10-13T08:30'), ctx, new Date(), CALENDAR_DAY_START)?.label,
+      ).toBe('Morning of the deadline · 8:30 AM (Deadline time)')
       // A deadline at the morning time itself is the morning.
-      expect(deadlineDayPick(at('2026-10-13T09:00'), ctx)?.label).toBe(
-        'Morning of the deadline · 9:00 AM (Default task time)',
-      )
+      expect(
+        deadlineDayPick(at('2026-10-13T09:00'), ctx, new Date(), CALENDAR_DAY_START)?.label,
+      ).toBe('Morning of the deadline · 9:00 AM (Default task time)')
       // Today, before its morning.
       expect(
-        deadlineDayPick(at('2026-10-12T17:00'), ctx, new Date(at('2026-10-12T06:00')))?.label,
+        deadlineDayPick(
+          at('2026-10-12T17:00'),
+          ctx,
+          new Date(at('2026-10-12T06:00')),
+          CALENDAR_DAY_START,
+        )?.label,
       ).toBe('Morning of the deadline · 9:00 AM (Default task time)')
       // Its morning already gone: nothing to offer.
-      expect(deadlineDayPick(at('2026-10-12T17:00'), ctx)).toBeNull()
+      expect(
+        deadlineDayPick(at('2026-10-12T17:00'), ctx, new Date(), CALENDAR_DAY_START),
+      ).toBeNull()
       // The deadline passed: never offered (Trent's ruling, 2026-10-12).
-      expect(deadlineDayPick(at('2026-10-12T11:00'), ctx)).toBeNull()
-      expect(deadlineDayPick(at('2026-10-10T17:00'), ctx)).toBeNull()
-      expect(deadlineDayPick(null, ctx)).toBeNull()
+      expect(
+        deadlineDayPick(at('2026-10-12T11:00'), ctx, new Date(), CALENDAR_DAY_START),
+      ).toBeNull()
+      expect(
+        deadlineDayPick(at('2026-10-10T17:00'), ctx, new Date(), CALENDAR_DAY_START),
+      ).toBeNull()
+      expect(deadlineDayPick(null, ctx, new Date(), CALENDAR_DAY_START)).toBeNull()
     })
 
     test('TM8-016: capAtDeadline is the one cap', () => {

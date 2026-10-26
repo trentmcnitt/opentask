@@ -14,6 +14,7 @@ import {
   daysBetween,
 } from '@/lib/format-date'
 import { snapToHour } from '@/lib/snooze'
+import { capitalized, nightDay, nightDayWords } from '@/lib/night-day'
 
 /** Increment buttons: positive = forward, negative = backward */
 export const INCREMENTS = [
@@ -148,7 +149,9 @@ export function initWorkingDate(dueAt: string | null, now?: Date): string {
 /**
  * Get the day label for a date: "Today", "Tomorrow", "Yesterday", or short
  * weekday (e.g., "Mon") — by the user's OpenTask days (`dayStart`, "Day
- * starts at" PR 2): with a 3:00 AM start, at 01:30 a 9:00 AM time is "Tomorrow".
+ * starts at" PR 2): with a 3:00 AM start, at 01:30 a 9:00 AM time is
+ * "Tomorrow", and a Friday 1:00 AM time is "Thu" (the OpenTask day's weekday,
+ * part 2) — the label of the whole day the moment is on.
  */
 export function getDayLabel(
   isoUtc: string,
@@ -164,12 +167,17 @@ export function getDayLabel(
   if (date >= todayStart && date < tomorrowStart) return 'Today'
   if (date >= tomorrowStart && date < dayAfterTomorrowStart) return 'Tomorrow'
 
-  return date.toLocaleString('en-US', { timeZone: timezone, weekday: 'short' })
+  return nightDay(date, timezone, dayStart, now).day.toFormat('ccc')
 }
 
 /**
  * Format the header line for the Quick Action Panel.
- * Returns: "Today, Feb 3, 10:00 AM" or "Tomorrow, Feb 4, 9:00 AM" or "Mon, Feb 10, 6:50 PM"
+ * Returns: "Today, Feb 3, 10:00 AM" or "Tomorrow, Feb 4, 9:00 AM" or "Mon, Feb 10, 6:50 PM".
+ *
+ * Between midnight and the day start the day word follows L9's night rule
+ * (`nightDay`, part 2): "Tonight, Feb 4, 1:00 AM", "Tomorrow night, Feb 5,
+ * 1:00 AM", "Thu night, Feb 6, 1:00 AM" — the word names the OpenTask day
+ * the time is on, the date stays the moment's own.
  */
 export function formatQuickSelectHeader(
   isoUtc: string,
@@ -178,7 +186,10 @@ export function formatQuickSelectHeader(
   now: Date = new Date(),
 ): string {
   const date = new Date(isoUtc)
-  const dayLabel = getDayLabel(isoUtc, timezone, dayStart, now)
+  const n = nightDay(date, timezone, dayStart, now)
+  const dayLabel = n.night
+    ? capitalized(nightDayWords(n, date < now))
+    : getDayLabel(isoUtc, timezone, dayStart, now)
 
   const timePart = date.toLocaleString('en-US', {
     timeZone: timezone,

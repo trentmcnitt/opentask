@@ -18,6 +18,7 @@ import {
 import { DateTime } from 'luxon'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { parseDeckDay } from '@/lib/task-segments'
+import { NIGHT_SUFFIX, nightDay, nightWeekday } from '@/lib/night-day'
 import { getPriorityOption } from '@/lib/priority'
 
 /** Maps DB column names to human-readable labels */
@@ -100,16 +101,14 @@ export function formatSnoozeTarget(
     return time
   }
 
+  // L9's night rule (`nightDay`): "tomorrow night 1:00 AM", "Thu night 1:00 AM".
+  const n = nightDay(target, timezone, dayStart, now)
   if (target >= tomorrowStart && target < dayAfterTomorrowStart) {
-    return `tomorrow ${time}`
+    return `tomorrow${n.night ? NIGHT_SUFFIX : ''} ${time}`
   }
 
   if (target >= dayAfterTomorrowStart && target < nextWeekStart) {
-    const dayName = target.toLocaleDateString('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-    })
-    return `${dayName} ${time}`
+    return `${nightWeekday(n)} ${time}`
   }
 
   const dateStr = target.toLocaleDateString('en-US', {
@@ -296,7 +295,7 @@ function buildFieldFragment(
     case 'is_reminder':
       return afterState.is_reminder ? 'Moved to Reminders' : 'Removed from Reminders'
     case 'on_deck_day':
-      return buildDeckFragment(afterState, userTimezone)
+      return buildDeckFragment(afterState, userTimezone, context.dayStart)
     case 'repeat_count':
     case 'repeat_until':
       return buildRepeatEndFragment(afterState)
@@ -374,6 +373,7 @@ function buildRelativeTargetFragment(
 function buildDeckFragment(
   afterState: Partial<Record<string, unknown>>,
   userTimezone: string,
+  dayStart: string,
 ): string {
   const day = afterState.on_deck_day
   if (typeof day !== 'string') {
@@ -384,7 +384,8 @@ function buildDeckFragment(
     if (typeof deadline !== 'string' || Date.parse(deadline) <= Date.now()) {
       return 'Taken off deck: the deadline has passed'
     }
-    const on = DateTime.fromISO(deadline, { zone: 'utc' }).setZone(userTimezone).toFormat('ccc')
+    // The deadline's OpenTask day, "night" in its night (L9: "Thu night").
+    const on = nightWeekday(nightDay(new Date(deadline), userTimezone, dayStart, new Date()))
     return `Taken off deck: the deadline is ${on}`
   }
   const parsed = parseDeckDay(day, 'utc')

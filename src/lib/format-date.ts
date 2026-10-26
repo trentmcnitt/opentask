@@ -7,7 +7,13 @@
  */
 
 import { DateTime } from 'luxon'
-import { openTaskDayBoundaries, openTaskDaysBetween, type DayBoundaries } from '@/lib/opentask-day'
+import {
+  openTaskDayBoundaries,
+  openTaskDayOf,
+  openTaskDaysBetween,
+  type DayBoundaries,
+} from '@/lib/opentask-day'
+import { NIGHT_SUFFIX, nightDay, nightWeekday } from '@/lib/night-day'
 
 /**
  * Whole days from `a` to `b` (negative when `b` is earlier), counted on the
@@ -145,18 +151,15 @@ export function formatDueTimeParts(
     return formatTodayFuture(due, now, time)
   }
 
-  // Tomorrow
+  // Tomorrow — "Tomorrow night 1:00 AM" in its night (L9, `nightDay`)
+  const n = nightDay(due, timezone, dayStart, now)
   if (due < dayAfterTomorrowStart) {
-    return { relative: `Tomorrow ${time}` }
+    return { relative: `Tomorrow${n.night ? NIGHT_SUFFIX : ''} ${time}` }
   }
 
-  // Within 7 days (after tomorrow)
+  // Within 7 days (after tomorrow): the OpenTask day's weekday ("Thu night 1:00 AM")
   if (due < nextWeekStart) {
-    const dayName = due.toLocaleDateString('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-    })
-    return { relative: `${dayName} ${time}` }
+    return { relative: `${nightWeekday(n)} ${time}` }
   }
 
   // Beyond 7 days
@@ -307,11 +310,34 @@ export function formatLastLogged(
 ): string {
   const days = daysBetween(new Date(isoUtc), now, timezone, dayStart)
   const time = formatTimeInTimezone(isoUtc, timezone)
-  if (days <= 0) return `today ${time}`
-  if (days === 1) return `yesterday ${time}`
+  // L9 (`nightDay`): a 1:00 AM log is the night of the OpenTask day before.
+  const n = nightDay(new Date(isoUtc), timezone, dayStart, now)
+  const suffix = n.night ? NIGHT_SUFFIX : ''
+  if (days <= 0) return n.night ? `${nightWeekday(n)} ${time}` : `today ${time}`
+  if (days === 1) return `yesterday${suffix} ${time}`
   const local = DateTime.fromISO(isoUtc, { zone: timezone })
-  if (days < 7) return `${local.toFormat('ccc')} ${time}`
+  if (days < 7) return `${nightWeekday(n)} ${time}`
   return `${local.toFormat('LLL d')}, ${time}`
+}
+
+/**
+ * A moment's DATE ALONE ("Oct 25"; with `year`, "Oct 25, 2026"), as its
+ * OpenTask date ("OpenTask day everywhere" part 2): a task completed or
+ * deleted at 00:30 with a 3:00 AM day start is the day before's — the day
+ * History groups it under. For the archive's "Completed …", the trash's
+ * "Deleted …" and a quota's "Created". A label with a TIME keeps the moment's
+ * own date (`formatDateTime`).
+ */
+export function openTaskDateLabel(
+  isoUtc: string,
+  timezone: string,
+  dayStart: string,
+  opts: { year?: boolean } = {},
+): string {
+  const date = new Date(isoUtc)
+  if (Number.isNaN(date.getTime())) return '—'
+  const day = DateTime.fromISO(openTaskDayOf(date, timezone, dayStart), { zone: timezone })
+  return day.toFormat(opts.year ? 'LLL d, yyyy' : 'LLL d')
 }
 
 /**
@@ -428,19 +454,21 @@ export function formatTaskSince(
 
   const timeAgo = formatTimeAgo(anchor, nowDt)
 
-  // "today" / "yesterday" by OpenTask day (`daysBetween`).
+  // "today" / "yesterday" by OpenTask day (`daysBetween`); a weekday is the
+  // OpenTask day's, with L9's "night" for a moment in its night (`nightDay`).
   const days = daysBetween(anchor.toJSDate(), now, timezone, dayStart)
+  const n = nightDay(anchor.toJSDate(), timezone, dayStart, now)
   let label: string
   if (days === 0) {
-    label = 'today'
+    label = n.night ? nightWeekday(n) : 'today'
   } else if (days === 1) {
-    label = 'yesterday'
+    label = n.night ? `yesterday${NIGHT_SUFFIX}` : 'yesterday'
   } else if (nowDt.diff(anchor, 'days').days < 7) {
-    label = anchor.toFormat('ccc')
-  } else if (anchor.year === nowDt.year) {
-    label = anchor.toFormat('LLL d')
+    label = nightWeekday(n)
   } else {
-    label = anchor.toFormat('LLL d, yyyy')
+    // The OpenTask date, "night" in its night (the chip's "Oct 30 night").
+    const date = n.day.toFormat(n.day.year === nowDt.year ? 'LLL d' : 'LLL d, yyyy')
+    label = n.night ? `${date}${NIGHT_SUFFIX}` : date
   }
 
   return { label, timeAgo, fullDate }

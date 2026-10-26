@@ -10,6 +10,7 @@ import {
 import type { Task } from '@/types'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { openTaskDayOf } from '@/lib/opentask-day'
+import { openTaskDateLabel } from '@/lib/format-date'
 
 interface UseBulkQuickSelectDateOptions {
   tasks: Task[]
@@ -122,11 +123,9 @@ export function computeInitialDisplay(
   if (allSameDay) {
     // Same day, different times: "Today, —" or "Tomorrow, —"
     const dayLabel = getDayLabel(earliest, timezone, dayStart)
-    const datePart = new Date(earliest).toLocaleDateString('en-US', {
-      timeZone: timezone,
-      month: 'short',
-      day: 'numeric',
-    })
+    // The day they share is an OpenTask day: its date, not the earliest
+    // moment's calendar date (a 1:00 AM time is the evening before's).
+    const datePart = openTaskDateLabel(earliest, timezone, dayStart)
     return {
       headerText: `${dayLabel}, ${datePart}, —`,
       hasMixedDates: true,

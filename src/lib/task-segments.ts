@@ -393,15 +393,19 @@ function resolveFixed(w: TargetWrite, ctx: TargetContext | null, now: Date): Res
 
 /**
  * The picker's "Morning of the deadline" (ruling Q8): the user's morning on the
- * deadline's own local day — or the deadline itself, if that is earlier.
+ * deadline's OpenTask day — or the deadline itself, if that is earlier. L9
+ * (part 2, 2026-10-26): a deadline between midnight and the day start counts
+ * on the evening before ("Deadline Thu night" for Fri 01:00 with a 3:00 AM
+ * start), so its morning is Thursday's, not Friday's.
  */
 export function deadlineDayTarget(
   deadlineAt: string,
-  ctx: TargetContext | null = clientContext,
+  ctx: TargetContext,
+  /** The user's day boundary (`useDayStart`). */
+  dayStart: string,
 ): string {
   const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
-  if (!ctx) return deadline.startOf('day').toISO()!
-  const morning = morningOn(deadline.setZone(ctx.timezone).startOf('day'), ctx)
+  const morning = morningOn(openTaskLocalDay(deadline.toJSDate(), ctx.timezone, dayStart), ctx)
   return (morning < deadline ? morning : deadline).toUTC().toISO()!
 }
 
