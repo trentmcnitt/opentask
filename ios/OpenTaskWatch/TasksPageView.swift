@@ -22,6 +22,11 @@ struct TasksPageView: View {
 
     private var upNext: [TaskDTO] { model.upNextTasks }
     private var overdueCount: Int { model.overdueTasks.count }
+    /// What the sweep would move (`OverdueSweepWords`, 2026-10-26: the button
+    /// said "Defer all overdue (3)" for a sweep that moves 2). Zero — only
+    /// Urgent left, which a sweep never moves — shows no button: there is
+    /// nothing honest for it to say, the phone widget's rule.
+    private var sweepCount: Int { model.overdueSweepCount }
 
     var body: some View {
         // See `RemindersPageView`'s doc: `.navigationTitle` anchors to the
@@ -42,17 +47,18 @@ struct TasksPageView: View {
                 LoadErrorView(message: error)
                     .listRowBackground(Color.clear)
             } else {
-                if overdueCount > 0 {
+                if sweepCount > 0 {
                     // An ACTION, and it must read as one (Trent, 2026-10-11:
-                    // "All over target (4)" looked like a section header; now "Defer all
-                    // overdue (4)"): a
+                    // "All over target (4)" looked like a section header): a
                     // verb, and a filled capsule button set apart from the
-                    // rows below, rather than a tinted row.
+                    // rows below, rather than a tinted row. Its words are the
+                    // phone's and the Mac's ("Defer 2 of 3", "Defer all 3
+                    // overdue", 2026-10-26).
                     Button {
                         showingBulkSheet = true
                     } label: {
                         Label(
-                            "Defer all \(TaskWording.overdueLower) (\(overdueCount))",
+                            OverdueSweepWords.label(count: sweepCount, total: overdueCount),
                             systemImage: "moon.zzz.fill"
                         )
                         .font(.footnote.weight(.semibold))

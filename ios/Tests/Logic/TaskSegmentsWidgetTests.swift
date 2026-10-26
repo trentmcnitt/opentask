@@ -467,12 +467,29 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertNil(TaskSegmentDTO(horizon: "someday", tasks: []).kind)
         XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).pageKey, -15)
 
+        // The titles (2026-10-26, the web's `segmentTitle`): "Task queue ·"
+        // and the cadence word — the row word ("Days") keeps its name.
+        XCTAssertEqual(
+            ["days", "weeks", "months", "eventually", "upcoming"].map { TaskSegmentDTO(horizon: $0, tasks: []).title },
+            [
+                "Task queue · Daily", "Task queue · Weekly", "Task queue · Monthly", "Task queue · Quarterly",
+                "Task queue · Upcoming",
+            ]
+        )
+        XCTAssertEqual(TaskSegmentDTO(horizon: "weeks", tasks: []).label, "Weeks")
+        XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).title, "Task queue · Someday")
+        // A wrapping header breaks after the dot, never before it.
+        XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Task queue\u{00A0}· Quarterly")
+        // The Smart Stack card's short header: the word alone; a period keeps its name.
+        XCTAssertEqual(TaskWording.withoutTaskQueuePrefix("Task queue · Upcoming"), "Upcoming")
+        XCTAssertNil(TaskWording.withoutTaskQueuePrefix("Early morning"))
+
         let bars = ReminderDayProgress.stripBars(
             groups: [], segments: [TaskSegmentDTO(horizon: "days", tasks: [row(1)]), upcoming], now: t0,
             day: .midnight(timeZone: .current)
         )
         XCTAssertEqual(bars.map(\.segment), [.horizon(.days), .upcoming])
-        XCTAssertEqual(bars.map(\.label), ["Tasks · Days", "Tasks · Upcoming"])
+        XCTAssertEqual(bars.map(\.label), ["Task queue · Daily", "Task queue · Upcoming"])
     }
 
     /// Every row offers Today, repeating ones included (batch 2, 2026-10-12:

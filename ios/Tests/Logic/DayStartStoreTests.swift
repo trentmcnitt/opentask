@@ -51,6 +51,22 @@ final class DayStartStoreTests: XCTestCase {
         XCTAssertEqual(DayStartStore.cachedFirstWeekday, 2)
     }
 
+    /// The switch itself is remembered (2026-10-26, the sweep estimate's one
+    /// High per press) — apart from the boundary, since the switch on with a
+    /// 00:00 day start resolves to the same boundary as off. Off when nothing
+    /// is known, or the field is missing or not a boolean.
+    func testRemembersTheTaskQueueSwitch() throws {
+        XCTAssertFalse(DayStartStore.cachedTaskQueue)
+        DayStartStore.save(from: try page(#"{"task_queue":true,"rollover_time":"00:00"}"#))
+        XCTAssertTrue(DayStartStore.cachedTaskQueue)
+        XCTAssertEqual(DayStartStore.cachedDayStart, "00:00")
+        DayStartStore.save(from: try page(#"{"rollover_time":"03:00"}"#))
+        XCTAssertFalse(DayStartStore.cachedTaskQueue, "a server without the field has no switch")
+        DayStartStore.save(from: try page(#"{"task_queue":true}"#))
+        DayStartStore.save(from: try page(#"{"task_queue":"yes"}"#))
+        XCTAssertFalse(DayStartStore.cachedTaskQueue)
+    }
+
     func testDecodesTheFieldsLeniently() throws {
         let p = try page(#"{"task_queue":"yes","rollover_time":3,"week_start":"sunday"}"#)
         XCTAssertNil(p.taskQueue)

@@ -112,6 +112,13 @@ final class WatchViewModel: ObservableObject {
 
     var upNextTasks: [TaskDTO] { WatchSlotLogic.upNextTasks(from: tasks) }
     var overdueTasks: [TaskDTO] { WatchSlotLogic.overdueTasks(from: tasks) }
+    /// How many the overdue sweep would move — the phone's and the Mac's
+    /// estimate (`TaskLists.overdueSweepEligibleCount`; one High per press
+    /// with the task queue on, as this watch last cached it). The Tasks
+    /// button's "Defer 2 of 3" (`OverdueSweepWords`, 2026-10-26).
+    var overdueSweepCount: Int {
+        TaskLists.overdueSweepEligibleCount(tasks, taskQueue: DayStartStore.cachedTaskQueue)
+    }
     /// Every open quota — the same `isTracked` slice of `/api/tasks` the
     /// phone Quotas widget reads (quotas are open tasks that never complete,
     /// so no separate endpoint exists or is needed).

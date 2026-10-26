@@ -214,7 +214,7 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(bars.map(\.total), [4, 2, 5, 3, 1], "a segment weighs its rows today, deferred included")
         XCTAssertEqual(bars.map(\.handled), [3, 2, 0, 2, 1])
         XCTAssertEqual(bars[3].fraction, 2.0 / 3.0, accuracy: 1e-9)
-        XCTAssertEqual(bars[3].label, "Tasks · Days")
+        XCTAssertEqual(bars[3].label, "Task queue · Daily")
     }
 
     func testATaskSegmentBarIsNeverUpcoming() {

@@ -21,9 +21,13 @@ enum TasksTimeline {
 
     /// The "All overdue" snooze-mode bar's count (2026-09-23, Phase 2) — an
     /// estimate; see `TaskLists.overdueSweepEligibleCount` for the rule and its
-    /// two accepted gaps versus the server.
-    static func overdueSweepEligibleCount(from tasks: [TaskDTO], now: Date = Date()) -> Int {
-        TaskLists.overdueSweepEligibleCount(tasks, now: now)
+    /// two accepted gaps versus the server. `taskQueue` (one High per press)
+    /// is read at this edge from what the app or the Quotas widget last
+    /// cached (`DayStartStore.cachedTaskQueue`).
+    static func overdueSweepEligibleCount(
+        from tasks: [TaskDTO], now: Date = Date(), taskQueue: Bool = DayStartStore.cachedTaskQueue
+    ) -> Int {
+        TaskLists.overdueSweepEligibleCount(tasks, now: now, taskQueue: taskQueue)
     }
 
     /// Due or overdue as of the end of the OpenTask day (`TaskLists.dueToday`)
