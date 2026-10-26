@@ -16,7 +16,10 @@
  *  - QN-P09 the weekly purge;
  *  - QN-P10 a double tick sends once;
  *  - QN-P11 the cheap gate never skips a due push;
- *  - QN-P12 a mutation that ends a prompt's named push dismisses its banner.
+ *  - QN-P12 a mutation that ends a prompt's named push dismisses its banner,
+ *    by prompt key (a daily quota's other period's banner stays);
+ *  - QN-P13 the user-level changes (prompt switch, default period, a period
+ *    deleted or retimed) dismiss the prompt banners they end.
  *
  * Synthetic data only. Clock frozen: Thu 2026-01-15 in the test zone
  * (America/Chicago). Default periods (seeded per user): 07:00 Early morning,
@@ -29,6 +32,7 @@ import { DateTime } from 'luxon'
 
 vi.mock('@/core/notifications/dismiss', () => ({
   dismissNotificationsForTasks: vi.fn(),
+  dismissPromptNotifications: vi.fn(),
   syncBadgeCount: vi.fn(),
   getOverdueCount: vi.fn().mockReturnValue(0),
 }))
@@ -67,7 +71,12 @@ import {
   promptNagKey,
   purgeOldPromptNags,
 } from '@/core/notifications/prompt-nags'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import {
+  dismissNotificationsForTasks,
+  dismissPromptNotifications,
+} from '@/core/notifications/dismiss'
+import { deleteTimeSlot, updateTimeSlot } from '@/core/time-slots/edit'
+import { updatePreferences } from '@/core/users/preferences'
 import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
 import { pendingSlotNags } from '@/core/notifications/slot-nags'
 import { sendPushNotification } from '@/core/notifications/web-push'
@@ -730,16 +739,29 @@ describe('QN-P11 the cheap gate never skips a due push', () => {
   })
 })
 
+/** The prompt keys each `dismissPromptNotifications` call carried (empty calls left out). */
+const dismissed = () =>
+  vi
+    .mocked(dismissPromptNotifications)
+    .mock.calls.map(([, keys]) => keys)
+    .filter((keys) => keys.length > 0)
+
 /**
  * QN-P12: a mutation that ENDS a prompt's named push — it was pushed today
  * and stood (waiting, Medium+, in an opened period) and no longer does —
- * dismisses its banner through `dismissNotificationsForTasks` (by the
- * quota's id, what the banner's `taskId` is). At 09:05 Morning has opened.
+ * dismisses its banner through `dismissPromptNotifications`, BY PROMPT KEY
+ * (review of #377): the `dismiss` push carries `promptKeys`, so a daily
+ * quota's other period's banner stays. Never through the task path
+ * (`dismissNotificationsForTasks`), which would close every banner of the
+ * quota. At 09:05 Morning has opened.
  */
 describe('QN-P12 a mutation that ends the named push dismisses the banner', () => {
-  const dismissed = () => vi.mocked(dismissNotificationsForTasks).mock.calls.map(([, ids]) => ids)
   const edit = (taskId: number, input: Record<string, unknown>) =>
     updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId, input })
+  afterEach(() => {
+    // The task path never carries a quota whose prompt push ended.
+    expect(vi.mocked(dismissNotificationsForTasks).mock.calls.flatMap(([, ids]) => ids)).toEqual([])
+  })
   /** A High quota in Morning, its 09:00 push sent. */
   function pushed(extra: Record<string, unknown> = {}) {
     const q = quota(3, extra, 'Morning')
@@ -756,7 +778,7 @@ describe('QN-P12 a mutation that ends the named push dismisses the banner', () =
       userTimezone: tz,
       actions: [{ key: key(a.id), did: false }],
     })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
 
     vi.clearAllMocks()
     const later = quota(3, {}, 'Midday')
@@ -776,13 +798,13 @@ describe('QN-P12 a mutation that ends the named push dismisses the banner', () =
       taskIds: [],
       prompts: [{ key: key(a.id), did: true }],
     })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
   })
 
   test('the count logged elsewhere dismisses', () => {
     const a = pushed()
     incrementProgress({ userId: TEST_USER_ID, taskId: a.id, source: 'watch' })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
   })
 
   test('priority below Medium dismisses; High → Medium and a title edit do not', () => {
@@ -791,19 +813,19 @@ describe('QN-P12 a mutation that ends the named push dismisses the banner', () =
     edit(a.id, { title: 'Synthetic quota, renamed' })
     expect(dismissed()).toEqual([])
     edit(a.id, { priority: 1 })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
   })
 
   test('its prompt moved to a period not yet open dismisses', () => {
     const a = pushed()
     edit(a.id, { quota_prompt_config: { slot_id: slotId('Evening') } })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
   })
 
   test('no longer a quota dismisses', () => {
     const a = pushed()
     edit(a.id, { is_tracked: false, progress_target: 1 })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
   })
 
   test('bulkEdit: only the quotas whose named push the edit ended', () => {
@@ -817,10 +839,10 @@ describe('QN-P12 a mutation that ends the named push dismisses the banner', () =
       taskIds: [a.id, b.id, task.id],
       changes: { priority: 1 },
     })
-    expect(dismissed()).toEqual([[a.id]])
+    expect(dismissed()).toEqual([[key(a.id)]])
   })
 
-  test('a daily quota: acting on #1 dismisses by the quota id (its #2’s banner goes too)', () => {
+  test('a daily quota: acting on #1 dismisses #1’s banner only; #2’s stays', () => {
     vi.setSystemTime(at(6))
     const q = dailyQuota(3)
     planTick([PROMPT_NAG_SOURCE], at(9), CHANNELS)
@@ -831,8 +853,67 @@ describe('QN-P12 a mutation that ends the named push dismisses the banner', () =
       userTimezone: tz,
       actions: [{ key: key(q.id, 1), did: false }],
     })
-    expect(dismissed()).toEqual([[q.id]])
+    expect(dismissed()).toEqual([[key(q.id, 1)]])
     // #2 still stands: its next push comes at its mark.
     expect(pendingPromptNags(at(9, 30)).map((n) => n.promptKey)).toEqual([key(q.id, 2)])
+  })
+})
+
+/**
+ * QN-P13 (review of #377): the user-level changes that can end a prompt's
+ * named push — the prompt switch, the default prompt period, a period
+ * deleted (its prompts move to the nearest one) or retimed — dismiss the
+ * banners they end, by prompt key.
+ */
+describe('QN-P13 user-level changes dismiss the prompt banners they end', () => {
+  /** A High quota on the default period (Early morning), its 07:00 push sent; now 09:05. */
+  function pushed() {
+    const q = quota(3)
+    planTick([PROMPT_NAG_SOURCE], at(7), CHANNELS)
+    vi.setSystemTime(at(9, 5))
+    vi.clearAllMocks()
+    return q
+  }
+
+  test('prompts switched off', () => {
+    const q = pushed()
+    updatePreferences(TEST_USER_ID, { quota_prompts_enabled: 0 })
+    expect(dismissed()).toEqual([[key(q.id)]])
+  })
+
+  test('the default prompt period moved to one not yet open', () => {
+    const q = pushed()
+    updatePreferences(TEST_USER_ID, { quota_prompt_slot_id: slotId('Evening') })
+    expect(dismissed()).toEqual([[key(q.id)]])
+  })
+
+  test('another preference changes nothing', () => {
+    pushed()
+    updatePreferences(TEST_USER_ID, { week_start: 'monday' })
+    expect(dismissed()).toEqual([])
+  })
+
+  test('its period deleted: moved to the nearest, still open — the banner stays', () => {
+    const q = quota(3, {}, 'Morning')
+    planTick([PROMPT_NAG_SOURCE], at(9), CHANNELS)
+    vi.setSystemTime(at(9, 5))
+    vi.clearAllMocks()
+    deleteTimeSlot({ userId: TEST_USER_ID, userTimezone: tz, slotId: slotId('Morning') })
+    expect(dismissed()).toEqual([])
+    expect(pendingPromptNags(at(9, 30)).map((n) => n.promptKey)).toEqual([key(q.id)])
+  })
+
+  test('its period retimed to later today: not open any more — dismissed', () => {
+    const q = quota(3, {}, 'Morning')
+    planTick([PROMPT_NAG_SOURCE], at(9), CHANNELS)
+    vi.setSystemTime(at(9, 5))
+    vi.clearAllMocks()
+    updateTimeSlot({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      slotId: slotId('Morning'),
+      input: { start_time: '10:00' },
+    })
+    expect(dismissed()).toEqual([[key(q.id)]])
   })
 })

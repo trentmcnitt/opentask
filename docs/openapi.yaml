@@ -2008,9 +2008,9 @@ paths:
         the Web Push banner's `considered` action, `public/sw.js`, and
         native `QUOTA_NAG` from PR 4b), with the push's `prompt_key`. A push
         from another OpenTask day gets the 400, which the banner treats as
-        nothing to do. A request authenticated by the session cookie alone
-        must also be same-origin (`Sec-Fetch-Site: same-origin`, or an
-        `Origin` equal to the app's own), else 403.
+        nothing to do. A request authenticated by the session cookie or a
+        reverse-proxy header must also be same-origin (`Sec-Fetch-Site:
+        same-origin`, or an `Origin` equal to the app's own), else 403.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       requestBody:
@@ -2028,9 +2028,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: |
-            A session-cookie request that is not same-origin (cross-site, or
-            neither `Sec-Fetch-Site` nor a matching `Origin`). Bearer and
-            proxy-header requests are not checked.
+            A session-cookie or reverse-proxy-header request that is not
+            same-origin (cross-site, or neither `Sec-Fetch-Site` nor a
+            matching `Origin`). Bearer requests are not checked.
           content:
             application/json:
               schema:
@@ -2052,8 +2052,9 @@ paths:
         Also the named quota-prompt push's "Did it" button (2026-10-26: the
         Web Push banner's `did` action, `public/sw.js`, which sends
         `source: web`, and native `QUOTA_NAG` from PR 4b). Another OpenTask
-        day's key is the 400, a no-op for the banner. A request authenticated
-        by the session cookie alone must also be same-origin, else 403.
+        day's key is the 400 (the banner then says it was yesterday's). A
+        request authenticated by the session cookie or a reverse-proxy header
+        must also be same-origin, else 403.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       requestBody:
@@ -2071,9 +2072,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: |
-            A session-cookie request that is not same-origin (cross-site, or
-            neither `Sec-Fetch-Site` nor a matching `Origin`). Bearer and
-            proxy-header requests are not checked.
+            A session-cookie or reverse-proxy-header request that is not
+            same-origin (cross-site, or neither `Sec-Fetch-Site` nor a
+            matching `Origin`). Bearer requests are not checked.
           content:
             application/json:
               schema:
@@ -4810,7 +4811,8 @@ paths:
         `token` the request is authenticated like any other endpoint — a
         Bearer header, or the web app's session cookie (how the service
         worker's "Considered" button calls it). A request authenticated by
-        the session cookie must also be same-origin (`Sec-Fetch-Site:
+        the session cookie or a reverse-proxy header (which rides the
+        proxy's own cookie) must also be same-origin (`Sec-Fetch-Site:
         same-origin` or a matching `Origin`), else 403.
 
         - `done` — mark the task done. With `day` (the named reminder push's
@@ -4924,9 +4926,9 @@ paths:
                 $ref: '#/components/schemas/Error'
         '403':
           description: |
-            The caller cannot access this task, or a session-cookie request
-            that is not same-origin (cross-site, or neither `Sec-Fetch-Site`
-            nor a matching `Origin`)
+            The caller cannot access this task, or a session-cookie or
+            proxy-header request that is not same-origin (cross-site, or
+            neither `Sec-Fetch-Site` nor a matching `Origin`)
           content:
             application/json:
               schema:

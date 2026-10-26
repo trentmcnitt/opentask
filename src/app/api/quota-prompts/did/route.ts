@@ -12,9 +12,10 @@
  *
  * CSRF (Push PR 4, 2026-10-26): the named quota-prompt push's "Did it" button
  * (public/sw.js) calls this with the session cookie alone, so a request
- * authenticated by the cookie must also be same-origin
- * (`isCrossSiteCookieRequest`, src/core/auth/same-origin.ts) — else 403. Bearer
- * and proxy-header requests (the native apps, integrations) are not checked.
+ * authenticated by the cookie — or by the proxy header, which rides the
+ * proxy's own cookie — must also be same-origin (`isCrossSiteCookieRequest`,
+ * src/core/auth/same-origin.ts), else 403. Bearer requests (the native apps,
+ * integrations) are not checked.
  */
 
 import { NextRequest } from 'next/server'
@@ -34,7 +35,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     if (isCrossSiteCookieRequest(request)) {
       log.warn(
         'api',
-        `POST /api/quota-prompts/did refused: cookie request for user ${user.id} is not same-origin ` +
+        `POST /api/quota-prompts/did refused: cookie or proxy request for user ${user.id} is not same-origin ` +
           `(Origin ${request.headers.get('origin') ?? 'none'}, ` +
           `Sec-Fetch-Site ${request.headers.get('sec-fetch-site') ?? 'none'})`,
       )

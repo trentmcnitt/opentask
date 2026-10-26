@@ -62,7 +62,7 @@ self.addEventListener('push', (event) => {
 
   // Dismiss signal: close matching notifications instead of showing a new one
   if (data.type === 'dismiss') {
-    event.waitUntil(handleDismiss(data.taskIds || []))
+    event.waitUntil(handleDismiss(data.taskIds || [], data.promptKeys || []))
     return
   }
 
@@ -98,18 +98,39 @@ self.addEventListener('push', (event) => {
   )
 })
 
+/** A named quota-prompt banner's key: its tag `prompt-<key>`, else its data's `prompt_key`. */
+function promptKeyOf(notification) {
+  const tag = notification.tag
+  if (typeof tag === 'string' && tag.startsWith('prompt-')) return tag.slice('prompt-'.length)
+  const key = notification.data?.prompt_key
+  return typeof key === 'string' ? key : null
+}
+
 /**
  * Close notifications matching the given task IDs.
  * Used for cross-device dismissal — when a task is done/snoozed on one device,
  * the notification disappears from all other devices.
+ *
+ * With `promptKeys` (a named quota-prompt push ended, review of #377) the
+ * dismiss is prompt-precise: a prompt banner closes only when its key is
+ * listed — so considering Morning's prompt of a daily quota leaves Evening's
+ * banner — and every other banner by `taskIds` as before. Without them,
+ * `taskIds` closes every banner of those tasks, prompt banners included (a
+ * quota deleted or done).
  */
-async function handleDismiss(taskIds) {
+async function handleDismiss(taskIds, promptKeys) {
   const notifications = await self.registration.getNotifications()
   const taskIdSet = new Set(taskIds)
+  const promptKeySet = new Set(promptKeys)
   let closed = 0
 
   for (const notification of notifications) {
-    if (notification.data?.taskId && taskIdSet.has(notification.data.taskId)) {
+    const promptKey = promptKeyOf(notification)
+    const match =
+      promptKeySet.size > 0 && promptKey !== null
+        ? promptKeySet.has(promptKey)
+        : Boolean(notification.data?.taskId) && taskIdSet.has(notification.data.taskId)
+    if (match) {
       notification.close()
       closed++
     }
@@ -194,10 +215,12 @@ async function considerFromBanner(notification) {
  * The banner stays up until the server answers, as for a reminder's
  * Considered (review of #368):
  *  - 2xx: done (or already done) — close it;
- *  - 400: close it quietly. This worker always sends a well-formed body, so a
- *    400 is the server refusing the KEY: another day's (the push outlived
- *    its OpenTask day) or a quota no longer the user's live one. Nothing to
- *    do, and nothing the user could fix by opening the app;
+ *  - 400: this worker always sends a well-formed body, so a 400 is the
+ *    server refusing the KEY: another day's (the push outlived its OpenTask
+ *    day) or a quota no longer the user's live one. "Considered" closes it
+ *    quietly — nothing to consider. "Did it" replaces it (same tag, silent)
+ *    with "That was yesterday's — open OpenTask to log it" (review of #377):
+ *    the user did the thing, and the count it should add is not logged;
  *  - anything else — 401/403, 5xx, a network error: replace it (same tag,
  *    silent) with "Couldn't … — open OpenTask", whose tap opens the app.
  */
@@ -224,12 +247,15 @@ async function actOnPromptFromBanner(notification, action) {
   } catch (err) {
     forwardErrorToClients(`Prompt ${action} failed: ${err}`, err?.stack)
   }
-  if ((status >= 200 && status < 300) || status === 400) {
+  if ((status >= 200 && status < 300) || (status === 400 && action === 'considered')) {
     notification.close()
     return
   }
   await self.registration.showNotification(notification.title || 'OpenTask', {
-    body: `${failed} — open OpenTask`,
+    body:
+      status === 400
+        ? "That was yesterday's — open OpenTask to log it"
+        : `${failed} — open OpenTask`,
     icon: '/icon-192.png',
     data: { url: data.url || '/', taskId: data.taskId, prompt_key: data.prompt_key },
     tag: notification.tag || undefined,

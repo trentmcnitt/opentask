@@ -44,8 +44,7 @@ import { createQuotaSnapshot, logAction } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { emitSyncEvent } from '@/lib/sync-events'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
-import { promptPushEndCheck } from '@/core/notifications/prompt-nags'
+import { dismissEndedPromptPushes, promptPushEndCheck } from '@/core/notifications/prompt-nags'
 import { ownerTimezone } from './progress'
 import { formatTaskResponse } from '@/lib/format-task'
 import {
@@ -329,8 +328,7 @@ export function actOnPrompts(options: {
   // Considered or did it: a named prompt push it ended is stale everywhere.
   // Only when one was pushed today and stood (`promptPushEndCheck`), so a
   // tap on the Reminders screen costs no dismiss push otherwise.
-  const ended = endedPromptPush()
-  if (ended.length > 0) dismissNotificationsForTasks(userId, ended)
+  dismissEndedPromptPushes(userId, endedPromptPush)
   dispatchProgressed(userId, result.progressed)
   const ids = [...new Set(planned.map((p) => p.taskId))]
   return {

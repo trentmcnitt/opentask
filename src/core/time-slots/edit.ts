@@ -99,6 +99,7 @@ import { getTargetContext } from '@/core/tasks/target-context'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import { retimeRefused } from '@/core/tasks/relative-target'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
+import { dismissEndedPromptPushes, promptPushEndCheck } from '@/core/notifications/prompt-nags'
 import { nowUtc } from '@/core/recurrence'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
@@ -561,6 +562,9 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
     }
   }
 
+  // A retime can end a named quota-prompt push (its period not open any
+  // more): those banners go after the commit (review of #377).
+  const endedPromptPushes = retimed ? promptPushEndCheck(userId, 'all') : () => []
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
   let remindersMoved = 0
   let targetsMoved = 0
@@ -627,6 +631,7 @@ export function updateTimeSlot(options: UpdateTimeSlotOptions): TimeSlotChangeRe
   })
 
   notifyMoved(userId, userTimezone, outcome)
+  dismissEndedPromptPushes(userId, endedPromptPushes)
   return {
     slot: after,
     reminders_moved: remindersMoved,
@@ -696,6 +701,9 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
   const { userId, userTimezone, slotId } = options
   const before = loadSlot(userId, slotId)
 
+  // Deleting a period moves its prompts to the nearest one, which may not
+  // have opened: a named quota-prompt push that ends goes (review of #377).
+  const endedPromptPushes = promptPushEndCheck(userId, 'all')
   let outcome: MoveOutcome = { snapshots: [], fields: [] }
   let remindersMoved = 0
   let quotasMoved = 0
@@ -777,6 +785,7 @@ export function deleteTimeSlot(options: DeleteTimeSlotOptions): TimeSlotChangeRe
   })
 
   notifyMoved(userId, userTimezone, outcome)
+  dismissEndedPromptPushes(userId, endedPromptPushes)
   return {
     slot: before,
     reminders_moved: remindersMoved,

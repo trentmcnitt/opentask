@@ -136,8 +136,9 @@ describe('POST /api/notifications/actions — delete', () => {
  *
  * CSRF (coordinator ruling, 2026-10-26): a request authenticated by the
  * cookie alone must also be same-origin — `Sec-Fetch-Site: same-origin`, or
- * an `Origin` equal to the app's own — else 403. Token requests are not
- * checked (the native apps send no Origin).
+ * an `Origin` equal to the app's own — else 403. So must a proxy-header
+ * request (review of #377: it rides the proxy's own cookie). Token requests
+ * are not checked (the native apps send no Origin).
  */
 describe('POST /api/notifications/actions — session auth', () => {
   beforeEach(async () => {
@@ -227,6 +228,31 @@ describe('POST /api/notifications/actions — session auth', () => {
     })
     expect(res.status).toBe(401)
     expect((await getTask(task.id)).done).toBe(false)
+  })
+
+  test('a proxy-header POST with a cross-site Origin: 403 (review of #377), nothing changes', async () => {
+    const task = await createTask()
+    const res = await apiAnon('/api/notifications/actions', {
+      method: 'POST',
+      headers: {
+        'X-Test-Proxy-User': 'Test User A',
+        Origin: 'https://attacker.example',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      body: { action: 'done', task_id: task.id },
+    })
+    expect(res.status).toBe(403)
+    expect((await getTask(task.id)).done).toBe(false)
+  })
+
+  test('a proxy-header POST that is same-origin: 200', async () => {
+    const task = await createTask()
+    const res = await apiAnon('/api/notifications/actions', {
+      method: 'POST',
+      headers: { 'X-Test-Proxy-User': 'Test User A', ...SAME_ORIGIN },
+      body: { action: 'done', task_id: task.id },
+    })
+    expect(res.status).toBe(200)
   })
 
   test('no body token and no cookie: 401', async () => {

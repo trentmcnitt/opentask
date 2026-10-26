@@ -14,9 +14,15 @@
  *    on every POST): `AUTH_URL`'s origin, or the one the request arrived on
  *    (`X-Forwarded-Proto` / `X-Forwarded-Host` behind the reverse proxy, else
  *    the URL and `Host`).
- * A request with neither is refused. Token and proxy-header requests never
- * come here: they carry no ambient credential a third-party page could ride
- * (the native apps send no Origin).
+ * A request with neither is refused.
+ *
+ * PROXY-HEADER LOGINS ARE CHECKED TOO (review of #377). A proxy-header user
+ * (Authelia, Authentik, Caddy forward_auth) is logged in by the PROXY's own
+ * session cookie — as ambient as ours: a third-party page's cross-site POST
+ * carries it, and the proxy then adds the user header. So a request
+ * authenticated by the proxy header must say it is same-origin as well. Only
+ * a Bearer or body token is exempt: no page can make a browser send one (the
+ * native apps, which send no Origin, use tokens).
  */
 
 import type { NextRequest } from 'next/server'
@@ -57,11 +63,11 @@ export function isSameOriginRequest(request: NextRequest): boolean {
 
 /**
  * Whether an AUTHENTICATED request must be refused as cross-site: it was
- * authenticated by the session cookie (not a Bearer or body token, not the
- * proxy header — the request context's `authMethod`, set by the auth step)
- * and does not say it is same-origin. Call it after authenticating.
+ * authenticated by an ambient credential — the session cookie, or the proxy
+ * header (behind the proxy's own cookie) — not a Bearer or body token (the
+ * request context's `authMethod`, set by the auth step), and it does not say
+ * it is same-origin. Call it after authenticating.
  */
 export function isCrossSiteCookieRequest(request: NextRequest): boolean {
-  const method = getRequestContext()?.authMethod
-  return method !== 'token' && method !== 'proxy' && !isSameOriginRequest(request)
+  return getRequestContext()?.authMethod !== 'token' && !isSameOriginRequest(request)
 }

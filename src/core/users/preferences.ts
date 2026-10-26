@@ -11,6 +11,7 @@ import { getDb, withTransaction } from '@/core/db'
 import { createLabel, deleteLabel, SYSTEM_LABELS, isReservedLabel } from '@/core/labels'
 import { rolloverTrackedPeriods } from '@/core/tasks/period-rollover'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dismissEndedPromptPushes, promptPushEndCheck } from '@/core/notifications/prompt-nags'
 import { nowUtc } from '@/core/recurrence'
 import type { PriorityDisplayConfig } from '@/types'
 
@@ -216,6 +217,14 @@ function syncLabelRegistry(userId: number, oldJson: string | undefined, newJson:
  * Only a label change can show on a widget (the Quotas widget and the watch
  * colour labels from `label_config`), so only that one spends a widget push.
  */
+/** Preferences whose change can end a named quota-prompt push. */
+const PROMPT_PUSH_PREFERENCES = new Set<string>([
+  'quota_prompts_enabled',
+  'quota_prompt_slot_id',
+  'day_start_time',
+  'day_start_slot_id',
+])
+
 export function updatePreferences(userId: number, changes: PreferenceChanges): PreferencesRow {
   const columns = Object.keys(changes) as PreferenceColumn[]
   for (const column of columns) {
@@ -224,6 +233,13 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
   }
   const labelConfigChanged = typeof changes.label_config === 'string'
   const aiContextSent = changes.ai_context !== undefined
+  // A change that can end a named quota-prompt push (prompt-nags.ts): the
+  // prompt switch, the default prompt period, the day start. Its delivered
+  // banners go (review of #377). Cheap: nothing is computed unless a prompt
+  // was pushed today.
+  const endedPromptPushes = columns.some((c) => PROMPT_PUSH_PREFERENCES.has(c))
+    ? promptPushEndCheck(userId, 'all')
+    : () => []
   if (columns.length > 0) {
     withTransaction((db) => {
       const old = labelConfigChanged || aiContextSent ? readPreferencesRow(userId) : undefined
@@ -264,6 +280,7 @@ export function updatePreferences(userId: number, changes: PreferenceChanges): P
   if (columns.length > 0) {
     emitSyncEvent(userId, { widgets: labelConfigChanged || dayStartChanged })
   }
+  dismissEndedPromptPushes(userId, endedPromptPushes)
 
   return readPreferencesRow(userId) as PreferencesRow
 }

@@ -999,16 +999,27 @@ export async function sendApnsBadgeUpdate(userId: number, badge: number): Promis
  * Dismiss notifications for specific tasks on all iOS devices for a user.
  * Sends a silent push with a dismiss signal that the app handles by clearing
  * matching delivered notifications.
+ *
+ * `promptKeys` (named quota-prompt pushes, review of #377) are added to the
+ * data as `promptKeys`: from native PR 4b a banner with a `prompt_key`
+ * closes only when its key is listed, every other banner by `taskIds`. A
+ * build before 4b reads `taskIds` alone, so it clears every banner of the
+ * quota (both periods' prompt banners) — the old behaviour, never a stale one.
  */
-export async function dismissApnsNotifications(userId: number, taskIds: number[]): Promise<void> {
+export async function dismissApnsNotifications(
+  userId: number,
+  taskIds: number[],
+  promptKeys?: string[],
+): Promise<void> {
   if (taskIds.length === 0) return
+  const data = { type: 'dismiss', taskIds, ...(promptKeys?.length ? { promptKeys } : {}) }
 
   await sendToAllDevices(
     userId,
     (device) =>
       new SilentNotification(device.device_token, {
         topic: device.bundle_id,
-        data: { type: 'dismiss', taskIds },
+        data,
       }),
     'dismiss signals',
     (devices) => {

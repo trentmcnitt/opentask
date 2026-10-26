@@ -133,8 +133,18 @@ export async function sendPushNotification(
  * Sends a special push message that the service worker handles by closing
  * matching notifications instead of showing a new one.
  * Fire-and-forget — failures are logged but don't affect the caller.
+ *
+ * `promptKeys` (named quota-prompt pushes, review of #377): with them the
+ * dismiss is PROMPT-PRECISE — a banner carrying a `prompt_key` closes only
+ * when its key is listed (sw.js `handleDismiss`), every other banner by
+ * `taskIds` as before. Without them, `taskIds` closes every banner of those
+ * tasks, prompt banners included (a quota deleted or done).
  */
-export async function dismissTaskNotifications(userId: number, taskIds: number[]): Promise<void> {
+export async function dismissTaskNotifications(
+  userId: number,
+  taskIds: number[],
+  promptKeys?: string[],
+): Promise<void> {
   if (!isWebPushConfigured() || taskIds.length === 0) return
   const db = getDb()
   const count = (
@@ -146,7 +156,10 @@ export async function dismissTaskNotifications(userId: number, taskIds: number[]
     'web-push',
     `Dismiss: sending for tasks [${taskIds.join(',')}] to ${count} subscription(s)`,
   )
-  await sendToAllSubscriptions(userId, JSON.stringify({ type: 'dismiss', taskIds }))
+  await sendToAllSubscriptions(
+    userId,
+    JSON.stringify({ type: 'dismiss', taskIds, ...(promptKeys?.length ? { promptKeys } : {}) }),
+  )
 }
 
 /**

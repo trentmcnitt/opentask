@@ -423,6 +423,42 @@ describe('POST /api/quota-prompts/consider and /did — session auth', () => {
     },
   )
 
+  /**
+   * Review of #377: a proxy-header login rides the proxy's own session
+   * cookie, so it is checked like ours (the integration server turns proxy
+   * auth on with `X-Test-Proxy-User`, globalSetup.ts).
+   */
+  test.each(['consider', 'did'])(
+    '%s: a proxy-header POST with a cross-site Origin is a 403, nothing changes',
+    async (verb) => {
+      await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+      const [prompt] = await allPrompts()
+      const res = await apiAnon(`/api/quota-prompts/${verb}`, {
+        method: 'POST',
+        headers: {
+          'X-Test-Proxy-User': 'Test User A',
+          Origin: 'https://attacker.example',
+          'Sec-Fetch-Site': 'cross-site',
+        },
+        body: { keys: [prompt.prompt_key] },
+      })
+      expect(res.status).toBe(403)
+      expect((await allPrompts())[0]).toMatchObject({ considered: false, done: false })
+    },
+  )
+
+  test('a proxy-header POST that is same-origin is a 200', async () => {
+    await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
+    const [prompt] = await allPrompts()
+    const res = await apiAnon('/api/quota-prompts/consider', {
+      method: 'POST',
+      headers: { 'X-Test-Proxy-User': 'Test User A', 'Sec-Fetch-Site': 'same-origin' },
+      body: { keys: [prompt.prompt_key] },
+    })
+    expect(res.status).toBe(200)
+    expect((await allPrompts())[0]).toMatchObject({ considered: true })
+  })
+
   test('another day’s key over the cookie, same-origin: a 400 (the banner’s no-op)', async () => {
     const quota = await makeQuota('Cook vegetables', 'FREQ=WEEKLY', 5)
     const cookie = await sessionCookieFromToken(TOKEN_A)

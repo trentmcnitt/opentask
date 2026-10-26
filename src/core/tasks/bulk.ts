@@ -31,7 +31,11 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { namedPushEndCheck } from '@/core/notifications/reminder-nags'
-import { promptPushEndCheck, promptPushEndCheckForEdit } from '@/core/notifications/prompt-nags'
+import {
+  dismissEndedPromptPushes,
+  promptPushEndCheck,
+  promptPushEndCheckForEdit,
+} from '@/core/notifications/prompt-nags'
 import { formatTaskResponse } from '@/lib/format-task'
 import type { ActivityEntry } from '@/core/activity'
 import { incrementDailyStat } from '@/core/stats'
@@ -307,11 +311,15 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   })
 
   emitSyncEvent(userId)
-  // The completed items are handled, so their banners go too — and a quota
-  // whose named prompt push the batch ended (`promptPushEndCheck`). A
-  // prompt-only batch that ended none leaves notifications (and the badge)
-  // alone.
-  dismissNotificationsForTasks(userId, [...tasks.map((t) => t.id), ...endedPromptPush()])
+  // The completed items are handled, so their banners go too — and the
+  // prompts whose named push the batch ended (`promptPushEndCheck`), by
+  // prompt key. A prompt-only batch that ended none leaves notifications
+  // (and the badge) alone.
+  dismissNotificationsForTasks(
+    userId,
+    tasks.map((t) => t.id),
+  )
+  dismissEndedPromptPushes(userId, endedPromptPush)
   dispatchProgressed(userId, result.progressed)
 
   for (const task of tasks) {
@@ -1343,6 +1351,30 @@ function mergePromptConfig(
 }
 
 /**
+ * After a bulk edit commits: only a task whose date actually moved has a
+ * stale notification — or a reminder whose named push the edit ended
+ * (priority below Medium, converted, moved to Anytime or off today:
+ * `namedPushStands`). Any other priority or label edit leaves the banner as
+ * true as it was. A quota's named prompt pushes the edit ended go by prompt
+ * key (`promptPushEndCheckForEdit`), never by the quota's id.
+ */
+function dismissAfterBulkEdit(
+  userId: number,
+  perTaskFields: Map<number, string[]>,
+  endedNamedPush: Map<number, () => boolean>,
+  endedPromptPushes: (() => string[])[],
+): void {
+  const pushEnded = (id: number) => endedNamedPush.get(id)?.() === true
+  dismissNotificationsForTasks(
+    userId,
+    [...perTaskFields]
+      .filter(([id, fields]) => fields.includes('due_at') || pushEnded(id))
+      .map(([id]) => id),
+  )
+  dismissEndedPromptPushes(userId, () => endedPromptPushes.flatMap((check) => check()))
+}
+
+/**
  * Bulk edit
  *
  * Applies the same changes to all specified tasks. `quota_prompt_config` is
@@ -1433,6 +1465,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   const perTaskFields = new Map<number, string[]>()
   /** Per edited task: did the edit end its reminder's named push (`namedPushEndCheck`)? */
   const endedNamedPush = new Map<number, () => boolean>()
+  /** Per edited quota: the prompt keys whose named push the edit ended (`promptPushEndCheckForEdit`). */
+  const endedPromptPushes: (() => string[])[] = []
   let totalSnoozedCount = 0
 
   const result = withTransaction((tx) => {
@@ -1467,9 +1501,8 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
       if (data.fieldsChanged.length > 0) {
         // Read before this task's own change is applied.
-        const reminderEnd = namedPushEndCheck(task, data.fieldsChanged)
-        const promptEnd = promptPushEndCheckForEdit(task, data.fieldsChanged)
-        endedNamedPush.set(task.id, () => reminderEnd() || promptEnd())
+        endedNamedPush.set(task.id, namedPushEndCheck(task, data.fieldsChanged))
+        endedPromptPushes.push(promptPushEndCheckForEdit(task, data.fieldsChanged))
         const { snapshot, activity } = applyFieldChanges(tx, task, data, nowStr)
         snapshots.push(snapshot)
         activityEntries.push({ userId, ...activity, source: 'bulk', batchId })
@@ -1512,18 +1545,7 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
   })
 
   emitSyncEvent(userId)
-  // Only a task whose date actually moved has a stale notification — or a
-  // reminder whose named push this edit ended (priority below Medium,
-  // converted, moved to Anytime or off today: `namedPushStands`), or a quota
-  // whose named prompt push it ended (`promptPushEndCheckForEdit`). Any other
-  // priority or label edit leaves the banner as true as it was.
-  const pushEnded = (id: number) => endedNamedPush.get(id)?.() === true
-  dismissNotificationsForTasks(
-    userId,
-    [...perTaskFields]
-      .filter(([id, fields]) => fields.includes('due_at') || pushEnded(id))
-      .map(([id]) => id),
-  )
+  dismissAfterBulkEdit(userId, perTaskFields, endedNamedPush, endedPromptPushes)
 
   for (const snapshot of snapshots) {
     const fresh = getTaskById(snapshot.task_id)

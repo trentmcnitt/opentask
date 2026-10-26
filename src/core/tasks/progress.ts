@@ -53,8 +53,7 @@ import { promptDate, withLogged } from '@/lib/quota-prompts'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import { emitSyncEvent } from '@/lib/sync-events'
-import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
-import { promptPushEndCheck } from '@/core/notifications/prompt-nags'
+import { dismissEndedPromptPushes, promptPushEndCheck } from '@/core/notifications/prompt-nags'
 import { DEFAULT_PROGRESS_SOURCE, type ClientProgressSource } from '@/lib/progress-source'
 
 export interface IncrementProgressOptions {
@@ -153,8 +152,7 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
   // Other tabs and the widgets learn about the new count the same way they
   // learn about every other mutation.
   emitSyncEvent(userId)
-  const ended = endedPromptPush()
-  if (ended.length > 0) dismissNotificationsForTasks(found.user_id, ended)
+  dismissEndedPromptPushes(found.user_id, endedPromptPush)
 
   // §5: progress is NOT completion. Firing task.completed here would make every
   // downstream counter over-count by the target.

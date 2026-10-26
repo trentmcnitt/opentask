@@ -14,7 +14,10 @@ import { emitSyncEvent } from '@/lib/sync-events'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { namedPushEndCheck } from '@/core/notifications/reminder-nags'
-import { promptPushEndCheckForEdit } from '@/core/notifications/prompt-nags'
+import {
+  dismissEndedPromptPushes,
+  promptPushEndCheckForEdit,
+} from '@/core/notifications/prompt-nags'
 import { formatTaskResponse } from '@/lib/format-task'
 import { incrementDailyStat } from '@/core/stats'
 import { dayBoundaryForUser } from './rollover-time'
@@ -207,17 +210,17 @@ export function updateTask(options: UpdateTaskOptions): UpdateTaskResult {
   // task's delivered notification stale: dismiss it everywhere and resync the
   // badge. So does an edit that ends a reminder's named push (priority below
   // Medium, converted to a task, moved to Anytime or off today:
-  // `namedPushStands`, reminder-nags.ts), or one that ends a quota's named
-  // prompt push (`promptPushEndCheckForEdit`). Any other field leaves the
-  // notification as true as it was.
+  // `namedPushStands`, reminder-nags.ts). Any other field leaves the
+  // notification as true as it was. A quota's named prompt pushes the edit
+  // ended go by prompt key (`promptPushEndCheckForEdit`): only those banners.
   if (
     result.fieldsChanged.includes('due_at') ||
     result.fieldsChanged.includes('done') ||
-    endedNamedPush() ||
-    endedPromptPush()
+    endedNamedPush()
   ) {
     dismissNotificationsForTasks(userId, [taskId])
   }
+  dismissEndedPromptPushes(userId, endedPromptPush)
 
   // Callers like snoozeTask() set skipWebhookDispatch to dispatch their own more specific event
   if (!skipWebhookDispatch) {

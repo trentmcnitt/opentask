@@ -59,10 +59,13 @@
  *
  * STALE BANNERS: `promptPushEndCheck` — a mutation that can end a prompt's
  * named push (consider, did it, a count logged, an edit of the quota's
- * priority, kind, period or target) asks it before and after, and dismisses
- * the quota's banners when a prompt pushed today stood before and no longer
- * does. The dismiss push matches by `taskId` (the quota), so a daily quota's
- * other period's banner goes too; it comes back at its next mark.
+ * priority, kind, period or target; and the user-level changes: the prompt
+ * switch, the default period, a period deleted or retimed, the day start)
+ * asks it before and after, and dismisses the ended PROMPTS
+ * (`dismissPromptNotifications`, dismiss.ts): the `dismiss` push carries
+ * their `promptKeys`, and a banner with a `prompt_key` closes only when its
+ * key is listed — so considering Morning's prompt of a daily quota leaves
+ * Evening's banner up (review of #377).
  *
  * WHY THIS IS NOT A §6 VIOLATION: the same exception Trent ruled for Medium+
  * reminders on 2026-10-26. A prompt still carries no debt: never overdue,
@@ -88,6 +91,7 @@ import { getQuotaPromptsBySlot, quotaPromptsEnabledGlobally } from '@/core/tasks
 import { parseJsonColumn } from '@/core/tasks/read'
 import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
 import { APP_URL } from '@/core/notifications/format'
+import { dismissPromptNotifications } from '@/core/notifications/dismiss'
 import { isApnsConfigured, promptCollapseId, sendApnsPromptNag } from '@/core/notifications/apns'
 import { isWebPushConfigured, sendPushNotification } from '@/core/notifications/web-push'
 import { mergeSettled, type DeliveryResult } from '@/core/notifications/delivery-result'
@@ -446,25 +450,30 @@ const PROMPT_PUSH_FIELDS = new Set([
 ])
 
 /**
- * For a mutation ABOUT to be applied to these quotas (the owner's): a check
- * to run after it, answering the quota ids whose named prompt push it ended —
- * a prompt pushed today (a `prompt-…` stamp of today) that stood before
- * (waiting, Medium+, in an opened period) and no longer does — so their
- * delivered banners are stale. Reads nothing more than one stamp query
- * unless a prompt of one of them was pushed today.
+ * For a mutation ABOUT to be applied: a check to run after it, answering the
+ * prompt keys whose named push it ended — a prompt pushed today (a `prompt-…`
+ * stamp of today) that stood before (waiting, Medium+, in an opened period)
+ * and no longer does — so their delivered banners are stale. `quotaIds`
+ * limits it to those quotas; `'all'` is every quota of the user (a
+ * user-level change: the prompt switch, the default period, a period
+ * deleted or retimed, the day start). Reads nothing more than one stamp
+ * query unless a prompt in scope was pushed today.
  */
-export function promptPushEndCheck(userId: number, quotaIds: readonly number[]): () => number[] {
+export function promptPushEndCheck(
+  userId: number,
+  quotaIds: readonly number[] | 'all',
+): () => string[] {
   const none = () => []
-  if (quotaIds.length === 0) return none
+  if (quotaIds !== 'all' && quotaIds.length === 0) return none
   const user = getDb().prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
     | { timezone: string }
     | undefined
   if (!user) return none
   const now = new Date()
   const date = promptDate(user.timezone, dayBoundaryForUser(userId), now)
-  const ids = new Set(quotaIds)
-  const sent = [...stampsFor(userId, date).keys()].filter((key) =>
-    ids.has(Number(key.split(':')[1])),
+  const ids = quotaIds === 'all' ? null : new Set(quotaIds)
+  const sent = [...stampsFor(userId, date).keys()].filter(
+    (key) => ids === null || ids.has(promptTaskId(key)),
   )
   if (sent.length === 0) return none
   const standing = (at: Date) => {
@@ -476,9 +485,23 @@ export function promptPushEndCheck(userId: number, quotaIds: readonly number[]):
   if (stood.length === 0) return none
   return () => {
     const after = standing(new Date())
-    const ended = stood.filter((key) => !after.has(key)).map((key) => Number(key.split(':')[1]))
-    return [...new Set(ended)]
+    return stood.filter((key) => !after.has(key))
   }
+}
+
+/**
+ * After the mutation commits: dismiss the prompts `ended` names (a
+ * `promptPushEndCheck` result) — nothing at all when it names none, so a
+ * mutation that ended no named prompt push sends no dismiss push.
+ */
+export function dismissEndedPromptPushes(userId: number, ended: () => string[]): void {
+  const keys = ended()
+  if (keys.length > 0) dismissPromptNotifications(userId, keys)
+}
+
+/** The quota id in a prompt key (`q:<taskId>:<k>:<date>`). */
+export function promptTaskId(key: string): number {
+  return Number(key.split(':')[1])
 }
 
 /**
@@ -488,10 +511,9 @@ export function promptPushEndCheck(userId: number, quotaIds: readonly number[]):
 export function promptPushEndCheckForEdit(
   task: { id: number; user_id: number; is_tracked: boolean; progress_target: number },
   fieldsChanged: readonly string[],
-): () => boolean {
-  if (!isTracked(task) || !fieldsChanged.some((f) => PROMPT_PUSH_FIELDS.has(f))) return () => false
-  const check = promptPushEndCheck(task.user_id, [task.id])
-  return () => check().length > 0
+): () => string[] {
+  if (!isTracked(task) || !fieldsChanged.some((f) => PROMPT_PUSH_FIELDS.has(f))) return () => []
+  return promptPushEndCheck(task.user_id, [task.id])
 }
 
 /**

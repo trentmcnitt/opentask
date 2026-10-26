@@ -57,10 +57,11 @@ const SNOOZE_MINUTES: Record<string, number> = { snooze30: 30, snooze: 60, snooz
  * none, the ordinary chain (Bearer header, proxy, the service worker's
  * session cookie). Returns the 401 response when there is no user.
  *
- * CSRF: a request authenticated by the session cookie (not a token or the
- * proxy header) must also be same-origin (`isSameOriginRequest`:
- * `Sec-Fetch-Site: same-origin` or a matching `Origin`), else 403. The
- * cookie is SameSite=Lax already; this is the second wall.
+ * CSRF: a request authenticated by the session cookie or the proxy header
+ * (both ride an ambient browser cookie; only a token is exempt) must also be
+ * same-origin (`isCrossSiteCookieRequest`: `Sec-Fetch-Site: same-origin` or
+ * a matching `Origin`), else 403. The cookie is SameSite=Lax already; this is
+ * the second wall.
  */
 async function actionUser(request: NextRequest, token: unknown): Promise<AuthUser | Response> {
   if (token !== undefined && token !== null) {
@@ -72,7 +73,7 @@ async function actionUser(request: NextRequest, token: unknown): Promise<AuthUse
   if (isCrossSiteCookieRequest(request)) {
     log.warn(
       'notifications',
-      `Action refused: cookie-authenticated request for user ${user.id} is not same-origin ` +
+      `Action refused: cookie- or proxy-authenticated request for user ${user.id} is not same-origin ` +
         `(Origin ${request.headers.get('origin') ?? 'none'}, ` +
         `Sec-Fetch-Site ${request.headers.get('sec-fetch-site') ?? 'none'})`,
     )
