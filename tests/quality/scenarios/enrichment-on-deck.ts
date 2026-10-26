@@ -6,8 +6,8 @@
  *
  * Every scenario pins `now` to this week's Monday (2 PM unless it says
  * otherwise), so "Wednesday", "Saturday" and "this weekend" each name one day
- * whatever day the run starts. The harness's rollover is a default user's
- * (7:00 AM), so A4's 00:30 is before it and 23:30 after it.
+ * whatever day the run starts. The harness's day start is a default user's
+ * (3:00 AM), so A4's 00:30 is before it and 23:30 after it.
  */
 import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
@@ -196,6 +196,30 @@ export const enrichmentOnDeckScenarios: AITestScenario[] = [
       must_include: { on_deck_day: TUE, due_at: null, deadline_at: null },
       quality_notes:
         'Now is 12:30 AM on Tuesday — before the rollover, so the user is still in Monday night. "tomorrow" means the coming day: on deck for Tuesday (the calendar today), due_at null. Title "Order the replacement filter".',
+    },
+  },
+  // "OpenTask day everywhere" part 2 (2026-10-26): at 00:30 Monday, before
+  // the 3:00 AM day start, it is still Sunday — exactly as at 23:30 Sunday.
+  {
+    id: 'enrich-deck-this-weekend-after-midnight',
+    feature: 'enrichment',
+    description: '"this weekend" said at 00:30 Monday → still Sunday: on deck Sunday',
+    input: input('clean out the garage this weekend', at(0, '00:30')),
+    requirements: {
+      must_include: { on_deck_day: day(-1), due_at: null, deadline_at: null },
+      quality_notes:
+        'Now is 12:30 AM on Monday — before the 3:00 AM day start, so the user\'s day is still Sunday (the prompt says so). "this weekend" is then today, Sunday: on deck for Sunday, due_at null. Title "Clean out the garage".',
+    },
+  },
+  {
+    id: 'enrich-every-2-weeks-after-midnight',
+    feature: 'enrichment',
+    description: '"every 2 weeks" said at 00:30 Monday → every other Sunday (the user\'s day)',
+    input: input('clean the fish tank every 2 weeks', at(0, '00:30')),
+    requirements: {
+      must_include: { rrule: '~rrule-has:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU' },
+      quality_notes:
+        'Now is 12:30 AM on Monday — before the 3:00 AM day start, so the user\'s day is still Sunday. A repeat with no day named starts on the user\'s day: rrule FREQ=WEEKLY;INTERVAL=2;BYDAY=SU. Title "Clean the fish tank".',
     },
   },
   {

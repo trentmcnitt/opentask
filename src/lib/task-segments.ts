@@ -46,12 +46,15 @@ import { computeNextOccurrence, ruleTimeOfDay } from '@/core/recurrence/compute-
 import { formatAnchorTime } from '@/core/recurrence/timezone'
 import {
   CALENDAR_DAY_START,
+  addDays,
   calendarDateOf,
+  isLateNight,
   localMoment,
   openTaskDayOf,
   openTaskLocalDay,
   targetOpenTaskDay,
 } from '@/lib/opentask-day'
+import { NIGHT_SUFFIX } from '@/lib/night-day'
 import type { RepeatAnchor } from '@/types'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
@@ -393,15 +396,27 @@ function resolveFixed(w: TargetWrite, ctx: TargetContext | null, now: Date): Res
 
 /**
  * The picker's "Morning of the deadline" (ruling Q8): the user's morning on the
- * deadline's own local day — or the deadline itself, if that is earlier.
+ * deadline's own local day — or the deadline itself, if that is earlier. L9
+ * (part 2, 2026-10-26): a deadline between midnight and a day start at or
+ * before 12:00 counts on the evening before ("Deadline Thu night" for Fri
+ * 01:00 with a 3:00 AM start), so its morning is Thursday's, not Friday's.
+ * With a start after 12:00 there is no night, and the day is the deadline's
+ * calendar date as it always was: with an 11 PM start a Tue 23:47 deadline is
+ * on Wednesday's list, but its morning is Tuesday 9:00, not Wednesday's (after
+ * the deadline, so the pick collapsed to the deadline itself).
  */
 export function deadlineDayTarget(
   deadlineAt: string,
-  ctx: TargetContext | null = clientContext,
+  ctx: TargetContext,
+  /** The user's day boundary (`useDayStart`). */
+  dayStart: string,
 ): string {
   const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
-  if (!ctx) return deadline.startOf('day').toISO()!
-  const morning = morningOn(deadline.setZone(ctx.timezone).startOf('day'), ctx)
+  const at = deadline.toJSDate()
+  const day = isLateNight(at, ctx.timezone, dayStart)
+    ? openTaskLocalDay(at, ctx.timezone, dayStart)
+    : DateTime.fromISO(calendarDateOf(at, ctx.timezone), { zone: ctx.timezone })
+  const morning = morningOn(day, ctx)
   return (morning < deadline ? morning : deadline).toUTC().toISO()!
 }
 
@@ -752,7 +767,7 @@ export function effectiveAttempts(
    * `attempts_counted_through` names an OpenTask day (same format). Omitted
    * or null: local calendar days, as before the queue.
    */
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): { attempts: number; countedThrough: string | null } {
   const stored = {
     attempts: task.attempts ?? 0,
@@ -812,7 +827,7 @@ export function putBackCountedThrough(
    * then OPENTASK days, like `effectiveAttempts` — so a put-back between
    * midnight and the rollover checkpoints the right day. Null: calendar days.
    */
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): string {
   const dayOf = (instant: Date): DateTime =>
     openTaskLocalDay(instant, timezone, rolloverTime ?? CALENDAR_DAY_START)
@@ -1768,6 +1783,16 @@ export function openTaskToday(timezone: string, now: Date, rolloverTime: string 
   return rolloverTime ? openTaskDayOf(now, timezone, rolloverTime) : calendarDateOf(now, timezone)
 }
 
+/**
+ * Skip until's EARLIEST DATE (yyyy-MM-dd): the OpenTask day after today's
+ * ("OpenTask day everywhere" part 2) — the dialog's first pickable day and
+ * `parseUntil`'s floor. At 00:30 Monday with a 3:00 AM start, Monday (the
+ * calendar today), as at 23:30 Sunday.
+ */
+export function skipUntilFirstDay(timezone: string, now: Date, dayStart: string): string {
+  return addDays(openTaskDayOf(now, timezone, dayStart), 1)
+}
+
 /** `day` (yyyy-MM-dd) moved by `days` calendar days. */
 export function shiftDay(day: string, days: number, timezone: string): string {
   return DateTime.fromISO(day, { zone: timezone }).plus({ days }).toFormat(LEAD_DAY_FORMAT)
@@ -2280,6 +2305,13 @@ export function upcomingGap(
   task: Pick<TargetFields, 'due_at' | 'deadline_at'> & { on_deck_day?: string | null },
   timezone: string,
   /**
+   * The user's day boundary (`useDayStart`): L9's night rule (`nightDay`,
+   * part 2, 2026-10-26) — a target or deadline between midnight and the day
+   * start names its OpenTask day: a Fri 01:00 target is "Target Thu night
+   * Oct 29", on a Tomorrow row "Target tomorrow night 1:00 AM".
+   */
+  dayStart: string,
+  /**
    * The row's section (2026-10-25): a TOMORROW row's day goes without saying
    * (it is tomorrow), so it says only the time — "Target 9:00 AM", or "On
    * deck" for a deck (a deck has no time). A Later row (or no section) says
@@ -2287,8 +2319,11 @@ export function upcomingGap(
    */
   section?: UpcomingSection,
 ): { target: string | null; deadline: string | null } {
+  // Its night (L9): the OpenTask day's weekday and date, "Thu night Oct 29".
   const fmt = (iso: string) =>
-    DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
+    isLateNight(new Date(iso), timezone, dayStart)
+      ? nightWords(openTaskDayOf(new Date(iso), timezone, dayStart), timezone)
+      : DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
   const tomorrow = section === 'tomorrow'
   // On deck (2026-10-20): "On deck Sat Oct 24" — the day, no time. It wins
   // over a deadline's automatic target, which is not the plan.
@@ -2297,12 +2332,21 @@ export function upcomingGap(
   if (deck) {
     target = tomorrow ? 'On deck' : `On deck ${deck.toFormat('ccc LLL d')}`
   } else if (task.due_at) {
+    const time = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone).toFormat('h:mm a')
+    // A Tomorrow row's 1:00 AM is tomorrow NIGHT's, not tonight's: said.
+    const night = isLateNight(new Date(task.due_at), timezone, dayStart)
     target = tomorrow
-      ? `Target ${DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone).toFormat('h:mm a')}`
+      ? `Target ${night ? 'tomorrow night ' : ''}${time}`
       : `Target ${fmt(task.due_at)}`
   }
   if (!task.deadline_at) return { target, deadline: null }
   return { target, deadline: `deadline ${fmt(task.deadline_at)}` }
+}
+
+/** An OpenTask date's night, for a label (L9): "Thu night Oct 29". */
+function nightWords(date: string, timezone: string): string {
+  const day = DateTime.fromISO(date, { zone: timezone })
+  return `${day.toFormat('ccc')}${NIGHT_SUFFIX} ${day.toFormat('LLL d')}`
 }
 
 /**
@@ -2475,7 +2519,7 @@ export function deckRefusal(
   day: string,
   ctx: TargetContext,
   now: Date,
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): DeckRefusal | null {
   if (!task.deadline_at) return null
   if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'

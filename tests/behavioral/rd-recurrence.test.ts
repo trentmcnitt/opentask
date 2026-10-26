@@ -32,6 +32,7 @@ import {
   TEST_TIMEZONE,
   madeBefore,
 } from '../helpers/setup'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TIMEZONE = 'America/Chicago'
 
@@ -869,7 +870,13 @@ describe('RD-015: yearly rules keep their month (BYMONTH)', () => {
   })
 
   test('the first occurrence is the next March 1st, not the next 1st of a month', () => {
-    const first = computeFirstOccurrence(MARCH_1ST, null, TIMEZONE, localDate(2026, 10, 13, 10, 0))
+    const first = computeFirstOccurrence(
+      MARCH_1ST,
+      null,
+      TIMEZONE,
+      localDate(2026, 10, 13, 10, 0),
+      CALENDAR_DAY_START,
+    )
     expect(DateTime.fromJSDate(first).setZone(TIMEZONE).toISO({ includeOffset: false })).toBe(
       '2027-03-01T09:00:00.000',
     )

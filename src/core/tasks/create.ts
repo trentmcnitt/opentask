@@ -219,10 +219,11 @@ function deadlineAnchoredDates(
   ctx: TargetContext,
   timezone: string,
   lead: LeadContext,
+  dayStart: string,
 ): FirstDates {
   const given = input.deadline_at!
   assertRuleOnDeadline(rrule, null, given, timezone)
-  const first = firstDueAt(given, rrule, false, timezone)!
+  const first = firstDueAt(given, rrule, false, timezone, dayStart)!
   const sent =
     input.target_days_before !== undefined && input.target_time !== undefined
       ? { days_before: input.target_days_before, time: input.target_time }
@@ -294,12 +295,15 @@ function firstDueAt(
   rrule: string | null | undefined,
   isReminder: boolean,
   timezone: string,
+  /** The user's day boundary: a rule with no date starts on the OpenTask day. */
+  dayStart: string,
 ): string | null {
   if (!rrule) return given
-  if (!given) return computeFirstOccurrence(rrule, null, timezone).toISOString()
+  if (!given)
+    return computeFirstOccurrence(rrule, null, timezone, new Date(), dayStart).toISOString()
   if (isReminder) return given
   const due = new Date(given)
-  const first = rollPassedFirstOccurrence(rrule, due, timezone)
+  const first = rollPassedFirstOccurrence(rrule, due, timezone, new Date(), dayStart)
   return first.getTime() === due.getTime() ? given : first.toISOString()
 }
 
@@ -319,10 +323,11 @@ function targetAnchoredDates(
   ctx: TargetContext,
   timezone: string,
   lead: LeadContext,
+  dayStart: string,
 ): FirstDates {
   const dueAt = tracked
     ? null
-    : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, timezone)
+    : firstDueAt(input.due_at ?? null, rrule, !!input.is_reminder, timezone, dayStart)
   const deadlineAt = tracked ? null : (input.deadline_at ?? null)
   assertRepeatLead(input, rrule, dueAt, tracked, timezone)
   const autoEligible = !rrule && !tracked && !input.is_reminder
@@ -477,14 +482,15 @@ export function createTask(options: CreateTaskOptions): Task {
   if (onDeckDay) assertCreateDeck(input, onDeckDay, rrule, tracked, targetCtx, userId)
 
   const lead: LeadContext = { rolloverTime: rolloverTimeForUser(userId), now: new Date() }
+  const dayStart = dayBoundaryForUser(userId)
   const first =
     anchor === 'deadline' && rrule
-      ? deadlineAnchoredDates(input, rrule, targetCtx, userTimezone, lead)
-      : targetAnchoredDates(input, rrule, tracked, targetCtx, userTimezone, lead)
+      ? deadlineAnchoredDates(input, rrule, targetCtx, userTimezone, lead, dayStart)
+      : targetAnchoredDates(input, rrule, tracked, targetCtx, userTimezone, lead, dayStart)
   const dueAt = first.dueAt
   const relative = first.relative ?? { days_before: null, time: null }
   // Repeat ends (2026-10-22): judged against the first occurrence.
-  assertCreateEnd(input, rrule, first.occurrenceAt, tracked, userTimezone)
+  assertCreateEnd(input, rrule, first.occurrenceAt, tracked, userTimezone, dayStart)
 
   // Derive anchor fields from rrule
   let anchorTime: string | null = null
@@ -715,6 +721,7 @@ function assertCreateEnd(
   firstOccurrence: string | null,
   tracked: boolean,
   timezone: string,
+  dayStart: string,
 ): void {
   const count = input.repeat_count ?? null
   const until = input.repeat_until ?? null
@@ -733,6 +740,7 @@ function assertCreateEnd(
     },
     timezone,
     new Date(),
+    dayStart,
   )
   if (problem) throw new ValidationError(REPEAT_END_MESSAGES[problem])
 }

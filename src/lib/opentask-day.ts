@@ -250,14 +250,22 @@ export function periodOpensAt(
   timezone: string,
   dayStart: string,
 ): Date {
+  return localMoment(periodOpensOnDate(date, start, dayStart), start, timezone)
+}
+
+/**
+ * The local calendar date (yyyy-MM-dd) `start` (HH:MM) falls on within the
+ * OpenTask day `date` — `periodOpensAt`'s date, for a caller that sets the
+ * time itself (skip until's from-completion landing keeps Luxon's DST
+ * convention, as `computeNextOccurrence` does). With midnight it is `date`.
+ */
+export function periodOpensOnDate(date: string, start: string, dayStart: string): string {
   const startMin = parseHHMM(start)
   const dayStartMin = parseHHMM(dayStart)
   const begins = namesNextDate(dayStart) ? addDays(date, -1) : date
-  const onDate =
-    startMin === null || dayStartMin === null || startMin >= dayStartMin
-      ? begins
-      : addDays(begins, 1)
-  return localMoment(onDate, start, timezone)
+  return startMin === null || dayStartMin === null || startMin >= dayStartMin
+    ? begins
+    : addDays(begins, 1)
 }
 
 /**

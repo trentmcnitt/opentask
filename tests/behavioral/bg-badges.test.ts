@@ -238,12 +238,17 @@ describe('BG: attempts', () => {
       target_set_at: at('2026-10-08T09:00'),
     }
     const now = new Date(at('2026-10-10T12:00'))
-    expect(effectiveAttempts(base, tz, now)).toEqual({
+    expect(effectiveAttempts(base, tz, now, null)).toEqual({
       attempts: 3,
       countedThrough: '2026-10-10',
     })
     expect(
-      effectiveAttempts({ ...base, attempts_counted_through: '2026-10-09', attempts: 5 }, tz, now),
+      effectiveAttempts(
+        { ...base, attempts_counted_through: '2026-10-09', attempts: 5 },
+        tz,
+        now,
+        null,
+      ),
     ).toEqual({ attempts: 6, countedThrough: '2026-10-10' })
   })
 })

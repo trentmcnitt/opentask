@@ -16,6 +16,7 @@ import { skipUntil, planSkipUntil } from '@/core/tasks/skip-until'
 import { deckTasks } from '@/core/tasks/deck'
 import { executeUndo, executeRedo } from '@/core/undo'
 import { ValidationError } from '@/core/errors'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -350,7 +351,7 @@ describe('Skip until: batches, undo and checks', () => {
 
   test('SKU-015: the plan is pure — a far date walks a daily rule without a write', () => {
     const t = make({ rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', due_at: at('2026-01-16T09:00') })
-    const plan = planSkipUntil(t, tz, '2026-04-15', new Date())
+    const plan = planSkipUntil(t, tz, '2026-04-15', new Date(), CALENDAR_DAY_START)
     expect(plan).toEqual({
       kind: 'skip',
       landing: at('2026-04-15T09:00'),
@@ -425,7 +426,7 @@ describe('Skip until: targets, far dates and rule times', () => {
     // The engine reads a rule's first BYHOUR as its time of day, so it is one a day at 9:00.
     set(t.id, { rrule: 'FREQ=DAILY;BYHOUR=9,13,17;BYMINUTE=0', anchor_time: '09:00' })
     const started = performance.now()
-    const plan = planSkipUntil(task(t.id), tz, '2028-01-16', new Date())
+    const plan = planSkipUntil(task(t.id), tz, '2028-01-16', new Date(), CALENDAR_DAY_START)
     expect(performance.now() - started).toBeLessThan(1000)
     // Jan 16 2026 up to Jan 15 2028: 730 days.
     expect(plan).toEqual({
@@ -445,12 +446,12 @@ describe('Skip until: targets, far dates and rule times', () => {
       due_at: at('2026-01-16T09:00'),
     })
     // Pure plans, so the 10-year limit on `until` is not in the way: ~14 years of days.
-    expect(() => planSkipUntil(task(daily.id), tz, '2040-01-01', new Date())).toThrow(
-      ValidationError,
-    )
-    expect(() => planSkipUntil(task(fromDone.id), tz, '2040-01-01', new Date())).toThrow(
-      ValidationError,
-    )
+    expect(() =>
+      planSkipUntil(task(daily.id), tz, '2040-01-01', new Date(), CALENDAR_DAY_START),
+    ).toThrow(ValidationError)
+    expect(() =>
+      planSkipUntil(task(fromDone.id), tz, '2040-01-01', new Date(), CALENDAR_DAY_START),
+    ).toThrow(ValidationError)
   })
 
   test('SKU-019: from_completion with no time in the rule lands at the time the next Done keeps', () => {
@@ -538,7 +539,9 @@ describe('Skip until: on deck and ordinal rules', () => {
     })
     deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [weekly.id], day: '2026-01-15' })
     expect(task(weekly.id).due_at).toBeNull()
-    expect(planSkipUntil(task(weekly.id), tz, '2026-01-17')).toEqual({
+    expect(
+      planSkipUntil(task(weekly.id), tz, '2026-01-17', new Date(), CALENDAR_DAY_START),
+    ).toEqual({
       kind: 'retarget',
       landing: at('2026-01-19T09:00'),
     })

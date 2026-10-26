@@ -11,6 +11,7 @@ import { setupTestDb, teardownTestDb, TEST_USER_ID, TEST_TIMEZONE } from '../hel
 import { createTask, getTaskById } from '@/core/tasks'
 import { updateTask } from '@/core/tasks/update'
 import { rollPassedFirstOccurrence } from '@/core/recurrence'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 // Fri Oct 16 2026, Chicago (CDT, UTC-5).
 const at = (local: string) => new Date(`2026-10-16T${local}:00-05:00`)
@@ -20,7 +21,13 @@ const NOV15_9AM = '2026-11-15T15:00:00.000Z'
 
 describe('rollPassedFirstOccurrence', () => {
   const roll = (rrule: string, due: string, now: string) =>
-    rollPassedFirstOccurrence(rrule, new Date(utc(due)), TEST_TIMEZONE, at(now)).toISOString()
+    rollPassedFirstOccurrence(
+      rrule,
+      new Date(utc(due)),
+      TEST_TIMEZONE,
+      at(now),
+      CALENDAR_DAY_START,
+    ).toISOString()
 
   test('weekly Friday 5 PM made Friday 8:30 PM → next Friday 5 PM', () => {
     expect(roll('FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0', '2026-10-16T17:00', '20:30')).toBe(

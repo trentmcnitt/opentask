@@ -67,6 +67,7 @@ import {
 } from '@/lib/task-segments'
 import type { Task } from '@/types'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const tz = TEST_TIMEZONE
 const u = { userId: TEST_USER_ID, userTimezone: tz }
@@ -479,8 +480,8 @@ describe('RE: edits', () => {
     }
     // A stored end, with neither it nor the walk written: a reschedule of
     // this occurrence past it is allowed (that occurrence is in the series).
-    expect(repeatEndProblem(check, tz, now)).toBeNull()
-    expect(repeatEndProblem({ ...check, walkWritten: true }, tz, now)).toBe(
+    expect(repeatEndProblem(check, tz, now, CALENDAR_DAY_START)).toBeNull()
+    expect(repeatEndProblem({ ...check, walkWritten: true }, tz, now, CALENDAR_DAY_START)).toBe(
       'until_before_occurrence',
     )
   })

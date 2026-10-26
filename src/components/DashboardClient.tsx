@@ -1355,17 +1355,30 @@ function HomeContent({
   // Exit keyboard/selection modes on click/touch outside (extracted to hook)
   useExitModes({ keyboard, selection })
 
-  const handleSnoozeAllOverdue = useSnoozeOverdue({
-    displayTasks,
-    fetchTasks: refreshAll,
-    handleUndo: actions.handleUndo,
-    onUndoCountBump: actions.bumpUndoCount,
-    timezone,
-    defaultSnoozeOption,
-    bulkSnoozeDefault,
-    timeSlots,
-    morningTime,
-  })
+  // Compute selected tasks for bulk operations (the action bar and the Defer
+  // button). Reads `visibleTasks`, not the raw corpus: the selection can only
+  // ever hold ids of rendered rows, and resolving it against rows this page
+  // deliberately hides would let a reminder or a quota reach a bulk action.
+  const selectedTasks = useMemo(() => {
+    return visibleTasks.filter((t) => selection.selectedIds.has(t.id))
+  }, [visibleTasks, selection.selectedIds])
+
+  // The Defer button (clock and FAB): the selection when there is one, every
+  // overdue task otherwise — see `useSnoozeOverdue`.
+  const { snoozeOverdue: handleSnoozeAllOverdue, snoozeSelected: handleSnoozeSelected } =
+    useSnoozeOverdue({
+      displayTasks,
+      selectedTasks,
+      onSelectedDone: selection.clear,
+      fetchTasks: refreshAll,
+      handleUndo: actions.handleUndo,
+      onUndoCountBump: actions.bumpUndoCount,
+      timezone,
+      defaultSnoozeOption,
+      bulkSnoozeDefault,
+      timeSlots,
+      morningTime,
+    })
 
   // Global keyboard shortcuts (extracted to hook)
   useDashboardKeyboard({
@@ -1429,14 +1442,6 @@ function HomeContent({
       navigator.clearAppBadge?.()
     }
   }, [overdueCount])
-
-  // Compute selected tasks for bulk operations
-  // Reads `visibleTasks`, not the raw corpus: the selection can only ever hold
-  // ids of rendered rows, and resolving it against rows this page deliberately
-  // hides would let a reminder or a quota reach the bulk action sheet.
-  const selectedTasks = useMemo(() => {
-    return visibleTasks.filter((t) => selection.selectedIds.has(t.id))
-  }, [visibleTasks, selection.selectedIds])
 
   // Cmd+S: the selection, then the keyboard-focused row, then the hovered row
   // (see the hook for why the order matters).
@@ -1614,6 +1619,7 @@ function HomeContent({
         onBulkDelete={bulk.bulkDelete}
         onSkipUntil={bulk.skipUntil}
         onSnoozeOverdue={handleSnoozeAllOverdue}
+        onSnoozeSelected={handleSnoozeSelected}
         focusedTask={focusedTask}
         quickActionOpen={quickActionOpen}
         onTaskFocus={setFocusedTask}
@@ -1966,6 +1972,7 @@ function DashboardView({
   onBulkDelete,
   onSkipUntil,
   onSnoozeOverdue,
+  onSnoozeSelected,
   focusedTask,
   quickActionOpen,
   onTaskFocus,
@@ -2114,6 +2121,8 @@ function DashboardView({
   /** Skip until (PR 4): the selection sheet and the quick popover. */
   onSkipUntil: (ids: number[], until: string | null) => Promise<void>
   onSnoozeOverdue: (until?: string) => void
+  /** The Defer button with a selection: defers `selectedTasks` (`useSnoozeOverdue`). */
+  onSnoozeSelected: (until?: string) => void
   focusedTask: Task | null
   quickActionOpen: boolean
   onTaskFocus: (task: Task) => void
@@ -2393,7 +2402,6 @@ function DashboardView({
         todayCount={headerCounts.todayCount}
         onPillFilter={onPillFilter}
         activePillFilter={activePillFilter}
-        isSelectionMode={selection.isSelectionMode}
         onUndo={actions.handleUndo}
         onRedo={actions.handleRedo}
         undoCount={actions.undoCount}
@@ -2401,6 +2409,8 @@ function DashboardView({
         onSearch={onSearch}
         onSearchClear={onSearchClear}
         onSnoozeOverdue={onSnoozeOverdue}
+        onSnoozeSelected={onSnoozeSelected}
+        snoozeSelectedCount={selectedTasks.length}
         snoozeOverdueCount={sweepOverdueCount}
         hasPeriods={timeSlots.length > 0}
         onShowKeyboardShortcuts={() => onShortcutsDialogChange(true)}
@@ -2618,7 +2628,7 @@ function DashboardView({
       />
 
       {/* Top to bottom, as they stack on screen — see `DashboardFabStack`. */}
-      <DashboardFabStack>
+      <DashboardFabStack selectionBarUp={selection.selectedIds.size > 0}>
         <JumpToTasksFab
           listRef={taskListRef}
           landingRef={taskListLandingRef}
@@ -2648,14 +2658,16 @@ function DashboardView({
           isSelectionMode={selection.isSelectionMode}
           onJump={onOverdueJump}
         />
-        {!selection.isSelectionMode && (
-          <SnoozeOverdueTrigger
-            variant="fab"
-            overdueCount={sweepOverdueCount}
-            hasPeriods={timeSlots.length > 0}
-            onSnoozeOverdue={onSnoozeOverdue}
-          />
-        )}
+        {/* Stays in selection mode (Trent, 2026-10-26): it then defers the
+            selection, with the selected count on it. */}
+        <SnoozeOverdueTrigger
+          variant="fab"
+          overdueCount={sweepOverdueCount}
+          selectedCount={selectedTasks.length}
+          hasPeriods={timeSlots.length > 0}
+          onSnoozeOverdue={onSnoozeOverdue}
+          onSnoozeSelected={onSnoozeSelected}
+        />
       </DashboardFabStack>
 
       <QuickActionPopover

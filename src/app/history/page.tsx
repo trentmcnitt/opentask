@@ -6,6 +6,7 @@ import {
   formatDurationDelta,
   formatTimeInTimezone,
   getTimezoneDayBoundaries,
+  openTaskDateLabel,
 } from '@/lib/format-date'
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
 import { clientLabel } from '@/lib/client-attribution'
@@ -28,6 +29,7 @@ import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
 import { useAiFeatureInfo, useDayStart } from '@/components/PreferencesProvider'
 import { openTaskDateSpan, openTaskDayOf } from '@/lib/opentask-day'
+import { NIGHT_SUFFIX, nightDay, timedDay, wordsAgree } from '@/lib/night-day'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -643,17 +645,21 @@ function formatTimeAgoLabel(
   // The OpenTask day boundaries tell "Yesterday" from a weekday
   const { todayStart, yesterdayStart } = getTimezoneDayBoundaries(timezone, dayStart, new Date(now))
 
-  if (entryTime >= yesterdayStart.getTime() && entryTime < todayStart.getTime()) {
-    return `Yesterday ${formatTime()}`
+  // L9's night rule (`nightDay`): a 1:00 AM entry is the night of the day
+  // before. Out of the night the weekday is the entry's own date's (a start
+  // after noon: a Sat 23:47 entry is "Saturday 11:47 PM", `timedDay`), and
+  // "Yesterday" gives way to it where it would contradict that date.
+  const n = nightDay(entryDate, timezone, dayStart, new Date(now))
+  const night = n.night ? NIGHT_SUFFIX : ''
+  const weekday = `${timedDay(n).toFormat('cccc')}${night}`
+  const yesterday = entryTime >= yesterdayStart.getTime() && entryTime < todayStart.getTime()
+  if (yesterday && wordsAgree(n)) {
+    return `Yesterday${night} ${formatTime()}`
   }
 
-  // 2–4 days ago: weekday + time
+  // 2–4 days ago: the weekday + time
   const fourDaysAgo = new Date(todayStart.getTime() - 4 * ONE_DAY)
-  if (entryTime >= fourDaysAgo.getTime()) {
-    const weekday = entryDate.toLocaleDateString('en-US', {
-      timeZone: timezone,
-      weekday: 'long',
-    })
+  if (yesterday || entryTime >= fourDaysAgo.getTime()) {
     return `${weekday} ${formatTime()}`
   }
 
@@ -667,12 +673,8 @@ function formatTimeAgoLabel(
     return `${date} ${formatTime()}`
   }
 
-  // > 7 days: date only
-  return entryDate.toLocaleDateString('en-US', {
-    timeZone: timezone,
-    month: 'short',
-    day: 'numeric',
-  })
+  // > 7 days: date only — the OpenTask date, the day History lists it under
+  return openTaskDateLabel(entry.created_at, timezone, dayStart)
 }
 
 function ActivityTab({

@@ -240,6 +240,7 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     timezone: userTimezone,
     morningTime: ctx.morningTime,
     now,
+    dayStart: dayBoundaryForUser(task.user_id),
     leads: taskQueueEnabled(),
   })
   const retired = withRuleTime(
@@ -1042,6 +1043,7 @@ function collectRepeatEnds(
       },
       left.timezone,
       left.now,
+      dayBoundaryForUser(task.user_id),
     )
     if (problem) throw new ValidationError(REPEAT_END_MESSAGES[problem])
   }
@@ -1594,7 +1596,13 @@ function collectRruleChanges(
       })
     }
     if (!willBeTracked && input.due_at === undefined && (!isOverdue || task.is_reminder)) {
-      const nextOccurrence = computeFirstOccurrence(input.rrule, anchors.anchor_time, userTimezone)
+      const nextOccurrence = computeFirstOccurrence(
+        input.rrule,
+        anchors.anchor_time,
+        userTimezone,
+        now,
+        dayBoundaryForUser(task.user_id),
+      )
       const scheduled = nextOccurrence.toISOString()
       // The target never passes the deadline (§8.2); the occurrence keeps the
       // schedule (`collectOccurrence`).
@@ -1708,7 +1716,13 @@ function keepPersonalOccurrence(
       data.afterState.deadline_at !== undefined ? data.afterState.deadline_at : task.deadline_at
     const capped = capAtDeadline(task.due_at!, deadline ?? null, left.now)
     if (capped !== task.due_at) trackField(data, 'due_at', task.due_at, capped)
-    const scheduled = computeFirstOccurrence(rrule, anchorTime, left.timezone).toISOString()
+    const scheduled = computeFirstOccurrence(
+      rrule,
+      anchorTime,
+      left.timezone,
+      left.now,
+      dayBoundaryForUser(task.user_id),
+    ).toISOString()
     return { changed: true, scheduled }
   }
   const target =

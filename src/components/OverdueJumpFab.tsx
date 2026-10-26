@@ -42,8 +42,13 @@ interface OverdueJumpFabProps {
  *   rule). It used to vanish once the filter was on, leaving no way back from
  *   the corner.
  * - **Hidden** only when nothing is overdue (an Overdue filter left empty
- *   clears itself, `ce069c6`) and in selection mode, where the snooze
- *   FAB (`SnoozeOverdueTrigger`) hides too and the selection bar owns the bottom.
+ *   clears itself, `ce069c6`) and in selection mode, where the selection
+ *   bar owns the bottom. The Defer FAB below it (`SnoozeOverdueTrigger`) no
+ *   longer hides with it (Trent, 2026-10-26): with a selection it stays,
+ *   shows the selected count and defers the selection — only the selected
+ *   tasks whose target is before the defer time; the rest are counted in the
+ *   toast. A jump to the overdue filter has no meaning for a selection, so
+ *   this one still goes.
  *
  * **Where it sits.** In the right-hand FAB column (`DashboardFabStack`, which
  * owns the position and the 12px gaps), directly above the snooze FAB — the
@@ -68,7 +73,9 @@ interface OverdueJumpFabProps {
  *   edge is mid-screen and the button read as misplaced. At `xl` it can now
  *   float over the Quotas column's lower rows, so it is 90% opaque (full on
  *   hover): whatever it covers still shows through.
- * - The selection bar only exists while both are hidden, and the toaster is
+ * - The selection bar only exists while this button is hidden; the Defer FAB
+ *   stays beside it, and `DashboardFabStack` lifts the column clear of the
+ *   bar wherever the two would meet (on a phone). The toaster is
  *   bottom-center and 356px wide, so even at `md` (768px) it ends well left
  *   of this corner.
  */

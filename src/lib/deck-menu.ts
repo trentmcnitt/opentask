@@ -147,10 +147,10 @@ export function deckLimit(
     rrule?: string | null
   },
   timezone: string,
-  now: Date = new Date(),
-  ctx?: TargetContext | null,
+  now: Date,
+  ctx: TargetContext | null,
   /** The user's rollover time: the deadline's day is its OpenTask day (`repeatingDeadlineDay`). */
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): DeckLimit | null {
   if (!task.deadline_at) return null
   const today = DateTime.fromISO(openTaskToday(timezone, now, rolloverTime), { zone: timezone })

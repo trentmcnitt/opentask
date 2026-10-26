@@ -80,7 +80,6 @@ interface HeaderProps {
   onPillFilter?: (filter: HeaderPillFilter) => void
   /** Which pill's filter is the sole active date filter, for `aria-pressed`. */
   activePillFilter?: HeaderPillFilter | null
-  isSelectionMode?: boolean
   onUndo: () => void
   onRedo: () => void
   undoCount?: number
@@ -88,6 +87,10 @@ interface HeaderProps {
   onSearch?: (query: string) => void
   onSearchClear?: () => void
   onSnoozeOverdue?: (until?: string) => void
+  /** The clock with a selection: defers the selected tasks instead. */
+  onSnoozeSelected?: (until?: string) => void
+  /** Selected task rows; above 0, the clock acts on (and counts) them. */
+  snoozeSelectedCount?: number
   /**
    * The snooze-all clock's badge: overdue tasks a press would sweep. Not
    * `overdueCount`, which is the red pill's date-facet number — see
@@ -131,7 +134,6 @@ export function Header({
   todayCount = 0,
   onPillFilter,
   activePillFilter = null,
-  isSelectionMode = false,
   onUndo,
   onRedo,
   undoCount = 0,
@@ -139,6 +141,8 @@ export function Header({
   onSearch,
   onSearchClear,
   onSnoozeOverdue,
+  onSnoozeSelected,
+  snoozeSelectedCount = 0,
   snoozeOverdueCount = 0,
   hasPeriods = false,
   onShowKeyboardShortcuts,
@@ -295,13 +299,16 @@ export function Header({
           <div className="flex flex-shrink-0 items-center">
             {/* Snooze all overdue — desktop only (`md` and up). The FAB, shown at
                every width, is the same control (`SnoozeOverdueTrigger`); the
-               top-bar copy stays too (Trent, 2026-09-29). */}
-            {onSnoozeOverdue && !isSelectionMode && (
+               top-bar copy stays too (Trent, 2026-09-29). With a selection it
+               stays and defers the selection (2026-10-26). */}
+            {onSnoozeOverdue && (
               <SnoozeOverdueTrigger
                 variant="header"
                 overdueCount={snoozeOverdueCount}
+                selectedCount={snoozeSelectedCount}
                 hasPeriods={hasPeriods}
                 onSnoozeOverdue={onSnoozeOverdue}
+                onSnoozeSelected={onSnoozeSelected}
               />
             )}
 

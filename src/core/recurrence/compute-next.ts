@@ -19,6 +19,8 @@ import { ValidationError } from '@/core/errors'
 import { ordinalsCount, parseRRule, type RRuleComponents } from './rrule-builder'
 import { parseAnchorTime } from './timezone'
 import { toNaiveLocal, fromNaiveLocal } from './utils'
+import { dayStartMoment, openTaskDayOf, periodOpensAt } from '@/lib/opentask-day'
+import { toHHMM } from '@/lib/rrule-draft'
 
 // Map our DOW (0=Mon..6=Sun) to rrule.js Weekday constants
 const DOW_TO_RRULE_WEEKDAY: Weekday[] = [
@@ -495,35 +497,56 @@ export function isRecurring(rrule: string | null): boolean {
  * A rule with no time of day (no BYHOUR and no `anchorTime`) is at local
  * midnight, which has always passed, so it starts one period on.
  *
+ * DAY 0 IS THE OPENTASK DAY ("OpenTask day everywhere" part 2, Trent
+ * 2026-10-26): "today" is the user's day (`dayStart`, `dayBoundaryForUser` /
+ * `useDayStart`), so at 00:30 Monday with a 3:00 AM day start the creation
+ * day is still Sunday — every 22 days made then is on Sunday's grid, exactly
+ * as if made at 23:30 Sunday (the long first gap included, when Sunday's
+ * time has passed). Day 0's occurrence is the one instant at the rule's time
+ * INSIDE that day (`periodOpensAt`), which with a start after 12:00 can be on
+ * the date before: with an 11 PM start, every 3 days at 23:45 made Sun 23:26
+ * (Monday's day) is first Sun 23:45, 19 minutes on (PR #354 review). With
+ * midnight (the switch off) it is the calendar day.
+ *
  * Rules that pin their own phase (FREQ=DAILY, BYDAY=SU, BYMONTHDAY=1 at
  * INTERVAL=1) are exactly as before: the next matching time after now.
  *
- * `now` is injectable for tests; callers use the clock.
+ * `now` is injectable for tests; callers pass the clock.
  */
 export function computeFirstOccurrence(
   rruleStr: string,
   anchorTime: string | null,
   timezone: string,
-  now: Date = new Date(),
+  now: Date,
+  /** The user's day boundary: day 0 is the OpenTask day `now` is in. */
+  dayStart: string,
 ): Date {
   const components = parseRRule(rruleStr)
   if (!phaseFloats(components)) {
     return computeFromDue(rruleStr, anchorTime, timezone, now, null)
   }
-  let day0 = now
+  const today = openTaskDayOf(now, timezone, dayStart)
   if (pinsDays(components)) {
-    const startOfToday = DateTime.fromJSDate(now)
-      .setZone(timezone)
-      .startOf('day')
-      .minus({ milliseconds: 1 })
-      .toJSDate()
+    // The first matching day from the moment today's OpenTask day starts.
+    const startOfToday = new Date(dayStartMoment(today, timezone, dayStart).getTime() - 1)
     const everyPeriod = rruleStr
       .split(';')
       .filter((part) => !/^INTERVAL=/i.test(part))
       .join(';')
-    day0 = computeFromDue(everyPeriod, anchorTime, timezone, startOfToday, null)
+    const day0 = computeFromDue(everyPeriod, anchorTime, timezone, startOfToday, null)
+    return computeFromDue(rruleStr, anchorTime, timezone, now, null, day0)
   }
-  return computeFromDue(rruleStr, anchorTime, timezone, now, null, day0)
+  // Day 0's occurrence: the one instant at the rule's time INSIDE today's
+  // OpenTask day (`periodOpensAt`) — its date anchors the grid. With an 11 PM
+  // start, at Sun 23:26 (Monday's day) a 23:45 rule's is Sun 23:45, still
+  // ahead; with a 3:00 AM start, at Mon 00:30 (Sunday's day) a 1:00 AM rule's
+  // is Mon 01:00. With midnight it is today's date, as it always was.
+  const { hour, minute } = ruleTimeOfDay(rruleStr, anchorTime)
+  const day0 = periodOpensAt(today, toHHMM(hour, minute), timezone, dayStart)
+  // A rule with no time of day: day 0's midnight counts as passed (the
+  // promise above), even where the day start leaves it ahead.
+  const timeless = !anchorTime && components.byhour === undefined
+  return computeFromDue(rruleStr, anchorTime, timezone, now, timeless ? day0 : null, day0)
 }
 
 /**
@@ -554,10 +577,12 @@ export function rollPassedFirstOccurrence(
   rruleStr: string,
   dueAt: Date,
   timezone: string,
-  now: Date = new Date(),
+  now: Date,
+  /** The user's day boundary: counted from the OpenTask day (`computeFirstOccurrence`). */
+  dayStart: string,
 ): Date {
   const due = DateTime.fromJSDate(dueAt).setZone(timezone)
   const nowLocal = DateTime.fromJSDate(now).setZone(timezone)
   if (!due.isValid || due >= nowLocal) return dueAt
-  return computeFirstOccurrence(rruleStr, due.toFormat('HH:mm'), timezone, now)
+  return computeFirstOccurrence(rruleStr, due.toFormat('HH:mm'), timezone, now, dayStart)
 }

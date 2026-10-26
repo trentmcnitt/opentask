@@ -89,6 +89,7 @@ function pipe(
     morningTime: opts.morningTime ?? '09:00',
     todayTarget: TODAY_TARGET,
     rolloverTime: opts.rolloverTime ?? '06:30',
+    dayStart: opts.rolloverTime ?? '06:30',
     checkInDay: opts.checkInDay,
     now: opts.now ?? TUE_2PM,
     newTask: true,
@@ -166,7 +167,13 @@ describe('a day with no time goes on deck (the post-process)', () => {
       result({ due_at: '2026-10-24', rrule: 'FREQ=WEEKLY;BYDAY=SA' }),
       'mow the lawn every Saturday',
       TZ,
-      { morningTime: '09:00', todayTarget: TODAY_TARGET, now: TUE_2PM, newTask: true },
+      {
+        morningTime: '09:00',
+        todayTarget: TODAY_TARGET,
+        dayStart: CALENDAR_DAY_START,
+        now: TUE_2PM,
+        newTask: true,
+      },
     )
     expect(out.on_deck_day ?? null).toBeNull()
     expect(out.due_at).toBe('2026-10-24T09:00:00')
@@ -312,7 +319,13 @@ describe('"this weekend" (A5)', () => {
       result({ horizon: 'days' }),
       'sometime this weekend clean the garage',
       TZ,
-      { morningTime: '09:00', todayTarget: TODAY_TARGET, now: TUE_2PM, newTask: true },
+      {
+        morningTime: '09:00',
+        todayTarget: TODAY_TARGET,
+        dayStart: CALENDAR_DAY_START,
+        now: TUE_2PM,
+        newTask: true,
+      },
     )
     expect(out.on_deck_day ?? null).toBeNull()
     expect(out.due_at).toBeNull()
@@ -414,6 +427,7 @@ describe('D3 ruling: a deadline follows A4 too', () => {
         morningTime: '09:00',
         todayTarget: TODAY_TARGET,
         rolloverTime: '06:30',
+        dayStart: '06:30',
         now: AT_0030,
         newTask: true,
       },

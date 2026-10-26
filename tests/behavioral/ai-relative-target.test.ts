@@ -58,6 +58,7 @@ import {
 } from '@/lib/sync-events'
 import type { EnrichmentResult } from '@/core/ai/types'
 import type { TimeSlot } from '@/lib/time-slot-assign'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const mockEnrichmentQuery = vi.mocked(enrichmentQuery)
 
@@ -359,6 +360,7 @@ describe('resolveEnrichmentRelative: the mapped result', () => {
         {
           morningTime: '09:00',
           todayTarget: '2026-10-11T14:00:00.000Z',
+          dayStart: CALENDAR_DAY_START,
           relative: custom(AM_PM_NIGHT),
         },
       )

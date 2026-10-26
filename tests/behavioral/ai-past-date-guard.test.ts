@@ -14,6 +14,7 @@ import { describe, test, expect } from 'vitest'
 import { dropUnstatedPastDates, postProcessTaskDates } from '@/core/ai/enrichment'
 import { buildEnrichmentUserPrompt } from '@/core/ai/prompts'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 function result(overrides: Partial<EnrichmentResult>): EnrichmentResult {
   return {
@@ -118,6 +119,7 @@ describe('left alone', () => {
 describe('the prompt names the year', () => {
   test('"Current local time" carries it, so a model cannot assume its training year', () => {
     const prompt = buildEnrichmentUserPrompt({
+      dayStart: CALENDAR_DAY_START,
       timezone: TZ,
       morningTime: '09:00',
       wakeTime: '07:00',
@@ -133,6 +135,7 @@ describe('the prompt names the year', () => {
 describe('in the shared pipeline (postProcessTaskDates)', () => {
   const run = (text: string, overrides: Partial<EnrichmentResult>) =>
     postProcessTaskDates(result(overrides), text, TZ, {
+      dayStart: CALENDAR_DAY_START,
       morningTime: '09:00',
       todayTarget: '2026-10-16T19:30:00.000Z',
       now: NOW,

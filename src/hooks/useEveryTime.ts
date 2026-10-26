@@ -17,6 +17,7 @@ import {
   type EveryTimeTask,
 } from '@/lib/every-time'
 import type { EveryTimeVariant } from '@/components/quick-panel/EveryTimePanel'
+import { useDayStart } from '@/components/PreferencesProvider'
 import type { Task } from '@/types'
 
 /** An open every-time session: the draft, what it opened with, and what it is checked against. */
@@ -95,10 +96,20 @@ export function useEveryTime({
   const [staged, setStaged] = useState<StagedSchedule | null>(null)
   // "Back to this one" for the live region once the mode has been left.
   const [left, setLeft] = useState(false)
+  // The user's day ("OpenTask day everywhere" part 2): a new rule's default
+  // weekday and its first occurrence count from the OpenTask day.
+  const dayStart = useDayStart()
 
   const enter = useCallback(
     (opts?: { focusDeadline?: boolean }) => {
-      const ctx: EveryTimeContext = { timezone, morningTime, morningSlotId, now: new Date(), leads }
+      const ctx: EveryTimeContext = {
+        timezone,
+        morningTime,
+        morningSlotId,
+        now: new Date(),
+        dayStart,
+        leads,
+      }
       let checkTask: EveryTimeTask
       let initial: EveryTimeDraft
       let mixed = false
@@ -137,6 +148,7 @@ export function useEveryTime({
       timezone,
       morningTime,
       morningSlotId,
+      dayStart,
       leads,
       staged,
     ],

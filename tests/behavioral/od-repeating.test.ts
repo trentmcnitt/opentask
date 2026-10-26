@@ -164,20 +164,23 @@ describe('OD-RP: the pure rules', () => {
       deadline_at: at('2026-10-23T17:00'),
       rrule: DAILY_8,
     }
-    expect(deckRefusal(t, '2026-10-22', ctx, now)).toBeNull()
-    expect(deckRefusal(t, '2026-10-23', ctx, now)).toBeNull()
-    expect(deckRefusal(t, '2026-10-24', ctx, now)).toBe('after_auto_target')
+    expect(deckRefusal(t, '2026-10-22', ctx, now, null)).toBeNull()
+    expect(deckRefusal(t, '2026-10-23', ctx, now, null)).toBeNull()
+    expect(deckRefusal(t, '2026-10-24', ctx, now, null)).toBe('after_auto_target')
     const passed = { ...t, deadline_at: at('2026-10-20T09:00') }
-    expect(deckRefusal(passed, '2026-10-20', ctx, now)).toBe('deadline_nagging')
+    expect(deckRefusal(passed, '2026-10-20', ctx, now, null)).toBe('deadline_nagging')
     // The web greys the same days.
-    expect(deckLimit(t, tz, now)).toEqual({ latestDay: '2026-10-23', caption: 'deadline Fri' })
-    const days = deckMenuDays(tz, now, CALENDAR_DAY_START, 6, deckLimit(t, tz, now))
+    expect(deckLimit(t, tz, now, null, null)).toEqual({
+      latestDay: '2026-10-23',
+      caption: 'deadline Fri',
+    })
+    const days = deckMenuDays(tz, now, CALENDAR_DAY_START, 6, deckLimit(t, tz, now, null, null))
     expect(days.filter((d) => !d.disabled).map((d) => d.day)).toEqual([
       '2026-10-21',
       '2026-10-22',
       '2026-10-23',
     ])
-    expect(deckLimit(passed, tz, now)).toEqual({
+    expect(deckLimit(passed, tz, now, null, null)).toEqual({
       latestDay: '2026-10-19',
       caption: 'deadline passed',
     })
@@ -599,9 +602,9 @@ describe('OD-RP: review round (2026-10-20)', () => {
     expect(deckRefusal(t, '2026-10-23', ctx, now, '06:30')).toBe('after_auto_target')
     expect(deckRefusal(t, '2026-10-22', ctx, now, '06:30')).toBeNull()
     // Without a rollover time, the calendar day (Fri): Fri allowed.
-    expect(deckRefusal(t, '2026-10-23', ctx, now)).toBeNull()
+    expect(deckRefusal(t, '2026-10-23', ctx, now, null)).toBeNull()
     expect(deckLimit(t, tz, now, null, '06:30')).toMatchObject({ latestDay: '2026-10-22' })
-    expect(deckLimit(t, tz, now)).toMatchObject({ latestDay: '2026-10-23' })
+    expect(deckLimit(t, tz, now, null, null)).toMatchObject({ latestDay: '2026-10-23' })
     // The server judges with the owner's rollover time (06:30 here). A
     // deadline-anchored weekly (2026-10-21): deadline Fridays 02:00, target
     // the day before at 20:00.

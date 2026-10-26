@@ -92,6 +92,9 @@ import { getTaskById } from './read'
 import { seriesEndSkipWords, writeRecurringSkip, writeSeriesEndSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
 import { DECK_CLEAR_SQL, collectDeckClear } from './deck-clear'
+import { addDays, dayStartMoment, openTaskLocalDay, periodOpensOnDate } from '@/lib/opentask-day'
+import { toHHMM } from '@/lib/rrule-draft'
+import { dayBoundaryForUser } from './rollover-time'
 import {
   isDeadlineAnchored,
   nextLanding,
@@ -214,19 +217,24 @@ function walkFromDue(
 function walkFromCompletion(
   task: PlanTask,
   timezone: string,
-  untilDay: DateTime,
+  until: { day: string; start: Date; dayStart: string },
   now: Date,
 ): { landing: string; skipped: number } {
   // The floor: exactly where "skip this occurrence" lands (end-blind; the end
   // is judged on the landing in `planSkipUntil`).
   const plain = new Date(nextLanding(task, timezone, now))
-  const skipped = completionSkipsBefore(task, timezone, untilDay.toJSDate(), now)
+  const skipped = completionSkipsBefore(task, timezone, until.start, now)
   const { hour, minute } = ruleTimeOfDay(task.rrule!, task.anchor_time)
   // A deadline-anchored repeat's occurrence is its deadline: it lands
   // `target_days_before` days on, so its derived target is on the date.
   const lead = isDeadlineAnchored(task) ? (task.target_days_before ?? 0) : 0
-  const onTheDay = untilDay
-    .plus({ days: lead })
+  // The rule's time WITHIN that OpenTask day (`periodOpensOnDate`): a 1:00 AM
+  // rule's moment on Monday is Tuesday 01:00 with a 3:00 AM day start. The
+  // time is set as Luxon sets it, the convention `computeNextOccurrence`'s
+  // from-completion step keeps: on a spring-forward night a 02:30 that does
+  // not exist moves on by the gap, to 03:30 (not `localMoment`'s 03:00).
+  const onDate = periodOpensOnDate(addDays(until.day, lead), toHHMM(hour, minute), until.dayStart)
+  const onTheDay = DateTime.fromISO(onDate, { zone: timezone })
     .set({ hour, minute, second: 0, millisecond: 0 })
     .toJSDate()
   const landing = onTheDay > plain ? onTheDay : plain
@@ -316,7 +324,14 @@ export function planSkipUntil(
   task: PlanTask,
   timezone: string,
   until: string | null,
-  now: Date = new Date(),
+  now: Date,
+  /**
+   * The user's day boundary (`dayBoundaryForUser`): the date starts at its
+   * day start (`dayStartMoment`), not midnight ("OpenTask day everywhere"
+   * part 2) — skipped until Monday, a 1:00 AM occurrence on Monday's calendar
+   * date is Sunday night's, so it is skipped too.
+   */
+  dayStart: string,
 ): SkipUntilPlan {
   const reason = leaveReason(task)
   if (reason) return { kind: 'leave', reason }
@@ -327,8 +342,7 @@ export function planSkipUntil(
       ? { kind: 'skip', landing: null, skipped: step.consumed, keepDeck: false, ended: true }
       : { kind: 'skip', landing: step.occurrenceAt, skipped: 1, keepDeck: false, ended: false }
   }
-  const untilDay = DateTime.fromISO(until, { zone: timezone }).startOf('day')
-  const untilStart = untilDay.toJSDate()
+  const untilStart = dayStartMoment(until, timezone, dayStart)
   // A deck on or after the date is part of the after: it stays. Both days are
   // `yyyy-MM-dd` in the user's timezone, so the string compare is the day compare.
   const keepDeck = !!task.on_deck_day && task.due_at === null && task.on_deck_day >= until
@@ -354,7 +368,7 @@ export function planSkipUntil(
   }
   const walked =
     task.recurrence_mode === 'from_completion'
-      ? walkFromCompletion(task, timezone, untilDay, now)
+      ? walkFromCompletion(task, timezone, { day: until, start: untilStart, dayStart }, now)
       : walkFromDue(task, timezone, untilStart, now)
   return judgeSkip(
     task,
@@ -404,6 +418,8 @@ export function parseUntil(
   until: string | null | undefined,
   timezone: string,
   now: Date,
+  /** The user's day boundary: "tomorrow" is the next OpenTask day. */
+  dayStart: string,
 ): string | null {
   if (until === undefined || until === null) return null
   const invalid = new ValidationError('until must be a date (yyyy-MM-dd)')
@@ -415,7 +431,9 @@ export function parseUntil(
     throw invalid
   }
   if (!day.isValid) throw invalid
-  const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
+  // Tomorrow or later, as OpenTask days (`skipUntilFirstDay`'s floor): at
+  // 00:30 with a 3:00 AM start, "tomorrow" is the calendar today.
+  const today = openTaskLocalDay(now, timezone, dayStart)
   if (day <= today) throw new ValidationError('until must be tomorrow or later')
   if (day > today.plus({ years: MAX_UNTIL_YEARS })) {
     throw new ValidationError(`until is more than ${MAX_UNTIL_YEARS} years ahead`)
@@ -574,7 +592,8 @@ interface PlannedWrite {
 export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
   const { userId, userTimezone } = options
   const now = new Date()
-  const until = parseUntil(options.until, userTimezone, now)
+  const dayStart = dayBoundaryForUser(userId)
+  const until = parseUntil(options.until, userTimezone, now, dayStart)
   const batch = loadBatch(userId, options.taskIds)
 
   const counts: LeaveCounts = {
@@ -586,7 +605,7 @@ export function skipUntil(options: SkipUntilOptions): SkipUntilResult {
   }
   const planned: PlannedWrite[] = []
   for (const task of batch) {
-    const plan = planSkipUntil(task, userTimezone, until, now)
+    const plan = planSkipUntil(task, userTimezone, until, now, dayStart)
     if (plan.kind === 'skip') {
       planned.push({
         task,

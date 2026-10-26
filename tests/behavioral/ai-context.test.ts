@@ -27,6 +27,7 @@ import { buildInsightsFullPrompt } from '@/core/ai/insights'
 import { buildEnrichmentUserPrompt } from '@/core/ai/prompts'
 import { getDb } from '@/core/db'
 import { aiQuery } from '@/core/ai/sdk'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const mockAiQuery = vi.mocked(aiQuery)
 
@@ -155,6 +156,7 @@ describe("What's Next prompt includes user context", () => {
 describe('Enrichment prompt includes user context', () => {
   test('includes "User context:" when userContext is provided', () => {
     const prompt = buildEnrichmentUserPrompt({
+      dayStart: CALENDAR_DAY_START,
       timezone: TEST_TIMEZONE,
       morningTime: '09:00',
       wakeTime: '07:00',
@@ -169,6 +171,7 @@ describe('Enrichment prompt includes user context', () => {
 
   test('does not include "User context:" when null', () => {
     const prompt = buildEnrichmentUserPrompt({
+      dayStart: CALENDAR_DAY_START,
       timezone: TEST_TIMEZONE,
       morningTime: '09:00',
       wakeTime: '07:00',
@@ -183,6 +186,7 @@ describe('Enrichment prompt includes user context', () => {
 
   test('does not include "User context:" when undefined', () => {
     const prompt = buildEnrichmentUserPrompt({
+      dayStart: CALENDAR_DAY_START,
       timezone: TEST_TIMEZONE,
       morningTime: '09:00',
       wakeTime: '07:00',
@@ -197,6 +201,7 @@ describe('Enrichment prompt includes user context', () => {
   test('embeds a 4,000-character context whole', () => {
     const context = 'x'.repeat(3999) + 'Z'
     const prompt = buildEnrichmentUserPrompt({
+      dayStart: CALENDAR_DAY_START,
       timezone: TEST_TIMEZONE,
       morningTime: '09:00',
       wakeTime: '07:00',
@@ -213,6 +218,7 @@ describe('Enrichment prompt includes user context', () => {
 describe('Enrichment prompt lists project descriptions (2026-10-16)', () => {
   const build = (projects: Parameters<typeof buildEnrichmentUserPrompt>[0]['projects']) =>
     buildEnrichmentUserPrompt({
+      dayStart: CALENDAR_DAY_START,
       timezone: TEST_TIMEZONE,
       morningTime: '09:00',
       wakeTime: '07:00',

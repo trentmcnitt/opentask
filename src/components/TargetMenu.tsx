@@ -52,7 +52,9 @@ export function TargetMenu({
   const [deadlineDay, setDeadlineDay] = useState<{ label: string; at: string } | null>(null)
   const openPicker = () => {
     setAnchor(computeSnoozeTime('tomorrow', timezone, morningTime, dayStart))
-    setDeadlineDay(deadlineDayPick(task.deadline_at, { timezone, morningTime }))
+    setDeadlineDay(
+      deadlineDayPick(task.deadline_at, { timezone, morningTime }, new Date(), dayStart),
+    )
     setPickerOpen(true)
   }
   return (

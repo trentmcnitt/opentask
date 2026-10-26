@@ -29,6 +29,7 @@ import { ValidationError } from '@/core/errors'
 import { markDone } from '@/core/tasks/mark-done'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 /** parse → build at the rule's own time. */
 function roundTrip(rrule: string): string {
@@ -166,15 +167,15 @@ describe('RD-SHIFT: moving a rule’s days (rule-shift.ts)', () => {
     const now = new Date('2026-10-22T15:00:00Z')
     const fri = 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=16;BYMINUTE=0'
     const sat = 'FREQ=WEEKLY;BYDAY=SA;BYHOUR=8;BYMINUTE=0'
-    const from = computeFirstOccurrence(fri, null, tz, now).toISOString()
-    const satFrom = computeFirstOccurrence(sat, null, tz, now).toISOString()
+    const from = computeFirstOccurrence(fri, null, tz, now, CALENDAR_DAY_START).toISOString()
+    const satFrom = computeFirstOccurrence(sat, null, tz, now, CALENDAR_DAY_START).toISOString()
     expect(shiftedRuleHolds(rule(fri), from, rule(sat), satFrom, 1, '08:00', tz)).toBe(true)
     // "1SA" − 1 writes "1FR", which is not always the day before the 1st Saturday.
     const firstSat = 'FREQ=MONTHLY;BYDAY=1SA;BYHOUR=8;BYMINUTE=0'
     const firstFri = shiftRuleDays(firstSat, -1)!
     expect(firstFri).toBe('FREQ=MONTHLY;BYDAY=1FR;BYHOUR=8;BYMINUTE=0')
-    const a = computeFirstOccurrence(firstSat, null, tz, now).toISOString()
-    const b = computeFirstOccurrence(firstFri, null, tz, now).toISOString()
+    const a = computeFirstOccurrence(firstSat, null, tz, now, CALENDAR_DAY_START).toISOString()
+    const b = computeFirstOccurrence(firstFri, null, tz, now, CALENDAR_DAY_START).toISOString()
     expect(shiftedRuleHolds(rule(firstSat), a, rule(firstFri), b, -1, '08:00', tz)).toBe(false)
   })
 })

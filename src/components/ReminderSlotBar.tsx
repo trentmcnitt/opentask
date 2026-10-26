@@ -94,6 +94,9 @@ export interface SlotBarItem {
   /** A task segment's teal (`segmentColor`): its fill while it fills. The
    *  page on screen grows like a slot's, with no ring. Absent for a slot. */
   color?: string
+  /** Its fill once finished, in place of green: the deadlines page's teal
+   *  (`segmentDoneColor`). Absent for a slot and every other segment. */
+  doneColor?: string
   /**
    * EMPTY IS DONE (a task segment, Trent 2026-10-24: "always show every queue
    * segment, every day, in fixed positions"). With this set an item holding
@@ -160,7 +163,7 @@ export function ReminderSlotBar({
   return (
     <div className="flex items-center gap-1 px-3 pb-2" role="group" aria-label={ariaLabel}>
       {shown.map(({ item, index: i }, n) => {
-        const { considered, total, label, color } = item
+        const { considered, total, label, color, doneColor } = item
         // The divider goes before the first task segment, after a slot.
         const divider = color !== undefined && n > 0 && shown[n - 1].item.color === undefined
         const state = slotState(item)
@@ -211,7 +214,9 @@ export function ReminderSlotBar({
                   // Its time has come: a track with real presence, so the
                   // unfilled part reads as "still to do".
                   state === 'behind' && 'bg-foreground/20',
-                  state === 'done' && 'bg-green-600/20',
+                  // (Under a finished fill in its own colour, a plain grey
+                  // track rather than green's tint: `doneColor`.)
+                  state === 'done' && (doneColor ? 'bg-foreground/20' : 'bg-green-600/20'),
                   // Nothing has happened here yet, and that is not a problem —
                   // barely there, so it never competes for attention.
                   state === 'upcoming' && 'bg-foreground/[0.06]',
@@ -225,12 +230,14 @@ export function ReminderSlotBar({
                       // moment there isn't. A step change in colour, not an
                       // increment in length — see the header comment.
                       'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
-                      complete ? 'bg-green-600' : 'bg-indigo-600',
+                      complete ? !doneColor && 'bg-green-600' : 'bg-indigo-600',
                     )}
                     style={{
                       width: `${Math.min(1, fraction) * 100}%`,
-                      // Teal for a task segment while it fills; green when done.
+                      // Teal for a task segment while it fills; green when done
+                      // — or its own `doneColor` (the deadlines page).
                       ...(color && !complete ? { backgroundColor: color } : {}),
+                      ...(doneColor && complete ? { backgroundColor: doneColor } : {}),
                     }}
                   />
                 )}

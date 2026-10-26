@@ -256,8 +256,9 @@ export function orderGroupsByDay<G extends SlotIndexed>(
 export function naturalSlotIndex(
   groups: SlotIndexed[],
   timezone: string,
-  now: Date = new Date(),
-  dayStart: string = '00:00',
+  now: Date,
+  /** The user's day boundary (`useDayStart`): the roster's day starts there. */
+  dayStart: string,
 ): number {
   if (groups.length === 0) return 0
 

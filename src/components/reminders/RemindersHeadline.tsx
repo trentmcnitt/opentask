@@ -8,7 +8,13 @@ import type { RemindersSummary } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import { MIN_SEGMENT_PX, SegmentDivider } from '@/components/ReminderSlotBar'
-import { segmentColor, segmentCounts, segmentKey, segmentLabel } from '@/components/TaskSegmentRow'
+import {
+  segmentColor,
+  segmentCounts,
+  segmentDoneColor,
+  segmentKey,
+  segmentLabel,
+} from '@/components/TaskSegmentRow'
 import type { SegmentView } from '@/hooks/useTaskSegments'
 
 /**
@@ -154,6 +160,7 @@ export function RemindersHeadline({
                 total={total}
                 started
                 color={segmentColor(segment.horizon)}
+                doneColor={segmentDoneColor(segment.horizon)}
                 emptyDone
                 share={share}
                 onClick={() => onGoToSlot(key)}
@@ -222,6 +229,7 @@ function DayBarButton({
   total,
   started,
   color,
+  doneColor,
   emptyDone = false,
   share,
   onClick,
@@ -232,6 +240,8 @@ function DayBarButton({
   total: number
   started: boolean
   color?: string
+  /** Its fill once done, in place of green: the deadlines page's teal (`segmentDoneColor`). */
+  doneColor?: string
   /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
   emptyDone?: boolean
   /** Its even share of the bar (`fitShare`): the most its minimum may be. */
@@ -277,11 +287,12 @@ function DayBarButton({
         <span
           className={cn(
             'block h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-            done ? 'bg-green-600' : 'bg-indigo-600',
+            done ? !doneColor && 'bg-green-600' : 'bg-indigo-600',
           )}
           style={{
             width: `${total > 0 ? (considered / total) * 100 : done ? 100 : 0}%`,
             ...(color && !done ? { backgroundColor: color } : {}),
+            ...(doneColor && done ? { backgroundColor: doneColor } : {}),
           }}
         />
       </span>

@@ -25,12 +25,8 @@
  * before, not as a calendar-day surprise. The tooltip keeps the exact moment.
  */
 import { DateTime } from 'luxon'
-import {
-  inSafetyNet,
-  isPastDeadline,
-  openTaskToday,
-  repeatingDeadlineDay,
-} from '@/lib/task-segments'
+import { inSafetyNet, isPastDeadline } from '@/lib/task-segments'
+import { nightDay, nightWeekday } from '@/lib/night-day'
 
 export type DeadlineTone = 'passed' | 'close' | 'ahead'
 
@@ -52,16 +48,13 @@ export function deadlineChip(
 ): DeadlineChipFacts {
   const at = DateTime.fromISO(deadlineAt, { zone: 'utc' }).setZone(timezone)
   const title = `Deadline ${at.toFormat('ccc LLL d, h:mm a')}`
-  // The OpenTask day the deadline counts on, and today's, both as local days.
-  const dayIso = repeatingDeadlineDay(deadlineAt, timezone, rolloverTime)
-  const day = DateTime.fromISO(dayIso, { zone: timezone })
-  const night = dayIso !== at.toFormat('yyyy-MM-dd')
-  const todayIso = openTaskToday(timezone, now, rolloverTime)
-  const today = DateTime.fromISO(todayIso, { zone: timezone })
-  const gap = Math.round(day.diff(today, 'days').days)
+  // The OpenTask day the deadline counts on, its gap from today's, and
+  // whether it is in that day's night (L9, `nightDay` — one rule app-wide).
+  const n = nightDay(at.toJSDate(), timezone, rolloverTime, now)
+  const { day, gap, night } = n
   if (isPastDeadline(deadlineAt, now)) {
     // Just passed, on its own (evening-before) day: "Thu night", never "tonight".
-    const past = night && gap === 0 ? `${day.toFormat('ccc')} night` : dayWords(day, gap, night)
+    const past = night && gap === 0 ? nightWeekday(n) : dayWords(day, gap, night)
     return { text: `Past deadline ${past}`, tone: 'passed', title }
   }
   const words = dayWords(day, gap, night)

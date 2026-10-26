@@ -200,24 +200,24 @@ describe('OD-R: the rules', () => {
   test('OD-R02: A1 (the deadlines page, 2026-10-22) — a deadline deck up to the deadline day, while it is ahead', () => {
     // Deadline Fri Oct 30 23:59, now Tue Oct 20: any day up to Fri Oct 30.
     const t = bare({ deadline_at: at('2026-10-30T23:59') })
-    expect(deckRefusal(t, '2026-10-26', ctx, tue10)).toBeNull()
-    expect(deckRefusal(t, '2026-10-27', ctx, tue10)).toBeNull()
+    expect(deckRefusal(t, '2026-10-26', ctx, tue10, null)).toBeNull()
+    expect(deckRefusal(t, '2026-10-27', ctx, tue10, null)).toBeNull()
     // The deadline's own day is allowed: the safety net still holds it.
-    expect(deckRefusal(t, '2026-10-30', ctx, tue10)).toBeNull()
-    expect(deckRefusal(t, '2026-10-31', ctx, tue10)).toBe('after_auto_target')
+    expect(deckRefusal(t, '2026-10-30', ctx, tue10, null)).toBeNull()
+    expect(deckRefusal(t, '2026-10-31', ctx, tue10, null)).toBe('after_auto_target')
     // Deadline tonight: still ahead, today allowed.
     expect(
-      deckRefusal(bare({ deadline_at: at('2026-10-20T23:59') }), '2026-10-20', ctx, tue10),
+      deckRefusal(bare({ deadline_at: at('2026-10-20T23:59') }), '2026-10-20', ctx, tue10, null),
     ).toBeNull()
     // A passed deadline refuses every day.
     expect(
-      deckRefusal(bare({ deadline_at: at('2026-10-19T17:00') }), '2026-10-20', ctx, tue10),
+      deckRefusal(bare({ deadline_at: at('2026-10-19T17:00') }), '2026-10-20', ctx, tue10, null),
     ).toBe('deadline_nagging')
     // A deadline before the rollover belongs to the evening before (its OpenTask day).
     const early = bare({ deadline_at: at('2026-10-31T01:00') })
     expect(deckRefusal(early, '2026-10-31', ctx, tue10, '06:30')).toBe('after_auto_target')
     expect(deckRefusal(early, '2026-10-30', ctx, tue10, '06:30')).toBeNull()
-    expect(deckRefusal(bare(), '2027-01-01', ctx, tue10)).toBeNull()
+    expect(deckRefusal(bare(), '2027-01-01', ctx, tue10, null)).toBeNull()
   })
 
   test('OD-R03: quiet like a picked target — no segment; Upcoming on heads-up days (B6)', () => {
@@ -231,7 +231,7 @@ describe('OD-R: the rules', () => {
     expect(on('2026-10-29T10:00')).toBe('waiting') // carry-over
     expect(on('2026-10-30T10:00')).toBe('waiting')
     expect(on('2026-10-31T10:00')).toBeNull() // its day: the On deck section
-    expect(upcomingGap(t, tz).target).toBe('On deck Sat Oct 31')
+    expect(upcomingGap(t, tz, CALENDAR_DAY_START).target).toBe('On deck Sat Oct 31')
     // Decked for tomorrow: no heads-up (wait 1), like a picked target.
     expect(
       upcomingState(bare({ on_deck_day: '2026-10-21' }), tz, tue10, CALENDAR_DAY_START),

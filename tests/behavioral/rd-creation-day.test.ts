@@ -29,7 +29,7 @@ function local(iso: string | Date | null): string {
 }
 /** The first occurrence of `rrule` asked at local time `now`. */
 function first(rrule: string, now: string, anchorTime: string | null = null): string {
-  return local(computeFirstOccurrence(rrule, anchorTime, tz, new Date(at(now))))
+  return local(computeFirstOccurrence(rrule, anchorTime, tz, new Date(at(now)), CALENDAR_DAY_START))
 }
 
 describe('RD-CDAY: the first occurrence of a floating rule starts on the creation day', () => {
@@ -103,7 +103,13 @@ describe('RD-CDAY: the first occurrence of a floating rule starts on the creatio
     // Made on the spring-forward day (Sun Mar 14 2027), after the change → 9:00 CDT,
     // then Sun Mar 21 at 9:00.
     const rule = 'FREQ=WEEKLY;BYHOUR=9;BYMINUTE=0'
-    const f = computeFirstOccurrence(rule, null, tz, new Date(at('2027-03-14T08:00')))
+    const f = computeFirstOccurrence(
+      rule,
+      null,
+      tz,
+      new Date(at('2027-03-14T08:00')),
+      CALENDAR_DAY_START,
+    )
     expect(local(f)).toBe('2027-03-14T09:00')
     expect(f.toISOString()).toBe('2027-03-14T14:00:00.000Z')
     const n = computeNextOccurrence({
@@ -148,7 +154,7 @@ describe('RD-CDAY: rules that pin their own phase are exactly as before (regress
           completedAt: now,
           prevDueAt: null,
         })
-        expect(computeFirstOccurrence(rrule, null, tz, now).toISOString()).toBe(
+        expect(computeFirstOccurrence(rrule, null, tz, now, CALENDAR_DAY_START).toISOString()).toBe(
           before.toISOString(),
         )
         checked++

@@ -363,6 +363,8 @@ export function SlotHeaderRow({
   open,
   started,
   accent,
+  doneAccent,
+  doneColor,
   emptyDone = false,
 }: {
   label: string
@@ -373,6 +375,12 @@ export function SlotHeaderRow({
   started: boolean
   /** A colour for the label — a task segment's teal. */
   accent?: string
+  /** The finished "N of N" numbers in this colour, not green: the deadlines
+   *  page's text teal (`segmentDoneTextColor`). */
+  doneAccent?: string
+  /** The finished count's ✓ in this colour (a glyph, so the fill teal:
+   *  `segmentDoneColor`); without it the ✓ takes the count's colour. */
+  doneColor?: string
   /**
    * Empty is DONE (a task segment, Trent 2026-10-24: every segment shows
    * every day, an empty one finished from the start): "0 of 0 ✓", and the
@@ -401,11 +409,24 @@ export function SlotHeaderRow({
   // that hasn't started and has nothing considered yet just says how many
   // are ahead.
   const counter = finished ? (
-    <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-green-700 tabular-nums dark:text-green-400">
+    <span
+      data-done-count
+      className={cn(
+        'inline-flex items-center gap-1 text-xs whitespace-nowrap tabular-nums',
+        !doneAccent && 'text-green-700 dark:text-green-400',
+      )}
+      style={doneAccent ? { color: doneAccent } : undefined}
+    >
       {considered} of {total}
       {/* Same check mark as the dashboard's slot header (2026-09-22), so a
           finished slot reads the same way on both surfaces. */}
-      <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+      <Check
+        data-done-check
+        className="size-3.5"
+        style={doneColor ? { color: doneColor } : undefined}
+        strokeWidth={2.5}
+        aria-hidden="true"
+      />
     </span>
   ) : !started && considered === 0 ? (
     <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
@@ -470,6 +491,7 @@ export function SlotHairline({
   considered,
   total,
   color,
+  doneColor,
   fraction: fractionOverride,
   ariaLabel,
   ariaValueText,
@@ -480,8 +502,10 @@ export function SlotHairline({
   considered: number
   total: number
   /** A task segment's teal (2026-10-11) in place of the slots' indigo while
-   *  it fills. Finished is green either way, like a slot. */
+   *  it fills. Finished is green, like a slot — unless `doneColor`. */
   color?: string
+  /** The finished fill in place of green: the deadlines page's teal (`segmentDoneColor`). */
+  doneColor?: string
   /** The fill, 0..1, when it is not `considered / total` (a quota period). */
   fraction?: number
   ariaLabel?: string
@@ -506,11 +530,12 @@ export function SlotHairline({
           'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
           // Blue while still filling, green the moment it's done — matches
           // the dashboard's `ReminderSlotBar` (2026-09-22).
-          fraction >= 1 ? 'bg-green-600' : 'bg-indigo-600',
+          fraction >= 1 ? !doneColor && 'bg-green-600' : 'bg-indigo-600',
         )}
         style={{
           width: `${Math.min(1, fraction) * 100}%`,
           ...(color && fraction < 1 ? { backgroundColor: color } : {}),
+          ...(doneColor && fraction >= 1 ? { backgroundColor: doneColor } : {}),
         }}
       />
     </div>

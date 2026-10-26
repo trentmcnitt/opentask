@@ -72,7 +72,7 @@ import {
   type CheckInDay,
   type RelativeTarget,
 } from '@/lib/task-segments'
-import { isLateNight, openTaskDayOf } from '@/lib/opentask-day'
+import { isLateNight, openTaskDayOf, openTaskLocalDay } from '@/lib/opentask-day'
 import { dayBoundaryForUser, rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { log } from '@/lib/logger'
@@ -759,6 +759,7 @@ function buildPromptFor(
         projects,
         userContext: user.ai_context,
         taskText: textToEnrich,
+        dayStart: dayBoundaryForUser(user.id),
       }),
     }
   }
@@ -922,7 +923,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
 
   if (isReminder) {
     parsed = sanitizeReminderEnrichment(
-      pinUnnamedDay(parsed, textToEnrich, user.timezone),
+      pinUnnamedDay(parsed, textToEnrich, user.timezone, new Date(), dayBoundaryForUser(user.id)),
       slots,
       defaultSlotLabel,
     )
@@ -931,6 +932,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
       morningTime: user.morning_time,
       todayTarget: targetTodayTime(user.id, user.timezone),
       rolloverTime: rolloverTimeForUser(user.id),
+      dayStart: dayBoundaryForUser(user.id),
       checkInDay: coerceCheckInDay(user.check_in_day),
       taskId: row.id,
       // A new task: created title-only (createTask's `isTitleOnly`), so no
@@ -955,6 +957,12 @@ export interface PostProcessOptions {
   todayTarget: string
   /** The user's rollover (HH:MM, `rolloverTimeForUser`) — A4 in `resolveDeckDay`. */
   rolloverTime?: string
+  /**
+   * The user's day boundary (HH:MM, `dayBoundaryForUser`): the OpenTask day a
+   * repeat with no day named is pinned to (`pinUnnamedDay`), "this weekend"
+   * is read on, and a passed first date rolls on from.
+   */
+  dayStart: string
   /** The user's check-in day — a bare "this weekend" in `resolveDeckDay`. */
   checkInDay?: CheckInDay
   taskId?: number
@@ -1003,8 +1011,8 @@ export function postProcessTaskDates(
   result = resolveSameDayPast(result, inputText, timezone, now, opts.rolloverTime)
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
-  result = pinUnnamedDay(result, inputText, timezone, now)
-  if (opts.newTask) result = rollPassedRepeatStart(result, timezone, now)
+  result = pinUnnamedDay(result, inputText, timezone, now, opts.dayStart)
+  if (opts.newTask) result = rollPassedRepeatStart(result, timezone, now, opts.dayStart)
   const relativeCtx = opts.relative ?? {
     slots: [],
     defaultTime: { time: opts.morningTime, slot_id: null },
@@ -1289,6 +1297,13 @@ export interface DeckDayOptions {
    * today (A4). Absent: no A4.
    */
   rolloverTime?: string
+  /**
+   * HH:MM, the user's day boundary (`dayBoundaryForUser`: the day start with
+   * the task queue on, midnight off). "This weekend" is read on the OpenTask
+   * day (part 2, 2026-10-26): at 00:30 Monday with a 3:00 AM start it is still
+   * Sunday — this weekend's last day — as at 23:30.
+   */
+  dayStart: string
   /** The user's check-in day (Luxon weekday): a bare "this weekend" decks it when it is a weekend day. */
   checkInDay?: CheckInDay
 }
@@ -1472,6 +1487,10 @@ export function resolveDeckDay(
 
   const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')
   const settled = settleDeckDay(day.startOf('day'), inputText, today, opts, now)
+  // "This weekend" was settled on the OpenTask day, which its day is never
+  // before: at 00:30 Monday (3:00 AM start) Sunday's deck, as at 23:30.
+  if (settled.weekend)
+    return { ...enrichment, due_at: null, on_deck_day: settled.deck.toISODate()! }
   // A deck never lands in the past (D3 ruling): yesterday — the words were
   // said before midnight, the model answered after — is the calendar today
   // (and the words named that day, so it counts as named).
@@ -1560,14 +1579,19 @@ function settleDeckDay(
   today: DateTime,
   opts: DeckDayOptions,
   now: Date,
-): { deck: DateTime; todayNamed: boolean } {
+): { deck: DateTime; todayNamed: boolean; weekend: boolean } {
   const tomorrow = today.plus({ days: 1 })
   const early = saidTomorrowBeforeRollover(inputText, today.zoneName!, opts.rolloverTime, now)
   const tomorrowSaid = saysTomorrow(inputText)
   const saysToday = TODAY_CUE.test(inputText)
+  // "This weekend" on the OpenTask day's weekday (part 2), not the calendar's.
   const weekendDay =
     THIS_WEEKEND.test(inputText) && !WEEKEND_PACE.test(inputText)
-      ? weekendDeckDay(inputText, today, opts.checkInDay ?? CHECK_IN_DAY_DEFAULT)
+      ? weekendDeckDay(
+          inputText,
+          openTaskLocalDay(now, today.zoneName!, opts.dayStart),
+          opts.checkInDay ?? CHECK_IN_DAY_DEFAULT,
+        )
       : null
 
   let deck = day
@@ -1575,14 +1599,10 @@ function settleDeckDay(
   else if (early && +deck === +tomorrow)
     deck = today // A4
   else if (tomorrowSaid && !early && +deck === +today) deck = tomorrow
-  else if (weekendDay) deck = weekendDay
+  else if (weekendDay) return { deck: weekendDay, todayNamed: true, weekend: true }
 
-  const todayNamed =
-    saysToday ||
-    WEEKDAY_WORDS[today.weekday].test(inputText) ||
-    early ||
-    (weekendDay !== null && +weekendDay === +today)
-  return { deck, todayNamed }
+  const todayNamed = saysToday || WEEKDAY_WORDS[today.weekday].test(inputText) || early
+  return { deck, todayNamed, weekend: false }
 }
 
 /**
@@ -2223,13 +2243,21 @@ export function resolveSameDayPast(
 export function rollPassedRepeatStart(
   enrichment: EnrichmentResult,
   timezone: string,
-  now: Date = new Date(),
+  now: Date,
+  /** The user's day boundary: a floating rule's day 0 is the OpenTask day. */
+  dayStart: string,
 ): EnrichmentResult {
   const value = enrichment.due_at
   if (!value || !enrichment.rrule) return enrichment
   const local = parseLocalDateTime(value, timezone)
   if (!local) return enrichment
-  const first = rollPassedFirstOccurrence(enrichment.rrule, local.toJSDate(), timezone, now)
+  const first = rollPassedFirstOccurrence(
+    enrichment.rrule,
+    local.toJSDate(),
+    timezone,
+    now,
+    dayStart,
+  )
   if (first.getTime() === local.toJSDate().getTime()) return enrichment
   const next = toLocalIso(DateTime.fromJSDate(first).setZone(timezone), value)
   log.info('ai', `Enrichment: a repeat's first date today had passed; moved to ${next}`)
@@ -2375,7 +2403,9 @@ export function pinUnnamedDay(
   input: EnrichmentResult,
   inputText: string,
   timezone: string,
-  now: Date = new Date(),
+  now: Date,
+  /** The user's day boundary (`dayBoundaryForUser`): "today" is the OpenTask day. */
+  dayStart: string,
 ): EnrichmentResult {
   if (!input.rrule) return input
   const enrichment = withNormalizedRule(input)
@@ -2388,7 +2418,9 @@ export function pinUnnamedDay(
 
   const due = enrichment.due_at ? parseLocalDateTime(enrichment.due_at, timezone) : null
   const keepDue = due !== null && START_CUE.test(inputText)
-  const day = keepDue ? due : DateTime.fromJSDate(now).setZone(timezone)
+  // TODAY is the OpenTask day (part 2, 2026-10-26): at 00:30 Monday with a
+  // 3:00 AM start, "every 2 weeks" is every other Sunday, as at 23:30.
+  const day = keepDue ? due : openTaskLocalDay(now, timezone, dayStart)
   const pinned =
     part === 'BYDAY'
       ? RRULE_DAYS[day.weekday - 1]
@@ -2781,6 +2813,8 @@ function collectEnrichmentChanges(
         enrichment.rrule,
         null,
         user.timezone,
+        new Date(),
+        dayBoundaryForUser(user.id),
       ).toISOString()
       if (firstOccurrence !== task.due_at) proposedDue = firstOccurrence
     }
