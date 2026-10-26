@@ -1507,9 +1507,9 @@ export function bulkEdit(options: BulkEditOptions): BulkEditResult {
 
   emitSyncEvent(userId)
   // Only a task whose date actually moved has a stale notification — or a
-  // reminder whose named push this edit ended (priority below Medium, Nag
-  // off, converted, moved to Anytime or off today: `namedPushStands`). Any
-  // other priority or label edit leaves the banner as true as it was.
+  // reminder whose named push this edit ended (priority below Medium,
+  // converted, moved to Anytime or off today: `namedPushStands`). Any other
+  // priority or label edit leaves the banner as true as it was.
   const pushEnded = (id: number) => endedNamedPush.get(id)?.() === true
   dismissNotificationsForTasks(
     userId,

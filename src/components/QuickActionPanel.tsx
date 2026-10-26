@@ -280,20 +280,14 @@ function getDetailTitleClasses(title: string): { sizeClass: string; scrollable: 
   return { sizeClass: 'text-sm', scrollable: true }
 }
 
-/**
- * The Nag trigger's words. A reminder's Nag is On / Off only (2026-10-26):
- * its pace comes from its priority, so it never shows a cadence, and it is
- * never styled as a custom value.
- */
+/** The Nag trigger's words: the cadence, or a dash for a mixed selection. */
 function nagTriggerText(
-  isReminder: boolean,
   isMixed: boolean | undefined,
   minutes: number,
-): { label: string; title: string; muted: boolean } {
-  if (isReminder) return { label: 'On', title: 'Nag on', muted: true }
-  if (isMixed) return { label: '\u2014', title: 'Nag: mixed', muted: false }
+): { label: string; title: string } {
+  if (isMixed) return { label: '\u2014', title: 'Nag: mixed' }
   const label = formatAutoSnoozeLabel(minutes)
-  return { label, title: `Nag every ${label}`, muted: false }
+  return { label, title: `Nag every ${label}` }
 }
 
 export function QuickActionPanel({
@@ -1948,81 +1942,80 @@ export function QuickActionPanel({
               )}
               {/* Action icons — right-aligned */}
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {/* Auto-snooze picker — per-task notification repeat interval */}
-                {(() => {
-                  // In bulk mode, compute common auto-snooze across selected tasks
-                  const bulkCommonAutoSnooze =
-                    isBulkMode &&
-                    selectedTasks &&
-                    selectedTasks.length > 1 &&
-                    selectedTasks.every(
-                      (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
-                    )
-                      ? (selectedTasks[0].auto_snooze_minutes ?? null)
-                      : null
-                  const effectiveAutoSnooze =
-                    pendingAutoSnooze !== undefined
-                      ? pendingAutoSnooze
-                      : (effectiveTask?.auto_snooze_minutes ??
-                        (isBulkMode ? bulkCommonAutoSnooze : null))
-                  const isOff = effectiveAutoSnooze === 0
-                  const isDefault = effectiveAutoSnooze === null
-                  const effectiveMinutes = isDefault
-                    ? autoSnoozeDefault
-                    : (effectiveAutoSnooze ?? autoSnoozeDefault)
-                  // In bulk mode with mixed values, show dash indicator
-                  const isMixedAutoSnooze =
-                    isBulkMode &&
-                    pendingAutoSnooze === undefined &&
-                    selectedTasks &&
-                    selectedTasks.length > 1 &&
-                    !selectedTasks.every(
-                      (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
-                    )
+                {/* Auto-snooze picker — per-task notification repeat interval.
+                    Never for a reminder (Trent, 2026-10-26: "Turn off every
+                    nag-specific option for reminders"): its priority alone
+                    decides its pushes. Not shown while the Reminder switch
+                    is on either; the stored value is left as it is. */}
+                {!displayIsReminder &&
+                  (() => {
+                    // In bulk mode, compute common auto-snooze across selected tasks
+                    const bulkCommonAutoSnooze =
+                      isBulkMode &&
+                      selectedTasks &&
+                      selectedTasks.length > 1 &&
+                      selectedTasks.every(
+                        (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
+                      )
+                        ? (selectedTasks[0].auto_snooze_minutes ?? null)
+                        : null
+                    const effectiveAutoSnooze =
+                      pendingAutoSnooze !== undefined
+                        ? pendingAutoSnooze
+                        : (effectiveTask?.auto_snooze_minutes ??
+                          (isBulkMode ? bulkCommonAutoSnooze : null))
+                    const isOff = effectiveAutoSnooze === 0
+                    const isDefault = effectiveAutoSnooze === null
+                    const effectiveMinutes = isDefault
+                      ? autoSnoozeDefault
+                      : (effectiveAutoSnooze ?? autoSnoozeDefault)
+                    // In bulk mode with mixed values, show dash indicator
+                    const isMixedAutoSnooze =
+                      isBulkMode &&
+                      pendingAutoSnooze === undefined &&
+                      selectedTasks &&
+                      selectedTasks.length > 1 &&
+                      !selectedTasks.every(
+                        (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
+                      )
 
-                  const nagTrigger = nagTriggerText(
-                    displayIsReminder,
-                    isMixedAutoSnooze,
-                    effectiveMinutes,
-                  )
+                    const nagTrigger = nagTriggerText(isMixedAutoSnooze, effectiveMinutes)
 
-                  return (
-                    <AutoSnoozePicker
-                      value={effectiveAutoSnooze}
-                      userDefault={autoSnoozeDefault}
-                      onChange={setPendingAutoSnooze}
-                      open={autoSnoozePopoverOpen}
-                      onOpenChange={setAutoSnoozePopoverOpen}
-                      // A reminder's Nag is On / Off: its pace is its priority's (2026-10-26).
-                      onOffOnly={displayIsReminder}
-                    >
-                      {isOff ? (
-                        <div>
-                          <IconButton
-                            icon={<TimerOff className="size-4" />}
-                            label="Nag off"
+                    return (
+                      <AutoSnoozePicker
+                        value={effectiveAutoSnooze}
+                        userDefault={autoSnoozeDefault}
+                        onChange={setPendingAutoSnooze}
+                        open={autoSnoozePopoverOpen}
+                        onOpenChange={setAutoSnoozePopoverOpen}
+                      >
+                        {isOff ? (
+                          <div>
+                            <IconButton
+                              icon={<TimerOff className="size-4" />}
+                              label="Nag off"
+                              onClick={() => setAutoSnoozePopoverOpen(true)}
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
                             onClick={() => setAutoSnoozePopoverOpen(true)}
-                          />
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setAutoSnoozePopoverOpen(true)}
-                          className={cn(
-                            'flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors',
-                            nagTrigger.muted || isDefault
-                              ? 'text-muted-foreground/60 hover:bg-accent active:bg-accent'
-                              : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
-                          )}
-                          title={nagTrigger.title}
-                        >
-                          <Timer className="size-4" />
-                          <span>{nagTrigger.label}</span>
-                        </button>
-                      )}
-                    </AutoSnoozePicker>
-                  )
-                })()}
+                            className={cn(
+                              'flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors',
+                              isDefault
+                                ? 'text-muted-foreground/60 hover:bg-accent active:bg-accent'
+                                : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
+                            )}
+                            title={nagTrigger.title}
+                          >
+                            <Timer className="size-4" />
+                            <span>{nagTrigger.label}</span>
+                          </button>
+                        )}
+                      </AutoSnoozePicker>
+                    )
+                  })()}
                 {!isCreateMode && onDelete && (
                   <IconButton
                     icon={<Trash2 className="size-4" />}
