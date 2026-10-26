@@ -100,7 +100,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
                 let expected: Set<String> = [
                     "prompt_key", "task_id", "number", "numbers", "slot_id", "title", "current", "target",
                     "period", "stripe_color", "considered", "done", "has_notes",
-                    "period_interval", "period_end", "period_last_day", "period_label",
+                    "period_interval", "period_end", "period_last_day", "period_label", "priority",
                 ]
                 XCTAssertEqual(Set(r.keys), expected, "\(name): the wire keys QuotaPromptDTO decodes")
                 XCTAssertEqual(r["prompt_key"] as? String, p.promptKey)
@@ -120,6 +120,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
                 XCTAssertEqual(r["period_end"] as? String, p.periodEnd)
                 XCTAssertEqual(r["period_last_day"] as? String, p.periodLastDay)
                 XCTAssertEqual(r["period_label"] as? String, p.periodLabel)
+                XCTAssertEqual(r["priority"] as? Int, p.priority)
                 // Interval 1 everywhere in these captures: no label, the FREQ's word.
                 XCTAssertEqual(p.periodInterval, 1)
                 XCTAssertNil(p.periodLabel)

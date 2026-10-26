@@ -7,8 +7,11 @@ import { cadenceMark } from '@/lib/reminder-rule'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import type { QuotaPrompt } from '@/lib/quota-prompts'
 import { NotesMarker } from '@/components/NotesMarker'
+import { InlinePriorityTab, PriorityEdgeBar } from '@/components/RowCorner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useLongPress } from '@/hooks/useLongPress'
+import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
+import type { PriorityRowStyles } from '@/lib/priority-display'
 import {
   focusAfterRow,
   measureLeavingRow,
@@ -72,7 +75,7 @@ function reminderRowClasses({
   return cn(
     // The border is always there, transparent, so the processing pulse has
     // something to color without the row shifting by a pixel.
-    'group flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
+    'group relative flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
     'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
     selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
     completing && 'animate-reminder-leaving pointer-events-none',
@@ -215,6 +218,7 @@ function ReminderRowMarker({
   completing,
   selected,
   isSelectionMode,
+  check,
   onSelect,
   onComplete,
 }: {
@@ -222,6 +226,8 @@ function ReminderRowMarker({
   completing: boolean
   selected: boolean
   isSelectionMode: boolean
+  /** "Color checkbox" (`priorityRowStyles(...).check`): the task row's circle colours. */
+  check: PriorityRowStyles['check']
   onSelect: (task: Task) => void
   onComplete: (task: Task) => void
 }) {
@@ -261,10 +267,22 @@ function ReminderRowMarker({
       tabIndex={-1}
       aria-label={`Mark "${reminder.title}" as considered`}
       title="Considered"
-      className="border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5 mt-[3px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors"
+      // "Color checkbox" on: the task row's done-circle colours, its check
+      // showing on the circle's own hover (`group/done`) as there. Off: the
+      // neutral circle, whose check shows on the whole row's hover (the row
+      // is the tap).
+      className={cn(
+        'group/done mt-[3px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
+        check
+          ? cn(check.checkbox, check.checkboxHover)
+          : 'border-foreground/20 hover:border-foreground/60 hover:bg-foreground/5',
+      )}
     >
       <Check
-        className="group-hover:text-foreground/40 size-3.5 text-transparent transition-colors"
+        className={cn(
+          'size-3.5 text-transparent transition-colors',
+          check ? check.checkIcon : 'group-hover:text-foreground/40',
+        )}
         strokeWidth={3}
       />
     </button>
@@ -306,6 +324,8 @@ export function ReminderRow({
 }) {
   const hasNotes = !!reminder.notes?.trim()
   const mark = cadenceMark(reminder.rrule)
+  // Settings → Priority Display, the task rows' own rule (2026-10-26).
+  const pri = usePriorityRowStyles(reminder.priority)
   // The AI's processing state, carried on the same labels a task uses. The
   // surface shows no labels, so the two states that matter get their own
   // marks: the pulse the task row wears while the AI is reading, and a line
@@ -368,27 +388,43 @@ export function ReminderRow({
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
       onAnimationEnd={onAnimationEnd}
-      className={reminderRowClasses({ completing, selected, highlighted, aiProcessing })}
+      className={reminderRowClasses({
+        completing,
+        selected,
+        highlighted,
+        aiProcessing,
+      })}
       data-ai-state={aiProcessing ? 'processing' : aiFailed ? 'failed' : undefined}
     >
+      {/* "Show right border": a bar on the right edge (`PriorityEdgeBar`). */}
+      <PriorityEdgeBar bar={pri.bar} />
       <ReminderRowMarker
         reminder={reminder}
         completing={completing}
         selected={selected}
         isSelectionMode={isSelectionMode}
+        check={pri.check}
         onSelect={onSelect}
         onComplete={onComplete}
       />
       {/* The notes marker sits inline after the title — see `NotesMarker`. */}
       <p className={cn('min-w-0 flex-1 text-[16px] leading-6', completing && 'line-through')}>
         <span
+          data-row-title
           className={cn(
             'text-pretty',
-            completing ? 'text-muted-foreground' : prominenceClasses(reminder.priority),
+            // "Color task titles" adds the hue over §6's weight: twMerge
+            // swaps the colour and keeps High/Urgent's `font-medium`.
+            completing
+              ? 'text-muted-foreground'
+              : cn(prominenceClasses(reminder.priority), pri.title),
           )}
         >
           {reminder.title}
         </span>
+        {/* "Show priority indicator": the task row's corner tab, inline —
+            these rows have no card corner. High and Urgent only. */}
+        <InlinePriorityTab tab={pri.tab} />
         {/* Not every day: the day codes, "Monthly", "Once". Daily wears nothing. */}
         {mark && (
           <span

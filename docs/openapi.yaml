@@ -5649,6 +5649,13 @@ components:
           description: >
             The quota has non-blank notes. A flag only, for the rows' notes
             mark; the notes themselves are on the quota task.
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: >
+            The quota task's priority (0 = None … 4 = Urgent), so the prompt
+            row can show it the way the user's priority display shows a task's.
         considered:
           type: boolean
         done:
