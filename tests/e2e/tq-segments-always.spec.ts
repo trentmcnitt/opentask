@@ -16,7 +16,7 @@
  * switch off again after the file.
  */
 import { test, expect, uniqueTitle } from './fixtures'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 test.use({ timezoneId: TZ })
@@ -224,6 +224,65 @@ async function appTextSize(page: Page, percent: string) {
 const LINK_TITLE =
   'Read this thread later https://social.example.com/sample_account/status/1234567890123456789?s=20&t=AbCdEfGhIjKlMnOpQrStUv'
 
+/** A long plain title, for the wrap around the row's buttons. */
+const LONG_TITLE =
+  'Call the county office about the property tax appeal paperwork and ask whether the extension form needs a notary'
+
+/**
+ * A segment row's layout (2026-10-26, compact buttons, Trent's mock "B"):
+ * each of the button group's hit areas, height included the done square's
+ * `after:` box; and the title's lines — the first beside the group, which
+ * floats right in the title's column, the second from the column's left edge
+ * and running on under the group.
+ */
+async function segmentRowLayout(row: Locator) {
+  return row.evaluate((li) => {
+    const group = li.querySelector('[data-segment-actions]')!.getBoundingClientRect()
+    const hits = Array.from(li.querySelectorAll('[data-segment-actions] button')).map((b) => {
+      const r = b.getBoundingClientRect()
+      const after = getComputedStyle(b, '::after')
+      const grow =
+        after.content !== 'none' && after.position === 'absolute'
+          ? Math.max(0, -parseFloat(after.top)) + Math.max(0, -parseFloat(after.bottom))
+          : 0
+      const growLeft =
+        after.content !== 'none' && after.position === 'absolute'
+          ? Math.max(0, -parseFloat(after.left))
+          : 0
+      return {
+        name: b.getAttribute('aria-label') ?? '',
+        height: r.height + grow,
+        left: r.left - growLeft,
+        right: r.right,
+      }
+    })
+    const today = li.querySelector('[data-segment-actions] [data-target-today]')!
+    const todayRight = today.getBoundingClientRect().right
+    const done = hits[hits.length - 1]
+    const p = li.querySelector('p')!
+    const text = p.firstChild as Text
+    const lines: { left: number; right: number }[] = []
+    let top = Number.NaN
+    for (const m of text.data.matchAll(/\S+/g)) {
+      const range = document.createRange()
+      range.setStart(text, m.index!)
+      range.setEnd(text, m.index! + m[0].length)
+      const r = range.getClientRects()[0]
+      if (Math.round(r.top) !== top) {
+        top = Math.round(r.top)
+        lines.push({ left: r.left, right: r.right })
+      } else lines[lines.length - 1].right = r.right
+    }
+    return {
+      groupLeft: group.left,
+      titleLeft: p.getBoundingClientRect().left,
+      hits,
+      lines,
+      todayToDone: done.left - todayRight,
+    }
+  })
+}
+
 /**
  * THE DAY BAR FITS A PHONE (2026-10-24). On real data — five periods of 20-odd
  * reminders each, every task segment — the bar's thumb-wide minimums pushed
@@ -231,12 +290,18 @@ const LINK_TITLE =
  * eight segments (the switch on): at 375 and 320 the page never scrolls
  * sideways and the count is whole and on screen.
  *
- * And at the iOS app's 119% text size (2026-10-26), with a long link in a task
- * segment row's title (`LINK_TITLE`): 375 and 402 (an iPhone 17 Pro).
+ * And at the iOS app's text sizes (2026-10-26), with a long link in a task
+ * segment row's title (`LINK_TITLE`): 375 and 402 (an iPhone 17 Pro) at 100%,
+ * 119% ("xxxLarge", Trent's phone) and 150% (the largest accessibility size,
+ * `WebView.swift`). There the rows' buttons are checked too: every hit area
+ * at least 44px tall, 12px of dead space between Today's and the done square's,
+ * and a long title's first line beside them, its second from the row's left
+ * edge.
  */
 for (const { textSize, widths } of [
-  { textSize: '100%', widths: [375, 320] },
+  { textSize: '100%', widths: [375, 402, 320] },
   { textSize: '119%', widths: [375, 402] },
+  { textSize: '150%', widths: [375, 402] },
 ]) {
   test(`the /reminders day bar fits at ${widths.join(' and ')} with six full periods and every segment, text ${textSize}`, async ({
     page,
@@ -277,6 +342,8 @@ async function dayBarFits(page: Page, widths: number[]) {
     ids.push(await create(page, { title: uniqueTitle('SA fit daily'), horizon: 'days' }))
     const linkId = await create(page, { title: uniqueTitle(LINK_TITLE), horizon: 'days' })
     ids.push(linkId)
+    const longId = await create(page, { title: uniqueTitle(LONG_TITLE), horizon: 'days' })
+    ids.push(longId)
 
     for (const width of widths) {
       await page.setViewportSize({ width, height: 812 })
@@ -303,6 +370,33 @@ async function dayBarFits(page: Page, widths: number[]) {
         .first()
         .evaluate((el) => el.scrollWidth > el.clientWidth)
       expect(titleSpills, `the link's title runs out of its column at ${width}`).toBe(false)
+
+      // The buttons: every hit area a finger's height; the long title's first
+      // line beside them, its second from the column's left edge and on past
+      // where the buttons begin (the title wraps around them).
+      const longRow = page.locator(`[data-task-segments] [data-segment-task="${longId}"]`)
+      await longRow.scrollIntoViewIfNeeded()
+      const layout = await segmentRowLayout(longRow)
+      expect(layout.hits.length, `the row's buttons at ${width}`).toBeGreaterThanOrEqual(4)
+      for (const hit of layout.hits) {
+        expect(hit.height, `${hit.name}'s hit height at ${width}`).toBeGreaterThanOrEqual(44)
+      }
+      // Dead space between Today's and the done square's hit areas, so a tap
+      // meant for one never lands on the other (Trent mis-tapped Today for
+      // done, 2026-10-12, and ruled 12px).
+      expect(layout.todayToDone, `Today to done at ${width}`).toBeGreaterThanOrEqual(12)
+      expect(layout.lines.length, `the long title's lines at ${width}`).toBeGreaterThanOrEqual(2)
+      const [first, second] = layout.lines
+      expect(first.right, `the first line ends before the buttons at ${width}`).toBeLessThanOrEqual(
+        layout.groupLeft,
+      )
+      expect(
+        Math.abs(second.left - layout.titleLeft),
+        `the second line's start at ${width}`,
+      ).toBeLessThan(1)
+      expect(second.right, `the second line runs under the buttons at ${width}`).toBeGreaterThan(
+        layout.groupLeft,
+      )
 
       // The count: whole (never clipped) and inside the screen.
       const count = headline.locator('[data-day-count]')

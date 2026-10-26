@@ -10,8 +10,11 @@ import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
  *
  * On these surfaces priority is prominence — order within the slot and weight
  * of the row — and, since 2026-10-22 (Trent), how often the period's one nag
- * repeats while the item waits (the shortest rung among the waiting reminders
- * and quota prompts, `slot-nags.ts`). Never a nag of its own.
+ * repeats while the item waits (`slot-nags.ts`). Since 2026-10-26 a Medium+
+ * REMINDER also gets its own named push until considered, paced by its
+ * priority (`reminder-nags.ts`; priority is a reminder's only dial, it has no
+ * Nag option). A quota prompt has no push of its own yet, so the two editors
+ * show different hints (`kind`).
  *
  * Chips and hint only: each editor wraps them in its own heading, because the
  * two editors head their sections differently (the reminder's uppercase
@@ -23,9 +26,11 @@ import { PRIORITY_OPTIONS, getPriorityBadgeClasses } from '@/lib/priority'
 export function PriorityChips({
   value,
   onSelect,
+  kind,
 }: {
   value: number | null
   onSelect: (value: number) => void
+  kind: 'reminder' | 'quota'
 }) {
   return (
     <>
@@ -49,8 +54,12 @@ export function PriorityChips({
           )
         })}
       </div>
-      {/* The slot section's hint, copied: priority's one non-obvious effect. */}
-      <p className="text-muted-foreground text-xs">Also sets how often its period nags.</p>
+      {/* Priority's non-obvious effect on this kind of item (see the header). */}
+      <p className="text-muted-foreground text-xs">
+        {kind === 'reminder'
+          ? 'Medium and up notify you by name until considered. Higher repeats sooner.'
+          : 'Also sets how often its period nags.'}
+      </p>
     </>
   )
 }

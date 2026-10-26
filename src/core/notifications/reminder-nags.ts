@@ -14,12 +14,10 @@
  *    screen's own: scheduled today, not yet considered);
  *  - its priority is Medium (2) or above (reminder-nag-rule.ts);
  *  - it is in a real period, not Anytime (the un-slotted group never opens);
- *  - its period has opened today (`periodOpensAt` within the OpenTask day);
- *  - its own Nag is not OFF (`auto_snooze_minutes` is not 0). A Medium+
- *    reminder with Nag OFF is treated like a None/Low one: no named push, no
- *    repeats, but it STAYS in the period push's count and the period nag —
- *    Nag off turns off its own nagging, never every notification of it
- *    (coordinator ruling, 2026-10-26). `getsNamedPush` is the one rule.
+ *  - its period has opened today (`periodOpensAt` within the OpenTask day).
+ * Priority is the one dial: a reminder's own Nag value
+ * (`auto_snooze_minutes`) is ignored — not read, not rewritten (Trent,
+ * 2026-10-26: "Turn off every nag-specific option for reminders").
  *
  * WHEN IT FIRES.
  *  - FIRST at the period's open, exact (the first tick at or after it).
@@ -163,8 +161,7 @@ function namedReminderCandidates(userId: number): NamedReminderCandidate[] {
        LEFT JOIN nag_sends n ON n.user_id = t.user_id AND n.key = ? || t.id
        WHERE t.user_id = ? AND t.is_reminder = 1 AND t.done = 0
          AND t.deleted_at IS NULL AND t.archived_at IS NULL
-         AND t.priority >= ?
-         AND (t.auto_snooze_minutes IS NULL OR t.auto_snooze_minutes != 0)`,
+         AND t.priority >= ?`,
     )
     .all(REMINDER_NAG_KEY_PREFIX, userId, NAMED_REMINDER_MIN_PRIORITY) as NamedReminderCandidate[]
 }
@@ -280,7 +277,6 @@ export function pendingReminderNags(
 const NAMED_PUSH_FIELDS = new Set([
   'priority',
   'is_reminder',
-  'auto_snooze_minutes',
   'rrule',
   'anchor_time',
   'anchor_dow',
@@ -303,7 +299,7 @@ export function touchesNamedPush(fieldsChanged: readonly string[]): boolean {
  * owner's roster today, in a period that has opened, and `getsNamedPush`.
  * The task mutations (update.ts, bulk.ts) ask it before and after an edit
  * that `touchesNamedPush`: stood before and not after — priority below
- * Medium, Nag off, converted to a task, moved to Anytime or to a period not
+ * Medium, converted to a task, moved to Anytime or to a period not
  * yet open, its schedule moved off today — means its delivered banner is
  * stale, and they dismiss it (review of #368). Reads the database.
  */
