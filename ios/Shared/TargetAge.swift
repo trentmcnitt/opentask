@@ -81,6 +81,21 @@ enum TargetAge {
     static func weekdayDayText(_ date: Date, calendar: Calendar = .current, dayStart: String) -> String {
         NightDay.dateWords(date, day: OpenTaskDay(dayStart: dayStart, timeZone: calendar.timeZone), includeWeekday: true)
     }
+
+    /// A Tomorrow Upcoming row's target (2026-10-26): "9:00 am", or "tomorrow
+    /// night 1:00 am" between midnight and a before-noon day start.
+    static func tomorrowTimeText(_ date: Date, calendar: Calendar = .current, dayStart: String) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        formatter.amSymbol = "am"
+        formatter.pmSymbol = "pm"
+        let time = formatter.string(from: date)
+        let night = OpenTaskDay(dayStart: dayStart, timeZone: calendar.timeZone).isLateNight(date)
+        return night ? "tomorrow\(NightDay.nightSuffix) \(time)" : time
+    }
 }
 
 /// How short an Upcoming row's small words are (2026-10-12, Trent's review of
@@ -140,13 +155,17 @@ extension TaskDTO {
     /// deadline between midnight and a before-noon day start (`dayStart`,
     /// the user's, as last cached) names its evening — "deadline Mon night
     /// Oct 26", never Tuesday's date beside Monday's list.
+    ///
+    /// `upcomingSection`: an Upcoming row's section (2026-10-26) — a Tomorrow
+    /// row's target says only its time (`upcomingParts`).
     func segmentMeta(
         segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
-        upcomingForm: UpcomingMetaForm = .full, dayStart: String = DayStartStore.current.dayStart
+        upcomingForm: UpcomingMetaForm = .full, dayStart: String = DayStartStore.current.dayStart,
+        upcomingSection: UpcomingSection? = nil
     ) -> String? {
         let parts: [String?]
         if segmentHorizon == SegmentKind.upcomingRaw {
-            parts = upcomingParts(calendar: calendar, form: upcomingForm, dayStart: dayStart)
+            parts = upcomingParts(calendar: calendar, form: upcomingForm, dayStart: dayStart, section: upcomingSection)
         } else {
             let horizonWord = (segmentHorizon != nil && horizon == segmentHorizon) ? nil : horizonLabel
             let deadline = deadlineDate.map {
@@ -174,22 +193,33 @@ extension TaskDTO {
     /// midnight and a before-noon day start, the evening's ("Mon night Oct
     /// 26", the web's `upcomingGap`; its weekday in every form). See
     /// `UpcomingMetaForm` for what each form drops.
+    ///
+    /// A TOMORROW row (2026-10-26, the Upcoming split; the web's
+    /// `upcomingGap(…, 'tomorrow')`): its day goes without saying — it is
+    /// tomorrow — so its target is the time alone, "9:00 am", with the night
+    /// word when the time is in tomorrow's night: "tomorrow night 1:00 am"
+    /// (a 1:00 AM after tomorrow's date is tomorrow NIGHT's, not tonight's).
+    /// The deadline keeps its date either way.
     func upcomingMeta(
         calendar: Calendar = .current, form: UpcomingMetaForm = .full,
-        dayStart: String = DayStartStore.current.dayStart
+        dayStart: String = DayStartStore.current.dayStart, section: UpcomingSection? = nil
     ) -> String? {
-        let parts = upcomingParts(calendar: calendar, form: form, dayStart: dayStart)
+        let parts = upcomingParts(calendar: calendar, form: form, dayStart: dayStart, section: section)
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
         return parts.isEmpty ? nil : parts.joined(separator: Self.metaJoiner)
     }
 
-    private func upcomingParts(calendar: Calendar, form: UpcomingMetaForm, dayStart: String) -> [String?] {
+    private func upcomingParts(
+        calendar: Calendar, form: UpcomingMetaForm, dayStart: String, section: UpcomingSection?
+    ) -> [String?] {
         func day(_ date: Date) -> String {
             form.includesWeekdays
                 ? TargetAge.weekdayDayText(date, calendar: calendar, dayStart: dayStart)
                 : TargetAge.dayText(date, calendar: calendar, dayStart: dayStart)
         }
-        let target = dueDate.map(day)
+        let target = section == .tomorrow
+            ? dueDate.map { TargetAge.tomorrowTimeText($0, calendar: calendar, dayStart: dayStart) }
+            : dueDate.map(day)
         var deadline: String?
         if let deadlineDate {
             deadline = "deadline \(day(deadlineDate))"
@@ -222,11 +252,11 @@ extension TaskDTO {
     func segmentLabelText(
         segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
         placement: SegmentMetaPlacement = .inline, upcomingForm: UpcomingMetaForm = .full,
-        dayStart: String = DayStartStore.current.dayStart
+        dayStart: String = DayStartStore.current.dayStart, upcomingSection: UpcomingSection? = nil
     ) -> String {
         guard let meta = segmentMeta(
             segmentHorizon: segmentHorizon, now: now, calendar: calendar, upcomingForm: upcomingForm,
-            dayStart: dayStart
+            dayStart: dayStart, upcomingSection: upcomingSection
         ) else { return title }
         return title + placement.joined(meta: meta)
     }

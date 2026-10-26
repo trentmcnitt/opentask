@@ -522,7 +522,13 @@ private enum ReminderPreviewData {
     /// Pins the page and the toggle — previews share the simulator's App
     /// Group UserDefaults, so whatever a prior preview (or a real widget)
     /// left there would otherwise bleed into this render.
-    static func prepare(page: Int, showCompleted: Bool, slotKey: Int = earlyMorningKey) {
+    /// `dayStart`: the remembered day boundary the preview draws with — the
+    /// Upcoming previews pass 3:00 AM for the night words (2026-10-26).
+    static func prepare(
+        page: Int, showCompleted: Bool, slotKey: Int = earlyMorningKey,
+        dayStart: String = OpenTaskDay.calendarDayStart
+    ) {
+        DayStartStore.seedForPreview(dayStart)
         WidgetStore.setShowCompleted(showCompleted, for: RemindersWidget.kind)
         WidgetStore.setRemindersPage(page, for: slotKey)
     }
@@ -543,6 +549,31 @@ private enum ReminderPreviewData {
         return DateHelpers.formatISO(at)
     }
 
+    /// Upcoming's Tomorrow section (2026-10-26): tomorrow afternoon, and
+    /// 1:00 AM after tomorrow's date — tomorrow NIGHT's with a 3:00 AM day
+    /// start ("tomorrow night 1:00 am").
+    static var upcomingTomorrow: [SegmentTaskDTO] {
+        [
+            SegmentTaskDTO(task: TaskDTO(id: 9307, title: "Pick up the framed print from the shop", dueAt: iso(daysFromNow: 1, hour: 15)), state: .waiting, recurring: false, upcomingSection: .tomorrow),
+            SegmentTaskDTO(task: TaskDTO(id: 9309, title: "Catch the early airport shuttle", dueAt: iso(daysFromNow: 2, hour: 1), deadlineAt: iso(daysFromNow: 2, hour: 2)), state: .waiting, recurring: false, upcomingSection: .tomorrow),
+        ]
+    }
+
+    /// Upcoming's Later section: the #251 review set, and one row already
+    /// considered today ("Later  1 of 8").
+    static var upcomingLater: [SegmentTaskDTO] {
+        [
+            SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Call the insurance office about the renewal paperwork for the car", priority: 2, dueAt: iso(daysFromNow: 2), deadlineAt: iso(daysFromNow: 5, hour: 17), horizon: "weeks"), state: .waiting, recurring: false, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the porch plants", dueAt: iso(daysFromNow: 2), rrule: "FREQ=WEEKLY;BYDAY=WE", anchorTime: "09:00"), state: .waiting, recurring: true, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9303, title: "Take the recycling and the yard waste bins out to the curb", dueAt: iso(daysFromNow: 2, hour: 7), rrule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE", anchorTime: "07:00"), state: .waiting, recurring: true, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9304, title: "Send the signed lease renewal back to the property manager", dueAt: iso(daysFromNow: 3), deadlineAt: iso(daysFromNow: 6, hour: 17), attempts: 3, attemptsLabel: "3×"), state: .waiting, recurring: false, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9305, title: "Pay the water bill", dueAt: iso(daysFromNow: 20, hour: 12), rrule: "FREQ=MONTHLY;BYMONTHDAY=1", anchorTime: "12:00"), state: .waiting, recurring: true, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9306, title: "Book the follow-up appointment once the clinic posts November's schedule", dueAt: iso(daysFromNow: 4), deadlineAt: iso(daysFromNow: -1, hour: 17)), state: .waiting, recurring: false, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9308, title: "Drop the donation boxes at the community center on the way to work", dueAt: iso(daysFromNow: 6), deadlineAt: iso(daysFromNow: 9, hour: 17)), state: .waiting, recurring: false, upcomingSection: .later),
+            SegmentTaskDTO(task: TaskDTO(id: 9310, title: "Renew the car registration", dueAt: iso(daysFromNow: 5)), state: .considered, recurring: false, upcomingSection: .later),
+        ]
+    }
+
     static var segments: [TaskSegmentDTO] {
         PreviewLocalData.taskSegments ?? [
             TaskSegmentDTO(horizon: "days", tasks: [
@@ -558,17 +589,11 @@ private enum ReminderPreviewData {
             // has to shorten to fit one line (weekly at a time, every 2
             // weeks on a day at a time, monthly on the 1st), a deadline
             // before its target, and a plain target. Every row offers
-            // Target today, the repeating ones too.
-            TaskSegmentDTO(horizon: "upcoming", tasks: [
-                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Call the insurance office about the renewal paperwork for the car", priority: 2, dueAt: iso(daysFromNow: 2), deadlineAt: iso(daysFromNow: 5, hour: 17), horizon: "weeks"), state: .waiting, recurring: false),
-                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the porch plants", dueAt: iso(daysFromNow: 2), rrule: "FREQ=WEEKLY;BYDAY=WE", anchorTime: "09:00"), state: .waiting, recurring: true),
-                SegmentTaskDTO(task: TaskDTO(id: 9303, title: "Take the recycling and the yard waste bins out to the curb", dueAt: iso(daysFromNow: 2, hour: 7), rrule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE", anchorTime: "07:00"), state: .waiting, recurring: true),
-                SegmentTaskDTO(task: TaskDTO(id: 9304, title: "Send the signed lease renewal back to the property manager", dueAt: iso(daysFromNow: 3), deadlineAt: iso(daysFromNow: 6, hour: 17), attempts: 3, attemptsLabel: "3×"), state: .waiting, recurring: false),
-                SegmentTaskDTO(task: TaskDTO(id: 9305, title: "Pay the water bill", dueAt: iso(daysFromNow: 20, hour: 12), rrule: "FREQ=MONTHLY;BYMONTHDAY=1", anchorTime: "12:00"), state: .waiting, recurring: true),
-                SegmentTaskDTO(task: TaskDTO(id: 9306, title: "Book the follow-up appointment once the clinic posts November's schedule", dueAt: iso(daysFromNow: 4), deadlineAt: iso(daysFromNow: -1, hour: 17)), state: .waiting, recurring: false),
-                SegmentTaskDTO(task: TaskDTO(id: 9307, title: "Pick up the framed print from the shop", dueAt: iso(daysFromNow: 2, hour: 15)), state: .waiting, recurring: false),
-                SegmentTaskDTO(task: TaskDTO(id: 9308, title: "Drop the donation boxes at the community center on the way to work", dueAt: iso(daysFromNow: 6), deadlineAt: iso(daysFromNow: 9, hour: 17)), state: .waiting, recurring: false),
-            ]),
+            // Target today, the repeating ones too. Since 2026-10-26 in its
+            // two sections, Tomorrow's rows first as the server sends them:
+            // tomorrow afternoon, and 1:00 AM after tomorrow's date (tomorrow
+            // NIGHT's, with a 3:00 AM day start); one Later row considered.
+            TaskSegmentDTO(horizon: "upcoming", tasks: upcomingTomorrow + upcomingLater),
             TaskSegmentDTO(horizon: "weeks", tasks: [
                 // Undated and past its horizon's threshold: the age label (the
                 // server's `age_label`).
@@ -587,9 +612,11 @@ private enum ReminderPreviewData {
     /// key, not from the clock (`naturalPage`), so a render shows the same
     /// page whatever time it is drawn. -10 is the Days segment; the default
     /// is Early morning with the segments' bars in its strip (2026-10-11).
-    static func segmentEntry(key: Int = -10, groups gs: [ReminderGroupDTO]? = nil) -> RemindersEntry {
+    static func segmentEntry(
+        key: Int = -10, groups gs: [ReminderGroupDTO]? = nil, segments segs: [TaskSegmentDTO]? = nil
+    ) -> RemindersEntry {
         let gs = gs ?? groups
-        let listed = TaskSegmentDTO.listed(segments)
+        let listed = TaskSegmentDTO.listed(segs ?? segments)
         let natural = RemindersTimeline.naturalSlotIndex(in: gs, now: now)
         let page = RemindersTimeline.page(forKey: key, groups: gs, segments: listed, naturalSlot: natural)
         return RemindersEntry(
@@ -657,7 +684,7 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.clearSlotOverride()
-    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14)
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14, dayStart: "03:00")
     ReminderPreviewData.segmentEntry(key: -14)
 }
 
@@ -665,7 +692,7 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.clearSlotOverride()
-    let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false, slotKey: -14)
+    let _ = ReminderPreviewData.prepare(page: 1, showCompleted: false, slotKey: -14, dayStart: "03:00")
     ReminderPreviewData.segmentEntry(key: -14)
 }
 
@@ -673,7 +700,7 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.clearSlotOverride()
-    let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false, slotKey: -14)
+    let _ = ReminderPreviewData.prepare(page: 2, showCompleted: false, slotKey: -14, dayStart: "03:00")
     ReminderPreviewData.segmentEntry(key: -14)
 }
 
@@ -681,7 +708,7 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.clearSlotOverride()
-    let _ = ReminderPreviewData.prepare(page: 3, showCompleted: false, slotKey: -14)
+    let _ = ReminderPreviewData.prepare(page: 3, showCompleted: false, slotKey: -14, dayStart: "03:00")
     ReminderPreviewData.segmentEntry(key: -14)
 }
 
@@ -689,8 +716,23 @@ private enum ReminderPreviewData {
     RemindersWidget()
 } timeline: {
     let _ = WidgetStore.clearSlotOverride()
-    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14)
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14, dayStart: "03:00")
     ReminderPreviewData.segmentEntry(key: -14)
+}
+
+/// Upcoming with an empty Tomorrow section (2026-10-26): its heading still
+/// shows, "Tomorrow  0 of 0 ✓", with no row under it.
+#Preview("Reminders Large — Upcoming, Tomorrow empty", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -14, dayStart: "03:00")
+    ReminderPreviewData.segmentEntry(
+        key: -14,
+        segments: ReminderPreviewData.segments.map {
+            $0.isUpcoming ? $0.replacingTasks(ReminderPreviewData.upcomingLater) : $0
+        }
+    )
 }
 
 #Preview("Reminders Large — task segment (Weeks)", as: .systemLarge) {

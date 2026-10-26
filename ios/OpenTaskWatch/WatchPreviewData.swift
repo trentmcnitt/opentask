@@ -138,11 +138,22 @@ enum WatchPreviewData {
             ]),
             // Upcoming (2026-10-12), after Days: a one-off with a deadline
             // and a repeating task — target dates, never a horizon word.
+            // In its two sections since 2026-10-26: the one due tomorrow in
+            // Tomorrow (its time alone), the other in Later.
             TaskSegmentDTO(horizon: "upcoming", tasks: [
-                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Renew the car registration", priority: 2, dueAt: tomorrow, deadlineAt: deadline, horizon: "weeks"), state: .waiting, recurring: false),
-                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the balcony plants", dueAt: soon, rrule: "FREQ=DAILY;INTERVAL=3"), state: .waiting, recurring: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9301, title: "Renew the car registration", priority: 2, dueAt: tomorrow, deadlineAt: deadline, horizon: "weeks"), state: .waiting, recurring: false, upcomingSection: .tomorrow),
+                SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the balcony plants", dueAt: soon, rrule: "FREQ=DAILY;INTERVAL=3"), state: .waiting, recurring: true, upcomingSection: .later),
             ]),
         ]
+    }
+
+    /// Upcoming with nothing for tomorrow (2026-10-26): "Tomorrow  0 of 0 ✓"
+    /// and "Nothing today ✓", then Later's row.
+    static var upcomingTomorrowEmpty: TaskSegmentDTO {
+        let soon = DateHelpers.formatISO(Date().addingTimeInterval(3 * 24 * 60 * 60))
+        return TaskSegmentDTO(horizon: "upcoming", tasks: [
+            SegmentTaskDTO(task: TaskDTO(id: 9302, title: "Water the balcony plants", dueAt: soon, rrule: "FREQ=DAILY;INTERVAL=3"), state: .waiting, recurring: true, upcomingSection: .later),
+        ])
     }
 
     /// The Tasks page's row corner (2026-10-16) — invented titles: "!!" and

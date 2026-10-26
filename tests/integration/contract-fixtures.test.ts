@@ -118,9 +118,11 @@
  *
  * 21. Upcoming's two sections (2026-10-25): a one-off due tomorrow (its
  *     Tomorrow) and one due in six days with a lead of 6 (its Later is
- *     today), both targeted 10 days ago (backdated in the DB)
+ *     today), both targeted 10 days ago (backdated in the DB), and a second
+ *     Later one considered today (2026-10-26, the native per-section "n of m")
  *     GET  /api/reminders                       → reminders-upcoming-sections.json
- *     (every Upcoming row carries `upcoming_section`; Tomorrow's first)
+ *     (every Upcoming row carries `upcoming_section`, a considered one too;
+ *     Tomorrow's first)
  *
  * 22. The named reminder push's Considered button (2026-10-26): a one-time
  *     High reminder, waiting today
@@ -1013,7 +1015,11 @@ describe('contract fixtures (native clients)', () => {
     // Listed in this order on purpose: the server puts Tomorrow first.
     await make('sectionLater', { title: 'Plan the garden', target_at: day(6), lead_days: 6 })
     await make('sectionTomorrow', { title: 'Return the library books', target_at: day(1) })
-    backdate([created.sectionLater, created.sectionTomorrow], 10)
+    // A Later row considered today: it stays in the payload (considered),
+    // still in its section — the native "Later  1 of 2".
+    await make('sectionSeen', { title: 'Book the chimney sweep', target_at: day(5), lead_days: 6 })
+    backdate([created.sectionLater, created.sectionTomorrow, created.sectionSeen], 10)
+    await call('/api/task-segments/consider', { ids: [created.sectionSeen] })
     captured['reminders-upcoming-sections'] = await call('/api/reminders')
   })
 
@@ -1055,18 +1061,25 @@ describe('contract fixtures (native clients)', () => {
   })
 
   test('Upcoming sections: every row carries its section, Tomorrow first', () => {
-    type Row = { id: number; upcoming_section?: string }
+    type Row = { id: number; upcoming_section?: string; segment_state?: string }
     type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
     const segs = (captured['reminders-upcoming-sections'] as unknown as Segs).data.task_segments
     const upcoming = segs.find((s) => s.horizon === 'upcoming')!
     for (const t of upcoming.tasks) expect(t.upcoming_section).toMatch(/^(tomorrow|later)$/)
     const mine = upcoming.tasks
-      .filter((t) => t.id === created.sectionLater || t.id === created.sectionTomorrow)
-      .map((t) => [t.id, t.upcoming_section])
-    expect(mine).toEqual([
-      [created.sectionTomorrow, 'tomorrow'],
-      [created.sectionLater, 'later'],
-    ])
+      .filter((t) =>
+        [created.sectionLater, created.sectionTomorrow, created.sectionSeen].includes(t.id),
+      )
+      .map((t) => [t.id, t.upcoming_section, t.segment_state])
+    expect(mine).toEqual(
+      expect.arrayContaining([
+        [created.sectionTomorrow, 'tomorrow', 'waiting'],
+        [created.sectionLater, 'later', 'waiting'],
+        [created.sectionSeen, 'later', 'considered'],
+      ]),
+    )
+    // Tomorrow's rows first.
+    expect(mine[0][0]).toBe(created.sectionTomorrow)
     // No other kind carries it.
     for (const seg of segs.filter((x) => x.horizon !== 'upcoming')) {
       for (const t of seg.tasks) expect(t.upcoming_section).toBeUndefined()

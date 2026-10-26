@@ -442,12 +442,19 @@ struct TaskSegmentSection: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.top, 6)
-            ForEach(segment.waitingTasks) { row in
-                SegmentRowView(
-                    task: row.task, segmentHorizon: segment.horizon,
-                    consider: { model.considerSegmentTask(row.task) },
-                    done: { model.completeSegmentTask(row.task) }
-                )
+            if segment.isUpcoming {
+                // Upcoming in two sections (2026-10-26, ruling 1), drawn like
+                // the web: each section's heading and its own "n of m", its
+                // rows, and "Nothing today ✓" when it holds none.
+                ForEach(UpcomingSections.split(segment.tasks), id: \.section) { section in
+                    UpcomingSectionHeader(section: section)
+                    if section.isEmpty {
+                        NothingTodayLine()
+                    }
+                    rows(section.waiting)
+                }
+            } else {
+                rows(segment.waitingTasks)
             }
             // An ordinary watch action button (the bulk-snooze sheet's
             // weight), not a small tinted link.
@@ -463,6 +470,51 @@ struct TaskSegmentSection: View {
             .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
         }
     }
+
+    private func rows(_ rows: [SegmentTaskDTO]) -> some View {
+        ForEach(rows) { row in
+            SegmentRowView(
+                task: row.task, segmentHorizon: segment.horizon, upcomingSection: row.upcomingSection,
+                consider: { model.considerSegmentTask(row.task) },
+                done: { model.completeSegmentTask(row.task) }
+            )
+        }
+    }
+}
+
+/// An Upcoming section's heading on the watch (2026-10-26, the web's
+/// `SectionHeading`): the word, muted, and the section's own "n of m" — green
+/// with a ✓ once nothing in it waits.
+private struct UpcomingSectionHeader: View {
+    let section: UpcomingSections.Section
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(section.section.title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            (section.finished
+                ? Text(section.countText) + Text("\u{00A0}") + Text(Image(systemName: "checkmark"))
+                : Text(section.countText))
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(section.finished ? WatchTheme.done : Color.secondary)
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(section.section.title), \(section.handledCount) of \(section.total) considered"))
+    }
+}
+
+/// "Nothing today ✓" — an empty Upcoming section (Trent's words, the web's
+/// `EmptySegmentLine`): muted text, a green check.
+private struct NothingTodayLine: View {
+    var body: some View {
+        (Text("Nothing today ") + Text(Image(systemName: "checkmark")).foregroundStyle(WatchTheme.done))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+    }
 }
 
 /// One task segment row, a reminder row's shape: circle, title (and under it
@@ -475,10 +527,12 @@ struct TaskSegmentSection: View {
 struct SegmentRowView: View {
     let task: TaskDTO
     let segmentHorizon: String
+    /// An Upcoming row's section: a Tomorrow row's target is its time alone.
+    var upcomingSection: UpcomingSection? = nil
     let consider: () -> Void
     let done: () -> Void
 
-    private var meta: String? { task.segmentMeta(segmentHorizon: segmentHorizon) }
+    private var meta: String? { task.segmentMeta(segmentHorizon: segmentHorizon, upcomingSection: upcomingSection) }
 
     private var spoken: String {
         let words = meta.map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
@@ -503,11 +557,15 @@ struct SegmentRowView: View {
     private var upcomingWords: some View {
         ViewThatFits(in: .horizontal) {
             ForEach(UpcomingMetaForm.allCases, id: \.self) { form in
-                if let words = task.segmentMeta(segmentHorizon: segmentHorizon, upcomingForm: form) {
+                if let words = task.segmentMeta(
+                    segmentHorizon: segmentHorizon, upcomingForm: form, upcomingSection: upcomingSection
+                ) {
                     metaText(words).lineLimit(1).fixedSize()
                 }
             }
-            if let words = task.segmentMeta(segmentHorizon: segmentHorizon, upcomingForm: .shortest) {
+            if let words = task.segmentMeta(
+                segmentHorizon: segmentHorizon, upcomingForm: .shortest, upcomingSection: upcomingSection
+            ) {
                 metaText(words)
             }
         }
@@ -661,23 +719,31 @@ private struct PromptRowsPreview: View {
 // Daily" titles), for the same reason: on the page they sit below every
 // period row, out of a preview's reach.
 private struct SegmentSectionPreview: View {
-    let horizon: String
+    let segment: TaskSegmentDTO
     let model = WatchViewModel.previewReminders(segments: true)
+
+    init(horizon: String) {
+        segment = WatchPreviewData.taskSegments.first { $0.horizon == horizon }
+            ?? TaskSegmentDTO(horizon: horizon, tasks: [])
+    }
+
+    init(segment: TaskSegmentDTO) {
+        self.segment = segment
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(WatchPreviewData.taskSegments.filter { $0.horizon == horizon }, id: \.horizon) { segment in
-                    TaskSegmentSection(segment: segment, model: model)
-                }
-            }
-            .padding(.horizontal, 4)
-            .frame(width: 184)
+            TaskSegmentSection(segment: segment, model: model)
+                .padding(.horizontal, 4)
+                .frame(width: 184)
         }
     }
 }
 
 #Preview("Task segment section — Upcoming") { SegmentSectionPreview(horizon: "upcoming") }
+#Preview("Task segment section — Upcoming, Tomorrow empty") {
+    SegmentSectionPreview(segment: WatchPreviewData.upcomingTomorrowEmpty)
+}
 
 #Preview("Prompt rows 1-5") { PromptRowsPreview(range: 0..<5) }
 #Preview("Prompt rows 6-10") { PromptRowsPreview(range: 5..<10) }

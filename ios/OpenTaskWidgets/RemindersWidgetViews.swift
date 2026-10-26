@@ -1518,26 +1518,38 @@ private struct DonePromptRow: View {
 /// One row of a task segment page: a waiting task, the "CONSIDERED · N"
 /// divider, or a task considered today (shown only with the "done" dot on).
 private enum SegmentListItem {
+    /// An Upcoming section's heading (2026-10-26, the Upcoming split):
+    /// "Tomorrow  0 of 2", "Later  1 of 1 ✓".
+    case sectionHeader(UpcomingSections.Section)
     case waiting(SegmentTaskDTO)
     case divider(count: Int)
     case considered(SegmentTaskDTO)
 
     var id: String {
         switch self {
+        case .sectionHeader(let s): return "seg-section-\(s.section.rawValue)"
         case .waiting(let row): return "seg-\(row.id)"
         case .divider: return "seg-divider"
         case .considered(let row): return "seg-considered-\(row.id)"
         }
     }
 
-    /// See `ReminderListItem.pagedRow`.
+    /// See `ReminderListItem.pagedRow`. A section heading stays with the row
+    /// after it (a page never ends on one) and is no ITEM — it has no
+    /// identity, so it never lapses an anchor — but it has a key: a page can
+    /// start on it ("Later" heads page 2), so an anchor can name it.
     var pagedRow: PagedRow {
         switch self {
+        case .sectionHeader: return PagedRow(keys: [id], identities: [], staysWithNext: true)
         case .waiting(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
         case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
         case .considered(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
         }
     }
+
+    /// Rows that must share a page with the next one (the plain partition's
+    /// rule; the anchored one reads `pagedRow.staysWithNext`).
+    var staysWithNext: Bool { pagedRow.staysWithNext }
 }
 
 /// The widths a task segment row spends on things that are not its label —
@@ -1611,8 +1623,26 @@ private struct TaskSegmentListView: View {
         isLarge && WidgetStore.showCompleted(for: RemindersWidget.kind)
     }
 
+    /// UPCOMING IN TWO SECTIONS (2026-10-26, ruling 1; the web's
+    /// `UpcomingSections`): while anything waits, each section is a compact
+    /// heading — "Tomorrow  0 of 2", "Later  1 of 1 ✓", the ✓ inline once
+    /// nothing in it waits — then its waiting rows. BOTH headings always
+    /// show, an empty one too ("Tomorrow  0 of 0 ✓"), with no separate
+    /// "Nothing today" row. Headings are rows: measured, paged, and kept with
+    /// the row after them. The page's "X of Y", strip bar, "Defer all" and
+    /// the CONSIDERED list stay the segment's. Nothing waiting: the finished
+    /// seal, as every page.
+    private var openItems: [SegmentListItem] {
+        guard segment.isUpcoming, segment.hasWaiting else {
+            return segment.waitingTasks.map { SegmentListItem.waiting($0) }
+        }
+        return UpcomingSections.split(segment.tasks).flatMap { section in
+            [SegmentListItem.sectionHeader(section)] + section.waiting.map { SegmentListItem.waiting($0) }
+        }
+    }
+
     private var items: [SegmentListItem] {
-        let open = segment.waitingTasks.map { SegmentListItem.waiting($0) }
+        let open = openItems
         let considered = segment.consideredTasks
         guard showCompleted, !considered.isEmpty else { return open }
         return open + [.divider(count: considered.count)] + considered.map { .considered($0) }
@@ -1670,14 +1700,27 @@ private struct TaskSegmentListView: View {
         let items = items
         let barHeight = metrics.bottomBarHeight
         let budget = max(size.height - (isLarge ? barHeight + rowSpacing : 0), 0)
-        let layouts = items.map { layout(for: $0, width: size.width, budget: budget, metrics: metrics) }
+        // A row right under Upcoming's section headings (2026-10-26) has to
+        // share a page with them — a heading never ends a page — so it is
+        // measured against what's left of a page after them: a heading run
+        // and its first row always fit one page. Without this, at XXX Large
+        // an empty "Tomorrow" heading was left alone on page 1 when "Later"
+        // and its tall first row didn't fit beside it. Only an extreme row
+        // (taller than that) is affected, and then its title shrinks to fit
+        // rather than truncating (`ReminderRowLayout.shrinks`).
+        let headingRun = metrics.caption2Height + rowSpacing
+        let layouts = items.indices.map { index -> ReminderRowLayout in
+            var headings = 0
+            while index - headings - 1 >= 0, case .sectionHeader = items[index - headings - 1] { headings += 1 }
+            let rowBudget = max(budget - CGFloat(headings) * headingRun, 0)
+            return layout(for: items[index], width: size.width, budget: rowBudget, metrics: metrics)
+        }
         // Anchored like a period's list (`RemindersListView.listBody`).
         let paging = remindersPaging(
             rows: items.map(\.pagedRow), pageKey: segment.pageKey, isLarge: isLarge, entryDate: entry.date
         ) { range in
             WidgetTheme.pages(heights: layouts.map(\.height), spacing: rowSpacing, budget: budget, in: range) {
-                if case .divider = items[$0] { return true }
-                return false
+                items[$0].staysWithNext
             }
         }
         let pages = paging.pages
@@ -1723,8 +1766,11 @@ private struct TaskSegmentListView: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    private func label(_ task: TaskDTO, placement: SegmentMetaPlacement, form: UpcomingMetaForm) -> String {
-        task.segmentLabelText(segmentHorizon: segment.horizon, now: entry.date, placement: placement, upcomingForm: form)
+    private func label(_ row: SegmentTaskDTO, placement: SegmentMetaPlacement, form: UpcomingMetaForm) -> String {
+        row.task.segmentLabelText(
+            segmentHorizon: segment.horizon, now: entry.date, placement: placement, upcomingForm: form,
+            upcomingSection: row.upcomingSection
+        )
     }
 
     /// WHERE THE SMALL WORDS GO (2026-10-12, "· Target Wed Oct 14 · repeats"
@@ -1757,7 +1803,9 @@ private struct TaskSegmentListView: View {
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
         switch item {
-        case .divider:
+        case .divider, .sectionHeader:
+            // One caption2 line each — what `DoneDivider` and
+            // `UpcomingSectionHeading` draw.
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
         case .waiting(let row), .considered(let row):
             let task = row.task
@@ -1769,7 +1817,10 @@ private struct TaskSegmentListView: View {
                 metrics.titleLines(text, width: titleWidth, weight: weight, maxHeight: budget, hasNotes: hasNotes)
             }
             func meta(_ form: UpcomingMetaForm) -> String? {
-                task.segmentMeta(segmentHorizon: segment.horizon, now: entry.date, upcomingForm: form)
+                task.segmentMeta(
+                    segmentHorizon: segment.horizon, now: entry.date, upcomingForm: form,
+                    upcomingSection: row.upcomingSection
+                )
             }
             var form = UpcomingMetaForm.full
             if segment.horizon == SegmentKind.upcomingRaw {
@@ -1779,10 +1830,10 @@ private struct TaskSegmentListView: View {
                 } ?? .shortest
             }
             var placement = SegmentMetaPlacement.inline
-            var fit = lines(label(task, placement: .inline, form: form), hasNotes: task.hasNotes)
+            var fit = lines(label(row, placement: .inline, form: form), hasNotes: task.hasNotes)
             if let words = meta(form), fit.lines > lines(task.title, hasNotes: false).lines {
                 placement = lines(words, hasNotes: false).lines > 1 ? .partsOnOwnLines : .ownLine
-                fit = lines(label(task, placement: placement, form: form), hasNotes: task.hasNotes)
+                fit = lines(label(row, placement: placement, form: form), hasNotes: task.hasNotes)
             }
             if fit.shrinks {
                 return ReminderRowLayout(
@@ -1799,11 +1850,14 @@ private struct TaskSegmentListView: View {
     @ViewBuilder
     private func row(_ item: SegmentListItem, layout: ReminderRowLayout, metrics: WidgetTextMetrics) -> some View {
         switch item {
+        case .sectionHeader(let section):
+            UpcomingSectionHeading(section: section)
         case .divider(let count):
             DoneDivider(count: count, label: "CONSIDERED")
         case .waiting(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
+                upcomingSection: row.upcomingSection,
                 considered: false, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
@@ -1812,6 +1866,7 @@ private struct TaskSegmentListView: View {
         case .considered(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
+                upcomingSection: row.upcomingSection,
                 considered: true, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
@@ -2003,6 +2058,51 @@ private struct TaskSegmentListView: View {
     }
 }
 
+/// An Upcoming section's compact heading (2026-10-26, ruling 1): "Tomorrow
+/// 0 of 2", and once nothing in the section waits, the count in green with
+/// an inline ✓ — "Later  1 of 1 ✓", "Tomorrow  0 of 0 ✓" for an empty one
+/// (done from the start; there is no separate "Nothing today" row on the
+/// widget). The web's `SectionHeading`: the word muted and not uppercased
+/// (the page title above carries the accent), the count the slot header's.
+/// ONE caption2 line — the height the list measures it at.
+private struct UpcomingSectionHeading: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let section: UpcomingSections.Section
+
+    /// The web's green-700 / green-400 (`text-green-700 dark:text-green-400`):
+    /// small green text needs the deeper shade on the light card.
+    private var finishedGreen: Color {
+        colorScheme == .dark
+            ? Color(red: 0x4A / 255, green: 0xDE / 255, blue: 0x80 / 255)
+            : Color(red: 0x15 / 255, green: 0x80 / 255, blue: 0x3D / 255)
+    }
+
+    private var count: Text {
+        let words = Text(section.countText).monospacedDigit()
+        guard section.finished else { return words }
+        return words + Text("\u{00A0}") + Text(Image(systemName: "checkmark")).fontWeight(.bold)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(section.section.title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            count
+                .font(.caption2)
+                .foregroundStyle(section.finished ? finishedGreen : Color.secondary)
+            Spacer(minLength: 0)
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(
+            "\(section.section.title), \(section.handledCount) of \(section.total) considered"
+                + (section.finished ? ", nothing waiting" : "")
+        ))
+    }
+}
+
 /// One task segment row: circle (consider) · title · checkbox (done).
 ///
 /// `ReminderRow`'s grammar — the title is a `Link`, the controls are
@@ -2024,6 +2124,8 @@ private struct SegmentTaskRow: View {
     let showsTargetToday: Bool
     /// The page's horizon — the row names its own only when it differs.
     let segmentHorizon: String
+    /// An Upcoming row's section: a Tomorrow row's target is its time alone.
+    let upcomingSection: UpcomingSection?
     let considered: Bool
     let now: Date
     /// Where the small words go (`ReminderRowLayout.metaPlacement`, measured
@@ -2039,7 +2141,9 @@ private struct SegmentTaskRow: View {
     let notesGlyphSize: CGFloat?
 
     private var meta: String? {
-        task.segmentMeta(segmentHorizon: segmentHorizon, now: now, upcomingForm: upcomingForm)
+        task.segmentMeta(
+            segmentHorizon: segmentHorizon, now: now, upcomingForm: upcomingForm, upcomingSection: upcomingSection
+        )
     }
 
     private var spoken: String {
