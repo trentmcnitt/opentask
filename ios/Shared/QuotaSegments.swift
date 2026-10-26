@@ -17,7 +17,7 @@ import CoreGraphics
 /// glyph's trick (`WidgetTheme.titleText`). Template images take the
 /// `Text`'s `foregroundStyle`, so the colors stay semantic (indigo, green,
 /// `.secondary`) and follow light/dark without being resolved by hand. The
-/// unit can't break: the image and its word are joined by a word joiner
+/// unit can't break: the images (a filled run, an empty run) and their word are joined by word joiners
 /// (U+2060), so it wraps to the next line whole.
 ///
 /// THE TWO FORMS. `QuotaCount.chooseForm` decides; a caller with a width to
@@ -73,7 +73,15 @@ enum QuotaSegmentsText {
         ) {
             runs.append(Text(image).foregroundStyle(.secondary))
         }
-        var text = runs.reduce(Text(""), +)
+        // The runs are joined by the word joiner too (2026-10-26): two
+        // `Text(Image)`s side by side are a break opportunity, and the drawn
+        // unit split there at XXX Large ("Practice the ▰▰" / "▱▱▱ week")
+        // while the pager measures it as ONE unbreakable box
+        // (`WidgetTextMetrics.promptLines`). Joined, it wraps whole, as
+        // measured — and a `.pitch`-trimmed filled run can't end a line.
+        var text = runs.enumerated().reduce(Text("")) { text, run in
+            run.offset == 0 ? text + run.element : text + Text(joiner) + run.element
+        }
         if let word {
             text = text + Text(joiner)
                 + Text(word)

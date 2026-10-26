@@ -106,6 +106,32 @@ final class QuotaCountTests: XCTestCase {
         }
     }
 
+    /// The pager's measuring box counts its whole width (2026-10-26, the
+    /// docs' "Deep work block, no meetings ▰▰▱▱▱ wee…"): an image-less
+    /// attachment measured as 1pt on macOS, so a prompt row's boxes counted
+    /// as nothing and the row was sized one line short. Runs on macOS — where
+    /// it broke.
+    func testMeasuringBoxCountsItsWidth() {
+        #if canImport(AppKit)
+        let font = NSFont.systemFont(ofSize: 15)
+        #else
+        let font = UIFont.systemFont(ofSize: 15)
+        #endif
+        let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        let text = NSMutableAttributedString(string: "Deep work block ", attributes: [.font: font])
+        let plain = text.boundingRect(with: CGSize(width: 10_000, height: 1_000), options: options, context: nil)
+        text.append(NSAttributedString(attachment: MeasuringBox.attachment(width: 60)))
+        text.addAttribute(.font, value: font, range: NSRange(location: text.length - 1, length: 1))
+        let boxed = text.boundingRect(with: CGSize(width: 10_000, height: 1_000), options: options, context: nil)
+        XCTAssertEqual(boxed.width - plain.width, 60, accuracy: 1)
+        XCTAssertEqual(boxed.height, plain.height, accuracy: 0.5, "1pt tall: no taller line")
+        // Too wide for one line once the box counts: two lines.
+        let narrow = text.boundingRect(
+            with: CGSize(width: plain.width + 30, height: 1_000), options: options, context: nil
+        )
+        XCTAssertEqual(narrow.height / plain.height, 2, accuracy: 0.1)
+    }
+
     private func prompt(current: Int, target: Int, period: String?) -> QuotaPromptDTO {
         QuotaPromptDTO(
             promptKey: "k", taskId: 1, title: "Read", current: current, target: target, period: period,
