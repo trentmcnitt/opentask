@@ -192,7 +192,7 @@ export function Header({
           {title ? (
             <h1
               className={cn(
-                'flex-shrink-0 truncate text-lg font-semibold transition-opacity duration-200',
+                'min-w-0 truncate text-lg font-semibold transition-opacity duration-200',
                 searchExpanded ? 'opacity-0 md:opacity-100' : '',
               )}
             >
@@ -210,8 +210,12 @@ export function Header({
                     'w-auto flex-shrink-0 cursor-pointer transition-opacity duration-200 md:h-9',
                     // With a section label beside it the bar is tight on a phone
                     // (logo + label + pill + two buttons in 375px), so the logo
-                    // drops a step there.
-                    section ? 'h-6' : 'h-7',
+                    // drops a step there. In px, not rem: the iOS app scales the
+                    // root font with Dynamic Type (WebView.swift), and a logo
+                    // that grew with the text at Trent's 119% was what pushed
+                    // the bar past a 402px phone (2026-10-26). It is a picture,
+                    // not text; the words beside it still scale.
+                    section ? 'h-[24px]' : 'h-[28px]',
                     searchExpanded ? 'opacity-0 md:opacity-100' : '',
                   )}
                   unoptimized
@@ -230,9 +234,16 @@ export function Header({
                 aria-hidden="true"
                 className="bg-border mx-0.5 h-5 w-px flex-shrink-0 md:mx-1"
               />
+              {/* THE BAR NEVER OVERFLOWS (2026-10-26). At a large text size
+                  the logo, this label, search, undo and menu are wider than
+                  a phone. Every other piece is a fixed control, so the label
+                  is the one that gives way (an ellipsis) — before, nothing
+                  could: the search button slid back over the label and the
+                  menu button ran off the right edge, which widened the page
+                  and let iOS zoom the whole app out. */}
               <span
                 data-header-section
-                className="text-foreground flex-shrink-0 text-sm font-semibold tracking-tight md:text-base"
+                className="text-foreground min-w-0 truncate text-sm font-semibold tracking-tight md:text-base"
               >
                 {section}
               </span>
@@ -241,8 +252,11 @@ export function Header({
 
           {headerAction}
 
-          {/* Middle section: badges + search. flex-1 keeps buttons fixed. */}
-          <div className="flex min-w-0 flex-1 items-center">
+          {/* Middle section: badges + search. flex-1 keeps buttons fixed.
+              `min-w-fit` on a phone: never narrower than the search button
+              (the badges are a size container, so they ask for nothing), or
+              the button overflows onto the label beside it. */}
+          <div className="flex min-w-fit flex-1 items-center md:min-w-0">
             {/* Badge container: @container enables container queries on mobile.
                 md:[container-type:normal] disables containment on desktop where
                 md:inline-flex handles visibility via media queries instead. */}

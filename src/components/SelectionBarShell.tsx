@@ -75,7 +75,7 @@ export function SelectionBarShell({
       }}
     >
       <div
-        className="bg-primary text-primary-foreground rounded-xl px-3 py-3 shadow-xl sm:px-4"
+        className="bg-primary text-primary-foreground relative rounded-xl px-3 py-3 shadow-xl sm:px-4"
         aria-live="polite"
       >
         {/* Wraps rather than overflowing: the bar is capped at the screen's
@@ -83,24 +83,32 @@ export function SelectionBarShell({
             reach (iPhone at a larger text size, 2026-10-14). Centred with
             `inset-x-0 mx-auto w-fit`, not `left-1/2 -translate-x-1/2`: a
             fixed box at `left: 50%` may only grow to half the screen, so a
-            row allowed to wrap would wrap at half width. */}
+            row allowed to wrap would wrap at half width.
+            CLEAR SITS ON THE CORNER (2026-10-26), out of the row: as the last
+            item of a wrapping row it was the one that fell to a line of its
+            own — an X alone under "Considered · Details · trash" on Trent's
+            phone at 119% text, a whole extra row of bar for one small button.
+            On the pill's top-right corner it costs the verbs no width at all,
+            so at that size the three fit on one line, and when a screen is too
+            narrow even for them, only a verb wraps and Clear stays put. Its
+            hit area is larger than the disc (the `after:` inset). */}
         <div className="flex flex-wrap items-center justify-center gap-2">
           {count > 1 && (
             <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
           )}
 
           {children}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClear}
-            aria-label="Clear selection"
-            className="text-primary-foreground/60 hover:text-primary-foreground hover:bg-primary-foreground/10 active:bg-primary-foreground/10 ml-1"
-          >
-            <X className="size-4" />
-          </Button>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClear}
+          aria-label="Clear selection"
+          data-selection-clear
+          className="bg-primary text-primary-foreground/70 hover:bg-primary hover:text-primary-foreground active:bg-primary ring-background absolute -top-2.5 -right-2.5 size-7 rounded-full shadow-md ring-2 after:absolute after:-inset-2 after:content-['']"
+        >
+          <X className="size-3.5" />
+        </Button>
         {hint && (
           <p
             id={SELECTION_BAR_HINT_ID}

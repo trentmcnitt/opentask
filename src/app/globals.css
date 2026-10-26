@@ -211,6 +211,10 @@
        content that grows past the viewport (opening a slot, expanding a
        group) does not shove the whole centered layout sideways. */
     scrollbar-gutter: stable;
+    /* No double-tap zoom (2026-10-26) — the viewport export in layout.tsx
+       shuts pinch where iOS allows it; this is the half Safari honours in a
+       browser tab too. Panning and every tap are untouched. */
+    touch-action: manipulation;
   }
   /* Every enabled button is pressable, so it gets the hand (2026-10-20: Today
      and On deck on the task rows, the pager chevrons, Considered all and Show
@@ -224,6 +228,15 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* A word longer than its line breaks instead of running out of its box
+       (2026-10-26). Titles and notes are the user's own text: a pasted URL or
+       file path is one unbreakable "word", and a row title's column on a phone
+       at a large text size is ~130px, so it ran out of its row and widened
+       the page — which lets iOS zoom the app out (see layout.tsx). `break-word`,
+       not `anywhere`: it breaks only a word that does not fit, and leaves
+       every box's min-content width (flex and grid sizing) as it was. Text set
+       `nowrap` (truncated labels) is unaffected. */
+    overflow-wrap: break-word;
     font-family:
       var(--font-inter),
       system-ui,
