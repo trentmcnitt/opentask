@@ -589,7 +589,9 @@ test.describe('Row corner · phone', () => {
     }
   })
 
-  test('segment row dot is a 44px target on a phone', async ({ authenticatedPage: page }) => {
+  // A finger's target: 44 tall, and 34 wide like every action in the row's
+  // button group (the compact row buttons, 2026-10-26; 44 wide before).
+  test('segment row dot is a 34×44 target on a phone', async ({ authenticatedPage: page }) => {
     const id = await create(page, { title: uniqueTitle('RC seg phone'), horizon: 'days' })
     backdateCreated([id], { inSegments: true })
     try {
@@ -598,7 +600,7 @@ test.describe('Row corner · phone', () => {
         .locator('[data-task-segments]')
         .locator(`[data-segment-task="${id}"] [data-horizon-dot]`)
       const box = (await dot.boundingBox())!
-      expect(box.width).toBeGreaterThanOrEqual(44)
+      expect(box.width).toBeGreaterThanOrEqual(34)
       expect(box.height).toBeGreaterThanOrEqual(44)
     } finally {
       await trash(page, [id])

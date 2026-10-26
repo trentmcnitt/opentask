@@ -294,7 +294,7 @@ async function segmentRowLayout(row: Locator) {
  * segment row's title (`LINK_TITLE`): 375 and 402 (an iPhone 17 Pro) at 100%,
  * 119% ("xxxLarge", Trent's phone) and 150% (the largest accessibility size,
  * `WebView.swift`). There the rows' buttons are checked too: every hit area
- * at least 44px tall, 6px of dead space between Today's and the done square's,
+ * at least 44px tall, 12px of dead space between Today's and the done square's,
  * and a long title's first line beside them, its second from the row's left
  * edge.
  */
@@ -383,8 +383,8 @@ async function dayBarFits(page: Page, widths: number[]) {
       }
       // Dead space between Today's and the done square's hit areas, so a tap
       // meant for one never lands on the other (Trent mis-tapped Today for
-      // done, 2026-10-12; 6px, ruled 2026-10-26).
-      expect(layout.todayToDone, `Today to done at ${width}`).toBeGreaterThanOrEqual(6)
+      // done, 2026-10-12, and ruled 12px).
+      expect(layout.todayToDone, `Today to done at ${width}`).toBeGreaterThanOrEqual(12)
       expect(layout.lines.length, `the long title's lines at ${width}`).toBeGreaterThanOrEqual(2)
       const [first, second] = layout.lines
       expect(first.right, `the first line ends before the buttons at ${width}`).toBeLessThanOrEqual(

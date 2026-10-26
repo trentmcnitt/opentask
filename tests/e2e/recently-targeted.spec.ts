@@ -167,10 +167,12 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
     timezoneId: TEST_TZ,
   })
 
-  test("Today's 44px hit area keeps 12px clear of the done square, on /reminders and the Tasks card", async ({
+  test("Today's 34×44 hit area keeps 12px clear of the done square, on /reminders and the Tasks card", async ({
     authenticatedPage: page,
   }) => {
     // Trent tapped Today while reaching for done (2026-10-12): the two sat 2px apart.
+    // Since the compact row buttons (2026-10-26) every action's hit area is
+    // 34 wide and 44 tall, in px at any text size; the 12px stays.
     const id = await segmentTask(page, 'RT hit areas')
     try {
       const check = async (scope: Locator) => {
@@ -178,7 +180,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
         const done = scope.getByRole('button', { name: /^Done: / })
         const t = (await today.boundingBox())!
         const d = (await done.boundingBox())!
-        expect(t.width).toBeGreaterThanOrEqual(44)
+        expect(t.width).toBeGreaterThanOrEqual(34)
         expect(t.height).toBeGreaterThanOrEqual(44)
         // Today sits left of done; the gap between the two hit areas is dead space.
         expect(d.x - (t.x + t.width)).toBeGreaterThanOrEqual(12)
