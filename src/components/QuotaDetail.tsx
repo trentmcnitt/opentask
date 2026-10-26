@@ -617,7 +617,7 @@ function PriorityField({
   return (
     <fieldset className="space-y-2">
       <legend className="text-sm font-medium">Priority</legend>
-      <PriorityChips value={value} onSelect={onChange} />
+      <PriorityChips value={value} onSelect={onChange} kind="quota" />
     </fieldset>
   )
 }

@@ -902,7 +902,7 @@ function PrioritySection({
         Priority
         {dirty && <span className="ml-1 text-blue-500">●</span>}
       </SectionHeading>
-      <PriorityChips value={value} onSelect={onSelect} />
+      <PriorityChips value={value} onSelect={onSelect} kind="reminder" />
     </section>
   )
 }
