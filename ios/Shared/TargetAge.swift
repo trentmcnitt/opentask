@@ -59,31 +59,27 @@ enum TargetAge {
     /// A FUTURE target's day, "Nov 1" — the chip a task segment row wears
     /// (amendment 5): its OWN target (a deadline shows as itself). Nil when none, or not
     /// in the future (a segment row's target is never today: a target today
-    /// takes the task out of the segment).
-    static func futureTargetChip(_ task: TaskDTO, now: Date = Date(), calendar: Calendar = .current) -> String? {
+    /// takes the task out of the segment). In its night (2026-10-26, the
+    /// night rule): the evening's, "Mon night Oct 26".
+    static func futureTargetChip(
+        _ task: TaskDTO, now: Date = Date(), calendar: Calendar = .current,
+        dayStart: String = DayStartStore.current.dayStart
+    ) -> String? {
         guard let target = task.dueDate, target > now else { return nil }
-        return dayText(target, calendar: calendar)
+        return dayText(target, calendar: calendar, dayStart: dayStart)
     }
 
-    /// "Nov 1" in `calendar`'s zone.
-    static func dayText(_ date: Date, calendar: Calendar = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+    /// "Nov 1" in `calendar`'s zone — or, between midnight and a before-noon
+    /// day start, the evening's "Mon night Oct 26" (`NightDay.dateWords`).
+    static func dayText(_ date: Date, calendar: Calendar = .current, dayStart: String) -> String {
+        NightDay.dateWords(date, day: OpenTaskDay(dayStart: dayStart, timeZone: calendar.timeZone), includeWeekday: false)
     }
 
     /// "Tue Oct 13" in `calendar`'s zone — the web's `ccc LLL d`, Upcoming's
-    /// target and deadline words.
-    static func weekdayDayText(_ date: Date, calendar: Calendar = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE MMM d"
-        return formatter.string(from: date)
+    /// target and deadline words; "Mon night Oct 26" in the night (the web's
+    /// `upcomingGap`).
+    static func weekdayDayText(_ date: Date, calendar: Calendar = .current, dayStart: String) -> String {
+        NightDay.dateWords(date, day: OpenTaskDay(dayStart: dayStart, timeZone: calendar.timeZone), includeWeekday: true)
     }
 }
 
@@ -139,17 +135,25 @@ extension TaskDTO {
     /// AFTER a dot, never before one. `segmentHorizon` nil = no segment
     /// context (the watch's compact rows): the set horizon always shows.
     /// `upcomingForm` applies to an Upcoming row only.
+    ///
+    /// The NIGHT RULE (2026-10-26; `NightDay.dateWords`): a target or
+    /// deadline between midnight and a before-noon day start (`dayStart`,
+    /// the user's, as last cached) names its evening — "deadline Mon night
+    /// Oct 26", never Tuesday's date beside Monday's list.
     func segmentMeta(
         segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
-        upcomingForm: UpcomingMetaForm = .full
+        upcomingForm: UpcomingMetaForm = .full, dayStart: String = DayStartStore.current.dayStart
     ) -> String? {
         let parts: [String?]
         if segmentHorizon == SegmentKind.upcomingRaw {
-            parts = upcomingParts(calendar: calendar, form: upcomingForm)
+            parts = upcomingParts(calendar: calendar, form: upcomingForm, dayStart: dayStart)
         } else {
             let horizonWord = (segmentHorizon != nil && horizon == segmentHorizon) ? nil : horizonLabel
-            let deadline = deadlineDate.map { "deadline \(TargetAge.dayText($0, calendar: calendar))" }
-            parts = [horizonWord, TargetAge.futureTargetChip(self, now: now, calendar: calendar), deadline]
+            let deadline = deadlineDate.map {
+                "deadline \(TargetAge.dayText($0, calendar: calendar, dayStart: dayStart))"
+            }
+            let target = TargetAge.futureTargetChip(self, now: now, calendar: calendar, dayStart: dayStart)
+            parts = [horizonWord, target, deadline]
         }
         let all = (parts + [ageLabel, TargetAge.attemptsBadge(self)])
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
@@ -166,19 +170,24 @@ extension TaskDTO {
     /// once the deadline has passed — says "(deadline before target)", or
     /// "(deadline first)" in the shorter forms, nothing in the shortest. No horizon word: a targeted
     /// task's horizon decides nothing until the target is removed (spec §1).
-    /// Days are local calendar days in `calendar`'s zone. See
+    /// Days are local calendar days in `calendar`'s zone — except between
+    /// midnight and a before-noon day start, the evening's ("Mon night Oct
+    /// 26", the web's `upcomingGap`; its weekday in every form). See
     /// `UpcomingMetaForm` for what each form drops.
-    func upcomingMeta(calendar: Calendar = .current, form: UpcomingMetaForm = .full) -> String? {
-        let parts = upcomingParts(calendar: calendar, form: form)
+    func upcomingMeta(
+        calendar: Calendar = .current, form: UpcomingMetaForm = .full,
+        dayStart: String = DayStartStore.current.dayStart
+    ) -> String? {
+        let parts = upcomingParts(calendar: calendar, form: form, dayStart: dayStart)
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
         return parts.isEmpty ? nil : parts.joined(separator: Self.metaJoiner)
     }
 
-    private func upcomingParts(calendar: Calendar, form: UpcomingMetaForm) -> [String?] {
+    private func upcomingParts(calendar: Calendar, form: UpcomingMetaForm, dayStart: String) -> [String?] {
         func day(_ date: Date) -> String {
             form.includesWeekdays
-                ? TargetAge.weekdayDayText(date, calendar: calendar)
-                : TargetAge.dayText(date, calendar: calendar)
+                ? TargetAge.weekdayDayText(date, calendar: calendar, dayStart: dayStart)
+                : TargetAge.dayText(date, calendar: calendar, dayStart: dayStart)
         }
         let target = dueDate.map(day)
         var deadline: String?
@@ -212,10 +221,12 @@ extension TaskDTO {
     /// `placement` (2026-10-12; `TaskSegmentListView` measures and picks).
     func segmentLabelText(
         segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
-        placement: SegmentMetaPlacement = .inline, upcomingForm: UpcomingMetaForm = .full
+        placement: SegmentMetaPlacement = .inline, upcomingForm: UpcomingMetaForm = .full,
+        dayStart: String = DayStartStore.current.dayStart
     ) -> String {
         guard let meta = segmentMeta(
-            segmentHorizon: segmentHorizon, now: now, calendar: calendar, upcomingForm: upcomingForm
+            segmentHorizon: segmentHorizon, now: now, calendar: calendar, upcomingForm: upcomingForm,
+            dayStart: dayStart
         ) else { return title }
         return title + placement.joined(meta: meta)
     }

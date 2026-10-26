@@ -87,21 +87,32 @@ enum DueLabel {
     /// longer writes) names a calendar date rather than an instant, so it is
     /// bucketed by that date — read as an instant, Tuesday 00:00 would be
     /// Monday's with any day start after midnight.
+    ///
+    /// THE NIGHT RULE (2026-10-26, native catch-up PR 2; `NightDay`, the
+    /// web's `nightDayWords`): a timed target between midnight and a
+    /// before-noon day start names its evening, "Tomorrow night" / "1:00 am",
+    /// "Mon night" (the evening's weekday), "Last night" (never "Yesterday
+    /// night"). Outside the night the word is the target's own calendar day,
+    /// and "Tomorrow" / "Yesterday" only where its OpenTask day and its own
+    /// date agree — with an 11 PM start, at Sat 12:30 a Sat 23:30 target is
+    /// on Sunday's list but reads "Sat", never "Tomorrow". The far ladder
+    /// (a week or more) is the target's own date, as on the web's row.
     static func parts(for due: Date, now: Date = Date(), isOverdue: Bool, day: OpenTaskDay) -> Parts {
         let isDateOnly = day.minuteOfDay(due) == 0
-        let time = isDateOnly ? nil : shortTime(due)
-        let dueDay = isDateOnly ? day.calendarDate(of: due) : day.openTaskDay(of: due)
+        guard isDateOnly else {
+            return Parts(dayWord: timedDayWord(for: due, now: now, isOverdue: isOverdue, day: day), time: shortTime(due))
+        }
+        // Date-only: a calendar date, never a night.
+        let dueDay = day.calendarDate(of: due)
         let days = day.openTaskDay(of: now).days(to: dueDay)
 
         let dayWord: String?
         if isOverdue {
             switch days {
             case 0...:
-                // Due earlier today (or, in principle, a clock skew putting
-                // an overdue instant on a later day): the time alone. A
-                // date-only task due today that is somehow overdue has no
-                // time either — "Today" says what there is to say.
-                dayWord = time == nil ? "Today" : nil
+                // A date-only task due today that is somehow overdue has no
+                // time — "Today" says what there is to say.
+                dayWord = "Today"
             case -1:
                 dayWord = "Yesterday"
             case -6 ... -2:
@@ -123,6 +134,38 @@ enum DueLabel {
                 dayWord = monthDayFormatter.string(from: due)
             }
         }
-        return Parts(dayWord: dayWord, time: time)
+        return Parts(dayWord: dayWord, time: nil)
+    }
+
+    /// A TIMED target's day word (nil: today, the time alone) — the ladder
+    /// above, through the night rule (`NightDay`).
+    private static func timedDayWord(for due: Date, now: Date, isOverdue: Bool, day: OpenTaskDay) -> String? {
+        let n = NightDay(at: due, now: now, day: day)
+        if isOverdue {
+            switch n.gap {
+            case 0...:
+                // Due earlier today (or, in principle, a clock skew putting an
+                // overdue instant on a later day): the time alone.
+                return nil
+            case -1:
+                return NightDay.capitalized(n.words(past: true))
+            case -6 ... -2:
+                return n.timedWeekday
+            default:
+                return NightDay.monthDay(n.date)
+            }
+        }
+        switch n.gap {
+        case ..<1:
+            // Today (0), or still-negative-but-not-overdue (never reached in
+            // practice — `isOverdue` catches every past instant).
+            return nil
+        case 1:
+            return NightDay.capitalized(n.words(past: false))
+        case 2...6:
+            return n.timedWeekday
+        default:
+            return NightDay.monthDay(n.date)
+        }
     }
 }

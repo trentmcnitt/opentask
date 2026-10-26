@@ -91,6 +91,15 @@ enum DayStartStore {
         }
     }
 
+    #if DEBUG
+    /// `#Preview`s only: remember `dayStart` as the boundary, as a fetch with
+    /// the task queue on would ("00:00" for the calendar day), so a preview
+    /// can draw the night labels whatever its simulator last cached.
+    static func seedForPreview(_ dayStart: String) {
+        defaults?.set(dayStart, forKey: dayStartKey)
+    }
+    #endif
+
     // MARK: Pure halves (tested in `DayStartStoreTests`)
 
     /// The day boundary a preferences page means: `rollover_time` with the

@@ -173,6 +173,24 @@ enum WatchPreviewData {
         ]
     }
 
+    /// The night rule's due lines (2026-10-26), drawn with a 3:00 AM day
+    /// start (the preview seeds it) after 3:00 AM: last night's 1:00 AM
+    /// ("Last night 1:00 AM"), tonight's (the time alone), tomorrow night's
+    /// ("Tomorrow night 1:30 AM"), a later night ("Fri night 12:30 AM").
+    static var nightTasks: [TaskDTO] {
+        let calendar = Calendar.current
+        func at(days: Int, _ hour: Int, _ minute: Int = 0) -> String {
+            let base = calendar.date(byAdding: .day, value: days, to: Date()) ?? Date()
+            return DateHelpers.formatISO(calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base) ?? base)
+        }
+        return [
+            TaskDTO(id: 9601, projectId: 1, title: "Join the late call", priority: 1, dueAt: at(days: 0, 1)),
+            TaskDTO(id: 9602, projectId: 2, title: "Check the backup ran", priority: 1, dueAt: at(days: 1, 1)),
+            TaskDTO(id: 9603, projectId: 2, title: "Meet the airport shuttle", priority: 1, dueAt: at(days: 2, 1, 30)),
+            TaskDTO(id: 9604, projectId: 1, title: "Submit the timesheet", priority: 1, dueAt: at(days: 4, 0, 30)),
+        ]
+    }
+
     static let cornerProjects: [ProjectDTO] = [
         ProjectDTO(id: 1, name: "Work", color: "red"),
         ProjectDTO(id: 2, name: "Home", color: "blue"),
