@@ -72,7 +72,7 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 Type or dictate a task the way you'd say it, and AI fills in the details. It sets only what your words say — it never guesses a deadline from urgency or a project from the topic — and a quiet notification tells you what it set.
 
 <p align="center">
-  <img src="docs/images/filled-task-input-light.png" alt="Quick add field with a natural-language task typed in, next to the AI button" width="500">
+  <img src="docs/images/filled-task-input-light.png" alt="Quick add field with a natural-language task typed in" width="500">
 </p>
 
 - **Natural language input** — "Call the dentist next Tuesday at 2pm to reschedule, it's important" becomes a structured task: AI extracts the title, target, recurrence, priority, project, and notes, plus a deadline when you state one, or a target relative to it ("remind me the evening before").
