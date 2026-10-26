@@ -5,11 +5,13 @@
  * for notifications, cleanup tasks, and the AI subsystem.
  *
  * Cron schedule:
- * - Every 1 min: notification check (overdue tasks, all priorities)
- * - Every 1 min: time-slot reminder check (§6 — the slot notifies, not the item)
- * - Every 1 min: unfinished-slot nag (the nag ladder's pace, 60 min by default; slot-nags.ts)
- * - Every 1 min: deadlines-page nag (paced by the nag ladder, sent when
- *   `nag_sends` says it is due; see deadline-nags.ts)
+ * - Every 1 min: the notification tick (src/core/notifications/minute-tick.ts),
+ *   one coordinated pass with ONE alerting push per user (tick.ts):
+ *   - overdue tasks, all priorities (repeats on clock marks, nag-marks.ts)
+ *   - time-slot reminder check (§6 — the slot notifies, not the item)
+ *   - unfinished-slot nag (the nag ladder's pace, on clock marks; slot-nags.ts)
+ *   - deadlines-page nag (paced by the nag ladder, sent when `nag_sends` says
+ *     it is due; see deadline-nags.ts)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - Every 1 min: persist attempts (§7 — reads are already exact; this keeps
  *   the stored columns current, see src/core/tasks/attempts.ts)
@@ -161,9 +163,8 @@ export async function register() {
     const cron = (await import('node-cron')).default
     const { notifyError } = await import('@/lib/error-notify')
     const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
-    const { checkSlotReminders } = await import('@/core/notifications/slot-reminders')
-    const { checkSlotNags, purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
-    const { checkDeadlineNags } = await import('@/core/notifications/deadline-nags')
+    const { runMinuteTick } = await import('@/core/notifications/minute-tick')
+    const { purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
     const { initWidgetPushSync } = await import('@/core/notifications/widget-push')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
@@ -218,18 +219,13 @@ export async function register() {
       // Before the overdue check: see `makeTaskRollover`.
       taskRollover()
       try {
-        await checkOverdueTasks()
-        // §6: the time slot notifies, not the reminder. Same tick as the
-        // overdue check because both are minute-boundary derived.
-        await checkSlotReminders()
-        // The §6 exception: one nag for slots still unfinished, at the ladder's
-        // pace. AFTER checkSlotReminders on purpose — a slot opening on this exact
-        // minute sends its own push, and the nag stands down for that minute
-        // rather than putting a second banner beside it.
-        await checkSlotNags()
-        // The deadlines page's nag (deadline-nags.ts): one push per user, paced
-        // by the nag ladder, sent when `nag_sends` says it is due.
-        await checkDeadlineNags()
+        // Every sender in one coordinated pass (minute-tick.ts, tick.ts): the
+        // overdue checker, the slot-open push (§6: the time slot notifies, not
+        // the reminder), the slot nag (the §6 exception, after the slot-open
+        // push so it stands down when a slot opens this minute) and the
+        // deadlines-page nag. One alerting push per user per minute; the rest
+        // of that user's banners go passive.
+        await runMinuteTick()
       } catch (err) {
         log.error('notifications', 'Notification check error:', err)
         notifyError(

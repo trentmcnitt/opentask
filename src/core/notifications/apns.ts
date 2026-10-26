@@ -173,8 +173,12 @@ export interface ApnsPushPayload {
   overdueCount: number
   /** App icon badge number — total overdue tasks for the user */
   badge?: number
-  /** 'time-sensitive' for P3+, 'active' for P0-P2. 'critical' reserved for when Apple approves the entitlement. */
-  interruptionLevel: 'time-sensitive' | 'active' | 'critical'
+  /**
+   * 'critical' for P4, 'time-sensitive' for P3, 'active' for P0-P2 — or
+   * 'passive' (no sound) when another push leads this minute's tick
+   * (tick.ts: one alert per user per tick).
+   */
+  interruptionLevel: 'time-sensitive' | 'active' | 'critical' | 'passive'
   /** Volume for critical alerts (0.0-1.0). Only used when interruptionLevel is 'critical'. */
   criticalAlertVolume?: number
 }
@@ -213,6 +217,12 @@ export async function sendApnsNotification(
   payload: ApnsPushPayload,
 ): Promise<void> {
   const isCritical = payload.interruptionLevel === 'critical'
+  // A passive banner lands in Notification Center without sound (tick.ts).
+  const sound = isCritical
+    ? { critical: 1 as const, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
+    : payload.interruptionLevel === 'passive'
+      ? undefined
+      : 'default'
 
   const delivered = await sendToAllDevices(
     userId,
@@ -225,9 +235,7 @@ export async function sendApnsNotification(
         // routine items.
         threadId: threadIdForPriority(payload.priority),
         badge: payload.badge,
-        sound: isCritical
-          ? { critical: 1, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
-          : 'default',
+        sound,
         collapseId: taskCollapseId(payload.taskId),
         data: {
           taskId: payload.taskId,
@@ -264,6 +272,8 @@ export async function sendApnsNotification(
  *
  * Uses the TASK_SUMMARY category so iOS shows bulk-snooze action buttons
  * and the content extension can display the snooze grid in bulk mode.
+ * `passive`: another push leads this minute's tick (tick.ts) — no sound,
+ * `interruption-level: passive`.
  */
 export async function sendApnsSummaryNotification(
   userId: number,
@@ -271,6 +281,7 @@ export async function sendApnsSummaryNotification(
   body: string,
   overflowCount: number,
   totalOverdueCount: number,
+  options: { passive?: boolean } = {},
 ): Promise<void> {
   await sendToAllDevices(
     userId,
@@ -280,12 +291,13 @@ export async function sendApnsSummaryNotification(
         topic: device.bundle_id,
         category: 'TASK_SUMMARY',
         threadId: NOTIFICATION_THREADS.tasks,
-        sound: 'default',
+        sound: options.passive ? undefined : 'default',
         collapseId: OVERDUE_SUMMARY_COLLAPSE_ID,
         data: {
           overflowCount,
           totalOverdueCount,
         },
+        ...(options.passive ? { aps: { 'interruption-level': 'passive' } } : {}),
       }),
     'summary notifications',
   )
@@ -342,6 +354,10 @@ export interface ApnsSlotReminderPayload {
    * has to say more — it speaks for the other unfinished slots too.
    */
   body?: string
+  /** Appended to the body: the tick lead's " · N more waiting" (tick.ts). */
+  suffix?: string
+  /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`. */
+  passive?: boolean
 }
 
 /**
@@ -378,7 +394,9 @@ export function buildSlotReminderNotification(
 ): Notification {
   const prompts = payload.promptCount ?? 0
   const decks = payload.deckCount ?? 0
-  const body = payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)
+  const body =
+    (payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)) +
+    (payload.suffix ?? '')
   return new Notification(deviceToken, {
     alert: { title: payload.slotLabel, body },
     topic,
@@ -394,8 +412,8 @@ export function buildSlotReminderNotification(
     },
     aps: {
       // Reminders carry no debt (§6) — they must never interrupt like an
-      // overdue task does.
-      'interruption-level': 'active',
+      // overdue task does. Passive when another push leads the tick.
+      'interruption-level': payload.passive ? 'passive' : 'active',
     },
   })
 }
@@ -682,6 +700,13 @@ export const DEADLINES_NAG_COLLAPSE_ID = 'deadlines-page'
 /** `data.kind` of the deadlines-page nag: the native apps open the page on a body tap. */
 export const DEADLINES_NAG_KIND = 'deadlines'
 
+export interface DeadlinesNagPayload {
+  title: string
+  body: string
+  /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`. */
+  passive?: boolean
+}
+
 /**
  * The deadlines page's nag (deadline-nags.ts; nag-map rulings 4 and 5): a
  * SILENT banner — no `sound`, `interruption-level: active` whatever the
@@ -696,7 +721,7 @@ export const DEADLINES_NAG_KIND = 'deadlines'
 export function buildDeadlinesNagNotification(
   deviceToken: string,
   topic: string,
-  payload: { title: string; body: string },
+  payload: DeadlinesNagPayload,
 ): Notification {
   return new Notification(deviceToken, {
     alert: { title: payload.title, body: payload.body },
@@ -705,13 +730,13 @@ export function buildDeadlinesNagNotification(
     collapseId: DEADLINES_NAG_COLLAPSE_ID,
     priority: Priority.immediate,
     data: { kind: DEADLINES_NAG_KIND },
-    aps: { 'interruption-level': 'active' },
+    aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
   })
 }
 
 export async function sendApnsDeadlinesNag(
   userId: number,
-  payload: { title: string; body: string },
+  payload: DeadlinesNagPayload,
 ): Promise<void> {
   await sendToAllDevices(
     userId,
