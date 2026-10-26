@@ -61,7 +61,8 @@ import { isTracked, quotaIntervalAllowed, quotaPeriodOf } from '@/lib/track'
 import { assertPromptSlotsOwned, defaultReminderRule } from '@/core/time-slots'
 import { getTaskById } from './read'
 import { quotaAnchorNow } from './period-rollover'
-import { isAIEnabled } from '@/core/ai'
+import { getUserFeatureModes, isAIEnabled } from '@/core/ai'
+import { QUOTA_PROVISIONAL_RULE } from '@/core/ai/quota-enrichment'
 import { validateLabelsExist, PROVENANCE_LABELS } from '@/core/labels'
 
 // The reads used to live here. Re-exported so existing `./create` imports keep
@@ -84,6 +85,62 @@ function assertQuotaShape(input: TaskCreateInput): void {
   if (input.due_at) throw new ValidationError(QUOTA_DUE_DATE_MESSAGE)
   if (quotaPeriodOf(input.rrule) === null) throw new ValidationError(QUOTA_PERIOD_MESSAGE)
   if (!quotaIntervalAllowed(input.rrule)) throw new ValidationError(QUOTA_INTERVAL_MESSAGE)
+}
+
+/**
+ * Title-only (enrichment's trigger) is judged on what the CALLER sent, before
+ * any server default fills in an rrule (the default reminder slot, a quota's
+ * provisional period) — otherwise a title-only reminder would stop qualifying
+ * for enrichment the moment it got its default slot. A deadline or horizon the
+ * caller set is structured input too: enrichment must not overwrite a desk's
+ * explicit deadline with its own reading. So is a quota's count above 1
+ * (quota enrichment, 2026-10-24): the caller already said how many.
+ */
+function isTitleOnlyInput(input: TaskCreateInput): boolean {
+  return (
+    !input.due_at &&
+    (input.priority ?? 0) === 0 &&
+    !input.labels?.length &&
+    !input.rrule &&
+    !input.deadline_at &&
+    !input.horizon &&
+    // A deck is the caller's own plan (On deck, 2026-10-20): enrichment must
+    // not land a target on it (a target would take it straight off deck).
+    !input.on_deck_day &&
+    (input.progress_target ?? 1) <= 1
+  )
+}
+
+/** Will this new row get `ai-to-process` — AI on, the owner's enrichment on, and title-only or `enrich`? */
+function enrichmentWillRun(userId: number, input: TaskCreateInput): boolean {
+  if (!isAIEnabled()) return false
+  if (!isTitleOnlyInput(input) && input.enrich !== true) return false
+  return getUserFeatureModes(userId).enrichment !== 'off'
+}
+
+/**
+ * A QUOTA FROM WORDS (quota enrichment, 2026-10-24; plan APPROVED 10-22): a
+ * caller that declares a quota with no rule — an Apple Shortcut POSTing
+ * `{title: "eggs twice a week", is_tracked: true}` — gets it at once with the
+ * PROVISIONAL period (`QUOTA_PROVISIONAL_RULE`, weekly, target 1), the way a
+ * rule-less reminder gets its default slot (`scheduleFor`), and enrichment
+ * then reads the count, period and reminder period from the words. Only when
+ * enrichment will actually run: without it the raw sentence at once a week is
+ * worse than an error, so the 400 stays — saying how to avoid it. An explicit
+ * `rrule: null` is not "unsaid": it is refused as before (`assertQuotaShape`).
+ */
+function withProvisionalQuotaRule(userId: number, input: TaskCreateInput): TaskCreateInput {
+  const tracked = isTracked({
+    is_tracked: input.is_tracked ?? false,
+    progress_target: input.progress_target ?? 1,
+  })
+  if (!tracked || input.rrule !== undefined) return input
+  if (!enrichmentWillRun(userId, input)) {
+    throw new ValidationError(
+      `${QUOTA_PERIOD_MESSAGE}, or turn on AI enrichment to have the period read from the title`,
+    )
+  }
+  return { ...input, rrule: QUOTA_PROVISIONAL_RULE }
 }
 
 /**
@@ -371,7 +428,8 @@ export function createTask(options: CreateTaskOptions): Task {
   // Relative targets (2026-10-24): a sent period sets the time first (the
   // creator's own periods — the creator is the owner).
   const linked = linkTargetTime(userId, options.input)
-  const input = linked.input
+  // A quota declared with no rule gets its provisional period (2026-10-24).
+  const input = withProvisionalQuotaRule(userId, linked.input)
 
   // Get user's inbox project if no project_id specified
   let projectId = input.project_id
@@ -403,21 +461,9 @@ export function createTask(options: CreateTaskOptions): Task {
   })
   if (tracked) assertQuotaShape(input)
 
-  // Title-only is judged on what the CALLER sent, before the default reminder
-  // schedule below fills in an rrule — otherwise a title-only reminder would
-  // stop qualifying for enrichment the moment it got its default slot.
-  // A deadline or horizon the caller set is structured input too: enrichment
-  // must not overwrite a desk's explicit deadline with its own reading.
-  const isTitleOnly =
-    !input.due_at &&
-    (input.priority ?? 0) === 0 &&
-    !input.labels?.length &&
-    !input.rrule &&
-    !input.deadline_at &&
-    !input.horizon &&
-    // A deck is the caller's own plan (On deck, 2026-10-20): enrichment must
-    // not land a target on it (a target would take it straight off deck).
-    !input.on_deck_day
+  // Judged on what the CALLER sent (`isTitleOnlyInput`), before the server's
+  // defaults — the reminder slot below, a quota's provisional period above.
+  const isTitleOnly = isTitleOnlyInput(linked.input)
 
   const targetCtx = getTargetContext(userId)
   // 2026-10-21: what the rule's instant is — the deadline when a rule comes

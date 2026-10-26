@@ -22,7 +22,12 @@ export type {
   FeatureProviderType,
   FeatureAIConfig,
 } from './models'
-export { processEnrichmentQueue, enrichSingleTask, getEnrichmentPipelineStatus } from './enrichment'
+export {
+  processEnrichmentQueue,
+  enrichSingleTask,
+  describeEnrichment,
+  getEnrichmentPipelineStatus,
+} from './enrichment'
 export { logAIActivity, getAIActivity } from './activity'
 export { purgeOldAIActivity } from './purge'
 export { generateWhatsNext, getCachedWhatsNext } from './whats-next'

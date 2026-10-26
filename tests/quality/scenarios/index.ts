@@ -11,6 +11,7 @@ import { enrichmentLabelScenarios } from './enrichment-labels'
 import { enrichmentDictationScenarios } from './enrichment-dictation'
 import { enrichmentRecurrenceScenarios } from './enrichment-recurrence'
 import { enrichmentReminderScenarios } from './enrichment-reminders'
+import { enrichmentQuotaScenarios } from './enrichment-quotas'
 import { enrichmentVoiceScenarios } from './enrichment-voice'
 import { enrichmentEdgeScenarios } from './enrichment-edge'
 import { enrichmentContextScenarios } from './enrichment-context'
@@ -36,6 +37,7 @@ export const enrichmentScenarios: AITestScenario[] = [
   ...enrichmentDictationScenarios,
   ...enrichmentRecurrenceScenarios,
   ...enrichmentReminderScenarios,
+  ...enrichmentQuotaScenarios,
   ...enrichmentVoiceScenarios,
   ...enrichmentEdgeScenarios,
   ...enrichmentContextScenarios,
