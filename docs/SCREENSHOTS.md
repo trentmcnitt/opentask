@@ -88,7 +88,7 @@ The watch app has three **DEBUG-only** launch-environment hooks for this, all in
 
 Some files are new (Reminders, Quotas, views, widgets, menu bar) and have no page yet; their destinations are suggestions.
 
-The README's three images in `docs/images/` are straight copies of pipeline output: `ios-dashboard-{light,dark}-400.png` from `web/ios-dashboard-{light,dark}-400.png`, and `task-card-ai-insight.png` from `web/web-task-card-ai-insight-light.png`.
+The README's three images in `docs/images/` are straight copies of pipeline output: `ios-dashboard-{light,dark}-400.png` from `web/ios-dashboard-{light,dark}-400.png`, and `filled-task-input-light.png` from `web/filled-task-input-light.png`.
 
 ## Adding a shot
 
