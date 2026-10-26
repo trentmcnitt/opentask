@@ -40,12 +40,19 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 
 ## ✨ Features
 
+### 🗓️ Tasks, reminders, and quotas
+
+- **Targets and deadlines** — A task's target is when it starts nagging: a soft date you can defer as often as you like. Its deadline, when it has one, is the real cutoff — no defer moves it, and every defer stops at it. A deadline with no target of your own gets an automatic one a few days before, or you can set a target relative to it ("the evening before") that moves when the deadline does. [More →](https://opentask.mcnitt.io/docs/concepts/tasks#deadline)
+- **Defer everything** — Bulk defer all overdue tasks in one tap: High-priority tasks move only when nothing lower is left, and Urgent ones always need a deliberate decision. Individual defer with presets, fine-grained adjustments, or custom times.
+- **Nothing quietly falls off** — Undated tasks come back round on the Reminders screen at the pace of their horizon (days, weeks, months, or eventually). A task with a target you picked stays quiet until its heads-up in **Upcoming**: _Tomorrow_ the day before, _Later_ a lead time ahead that you can set per task. [More →](https://opentask.mcnitt.io/docs/concepts/reminders#task-segments)
+- **Repeats** — Repeat on the target or on the deadline, end after a number of times or on a date, and skip ahead past a trip. [More →](https://opentask.mcnitt.io/docs/concepts/recurrence)
+- **Reminders and quotas** — Recurring reminders grouped into periods of the day (Early morning through Evening by default — yours to edit), checked off as a list. Quotas count toward a target per day, week, month, or year, or every N days, weeks, or months ("read 5 times a week", "back up the laptop every 2 weeks"), grouped and filtered by label. Unmet quotas also show up among the day's reminders. [More →](https://opentask.mcnitt.io/docs/concepts/quotas)
+- **Optional task queue** — A server-wide switch (`OPENTASK_TASK_QUEUE=1`) for breaking the defer treadmill. The day turns at your **Day starts at** time (3:00 AM by default) instead of midnight; whatever you kept deferring is taken off the overdue list into a queue at the start of the next day; you can put a task **on deck** for a day without it nagging; and a deadline with no target of your own waits on a **deadlines page** from its lead day instead of getting an automatic target. [More →](https://opentask.mcnitt.io/docs/concepts/task-queue)
+
 ### 📱 The apps (web, iPhone, Apple Watch, Mac)
 
 - **Mobile-first PWA** — Installable on iOS and Android. Designed for phones first, looks great on desktop too.
-- **Defer everything** — Bulk defer all overdue tasks in one tap. Individual defer with presets, fine-grained adjustments, or custom times.
-- **Native Apple apps** — An iPhone app with home-screen widgets and rich notifications (defer grids and period checklists right from the lock screen), a full Apple Watch app with its own pages and Smart Stack widgets, and a Mac app with widgets. (Source included — not on the App Store.)
-- **Reminders and quotas** — Recurring reminders grouped into periods of the day (morning, afternoon, evening — yours to edit), checked off as a list. Quotas track a count toward a target per day, week, month, or year ("read 5 times a week").
+- **Native Apple apps** — An iPhone app with home-screen widgets and rich notifications (defer grids and period checklists right from the lock screen), a full Apple Watch app with its own pages and Smart Stack widgets, and a Mac app with widgets and a menu bar item (overdue badge, quick add, one-click defer). (Source included — not on the App Store.) [More →](https://opentask.mcnitt.io/docs/ios/widgets-watch-mac)
 - **Full undo/redo** — Every action is logged and reversible.
 - **Trash & archive** — Deleted tasks go to trash, completed tasks go to archive. Nothing is permanently lost until you say so.
 
@@ -62,18 +69,19 @@ It runs as a single Docker container with SQLite — no Postgres, no Redis, no e
 
 ## 🧠 AI-native task management (optional)
 
-Every task gets AI-generated commentary and an attention score. AI sees your full task list and writes a one-liner — what it means, why it matters, what you might be forgetting.
+Type or dictate a task the way you'd say it, and AI fills in the details. It sets only what your words say — it never guesses a deadline from urgency or a project from the topic — and a quiet notification tells you what it set.
 
 <p align="center">
-  <img src="docs/images/task-card-ai-insight.png" alt="Task card with AI commentary and attention score" width="400">
+  <img src="docs/images/filled-task-input-light.png" alt="Quick add field with a natural-language task typed in" width="500">
 </p>
 
-- **Natural language input** — Type or dictate tasks in plain English. AI extracts the title, due date, recurrence, priority, project, and notes.
-- **Quick Take** — A one-liner as you add a task, aware of the rest of your list.
-- **What's Next** — Recommendations that surface overlooked or forgotten tasks.
-- **Insights** — Each task gets a contextual one-liner and a 0–100 attention score. Filter by Stale, Act Soon, Quick Win, or Misprioritized.
-- **Tested, not hoped** — A 150+ scenario eval suite checks every feature: schema and field checks first, then an LLM judge scoring each answer against a rubric.
-- **Entirely optional** — Disabled by default. Turn it off and every trace of AI disappears from the UI. Works with Claude, GPT-4.1-mini, Grok, DeepSeek, Ollama, and others.
+- **Natural language input** — "Call the dentist next Tuesday at 2pm to reschedule, it's important" becomes a structured task: AI extracts the title, target, recurrence, priority, project, and notes, plus a deadline when you state one, or a target relative to it ("remind me the evening before").
+- **Reminders and quotas too** — Add a reminder as a sentence ("every weekday evening, check the back door") and AI sets its schedule and puts it in your evening period. Add a quota the same way ("lift 3x a week") and AI sets its count and period.
+- **Process** — One dialog works through your Inbox and backlog: AI suggests a project for each Inbox task and spots likely duplicates, alongside rule-based steps for horizons and old targets. You decide; nothing changes on its own.
+- **Tested, not hoped** — A 250+ scenario eval suite checks every feature: schema and field checks first, then an LLM judge scoring each answer against a rubric.
+- **Entirely optional** — Disabled by default. Turn it off and every trace of AI disappears from the UI. Works with Claude, GPT-4.1-mini, Grok, DeepSeek, Ollama, and others, with a separate model for each feature.
+
+More in the [AI docs →](https://opentask.mcnitt.io/docs/setup/ai)
 
 ## 🚀 Quick Start (Docker)
 
@@ -252,29 +260,32 @@ The header value must match an existing OpenTask username (case-insensitive). Us
 
 AI is entirely optional — disabled by default. See [AI-native task management](#ai-native-task-management-optional) above for what it provides. Add `OPENTASK_AI_ENABLED=true` and a provider key to your `.env` file — see `.env.example` for setup with Claude, GPT-4.1-mini, Grok, DeepSeek, and Ollama.
 
+What's Next, Insights, and Quick Take are [shelved](https://opentask.mcnitt.io/docs/setup/ai#shelved-features) until they're redesigned; a server can bring them back with `OPENTASK_AI_UNSHELVE=1`.
+
 ## 🔗 API
 
 Three auth methods, checked in order: **Bearer token** → **Proxy header** → **Session cookie**
 
 Key endpoints:
 
-| Endpoint                         | Method   | Description                      |
-| -------------------------------- | -------- | -------------------------------- |
-| `/api/tasks`                     | GET      | List tasks with filters          |
-| `/api/tasks`                     | POST     | Create a task                    |
-| `/api/tasks/:id`                 | PATCH    | Update task fields               |
-| `/api/tasks/:id`                 | DELETE   | Soft delete to trash             |
-| `/api/tasks/:id/done`            | POST     | Mark done (advances recurring)   |
-| `/api/tasks/:id/snooze`          | POST     | Snooze to future time            |
-| `/api/tasks/bulk/snooze-overdue` | POST     | One-tap snooze all overdue tasks |
-| `/api/tasks/bulk/done`           | POST     | Bulk mark done                   |
-| `/api/tasks/bulk/snooze`         | POST     | Bulk snooze by task IDs          |
-| `/api/undo`                      | POST     | Undo last action                 |
-| `/api/redo`                      | POST     | Redo last undone action          |
-| `/api/projects`                  | GET/POST | List/create projects             |
-| `/api/export`                    | GET      | Export data (JSON or CSV)        |
-| `/api/webhooks`                  | GET/POST | List/create webhooks             |
-| `/api/openapi`                   | GET      | OpenAPI 3.1 spec (no auth)       |
+| Endpoint                         | Method   | Description                            |
+| -------------------------------- | -------- | -------------------------------------- |
+| `/api/tasks`                     | GET      | List tasks with filters                |
+| `/api/tasks`                     | POST     | Create a task                          |
+| `/api/tasks/:id`                 | PATCH    | Update task fields                     |
+| `/api/tasks/:id`                 | DELETE   | Soft delete to trash                   |
+| `/api/tasks/:id/done`            | POST     | Mark done (advances recurring)         |
+| `/api/tasks/:id/snooze`          | POST     | Defer to a later time                  |
+| `/api/tasks/bulk/snooze-overdue` | POST     | One-tap defer all overdue tasks        |
+| `/api/tasks/bulk/done`           | POST     | Bulk mark done                         |
+| `/api/tasks/bulk/snooze`         | POST     | Bulk defer by task IDs                 |
+| `/api/reminders`                 | GET      | Reminders by period, and task segments |
+| `/api/undo`                      | POST     | Undo last action                       |
+| `/api/redo`                      | POST     | Redo last undone action                |
+| `/api/projects`                  | GET/POST | List/create projects                   |
+| `/api/export`                    | GET      | Export data (JSON or CSV)              |
+| `/api/webhooks`                  | GET/POST | List/create webhooks                   |
+| `/api/openapi`                   | GET      | OpenAPI 3.1 spec (no auth)             |
 
 Full API reference with curl examples, webhook setup, and Apple Shortcuts integration: **[Documentation →](https://opentask.mcnitt.io/docs/automation/getting-started)**
 
@@ -298,7 +309,8 @@ src/
 ├── hooks/            # Custom React hooks
 ├── lib/              # Utilities
 └── types/            # TypeScript types
-ios/                  # Native iOS companion app (SwiftUI + WKWebView)
+ios/                  # Native iPhone and Apple Watch apps (SwiftUI; the iPhone app wraps the PWA)
+macos/                # Native Mac app with widgets and a menu bar item
 tests/                # Behavioral, integration, E2E, and AI quality tests
 docs/                 # Product spec, design rationale, API guide, roadmap
 ```
@@ -318,7 +330,7 @@ npm run dev
 # Open http://localhost:3000 — login: dev / dev
 ```
 
-[CLAUDE.md](CLAUDE.md) has detailed development conventions for AI-assisted development.
+[AGENTS.md](AGENTS.md) has detailed development conventions for AI-assisted development.
 
 ## 👤 Author
 
