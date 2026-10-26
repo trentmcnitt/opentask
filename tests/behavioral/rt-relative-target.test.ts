@@ -731,7 +731,10 @@ describe('RT-G: guards (plan §8)', () => {
       'src/core/undo/slot-row.ts': 'period hook (undo/redo)',
       // Unlinks only, beside a dropped/fixed target.
       'src/core/undo/auto-target-fence.ts': 'unlinks only (the undo fence)',
-      'src/core/ai/enrichment.ts': 'unlinks only (a target the AI made fixed)',
+      // PR C (2026-10-24): links through `linkTargetTime` (relative-target.ts,
+      // `resolveTime` at write time), after relative-wording.ts mapped the
+      // period through `resolveTime` too; also unlinks a target it made fixed.
+      'src/core/ai/enrichment.ts': 'links via linkTargetTime (@/core/tasks/relative-target)',
       // THE HEAL (2026-10-24): re-validates a link undo / redo restored
       // against the period's current start — resolving it through the retime
       // path (`collectFieldChanges` with the period sent, i.e. `linkTargetTime`)
@@ -748,6 +751,13 @@ describe('RT-G: guards (plan §8)', () => {
     expect(offenders).toEqual([])
     expect(read(path.join(root, 'src/core/tasks/relative-target.ts'))).toMatch(
       /import \{ resolveTime \} from '@\/lib\/anchor-times'/,
+    )
+    // Enrichment's exemption holds only while it links through those two.
+    expect(read(path.join(root, 'src/core/ai/enrichment.ts'))).toMatch(
+      /import \{ linkTargetTime\b[^}]*\} from '@\/core\/tasks\/relative-target'/,
+    )
+    expect(read(path.join(root, 'src/core/ai/relative-wording.ts'))).toMatch(
+      /import \{ resolveTime\b[^}]*\} from '@\/lib\/anchor-times'/,
     )
   })
 

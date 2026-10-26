@@ -56,6 +56,8 @@ import { stampTargetSet } from '@/core/tasks/target-set'
 import { collectDeckClear } from '@/core/tasks/deck-clear'
 import { getTargetContext } from '@/core/tasks/target-context'
 import { getAnchorTimes } from '@/core/users/anchor-times'
+import { linkTargetTime, type LinkInput } from '@/core/tasks/relative-target'
+import { ValidationError } from '@/core/errors'
 import {
   CHECK_IN_DAY_DEFAULT,
   coerceCheckInDay,
@@ -65,6 +67,7 @@ import {
   hasPickedTarget,
   leadFor,
   relativeOf,
+  relativeOneOffProblem,
   resolveTarget,
   type CheckInDay,
   type RelativeTarget,
@@ -82,6 +85,7 @@ import { parseCadence, buildSchedule } from '@/lib/reminder-rule'
 import { isTracked } from '@/lib/track'
 import { EnrichmentResultSchema } from './types'
 import { stripRepeatPhrase } from './repeat-title'
+import { RELATIVE_CUE, relativeTargetTime, type RelativeTimeContext } from './relative-wording'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
 import { enrichmentApiQuery } from './enrichment-api'
@@ -91,6 +95,7 @@ import { DateTime } from 'luxon'
 import { emitSyncEvent, emitEnrichmentCompleteEvent } from '@/lib/sync-events'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule } from '@/lib/format-rrule'
+import { relativeTargetWords } from '@/lib/editor-target-labels'
 import { getPriorityOption } from '@/lib/priority'
 import { validateLabelsExist, filterAutoCreatableLabels } from '@/core/labels'
 import { notifyEnrichmentFinished } from '@/core/notifications/enrichment-notify'
@@ -446,6 +451,16 @@ const HORIZON_TOAST_LABELS: Record<NonNullable<Task['horizon']>, string> = {
 }
 
 /**
+ * A relative target the AI set (2026-10-24): "the day before at 8:30 PM" — the
+ * target then moves with the deadline.
+ */
+function relativeToastPart(task: Task, fieldsChanged: string[]): string | null {
+  const relative = relativeOf(task)
+  if (task.rrule || !relative || !fieldsChanged.includes('target_days_before')) return null
+  return relativeTargetWords(relative.days_before, relative.time)
+}
+
+/**
  * Build a concise toast description from enrichment results.
  * Shows actual values (not field names): "Tomorrow 9:00 AM · Medium · Shopping"
  */
@@ -465,6 +480,9 @@ function buildEnrichmentDescription(
   if (!task.is_reminder && fieldsChanged.includes('due_at') && task.due_at) {
     parts.push(formatDueTimeParts(task.due_at, userTimezone, dayStart).relative)
   }
+
+  const relative = relativeToastPart(task, fieldsChanged)
+  if (relative) parts.push(relative)
 
   // On deck (D3): a day with no time — "On deck tomorrow", "On deck Sat Oct 24".
   if (fieldsChanged.includes('on_deck_day') && task.on_deck_day) {
@@ -628,7 +646,10 @@ function emitEnrichmentComplete(taskId: number, userId: number, enrichedFields: 
  * workday, and against its own instruction list — see
  * `buildReminderEnrichmentUserPrompt` for why that is a separate prompt rather
  * than a branch inside the task one. The slots come back with the prompt
- * because the sanitizer needs the same ones the model was shown.
+ * because the sanitizer needs the same ones the model was shown — and a
+ * task's prompt lists them too (2026-10-24), for a relative target's period
+ * ("the evening before" → the Evening period), mapped by
+ * `resolveEnrichmentRelative` against the same list.
  */
 function buildPromptFor(
   row: PendingTaskRow,
@@ -643,16 +664,18 @@ function buildPromptFor(
   projects: Array<{ id: number; name: string; shared: number; description: string | null }>,
   textToEnrich: string,
 ): { prompt: string; isReminder: boolean; slots: TimeSlot[]; defaultSlotLabel: string | null } {
+  const slots = listTimeSlots(user.id)
   if (row.is_reminder !== 1) {
     return {
       isReminder: false,
-      slots: [],
+      slots,
       defaultSlotLabel: null,
       prompt: buildEnrichmentUserPrompt({
         timezone: user.timezone,
         morningTime: user.morning_time,
         wakeTime: user.wake_time,
         sleepTime: user.sleep_time,
+        periods: slots,
         projects,
         userContext: user.ai_context,
         taskText: textToEnrich,
@@ -664,7 +687,6 @@ function buildPromptFor(
   // No time cue in the text → the user's default reminder slot (Trent,
   // 2026-09-28), the same slot the reminder was created in. Before that
   // decision it was the slot current at enrichment time.
-  const slots = listTimeSlots(user.id)
   const defaultSlotLabel = defaultReminderSlot(user.id)?.label ?? null
   return {
     isReminder: true,
@@ -708,6 +730,7 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
   const user = {
     ...userRow,
     morning_time: anchors.morning.time,
+    morning_slot_id: anchors.morning.slot_id,
     wake_time: anchors.wake.time,
     sleep_time: anchors.sleep.time,
   }
@@ -808,6 +831,12 @@ async function enrichTask(row: PendingTaskRow): Promise<string[] | null> {
       // A new task: created title-only (createTask's `isTitleOnly`), so no
       // date or rule yet. Re-enriching one that has either is an edit.
       newTask: row.due_at === null && row.rrule === null,
+      // A relative target's time: the periods the prompt listed, and the
+      // Default task time as it is (linked or custom, ruling 10).
+      relative: {
+        slots,
+        defaultTime: { time: user.morning_time, slot_id: user.morning_slot_id },
+      },
     })
   }
 
@@ -838,6 +867,12 @@ export interface PostProcessOptions {
    * never moves its dates that way. Default false.
    */
   newTask?: boolean
+  /**
+   * Relative targets (2026-10-24): the owner's periods and their Default task
+   * time as stored, for `resolveEnrichmentRelative`. Absent: no periods, and
+   * the Default task time is `morningTime`, custom.
+   */
+  relative?: RelativeTimeContext
 }
 
 /**
@@ -849,7 +884,8 @@ export interface PostProcessOptions {
  * "now that" drop → "today" on today's local date → A4's "tomorrow" before
  * the rollover → same-day past /
  * "tomorrow" → unstated past dates →
- * deadline alignment → unnamed-day pin → a repeat's passed start rolled on.
+ * deadline alignment → unnamed-day pin → a repeat's passed start rolled on →
+ * a relative target's time and period (`resolveEnrichmentRelative`).
  */
 export function postProcessTaskDates(
   parsed: EnrichmentResult,
@@ -869,7 +905,12 @@ export function postProcessTaskDates(
   result = dropUnstatedPastDates(result, inputText, timezone, now)
   result = alignTaskModelDates(result, timezone, now)
   result = pinUnnamedDay(result, inputText, timezone, now, opts.dayStart)
-  return opts.newTask ? rollPassedRepeatStart(result, timezone, now, opts.dayStart) : result
+  if (opts.newTask) result = rollPassedRepeatStart(result, timezone, now, opts.dayStart)
+  const relativeCtx = opts.relative ?? {
+    slots: [],
+    defaultTime: { time: opts.morningTime, slot_id: null },
+  }
+  return resolveEnrichmentRelative(result, inputText, relativeCtx, opts.taskId)
 }
 
 /**
@@ -999,6 +1040,15 @@ const PACE_CUE =
  *   recurring cutoff into due_at ("every Friday by 5pm" → due_at Friday 5pm),
  *   as before this model existed.
  *
+ * - RELATIVE TARGETS (2026-10-24, ruling 9: only relative wording makes a
+ *   target relative): `target_days_before` / `target_time` / `target_period`
+ *   are dropped unless the input counts back from a deadline
+ *   (`RELATIVE_CUE`: "the evening before", "2 days before", "the morning
+ *   of"), the result keeps a deadline, and it has no rule. When they
+ *   survive, the target is theirs: `due_at` and the deck day are dropped
+ *   (the target is derived from the deadline when it is written). A
+ *   reminder never gets here — `sanitizeReminderEnrichment` nulls them.
+ *
  * What the guard deliberately leaves to the model: whether a present cue word
  * is used as one ("drop it off before work" has "before" but is a target).
  * Exported for the quality harness, which must judge what production stores.
@@ -1024,7 +1074,79 @@ export function sanitizeTaskModelFields(
     )
     horizon = null
   }
-  return { ...enrichment, deadline_at: deadlineAt, horizon }
+  return sanitizeRelativeOffsets(
+    { ...enrichment, deadline_at: deadlineAt, horizon },
+    inputText,
+    taskId,
+  )
+}
+
+/** The model's relative-target fields, all null. */
+const NO_RELATIVE = {
+  target_days_before: null,
+  target_time: null,
+  target_period: null,
+  target_slot_id: null,
+} as const
+
+/** `sanitizeTaskModelFields`'s relative-target floor (see there). */
+function sanitizeRelativeOffsets(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  taskId?: number,
+): EnrichmentResult {
+  if (enrichment.target_days_before == null) return { ...enrichment, ...NO_RELATIVE }
+  const why = enrichment.rrule
+    ? 'a repeat'
+    : !enrichment.deadline_at
+      ? 'no deadline'
+      : !RELATIVE_CUE.test(inputText)
+        ? 'no wording counted from the deadline'
+        : null
+  if (why) {
+    log.info('ai', `Enrichment[${taskId ?? '-'}]: dropped a relative target (${why})`)
+    return { ...enrichment, ...NO_RELATIVE }
+  }
+  return { ...enrichment, due_at: null, on_deck_day: null }
+}
+
+/**
+ * RELATIVE TARGETS, last (2026-10-24): the offsets that survived
+ * `sanitizeTaskModelFields` turned into what is stored — the time and the
+ * period link (`relativeTargetTime`, the table in relative-wording.ts) —
+ * after every date step, so the deadline is the one written. Dropped, logged,
+ * when the deadline did not survive those steps, or when a time on the deadline day
+ * falls after the deadline's (the API's `after_deadline` 400 — enrichment
+ * never fails a task for it: the deadline stands alone). Local values, like
+ * the rest of the post-process.
+ */
+export function resolveEnrichmentRelative(
+  enrichment: EnrichmentResult,
+  inputText: string,
+  ctx: RelativeTimeContext,
+  taskId?: number,
+): EnrichmentResult {
+  const days = enrichment.target_days_before
+  if (days == null) return { ...enrichment, ...NO_RELATIVE }
+  const deadline = enrichment.deadline_at
+  if (!deadline) {
+    log.info('ai', `Enrichment[${taskId ?? '-'}]: dropped a relative target (deadline dropped)`)
+    return { ...enrichment, ...NO_RELATIVE }
+  }
+  const at = relativeTargetTime(enrichment, inputText, ctx)
+  const deadlineClock = /T(\d{2}:\d{2})/.exec(deadline)?.[1]
+  if (days === 0 && deadlineClock && at.time > deadlineClock) {
+    log.info(
+      'ai',
+      `Enrichment[${taskId ?? '-'}]: dropped a relative target (${at.time} on the deadline day is after the deadline)`,
+    )
+    return { ...enrichment, ...NO_RELATIVE }
+  }
+  log.info(
+    'ai',
+    `Enrichment[${taskId ?? '-'}]: relative target ${days} day(s) before at ${at.time} (${at.source})`,
+  )
+  return { ...enrichment, target_time: at.time, target_slot_id: at.slot_id }
 }
 
 /**
@@ -2299,6 +2421,8 @@ export function sanitizeReminderEnrichment(
     project_name: null,
     auto_snooze_minutes: null,
     recurrence_mode: null,
+    // Relative targets (2026-10-24): a reminder has no target to count back.
+    ...NO_RELATIVE,
   }
 
   // No usable rule: keep whatever the reminder already had rather than
@@ -2668,6 +2792,9 @@ function collectEnrichmentTarget(
   const deck = collectEnrichmentDeck(task, enrichment, opts.tracked, changes)
   const dropPick = deck.dropPick
   const autoEligible = !rrule && !task.is_reminder && !opts.tracked
+  const aiRelative = autoEligible
+    ? enrichmentRelativeWrite(enrichment, opts.userId, deadlineAt, targetCtx.timezone)
+    : null
   const resolved = resolveTarget(
     {
       dueAt: dropPick ? null : (opts.proposedDue ?? task.due_at),
@@ -2680,7 +2807,7 @@ function collectEnrichmentTarget(
       // target — "by Friday" leaves the task target-less, on the page from
       // its lead day.
       leads: taskQueueEnabled(),
-      ...enrichmentRelative(task, autoEligible),
+      ...enrichmentRelative(task, autoEligible, aiRelative),
     },
     targetCtx,
   )
@@ -2689,7 +2816,7 @@ function collectEnrichmentTarget(
     changes.values.push(resolved.dueAt)
     changes.fieldsChanged.push('due_at')
   }
-  collectEnrichmentRelativeClear(task, resolved.relative, changes)
+  collectEnrichmentRelative(task, resolved.relative, aiRelative, changes)
   if (resolved.auto !== task.target_auto) {
     changes.setClauses.push('target_auto = ?')
     changes.values.push(resolved.auto ? 1 : 0)
@@ -2740,11 +2867,92 @@ function collectEnrichmentTarget(
 /**
  * Relative targets (2026-10-24): a relative one-off's target follows a
  * deadline the AI moves, and a date the AI picks makes it fixed — the same
- * `resolveTarget` rules as every writer. (Enrichment SETTING offsets is PR C.)
+ * `resolveTarget` rules as every writer. A relative target the AI READ
+ * (`enrichmentRelativeWrite`) is sent as written: `resolveTarget` derives
+ * the target from it.
  */
-function enrichmentRelative(task: Task, autoEligible: boolean) {
+function enrichmentRelative(task: Task, autoEligible: boolean, aiRelative: AiRelative | null) {
   if (!autoEligible) return {}
+  if (aiRelative) return { relative: aiRelative.relative, relativeWritten: true }
   return { relative: task.rrule ? null : relativeOf(task) }
+}
+
+/** The relative target's columns: the AI's written, or a stored one the write made fixed cleared. */
+function collectEnrichmentRelative(
+  task: Task,
+  left: RelativeTarget | null | undefined,
+  aiRelative: AiRelative | null,
+  changes: FieldChanges,
+): void {
+  if (aiRelative && left) collectEnrichmentRelativeWrite(task, aiRelative, changes)
+  else collectEnrichmentRelativeClear(task, left, changes)
+}
+
+/** A relative target the AI read, as written: the offsets and the period link. */
+interface AiRelative {
+  relative: RelativeTarget
+  slotId: number | null
+}
+
+/**
+ * RELATIVE TARGETS THE AI SETS (2026-10-24, PR C): the offsets
+ * `resolveEnrichmentRelative` mapped ("the evening before" → 1 day, the
+ * Evening period), on a one-off with a deadline. The link is resolved at
+ * WRITE time like every writer's (`linkTargetTime`, through `resolveTime`):
+ * the period's start now, and the OWNER's period — a period deleted since the
+ * prompt leaves the mapped time as a custom one. Null — the deadline alone
+ * stands — when a time on the deadline day is after the deadline (the API's
+ * `after_deadline` 400; enrichment never fails a task for it).
+ */
+function enrichmentRelativeWrite(
+  enrichment: EnrichmentResult,
+  ownerId: number,
+  deadlineAt: string | null,
+  timezone: string,
+): AiRelative | null {
+  const days = enrichment.target_days_before
+  const time = enrichment.target_time
+  if (days == null || time == null || deadlineAt === null) return null
+  let relative: RelativeTarget = { days_before: days, time }
+  let slotId: number | null = null
+  if (enrichment.target_slot_id != null) {
+    try {
+      const linked = linkTargetTime<LinkInput>(ownerId, {
+        target_days_before: days,
+        target_slot_id: enrichment.target_slot_id,
+      })
+      relative = { days_before: days, time: linked.input.target_time ?? time }
+      slotId = linked.link ?? null
+    } catch (err) {
+      if (!(err instanceof ValidationError)) throw err
+      log.info('ai', `Enrichment: period ${enrichment.target_slot_id} is gone — a custom time`)
+    }
+  }
+  if (relativeOneOffProblem(relative, deadlineAt, timezone)) {
+    log.info('ai', 'Enrichment: a relative target after the deadline dropped')
+    return null
+  }
+  return { relative, slotId }
+}
+
+/** The AI's relative target written: the three columns, in the same snapshot as `due_at`. */
+function collectEnrichmentRelativeWrite(
+  task: Task,
+  written: AiRelative,
+  changes: FieldChanges,
+): void {
+  // Spelled out (not a template): the RT-G02 / RT-G03 guards read these writes.
+  const columns: Array<[keyof Task, string, number | string | null]> = [
+    ['target_days_before', 'target_days_before = ?', written.relative.days_before],
+    ['target_time', 'target_time = ?', written.relative.time],
+    ['target_slot_id', 'target_slot_id = ?', written.slotId],
+  ]
+  for (const [column, clause, value] of columns) {
+    if (task[column] === value) continue
+    changes.setClauses.push(clause)
+    changes.values.push(value)
+    changes.fieldsChanged.push(column)
+  }
 }
 
 /**
@@ -3003,6 +3211,7 @@ function withoutDateFields(
     rrule: null,
     recurrence_mode: null,
     auto_snooze_minutes: null,
+    ...NO_RELATIVE,
   }
 }
 

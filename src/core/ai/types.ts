@@ -53,6 +53,40 @@ export const EnrichmentResultSchema = z.object({
     .refine((val) => val === null || !isNaN(new Date(val).getTime()), {
       message: 'deadline_at must be a valid ISO 8601 datetime',
     }),
+  // RELATIVE TARGETS (2026-10-24, plan §5): a target counted back from the
+  // deadline ("the evening before", "2 days before"). Right after deadline_at
+  // because they are read from it. Default null like deadline_at, so a text
+  // fallback written without them still parses; the code turns the answer
+  // into the stored (days, time, period link) — `mapRelativeTarget`
+  // (relative-wording.ts). `target_time` is checked with a refine, not a
+  // regex: a `pattern` in the structured-output schema is unproven there.
+  target_days_before: z
+    .number()
+    .int()
+    .min(0)
+    .max(366)
+    .nullable()
+    .default(null)
+    .describe(
+      'Only for a target counted back from the deadline: whole days before the deadline\'s day ("the day before" / "the evening before" → 1, "2 days before" → 2, "the morning of" → 0). Otherwise null',
+    ),
+  target_time: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      'With target_days_before: "HH:MM" (24-hour) only when the user said a clock time for it ("at 6pm the day before" → "18:00"); otherwise null',
+    )
+    .refine((val) => val === null || /^([01]\d|2[0-3]):[0-5]\d$/.test(val), {
+      message: 'target_time must be HH:MM',
+    }),
+  target_period: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      'With target_days_before: the part of the day the user said, in their word ("evening", "night", "morning"), written as a listed reminder period\'s exact name when their word is that name; null when they said none',
+    ),
   horizon: z
     .enum(HORIZON_ORDER)
     .nullable()
@@ -93,8 +127,23 @@ export const EnrichmentResultSchema = z.object({
  * (yyyy-MM-dd), with `due_at` null. It is NOT in the schema the model sees:
  * the model only ever writes a bare date, and the code decides the deck.
  */
-export type EnrichmentResult = z.infer<typeof EnrichmentResultSchema> & {
+export type EnrichmentResult = Omit<
+  z.infer<typeof EnrichmentResultSchema>,
+  'target_days_before' | 'target_time' | 'target_period'
+> & {
+  // Relative targets (2026-10-24): optional here (the schema always fills
+  // them, null), so an answer built in code without them still types.
+  target_days_before?: number | null
+  target_time?: string | null
+  target_period?: string | null
   on_deck_day?: string | null
+  /**
+   * RELATIVE TARGETS (2026-10-24): the reminder period the relative target's
+   * time follows, or null for a custom time — set by `mapRelativeTarget`
+   * from `target_period` (then `target_time` is that period's start). Not in
+   * the schema: the model names a period, the code links it.
+   */
+  target_slot_id?: number | null
 }
 
 /**

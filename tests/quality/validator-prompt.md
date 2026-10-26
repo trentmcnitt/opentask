@@ -62,6 +62,16 @@ The output has `on_deck_day` (a local date, `YYYY-MM-DD`) beside `due_at`. **A d
 - Between local midnight and the user's rollover (the harness uses 7:00 AM; the run's now is in metadata), "tomorrow" means the coming day — the CALENDAR TODAY — for decks and targets alike. "tomorrow" at 00:30 on Oct 21 → `on_deck_day` 2026-10-21; "tomorrow at 3pm" at 00:30 on Oct 21 → `due_at` 2026-10-21T15:00; at 23:30 on Oct 20 both are Oct 21.
 - The quality-notes of older scenarios may still say "due_at should be tomorrow" for a day with no time; read that as the DAY, now carried by `on_deck_day`.
 
+### 2d. Relative targets (2026-10-24)
+
+A target counted back from a stated deadline ("remind me the evening before", "the morning of", "2 days before") is `target_days_before` + `target_time` (+ `target_slot_id` when it follows one of the user's periods); `due_at` and `on_deck_day` are then **null** — that null is correct, the app derives the target from the deadline. The output's `target_time` / `target_slot_id` are what the CODE mapped (`target_period` is the model's word), and `target_slot_label` names the linked period.
+
+- Set ONLY from wording counted back from a deadline the input states. A named day ("by Monday, do it Sunday morning") is a fixed `due_at` with the three null; no deadline (an occasion like a birthday, an undated trip) or a repeat → all null. Offsets on any other scenario are a **failure**.
+- `target_days_before`: "the day before" / "the evening before" / "the night before" → 1, "N days before" → N, "the morning of" → 0.
+- The model's `target_period` is the user's own word, or a listed period's exact name when the word is that name — never a different period the time falls in ("evening" with periods AM / PM / Night is "evening", not "Night"). The model's `target_time` is set only for a clock time said for the reminder (the deadline's own time is not it).
+- Mapped time: a clock time said → that time; "morning" or no part of day → the Default task time (the scenario's `morningTime`, 9:00 by default), even with a period named Morning; a period's exact name → linked, at its start; another part of day → 13:00 afternoon, 18:00 evening, 20:00 night.
+- The reminder wording must not be lost when the three are null (a repeat, no date): it stays in the title or notes, in the user's words — no added advice.
+
 ### 3. Priority Inference
 
 - Was an explicit priority signal correctly captured? ("URGENT" = 4, "high priority" = 3)

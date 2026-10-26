@@ -51,6 +51,12 @@ export interface EnrichmentInput {
   /** User's sleep time preference in HH:MM format (default: '22:00') */
   sleepTime?: string
   /**
+   * The user's reminder periods, in order (default: DEFAULT_TIME_SLOTS) —
+   * listed in the prompt for a relative target's period (2026-10-24). In
+   * the output, `target_slot_id` is the 1-based position in this list.
+   */
+  slots?: Array<{ label: string; start_time: string }>
+  /**
    * The current moment for this scenario, as a local datetime in `timezone`
    * ("2026-10-16T23:52"). The prompt's "Current local time", every
    * post-process and the `~soon` / `~in-hours` / `~hours-range` matchers all
