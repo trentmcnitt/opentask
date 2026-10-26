@@ -555,6 +555,52 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(back.taskSegments.last?.tasks.map(\.recurring), [false, true])
     }
 
+    /// Upcoming's two sections (2026-10-25 on the server; native 2026-10-26):
+    /// every Upcoming row's `upcoming_section`, Tomorrow's rows first, a
+    /// considered row in its section too; the split's per-section "n of m";
+    /// the cache round trip keeps the section; no other kind carries it.
+    func testRemindersUpcomingSections() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-upcoming-sections")
+        let upcoming = try XCTUnwrap(payload.taskSegments.first { $0.kind == .upcoming })
+        XCTAssertEqual(
+            upcoming.tasks.map(\.id),
+            [Fixtures.passport, Fixtures.sectionTomorrow, Fixtures.sectionSeen, Fixtures.sectionLater]
+        )
+        XCTAssertEqual(upcoming.tasks.map(\.upcomingSection), [.tomorrow, .tomorrow, .later, .later])
+        XCTAssertEqual(upcoming.tasks.map(\.state), [.waiting, .waiting, .considered, .waiting])
+
+        let raw = try Fixtures.object("reminders-upcoming-sections")
+        let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
+        let rawUpcoming = try XCTUnwrap(rawSegments.first { $0["horizon"] as? String == "upcoming" })
+        let rawRows = try XCTUnwrap(rawUpcoming["tasks"] as? [[String: Any]])
+        XCTAssertEqual(rawRows.map { $0["upcoming_section"] as? String }, ["tomorrow", "tomorrow", "later", "later"])
+        for segment in rawSegments where segment["horizon"] as? String != "upcoming" {
+            for row in segment["tasks"] as? [[String: Any]] ?? [] {
+                XCTAssertNil(row["upcoming_section"], "only Upcoming rows carry a section")
+            }
+        }
+        for segment in payload.taskSegments where segment.kind != .upcoming {
+            XCTAssertTrue(segment.tasks.allSatisfy { $0.upcomingSection == nil })
+        }
+
+        let sections = UpcomingSections.split(upcoming.tasks)
+        XCTAssertEqual(sections.map(\.section), [.tomorrow, .later])
+        XCTAssertEqual(sections.map { $0.waiting.map(\.id) }, [
+            [Fixtures.passport, Fixtures.sectionTomorrow], [Fixtures.sectionLater],
+        ])
+        XCTAssertEqual(sections.map(\.countText), ["0 of 2", "1 of 2"])
+        XCTAssertEqual(sections.map(\.finished), [false, false])
+        // The segment's own "X of Y" stays whole.
+        XCTAssertEqual(ReminderDayProgress.PeriodCount(upcoming).text, "1 of 4")
+
+        let back = try JSONDecoder().decode(RemindersPayload.self, from: JSONEncoder().encode(payload))
+        XCTAssertEqual(back.taskSegments, payload.taskSegments)
+        XCTAssertEqual(
+            back.taskSegments.first { $0.kind == .upcoming }?.tasks.map(\.upcomingSection),
+            [.tomorrow, .tomorrow, .later, .later]
+        )
+    }
+
     /// `POST /api/task-segments/target-today` on a repeating task: since §6
     /// (2026-10-12) its target moves (the occurrence stays), so it is
     /// targeted, and `skipped_recurring` is present and empty.
