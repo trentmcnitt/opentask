@@ -757,7 +757,7 @@ export function effectiveAttempts(
    * `attempts_counted_through` names an OpenTask day (same format). Omitted
    * or null: local calendar days, as before the queue.
    */
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): { attempts: number; countedThrough: string | null } {
   const stored = {
     attempts: task.attempts ?? 0,
@@ -817,7 +817,7 @@ export function putBackCountedThrough(
    * then OPENTASK days, like `effectiveAttempts` — so a put-back between
    * midnight and the rollover checkpoints the right day. Null: calendar days.
    */
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): string {
   const dayOf = (instant: Date): DateTime =>
     openTaskLocalDay(instant, timezone, rolloverTime ?? CALENDAR_DAY_START)
@@ -2490,7 +2490,7 @@ export function deckRefusal(
   day: string,
   ctx: TargetContext,
   now: Date,
-  rolloverTime: string | null = null,
+  rolloverTime: string | null,
 ): DeckRefusal | null {
   if (!task.deadline_at) return null
   if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'

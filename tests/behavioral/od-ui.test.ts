@@ -194,22 +194,22 @@ describe('OD-UI-01: the hold menu days', () => {
   test('the limit: up to the deadline day (the deadlines page, 2026-10-22), stored or staged', () => {
     const ctx = { timezone: TZ, morningTime: '08:30' }
     // Deadline Tue Jan 20 17:00 → the latest is Tue Jan 20 itself.
-    expect(deckLimit({ deadline_at: local(5, 17), due_at: null }, TZ, NOW)).toEqual({
+    expect(deckLimit({ deadline_at: local(5, 17), due_at: null }, TZ, NOW, null, null)).toEqual({
       latestDay: '2026-01-20',
       caption: 'deadline Tue',
     })
     // A staged deadline (the Quick panel): the same, Tue Jan 27.
     const staged = { deadline_at: local(12, 23), due_at: null }
-    expect(deckLimit(staged, TZ, NOW, ctx)).toEqual({
+    expect(deckLimit(staged, TZ, NOW, ctx, null)).toEqual({
       latestDay: '2026-01-27',
       caption: 'deadline Tue',
     })
     // A passed deadline: no day left (the latest is yesterday).
-    expect(deckLimit({ deadline_at: local(-1, 17), due_at: null }, TZ, NOW)).toEqual({
+    expect(deckLimit({ deadline_at: local(-1, 17), due_at: null }, TZ, NOW, null, null)).toEqual({
       latestDay: '2026-01-14',
       caption: 'deadline passed',
     })
-    expect(deckLimit({ deadline_at: null, due_at: null }, TZ, NOW)).toBeNull()
+    expect(deckLimit({ deadline_at: null, due_at: null }, TZ, NOW, null, null)).toBeNull()
   })
 
   test('the date picker opens on a day that can be chosen', () => {

@@ -20,6 +20,17 @@
  * - HAND-ROLLED DAY-START MINUTES: `% 1440`, or `parseHHMM(` of a rollover /
  *   day start, outside the helpers (`minutesIntoDay`).
  *
+ * V2 ("OpenTask day everywhere" part 2, Trent 2026-10-26 — the audit found
+ * eleven user-day entry points v1 missed, through helpers and weekdays):
+ * the day operations include the date PARTS (a weekday, a week / month /
+ * year, a date format, `calendarDateOf(`, a `.plus({ days` step); a line
+ * starting with `.` is joined to the one it continues (a chained
+ * `.startOf('day')` on its own line); and every `const` / `let` assigned
+ * from the clock — a ternary included, or from a variable that was — is
+ * tainted. The behaviour itself is pinned by TQ-LN
+ * (tests/behavioral/tq-late-night.test.ts): every entry point answers at
+ * 00:30 Monday (3:00 AM start) exactly as at 23:30 Sunday.
+ *
  * "DAY STARTS AT" PR 2 (Trent, 2026-10-24: EVERYTHING uses the OpenTask
  * date) emptied the "PR 2 moves this" and "needs a ruling" entries: the Now
  * view, the Today pill, Upcoming, the horizon segments, check_in_day, the
@@ -31,7 +42,11 @@
  * switch-off path, or not a user's day at all. The count is exact, and an
  * entry that no longer matches fails too, so the list stays true.
  *
- * TQ-G03 covers the CLIENT (and every default): the only places that choose
+ * TQ-G04 is structural: a type with `now: Date` and `timezone: string` must
+ * carry `dayStart` / `rolloverTime` too (or be listed with its reason).
+ *
+ * TQ-G03 covers the CLIENT (and every default — v2: no `dayStart` /
+ * `rolloverTime` default of any kind, and `'00:00'` only in its definition): the only places that choose
  * a day start are `dayBoundaryForUser` (server) and `useDayStart` (browser);
  * `CALENDAR_DAY_START` (midnight) appears nowhere else but the switch-off
  * paths listed there, and no function defaults its day start to midnight —
@@ -599,11 +614,67 @@ describe('TQ-G03: the user chooses the day — no default midnight, on the serve
     expect(defaults).toEqual([])
   })
 
+  // TQ-G03b v2 ("OpenTask day everywhere" part 2, 2026-10-26): no DEFAULT
+  // day start of any kind — `dayStart: string = '00:00'` (naturalSlotIndex
+  // had one) or `rolloverTime: string | null = null` (the calendar, five
+  // functions had one) — anywhere in src/. A caller that forgets it gets a
+  // type error, not midnight. The allowlist is exact (key + count).
+  const DAY_START_DEFAULT = /\b(dayStart|rolloverTime)\??\s*:\s*string(\s*\|\s*null)?\s*=(?!=)/
+  const DAY_START_DEFAULT_ALLOWLIST: Record<string, [number, string]> = {}
+  test('TQ-G03b2: no parameter or field gives a day start a default value (exact allowlist)', () => {
+    const found = new Map<string, number>()
+    for (const f of srcFiles) {
+      for (const l of codeLines(path.join(root, f)).filter((x) => DAY_START_DEFAULT.test(x))) {
+        found.set(`${f}: ${l}`, (found.get(`${f}: ${l}`) ?? 0) + 1)
+      }
+    }
+    const listed = Object.fromEntries(
+      Object.entries(DAY_START_DEFAULT_ALLOWLIST).map(([k, [n]]) => [k, n]),
+    )
+    expect(Object.fromEntries(found)).toEqual(listed)
+  })
+
+  // The MIDNIGHT LITERAL: `'00:00'` in code anywhere in src/ is the day
+  // start's definition only — every other midnight is `CALENDAR_DAY_START`
+  // (whose files TQ-G03 lists), so it can be found. Exact (key + count).
+  const MIDNIGHT_LITERAL_ALLOWLIST: Record<string, [number, string]> = {
+    "src/lib/opentask-day.ts: export const CALENDAR_DAY_START = '00:00'": [
+      1,
+      'its definition: midnight as a day start',
+    ],
+  }
+  test("TQ-G03b3: '00:00' appears in src/ code only where the allowlist says (exact)", () => {
+    const found = new Map<string, number>()
+    for (const f of srcFiles) {
+      for (const l of codeLines(path.join(root, f)).filter((x) => /['"]00:00['"]/.test(x))) {
+        found.set(`${f}: ${l}`, (found.get(`${f}: ${l}`) ?? 0) + 1)
+      }
+    }
+    const listed = Object.fromEntries(
+      Object.entries(MIDNIGHT_LITERAL_ALLOWLIST).map(([k, [n]]) => [k, n]),
+    )
+    expect(Object.fromEntries(found)).toEqual(listed)
+    for (const [key, [, reason]] of Object.entries({
+      ...MIDNIGHT_LITERAL_ALLOWLIST,
+      ...DAY_START_DEFAULT_ALLOWLIST,
+    })) {
+      expect(reason.length, key).toBeGreaterThan(10)
+    }
+  })
+
   test('TQ-G03c: the browser reads its day start from useDayStart — no client file asks the server helpers or picks midnight', () => {
+    // v2 (part 2, 2026-10-26): src/lib too — the pure helpers the browser
+    // runs — but for the day's own helpers and the files TQ-G03 lists.
+    const libExempt = new Set([
+      'src/lib/opentask-day.ts',
+      'src/lib/browser-day-start.ts',
+      ...Object.keys(CALENDAR_DAY_START_FILES),
+    ])
     const client = srcFiles.filter(
       (f) =>
         (f.startsWith('src/components/') ||
           f.startsWith('src/hooks/') ||
+          (f.startsWith('src/lib/') && !libExempt.has(f)) ||
           (f.startsWith('src/app/') && !f.startsWith('src/app/api/'))) &&
         f !== 'src/components/PreferencesProvider.tsx',
     )
@@ -613,5 +684,74 @@ describe('TQ-G03: the user chooses the day — no default midnight, on the serve
       ),
     )
     expect(offenders).toEqual([])
+  })
+})
+
+/**
+ * TQ-G04 (structural, "OpenTask day everywhere" part 2, 2026-10-26): a type
+ * that carries a moment (`now: Date`) and a zone (`timezone: string`) is
+ * asking "which day is it" — so it must carry the user's day too
+ * (`dayStart` / `rolloverTime`). `EveryTimeContext` had `now` and `timezone`
+ * and no day start, so every-time's weekday default read the calendar. Every
+ * interface and object type in src/ (exported or not); the allowlist is
+ * exact, each with its reason.
+ */
+describe('TQ-G04: a type with now + timezone carries the day start', () => {
+  const root = process.cwd()
+  const NOW_TZ_ALLOWLIST: Record<string, string> = {
+    'src/components/DueDateFilterBar.tsx: DueDateFilterBarProps':
+      'component props: the component reads the user’s day itself (`useDayStart`) for its buckets',
+    'src/components/ProjectFilterBar.tsx: ProjectFilterBarProps':
+      'component props: the component reads the user’s day itself (`useDayStart`) for its counts',
+    'src/hooks/useFilterState.ts: UseFilterStateOptions':
+      'a hook’s options: the hook reads the user’s day itself (`useDayStart`) and passes it to `applyTaskFilters`',
+    'src/core/tasks/bulk.ts: DeferContext':
+      'carries the day as `rollover`, the next day-start instant (`nextRollover` of the user’s day start)',
+    'src/core/tasks/deck.ts: DeckTasksOptions':
+      'server options with `userId`: `deckTasks` reads the owner’s day (`dayBoundaryForUser(opts.userId)`)',
+  }
+
+  function nowTimezoneTypes(): Map<string, boolean> {
+    const out = new Map<string, boolean>()
+    for (const f of files(path.join(root, 'src'))) {
+      const text = fs.readFileSync(f, 'utf8')
+      const head = /(?:export\s+)?(?:interface|type)\s+(\w+)[^{=;]*(?:=\s*)?\{/g
+      let m: RegExpExecArray | null
+      while ((m = head.exec(text))) {
+        let i = m.index + m[0].length
+        let depth = 1
+        while (depth && i < text.length) {
+          if (text[i] === '{') depth++
+          else if (text[i] === '}') depth--
+          i++
+        }
+        const body = text
+          .slice(m.index + m[0].length, i - 1)
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\/\/.*$/gm, '')
+        if (/\bnow\??\s*:\s*Date\b/.test(body) && /\btimezone\??\s*:\s*string\b/.test(body)) {
+          out.set(
+            `${path.relative(root, f)}: ${m[1]}`,
+            /\b(dayStart|rolloverTime)\??\s*:/.test(body),
+          )
+        }
+      }
+    }
+    return out
+  }
+
+  test('TQ-G04: every type with now: Date and timezone: string has dayStart or rolloverTime (or a listed reason)', () => {
+    const missing = [...nowTimezoneTypes()]
+      .filter(([key, has]) => !has && !(key in NOW_TZ_ALLOWLIST))
+      .map(([key]) => key)
+    expect(missing).toEqual([])
+  })
+
+  test('TQ-G04b: the allowlist is exact and reasoned', () => {
+    const types = nowTimezoneTypes()
+    for (const [key, reason] of Object.entries(NOW_TZ_ALLOWLIST)) {
+      expect(types.get(key), key).toBe(false)
+      expect(reason.length, key).toBeGreaterThan(10)
+    }
   })
 })
