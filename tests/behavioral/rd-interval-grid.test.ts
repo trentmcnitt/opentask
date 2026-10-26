@@ -126,6 +126,7 @@ describe('RD-GRID: an every-N rule runs on its own grid', () => {
       timezone: tz,
       completedAt: new Date(at('2026-11-05T20:00')),
       prevDueAt: occ,
+      dayStart: CALENDAR_DAY_START,
     }
     expect(local(computeNextOccurrence({ ...opts, anchorAt: occ }))).toBe('2026-11-27T09:00')
     expect(computeNextOccurrence({ ...opts, anchorAt: occ })).toEqual(computeNextOccurrence(opts))

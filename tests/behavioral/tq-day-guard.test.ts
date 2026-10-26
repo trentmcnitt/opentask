@@ -408,7 +408,7 @@ const CALENDAR_DAY_START_FILES: Record<string, string> = {
   'src/lib/browser-day-start.ts':
     '`browserDayStart`: the browser’s one rule (`useDayStart`), the same as `dayBoundaryForUser`, and what the page draws with while the day start is unknown',
   'src/lib/task-segments.ts':
-    'a null rollover time (the switch off) read as calendar days: attempts, the put-back, the deadlines page’s day',
+    'a null rollover time (the switch off) read as calendar days: attempts, the put-back, the deadlines page’s day; and `followingOccurrence`’s step from an OCCURRENCE (not a completion): a from_completion rule steps the occurrence’s own date, which for an occurrence at the rule’s time is the same answer under every day start',
   'src/core/tasks/read.ts':
     'the served quota period of a row whose owner rollover time is null (the switch off)',
 }
@@ -711,8 +711,6 @@ describe('TQ-G04: a type with now + timezone carries the day start', () => {
       'component props: the component reads the user’s day itself (`useDayStart`) for its counts',
     'src/hooks/useFilterState.ts: UseFilterStateOptions':
       'a hook’s options: the hook reads the user’s day itself (`useDayStart`) and passes it to `applyTaskFilters`',
-    'src/core/tasks/bulk.ts: DeferContext':
-      'carries the day as `rollover`, the next day-start instant (`nextRollover` of the user’s day start)',
     'src/core/tasks/deck.ts: DeckTasksOptions':
       'server options with `userId`: `deckTasks` reads the owner’s day (`dayBoundaryForUser(opts.userId)`)',
   }

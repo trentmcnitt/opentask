@@ -305,7 +305,7 @@ describe('Skip until: batches, undo and checks', () => {
     // Resolution 7 never lands earlier than the plain skip — the no-date skip's
     // own landing, computed the same way (for from_completion: two weeks from now,
     // Mar 18 at 7:30 CDT). Mar 12 is earlier, so it lands on Mar 18.
-    const plain = nextOccurrenceAfterSkip(task(f.id), tz, new Date())
+    const plain = nextOccurrenceAfterSkip(task(f.id), tz, new Date(), CALENDAR_DAY_START)
     expect(plain).toBe('2026-03-18T12:30:00.000Z')
     skipUntil({ ...u, taskIds: [f.id], until: '2026-03-12' })
     expect(task(f.id).occurrence_at).toBe(plain)

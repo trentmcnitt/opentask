@@ -27,7 +27,7 @@ import {
   seriesEndedBySkip,
   type AdvanceTask,
 } from '@/lib/task-segments'
-import { leadContextFor } from './rollover-time'
+import { dayBoundaryForUser, leadContextFor } from './rollover-time'
 import { withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { logActivity } from '@/core/activity'
@@ -113,7 +113,10 @@ export function skipOccurrence(options: SkipOccurrenceOptions): SkipOccurrenceRe
   // is judged by `nextOrEnd`; skipping the last occurrence ends the series.
   const step =
     recurring && !isTracked(task)
-      ? nextOrEnd(task, userTimezone, { completedAt: new Date() })
+      ? nextOrEnd(task, userTimezone, {
+          completedAt: new Date(),
+          dayStart: dayBoundaryForUser(userId),
+        })
       : null
   const seriesEnded = step?.ended === true
 
@@ -201,9 +204,11 @@ export function seriesEndSkipWords(task: Task): string {
 export function nextOccurrenceAfterSkip(
   task: AdvanceTask,
   timezone: string,
-  now: Date = new Date(),
+  now: Date,
+  /** The user's day boundary: a from_completion rule counts from now's OpenTask date. */
+  dayStart: string,
 ): string | null {
-  const step = nextOrEnd(task, timezone, { completedAt: now })
+  const step = nextOrEnd(task, timezone, { completedAt: now, dayStart })
   return step.ended ? null : step.occurrenceAt
 }
 

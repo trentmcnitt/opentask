@@ -4,7 +4,12 @@
  * Handles both recurring (advance in place) and one-off (archive) tasks.
  */
 
-import { attemptsRolloverTime, leadContextFor, rolloverTimeForUser } from './rollover-time'
+import {
+  attemptsRolloverTime,
+  dayBoundaryForUser,
+  leadContextFor,
+  rolloverTimeForUser,
+} from './rollover-time'
 import { autoTargetToLead } from './auto-target-lead'
 import { rederiveOnReopen } from './relative-target'
 import {
@@ -91,8 +96,13 @@ export function markDone(options: MarkDoneOptions): MarkDoneResult {
   const nowStr = nowUtc()
 
   // Compute state changes
-  const computation = computeMarkDone(task, userTimezone, completedAt, nowStr, () =>
-    rolloverTimeForUser(task.user_id),
+  const computation = computeMarkDone(
+    task,
+    userTimezone,
+    completedAt,
+    nowStr,
+    dayBoundaryForUser(userId),
+    () => rolloverTimeForUser(task.user_id),
   )
 
   const result = withTransaction((tx) => {

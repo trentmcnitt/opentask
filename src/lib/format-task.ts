@@ -10,13 +10,7 @@ import type { SortOption } from '@/lib/task-grouping'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule, withRepeatEnd } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
-import {
-  ageLabel,
-  attemptsLabel,
-  attemptsOffer,
-  isLastOccurrence,
-  repeatRemaining,
-} from '@/lib/task-segments'
+import { ageLabel, attemptsLabel, attemptsOffer, repeatRemaining } from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 
 export interface ClipboardGroup {
@@ -128,9 +122,12 @@ export function formatTaskResponse(task: Task, timezone: string): FormattedTask 
     is_recurring: task.rrule !== null,
     // 2026-10-21: null on a one-off — it has no rule for the anchor to describe.
     repeat_anchor: task.rrule !== null ? task.repeat_anchor : null,
-    // Repeat ends (2026-10-22): `rowToTask` derives them in the owner's zone;
-    // a row read without it is judged here, in the reader's.
-    repeat_last: task.repeat_last ?? isLastOccurrence(task, timezone, now),
+    // Repeat ends (2026-10-22): `rowToTask` derives them in the owner's zone
+    // and day (`isLastOccurrence` needs the owner's day start since
+    // from-completion repeats count OpenTask days, 2026-10-26), on every row
+    // with an end — every server read selects `taskColumns`. A task without
+    // it has no end to judge (the export's rows select none): not the last.
+    repeat_last: task.repeat_last ?? false,
     repeat_remaining: task.repeat_remaining ?? repeatRemaining(task),
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),

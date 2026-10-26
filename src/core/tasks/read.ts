@@ -402,7 +402,12 @@ export function rowToTask(row: TaskRow): Task {
     // with an end. A count is arithmetic; a date end asks the engine once
     // (`isLastOccurrence`).
     if (hasRepeatEnd(task)) {
-      task.repeat_last = isLastOccurrence(task, row.owner_timezone, new Date())
+      task.repeat_last = isLastOccurrence(
+        task,
+        row.owner_timezone,
+        new Date(),
+        rolloverTime ?? CALENDAR_DAY_START,
+      )
       task.repeat_remaining = repeatRemaining(task)
     }
     // Interval quotas (2026-10-16): the current period, served — see

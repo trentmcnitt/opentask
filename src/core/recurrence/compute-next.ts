@@ -19,7 +19,13 @@ import { ValidationError } from '@/core/errors'
 import { ordinalsCount, parseRRule, type RRuleComponents } from './rrule-builder'
 import { parseAnchorTime } from './timezone'
 import { toNaiveLocal, fromNaiveLocal } from './utils'
-import { dayStartMoment, openTaskDayOf, periodOpensAt } from '@/lib/opentask-day'
+import {
+  dayStartMoment,
+  openTaskDayOf,
+  openTaskLocalDay,
+  periodOpensAt,
+  periodOpensOnDate,
+} from '@/lib/opentask-day'
 import { toHHMM } from '@/lib/rrule-draft'
 
 // Map our DOW (0=Mon..6=Sun) to rrule.js Weekday constants
@@ -195,9 +201,8 @@ function gridDtstart(
   return advanceDtstart(base, freq, interval, refNaive, true)
 }
 
-export interface ComputeNextOptions {
+interface ComputeNextCommon {
   rrule: string
-  recurrenceMode: 'from_due' | 'from_completion'
   anchorTime: string | null
   timezone: string
   completedAt: Date
@@ -217,6 +222,21 @@ export interface ComputeNextOptions {
   anchorAt?: Date | null
 }
 
+/**
+ * The options of `computeNextOccurrence`. A call that may run a
+ * 'from_completion' rule — the literal mode, or a task's own mode
+ * (`'from_due' | 'from_completion'`) — must carry `dayStart`, the user's day
+ * boundary (`dayBoundaryForUser` / `useDayStart`; required, never defaulted —
+ * TQ-G03): a from-completion repeat counts from the completion's OpenTask
+ * date (`computeFromCompletion`). A call that only ever runs 'from_due' (the
+ * literal mode) never reads it and may leave it out.
+ */
+export type ComputeNextOptions = ComputeNextCommon &
+  (
+    | { recurrenceMode: 'from_due'; dayStart?: string }
+    | { recurrenceMode: 'from_due' | 'from_completion'; dayStart: string }
+  )
+
 /** A rule with no next occurrence (`computeNextOccurrence` throws it as a 400). */
 export const NEVER_OCCURS_MESSAGE = 'This repeat never occurs again: check its days and months'
 
@@ -232,10 +252,10 @@ export const NEVER_OCCURS_MESSAGE = 'This repeat never occurs again: check its d
  * - Snaps to anchor_time
  */
 export function computeNextOccurrence(options: ComputeNextOptions): Date {
-  const { rrule, recurrenceMode, anchorTime, timezone, completedAt, prevDueAt, anchorAt } = options
+  const { rrule, anchorTime, timezone, completedAt, prevDueAt, anchorAt } = options
 
-  if (recurrenceMode === 'from_completion') {
-    return computeFromCompletion(rrule, anchorTime, timezone, completedAt)
+  if (options.recurrenceMode === 'from_completion') {
+    return computeFromCompletion(rrule, anchorTime, timezone, completedAt, options.dayStart)
   }
 
   return computeFromDue(rrule, anchorTime, timezone, completedAt, prevDueAt ?? null, anchorAt)
@@ -418,17 +438,39 @@ export function occurrencesFromDue(options: {
 /**
  * Compute next occurrence for 'from_completion' mode
  *
- * The date advances from the completion moment by the interval,
- * but the time snaps to anchor_time.
+ * The date advances from the completion's day by the interval, and the time
+ * snaps to the rule's time (`ruleTimeOfDay`).
  *
  * Example: "7 days after last completion" - if completed Wednesday 2pm,
  * next = next Wednesday at anchor_time (e.g., 9am)
+ *
+ * COUNTED FROM THE OPENTASK DAY (Trent, 2026-10-26): the base is the
+ * completion's OpenTask date (`openTaskLocalDay`), not its calendar date. With
+ * a 3:00 AM day start, Done at 00:30 Monday is Sunday's — "every 2 days at
+ * 09:00" lands Tuesday 09:00, exactly as Done at 23:30 Sunday does (it used
+ * to land Wednesday). With a start after 12:00 the same map runs forward: with
+ * 11 PM, Done at Sunday 23:30 is Monday's, so every 2 days lands Wednesday.
+ * The interval is plain calendar maths on that date (Luxon's `plus`, so a
+ * monthly from Jan 31 still lands Feb 28), and the rule's time is placed
+ * WITHIN the landing OpenTask day (`periodOpensOnDate`): a 1:00 AM rule with a
+ * 3:00 AM start is the END of that day, the calendar date after — the rule
+ * skip until's from-completion landing uses (`walkFromCompletion` in
+ * src/core/tasks/skip-until.ts), so Done, skip and skip until agree.
+ *
+ * DST: the time is set the way it always was — the completion's own
+ * DateTime moved to the landing date, then set to the rule's time (Luxon's
+ * `set`: a 02:30 that does not exist moves on by the gap). With midnight
+ * (`CALENDAR_DAY_START`, the task queue off) the OpenTask date is the
+ * calendar date and the landing date is the stepped date, so every answer is
+ * the one it was before (pinned by TQ-LN).
  */
 function computeFromCompletion(
   rruleStr: string,
   anchorTime: string | null,
   timezone: string,
   completedAt: Date,
+  /** The user's day boundary: the completion's OpenTask date is the base. */
+  dayStart: string,
 ): Date {
   const components = parseRRule(rruleStr)
   const completedDt = DateTime.fromJSDate(completedAt).setZone(timezone)
@@ -437,29 +479,36 @@ function computeFromCompletion(
   const { hour, minute } = ruleTimeOfDay(rruleStr, anchorTime)
 
   const interval = components.interval || 1
-  let nextDt: DateTime
+  const baseDay = openTaskLocalDay(completedAt, timezone, dayStart)
+  let stepped: DateTime
 
   switch (components.freq) {
     case 'DAILY':
-      nextDt = completedDt.plus({ days: interval })
+      stepped = baseDay.plus({ days: interval })
       break
     case 'WEEKLY':
-      nextDt = completedDt.plus({ weeks: interval })
+      stepped = baseDay.plus({ weeks: interval })
       break
     case 'MONTHLY':
-      nextDt = completedDt.plus({ months: interval })
+      stepped = baseDay.plus({ months: interval })
       break
     case 'YEARLY':
-      nextDt = completedDt.plus({ years: interval })
+      stepped = baseDay.plus({ years: interval })
       break
     default:
-      nextDt = completedDt.plus({ days: 1 })
+      stepped = baseDay.plus({ days: 1 })
   }
 
-  // Snap to anchor time
-  nextDt = nextDt.set({ hour, minute, second: 0, millisecond: 0 })
+  // The calendar date the rule's time falls on within the landing OpenTask day.
+  const landingDate = periodOpensOnDate(stepped.toISODate()!, toHHMM(hour, minute), dayStart)
+  const landing = DateTime.fromISO(landingDate, { zone: timezone })
 
-  return nextDt.toJSDate()
+  // Move the completion to that date, then snap to the rule's time (two
+  // steps, as `plus` then `set` always did — the same DST resolution).
+  return completedDt
+    .set({ year: landing.year, month: landing.month, day: landing.day })
+    .set({ hour, minute, second: 0, millisecond: 0 })
+    .toJSDate()
 }
 
 /**
