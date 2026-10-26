@@ -52,22 +52,42 @@ export function RowCorner({
         />
       )}
       {attempts >= 1 && <AttemptsTab attempts={attempts} className={edge('attempts')} />}
-      {priority && (
-        <span
-          role="img"
-          data-priority-tab
-          aria-label={priority.name}
-          title={priority.name}
-          className={cn(
-            'flex h-[18px] items-center px-[7px] text-[10.5px] leading-none font-semibold',
-            priority.className,
-            edge('priority'),
-          )}
-        >
-          {priority.text}
-        </span>
-      )}
+      {priority && <PriorityTabMark tab={priority} className={edge('priority')} />}
     </div>
+  )
+}
+
+/**
+ * The priority tab itself — "High" / "Urgent", or "!" / "!!" — in the
+ * corner's strip here, and inline after the title on the rows that have no
+ * card corner to sit in (the reminder rows, the quota prompt rows and the
+ * quota chips, 2026-10-26: `inline` gives it its own small rounding and a
+ * baseline-friendly box). One element, so a tab reads the same everywhere.
+ */
+export function PriorityTabMark({
+  tab,
+  inline = false,
+  className,
+}: {
+  tab: PriorityTab
+  inline?: boolean
+  className?: string
+}) {
+  return (
+    <span
+      role="img"
+      data-priority-tab
+      aria-label={tab.name}
+      title={tab.name}
+      className={cn(
+        'h-[18px] items-center px-[7px] text-[10.5px] leading-none font-semibold',
+        inline ? 'inline-flex rounded-[4px] align-[2px] whitespace-nowrap' : 'flex',
+        tab.className,
+        className,
+      )}
+    >
+      {tab.text}
+    </span>
   )
 }
 
