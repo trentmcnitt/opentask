@@ -16,15 +16,13 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, holdUntil, uniqueTitle } from './fixtures'
+import { test, expect, openTaskDay, holdUntil, uniqueTitle } from './fixtures'
 import type { CDPSession, Locator, Page } from '@playwright/test'
 
 const QUEUE_USER_ID = 2
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 const DAY = 24 * 60 * 60 * 1000
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString()
-/** The user's calendar day, `n` days from today (yyyy-MM-dd). */
-const calendarDay = (n = 0) => DateTime.now().setZone(TZ).plus({ days: n }).toFormat('yyyy-MM-dd')
 
 async function signIn(page: Page) {
   await page.goto('/login')
@@ -316,7 +314,7 @@ test.describe('desktop', () => {
       await expect(r).toHaveCount(0)
       const t = toast(page, `On deck for tomorrow: “${title}”`)
       await expect(t).toBeVisible()
-      await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+      await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
       await expect(bubble(page, id)).toHaveCount(0)
       await t.getByRole('button', { name: 'Undo' }).click()
       await expect.poll(() => deckOf(page, id)).toBeNull()
@@ -343,9 +341,9 @@ test.describe('desktop', () => {
       await expect(deckMenu).toBeVisible()
       expect(await deckOf(page, id)).toBeNull()
       // The day after tomorrow, by its weekday name (maybe the check-in day).
-      const name = DateTime.now().setZone(TZ).plus({ days: 2 }).toFormat('cccc')
+      const name = DateTime.fromISO(await openTaskDay(page, 2), { zone: TZ }).toFormat('cccc')
       await deckMenu.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click()
-      await expect.poll(() => deckOf(page, id)).toBe(calendarDay(2))
+      await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 2))
       await expect(r).toHaveCount(0)
       await expect(bubble(page, id)).toHaveCount(0)
       expect(considers()).toBe(0)
@@ -395,7 +393,7 @@ test.describe('desktop', () => {
       await r.locator('[data-deck-tomorrow]').click()
       await expect(r).toHaveCount(0)
       await expect(toast(page, `On deck for tomorrow: “${title}”`)).toBeVisible()
-      await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+      await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
       const decked = await stateOf(page, id)
       expect(decked.queued_at).toBeNull()
       expect(decked.occurrence_at).toBe(waiting.occurrence_at)
@@ -484,9 +482,9 @@ test.describe('touch', () => {
       await expect(sheet).toBeVisible()
       await expect(bubble(page, id)).toHaveCount(0)
       expect(await deckOf(page, id)).toBeNull()
-      const name = DateTime.now().setZone(TZ).plus({ days: 2 }).toFormat('cccc')
+      const name = DateTime.fromISO(await openTaskDay(page, 2), { zone: TZ }).toFormat('cccc')
       await sheet.getByRole('button', { name: new RegExp(`^${name}`) }).click()
-      await expect.poll(() => deckOf(page, id)).toBe(calendarDay(2))
+      await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 2))
       expect(considers()).toBe(0)
     } finally {
       await trash(page, ids)

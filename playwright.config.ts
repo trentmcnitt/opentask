@@ -25,6 +25,9 @@ const port = Number(process.env.E2E_PORT ?? 3333)
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/globalSetup.ts',
+  // Puts the server's real clock back (POST /api/test/clock) in case a spec
+  // that pinned it (tq-late-night.spec.ts) didn't get to its own afterAll.
+  globalTeardown: './tests/e2e/globalTeardown.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   // One retry in CI, only so a failure leaves a trace behind

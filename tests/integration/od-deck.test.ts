@@ -4,18 +4,25 @@
  *
  * The server runs with OPENTASK_TASK_QUEUE off, as every other file expects;
  * this file turns it on through the test-only switch and off again after.
- * Clock-independent: deck days are User A's (America/Chicago) calendar today
- * and days after it, and every target is days away.
+ * Clock-independent: deck days are User A's (America/Chicago) OpenTask today
+ * and days after it — read from the server's own rule and the user's day
+ * start at each test's start (`openTaskToday`), never the calendar date,
+ * which between midnight and the 3:00 AM day start is a day ahead of it —
+ * and every target is days away.
  */
 
 import { describe, test, expect, beforeEach, afterAll } from 'vitest'
 import { DateTime } from 'luxon'
-import { apiFetch, apiFetchB, resetTestData, setTaskQueue } from './helpers'
+import { addDays } from '@/lib/opentask-day'
+import { apiFetch, apiFetchB, openTaskToday, resetTestData, setTaskQueue } from './helpers'
 
+const TZ = 'America/Chicago' // user A (scripts/seed-test.ts)
 const DAY = 24 * 3600 * 1000
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString()
-/** User A's calendar day, `n` days from today (yyyy-MM-dd). */
-const day = (n: number) => DateTime.now().setZone('America/Chicago').plus({ days: n }).toISODate()!
+/** User A's OpenTask today, set by every `beforeEach` (`openTaskToday`). */
+let today = ''
+/** User A's OpenTask day, `n` days from today (yyyy-MM-dd). */
+const day = (n: number) => addDays(today, n)
 
 async function make(body: Record<string, unknown>): Promise<number> {
   const res = await apiFetch('/api/tasks', { method: 'POST', body })
@@ -41,6 +48,7 @@ describe('On deck over HTTP', () => {
   beforeEach(async () => {
     await resetTestData()
     await setTaskQueue(true)
+    today = await openTaskToday(TZ)
   })
 
   afterAll(async () => {
@@ -185,6 +193,7 @@ describe('On deck over HTTP: repeating tasks (2026-10-20)', () => {
   beforeEach(async () => {
     await resetTestData()
     await setTaskQueue(true)
+    today = await openTaskToday(TZ)
   })
 
   afterAll(async () => {
@@ -287,6 +296,7 @@ describe('On deck over HTTP: review fixes (10-20)', () => {
   beforeEach(async () => {
     await resetTestData()
     await setTaskQueue(true)
+    today = await openTaskToday(TZ)
   })
 
   afterAll(async () => {

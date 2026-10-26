@@ -17,7 +17,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, openTaskDay, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
@@ -218,7 +218,7 @@ for (const viewport of VIEWPORTS) {
         // waiting, with its deck day — a deck is not a consider here (Trent,
         // 10-22), and survives a reload.
         await row(s, later).locator('[data-on-deck]').click({ button: 'right' })
-        const day = DateTime.now().setZone(TZ).plus({ days: 2 })
+        const day = DateTime.fromISO(await openTaskDay(page, 2), { zone: TZ })
         await choice(page, new RegExp(`^${day.toFormat('cccc')}`)).click()
         await expect
           .poll(async () => (await stateOf(page, later)).on_deck_day)
@@ -335,7 +335,7 @@ test.describe('the faded On deck on a picked target', () => {
       await confirm.locator('[data-replace-ok]').click()
       await expect
         .poll(async () => (await stateOf(page, id)).on_deck_day)
-        .toBe(DateTime.now().setZone(TZ).toISODate())
+        .toBe(await openTaskDay(page))
       expect((await stateOf(page, id)).target_at).toBeNull()
     } finally {
       await page.request.patch('/api/user/preferences', { data: { default_grouping: 'project' } })

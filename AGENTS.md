@@ -487,6 +487,10 @@ const tomorrow5pm = DateTime.now().plus({ days: 1 }).set({ hour: 17 })
 
 See `tests/behavioral/format-date.test.ts` and `tests/behavioral/bo-bulk.test.ts` for examples.
 
+**"Today" with the task queue on is the OpenTask day, not the calendar date.** Between midnight and the day start (3:00 AM by default) the server's today is still yesterday's date, so an integration or E2E test that computes "today"/"tomorrow" from the calendar fails in that window (CI, on UTC, runs in it). Read the server's day: `openTaskToday(tz)` (`tests/integration/helpers.ts`) or `openTaskDay(page, n)` (`tests/e2e/fixtures.ts`), both the user's `rollover_time` through `openTaskDayOf`. Keep the real 3:00 AM default; don't seed a midnight day start to hide the difference.
+
+**Pinning the server's clock (test mode only).** `POST /api/test/clock { now: ISO | null }` (404 unless `OPENTASK_TEST_MODE=1`; `src/core/test-clock.ts`) shifts the server process's `Date` by a fixed offset, so it runs on from `now`; `null` puts the real clock back. Pin the browser to the same instant with `page.clock.install`. Known gaps: SQL `'now'` defaults still stamp the real time, and the cron jobs compute on the shifted clock for every user — pin at or before real now, and stamp the task rollover first. Reset it in `afterAll` (the E2E global teardown resets it too). `tests/e2e/tq-late-night.spec.ts` uses it to run the deck flows at 01:30.
+
 ## Deployment
 
 **Local development:** `npm run dev` starts a hot-reloading server on port 3000.
