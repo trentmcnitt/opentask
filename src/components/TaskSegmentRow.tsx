@@ -180,7 +180,8 @@ export function segmentLabel(segment: SegmentView): string {
 /**
  * A segment's colour (2026-10-11, Trent's pick): one teal per horizon, darkest
  * for the soonest — the `--segment-*` tokens in globals.css, light and dark.
- * It fills the segment's bar while it fills (finished is green, like a slot),
+ * It fills the segment's bar while it fills (finished is green, like a slot —
+ * except the deadlines page, `segmentDoneColor`),
  * rings the bar of the page on screen, and colours the segment's title.
  */
 export function segmentColor(horizon: SegmentKind): string {
@@ -194,6 +195,22 @@ export function segmentColor(horizon: SegmentKind): string {
  */
 export function segmentTitleColor(horizon: SegmentKind): string {
   return `var(--segment-title-${horizon})`
+}
+
+/**
+ * A segment's FINISHED colour, where it is not the done green. THE ONE PLACE
+ * a segment kind opts out of green-when-done (2026-10-26, Trent: "change the
+ * color on that one and see what that's like"): the deadlines page — usually
+ * empty, so done from the start of the day — keeps its own teal
+ * (`--deadlines`) when finished: its strip and day-bar fill, its hairline,
+ * its "N of N ✓" and its "Nothing today ✓". `undefined` for every other kind,
+ * which then draws the green classes exactly as before. Each surface takes
+ * it as `doneColor` (a fill) or `doneAccent` (a count or check), beside
+ * `segmentColor` / `segmentTitleColor`. A considered ROW's green circle is
+ * the row's own state and stays green on every page.
+ */
+export function segmentDoneColor(horizon: SegmentKind): string | undefined {
+  return horizon === 'deadlines' ? segmentColor(horizon) : undefined
 }
 
 /** The pager page / section key of a segment — never a slot id ("tasks:days"). */
@@ -215,9 +232,17 @@ export function segmentEmpty(segment: SegmentView): boolean {
 /**
  * "Nothing today ✓" — Trent's words — on an empty segment's page or section.
  * The muted text and the green check of every finished count here (the Tasks
- * card's done line, a finished slot's "N of N ✓").
+ * card's done line, a finished slot's "N of N ✓") — the deadlines page's own
+ * teal there instead (`segmentDoneColor`).
  */
-export function EmptySegmentLine({ className }: { className?: string }) {
+export function EmptySegmentLine({
+  className,
+  doneAccent,
+}: {
+  className?: string
+  /** The segment's finished colour in place of green (`segmentDoneColor`). */
+  doneAccent?: string
+}) {
   return (
     <p
       data-segment-empty
@@ -225,7 +250,9 @@ export function EmptySegmentLine({ className }: { className?: string }) {
     >
       Nothing today
       <Check
-        className="size-3.5 text-green-700 dark:text-green-400"
+        data-done-check
+        className={cn('size-3.5', !doneAccent && 'text-green-700 dark:text-green-400')}
+        style={doneAccent ? { color: doneAccent } : undefined}
         strokeWidth={2.5}
         aria-hidden="true"
       />

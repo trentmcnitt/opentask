@@ -50,10 +50,10 @@
   --segment-queue_today: #0d7f8c;
   --segment-queue_previous: #5c9ba3;
   /* The deadlines page (2026-10-22, provisional): first in the strip and the
-     only queue page that nags, so the DEEPEST of the family — a petrol blue,
-     still teal-side of the reminders' indigo. Never amber or red: those are
-     the deadline chip's (safety net, passed). */
-  --segment-deadlines: #0b5d73;
+     only queue page that nags. Never amber or red: those are the deadline
+     chip's (safety net, passed). Its fill AND its title are `--deadlines`
+     (below), and so is its finished state — see `segmentDoneColor`. */
+  --segment-deadlines: var(--deadlines);
   /* Titles: one darker teal in light mode, so the small uppercase label
      stays readable on the near-white card (the lighter fills read at ~1.3–2.5:1).
      In dark mode each title is its fill. */
@@ -64,7 +64,7 @@
   --segment-title-upcoming: #136f8a;
   --segment-title-queue_today: #0a6670;
   --segment-title-queue_previous: #0a6670;
-  --segment-title-deadlines: #094c5e;
+  --segment-title-deadlines: var(--deadlines);
   --badge-neutral: oklch(0.368 0 0);
   /* Every-time mode (2026-10-22, editor PR 4c; Trent: "Teal's fine"): the
      Quick panel's framed "EDITING EVERY TIME" banner and frame. A MODE, not a
@@ -73,6 +73,16 @@
      white on it ≈5.4:1. */
   --every-time: #0f766e;
   --every-time-foreground: #ffffff;
+  /* The deadlines page's OWN teal (2026-10-26, experiment for Trent: "change
+     the color on that one and see what that's like"). Its title, its bar in
+     the Tasks card's strip and the /reminders day bar, and its finished
+     "N of N ✓" — where every other segment turns green when done, this one
+     stays its teal (`segmentDoneColor` in TaskSegmentRow.tsx). A lighter,
+     bluer cyan-teal than every-time's #0f766e (hue ≈226 vs ≈186 in OKLCH),
+     so the two never read as one colour. It is small uppercase text, so it
+     must clear WCAG AA 4.5:1: ≈4.9:1 on the white card, ≈4.75:1 on the
+     segment's bg-muted/30 section. */
+  --deadlines: #0a7a9c;
   /* Reminders get their own hue rather than the neutral grey: §6 says a waiting
      thought is never overdue, so it must not be red, but grey read as disabled
      next to a live count (Trent, 2026-09-06). Violet is the surface's own
@@ -120,7 +130,7 @@
   --segment-upcoming: #4cb8d9;
   --segment-queue_today: #36b8c6;
   --segment-queue_previous: #7fbcc4;
-  --segment-deadlines: #4aa6c4;
+  --segment-deadlines: var(--deadlines);
   --segment-title-days: var(--segment-days);
   --segment-title-weeks: var(--segment-weeks);
   --segment-title-months: var(--segment-months);
@@ -128,11 +138,15 @@
   --segment-title-upcoming: var(--segment-upcoming);
   --segment-title-queue_today: var(--segment-queue_today);
   --segment-title-queue_previous: var(--segment-queue_previous);
-  --segment-title-deadlines: var(--segment-deadlines);
+  --segment-title-deadlines: var(--deadlines);
   --badge-neutral: oklch(0.803 0 0);
   /* The same deep teal: white on it ≈5.4:1, its frame ≈3.4:1 on the dark card. */
   --every-time: #0f766e;
   --every-time-foreground: #ffffff;
+  /* Lifted for text on the dark card: ≈5.8:1 on it, ≈5.4:1 on the segment's
+     section. Deeper than the dark horizons' bright teals beside it in the
+     strip, and still well clear of every-time's #0f766e. */
+  --deadlines: #1597b5;
   --badge-reminders: oklch(0.62 0.19 295);
   --ai-glow: oklch(0.6 0.18 270);
   --ai-glow-shadow: rgba(129, 140, 248, 0.4);
@@ -186,6 +200,7 @@
   --color-badge-neutral: var(--badge-neutral);
   --color-every-time: var(--every-time);
   --color-every-time-foreground: var(--every-time-foreground);
+  --color-deadlines: var(--deadlines);
   --color-badge-reminders: var(--badge-reminders);
   --color-border: var(--border);
   --color-input: var(--input);
