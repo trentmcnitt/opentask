@@ -6,8 +6,9 @@
  * yearly, every other day, twice a week, multi-day complex, hourly.
  */
 
-import { DateTime } from 'luxon'
 import type { AITestScenario } from '../types'
+import { DEFAULT_DAY_START } from '@/lib/anchor-times'
+import { openTaskLocalDay } from '@/lib/opentask-day'
 
 /**
  * A repeat with no day named starts from today (Trent, 2026-10-12): "every 2
@@ -17,7 +18,10 @@ import type { AITestScenario } from '../types'
  * repeat in a named month with no day is the exception: the 1st ("every year
  * in March" → BYMONTH=3;BYMONTHDAY=1; Trent, 2026-10-13).
  */
-const TODAY = DateTime.now().setZone('America/Chicago')
+// TODAY is the user's OpenTask day ("OpenTask day everywhere" part 2): the
+// harness's default user starts the day at 3:00 AM, so a run between midnight
+// and 3:00 expects the day before (as `pinUnnamedDay` pins it).
+const TODAY = openTaskLocalDay(new Date(), 'America/Chicago', DEFAULT_DAY_START)
 const TODAY_BYDAY = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][TODAY.weekday - 1]
 const TODAY_BYMONTHDAY =
   TODAY.day === TODAY.daysInMonth && TODAY.day > 28 ? '-1' : String(TODAY.day)
