@@ -15,6 +15,7 @@ import {
 } from '@playwright/test'
 import path from 'path'
 import Database from 'better-sqlite3'
+import { addDays, openTaskDayOf } from '@/lib/opentask-day'
 
 export const TEST_EMAIL = 'test@opentask.local'
 export const TEST_PASSWORD = 'testpass123'
@@ -356,4 +357,26 @@ export async function cmdClickRow(row: Locator): Promise<void> {
   const box = await row.boundingBox()
   if (!box) throw new Error('cmdClickRow: the row is not on screen')
   await row.click({ modifiers: ['ControlOrMeta'], position: { x: 56, y: box.height - 6 } })
+}
+
+/**
+ * The signed-in user's OpenTask day, `n` days on (yyyy-MM-dd), as the server
+ * reckons it with the task-queue switch on: the user's resolved day start
+ * (`rollover_time`, 3:00 AM by default) read from the server, and the
+ * product's own rule (`openTaskDayOf`, docs/TASK-MODEL.md § The OpenTask day).
+ * Not the calendar date: between midnight and the day start the OpenTask day
+ * is still yesterday's, so a spec expecting the calendar date fails in that
+ * window (CI, on UTC, runs in it too). The twin of `openTaskToday` in
+ * tests/integration/helpers.ts. Read it where it is used, not when the file
+ * loads.
+ */
+export async function openTaskDay(
+  page: Page,
+  n = 0,
+  timezone = process.env.E2E_TZ || 'America/Chicago',
+): Promise<string> {
+  const res = await page.request.get('/api/user/preferences')
+  expect(res.ok(), await res.text()).toBeTruthy()
+  const { rollover_time } = (await res.json()).data as { rollover_time: string }
+  return addDays(openTaskDayOf(new Date(), timezone, rollover_time), n)
 }
