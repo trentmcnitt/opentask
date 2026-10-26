@@ -164,7 +164,9 @@ export function HorizonDotButton({
   const shape = cn(
     'relative flex shrink-0 items-center justify-center',
     variant === 'corner' && 'bg-muted h-[18px] min-w-6 px-[6px]',
-    variant === 'inline' && '-my-2 size-8 rounded-md pointer-coarse:-my-3 pointer-coarse:size-11',
+    // In a segment row's button group, its place there (`SLOT_HIT` in
+    // TaskSegmentRow): 34×44px in px at any text size (2026-10-26).
+    variant === 'inline' && '-my-[11px] h-[44px] w-[34px] rounded-md',
     // A segment row's meta line (task queue PR 3): just the mark, in the
     // line's flow, beside the project and priority.
     variant === 'meta' && 'size-3',

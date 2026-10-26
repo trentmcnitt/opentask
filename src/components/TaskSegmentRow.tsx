@@ -409,6 +409,25 @@ export function TaskSegmentRow({
           onConsider={consider}
         />
         <div className="min-w-0 flex-1">
+          {/* THE TITLE WRAPS AROUND THE BUTTONS (Trent, 2026-10-26, mock "B").
+              The buttons float right INSIDE the title's column, so its first
+              line or two sit beside them and every later line takes the
+              row's whole width — they used to be the row's own flex column,
+              which on a phone at the app's 119% text left the title 76px and
+              one word a line. A float, so the buttons come first in the
+              DOM; the meta line below is a flex box, which keeps clear of
+              the float on its own. */}
+          {!considered && (
+            <div data-segment-actions className="float-right ml-2">
+              <TaskSegmentRowActions
+                row={row}
+                actions={actions}
+                timezone={timezone}
+                panel={panel}
+                segmentHorizon={segmentHorizon}
+              />
+            </div>
+          )}
           <p
             className={cn(
               'text-pretty',
@@ -435,15 +454,6 @@ export function TaskSegmentRow({
             />
           )}
         </div>
-        {!considered && (
-          <TaskSegmentRowActions
-            row={row}
-            actions={actions}
-            timezone={timezone}
-            panel={panel}
-            segmentHorizon={segmentHorizon}
-          />
-        )}
       </li>
     </RowPeekPopover>
   )
@@ -693,21 +703,33 @@ function useSegmentRowPress({
  * line, 10px padding); 26px in a panel row (19px line, 6px padding, the
  * controls lifted 3px to line up with the done square), where 32 poked 2px
  * above the row.
+ *
+ * COMPACT, IN PX (Trent, 2026-10-26, mock "B"): every size in the row's
+ * button group is px, never rem, so the group stays 140px wide at any text
+ * size — the iOS app scales the root font with Dynamic Type, and at 119% the
+ * rem sizes made the group 200px and left the title a 76px column. 30px here
+ * (32 before).
  */
-const HOVER_BOX = { page: 'h-8', panel: 'h-6.5' } as const
+const HOVER_BOX = { page: 'h-[30px]', panel: 'h-[26px]' } as const
 
 /**
- * On deck's and Today's HIT TARGET (2026-10-20, Trent: tighten pencil · On
- * deck · Today): 44px tall always, and 44px wide for a finger — but with a
- * mouse only as wide as the hover box, the pencil's own rule (`size-8`, 44
- * only on `pointer-coarse`; On deck tomorrow, in the pencil's place, keeps
- * it: `SLOT_HIT`). The 44px width used to leave 6–9px of empty
- * button either side of each hover box, so the three read as spread apart.
+ * On deck's, On deck tomorrow's and Today's HIT TARGET: 34×44px, finger or
+ * mouse — one rule (2026-10-26; before, 44px wide for a finger, in rem, and
+ * only the hover box's width for a mouse). The negative margin lays it out
+ * 22px tall, the done square's height: the group must be no taller than the
+ * title's first line (24px), or the title's SECOND line wraps short beside
+ * it too (it floats in the title's column); the 44px stands 11px above and
+ * below.
+ * Three of them, the 16px before the done square (12px of it dead space)
+ * and its 22px: 140px.
  */
-const CONTROL_HIT = '-my-3 h-11 min-w-11 pointer-fine:min-w-0'
+const CONTROL_HIT = '-my-[11px] h-[44px] min-w-[34px]'
 
 /** On deck's hover box, and the empty slot's (`DeckSlotSpacer`). */
-const DECK_BOX = { page: `${HOVER_BOX.page} w-8`, panel: `${HOVER_BOX.panel} w-6.5` } as const
+const DECK_BOX = {
+  page: `${HOVER_BOX.page} w-[28px]`,
+  panel: `${HOVER_BOX.panel} w-[26px]`,
+} as const
 
 function TaskSegmentRowActions({
   row,
@@ -729,10 +751,12 @@ function TaskSegmentRowActions({
   return (
     <div
       className={cn(
-        // 8px between the hover boxes with a mouse; with a finger the 44px hit
-        // targets abut and their own padding is the gap (2026-10-20).
-        'flex shrink-0 items-center gap-2 pointer-coarse:gap-0',
-        panel ? '-my-[3px]' : 'mt-[3px]',
+        // The hit targets abut; their own padding around each hover box is
+        // the gap (finger or mouse, 2026-10-26).
+        'flex shrink-0 items-center',
+        // Down to the title's first line: by `top`, not a margin, which would
+        // make the float taller than that line (see `CONTROL_HIT`).
+        panel ? '-my-[4px]' : 'relative top-[4px]',
       )}
     >
       {/* On deck first, then On deck tomorrow (Trent, 2026-10-21): today's
@@ -776,18 +800,23 @@ function TaskSegmentRowActions({
           // Faded on a decked row: a target takes it off deck (plan §5).
           replaces={todayReplaces(task, timezone, dayStart)}
           showLabel
-          // A full 44px hit target around a glyph the size of the circle and
-          // the done square; the negative margin keeps the row's height. The
-          // 12px `mr-3` after it is dead space, so its hit area never touches
-          // the done square's (Trent mis-tapped Today for done, 2026-10-12).
-          // The grey hover block is the inner box, the row buttons'
-          // (`HOVER_BOX`), so it stays inside the row: the whole 44px button
-          // used to paint it, poking out of every row (2026-10-20).
-          className={`${CONTROL_HIT} mr-3`}
+          // A 34×44 hit target (`CONTROL_HIT`) around a glyph the size of the
+          // done square; the negative margin keeps the row's height. The
+          // `mr-[16px]` after it: 4px of it is the done square's own hit area
+          // (its `after:` inset), and 12px is DEAD SPACE between the two hit
+          // areas — Trent's own ruling after he mis-tapped Today for done
+          // (2026-10-12; kept through the compact buttons). The grey hover
+          // block is the inner box, the row buttons' (`HOVER_BOX`), so it
+          // stays inside the row (2026-10-20). From `sm` up the box has room
+          // for the word "Today" too (icon only on a phone, the word on a
+          // desktop — Trent's ruling).
+          className={`${CONTROL_HIT} mr-[16px]`}
           boxClassName={
-            panel ? `${HOVER_BOX.panel} min-w-6.5 sm:px-1.5` : `${HOVER_BOX.page} min-w-8 sm:px-2`
+            panel
+              ? `${HOVER_BOX.panel} min-w-[26px] sm:px-1.5`
+              : `${HOVER_BOX.page} min-w-[28px] sm:px-2`
           }
-          iconClassName={panel ? 'size-[19px]' : 'size-6'}
+          iconClassName={panel ? 'size-[19px]' : 'size-[22px]'}
         />
       )}
       {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
@@ -802,15 +831,17 @@ function TaskSegmentRowActions({
         }}
         aria-label={`Done: "${task.title}"`}
         title="Done"
+        // The square is drawn 22px (19 in a panel) and HIT 44px tall and 8px
+        // wider (the `after:` box): a finger's target without a bigger square.
         className={cn(
-          'group/done border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors',
-          panel ? 'size-[19px]' : 'size-6',
+          "group/done border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 relative flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors after:absolute after:-inset-x-[4px] after:content-['']",
+          panel ? 'size-[19px] after:-inset-y-[13px]' : 'size-[22px] after:-inset-y-[11px]',
         )}
       >
         <Check
           className={cn(
             'group-hover/done:text-foreground/50 text-transparent transition-colors',
-            panel ? 'size-3' : 'size-3.5',
+            panel ? 'size-[12px]' : 'size-[14px]',
           )}
           strokeWidth={3}
         />
@@ -857,20 +888,19 @@ function SegmentDeckSlot({
       // Icon only (Trent, 2026-10-20): the tooltip and the name say "On deck".
       className={CONTROL_HIT}
       boxClassName={panel ? DECK_BOX.panel : DECK_BOX.page}
-      iconClassName={panel ? 'size-[18px]' : 'size-[22px]'}
+      iconClassName={panel ? 'size-[18px]' : 'size-[20px]'}
     />
   )
 }
 
 /**
  * On deck tomorrow's HIT TARGET (the pencil's, which it took over, and the
- * empty place while the preferences load): 32px with a mouse, 44px with a
- * finger, pulled back to the row's line height — the inline horizon dot's box
- * (`HorizonDotButton`), which has this place with the switch off. The hover
- * block is an inner box (`HOVER_BOX`), so a finger's taller hit target never
- * paints outside the row.
+ * empty place while the preferences load): `CONTROL_HIT`'s 34×44px, finger
+ * or mouse (2026-10-26; 32px with a mouse and 44 with a finger before),
+ * pulled back to the row's line height. The hover block is an inner box
+ * (`HOVER_BOX`), so the taller hit target never paints outside the row.
  */
-const SLOT_HIT = '-my-2 size-8 shrink-0 pointer-coarse:-my-3 pointer-coarse:size-11'
+const SLOT_HIT = '-my-[11px] h-[44px] w-[34px] shrink-0'
 
 /**
  * ON DECK TOMORROW (2026-10-20), in the pencil's place — second since
@@ -986,7 +1016,7 @@ function DeckTomorrowButton({
         )}
       >
         <DeckTomorrowIcon
-          className={panel ? 'size-[18px]' : 'size-[22px]'}
+          className={panel ? 'size-[18px]' : 'size-[20px]'}
           // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
           strokeWidth={1.75}
         />
@@ -1101,7 +1131,7 @@ function DeferLeadSlot({
               panel ? DECK_BOX.panel : DECK_BOX.page,
             )}
           >
-            <Forward className={panel ? 'size-[18px]' : 'size-[22px]'} strokeWidth={1.75} />
+            <Forward className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
           </span>
         </button>
       </OptionMenu>
