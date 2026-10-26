@@ -38,6 +38,39 @@ it used to default to the target name, `OpenTaskMac.app`, even though
 Requires macOS 14, and Xcode with a macOS SDK. Nothing needs to be installed
 into `/Applications` to try it.
 
+## Installing (2026-10-26)
+
+**Installs to `~/Applications/OpenTask.app` go through the script**, never a
+hand-typed build and copy:
+
+```bash
+macos/scripts/install-mac.sh                       # derived data: macos/build
+OPENTASK_DD_MAC=<scratchpad>/dd-mac macos/scripts/install-mac.sh
+macos/scripts/install-mac.sh /some/derived-data    # or pass it
+```
+
+On 10-26 several Release builds were installed without
+`CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements` and the app
+silently got no push for hours (the default `OpenTaskMac.entitlements` has no
+`aps-environment`, see below). The script always builds Release with that
+override, and checks with `codesign -d --entitlements -` that both the app
+and `OpenTaskMacWidgets.appex` carry `com.apple.developer.aps-environment`:
+on the build product before replacing anything, and on the installed copy
+after. Either check failing exits non-zero with a banner. It also stops if
+`OpenTaskMac-Push.entitlements` and `OpenTaskMacWidgets.entitlements` ever
+grant different things, since the override is scheme-wide (below) and would
+sign the widgets with the app's file.
+
+In between it quits the running app (bundle id `io.mcnitt.opentask`, confirmed
+by the installed path, since the iPhone app shares the id), replaces the
+copy, unregisters the build product from LaunchServices, re-enables the
+widget extension (`pluginkit -e use`: it re-registers disabled after a
+reinstall), restarts `chronod`, `NotificationCenter` and `usernoted`, and
+relaunches. It ends by printing the commit and the `aps-environment` value.
+
+`--no-push` builds without the override (into `<derived-data>-nopush`) and
+runs the same check, to show it failing; it never installs.
+
 ## Provisioning profile — RESOLVED (was: no macOS profile for this team)
 
 **Historical note, kept for context.** This section used to say there was no
