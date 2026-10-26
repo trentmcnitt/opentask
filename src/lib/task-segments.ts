@@ -46,6 +46,7 @@ import { computeNextOccurrence, ruleTimeOfDay } from '@/core/recurrence/compute-
 import { formatAnchorTime } from '@/core/recurrence/timezone'
 import {
   CALENDAR_DAY_START,
+  addDays,
   calendarDateOf,
   localMoment,
   openTaskDayOf,
@@ -1770,6 +1771,16 @@ export function deadlineDay(
 /** Today as the owner's OpenTask day (the calendar day with no rollover time). */
 export function openTaskToday(timezone: string, now: Date, rolloverTime: string | null): string {
   return rolloverTime ? openTaskDayOf(now, timezone, rolloverTime) : calendarDateOf(now, timezone)
+}
+
+/**
+ * Skip until's EARLIEST DATE (yyyy-MM-dd): the OpenTask day after today's
+ * ("OpenTask day everywhere" part 2) — the dialog's first pickable day and
+ * `parseUntil`'s floor. At 00:30 Monday with a 3:00 AM start, Monday (the
+ * calendar today), as at 23:30 Sunday.
+ */
+export function skipUntilFirstDay(timezone: string, now: Date, dayStart: string): string {
+  return addDays(openTaskDayOf(now, timezone, dayStart), 1)
 }
 
 /** `day` (yyyy-MM-dd) moved by `days` calendar days. */
