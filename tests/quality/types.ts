@@ -15,6 +15,7 @@ export interface AITestScenario {
   feature:
     | 'enrichment'
     | 'enrichment_reminder'
+    | 'enrichment_quota'
     | 'whats_next'
     | 'insights'
     | 'quick_take'
@@ -26,6 +27,7 @@ export interface AITestScenario {
   input:
     | EnrichmentInput
     | ReminderEnrichmentInput
+    | QuotaEnrichmentInput
     | WhatsNextInput
     | InsightsInput
     | QuickTakeInput
@@ -84,6 +86,21 @@ export interface ReminderEnrichmentInput {
    * where a thought with no time cue goes.
    */
   defaultSlotLabel?: string
+  /** Optional user-provided AI context for personalization */
+  userContext?: string
+}
+
+/**
+ * Quota enrichment input (2026-10-24). A quota is parsed against the user's
+ * time slots (its reminder period) and nothing else: no clock, no projects.
+ */
+export interface QuotaEnrichmentInput {
+  /** Raw quota text (what the user typed or dictated) */
+  text: string
+  /** User's timezone */
+  timezone: string
+  /** The user's time slots, in order. Defaults to DEFAULT_TIME_SLOTS. */
+  slots?: Array<{ label: string; start_time: string }>
   /** Optional user-provided AI context for personalization */
   userContext?: string
 }

@@ -82,6 +82,82 @@ cue it stays in the default period. If AI is off or enrichment fails, it stays
 in the default period. Send `"rrule"` yourself to choose the schedule (it is
 used as sent), or `"rrule": null` for a one-time reminder with no schedule.
 
+### Adding a quota
+
+A quota (a count to reach each period: "eggs twice a week", "floss every day")
+is the same request with `"is_tracked": true`. You say what kind it is; the AI
+never decides that a task is a quota from its words, because "twice a week" is
+just as often a repeating task or a reminder.
+
+```bash
+curl -X POST https://tasks.example.com/api/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "lift 3x a week, remind me at lunch", "is_tracked": true}'
+```
+
+It is created at once as a **provisional** quota: once a week, target 1. AI
+enrichment then reads the text and sets:
+
+- **the count and the period**: "twice a week" is 2 a week, "every other day"
+  is every 2 days, "once a fortnight" is every 2 weeks, "3 times a quarter" is
+  3 every 3 months. Named weekdays ("gym Monday Wednesday Friday") become a
+  weekly count (3), with the days kept in the notes. With no period in the text
+  ("piano scales") the weekly period stays. A period longer than a quota allows
+  ("every 45 days"; the limits are 30 days, 12 weeks, 12 months, 1 year) is not
+  applied, and the weekly period stays for you to change.
+- **what is counted**: times, never amounts. A measured amount stays in the
+  title: "read 20 min every day" is "Read 20 min", once a day, and "100
+  pushups a day" is "100 pushups", once a day. Separate occasions are the count:
+  "drink 8 glasses of water a day" is "Drink water", 8 a day.
+- **the reminder period**: "remind me at lunch", "in the evening" or "at 7am"
+  puts the quota's daily prompt in the matching reminder period. With nothing
+  said, it follows your default reminder period. "Don't remind me" turns the
+  prompt off.
+- **the title**, with the count, period and reminder words removed ("Lift"),
+  and a label only when you ask for one ("label it fitness").
+
+This needs AI enrichment. With AI off on the server, or your enrichment mode set
+to Off, a quota with no `rrule` is refused (400): send the period yourself
+instead, e.g. `{"title": "Lift", "is_tracked": true, "progress_target": 3,
+"rrule": "FREQ=WEEKLY"}`. A quota sent with an `rrule` or a `progress_target`
+above 1 is used as sent and not enriched.
+
+### Waiting for the result (`wait`)
+
+Enrichment normally runs after the response, so a one-shot caller like an Apple
+Shortcut gets the task back as typed. Add `"wait": true` to hold the response
+until the enrichment finishes (up to 20 seconds), and read what the AI did from
+`data.ai`:
+
+```bash
+curl -X POST https://tasks.example.com/api/tasks \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "lift 3x a week, remind me at lunch", "is_tracked": true, "wait": true}'
+```
+
+```json
+{
+  "data": {
+    "id": 812,
+    "title": "Lift",
+    "is_tracked": true,
+    "progress_target": 3,
+    "rrule": "FREQ=WEEKLY",
+    "quota_prompt_config": { "slot_id": 3 },
+    "ai": { "status": "done", "description": "3× a week · Reminds at Midday" }
+  }
+}
+```
+
+`ai.status` is `done` (with `description`, the same words the app's toast
+uses), `pending` (still running after 20 seconds, or being retried; it finishes
+in the background within a minute or two), `failed` (the task has the
+`ai-failed` label), or `skipped` (no enrichment ran: AI off, your mode Off, or
+the request was not title-only). `wait` works for tasks and reminders too, and
+is never stored.
+
 ## Skipping AI Enrichment
 
 Send structured fields to bypass enrichment entirely:
@@ -322,3 +398,8 @@ A machine-readable API spec is available at `GET /api/openapi` (no auth required
 3. **Body**: Use "Request Body" → JSON with a single `title` key containing the dictated text
 4. **Siri trigger**: Name the shortcut "Add Task" for "Hey Siri, Add Task"
 5. **Response**: Parse the JSON response `data.id` to confirm creation
+6. **A second Shortcut for quotas**: duplicate "Add Task" as "Add Quota" and add
+   `is_tracked` (Boolean, true) to the body. Add `wait` (Boolean, true) to
+   either one if you want Siri to read back the result: show `data.title` and
+   `data.ai.description`. Without `wait`, show "Added", and the "AI finished"
+   notification confirms what was set a few seconds later.

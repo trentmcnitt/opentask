@@ -384,6 +384,11 @@ export const taskCreateSchema = z
     // OMITTED means "put it in my default reminder slot" (createTask), while
     // an explicit null means "no schedule" (the editor's one-time thought).
     enrich: z.boolean().optional(),
+    // WAIT (2026-10-24, quota enrichment): the response waits — up to a cap —
+    // for the enrichment this create starts, and carries what it did (`ai`).
+    // For a one-shot caller like an Apple Shortcut, which never sees the
+    // sync event. Never stored. See POST /api/tasks.
+    wait: z.boolean().optional(),
     // ON DECK (2026-10-20): create the task on deck for this local calendar
     // date. One-offs only, today or later, the A1 rule against any deadline
     // in the same body — checked in `createTask`. Never with a target.
