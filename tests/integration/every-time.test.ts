@@ -5,6 +5,7 @@
  * repeat that ENDS. Test user A's clock is America/Chicago; every date is
  * relative to now.
  */
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { describe, test, expect, beforeAll } from 'vitest'
 import { DateTime } from 'luxon'
 import { apiFetch, resetTestData } from './helpers'
@@ -29,7 +30,13 @@ async function send(path: string, method: string, body?: unknown) {
   return { status: res.status, body: (await res.json()) as Body }
 }
 
-const ctx = (): EveryTimeContext => ({ timezone: TZ, morningTime: '09:00', now: new Date() })
+const ctx = (): EveryTimeContext => ({
+  timezone: TZ,
+  morningTime: '09:00',
+  now: new Date(),
+  // The test server's day: the task queue is off there, so midnight.
+  dayStart: CALENDAR_DAY_START,
+})
 const iso = (d: DateTime) => d.toUTC().toISO()!
 /** `days` from today at `hour`:00 Chicago. */
 const day = (days: number, hour: number) =>

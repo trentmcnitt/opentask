@@ -9,6 +9,7 @@
 import { describe, test, expect } from 'vitest'
 import { resolveTodayLocalDate, postProcessTaskDates } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 function result(overrides: Partial<EnrichmentResult>): EnrichmentResult {
   return {
@@ -98,6 +99,7 @@ describe('left alone', () => {
 describe('through postProcessTaskDates (the whole shared post-process)', () => {
   const full = (text: string, overrides: Partial<EnrichmentResult>) =>
     postProcessTaskDates(result(overrides), text, TZ, {
+      dayStart: CALENDAR_DAY_START,
       morningTime: '09:00',
       todayTarget: TODAY_TARGET,
       now: NOW,

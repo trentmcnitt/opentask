@@ -8,6 +8,7 @@
 import { describe, test, expect } from 'vitest'
 import { pinUnnamedDay } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TZ = 'America/Chicago'
 // Thu Oct 15 2026, 10:00 Chicago.
@@ -31,7 +32,7 @@ function result(rrule: string | null, due_at: string | null = null): EnrichmentR
 }
 
 const pin = (text: string, rrule: string | null, due: string | null = null, now = THURSDAY) =>
-  pinUnnamedDay(result(rrule, due), text, TZ, now)
+  pinUnnamedDay(result(rrule, due), text, TZ, now, CALENDAR_DAY_START)
 
 describe('AI-PIN: weekly with no day named', () => {
   test.each([
@@ -127,7 +128,7 @@ describe('AI-PIN: everything else', () => {
 
   test('AI-PIN-021: a rule already on today is returned as is', () => {
     const r = result('FREQ=WEEKLY;INTERVAL=2;BYDAY=TH')
-    expect(pinUnnamedDay(r, 'every 2 weeks', TZ, THURSDAY)).toEqual(r)
+    expect(pinUnnamedDay(r, 'every 2 weeks', TZ, THURSDAY, CALENDAR_DAY_START)).toEqual(r)
   })
 })
 
@@ -195,11 +196,13 @@ describe('AI-PIN: yearly in a named month with no day', () => {
     // A month and day the model filled in from today are not the user's month:
     // not moved to the 1st (Oct 1 would already have passed).
     const r = result('FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=15', '2026-10-15T09:00:00')
-    expect(pinUnnamedDay(r, 'renew the domain every year', TZ, THURSDAY)).toEqual(r)
+    expect(
+      pinUnnamedDay(r, 'renew the domain every year', TZ, THURSDAY, CALENDAR_DAY_START),
+    ).toEqual(r)
   })
 
   test('AI-PIN-036: a rule already on the 1st with no due_at is returned as is', () => {
     const r = result('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=1')
-    expect(pinUnnamedDay(r, 'every year in March', TZ, THURSDAY)).toEqual(r)
+    expect(pinUnnamedDay(r, 'every year in March', TZ, THURSDAY, CALENDAR_DAY_START)).toEqual(r)
   })
 })

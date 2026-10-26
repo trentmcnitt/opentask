@@ -9,6 +9,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { computeRecurrencePreview } from '@/lib/recurrence-preview'
 import { computeFirstOccurrence } from '@/core/recurrence'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TIMEZONE_CHICAGO = 'America/Chicago'
 const TIMEZONE_LONDON = 'Europe/London'
@@ -27,7 +28,7 @@ describe('Recurrence preview timezone handling', () => {
     const rrule = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0'
 
     // Client preview
-    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
     expect(preview).not.toBeNull()
 
     // Parse and verify the local time
@@ -40,10 +41,16 @@ describe('Recurrence preview timezone handling', () => {
     const rrule = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0'
 
     // Client preview
-    const clientPreview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+    const clientPreview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
 
     // Server-side computation
-    const serverResult = computeFirstOccurrence(rrule, '09:00', TIMEZONE_CHICAGO)
+    const serverResult = computeFirstOccurrence(
+      rrule,
+      '09:00',
+      TIMEZONE_CHICAGO,
+      new Date(),
+      CALENDAR_DAY_START,
+    )
 
     // Both should return the same time
     expect(clientPreview).not.toBeNull()
@@ -63,7 +70,7 @@ describe('Recurrence preview timezone handling', () => {
     // Weekly on Wednesday at 3 PM
     const rrule = 'FREQ=WEEKLY;BYDAY=WE;BYHOUR=15;BYMINUTE=30'
 
-    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
     expect(preview).not.toBeNull()
 
     const previewDt = DateTime.fromISO(preview!).setZone(TIMEZONE_CHICAGO)
@@ -76,7 +83,7 @@ describe('Recurrence preview timezone handling', () => {
     // Monthly on the 15th at 10 AM
     const rrule = 'FREQ=MONTHLY;BYMONTHDAY=15;BYHOUR=10;BYMINUTE=0'
 
-    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
     expect(preview).not.toBeNull()
 
     const previewDt = DateTime.fromISO(preview!).setZone(TIMEZONE_CHICAGO)
@@ -89,12 +96,12 @@ describe('Recurrence preview timezone handling', () => {
     const rrule = 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0'
 
     // Chicago preview
-    const chicagoPreview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+    const chicagoPreview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
     const chicagoDt = DateTime.fromISO(chicagoPreview!).setZone(TIMEZONE_CHICAGO)
     expect(chicagoDt.hour).toBe(9)
 
     // London preview (same RRULE, different timezone)
-    const londonPreview = computeRecurrencePreview(rrule, TIMEZONE_LONDON)
+    const londonPreview = computeRecurrencePreview(rrule, TIMEZONE_LONDON, CALENDAR_DAY_START)
     const londonDt = DateTime.fromISO(londonPreview!).setZone(TIMEZONE_LONDON)
     expect(londonDt.hour).toBe(9)
 
@@ -104,7 +111,11 @@ describe('Recurrence preview timezone handling', () => {
 
   test('malformed rrule that causes error returns null', () => {
     // An RRULE with an invalid frequency should cause an error in rrule.js
-    const preview = computeRecurrencePreview('FREQ=INVALID_FREQUENCY', TIMEZONE_CHICAGO)
+    const preview = computeRecurrencePreview(
+      'FREQ=INVALID_FREQUENCY',
+      TIMEZONE_CHICAGO,
+      CALENDAR_DAY_START,
+    )
     expect(preview).toBeNull()
   })
 
@@ -118,8 +129,14 @@ describe('Recurrence preview timezone handling', () => {
     try {
       expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(300)
       const rrule = 'FREQ=WEEKLY;BYDAY=WE;BYHOUR=23;BYMINUTE=0'
-      const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
-      const server = computeFirstOccurrence(rrule, null, TIMEZONE_CHICAGO)
+      const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
+      const server = computeFirstOccurrence(
+        rrule,
+        null,
+        TIMEZONE_CHICAGO,
+        new Date(),
+        CALENDAR_DAY_START,
+      )
       expect(preview).not.toBeNull()
       expect(DateTime.fromISO(preview!).toMillis()).toBe(server.getTime())
       const local = DateTime.fromISO(preview!).setZone(TIMEZONE_CHICAGO)
@@ -134,7 +151,7 @@ describe('Recurrence preview timezone handling', () => {
   test('rrule without BYHOUR defaults to midnight', () => {
     const rrule = 'FREQ=DAILY'
 
-    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO)
+    const preview = computeRecurrencePreview(rrule, TIMEZONE_CHICAGO, CALENDAR_DAY_START)
     expect(preview).not.toBeNull()
 
     const previewDt = DateTime.fromISO(preview!).setZone(TIMEZONE_CHICAGO)

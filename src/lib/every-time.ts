@@ -65,7 +65,7 @@ import {
 import { formatTime } from '@/lib/format-rrule'
 import { leadDaysWords, relativeDaysWords } from '@/lib/editor-target-labels'
 import { UPCOMING_SECTION_TITLES } from '@/lib/task-model-words'
-import { localMoment } from '@/lib/opentask-day'
+import { localMoment, openTaskLocalDay } from '@/lib/opentask-day'
 import {
   RULE_DAYS,
   buildRule,
@@ -141,6 +141,14 @@ export interface EveryTimeContext {
   /** The user's Morning time (HH:MM), the default target time. */
   morningTime: string
   now: Date
+  /**
+   * The user's day boundary (`useDayStart`): "today" is the OpenTask day
+   * ("OpenTask day everywhere" part 2, Trent 2026-10-26). A new weekly rule
+   * with no day of its own takes the OpenTask day's weekday, and a rule's
+   * first occurrence counts from it — at 00:30 Monday with a 3:00 AM start,
+   * exactly as at 23:30 Sunday.
+   */
+  dayStart: string
   /**
    * The deadlines page is on (the task-queue switch, 2026-10-22, plan L1): a
    * one-off with a deadline and no target turned into a deadline-anchored
@@ -237,10 +245,14 @@ function localHHMM(iso: string, timezone: string): string {
   return local(iso, timezone).toFormat('HH:mm')
 }
 
-function weekdayOf(iso: string | Date, timezone: string): string {
-  const dt =
-    typeof iso === 'string' ? local(iso, timezone) : DateTime.fromJSDate(iso).setZone(timezone)
-  return RULE_DAYS[dt.weekday - 1]
+/** The RRULE weekday of a stored moment's own local date (an occurrence's, a target's). */
+function weekdayOf(iso: string, timezone: string): string {
+  return RULE_DAYS[local(iso, timezone).weekday - 1]
+}
+
+/** The RRULE weekday of TODAY — the OpenTask day `ctx.now` is in, not its calendar date. */
+function todayWeekday(ctx: EveryTimeContext): string {
+  return RULE_DAYS[openTaskLocalDay(ctx.now, ctx.timezone, ctx.dayStart).weekday - 1]
 }
 
 /** "4:00 PM" from "16:00". */
@@ -272,7 +284,7 @@ function ruleFields(rrule: string, mode: Mode): RepeatRule {
 /** A NEVER_OCCURS-safe first occurrence of a rule from now. */
 function firstFromNow(rrule: string, ctx: EveryTimeContext): string | null {
   try {
-    return computeFirstOccurrence(rrule, null, ctx.timezone, ctx.now).toISOString()
+    return computeFirstOccurrence(rrule, null, ctx.timezone, ctx.now, ctx.dayStart).toISOString()
   } catch {
     return null
   }
@@ -399,7 +411,7 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
       mode,
       stop: false,
       refusal: null,
-      defaultDay: day ? weekdayOf(day, timezone) : weekdayOf(ctx.now, timezone),
+      defaultDay: day ? weekdayOf(day, timezone) : todayWeekday(ctx),
       leadDays: task.lead_days ?? null,
     }
     if (isDeadlineAnchored(task)) {
@@ -449,7 +461,7 @@ function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft
   const time =
     task.anchor_time ?? (task.due_at ? localHHMM(task.due_at, timezone) : ctx.morningTime)
   const dayFrom = task.deadline_at ?? task.due_at
-  const defaultDay = dayFrom ? weekdayOf(dayFrom, timezone) : weekdayOf(ctx.now, timezone)
+  const defaultDay = dayFrom ? weekdayOf(dayFrom, timezone) : todayWeekday(ctx)
   const rule: RuleDraft = { ...parseRule(`FREQ=WEEKLY;BYDAY=${defaultDay}`)! }
   const base = {
     rule,
@@ -947,7 +959,14 @@ const planCache = new Map<string, Planned>()
  */
 function planDraft(task: EveryTimeTask, draft: EveryTimeDraft, ctx: EveryTimeContext): Planned {
   const patch = draftToPatch(task, draft, ctx)
-  const key = JSON.stringify([task, patch, ctx.timezone, ctx.morningTime, ctx.now.getTime()])
+  const key = JSON.stringify([
+    task,
+    patch,
+    ctx.timezone,
+    ctx.morningTime,
+    ctx.dayStart,
+    ctx.now.getTime(),
+  ])
   const hit = planCache.get(key)
   if (hit) {
     planCache.delete(key)
@@ -1050,6 +1069,7 @@ function endProblem(
     },
     ctx.timezone,
     ctx.now,
+    ctx.dayStart,
   )
 }
 

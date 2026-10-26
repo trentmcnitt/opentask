@@ -27,6 +27,7 @@ import { recurrenceSummary } from '@/lib/recurrence-summary'
 import { createTask, getTaskById, markDone } from '@/core/tasks'
 import { skipOccurrence } from '@/core/tasks/skip'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 const TZ = 'America/Chicago'
 
@@ -183,6 +184,7 @@ describe('ordinal BYDAY — next occurrence', () => {
       null,
       TZ,
       new Date('2026-10-20T15:00:00Z'),
+      CALENDAR_DAY_START,
     )
     expect(first.toISOString()).toBe('2026-11-07T15:00:00.000Z')
   })
@@ -298,6 +300,7 @@ describe('ordinal BYDAY — AI enrichment', () => {
     const parsed = EnrichmentResultSchema.safeParse(base)
     expect(parsed.success).toBe(true)
     const out = postProcessTaskEnrichment(parsed.data!, 'team sync every tuesday at 10', TZ, {
+      dayStart: CALENDAR_DAY_START,
       morningTime: '09:00',
       todayTarget: '09:00',
       now: new Date('2026-10-20T15:00:00Z'),
@@ -306,9 +309,9 @@ describe('ordinal BYDAY — AI enrichment', () => {
     // The rest of the enrichment survives.
     expect(out.title).toBe('Team sync')
     expect(out.priority).toBe(2)
-    expect(pinUnnamedDay(base, 'every tuesday at 10', TZ).rrule).toBe(
-      'FREQ=WEEKLY;BYDAY=TU;BYHOUR=10;BYMINUTE=0',
-    )
+    expect(
+      pinUnnamedDay(base, 'every tuesday at 10', TZ, new Date(), CALENDAR_DAY_START).rrule,
+    ).toBe('FREQ=WEEKLY;BYDAY=TU;BYHOUR=10;BYMINUTE=0')
   })
 
   test('snap: a 1st-Saturday rule moves the model date to a real occurrence', () => {

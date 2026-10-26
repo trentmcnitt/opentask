@@ -42,6 +42,7 @@ import {
 } from '../src/core/ai/quick-take'
 import type { TaskSummary } from '../src/core/ai/types'
 import { DEFAULT_TIME_SLOTS } from '../src/lib/time-slot-assign'
+import { DEFAULT_DAY_START } from '../src/lib/anchor-times'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,6 +104,8 @@ interface ScenarioInput {
     projects?: Array<{ id: number; name: string; shared?: boolean; description?: string | null }>
     slots?: Array<{ label: string; start_time: string }>
     defaultSlotLabel?: string
+    /** The scenario's pinned local minute ("2026-10-20T00:30"), as the harness runs it. */
+    now?: string
   }
 }
 
@@ -124,6 +127,14 @@ function renderEnrichmentPrompt(scenario?: ScenarioInput): string {
     projects: scenario?.input.projects ?? DEFAULTS.projects,
     userContext: scenario?.input.userContext,
     taskText: scenario?.input.text || '<raw task text would appear here>',
+    // The scenario's own pinned minute (as the harness runs it), else now —
+    // and a default user's day, so a late-night scenario shows its "User's day".
+    now: scenario?.input.now
+      ? DateTime.fromISO(scenario.input.now, {
+          zone: scenario.input.timezone || DEFAULTS.timezone,
+        }).toJSDate()
+      : undefined,
+    dayStart: DEFAULT_DAY_START,
   })
 
   const systemPrompt = ENRICHMENT_SYSTEM_PROMPT

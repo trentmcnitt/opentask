@@ -7,6 +7,7 @@ import { describe, test, expect } from 'vitest'
 import { stripRepeatPhrase } from '@/core/ai/repeat-title'
 import { postProcessTaskEnrichment } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
+import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 
 describe('stripped: the phrase matches the rule', () => {
   test.each([
@@ -90,6 +91,7 @@ describe('in the shared post-process', () => {
       'water the ferns every other day',
       'America/Chicago',
       {
+        dayStart: CALENDAR_DAY_START,
         morningTime: '09:00',
         todayTarget: '2026-10-16T19:30:00.000Z',
         now: new Date('2026-10-16T14:00:00-05:00'),

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, Minus, Plus, Repeat } from 'lucide-react'
-import { DateTime } from 'luxon'
+import { openTaskDayOf } from '@/lib/opentask-day'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -298,7 +298,9 @@ function ScheduleRows({
   const ruleDiffers = (...keys: Array<keyof EveryTimeDraft['rule']>) =>
     keys.some((k) => JSON.stringify(draft.rule[k]) !== JSON.stringify(initial.rule[k]))
   const stored = repeatEndOf(task)
-  const today = DateTime.fromJSDate(ctx.now).setZone(ctx.timezone).toISODate()!
+  // The repeat-until picker's earliest date: today's OpenTask date (at 00:30
+  // with a 3:00 AM start, still yesterday's — a repeat can end on it).
+  const today = openTaskDayOf(ctx.now, ctx.timezone, ctx.dayStart)
   return (
     <div
       className={cn(

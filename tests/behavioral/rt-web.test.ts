@@ -187,7 +187,13 @@ describe('RT-WEB-03: the Target row preview (staging)', () => {
 })
 
 describe('RT-WEB-04: every-time mode keeps one shape — the offsets and the link', () => {
-  const ctx: EveryTimeContext = { timezone: TZ, morningTime: '06:30', morningSlotId: 11, now: NOW }
+  const ctx: EveryTimeContext = {
+    timezone: TZ,
+    morningTime: '06:30',
+    morningSlotId: 11,
+    now: NOW,
+    dayStart: CALENDAR_DAY_START,
+  }
   const BASE: EveryTimeTask = {
     rrule: null,
     recurrence_mode: 'from_due',

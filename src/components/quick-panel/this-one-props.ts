@@ -378,7 +378,7 @@ export function stagedUpcomingAnchor(s: {
 export function derivedTargetFor(
   task: Task | null,
   stagedDeadline: string | null | undefined,
-  ctx: { timezone: string; morningTime: string },
+  ctx: { timezone: string; morningTime: string; dayStart: string },
 ): string | null {
   if (!task?.rrule || task.repeat_anchor !== 'deadline' || !stagedDeadline) return null
   try {

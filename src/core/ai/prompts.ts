@@ -9,6 +9,7 @@
  */
 
 import { formatMorningTime } from '@/lib/snooze'
+import { calendarDateOf, openTaskDayOf } from '@/lib/opentask-day'
 
 /**
  * System prompt for task enrichment.
@@ -935,6 +936,33 @@ export interface EnrichmentPromptParams {
    * and its answer is judged against the same minute the model was shown.
    */
   now?: Date
+  /**
+   * The user's day boundary (HH:MM, `dayBoundaryForUser`). When the user's
+   * OpenTask day is not the calendar date — 00:30 with a 3:00 AM start is
+   * still the day before — the context says so (`userDayLine`), so a repeat
+   * with no day named starts on the same day the code pins (`pinUnnamedDay`).
+   */
+  dayStart: string
+}
+
+/**
+ * The "User's day" line (part 2, 2026-10-26): only when the OpenTask day is
+ * not the calendar date of `now` (the late night, or the evening before with
+ * a day start after noon) — otherwise nothing, and the prompt is exactly as
+ * before. It is ONLY for a repeat's starting day: "today", "tomorrow" and
+ * every other date the user says still follow the calendar (the words
+ * ruling; A4 handles a late-night "tomorrow").
+ */
+export function userDayLine(now: Date, timezone: string, dayStart: string): string {
+  const day = openTaskDayOf(now, timezone, dayStart)
+  if (day === calendarDateOf(now, timezone)) return ''
+  const words = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+  return `\nUser's day: ${words} — their day starts at ${formatMorningTime(dayStart)}, so a weekly or monthly repeat with no day or date named starts on this day (its weekday, its day of the month). "Today", "tomorrow" and every other date still follow the calendar date in "Current local time".`
 }
 
 /**
@@ -946,6 +974,7 @@ export interface EnrichmentPromptParams {
 export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): string {
   const { timezone, morningTime, wakeTime, sleepTime, projects, userContext, taskText } = params
   const now = params.now ?? new Date()
+  const userDay = userDayLine(now, timezone, params.dayStart)
 
   const formattedMorning = formatMorningTime(morningTime)
   const formattedWake = formatMorningTime(wakeTime)
@@ -984,7 +1013,7 @@ export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): strin
   return `## Context
 
 User's timezone: ${timezone}
-Current local time: ${localNow}
+Current local time: ${localNow}${userDay}
 
 User's schedule:
 - Default task time: ${formattedMorning} (for "morning", "remind me <day>" and "nag me <day>" with no clock time; a day with no time at all is the date alone)
