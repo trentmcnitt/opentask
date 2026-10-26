@@ -150,7 +150,7 @@ const ALLOWLIST: Record<string, [number, string]> = {
     [1, `${ON_OPENTASK_DATE} (History's previous day: the picked OpenTask date − 1)`],
   'src/app/history/page.tsx: onClick={() => setDate(DateTime.fromISO(date).plus({ days: 1 }).toISODate()!)}':
     [1, `${ON_OPENTASK_DATE} (History's next day: the picked OpenTask date + 1)`],
-  "src/app/history/page.tsx: const weekday = `${timedDay(n).toFormat('cccc')}${night}`": [
+  "src/lib/history-time-label.ts: const weekday = `${timedDay(n).toFormat('cccc')}${night}`": [
     1,
     `${ON_OPENTASK_DATE} (an entry's weekday beside its time: in its night the OpenTask day, else its own date — timedDay, from nightDay)`,
   ],
@@ -265,10 +265,6 @@ const ALLOWLIST: Record<string, [number, string]> = {
     `${ON_OPENTASK_DATE} (deckDayWords)`,
   ],
   // ── An exact moment, shown as such (TQ-G01 v2) ──
-  "src/app/history/page.tsx: const date = entryDate.toLocaleDateString('en-US', {": [
-    1,
-    `${EXACT_MOMENT} (an entry 5–7 days back: date + time)`,
-  ],
   "src/components/quick-panel/BeforeDeadlineBlock.tsx: const when = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d, h:mm a')":
     [1, `${EXACT_MOMENT} (the deadline's exact moment)`],
   "src/lib/format-date.ts: const dateAndTime = `${due.toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric' })} ${time}`":

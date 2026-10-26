@@ -90,7 +90,7 @@ export async function sendDeadlineCapFeedback(
 
     const content = deadlineCapContent(deadlineAt, timezone, dayBoundaryForUser(userId))
     log.info('notifications', `Deadline cap feedback for user ${userId}: ${content.title}`)
-    const sends: Promise<void>[] = []
+    const sends: Promise<unknown>[] = []
     if (webPush) {
       sends.push(
         sendPushNotification(

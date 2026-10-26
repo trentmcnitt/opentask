@@ -83,6 +83,12 @@ export function wordsAgree(n: NightDay): boolean {
 export const NIGHT_SUFFIX = ' night'
 
 /**
+ * Yesterday's night, as people say it (2026-10-27): "last night", never
+ * "yesterday night" — the row, "Last:", "since", History, the deadline chip.
+ */
+export const LAST_NIGHT = 'last night'
+
+/**
  * The OpenTask day's weekday, with " night" when the moment is in its night:
  * "Thu night" — for a label of the whole day (the deadline chip, the deck's
  * "the deadline is Wed").
@@ -107,7 +113,7 @@ export function timedWeekday(n: NightDay): string {
 
 /**
  * A timed label's day words (lower case): "today" / "tonight", "tomorrow"
- * (" night"), "yesterday" (" night"), else the weekday (" night") — and the
+ * (" night"), "yesterday" / "last night", else the weekday (" night") — and the
  * moment's own weekday wherever a word would contradict its date
  * (`wordsAgree`). A moment already past on today's own night is "Thu night",
  * never "tonight" (the chip's rule).
@@ -120,7 +126,7 @@ export function nightDayWords(n: NightDay, past: boolean): string {
     return past ? timedWeekday(n) : 'tonight'
   }
   if (n.gap === 1) return `tomorrow${suffix}`
-  if (n.gap === -1) return `yesterday${suffix}`
+  if (n.gap === -1) return n.night ? LAST_NIGHT : 'yesterday'
   return timedWeekday(n)
 }
 

@@ -208,9 +208,12 @@ describe('the overdue checker sends a badge only when the count changes', () => 
   })
 
   test('a visible notification carries the badge, and the checker does not repeat it', async () => {
-    // Due exactly 30 minutes ago (plus a few seconds): a P0 boundary, so this
-    // tick sends the task's visible notification with aps.badge.
-    const dueAt = new Date(Date.now() - (30 * 60 + 5) * 1000)
+    // Due 30 minutes before the latest half-hour mark: a P0 (30 min) repeats
+    // on the half-hour grid (nag-marks.ts), so the tick at that mark sends
+    // the task's visible notification with aps.badge.
+    const halfHour = 30 * 60 * 1000
+    const mark = Math.floor(Date.now() / halfHour) * halfHour
+    const dueAt = new Date(mark - halfHour)
     getDb()
       .prepare(
         `INSERT INTO tasks (id, title, due_at, priority, user_id, project_id)
@@ -218,7 +221,7 @@ describe('the overdue checker sends a badge only when the count changes', () => 
       )
       .run(dueAt.toISOString(), USER)
 
-    const now = new Date(dueAt.getTime() + 30 * 60 * 1000 + 5000)
+    const now = new Date(mark + 5000)
     await checkOverdueTasks(now)
     const alerts = sent.filter((n) => n.buildApnsOptions().aps.alert !== undefined)
     expect(alerts).toHaveLength(1)

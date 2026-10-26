@@ -7,8 +7,9 @@
  * paced by the nag ladder alone: the shortest considering rung (the user's
  * tier ×2) among the waiting reminders and quota prompts — 60 minutes by
  * default when everything is Unset — after the slot's own push or the last
- * nag. No daily cap, no derived gap, no evening reserve, no Wake–Sleep
- * window, no top-of-the-hour alignment. These tests pin that, and the parts
+ * nag, on the clock mark nearest that (2026-10-26, nag-marks.ts). No daily
+ * cap, no derived gap, no evening reserve, no Wake–Sleep window. These tests
+ * pin that, and the parts
  * that did not change: ONE notification per user, naming the latest unfinished
  * slot; never a slot that hasn't opened; silent once the slot is finished; the
  * day is the OpenTask day.
@@ -75,7 +76,7 @@ function makeReminder(
 function tick(now: Date) {
   for (const push of pendingSlotNotifications(now)) stampNagSend(push.userId, SLOT_NAG_KEY, now)
   return pendingSlotNags(now).filter((nag) =>
-    claimNagSend(nag.userId, SLOT_NAG_KEY, nag.intervalMinutes, now),
+    claimNagSend(nag.userId, SLOT_NAG_KEY, nag.intervalMinutes, now, nag.timezone),
   )
 }
 
@@ -142,14 +143,15 @@ describe('Unfinished-slot nag — the ladder paces it', () => {
 
   /**
    * RN-004: with only Unset reminders waiting, the interval is the user's
-   * Unset tier ×2 (the ladder's slot_nag row).
+   * Unset tier ×2 (the ladder's slot_nag row). On its clock mark: from 08:00
+   * at 90 the target 09:30 ties 09:00 and 10:00, and a tie goes earlier.
    */
   test("RN-004: the user's Unset tier moves the pace", () => {
     makeReminder(7)
     getDb().prepare('UPDATE users SET auto_snooze_minutes = 45 WHERE id = ?').run(TEST_USER_ID)
     expect(tick(at(8))).toHaveLength(1)
-    expect(pendingSlotNags(at(9, 29))).toHaveLength(0)
-    expect(pendingSlotNags(at(9, 30))).toMatchObject([{ intervalMinutes: 90 }])
+    expect(pendingSlotNags(at(8, 59))).toHaveLength(0)
+    expect(pendingSlotNags(at(9))).toMatchObject([{ intervalMinutes: 90 }])
   })
 
   /** RN-005: a double tick sends once; restart-safe (the clock is `nag_sends`). */
@@ -455,7 +457,8 @@ describe('Unfinished-slot nag — priority paces it', () => {
 
   /**
    * RN-025: finishing the High item drops the pace back to the next rung —
-   * the Unset one left, 60 — counted from the last send.
+   * the Unset one left, 60 — counted from the last send, on its mark: from
+   * 07:30 the target 08:30 ties 08:00 and 09:00, so 08:00.
    */
   test('RN-025: finishing the High item drops back to the next rung', () => {
     makeReminder(7)
@@ -466,19 +469,21 @@ describe('Unfinished-slot nag — priority paces it', () => {
     vi.setSystemTime(at(7, 35))
     markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: high.id })
 
-    expect(pendingSlotNags(at(8))).toHaveLength(0)
-    expect(pendingSlotNags(at(8, 29))).toHaveLength(0)
-    expect(pendingSlotNags(at(8, 30))).toMatchObject([{ count: 1, intervalMinutes: 60 }])
+    expect(pendingSlotNags(at(7, 59))).toHaveLength(0)
+    expect(pendingSlotNags(at(8))).toMatchObject([{ count: 1, intervalMinutes: 60 }])
   })
 
-  /** RN-026: the rung is the user's own tier ×2 — moving the High tier moves it. */
+  /**
+   * RN-026: the rung is the user's own tier ×2 — moving the High tier moves
+   * it. 40 repeats on the half-hour grid: from 07:00 the target 07:40 is
+   * nearest 07:30.
+   */
   test("RN-026: the user's tier change moves the pace", () => {
     makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 3 })
     tick(at(7))
     getDb().prepare('UPDATE users SET auto_snooze_high_minutes = 20 WHERE id = ?').run(TEST_USER_ID)
-    expect(pendingSlotNags(at(7, 30))).toHaveLength(0)
-    expect(pendingSlotNags(at(7, 39))).toHaveLength(0)
-    expect(pendingSlotNags(at(7, 40))).toMatchObject([{ intervalMinutes: 40 }])
+    expect(pendingSlotNags(at(7, 29))).toHaveLength(0)
+    expect(pendingSlotNags(at(7, 30))).toMatchObject([{ intervalMinutes: 40 }])
   })
 
   /**

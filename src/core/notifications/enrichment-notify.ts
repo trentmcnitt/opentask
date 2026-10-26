@@ -239,7 +239,7 @@ export async function notifyEnrichmentFinished(taskId: number, userId: number): 
 
   log.info('notifications', `Enrichment finished: notifying user ${userId} about task ${taskId}`)
 
-  const sends: Promise<void>[] = []
+  const sends: Promise<unknown>[] = []
   if (webPush) {
     sends.push(
       sendPushNotification(

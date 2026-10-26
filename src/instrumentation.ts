@@ -5,11 +5,13 @@
  * for notifications, cleanup tasks, and the AI subsystem.
  *
  * Cron schedule:
- * - Every 1 min: notification check (overdue tasks, all priorities)
- * - Every 1 min: time-slot reminder check (§6 — the slot notifies, not the item)
- * - Every 1 min: unfinished-slot nag (the nag ladder's pace, 60 min by default; slot-nags.ts)
- * - Every 1 min: deadlines-page nag (paced by the nag ladder, sent when
- *   `nag_sends` says it is due; see deadline-nags.ts)
+ * - Every 1 min: the notification tick (src/core/notifications/minute-tick.ts),
+ *   one coordinated pass with ONE alerting push per user (tick.ts):
+ *   - overdue tasks, all priorities (repeats on clock marks, nag-marks.ts)
+ *   - time-slot reminder check (§6 — the slot notifies, not the item)
+ *   - unfinished-slot nag (the nag ladder's pace, on clock marks; slot-nags.ts)
+ *   - deadlines-page nag (paced by the nag ladder, sent when `nag_sends` says
+ *     it is due; see deadline-nags.ts)
  * - Every 1 min: enrichment safety net (AI, independent of notifications)
  * - Every 1 min: persist attempts (§7 — reads are already exact; this keeps
  *   the stored columns current, see src/core/tasks/attempts.ts)
@@ -78,6 +80,55 @@ function makeTaskRollover(runTaskRollover: () => unknown, notifyError: NotifyErr
         'Task rollover failed',
         err instanceof Error ? err.message : String(err),
       )
+    }
+  }
+}
+
+/**
+ * THE NOTIFICATION TICK — what the minute cron and the startup check both run
+ * (minute-tick.ts, tick.ts): the task rollover first (`makeTaskRollover`; a
+ * restart at 06:40 after downtime across 06:30 strips what a sweep marked
+ * for 06:30 before anything nags it), then every sender in one coordinated
+ * pass — the overdue checker, the slot-open push (§6: the time slot
+ * notifies, not the reminder), the slot nag (the §6 exception, after the
+ * slot-open push so it stands down when a slot opens this minute) and the
+ * deadlines-page nag; one alerting push per user per minute.
+ *
+ * One run at a time: a run still going when the next is due is skipped, and
+ * a guard stuck past 30 s is reset so a hung check can never lock delivery
+ * out. A stuck enrichment process can never block notification delivery.
+ */
+function makeNotificationTick(
+  runMinuteTick: () => Promise<void>,
+  taskRollover: () => void,
+  notifyError: NotifyError,
+): () => Promise<void> {
+  let running = false
+  let startedAt = 0
+  const TIMEOUT_MS = 30_000
+  return async () => {
+    if (running) {
+      const elapsed = Date.now() - startedAt
+      if (elapsed <= TIMEOUT_MS) return
+      log.warn(
+        'notifications',
+        `Previous notification check stuck for ${Math.round(elapsed / 1000)}s — resetting guard`,
+      )
+    }
+    running = true
+    startedAt = Date.now()
+    taskRollover()
+    try {
+      await runMinuteTick()
+    } catch (err) {
+      log.error('notifications', 'Notification check error:', err)
+      notifyError(
+        'cron-failure',
+        'Notification check failed',
+        err instanceof Error ? err.message : String(err),
+      )
+    } finally {
+      running = false
     }
   }
 }
@@ -160,10 +211,8 @@ export async function register() {
     markServerProcess()
     const cron = (await import('node-cron')).default
     const { notifyError } = await import('@/lib/error-notify')
-    const { checkOverdueTasks } = await import('@/core/notifications/overdue-checker')
-    const { checkSlotReminders } = await import('@/core/notifications/slot-reminders')
-    const { checkSlotNags, purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
-    const { checkDeadlineNags } = await import('@/core/notifications/deadline-nags')
+    const { runMinuteTick } = await import('@/core/notifications/minute-tick')
+    const { purgeOldSlotNags } = await import('@/core/notifications/slot-nags')
     const { initWidgetPushSync } = await import('@/core/notifications/widget-push')
     const { purgeOldUndoLogs } = await import('@/core/undo/purge')
     const { purgeOldTrash } = await import('@/core/tasks/purge-trash')
@@ -183,64 +232,22 @@ export async function register() {
       isSdkAvailableSync,
     } = await import('@/core/ai')
 
-    // Run initial notification check after a short delay
-    setTimeout(async () => {
-      // The rollover first, as in the minute jobs (`makeTaskRollover`): a
-      // restart at 06:40 after downtime across 06:30 must strip the tasks a
-      // sweep marked for 06:30 before this check would nag them.
-      taskRollover()
-      log.info('notifications', 'Running initial overdue check')
-      await checkOverdueTasks()
+    const notificationTick = makeNotificationTick(runMinuteTick, taskRollover, notifyError)
+
+    // The startup check, a short delay after boot: the same guarded minute
+    // tick as the cron (review of #362). It used to run the overdue checker
+    // alone, outside the guard, so a boot at hh:mm:55 sent that minute's
+    // overdue pushes twice; now the guard keeps the two runs apart in this
+    // process and the tick's minute claim (`claimTickMinute`) keeps any run
+    // from sending what a run of the same minute already sent — this process
+    // or the one a deploy just replaced.
+    setTimeout(() => {
+      log.info('notifications', 'Running initial notification check')
+      void notificationTick()
     }, 5000)
 
     // --- Notification cron (independent of enrichment) ---
-    // Guard with 30s timeout prevents permanent lockout if a check hangs.
-    // A stuck enrichment process can never block notification delivery.
-    let isNotificationRunning = false
-    let notificationStartedAt = 0
-    const NOTIFICATION_TIMEOUT_MS = 30_000
-    cron.schedule('* * * * *', async () => {
-      // If a previous run is stuck past the timeout, force-reset the guard
-      if (isNotificationRunning) {
-        const elapsed = Date.now() - notificationStartedAt
-        if (elapsed > NOTIFICATION_TIMEOUT_MS) {
-          log.warn(
-            'notifications',
-            `Previous notification check stuck for ${Math.round(elapsed / 1000)}s — resetting guard`,
-          )
-          isNotificationRunning = false
-        } else {
-          return
-        }
-      }
-      isNotificationRunning = true
-      notificationStartedAt = Date.now()
-      // Before the overdue check: see `makeTaskRollover`.
-      taskRollover()
-      try {
-        await checkOverdueTasks()
-        // §6: the time slot notifies, not the reminder. Same tick as the
-        // overdue check because both are minute-boundary derived.
-        await checkSlotReminders()
-        // The §6 exception: one nag for slots still unfinished, at the ladder's
-        // pace. AFTER checkSlotReminders on purpose — a slot opening on this exact
-        // minute sends its own push, and the nag stands down for that minute
-        // rather than putting a second banner beside it.
-        await checkSlotNags()
-        // The deadlines page's nag (deadline-nags.ts): one push per user, paced
-        // by the nag ladder, sent when `nag_sends` says it is due.
-        await checkDeadlineNags()
-      } catch (err) {
-        log.error('notifications', 'Notification check error:', err)
-        notifyError(
-          'cron-failure',
-          'Notification check failed',
-          err instanceof Error ? err.message : String(err),
-        )
-      } finally {
-        isNotificationRunning = false
-      }
-    })
+    cron.schedule('* * * * *', () => notificationTick())
     log.info('cron', 'Notification cron started (every 1 min)')
     await startAttemptsCron((expr, fn) => cron.schedule(expr, fn), notifyError, taskRollover)
 

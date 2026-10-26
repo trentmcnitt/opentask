@@ -16,6 +16,7 @@ import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { forgetBadgeSent, recordBadgeSent } from '@/core/notifications/badge-state'
 import { OVERDUE_SUMMARY_COLLAPSE_ID, taskCollapseId } from '@/core/notifications/format'
+import { NOTHING_SENT, type DeliveryResult } from '@/core/notifications/delivery-result'
 
 const APNS_KEY_ID = process.env.APNS_KEY_ID || ''
 const APNS_TEAM_ID = process.env.APNS_TEAM_ID || ''
@@ -107,8 +108,11 @@ async function sendTryingBothEnvironments(
  * @param logLabel - Label for failure log messages (e.g., "notification", "badge update")
  * @param preLog - Optional callback for pre-send logging, receives the device list
  * @param includeDevice - Optional filter: only devices it returns true for are sent to
- * @returns true when every device took the push (or there was none to send
- *   to), false when at least one send failed for a reason other than a stale token
+ * @returns `complete`: true when every device took the push (or there was
+ *   none to send to), false when at least one send failed for a reason other
+ *   than a stale token; `attempted` / `delivered`: the devices sent to and the
+ *   ones that took it (delivery-result.ts — the tick promotes a lead that
+ *   reached none)
  */
 async function sendToAllDevices(
   userId: number,
@@ -116,8 +120,8 @@ async function sendToAllDevices(
   logLabel: string,
   preLog?: (devices: ApnsDeviceRow[]) => void,
   includeDevice?: (device: ApnsDeviceRow) => boolean,
-): Promise<boolean> {
-  if (!isApnsConfigured()) return true
+): Promise<DeviceSendOutcome> {
+  if (!isApnsConfigured()) return { complete: true, ...NOTHING_SENT }
 
   const db = getDb()
   const devices = (
@@ -128,7 +132,7 @@ async function sendToAllDevices(
       .all(userId) as ApnsDeviceRow[]
   ).filter((device) => !includeDevice || includeDevice(device))
 
-  if (devices.length === 0) return true
+  if (devices.length === 0) return { complete: true, ...NOTHING_SENT }
 
   if (preLog) preLog(devices)
 
@@ -142,10 +146,12 @@ async function sendToAllDevices(
           db.prepare('UPDATE apns_devices SET environment = ? WHERE id = ?').run(env, device.id)
           log.info('apns', `Device token ${device.id} is ${env}, not ${device.environment} — fixed`)
         }
+        return true
       } catch (err: unknown) {
         if (isStaleTokenError(err)) {
           db.prepare('DELETE FROM apns_devices WHERE id = ?').run(device.id)
           log.info('apns', `Removed stale device token ${device.id}`)
+          return false
         } else {
           throw err
         }
@@ -161,7 +167,18 @@ async function sendToAllDevices(
       `Failed to send ${failures.length}/${devices.length} APNs ${logLabel}: ${reasons}`,
     )
   }
-  return failures.length === 0
+  const delivered = results.filter((r) => r.status === 'fulfilled' && r.value).length
+  return { complete: failures.length === 0, attempted: devices.length, delivered }
+}
+
+/** What `sendToAllDevices` reports. */
+interface DeviceSendOutcome extends DeliveryResult {
+  complete: boolean
+}
+
+/** A device fan-out as the tick reads it (delivery-result.ts). */
+function deliveryOf(outcome: DeviceSendOutcome): DeliveryResult {
+  return { attempted: outcome.attempted, delivered: outcome.delivered }
 }
 
 export interface ApnsPushPayload {
@@ -173,8 +190,12 @@ export interface ApnsPushPayload {
   overdueCount: number
   /** App icon badge number — total overdue tasks for the user */
   badge?: number
-  /** 'time-sensitive' for P3+, 'active' for P0-P2. 'critical' reserved for when Apple approves the entitlement. */
-  interruptionLevel: 'time-sensitive' | 'active' | 'critical'
+  /**
+   * 'critical' for P4, 'time-sensitive' for P3, 'active' for P0-P2 — or
+   * 'passive' (no sound) when another push leads this minute's tick
+   * (tick.ts: one alert per user per tick).
+   */
+  interruptionLevel: 'time-sensitive' | 'active' | 'critical' | 'passive'
   /** Volume for critical alerts (0.0-1.0). Only used when interruptionLevel is 'critical'. */
   criticalAlertVolume?: number
 }
@@ -211,10 +232,16 @@ export function threadIdForPriority(priority: number): string {
 export async function sendApnsNotification(
   userId: number,
   payload: ApnsPushPayload,
-): Promise<void> {
+): Promise<DeliveryResult> {
   const isCritical = payload.interruptionLevel === 'critical'
+  // A passive banner lands in Notification Center without sound (tick.ts).
+  const sound = isCritical
+    ? { critical: 1 as const, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
+    : payload.interruptionLevel === 'passive'
+      ? undefined
+      : 'default'
 
-  const delivered = await sendToAllDevices(
+  const outcome = await sendToAllDevices(
     userId,
     (device) =>
       new Notification(device.device_token, {
@@ -225,9 +252,7 @@ export async function sendApnsNotification(
         // routine items.
         threadId: threadIdForPriority(payload.priority),
         badge: payload.badge,
-        sound: isCritical
-          ? { critical: 1, name: 'default', volume: payload.criticalAlertVolume ?? 1.0 }
-          : 'default',
+        sound,
         collapseId: taskCollapseId(payload.taskId),
         data: {
           taskId: payload.taskId,
@@ -253,9 +278,10 @@ export async function sendApnsNotification(
   // checker's change gate (badge-state.ts) has to know, or it re-sends the
   // same number as a badge-only push a minute later.
   if (payload.badge !== undefined) {
-    if (delivered) recordBadgeSent(userId, payload.badge)
+    if (outcome.complete) recordBadgeSent(userId, payload.badge)
     else forgetBadgeSent(userId)
   }
+  return deliveryOf(outcome)
 }
 
 /**
@@ -264,6 +290,8 @@ export async function sendApnsNotification(
  *
  * Uses the TASK_SUMMARY category so iOS shows bulk-snooze action buttons
  * and the content extension can display the snooze grid in bulk mode.
+ * `passive`: another push leads this minute's tick (tick.ts) — no sound,
+ * `interruption-level: passive`.
  */
 export async function sendApnsSummaryNotification(
   userId: number,
@@ -271,8 +299,9 @@ export async function sendApnsSummaryNotification(
   body: string,
   overflowCount: number,
   totalOverdueCount: number,
-): Promise<void> {
-  await sendToAllDevices(
+  options: { passive?: boolean } = {},
+): Promise<DeliveryResult> {
+  const outcome = await sendToAllDevices(
     userId,
     (device) =>
       new Notification(device.device_token, {
@@ -280,15 +309,17 @@ export async function sendApnsSummaryNotification(
         topic: device.bundle_id,
         category: 'TASK_SUMMARY',
         threadId: NOTIFICATION_THREADS.tasks,
-        sound: 'default',
+        sound: options.passive ? undefined : 'default',
         collapseId: OVERDUE_SUMMARY_COLLAPSE_ID,
         data: {
           overflowCount,
           totalOverdueCount,
         },
+        ...(options.passive ? { aps: { 'interruption-level': 'passive' } } : {}),
       }),
     'summary notifications',
   )
+  return deliveryOf(outcome)
 }
 
 /**
@@ -342,6 +373,10 @@ export interface ApnsSlotReminderPayload {
    * has to say more — it speaks for the other unfinished slots too.
    */
   body?: string
+  /** Appended to the body: the tick lead's " · N more waiting" (tick.ts). */
+  suffix?: string
+  /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`. */
+  passive?: boolean
 }
 
 /**
@@ -378,7 +413,9 @@ export function buildSlotReminderNotification(
 ): Notification {
   const prompts = payload.promptCount ?? 0
   const decks = payload.deckCount ?? 0
-  const body = payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)
+  const body =
+    (payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)) +
+    (payload.suffix ?? '')
   return new Notification(deviceToken, {
     alert: { title: payload.slotLabel, body },
     topic,
@@ -394,8 +431,8 @@ export function buildSlotReminderNotification(
     },
     aps: {
       // Reminders carry no debt (§6) — they must never interrupt like an
-      // overdue task does.
-      'interruption-level': 'active',
+      // overdue task does. Passive when another push leads the tick.
+      'interruption-level': payload.passive ? 'passive' : 'active',
     },
   })
 }
@@ -403,9 +440,9 @@ export function buildSlotReminderNotification(
 export async function sendApnsSlotReminder(
   userId: number,
   payload: ApnsSlotReminderPayload,
-): Promise<void> {
+): Promise<DeliveryResult> {
   const prompts = payload.promptCount ?? 0
-  await sendToAllDevices(
+  const outcome = await sendToAllDevices(
     userId,
     (device) => buildSlotReminderNotification(device.device_token, device.bundle_id, payload),
     'slot reminders',
@@ -416,6 +453,7 @@ export async function sendApnsSlotReminder(
       )
     },
   )
+  return deliveryOf(outcome)
 }
 
 export interface ApnsEnrichedPayload {
@@ -682,6 +720,13 @@ export const DEADLINES_NAG_COLLAPSE_ID = 'deadlines-page'
 /** `data.kind` of the deadlines-page nag: the native apps open the page on a body tap. */
 export const DEADLINES_NAG_KIND = 'deadlines'
 
+export interface DeadlinesNagPayload {
+  title: string
+  body: string
+  /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`. */
+  passive?: boolean
+}
+
 /**
  * The deadlines page's nag (deadline-nags.ts; nag-map rulings 4 and 5): a
  * SILENT banner — no `sound`, `interruption-level: active` whatever the
@@ -696,7 +741,7 @@ export const DEADLINES_NAG_KIND = 'deadlines'
 export function buildDeadlinesNagNotification(
   deviceToken: string,
   topic: string,
-  payload: { title: string; body: string },
+  payload: DeadlinesNagPayload,
 ): Notification {
   return new Notification(deviceToken, {
     alert: { title: payload.title, body: payload.body },
@@ -705,15 +750,15 @@ export function buildDeadlinesNagNotification(
     collapseId: DEADLINES_NAG_COLLAPSE_ID,
     priority: Priority.immediate,
     data: { kind: DEADLINES_NAG_KIND },
-    aps: { 'interruption-level': 'active' },
+    aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
   })
 }
 
 export async function sendApnsDeadlinesNag(
   userId: number,
-  payload: { title: string; body: string },
-): Promise<void> {
-  await sendToAllDevices(
+  payload: DeadlinesNagPayload,
+): Promise<DeliveryResult> {
+  const outcome = await sendToAllDevices(
     userId,
     (device) => buildDeadlinesNagNotification(device.device_token, device.bundle_id, payload),
     'deadlines nags',
@@ -721,6 +766,7 @@ export async function sendApnsDeadlinesNag(
       log.info('apns', `Sending deadlines nag to ${devices.length} device(s)`)
     },
   )
+  return deliveryOf(outcome)
 }
 
 /**
@@ -777,14 +823,14 @@ export function buildBadgeNotification(
  * it when any send failed, so the checker's next tick tries again.
  */
 export async function sendApnsBadgeUpdate(userId: number, badge: number): Promise<void> {
-  const delivered = await sendToAllDevices(
+  const outcome = await sendToAllDevices(
     userId,
     (device) => buildBadgeNotification(device.device_token, device.bundle_id, badge),
     'badge updates',
     undefined,
     deviceShowsBadge,
   )
-  if (delivered) recordBadgeSent(userId, badge)
+  if (outcome.complete) recordBadgeSent(userId, badge)
   else forgetBadgeSent(userId)
 }
 

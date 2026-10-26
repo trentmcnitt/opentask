@@ -245,7 +245,7 @@ export async function sendSweepFeedback(userId: number, feedback: SweepFeedback)
 
   log.info('notifications', `Sweep feedback for user ${userId}: ${feedback.body}`)
 
-  const sends: Promise<void>[] = []
+  const sends: Promise<unknown>[] = []
   if (webPush) {
     sends.push(
       sendPushNotification(

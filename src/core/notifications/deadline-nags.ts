@@ -13,9 +13,11 @@
  *    Low 480, Unset 60 with the shipped tiers;
  *  - in the SAFETY NET (from the day before the deadline on, past it too) at
  *    least hourly (A2).
- *  Each counted row has its interval; the SHORTEST sets the pace, so adding a
- *  row can only make the nag come sooner. With the shipped tiers that is not
- *  always the highest priority's: an Unset row (60) outpaces a Medium (120).
+ *  Each counted row has its interval; the one whose next clock mark comes
+ *  FIRST sets the pace (`nagPace`; with the shipped rungs, the shortest), so
+ *  adding a row can only make the nag come sooner. With the shipped tiers
+ *  that is not always the highest priority's: an Unset row (60) outpaces a
+ *  Medium (120).
  *
  * WHICH ROWS COUNT. The page's own rows (`getTaskSegments(…, { deadlineRows })`,
  * so membership, the switch, queue precedence and "seen" are the page's,
@@ -44,12 +46,20 @@
  * `data.kind: "deadlines"` (APNs) and `/?tasks=deadlines` (Web Push) open the
  * task queue on the deadlines page.
  *
- * WHEN EXACTLY: `nag_sends` (user, 'deadlines-page', last_sent_at) — send
- * when the whole minutes since the last send reach the interval. Restart-safe
- * (a restart neither repeats nor skips a send), a double tick sends once
- * (the claim is a compare-and-swap), and after downtime the first tick sends.
- * A priority rising mid-interval sends as soon as the new, shorter interval
- * has passed since the last send.
+ * WHEN EXACTLY: `nag_sends` (user, 'deadlines-page', last_sent_at). The first
+ * nag goes the moment something waits (exact); each repeat on the CLOCK MARK
+ * nearest the last send plus the interval (nag-marks.ts, Trent 2026-10-26: a
+ * row waiting from 03:00 at Unset nags 03:00, 04:00, 05:00 …; one set at
+ * 10:07 at High nags 10:07, 10:30, 11:00 …). Restart-safe (a restart neither
+ * repeats nor skips a send), a double tick sends once (the claim is a
+ * compare-and-swap), and after downtime the first tick sends. A priority
+ * rising mid-interval sends as soon as the new rung's mark has come.
+ *
+ * ONE ALERT PER TICK (tick.ts): the nag is silent by its own rule, so it
+ * never leads a minute in which an overdue push would sound (Trent,
+ * 2026-10-26); it then goes out passive on APNs (Web Push is silent anyway).
+ * Among silent sends only, a safety-net nag ranks above the period pushes, a
+ * plain one last of all.
  *
  * Off: the task-queue switch off (no page), notifications off, the demo user
  * (`notifiableUsers`). Split like slot-nags.ts: a read-only decision
@@ -61,8 +71,10 @@ import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { APP_URL } from '@/core/notifications/format'
 import { nagIntervalMinutes, userNagTiers, type NagTiers } from './nag-ladder'
-import { claimNagSend, nagSendDue } from './nag-sends'
+import { claimNagSend, nagPace, nagSendDue } from './nag-sends'
+import { runTick, type Channels, type Delivery, type SourcePlan, type TickSource } from './tick'
 import { notifiableUsers } from './notifiable-users'
+import { mergeSettled, type DeliveryResult } from './delivery-result'
 import { isWebPushConfigured, sendPushNotification } from './web-push'
 import { DEADLINES_NAG_COLLAPSE_ID, isApnsConfigured, sendApnsDeadlinesNag } from './apns'
 import { getTaskSegments, type SegmentTask } from '@/core/tasks/task-segments'
@@ -88,16 +100,19 @@ export function countedDeadlineRows(rows: SegmentTask[]): SegmentTask[] {
   )
 }
 
-/** Minutes between nags for these rows — the shortest row's — or null (no rows). Pure. */
-export function deadlineNagInterval(rows: SegmentTask[], tiers: NagTiers): number | null {
-  let best: number | null = null
+/**
+ * Each counted row's rung (minutes), distinct — empty for no rows. Pure. The
+ * pace is the rung whose next clock mark comes first (`nagPace`).
+ */
+export function deadlineNagRungs(rows: SegmentTask[], tiers: NagTiers): number[] {
+  const rungs = new Set<number>()
   for (const row of rows) {
     const minutes = nagIntervalMinutes('deadlines', row.task.priority, tiers, {
       safetyNet: row.safetyNet === true,
     })
-    if (minutes > 0 && (best === null || minutes < best)) best = minutes
+    if (minutes > 0) rungs.add(minutes)
   }
-  return best
+  return [...rungs]
 }
 
 export interface DeadlineNagContent {
@@ -175,11 +190,32 @@ export function fastestDeadlineInterval(tiers: NagTiers): number {
   return Math.max(1, Math.min(...rungs))
 }
 
+/**
+ * Every rung any page row could set for these tiers, in the safety net or
+ * not. The cheap gate asks whether ANY of their marks has come: with marks a
+ * shorter interval does not always land sooner, so the fastest alone is no
+ * lower bound.
+ */
+function everyDeadlineRung(tiers: NagTiers): number[] {
+  const rungs = new Set<number>()
+  for (const p of [0, 1, 2, 3, 4]) {
+    for (const safetyNet of [false, true]) {
+      const minutes = nagIntervalMinutes('deadlines', p, tiers, { safetyNet })
+      if (minutes > 0) rungs.add(minutes)
+    }
+  }
+  return [...rungs]
+}
+
 export interface PendingDeadlineNag {
   userId: number
   intervalMinutes: number
   /** The rows the nag speaks for. */
   count: number
+  /** Any counted row is in the safety net: the tick ranks it high (tick.ts). */
+  safetyNet: boolean
+  /** The user's zone, whose clock marks the nag repeats on. */
+  timezone: string
   content: DeadlineNagContent
 }
 
@@ -190,28 +226,49 @@ export function pendingDeadlineNags(now: Date = new Date()): PendingDeadlineNag[
   for (const user of notifiableUsers()) {
     if (!hasDeadlineCandidate(user.id)) continue
     const tiers = userNagTiers(user.id)
-    // Not due even at the fastest pace any row could set: skip building the
-    // page (every open task, Upcoming's rrule walks) this minute.
-    if (!nagSendDue(user.id, DEADLINES_NAG_KEY, fastestDeadlineInterval(tiers), now)) continue
+    const due = (rungs: number[]) => {
+      const pace = nagPace(user.id, DEADLINES_NAG_KEY, rungs, user.timezone)
+      if (pace === null) return null
+      return nagSendDue(user.id, DEADLINES_NAG_KEY, pace, now, user.timezone) ? pace : null
+    }
+    // Not due at any pace a row could set: skip building the page (every
+    // open task, Upcoming's rrule walks) this minute.
+    if (due(everyDeadlineRung(tiers)) === null) continue
     const page =
       getTaskSegments(user.id, user.timezone, now, {
         queuePanels: true,
         deadlineRows: true,
       }).find((s) => s.horizon === 'deadlines')?.tasks ?? []
     const rows = countedDeadlineRows(page)
-    const interval = deadlineNagInterval(rows, tiers)
+    const interval = due(deadlineNagRungs(rows, tiers))
     if (interval === null) continue
-    if (!nagSendDue(user.id, DEADLINES_NAG_KEY, interval, now)) continue
     const content = deadlineNagContent(rows, user.timezone, now, rolloverTimeForUser(user.id))
-    pending.push({ userId: user.id, intervalMinutes: interval, count: rows.length, content })
+    pending.push({
+      userId: user.id,
+      intervalMinutes: interval,
+      count: rows.length,
+      safetyNet: rows.some((r) => r.safetyNet === true),
+      timezone: user.timezone,
+      content,
+    })
   }
   return pending
 }
 
-/** Deliver one nag on both channels. Failures are logged per channel. */
-async function sendDeadlinesNag(userId: number, content: DeadlineNagContent): Promise<void> {
-  const sends: Promise<void>[] = []
-  if (isWebPushConfigured()) {
+/**
+ * Deliver one nag on the channels that are on. Failures are logged per
+ * channel. Web Push is silent either way; `passive` (another push leads the
+ * tick) makes the APNs banner passive too.
+ */
+async function sendDeadlinesNag(
+  userId: number,
+  nagContent: DeadlineNagContent,
+  channels: Channels,
+  delivery: Delivery,
+): Promise<DeliveryResult> {
+  const content = { ...nagContent, body: nagContent.body + (delivery.suffix ?? '') }
+  const sends: Promise<DeliveryResult>[] = []
+  if (channels.webPush) {
     sends.push(
       sendPushNotification(
         userId,
@@ -225,27 +282,62 @@ async function sendDeadlinesNag(userId: number, content: DeadlineNagContent): Pr
       ),
     )
   }
-  if (isApnsConfigured()) sends.push(sendApnsDeadlinesNag(userId, content))
-  for (const r of await Promise.allSettled(sends)) {
+  if (channels.apns) {
+    sends.push(sendApnsDeadlinesNag(userId, { ...content, passive: delivery.passive }))
+  }
+  const settled = await Promise.allSettled(sends)
+  for (const r of settled) {
     if (r.status === 'rejected') log.error('notifications', 'Deadlines nag error:', r.reason)
+  }
+  return mergeSettled(settled)
+}
+
+/**
+ * This minute's deadlines nags as tick sends (tick.ts): kind
+ * `deadlines_safety_net` when any counted row is in the safety net, else
+ * `deadlines`. The claim is the `nag_sends` compare-and-swap — claimed before
+ * sending, so a lost claim means this minute already sent.
+ */
+export function planDeadlineNagSends(now: Date, channels: Channels): SourcePlan {
+  if (!channels.webPush && !channels.apns) return { sends: [] }
+  return {
+    sends: pendingDeadlineNags(now).map((nag) => ({
+      userId: nag.userId,
+      kind: nag.safetyNet ? 'deadlines_safety_net' : 'deadlines',
+      items: nag.count,
+      // Silent on both channels (rulings 4 and 5), the safety net too: never
+      // leads a minute in which something sounds (tick.ts).
+      silent: true,
+      claim: () => {
+        const won = claimNagSend(
+          nag.userId,
+          DEADLINES_NAG_KEY,
+          nag.intervalMinutes,
+          now,
+          nag.timezone,
+        )
+        if (won) {
+          log.info(
+            'notifications',
+            `Deadlines nag for user ${nag.userId}: ${nag.count} row(s), every ${nag.intervalMinutes} min`,
+          )
+        }
+        return won
+      },
+      deliver: (delivery) => sendDeadlinesNag(nag.userId, nag.content, channels, delivery),
+    })),
   }
 }
 
-/** Cron entry point — the minute tick, after the slot nag. */
+/** The deadlines nag as one of the minute tick's sources. */
+export const DEADLINE_NAG_SOURCE: TickSource = {
+  name: 'Deadlines nag checker',
+  minuteKey: 'tick-deadlines',
+  plan: planDeadlineNagSends,
+}
+
+/** The deadlines nag on its own (tests): one tick with this source alone. */
 export async function checkDeadlineNags(nowOverride?: Date): Promise<void> {
   if (!isWebPushConfigured() && !isApnsConfigured()) return
-  try {
-    const now = nowOverride ?? new Date()
-    for (const nag of pendingDeadlineNags(now)) {
-      // Claim before sending: a lost claim means this minute already sent.
-      if (!claimNagSend(nag.userId, DEADLINES_NAG_KEY, nag.intervalMinutes, now)) continue
-      log.info(
-        'notifications',
-        `Deadlines nag for user ${nag.userId}: ${nag.count} row(s), every ${nag.intervalMinutes} min`,
-      )
-      await sendDeadlinesNag(nag.userId, nag.content)
-    }
-  } catch (err) {
-    log.error('notifications', 'Deadlines nag checker error:', err)
-  }
+  await runTick([DEADLINE_NAG_SOURCE], nowOverride ?? new Date())
 }

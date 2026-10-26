@@ -256,30 +256,30 @@ describe('DN-004 nag_sends', () => {
   const plus = (minutes: number, ms = 0) => new Date(t0.getTime() + minutes * 60000 + ms)
 
   test('one claim per interval; a double tick sends once', () => {
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0)).toBe(true)
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0)).toBe(false)
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(119))).toBe(false)
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(120))).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0, tz)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0, tz)).toBe(false)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(119), tz)).toBe(false)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(120), tz)).toBe(true)
   })
 
   test('whole minutes: a tick that ran late or early does not slip a minute', () => {
     // Last send at 10:00:00.900; the 12:00 tick runs at 12:00:00.100.
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(0, 900))).toBe(true)
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(120, 100))).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(0, 900), tz)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, plus(120, 100), tz)).toBe(true)
   })
 
   test('restart-safe and catches up: the state is the row, read fresh each tick', () => {
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, t0)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, t0, tz)).toBe(true)
     // "Restart": nothing in memory matters — a new claim reads the stored row.
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(10))).toBe(false)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(10), tz)).toBe(false)
     // Down from 10:10 to 13:07: the first tick after sends, once.
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(187))).toBe(true)
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(188))).toBe(false)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(187), tz)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(188), tz)).toBe(false)
   })
 
   test('a shorter interval (priority rose) sends as soon as it has passed', () => {
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0)).toBe(true)
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(30))).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 120, t0, tz)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 30, plus(30), tz)).toBe(true)
   })
 
   test('the page is not built while no row could be due yet', () => {
@@ -287,7 +287,7 @@ describe('DN-004 nag_sends', () => {
     expect(fastestDeadlineInterval({ ...DEFAULT_TIERS, urgent: 60, high: 60 })).toBe(60)
     inNet(4)
     expect(pending()).toMatchObject([{ intervalMinutes: 10 }])
-    claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 10, new Date())
+    claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 10, new Date(), tz)
     setClock('2026-10-20T10:09')
     expect(pending()).toEqual([])
     setClock('2026-10-20T10:10')
@@ -295,8 +295,8 @@ describe('DN-004 nag_sends', () => {
   })
 
   test('keys and users are independent', () => {
-    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 60, t0)).toBe(true)
-    expect(claimNagSend(TEST_USER_ID, 'other', 60, t0)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, DEADLINES_NAG_KEY, 60, t0, tz)).toBe(true)
+    expect(claimNagSend(TEST_USER_ID, 'other', 60, t0, tz)).toBe(true)
   })
 })
 
@@ -308,6 +308,8 @@ describe('DN-005 the sender', () => {
     expect(sendApnsDeadlinesNag).toHaveBeenCalledWith(TEST_USER_ID, {
       title: 'Deadlines',
       body: 'Deadline tomorrow: 1 unplanned',
+      // Alone in its tick: not passive (tick.ts).
+      passive: false,
     })
     expect(sendPushNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
@@ -409,9 +411,11 @@ describe('DN-007 overdue Web Push tag = APNs collapse id (#6)', () => {
   test('the overflow summary carries tag overdue-summary', async () => {
     for (let i = 0; i < 5; i++) make({ due_at: at('2026-10-20T10:00'), priority: 2 })
     await checkOverdueTasks(new Date())
+    // One alert per tick (tick.ts): the first task's push leads, so the
+    // summary goes out silent rather than renotifying.
     expect(sendPushNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
-      expect.objectContaining({ tag: 'overdue-summary', renotify: true }),
+      expect.objectContaining({ tag: 'overdue-summary', silent: true }),
     )
   })
 })
