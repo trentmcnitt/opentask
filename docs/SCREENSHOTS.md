@@ -14,7 +14,7 @@ About three minutes on an M-series Mac, a minute of it the watch simulator (buil
 `scripts/screenshots/run.sh`, in order:
 
 1. **Build** — `next build` with a fixed build stamp (the sidebar prints `v<version> · <build date>`). Skip with `SCREENSHOTS_SKIP_BUILD=1` to reuse `.next`.
-2. **Seed** — `scripts/screenshots/seed.ts` writes a fresh throwaway SQLite database (`<out>/screenshots.db`) with one user, `sample`: five coloured projects, ~33 tasks across every priority with labels, recurrence, notes, two overdue, a day of due times, two "just added" and two done today; 14 reminders over the five default periods (Early morning finished, Morning under way); 8 quotas (day / week / month, some met) whose prompts are spread over the periods; pre-baked AI insights and What's Next (dormant while those are shelved, see AI below). All invented, generic data — this repo is public.
+2. **Seed** — `scripts/screenshots/seed.ts` writes a fresh throwaway SQLite database (`<out>/screenshots.db`) with one user, `sample`: five coloured projects, ~33 tasks across every priority with labels, recurrence, notes, two overdue, a day of due times, two "just added" and two done today; 14 reminders over the five default periods (Early morning finished, Morning under way); 8 quotas (day / week / month, some met) whose prompts are spread over the periods; pre-baked AI insights and What's Next. All invented, generic data — this repo is public.
 3. **Serve** — `next start` on port 3353 (`SCREENSHOTS_PORT`) against that database. Stopped on every exit path (`trap`).
 4. **Web** — `scripts/screenshots/capture-web.ts` (Playwright, **WebKit**, the apps' engine), light and dark.
 5. **Data** — the sample account's API responses (`scripts/dump-preview-data.ts --out <out>/widget-data`, plus today's `/api/completions`), for the native renders.
@@ -31,7 +31,7 @@ Every run shows the same moment: **Tuesday 2026-09-15, 9:41 AM, America/Chicago*
 - **Watch simulator**: `scripts/screenshots/watch-clock.c`, built into a dylib and inserted into every process of a throwaway simulator, freezes the wall clock at 9:41:00 — for the app and for the time watchOS draws in its corner. See [Apple Watch](#apple-watch).
 - **Why it must stay in the past**: SQLite's `datetime('now')` is the real clock. `src/core/tasks/currently-due.ts` prefilters with it and then filters in JS with the shifted clock, which is correct only while the real date is later.
 - **Cookies**: NextAuth's session cookie carries an absolute `Expires` a week after the (shifted) server date, which the browser compares with the real date and drops. `capture-web.ts` routes same-origin responses and strips `Expires` / `Max-Age` from their cookies, so they become session cookies; the JWT inside still expires on the server's clock.
-- **AI**: the server runs with `OPENTASK_AI_ENABLED=true` so the AI surfaces that still run render, but the provider is OpenAI with a dummy key and a dead loopback base URL, and `OPENTASK_AI_CLI_PATH` points nowhere, so the Claude Code warm slot fails fast (it logs `SDK provider unavailable` in `<out>/server.log` — expected). Nothing leaves the machine; what the UI shows is the pre-baked data. `OPENTASK_AI_UNSHELVE` is not set, so What's Next, Insights and Quick Take are shelved here as in production (`src/core/ai/shelved.ts`): the dashboard hides their AI chip and task-row commentary, and no shot depends on them.
+- **AI**: the server runs with `OPENTASK_AI_ENABLED=true` so the AI surfaces render, but the provider is OpenAI with a dummy key and a dead loopback base URL, and `OPENTASK_AI_CLI_PATH` points nowhere, so the Claude Code warm slot fails fast (it logs `Enrichment slot init failed` in `<out>/server.log` — expected). Nothing leaves the machine; what the UI shows is the pre-baked data.
 
 ### Web shots
 
@@ -88,7 +88,7 @@ The watch app has three **DEBUG-only** launch-environment hooks for this, all in
 
 Some files are new (Reminders, Quotas, views, widgets, menu bar) and have no page yet; their destinations are suggestions.
 
-The README's iPhone images in `docs/images/` are straight copies of pipeline output: `ios-dashboard-{light,dark}-400.png` from `web/ios-dashboard-{light,dark}-400.png`. Its `task-card-ai-insight.png` came from a `web-task-card-ai-insight-*` shot that is no longer produced (Insights is shelved, 2026-10-22).
+The README's three images in `docs/images/` are straight copies of pipeline output: `ios-dashboard-{light,dark}-400.png` from `web/ios-dashboard-{light,dark}-400.png`, and `filled-task-input-light.png` from `web/filled-task-input-light.png`.
 
 ## Adding a shot
 

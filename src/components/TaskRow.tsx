@@ -35,7 +35,8 @@ import {
   type HorizonValue,
 } from '@/lib/task-segments'
 import { REMOVE_TARGET } from '@/lib/task-model-words'
-import { cornerWidth, offersTargetToday, priorityTab, showsHorizonDot } from '@/lib/row-corner'
+import { cornerWidth, offersTargetToday, showsHorizonDot, type PriorityTab } from '@/lib/row-corner'
+import { priorityRowStyles } from '@/lib/priority-display'
 import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
@@ -59,7 +60,7 @@ import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
-import type { Task, LabelColor, PriorityDisplayConfig } from '@/types'
+import type { Task, LabelColor } from '@/types'
 
 /**
  * TaskRow visual reference — complete rendered examples:
@@ -414,7 +415,9 @@ export function TaskRow({
     [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, onDoubleClick, pointer],
   )
 
-  const priorityColors = getPriorityColors(task.priority)
+  // The user's Priority Display settings, read through the rule every row
+  // shares (`priorityRowStyles`: reminders, quota prompts and chips too).
+  const pri = priorityRowStyles(task.priority, priorityDisplay)
   const isAiProcessing = task.labels.includes('ai-to-process')
   const tracked = isTracked(task)
   const pastDeadline = !tracked && isPastDeadline(task.deadline_at, new Date())
@@ -453,7 +456,7 @@ export function TaskRow({
   const corner = rowCorner({
     task,
     attempts: !tracked && task.due_at !== null ? attempts : 0,
-    priorityDisplay,
+    priorityTab: pri.tab,
     isSelectionMode,
   })
   // The target time is a control (Remove target / Move…, `TargetTimeText`)
@@ -534,8 +537,7 @@ export function TaskRow({
           isOverdue &&
           'border-l-over-target hover:border-l-over-target border-l-4 pl-[9px]',
         // Right border for priority (user preference), with the same give-back
-        priorityDisplay.rightBorder && priorityColors && 'border-r-4 pr-[9px]',
-        priorityDisplay.rightBorder && priorityColors?.border,
+        pri.border && cn('border-r-4 pr-[9px]', pri.border),
         isSelected && 'ring-ring bg-accent ring-2',
         isSelectionMode && 'cursor-pointer',
         // AI enrichment in progress — subtle border pulse. Not while the row is
@@ -583,8 +585,8 @@ export function TaskRow({
           }
           className={cn(
             'group/done flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-            priorityDisplay.colorCheckbox && priorityColors
-              ? cn(priorityColors.checkbox, priorityColors.checkboxHover)
+            pri.check
+              ? cn(pri.check.checkbox, pri.check.checkboxHover)
               : 'border-muted-foreground/30 hover:border-green-500 hover:bg-green-500/10',
           )}
           title={task.rrule ? 'Advance to next occurrence' : 'Mark as done'}
@@ -592,9 +594,7 @@ export function TaskRow({
           <Check
             className={cn(
               'size-4 text-transparent transition-colors',
-              priorityDisplay.colorCheckbox && priorityColors
-                ? priorityColors.checkIcon
-                : 'group-hover:text-green-500',
+              pri.check ? pri.check.checkIcon : 'group-hover:text-green-500',
             )}
             strokeWidth={3}
           />
@@ -605,22 +605,14 @@ export function TaskRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           {isSelectionMode ? (
-            <span
-              className={cn(
-                'line-clamp-3 font-medium',
-                priorityDisplay.colorTitle && priorityColors?.text,
-              )}
-            >
+            <span className={cn('line-clamp-3 font-medium', pri.title)}>
               {!justAddedBadge && corner.spacer}
               {task.title}
             </span>
           ) : (
             <Link
               href={`/tasks/${task.id}`}
-              className={cn(
-                'line-clamp-3 font-medium hover:underline',
-                priorityDisplay.colorTitle && priorityColors?.text,
-              )}
+              className={cn('line-clamp-3 font-medium hover:underline', pri.title)}
               onClick={(e) => {
                 // Set keyboard focus (blue glow) before navigating
                 onActivate?.()
@@ -1035,57 +1027,6 @@ function buildMetaSegments(
 }
 
 /**
- * Priority color classes for different UI elements
- */
-function getPriorityColors(priority: number): {
-  text: string
-  border: string
-  /** Muted border color for the done-button circle */
-  checkbox: string
-  /** Hover styles for the done-button (border + background tint) */
-  checkboxHover: string
-  /** Checkmark color on hover — matches priority instead of green */
-  checkIcon: string
-} | null {
-  switch (priority) {
-    case 1:
-      return {
-        text: 'text-zinc-400',
-        border: 'border-r-zinc-400/50',
-        checkbox: 'border-zinc-400/60',
-        checkboxHover: 'hover:border-zinc-400 hover:bg-zinc-400/10',
-        checkIcon: 'group-hover/done:text-zinc-400',
-      }
-    case 2:
-      return {
-        text: 'text-amber-500',
-        border: 'border-r-amber-500/50',
-        checkbox: 'border-amber-400/50',
-        checkboxHover: 'hover:border-amber-500/70 hover:bg-amber-400/10',
-        checkIcon: 'group-hover/done:text-amber-500',
-      }
-    case 3:
-      return {
-        text: 'text-orange-500',
-        border: 'border-r-orange-500/50',
-        checkbox: 'border-orange-400/50',
-        checkboxHover: 'hover:border-orange-500/70 hover:bg-orange-400/10',
-        checkIcon: 'group-hover/done:text-orange-500',
-      }
-    case 4:
-      return {
-        text: 'text-red-500',
-        border: 'border-r-red-500/50',
-        checkbox: 'border-red-400/50',
-        checkboxHover: 'hover:border-red-500/70 hover:bg-red-400/10',
-        checkIcon: 'group-hover/done:text-red-500',
-      }
-    default:
-      return null
-  }
-}
-
-/**
  * What the row's corner shows (2026-10-14, `src/lib/row-corner.ts`), plus the
  * title's FLOAT SPACER: an invisible `float: right` box at the start of the
  * title, so a long title wraps around the corner tabs instead of running
@@ -1112,24 +1053,23 @@ function getPriorityColors(priority: number): {
 function rowCorner({
   task,
   attempts,
-  priorityDisplay,
+  priorityTab,
   isSelectionMode,
 }: {
   task: Task
   attempts: number
-  priorityDisplay: PriorityDisplayConfig
+  /** `priorityRowStyles(...).tab`: null when the indicator is off or below High. */
+  priorityTab: PriorityTab | null
   isSelectionMode: boolean
 }): {
   dot: boolean
   attempts: number
-  priority: ReturnType<typeof priorityTab>
+  priority: PriorityTab | null
   spacer: React.ReactNode
   badgeReserve: { style: React.CSSProperties; className: string } | null
 } {
   const dot = showsHorizonDot(task)
-  const priority = priorityDisplay.trailingDot
-    ? priorityTab(task.priority, priorityDisplay.badgeStyle)
-    : null
+  const priority = priorityTab
   const width = cornerWidth({ dot, attempts, priorityText: priority?.text ?? null })
   if (width === 0) return { dot, attempts, priority, spacer: null, badgeReserve: null }
   const insetNarrow = 12

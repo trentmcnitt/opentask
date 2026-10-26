@@ -35,6 +35,8 @@ import {
 } from '@/hooks/useResponsiveFold'
 import { TrackChipPopover, type PromptPeriods } from '@/components/TrackChipPopover'
 import { QuotaSegments } from '@/components/QuotaSegments'
+import { InlinePriorityTab } from '@/components/RowCorner'
+import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import { SlotHairline } from '@/components/reminders/ReminderSlotGroup'
 import { QuotaSelectionBar } from '@/components/QuotaSelectionBar'
 import { useQuotaChipSelection, type QuotaChipSelection } from '@/hooks/useQuotaChipSelection'
@@ -1574,6 +1576,9 @@ function TrackChip({
     },
   })
   const countText = `${state.current} of ${state.target}${period ? ` ${period}` : ''}`
+  // Settings → Priority Display, the task rows' own rule (2026-10-26). A chip
+  // has no done circle, so "Color checkbox" has nothing to colour here.
+  const pri = usePriorityRowStyles(task.priority)
 
   return (
     <li
@@ -1657,6 +1662,11 @@ function TrackChip({
             'relative flex min-h-7 max-w-full touch-pan-y items-center gap-1.5 overflow-hidden rounded-[10px] border py-1 pr-2.5 pl-3 text-left text-[13px] leading-5 transition-colors select-none',
             'border-foreground/15 bg-background hover:border-foreground/40 active:scale-[0.98]',
             state.met && 'border-green-600/30',
+            // "Show right border": the task row's 4px right border on the
+            // chip's own border — the left edge is the label stripe's — with
+            // the give-back (10px - 3px = 7px). On a met chip it keeps its
+            // priority colour on the right; the other three sides go green.
+            pri.border && cn('border-r-4 pr-[7px]', pri.border),
             // Selected: the Reminders row's ring and fill, on the chip.
             selected && 'ring-ring bg-accent ring-2',
             highlighted && 'animate-row-highlight',
@@ -1679,8 +1689,11 @@ function TrackChip({
               (2026-10-16): its section ("every 2 weeks") has no shared clock,
               so the chip says its own end, the server's `period_label`
               ("▰▱ by Oct 24") — null at interval 1, so no word there. */}
-          <span className="relative min-w-0 break-words">
+          <span data-row-title className={cn('relative min-w-0 break-words', pri.title)}>
             {task.title}
+            {/* "Show priority indicator": the tab, inline after the title as
+                on the reminder and prompt rows. High and Urgent only. */}
+            <InlinePriorityTab tab={pri.tab} />
             <QuotaSegments
               data-track-count
               current={state.current}
