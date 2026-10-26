@@ -17,12 +17,15 @@ export function notificationTitlePrefix(priority: number): string {
 
 /**
  * APNs interruption level by priority. P4 is a critical alert (bypasses mute
- * and Do Not Disturb, at the user's critical_alert_volume); P3 is
- * time-sensitive (breaks through Focus); the rest are ordinary.
+ * and Do Not Disturb, at the user's critical_alert_volume); everything else,
+ * High included, is `active` — a banner and a sound that respect Focus.
+ *
+ * High was `time-sensitive` (it broke through Focus) until 2026-10-26, when
+ * Trent ruled that only Urgent breaks through: nights are the phone's Sleep
+ * mode's to handle, not OpenTask's.
  */
-export function interruptionLevelFor(priority: number): 'critical' | 'time-sensitive' | 'active' {
+export function interruptionLevelFor(priority: number): 'critical' | 'active' {
   if (priority >= URGENT_PRIORITY) return 'critical'
-  if (priority >= HIGH_PRIORITY_THRESHOLD) return 'time-sensitive'
   return 'active'
 }
 

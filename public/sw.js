@@ -89,6 +89,9 @@ self.addEventListener('push', (event) => {
         // APNs collapse id) alerts again only with `renotify`. The browser
         // throws a TypeError for renotify without a tag, or with silent.
         renotify: Boolean(data.tag) && data.renotify === true && data.silent !== true,
+        // Buttons: the named reminder push's "Considered" (2026-10-26),
+        // handled in `notificationclick` below.
+        actions: Array.isArray(data.actions) ? data.actions : undefined,
       })
     }),
   )
@@ -134,7 +137,61 @@ async function handleDismiss(taskIds) {
 
 // Web Push: handle notification tap — open or focus the PWA at the target URL.
 // Also clears all remaining delivered notifications since the user is now in the app.
+/**
+ * The named reminder push's "Considered" button (2026-10-26): consider the
+ * reminder in the background — no navigation, the other banners stay. It
+ * sends the push's `reminder_day` as `day`, so the server changes nothing for
+ * another day's push or a reminder no longer waiting (200 `considered:
+ * false`). Authenticated by the session cookie; the route refuses a cookie
+ * POST that isn't same-origin (CSRF, 403), and this same-origin fetch carries
+ * `Sec-Fetch-Site: same-origin` and the app's `Origin`.
+ *
+ * The banner stays up until the server answers (review of #368: with the app
+ * closed, a failure would otherwise vanish unseen):
+ *  - 2xx and `considered: true`, or `considered: false` (stale, or no longer
+ *    waiting — nothing to do): close it;
+ *  - anything else — 401/403, 5xx, a network error: replace it (same tag,
+ *    silent) with "Couldn't mark it considered — open OpenTask", whose tap
+ *    opens the app like any banner.
+ */
+async function considerFromBanner(notification) {
+  const data = notification.data || {}
+  let answer = null
+  try {
+    const res = await fetch('/api/notifications/actions', {
+      method: 'POST',
+      mode: 'same-origin',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'done', task_id: data.taskId, day: data.reminder_day }),
+    })
+    if (res.ok) answer = (await res.json())?.data ?? null
+  } catch (err) {
+    forwardErrorToClients(`Considered failed: ${err}`, err?.stack)
+  }
+  if (answer && typeof answer.considered === 'boolean') {
+    notification.close()
+    return
+  }
+  await self.registration.showNotification(notification.title || 'OpenTask', {
+    body: "Couldn't mark it considered — open OpenTask",
+    icon: '/icon-192.png',
+    data: { url: data.url || '/', taskId: data.taskId },
+    tag: notification.tag || undefined,
+    silent: true,
+  })
+}
+
 self.addEventListener('notificationclick', (event) => {
+  if (event.action === 'considered') {
+    if (typeof event.notification.data?.taskId !== 'number') {
+      event.notification.close()
+      return
+    }
+    event.waitUntil(considerFromBanner(event.notification))
+    return
+  }
+
   event.notification.close()
   const url = event.notification.data?.url || '/'
   event.waitUntil(

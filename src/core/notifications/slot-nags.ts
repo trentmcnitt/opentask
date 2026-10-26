@@ -9,7 +9,9 @@
  * 30, Medium 120, Low 480, Unset 60 by default).
  *
  * PRIORITY PACES IT (Trent, 2026-10-22). Every waiting item the nag covers —
- * each reminder, and each quota prompt at its quota's priority, in EVERY
+ * each None/Low reminder (Medium+ ones have their own named push since
+ * 2026-10-26, reminder-nags.ts, and are not the nag's: `waitingBySlot`), and
+ * each quota prompt at its quota's priority, in EVERY
  * unfinished opened slot, not just the one it names — has its own rung; the
  * rung whose next clock mark comes FIRST wins (`nagPace`, nag-sends.ts — the
  * old "shortest interval wins", made exact for marks). Not highest priority:
@@ -62,7 +64,9 @@
  * - Nothing rolls forward: finishing a slot (considered or done) silences it,
  *   and the next day's roster starts clean at the day start (silencing =
  *   acting).
- * - A reminder is still never notified individually. The SLOT is the unit.
+ * - A None or Low reminder is never notified individually: the SLOT is the
+ *   unit. (Medium+ reminders are, since 2026-10-26 — by reminder-nags.ts,
+ *   not here.)
  *
  * THE DAY (2026-10-23, "one day boundary everywhere"). Slots are counted as
  * opened within the Reminders screen's own day (`reminderDay`: the user's

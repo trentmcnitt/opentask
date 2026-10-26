@@ -659,7 +659,9 @@ CREATE TABLE IF NOT EXISTS slot_nags (
 -- A nag sends when now − last_sent_at ≥ its interval, in whole minutes, so a
 -- restart, a double tick or downtime can neither repeat nor lose a send.
 -- Keys: 'deadlines-page' (src/core/notifications/deadline-nags.ts), 'slot-nag'
--- (slot-nags.ts; the slot-open push stamps it too), and 'tick-<sender>' (the
+-- (slot-nags.ts; the slot-open push stamps it too), 'reminder-<taskId>' (one per
+-- Medium+ reminder, reminder-nags.ts; the weekly purge drops the rows of
+-- reminders that are gone), and 'tick-<sender>' (the
 -- minute each sender last sent in, tick.ts: a minute's pushes go out once).
 -- See nag-sends.ts.
 CREATE TABLE IF NOT EXISTS nag_sends (

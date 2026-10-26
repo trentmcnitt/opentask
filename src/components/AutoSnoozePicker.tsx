@@ -11,6 +11,14 @@ interface AutoSnoozePickerProps {
   onChange: (value: number | null) => void
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * A REMINDER's Nag: just On or Off (coordinator ruling, 2026-10-26). Its
+   * pace comes from its priority (the named reminder push, the period nag),
+   * so there is no per-reminder cadence to pick. Any non-zero stored value
+   * reads as On and is left as it is; On from Off stores null (the default),
+   * Off stores 0.
+   */
+  onOffOnly?: boolean
   children: React.ReactNode
 }
 
@@ -40,6 +48,7 @@ export function AutoSnoozePicker({
   onChange,
   open,
   onOpenChange,
+  onOffOnly = false,
   children,
 }: AutoSnoozePickerProps) {
   const [customMode, setCustomMode] = useState(false)
@@ -63,6 +72,20 @@ export function AutoSnoozePicker({
   }
 
   const isNonPresetCustom = value !== null && value > 0 && !PRESET_VALUES.has(value)
+
+  if (onOffOnly) {
+    return (
+      <OnOffPicker
+        isOn={value !== 0}
+        onOn={() => (value === 0 ? handleSelect(null) : handleOpenChange(false))}
+        onOff={() => handleSelect(0)}
+        open={open}
+        onOpenChange={handleOpenChange}
+      >
+        {children}
+      </OnOffPicker>
+    )
+  }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -177,6 +200,49 @@ export function AutoSnoozePicker({
             </button>
           </>
         )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** The reminder's Nag picker: On / Off, nothing else (`onOffOnly`). */
+function OnOffPicker({
+  isOn,
+  onOn,
+  onOff,
+  open,
+  onOpenChange,
+  children,
+}: {
+  isOn: boolean
+  onOn: () => void
+  onOff: () => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: React.ReactNode
+}) {
+  const option = (label: string, checked: boolean, onClick: () => void) => (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={checked}
+      className={cn(
+        'flex w-full items-center justify-between rounded px-2 py-1.5 text-sm transition-colors',
+        'hover:bg-accent',
+        checked && 'bg-accent',
+      )}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      {checked && <Check className="size-4" />}
+    </button>
+  )
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent className="w-36 p-1" align="end" data-testid="reminder-nag-picker">
+        {option('On', isOn, onOn)}
+        {option('Off', !isOn, onOff)}
       </PopoverContent>
     </Popover>
   )

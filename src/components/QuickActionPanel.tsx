@@ -280,6 +280,22 @@ function getDetailTitleClasses(title: string): { sizeClass: string; scrollable: 
   return { sizeClass: 'text-sm', scrollable: true }
 }
 
+/**
+ * The Nag trigger's words. A reminder's Nag is On / Off only (2026-10-26):
+ * its pace comes from its priority, so it never shows a cadence, and it is
+ * never styled as a custom value.
+ */
+function nagTriggerText(
+  isReminder: boolean,
+  isMixed: boolean | undefined,
+  minutes: number,
+): { label: string; title: string; muted: boolean } {
+  if (isReminder) return { label: 'On', title: 'Nag on', muted: true }
+  if (isMixed) return { label: '\u2014', title: 'Nag: mixed', muted: false }
+  const label = formatAutoSnoozeLabel(minutes)
+  return { label, title: `Nag every ${label}`, muted: false }
+}
+
 export function QuickActionPanel({
   task,
   selectedTasks,
@@ -1964,6 +1980,12 @@ export function QuickActionPanel({
                       (t) => t.auto_snooze_minutes === selectedTasks[0].auto_snooze_minutes,
                     )
 
+                  const nagTrigger = nagTriggerText(
+                    displayIsReminder,
+                    isMixedAutoSnooze,
+                    effectiveMinutes,
+                  )
+
                   return (
                     <AutoSnoozePicker
                       value={effectiveAutoSnooze}
@@ -1971,6 +1993,8 @@ export function QuickActionPanel({
                       onChange={setPendingAutoSnooze}
                       open={autoSnoozePopoverOpen}
                       onOpenChange={setAutoSnoozePopoverOpen}
+                      // A reminder's Nag is On / Off: its pace is its priority's (2026-10-26).
+                      onOffOnly={displayIsReminder}
                     >
                       {isOff ? (
                         <div>
@@ -1986,20 +2010,14 @@ export function QuickActionPanel({
                           onClick={() => setAutoSnoozePopoverOpen(true)}
                           className={cn(
                             'flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors',
-                            isDefault
+                            nagTrigger.muted || isDefault
                               ? 'text-muted-foreground/60 hover:bg-accent active:bg-accent'
                               : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-600',
                           )}
-                          title={
-                            isMixedAutoSnooze
-                              ? 'Nag: mixed'
-                              : `Nag every ${formatAutoSnoozeLabel(effectiveMinutes)}`
-                          }
+                          title={nagTrigger.title}
                         >
                           <Timer className="size-4" />
-                          <span>
-                            {isMixedAutoSnooze ? '\u2014' : formatAutoSnoozeLabel(effectiveMinutes)}
-                          </span>
+                          <span>{nagTrigger.label}</span>
                         </button>
                       )}
                     </AutoSnoozePicker>

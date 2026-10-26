@@ -104,7 +104,7 @@ This system manages client work and critical reminders. No operation should sile
 | **UI Components** | ShadCN + Tailwind CSS                         | Component library Claude generates fluently. Accessible, customizable.                                           |
 | **Auth**          | NextAuth / Auth.js                            | Session-based auth, credentials provider. Handles multi-user.                                                    |
 | **PWA**           | next-pwa or manual service worker             | Installable on iOS/Android.                                                                                      |
-| **Notifications** | Web Push (overdue alerts) + APNs (iOS native) | Browser-native push, no third-party relay. APNs for iOS with time-sensitive interruption.                        |
+| **Notifications** | Web Push (overdue alerts) + APNs (iOS native) | Browser-native push, no third-party relay. APNs for iOS; only Urgent breaks through (critical).                  |
 
 ### System Diagram
 
@@ -625,7 +625,7 @@ Notification polling runs **in-process** within the Next.js server via `node-cro
 
 ### Critical Alerts
 
-- **Channel:** APNs with `time-sensitive` interruption level (breaks through iOS Focus mode)
+- **Channel:** APNs with `critical` interruption level (bypasses mute, DND and every Focus mode, at the user's critical-alert volume). Only Urgent breaks through: since 2026-10-26 (Trent) High is `active`, no longer `time-sensitive`; the phone's Sleep mode handles nights
 - **Trigger:** Overdue P4 (Urgent) tasks — checked every minute alongside regular overdue notifications
 - **Cooldown:** 60 minutes per task via `last_critical_alert_at` (independent of Web Push cooldown)
 - **Use sparingly:** School pickup, medication, hard deadlines only

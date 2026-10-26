@@ -14,8 +14,15 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_EMAIL) {
 interface PushPayload {
   title: string
   body: string
-  data?: { url?: string; taskId?: number }
+  /**
+   * `taskId` is what a `dismiss` push matches (public/sw.js); `reminder_day`
+   * (a named reminder push, reminder-nags.ts) is the OpenTask date the
+   * Considered button sends back as `day`.
+   */
+  data?: { url?: string; taskId?: number; reminder_day?: string }
   tag?: string
+  /** Buttons on the banner (`showNotification`'s `actions`); public/sw.js handles each `action`. */
+  actions?: { action: string; title: string }[]
   test?: boolean
   /** Show without sound or vibration (`showNotification`'s `silent`, in public/sw.js). */
   silent?: boolean

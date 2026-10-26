@@ -4758,13 +4758,26 @@ paths:
       summary: Act on a task from a notification
       operationId: notificationAction
       tags: [Notifications]
-      security: []
+      security:
+        - {}
+        - bearerAuth: []
       description: |
         Done, snooze or delete for a single task, as sent by notification
         action buttons. The API token goes in the body, not the `Authorization`
-        header, because the iOS notification extension cannot set headers.
+        header, because the iOS notification extension cannot set headers. A
+        body `token` that is present but invalid is a 401. With no body
+        `token` the request is authenticated like any other endpoint — a
+        Bearer header, or the web app's session cookie (how the service
+        worker's "Considered" button calls it). A request authenticated by
+        the session cookie must also be same-origin (`Sec-Fetch-Site:
+        same-origin` or a matching `Origin`), else 403.
 
-        - `done` — mark the task done
+        - `done` — mark the task done. With `day` (the named reminder push's
+          "Considered" button): only a reminder waiting in the user's
+          current OpenTask day's roster is considered (`considered: true`);
+          another day's push, or a task not waiting there (already
+          considered, or not a reminder), answers 200 with
+          `considered: false` and changes nothing.
         - `snooze30` — snooze 30 minutes from now
         - `snooze` — snooze 1 hour from now, rounded to the hour
         - `snooze2h` — snooze 2 hours from now, rounded to the hour
@@ -4779,7 +4792,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [action, task_id, token]
+              required: [action, task_id]
               properties:
                 action:
                   type: string
@@ -4789,7 +4802,19 @@ paths:
                   minimum: 1
                 token:
                   type: string
-                  description: An API token (the same value you would send as a Bearer token).
+                  description: |
+                    An API token (the same value you would send as a Bearer
+                    token). Omit it to authenticate with the `Authorization`
+                    header or the session cookie instead.
+                day:
+                  type: string
+                  format: date
+                  pattern: '^\d{4}-\d{2}-\d{2}$'
+                  description: |
+                    `done` only (the other actions ignore it): the OpenTask
+                    date (yyyy-MM-dd) the named reminder push was waiting on,
+                    its `reminder_day`. Guards against a stale push: see
+                    `considered`. A malformed value is a 400.
       responses:
         '200':
           description: |
@@ -4809,6 +4834,14 @@ paths:
                         enum: [done, snooze, snooze30, snooze2h, delete]
                       task_id:
                         type: integer
+                      considered:
+                        type: boolean
+                        description: |
+                          `done` with `day` only: whether the reminder was
+                          considered. False when `day` is not the user's
+                          current OpenTask day or the task is not waiting in
+                          that day's roster — nothing changed, and `result`
+                          is absent.
                       until:
                         type: string
                         format: date-time
@@ -4837,19 +4870,22 @@ paths:
                             type: [string, 'null']
                             description: Snooze actions only.
         '400':
-          description: Invalid `task_id`, unknown action, or the task cannot take it
+          description: Invalid `task_id` or `day`, unknown action, or the task cannot take it
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '401':
-          description: Missing or invalid `token`
+          description: Invalid body `token`, or no body token and no other valid credentials
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
-          description: The token's user cannot access this task
+          description: |
+            The caller cannot access this task, or a session-cookie request
+            that is not same-origin (cross-site, or neither `Sec-Fetch-Site`
+            nor a matching `Origin`)
           content:
             application/json:
               schema:
