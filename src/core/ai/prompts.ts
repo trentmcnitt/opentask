@@ -1075,7 +1075,7 @@ export function buildEnrichmentUserPrompt(params: EnrichmentPromptParams): strin
   const periods = params.periods ?? []
   const periodsBlock =
     periods.length > 0
-      ? `\nUser's reminder periods (for target_period — a period's name only when the user's own word is that name):\n${periods
+      ? `\nUser's reminder periods — ONLY for target_period (a target counted back from a deadline), named only when the user's own word is a period's name. They never set due_at: a time of day for due_at follows the rules above ("afternoon" → early afternoon, "evening" → early evening), not these periods:\n${periods
           .map((p) => `- ${p.label} — ${formatMorningTime(p.start_time)}`)
           .join('\n')}\n`
       : ''
