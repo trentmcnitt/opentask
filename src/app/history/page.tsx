@@ -6,6 +6,7 @@ import {
   formatDurationDelta,
   formatTimeInTimezone,
   getTimezoneDayBoundaries,
+  openTaskDateLabel,
 } from '@/lib/format-date'
 import { FIELD_LABELS, truncateTitle } from '@/lib/field-labels'
 import { clientLabel } from '@/lib/client-attribution'
@@ -28,6 +29,7 @@ import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { AIStatusContent, type AIStatusData } from '@/components/AIStatusContent'
 import { useAiFeatureInfo, useDayStart } from '@/components/PreferencesProvider'
 import { openTaskDateSpan, openTaskDayOf } from '@/lib/opentask-day'
+import { NIGHT_SUFFIX, nightDay } from '@/lib/night-day'
 import type { Task, UndoAction } from '@/types'
 
 interface CompletionEntry {
@@ -643,18 +645,17 @@ function formatTimeAgoLabel(
   // The OpenTask day boundaries tell "Yesterday" from a weekday
   const { todayStart, yesterdayStart } = getTimezoneDayBoundaries(timezone, dayStart, new Date(now))
 
+  // L9's night rule (`nightDay`): a 1:00 AM entry is the night of the day before.
+  const n = nightDay(entryDate, timezone, dayStart, new Date(now))
+  const night = n.night ? NIGHT_SUFFIX : ''
   if (entryTime >= yesterdayStart.getTime() && entryTime < todayStart.getTime()) {
-    return `Yesterday ${formatTime()}`
+    return `Yesterday${night} ${formatTime()}`
   }
 
-  // 2–4 days ago: weekday + time
+  // 2–4 days ago: the OpenTask day's weekday + time
   const fourDaysAgo = new Date(todayStart.getTime() - 4 * ONE_DAY)
   if (entryTime >= fourDaysAgo.getTime()) {
-    const weekday = entryDate.toLocaleDateString('en-US', {
-      timeZone: timezone,
-      weekday: 'long',
-    })
-    return `${weekday} ${formatTime()}`
+    return `${n.day.toFormat('cccc')}${night} ${formatTime()}`
   }
 
   // 5–7 days ago: date + time
@@ -667,12 +668,8 @@ function formatTimeAgoLabel(
     return `${date} ${formatTime()}`
   }
 
-  // > 7 days: date only
-  return entryDate.toLocaleDateString('en-US', {
-    timeZone: timezone,
-    month: 'short',
-    day: 'numeric',
-  })
+  // > 7 days: date only — the OpenTask date, the day History lists it under
+  return openTaskDateLabel(entry.created_at, timezone, dayStart)
 }
 
 function ActivityTab({
