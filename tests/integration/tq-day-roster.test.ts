@@ -7,16 +7,18 @@
  *
  * The task-queue switch is on for the deck (off again after). User A,
  * America/Chicago. Clock-independent: the tasks are backdated a day (a Days
- * segment lists a task from the day after it was made), the deck is tomorrow.
+ * segment lists a task from the day after it was made), the deck is the
+ * OpenTask tomorrow (`openTaskToday`: the server's day, not the calendar's,
+ * which between midnight and the day start is a day ahead).
  */
 
 import path from 'path'
 import Database from 'better-sqlite3'
 import { describe, test, expect, beforeEach, afterAll } from 'vitest'
-import { DateTime } from 'luxon'
-import { apiFetch, resetTestData, setTaskQueue } from './helpers'
+import { addDays } from '@/lib/opentask-day'
+import { apiFetch, openTaskToday, resetTestData, setTaskQueue } from './helpers'
 
-const tomorrow = () => DateTime.now().setZone('America/Chicago').plus({ days: 1 }).toISODate()!
+const tomorrow = async () => addDays(await openTaskToday('America/Chicago'), 1)
 
 async function make(body: Record<string, unknown>): Promise<number> {
   const res = await apiFetch('/api/tasks', { method: 'POST', body })
@@ -65,7 +67,7 @@ describe('The day roster over HTTP', () => {
 
     const d = await apiFetch('/api/tasks/deck', {
       method: 'POST',
-      body: { ids: [decked], day: tomorrow() },
+      body: { ids: [decked], day: await tomorrow() },
     })
     expect(d.status).toBe(200)
     const t = await apiFetch('/api/task-segments/target-today', {
