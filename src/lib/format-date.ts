@@ -213,8 +213,9 @@ function formatOverdue(
     return { relative: `${Math.floor(diffMin / 60)}h ago`, absolute: time }
   }
 
-  // Yesterday — "yesterday night" in its night (L9), the moment's own
-  // weekday where "yesterday" would contradict its date (`nightDayWords`)
+  // Yesterday — "last night" in its night (L9: a Mon 01:00 target read Mon
+  // 10:00 with a 3:00 AM start is Sunday's night), the moment's own weekday
+  // where "yesterday" would contradict its date (`nightDayWords`)
   if (due >= yesterdayStart) {
     return { relative: nightDayWords(nightDay(due, timezone, dayStart, now), true), absolute: time }
   }
