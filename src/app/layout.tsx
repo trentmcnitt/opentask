@@ -74,7 +74,9 @@ export const metadata: Metadata = {
  *
  * - The iOS app (WKWebView) and a Home Screen web app honour these: the
  *   minimum and maximum scale are both 1 even when content overflows, and the
- *   pinch recogniser goes away (checked in the simulator).
+ *   pinch does nothing. WKWebView obeys a page's viewport limits unless its
+ *   configuration sets `ignoresViewportScaleLimits`, which the app
+ *   (`ios/OpenTask/WebView.swift`) does not; not yet tried on a device.
  * - Safari in a browser tab ignores `user-scalable=no` / `maximum-scale` for
  *   accessibility; there `touch-action: manipulation` (globals.css) still ends
  *   double-tap zoom, and a pinch is Safari's to allow.
