@@ -52,7 +52,10 @@ interface SnoozeOverdueTriggerProps {
  * fab button would have just stayed there during selection and the bulk
  * snooze fab would have just applied to the selected items"). The button
  * stays, and both the tap and the menu act on the selected tasks only — at
- * any priority, since a selection is deliberate. So that a press can't be
+ * any priority, since a selection is deliberate — and, since a defer only
+ * ever moves a target LATER, only on those whose target is before the defer
+ * time; the rest are counted in the toast ("Deferred 2 tasks · 1 already
+ * later"; `useSnoozeOverdue`, `src/lib/defer-selection.ts`). So that a press can't be
  * mistaken for a sweep of everything, the badge shows the SELECTED count, in
  * the selection bar's colours (`bg-primary`) rather than the overdue badge's,
  * and the label reads "Defer 3 selected". The selection bar keeps Done / More
