@@ -36,7 +36,7 @@ function lastSent(userId: number, key: string): string | null {
  * reminder push restarts at its period's open each day, whatever the rung:
  * reminder-nags.ts).
  */
-function dueAfter(
+export function dueAfter(
   last: string | null,
   intervalMinutes: number,
   now: Date,

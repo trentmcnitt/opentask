@@ -15,8 +15,9 @@
  *   updateTask when `due_at` or `done` changed (so snoozeTask too), bulkEdit
  *   for the tasks whose date moved, bulkSnooze for the tasks it moved,
  *   deleteTask, bulkDelete, skipOccurrence; and updateTask / bulkEdit for a
- *   reminder whose priority went below Medium (its named push's banner,
- *   reminder-nag-rule.ts).
+ *   reminder whose named push the edit ended — priority below Medium, Nag
+ *   off, converted, moved to Anytime or off today (`namedPushEndCheck`,
+ *   reminder-nags.ts).
  * - syncBadgeCount alone (the overdue count may change, but no delivered
  *   banner is known to be stale): createTask when the task is born overdue,
  *   restoreTask, and undo/redo (`afterUndoRedo`).

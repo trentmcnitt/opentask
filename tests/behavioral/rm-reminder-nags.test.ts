@@ -13,9 +13,10 @@
  *    reminder never sounds or leads a minute in which something sounds;
  *  - RR-06 the payloads (APNs and Web Push);
  *  - RR-07 the Considered button's day guard (`reminderWaitingOn`);
- *  - RR-08 a reminder's priority lowered below Medium dismisses its banner;
+ *  - RR-08 an edit that ends a reminder's named push dismisses its banner;
  *  - RR-09 the weekly purge;
- *  - RR-10 a double tick sends once.
+ *  - RR-10 a double tick sends once;
+ *  - RR-11 the cheap gate never skips a due push.
  *
  * Synthetic data only. Clock frozen: Thu 2026-01-15 in the test zone
  * (America/Chicago). Default periods (seeded per user): 07:00 Early morning,
@@ -31,6 +32,11 @@ vi.mock('@/core/notifications/dismiss', () => ({
   getOverdueCount: vi.fn().mockReturnValue(0),
 }))
 vi.mock('@/core/webhooks/dispatch', () => ({ dispatchWebhookEvent: vi.fn() }))
+// A pass-through spy, so RR-11 can see whether the roster was read.
+vi.mock('@/core/tasks/reminders', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/core/tasks/reminders')>()
+  return { ...real, getRemindersBySlot: vi.fn(real.getRemindersBySlot) }
+})
 vi.mock('@/core/notifications/web-push', () => ({
   sendPushNotification: vi.fn().mockResolvedValue(undefined),
   isWebPushConfigured: vi.fn().mockReturnValue(true),
@@ -59,6 +65,8 @@ import {
 } from '@/core/notifications/reminder-nags'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { pendingSlotNotifications } from '@/core/notifications/slot-reminders'
+import { pendingSlotNags } from '@/core/notifications/slot-nags'
+import { getRemindersBySlot } from '@/core/tasks/reminders'
 import { sendPushNotification } from '@/core/notifications/web-push'
 import {
   buildReminderNagNotification,
@@ -174,19 +182,21 @@ describe('RR-01 eligibility: every condition', () => {
    * OFF is the period's again, like a None/Low one — in the period push's
    * count and the period nag (which its priority paces, as before PR 2).
    */
-  test('Nag OFF on a Medium+ reminder: it stays in the period push and the period nag', async () => {
+  test('Nag OFF on a Medium+ reminder: it stays in the period push and nag, paced like a Low one', async () => {
     const r = reminder(9, 0, 3)
     getDb().prepare('UPDATE tasks SET auto_snooze_minutes = 0 WHERE id = ?').run(r.id)
     expect(pendingSlotNotifications(at(9))).toMatchObject([{ slotLabel: 'Morning', count: 1 }])
 
-    for (let t = at(9).getTime(); t <= at(9, 30).getTime(); t += 60_000) {
-      await runTick([...MINUTE_TICK_SOURCES], new Date(t), CHANNELS)
-    }
+    await runTick([...MINUTE_TICK_SOURCES], at(9), CHANNELS)
     expect(sendApnsReminderNag).not.toHaveBeenCalled()
-    // 09:00 the period push; 09:30 the nag, at the High rung (30).
     expect(vi.mocked(sendApnsSlotReminder).mock.calls.map(([, p]) => [p.count, p.body])).toEqual([
       [1, undefined],
-      [1, '1 reminder waiting'],
+    ])
+    // The Low rung, 480, from the 09:00 push: 17:00 — not the High rung's 09:30.
+    expect(pendingSlotNags(at(9, 30))).toEqual([])
+    expect(pendingSlotNags(at(16, 59))).toEqual([])
+    expect(pendingSlotNags(at(17))).toMatchObject([
+      { slotLabel: 'Morning', count: 1, intervalMinutes: 480 },
     ])
   })
 
@@ -450,23 +460,76 @@ describe('RR-07 the Considered button’s day guard', () => {
   })
 })
 
-describe('RR-08 priority lowered below Medium dismisses the banner', () => {
+/**
+ * RR-08 (review of #368): an edit that ENDS a reminder's named push — its
+ * push stood (waiting today, in an opened period, Medium+, Nag on) and no
+ * longer does — dismisses its banner through `dismissNotificationsForTasks`:
+ * priority below Medium, Nag off, converted to a task, moved to Anytime, its
+ * schedule moved off today. At 09:05 Morning (09:00) has opened. (The two
+ * schedule edits also move the stored `due_at`, which dismisses on its own;
+ * they pin the outcome. Priority, Nag off and conversion move no date, so
+ * they pin `namedPushEndCheck` itself.)
+ */
+describe('RR-08 an edit that ends the named push dismisses the banner', () => {
   const dismissed = () => vi.mocked(dismissNotificationsForTasks).mock.calls.map(([, ids]) => ids)
+  const edit = (taskId: number, input: Record<string, unknown>) =>
+    updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId, input })
 
-  test('updateTask: High → Low dismisses; High → Medium and a non-reminder do not', () => {
+  beforeEach(() => vi.setSystemTime(at(9, 5)))
+
+  test('priority below Medium dismisses; High → Medium, a title edit and a task do not', () => {
     const a = reminder(9, 0, 3)
     const b = reminder(9, 0, 3)
+    const c = reminder(9, 0, 3)
     const task = overdue(15, 3)
     vi.clearAllMocks()
-    updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId: a.id, input: { priority: 1 } })
-    updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId: b.id, input: { priority: 2 } })
-    updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId: task.id, input: { priority: 0 } })
+    edit(a.id, { priority: 1 })
+    edit(b.id, { priority: 2 })
+    edit(c.id, { title: 'Synthetic reminder, renamed' })
+    edit(task.id, { priority: 0 })
     expect(dismissed()).toEqual([[a.id]])
   })
 
-  test('bulkEdit: only the reminders taken below Medium', () => {
+  test('Nag turned off dismisses', () => {
+    const r = reminder(9, 0, 3)
+    vi.clearAllMocks()
+    edit(r.id, { auto_snooze_minutes: 0 })
+    expect(dismissed()).toEqual([[r.id]])
+  })
+
+  test('converted to a task dismisses', () => {
+    const r = reminder(9, 0, 3)
+    vi.clearAllMocks()
+    edit(r.id, { is_reminder: false })
+    expect(dismissed()).toEqual([[r.id]])
+  })
+
+  test('moved to Anytime (a time before every period) dismisses', () => {
+    const r = reminder(9, 0, 3, { rrule: 'FREQ=DAILY' })
+    vi.clearAllMocks()
+    edit(r.id, { rrule: 'FREQ=DAILY;BYHOUR=5;BYMINUTE=0' })
+    expect(dismissed()).toEqual([[r.id]])
+  })
+
+  test('its schedule moved off today dismisses (a Thursday reminder made Friday-only)', () => {
+    const r = reminder(9, 0, 3, { rrule: 'FREQ=DAILY' })
+    vi.clearAllMocks()
+    edit(r.id, { rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0' })
+    expect(dismissed()).toEqual([[r.id]])
+  })
+
+  test('before its period opens there is no banner: a priority drop dismisses nothing', () => {
+    vi.setSystemTime(at(8))
+    const r = reminder(9, 0, 3)
+    vi.clearAllMocks()
+    edit(r.id, { priority: 1 })
+    expect(dismissed()).toEqual([])
+  })
+
+  test('bulkEdit: only the reminders whose named push the edit ended', () => {
     const a = reminder(9, 0, 2)
     const b = reminder(9, 0, 0)
+    const c = reminder(9, 0, 4)
     const task = overdue(15, 3)
     vi.clearAllMocks()
     bulkEdit({
@@ -475,7 +538,13 @@ describe('RR-08 priority lowered below Medium dismisses the banner', () => {
       taskIds: [a.id, b.id, task.id],
       changes: { priority: 1 },
     })
-    expect(dismissed()).toEqual([[a.id]])
+    bulkEdit({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      taskIds: [c.id],
+      changes: { auto_snooze_minutes: 0 },
+    })
+    expect(dismissed()).toEqual([[a.id], [c.id]])
   })
 })
 
@@ -514,5 +583,74 @@ describe('RR-10 a double tick sends once', () => {
     expect(tick(at(9))).toHaveLength(0)
     expect(tick(at(9, 29))).toHaveLength(0)
     expect(tick(at(9, 30))).toHaveLength(1)
+  })
+})
+
+/**
+ * RR-11 THE CHEAP GATE (review of #368): `pendingReminderNags` skips a user's
+ * roster unless some candidate could be due. It must never change the answer:
+ * minute by minute through a day of edits, the gated answer equals the
+ * ungated one (`skipGate`), claims applied as the tick would.
+ */
+describe('RR-11 the cheap gate never skips a due push', () => {
+  function sweep(from: Date, to: Date, events: Map<number, () => void>): number {
+    let sent = 0
+    for (let t = from.getTime(); t <= to.getTime(); t += 60_000) {
+      const now = new Date(t)
+      vi.setSystemTime(now)
+      events.get(t)?.()
+      const gated = pendingReminderNags(now)
+      expect(gated, DateTime.fromJSDate(now).setZone(tz).toFormat('dd HH:mm')).toEqual(
+        pendingReminderNags(now, { skipGate: true }),
+      )
+      sent += planTick([REMINDER_NAG_SOURCE], now, CHANNELS).sends.length
+    }
+    return sent
+  }
+
+  test('a day of edits: created mid-period, raised, considered, Nag toggled, moved, off-day', () => {
+    reminder(9, 0, 3, { rrule: 'FREQ=DAILY' })
+    const considered = reminder(12, 0, 2, { rrule: 'FREQ=DAILY' })
+    const low = reminder(12, 0, 1)
+    const toggled = reminder(9, 0, 4)
+    reminder(9, 0, 3, { rrule: 'FREQ=WEEKLY;BYDAY=FR;BYHOUR=9;BYMINUTE=0' })
+    reminder(5, 0, 4)
+    const edit = (taskId: number, input: Record<string, unknown>) =>
+      updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId, input })
+
+    const events = new Map<number, () => void>([
+      // A new High reminder in an already-open period: its first push at once.
+      [at(10, 17).getTime(), () => reminder(9, 0, 3)],
+      // Urgent Nag off, then on again.
+      [at(9, 25).getTime(), () => edit(toggled.id, { auto_snooze_minutes: 0 })],
+      [at(11, 3).getTime(), () => edit(toggled.id, { auto_snooze_minutes: null })],
+      // Considered after its 12:00 push.
+      [
+        at(12, 40).getTime(),
+        () => markDone({ userId: TEST_USER_ID, userTimezone: tz, taskId: considered.id }),
+      ],
+      // A Low raised to High mid-period.
+      [at(13, 5).getTime(), () => edit(low.id, { priority: 3 })],
+    ])
+    const sent = sweep(at(8, 55), at(14, 30), events)
+    expect(sent).toBeGreaterThan(20)
+  })
+
+  test('across midnight and into the next day’s open', () => {
+    reminder(20, 30, 3, { rrule: 'FREQ=DAILY' })
+    reminder(9, 0, 2, { rrule: 'FREQ=DAILY' })
+    sweep(at(20, 25), at(20, 40), new Map())
+    sweep(at(23, 50), at(0, 10, 16), new Map())
+    sweep(at(8, 55, 16), at(9, 5, 16), new Map())
+  })
+
+  test('it does skip the roster when nothing could be due', () => {
+    reminder(9, 0, 3)
+    planTick([REMINDER_NAG_SOURCE], at(9), CHANNELS)
+    vi.mocked(getRemindersBySlot).mockClear()
+    expect(pendingReminderNags(at(9, 10))).toEqual([])
+    expect(getRemindersBySlot).not.toHaveBeenCalled()
+    expect(pendingReminderNags(at(9, 30))).toHaveLength(1)
+    expect(getRemindersBySlot).toHaveBeenCalled()
   })
 })

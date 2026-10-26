@@ -65,7 +65,7 @@ import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
 import { SLOT_NAG_KEY, stampNagSend } from '@/core/notifications/nag-sends'
 import { runTick, type Channels, type SourcePlan, type TickSource } from '@/core/notifications/tick'
-import { getsNamedPush } from '@/core/notifications/reminder-nag-rule'
+import { getsNamedPush, periodPacePriority } from '@/core/notifications/reminder-nag-rule'
 
 /** The slots whose start time is the current local minute for this user. */
 export function slotsDueNow(slots: TimeSlot[], timezone: string, now: Date): TimeSlot[] {
@@ -142,12 +142,13 @@ export function waitingBySlot(
     const id = group.slot?.id ?? null
     const prompts = waitingPrompts.get(id) ?? []
     // Reminders with their own named push (reminder-nag-rule.ts) neither
-    // count in the period's push or nag nor pace the nag.
+    // count in the period's push or nag nor pace the nag. A Medium+ one with
+    // its Nag off is counted, and paces the nag like a Low one (`periodPacePriority`).
     const counted = group.reminders.filter((t) => !getsNamedPush(t))
     waiting.set(id, {
       reminders: counted.length,
       prompts: prompts.length,
-      priorities: [...counted.map((t) => t.priority ?? 0), ...promptPriorities(prompts)],
+      priorities: [...counted.map(periodPacePriority), ...promptPriorities(prompts)],
     })
   }
   // `getRemindersBySlot` returns every slot plus the un-slotted group, so a

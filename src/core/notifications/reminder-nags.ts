@@ -36,7 +36,8 @@
  * open, so each day starts afresh whatever the rung. The claim is the
  * compare-and-swap the other nags use, under the tick's per-minute claim
  * (`tick-reminder-nags`). The weekly purge drops the rows of reminders that
- * are gone (`purgeGoneReminderNags`).
+ * are gone (`purgeGoneReminderNags`). A cheap gate (`mayBeDue`, from the rows
+ * and their stamps) skips a user's roster unless some reminder could be due.
  *
  * HOW (one alert per tick, tick.ts). Kinds `reminder_urgent`,
  * `reminder_high`, `reminder_medium`, in their places in `LEAD_ORDER`. High
@@ -62,8 +63,13 @@
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { getPriorityOption, HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
-import { parseHHMM } from '@/lib/time-slot-assign'
-import { openTaskDayOf, openTaskDaySpan, periodOpensAt } from '@/lib/opentask-day'
+import { assignSlot, parseHHMM, sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
+import {
+  openTaskDayOf,
+  openTaskDaySpan,
+  periodOpensAt,
+  type OpenTaskDaySpan,
+} from '@/lib/opentask-day'
 import { listTimeSlots } from '@/core/time-slots'
 import { getRemindersBySlot, getTodaysReminders } from '@/core/tasks/reminders'
 import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
@@ -76,8 +82,8 @@ import {
 import { isWebPushConfigured, sendPushNotification } from '@/core/notifications/web-push'
 import { mergeSettled, type DeliveryResult } from '@/core/notifications/delivery-result'
 import { notifiableUsers } from '@/core/notifications/notifiable-users'
-import { nagIntervalMinutes, userNagTiers } from '@/core/notifications/nag-ladder'
-import { claimNagSend, nagSendDue } from '@/core/notifications/nag-sends'
+import { nagIntervalMinutes, userNagTiers, type NagTiers } from '@/core/notifications/nag-ladder'
+import { claimNagSend, dueAfter, nagSendDue } from '@/core/notifications/nag-sends'
 import { NAMED_REMINDER_MIN_PRIORITY, getsNamedPush } from '@/core/notifications/reminder-nag-rule'
 import {
   runTick,
@@ -131,49 +137,120 @@ export function reminderNagBody(slotLabel: string, priority: number): string {
   return `${slotLabel} · ${getPriorityOption(priority).label} reminder`
 }
 
+/** One reminder that could be pushed by name, with its `nag_sends` stamp (the cheap gate's input). */
+interface NamedReminderCandidate {
+  id: number
+  priority: number
+  anchor_time: string | null
+  due_at: string | null
+  rrule: string | null
+  last_completed_at: string | null
+  last_sent_at: string | null
+}
+
 /**
- * Whether the user has any reminder that could be pushed by name — one
- * statement, so the roster is only read for a user who has one.
+ * The user's reminders that `getsNamedPush` could pick — one statement, with
+ * each one's last send. The roster (`getRemindersBySlot`) reads the same
+ * open, undeleted, unarchived reminders, so every reminder it could push by
+ * name is one of these.
  */
-function hasNamedReminderCandidate(userId: number): boolean {
-  return !!getDb()
+function namedReminderCandidates(userId: number): NamedReminderCandidate[] {
+  return getDb()
     .prepare(
-      `SELECT 1 FROM tasks
-       WHERE user_id = ? AND is_reminder = 1 AND done = 0
-         AND deleted_at IS NULL AND archived_at IS NULL
-         AND priority >= ?
-         AND (auto_snooze_minutes IS NULL OR auto_snooze_minutes != 0)
-       LIMIT 1`,
+      `SELECT t.id, t.priority, t.anchor_time, t.due_at, t.rrule, t.last_completed_at,
+              n.last_sent_at
+       FROM tasks t
+       LEFT JOIN nag_sends n ON n.user_id = t.user_id AND n.key = ? || t.id
+       WHERE t.user_id = ? AND t.is_reminder = 1 AND t.done = 0
+         AND t.deleted_at IS NULL AND t.archived_at IS NULL
+         AND t.priority >= ?
+         AND (t.auto_snooze_minutes IS NULL OR t.auto_snooze_minutes != 0)`,
     )
-    .get(userId, NAMED_REMINDER_MIN_PRIORITY)
+    .all(REMINDER_NAG_KEY_PREFIX, userId, NAMED_REMINDER_MIN_PRIORITY) as NamedReminderCandidate[]
+}
+
+/** Today's OpenTask day for a user, and when each of its periods that has opened opened. */
+function openedPeriods(
+  userId: number,
+  timezone: string,
+  now: Date,
+): { day: OpenTaskDaySpan; slots: TimeSlot[]; opened: Map<number, Date> } {
+  const dayStart = dayBoundaryForUser(userId)
+  const day = openTaskDaySpan(now, timezone, dayStart)
+  const slots = sortSlotsByStart(listTimeSlots(userId))
+  const opened = new Map<number, Date>()
+  for (const slot of slots) {
+    if (parseHHMM(slot.start_time) === null) continue
+    const at = periodOpensAt(day.date, slot.start_time, timezone, dayStart)
+    if (at.getTime() <= now.getTime()) opened.set(slot.id, at)
+  }
+  return { day, slots, opened }
+}
+
+const withinDay = (iso: string | null, day: OpenTaskDaySpan): boolean => {
+  if (!iso) return false
+  const t = new Date(iso).getTime()
+  return !Number.isNaN(t) && t >= day.start.getTime() && t < day.end.getTime()
+}
+
+/**
+ * THE CHEAP GATE (review of #368): could this candidate be due at `now`?
+ * Read from the row alone — no rrule walk — and a SUPERSET of the real test
+ * in `pendingReminderNags`, so it never skips a due push:
+ *  - its period, by the roster's own rule (`assignSlot` on the same
+ *    `anchor_time` / `due_at`, the slots in the same order), has opened —
+ *    the real test asks the same of the group it is in;
+ *  - a repeating one was not considered today (`last_completed_at` within
+ *    the day takes it off the roster: `getTodaysReminders`);
+ *  - its stamp is due by the same rule as the claim (`dueAfter`: never
+ *    sent, sent before the period opened, or the mark after the last send
+ *    has come).
+ * What it cannot see is whether a repeating reminder is scheduled TODAY, so
+ * one off its day still lets the roster be read; that only costs a read.
+ */
+function mayBeDue(
+  c: NamedReminderCandidate,
+  periods: ReturnType<typeof openedPeriods>,
+  tiers: NagTiers,
+  now: Date,
+  timezone: string,
+): boolean {
+  const slot = assignSlot(c, periods.slots, timezone)
+  const openedAt = slot ? periods.opened.get(slot.id) : undefined
+  if (!openedAt) return false
+  if (c.rrule && withinDay(c.last_completed_at, periods.day)) return false
+  const interval = nagIntervalMinutes('slot_nag', c.priority, tiers)
+  if (interval <= 0) return false
+  return dueAfter(c.last_sent_at, interval, now, timezone, openedAt)
 }
 
 /**
  * Every named reminder push due this minute (read-only). The claim is
- * `planReminderNagSends`'s.
+ * `planReminderNagSends`'s. `skipGate` (tests) reads every user's roster,
+ * to prove the gate never changes the answer.
  */
-export function pendingReminderNags(now: Date = new Date()): PendingReminderNag[] {
+export function pendingReminderNags(
+  now: Date = new Date(),
+  { skipGate = false }: { skipGate?: boolean } = {},
+): PendingReminderNag[] {
   const pending: PendingReminderNag[] = []
   for (const user of notifiableUsers()) {
-    if (!hasNamedReminderCandidate(user.id)) continue
+    const candidates = namedReminderCandidates(user.id)
+    if (candidates.length === 0) continue
 
     // Which of today's periods have opened (the OpenTask day, the Reminders
-    // screen's own: `reminderDay` reads the same boundary). None yet: the
-    // roster need not be read.
-    const dayStart = dayBoundaryForUser(user.id)
-    const day = openTaskDaySpan(now, user.timezone, dayStart)
-    const opened = new Map<number, Date>()
-    for (const slot of listTimeSlots(user.id)) {
-      if (parseHHMM(slot.start_time) === null) continue
-      const at = periodOpensAt(day.date, slot.start_time, user.timezone, dayStart)
-      if (at.getTime() <= now.getTime()) opened.set(slot.id, at)
-    }
-    if (opened.size === 0) continue
-
+    // screen's own: `reminderDay` reads the same boundary). None yet, or no
+    // candidate could be due: the roster need not be read.
+    const periods = openedPeriods(user.id, user.timezone, now)
+    if (periods.opened.size === 0) continue
     const tiers = userNagTiers(user.id)
+    if (!skipGate && !candidates.some((c) => mayBeDue(c, periods, tiers, now, user.timezone))) {
+      continue
+    }
+
     for (const group of getRemindersBySlot(user.id, user.timezone, now)) {
       // Anytime (no slot) never opens; a period still ahead has not opened.
-      const openedAt = group.slot ? opened.get(group.slot.id) : undefined
+      const openedAt = group.slot ? periods.opened.get(group.slot.id) : undefined
       if (!group.slot || !openedAt) continue
       for (const task of group.reminders) {
         if (!getsNamedPush(task)) continue
@@ -188,7 +265,7 @@ export function pendingReminderNags(now: Date = new Date()): PendingReminderNag[
           title: task.title,
           priority,
           slotLabel: group.slot.label,
-          reminderDay: day.date,
+          reminderDay: periods.day.date,
           periodOpenedAt: openedAt,
           intervalMinutes: interval,
           timezone: user.timezone,
@@ -197,6 +274,72 @@ export function pendingReminderNags(now: Date = new Date()): PendingReminderNag[
     }
   }
   return pending
+}
+
+/** Task fields whose change can take a reminder out of its named push. */
+const NAMED_PUSH_FIELDS = new Set([
+  'priority',
+  'is_reminder',
+  'auto_snooze_minutes',
+  'rrule',
+  'anchor_time',
+  'anchor_dow',
+  'anchor_dom',
+  'due_at',
+  'occurrence_at',
+  'recurrence_mode',
+  'repeat_anchor',
+  'repeat_until',
+  'repeat_count',
+])
+
+/** Whether an edit touched a field that can take a reminder out of its named push. */
+export function touchesNamedPush(fieldsChanged: readonly string[]): boolean {
+  return fieldsChanged.some((f) => NAMED_PUSH_FIELDS.has(f))
+}
+
+/**
+ * Whether a reminder's named push STANDS at `now`: it is waiting in its
+ * owner's roster today, in a period that has opened, and `getsNamedPush`.
+ * The task mutations (update.ts, bulk.ts) ask it before and after an edit
+ * that `touchesNamedPush`: stood before and not after — priority below
+ * Medium, Nag off, converted to a task, moved to Anytime or to a period not
+ * yet open, its schedule moved off today — means its delivered banner is
+ * stale, and they dismiss it (review of #368). Reads the database.
+ */
+export function namedPushStands(userId: number, taskId: number, now: Date = new Date()): boolean {
+  return namedPushStandsAt(userId, taskId, now)
+}
+
+/**
+ * For an edit ABOUT to be applied to `task`: a check to run after it, true
+ * when the edit ended the reminder's named push (it stood before, and no
+ * longer does), so its delivered banner is stale. Reads the roster only for
+ * a reminder and an edit that `touchesNamedPush`; anything else gets a check
+ * that is always false.
+ */
+export function namedPushEndCheck(
+  task: { id: number; user_id: number; is_reminder: boolean },
+  fieldsChanged: readonly string[],
+): () => boolean {
+  if (!task.is_reminder || !touchesNamedPush(fieldsChanged)) return () => false
+  if (!namedPushStandsAt(task.user_id, task.id, new Date())) return () => false
+  return () => !namedPushStandsAt(task.user_id, task.id, new Date())
+}
+
+function namedPushStandsAt(userId: number, taskId: number, now: Date): boolean {
+  const row = getDb().prepare('SELECT timezone FROM users WHERE id = ?').get(userId) as
+    | { timezone: string }
+    | undefined
+  if (!row) return false
+  const periods = openedPeriods(userId, row.timezone, now)
+  if (periods.opened.size === 0) return false
+  return getRemindersBySlot(userId, row.timezone, now).some(
+    (group) =>
+      group.slot !== null &&
+      periods.opened.has(group.slot.id) &&
+      group.reminders.some((t) => t.id === taskId && getsNamedPush(t)),
+  )
 }
 
 /**
