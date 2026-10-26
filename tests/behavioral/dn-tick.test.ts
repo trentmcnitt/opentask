@@ -507,7 +507,10 @@ describe('DN-T08 a lead that reaches nothing', () => {
         : { attempted: 1, delivered: 1 },
     )
   }
-  afterEach(() => vi.mocked(sendApnsNotification).mockResolvedValue({ attempted: 0, delivered: 0 }))
+  afterEach(() => {
+    vi.mocked(sendApnsNotification).mockResolvedValue({ attempted: 0, delivered: 0 })
+    vi.mocked(sendPushNotification).mockResolvedValue({ attempted: 0, delivered: 0 })
+  })
   const callsOf = () =>
     vi
       .mocked(sendApnsNotification)
@@ -524,6 +527,18 @@ describe('DN-T08 a lead that reaches nothing', () => {
       [high.id, 'time-sensitive', 'Overdue task · 2 more waiting'],
       [medium.id, 'active', 'Overdue task · 1 more waiting'],
       [low.id, 'passive', 'Overdue task'],
+    ])
+  })
+
+  test('APNs fails but Web Push reaches the browser: the lead got through, nothing promoted', async () => {
+    const high = overdue(10, 3)
+    const medium = overdue(10, 2)
+    apnsFailsFor([high.id])
+    vi.mocked(sendPushNotification).mockResolvedValueOnce({ attempted: 1, delivered: 1 })
+    await runTick(sources(), at(10), CHANNELS)
+    expect(callsOf()).toEqual([
+      [high.id, 'time-sensitive', 'Overdue task · 1 more waiting'],
+      [medium.id, 'passive', 'Overdue task'],
     ])
   })
 

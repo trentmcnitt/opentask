@@ -120,6 +120,7 @@ Each sender's old `check*` entry point (`checkOverdueTasks`, `checkSlotReminders
 | `src/core/notifications/nag-sends.ts`                | `nag_sends`: when a nag last went out (`claimNagSend`, `nagSendDue`, `nagPace`)                                  |
 | `src/core/notifications/tick.ts`                     | The tick coordinator: one alerting push per user per minute (`planTick`, `runTick`, `LEAD_ORDER`)                |
 | `src/core/notifications/minute-tick.ts`              | The minute tick's senders, in order (`MINUTE_TICK_SOURCES`, `runMinuteTick`)                                     |
+| `src/core/notifications/delivery-result.ts`          | What a push reached (`attempted` / `delivered`): the tick promotes a lead that reached nothing                   |
 | `scripts/count-pushes.ts`                            | Projects one user's pushes over one OpenTask day, counts only, on a copy                                         |
 | `src/core/notifications/notifiable-users.ts`         | Who the cron senders notify: notifications on and not demo (`notifiableUsers`, `notifiableUserSql`)              |
 | `src/hooks/usePushSubscription.ts`                   | Client-side push subscription management hook                                                                    |
