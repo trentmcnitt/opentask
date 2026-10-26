@@ -27,7 +27,7 @@
  */
 import { DateTime } from 'luxon'
 import { test, expect, uniqueTitle, waitForPrefsLoaded, withPreferences } from './fixtures'
-import type { Locator, Page } from '@playwright/test'
+import type { APIRequestContext, Locator, Page } from '@playwright/test'
 
 const SHOTS = '.tmp/priority-display'
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
@@ -83,13 +83,42 @@ interface Made {
   titles: Map<string, string>
 }
 
-/** The natural slot (the latest started, else the first) — the dashboard card's page. */
-async function naturalSlotStart(page: Page): Promise<DateTime> {
+/**
+ * The dashboard card's clock (2026-10-26). The card shows ONE period, the
+ * clock's (`naturalSlotIndex`), and works it out again on every render, from
+ * the browser's clock — so the card test, seeded from one reading of the
+ * Playwright process's clock and checked over the next minute or two, failed
+ * whenever a period started in between: seeded at 11:58 into Morning, the card
+ * had moved to an empty Midday by a later page load (CI, 16:58 UTC). So the
+ * card test pins the server's clock (POST /api/test/clock) and the browser's
+ * (`page.clock.install`) to the most recent 10:30 in the user's zone, at or
+ * before real now (never ahead: the cron jobs compute on the shifted clock),
+ * and seeds from that instant, never from real now. 10:30 is mid-Morning, at
+ * least 90 minutes from every default period start (09:00, 12:00) and from
+ * either day start (midnight, 3:00), so the test never runs into one, whatever
+ * the hour it starts at.
+ */
+function midMorning(): DateTime {
+  const now = DateTime.now().setZone(TEST_TZ)
+  const at = now.set({ hour: 10, minute: 30, second: 0, millisecond: 0 })
+  return at > now ? at.minus({ days: 1 }) : at
+}
+
+/** Pin the server's clock (null: the real one). */
+async function setClock(request: APIRequestContext, now: string | null) {
+  const res = await request.post('/api/test/clock', { data: { now } })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
+/**
+ * The natural slot at `now` (the latest started, else the first) — the
+ * dashboard card's page.
+ */
+async function naturalSlotStart(page: Page, now: DateTime): Promise<DateTime> {
   const res = await page.request.get('/api/time-slots')
   const slots = ((await res.json()).data.time_slots as { start_time: string }[])
     .map((s) => s.start_time)
     .sort()
-  const now = DateTime.now().setZone(TEST_TZ)
   const at = (hhmm: string) => {
     const [h, m] = hhmm.split(':').map(Number)
     return now.set({ hour: h, minute: m, second: 0, millisecond: 0 })
@@ -98,9 +127,9 @@ async function naturalSlotStart(page: Page): Promise<DateTime> {
   return at(started.at(-1) ?? slots[0]).plus({ minutes: 1 })
 }
 
-async function makeRows(page: Page): Promise<Made> {
+async function makeRows(page: Page, now: DateTime): Promise<Made> {
   const made: Made = { reminders: new Map(), quotas: new Map(), titles: new Map() }
-  const due = (await naturalSlotStart(page)).toUTC().toISO()
+  const due = (await naturalSlotStart(page, now)).toUTC().toISO()
   for (const p of PRIORITIES) {
     const rTitle = uniqueTitle(`PD reminder ${p.name}`)
     const r = await page.request.post('/api/tasks', {
@@ -304,7 +333,7 @@ test.describe('Priority display on reminder and quota rows · desktop light', ()
   }) => {
     test.setTimeout(180_000)
     await setTheme(page, 'light')
-    const made = await makeRows(page)
+    const made = await makeRows(page, DateTime.now().setZone(TEST_TZ))
     try {
       await withPreferences(page, { quota_prompts_enabled: true }, async () => {
         for (const [name, d] of CONFIGS) {
@@ -320,12 +349,24 @@ test.describe('Priority display on reminder and quota rows · desktop light', ()
     }
   })
 
+  test.afterAll(async ({ request }) => {
+    await setClock(request, null)
+  })
+
   test("the dashboard's Reminders card follows each option", async ({
     authenticatedPage: page,
   }) => {
     test.setTimeout(120_000)
     await setTheme(page, 'light')
-    const made = await makeRows(page)
+    // Both clocks on mid-Morning, before anything is seeded — see `midMorning`.
+    // The task rollover is stamped as of real now first, so a cron run on the
+    // shifted clock finds its day already done (src/core/test-clock.ts).
+    const pin = midMorning()
+    const stamp = await page.request.post('/api/test/rollover', { data: {} })
+    expect(stamp.ok(), await stamp.text()).toBeTruthy()
+    await setClock(page.request, pin.toUTC().toISO())
+    await page.clock.install({ time: pin.toJSDate() })
+    const made = await makeRows(page, pin)
     try {
       for (const [name, d] of CONFIGS) {
         await withPreferences(page, { priority_display: d }, async () => {
@@ -341,6 +382,7 @@ test.describe('Priority display on reminder and quota rows · desktop light', ()
       }
     } finally {
       await trash(page, made)
+      await setClock(page.request, null)
     }
   })
 })
@@ -353,7 +395,7 @@ test.describe('Priority display on reminder and quota rows · phone dark', () =>
   }) => {
     test.setTimeout(180_000)
     await setTheme(page, 'dark')
-    const made = await makeRows(page)
+    const made = await makeRows(page, DateTime.now().setZone(TEST_TZ))
     try {
       await withPreferences(page, { quota_prompts_enabled: true }, async () => {
         for (const [name, d] of CONFIGS) {
