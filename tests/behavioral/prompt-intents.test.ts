@@ -24,6 +24,7 @@ function prompt(overrides: Partial<QuotaPrompt> & { prompt_key: string }): Quota
     period_label: null,
     stripe_color: null,
     has_notes: false,
+    priority: 0,
     considered: false,
     done: false,
     ...overrides,

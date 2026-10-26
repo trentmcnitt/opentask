@@ -66,6 +66,11 @@ export interface QuotaPrompt {
    * exists, and the quota's bubble and editor are where it is read.
    */
   has_notes: boolean
+  /**
+   * The quota's priority, 0–4 (2026-10-26): the prompt row follows the user's
+   * Priority Display settings like every task row (`priorityRowStyles`).
+   */
+  priority: number
   /** Considered today (the circle, or "did it", which implies it). */
   considered: boolean
   /** Done for today: daily — count reached `number`; others — progress logged today. */

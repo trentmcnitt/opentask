@@ -10,6 +10,9 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { NotesMarker } from '@/components/NotesMarker'
+import { InlinePriorityTab, PriorityEdgeBar } from '@/components/RowCorner'
+import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
+import type { PriorityRowStyles } from '@/lib/priority-display'
 import { QuotaSegments } from '@/components/QuotaSegments'
 import { Checkbox } from '@/components/ui/checkbox'
 import { usePromptSetup } from '@/components/QuotaPromptField'
@@ -155,6 +158,8 @@ export function QuotaPromptRow({
 }: QuotaPromptRowProps) {
   const panel = variant === 'panel'
   const key = prompt.prompt_key
+  // Settings → Priority Display, the task rows' own rule (2026-10-26).
+  const pri = usePriorityRowStyles(prompt.priority)
   // Selection mode on a surface where this row can join it.
   const selecting = isSelectionMode && onSelect !== undefined
   const { press, onClick, onKeyDown } = usePromptRowGestures({
@@ -221,6 +226,8 @@ export function QuotaPromptRow({
           trackStripeClass(prompt.stripe_color),
         )}
       />
+      {/* "Show right border": the stripe's mirror on the right edge. */}
+      <PriorityEdgeBar bar={pri.bar} panel={panel} />
       {/* The bubble's anchor: an inert box over the whole row. The wrapper
           stops the bubble's own events (it renders in a portal, but React
           still bubbles them through here) from reaching the row, where a
@@ -241,19 +248,25 @@ export function QuotaPromptRow({
         panel={panel}
         completing={completing}
         selection={selecting ? { selected, onToggle: () => onSelect(prompt) } : null}
+        check={pri.check}
         onConsider={onConsider}
       />
       <p
+        data-row-title
         className={cn(
           // No text-pretty: it avoids a short last line by pulling the title's
           // last word down beside the (unbreakable) count, which read as
           // "Clean bedroom / fans · 0/1 this month" (Trent, 2026-09-26).
           'min-w-0 flex-1',
           panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
-          completing && 'text-muted-foreground line-through',
+          completing ? 'text-muted-foreground line-through' : pri.title,
         )}
       >
         {prompt.title}
+        {/* "Show priority indicator": the task row's tab, inline after the
+            title as on a reminder row — before the count, which stays the
+            line's last word. High and Urgent only. */}
+        <InlinePriorityTab tab={pri.tab} />
         {/* The count as segments (`QuotaSegments`), or "0/2 today" when they
             don't fit. Its own space is the break point: the count wraps as a
             unit on its own, never dragging the title's last word with it. */}
@@ -481,6 +494,7 @@ function PromptDashedCircle({
   panel,
   completing,
   selection,
+  check,
   onConsider,
 }: {
   prompt: QuotaPrompt
@@ -488,6 +502,11 @@ function PromptDashedCircle({
   completing: boolean
   /** In selection mode: the checkbox's state and toggle. */
   selection: { selected: boolean; onToggle: () => void } | null
+  /**
+   * "Color checkbox": the task row's circle colours, as the ring's stroke
+   * (it is drawn in `currentColor`, not a border).
+   */
+  check: PriorityRowStyles['check']
   onConsider: (prompt: QuotaPrompt) => void
 }) {
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
@@ -527,7 +546,10 @@ function PromptDashedCircle({
       title="Considered"
       data-prompt-consider
       className={cn(
-        'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',
+        'flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',
+        check
+          ? cn(check.ring, check.ringHover)
+          : 'text-foreground/20 hover:text-foreground/60 hover:bg-foreground/5',
         size,
       )}
     >

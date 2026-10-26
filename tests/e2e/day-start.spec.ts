@@ -1,11 +1,14 @@
 /**
- * "Day starts at" (2026-10-23): Settings → Defer shows when the OpenTask day
+ * "Day starts at" (2026-10-23): Settings → Your day shows when the OpenTask day
  * turns — by default a fixed 3:00 AM ("Default (3:00 AM)", 2026-10-24), or a
  * custom time at any hour, or a link to a period. Removing a linked period keeps its time as custom,
  * and Undo puts the link back, like Morning's.
  *
  * The E2E user is shared with every other spec, so the setting is put back
  * to the default (`day_start_time: null`) before each test ends.
+ *
+ * The row shows only with the server's task-queue switch on (with it off the
+ * day turns at midnight), so each test turns it on and off again after.
  */
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -38,6 +41,19 @@ function clock(hhmm: string): string {
 async function resetDayStart(page: Page) {
   await page.request.patch('/api/user/preferences', { data: { day_start_time: null } })
 }
+
+async function setQueue(page: Page, enabled: boolean) {
+  const res = await page.request.post('/api/test/task-queue', { data: { enabled } })
+  expect(res.ok()).toBeTruthy()
+}
+
+test.beforeEach(async ({ authenticatedPage: page }) => {
+  await setQueue(page, true)
+})
+
+test.afterEach(async ({ authenticatedPage: page }) => {
+  await setQueue(page, false)
+})
 
 test.describe('Day starts at', () => {
   test('defaults to 3:00 AM; a custom 11:00 PM saves and reads back; Default goes back', async ({

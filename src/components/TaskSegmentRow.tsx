@@ -58,6 +58,7 @@ import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/Prefer
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
+import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import { DeadlineChip } from '@/components/DeadlineChip'
 import { useTimezone } from '@/hooks/useTimezone'
 
@@ -299,6 +300,10 @@ export function TaskSegmentRow({
   // lifted to the top — it keeps its place in the priority sort. The rollover
   // clears the flag once the row moves to "Previous pulls".
   const tryTomorrow = segmentHorizon === 'queue_today' && task.try_tomorrow
+  // "Color task titles" (Settings → Priority Display): the reminder rows
+  // beside it take the hue (2026-10-26), so this title does too — the 10-11
+  // rule that the two read the same colour.
+  const priorityTitle = usePriorityRowStyles(task.priority).title
   return (
     <RowPeekPopover
       open={peekOpen}
@@ -376,6 +381,7 @@ export function TaskSegmentRow({
               panel
                 ? 'text-foreground text-[13.5px] leading-[1.42]'
                 : cn('text-[16px] leading-6', prominenceClasses(task.priority)),
+              priorityTitle,
             )}
           >
             {task.title}

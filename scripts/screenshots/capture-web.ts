@@ -321,13 +321,10 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
   await input.fill('Call the dentist next Tuesday at 2pm to reschedule, it’s important')
   await input.blur()
   await settle(page)
-  // The row holding the add field and the AI chip: the innermost element that
-  // contains both (ancestors come first in document order, so `.last()`).
-  const addBar = page
-    .locator('main div')
-    .filter({ has: input })
-    .filter({ has: page.getByRole('button', { name: 'AI settings' }) })
-    .last()
+  // The add field's own bar (QuickAdd's `data-tour="quick-add"`: the + button,
+  // the field and the mic). The AI chip that used to sit beside it holds only
+  // What's Next and Insights, hidden while they are shelved (2026-10-22).
+  const addBar = page.locator('[data-tour="quick-add"]').filter({ has: input })
   const aiFile = outPath(`filled-task-input-${theme}.png`)
   await shootWithPadding(page, addBar, aiFile, 12)
   record(aiFile, 'Quick add field with a natural-language task typed in', theme, [
@@ -337,15 +334,11 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
 
   await clearJustAdded(page)
 
-  // A task card with its AI commentary and score.
+  // The task the quick panel and detail page shots open. (Its AI-commentary
+  // card shot is gone: Insights is shelved, 2026-10-22.)
   const card = page.locator('[id^="task-row-"]').filter({ hasText: 'Draft Q4 budget review' })
   await card.scrollIntoViewIfNeeded()
   await settle(page)
-  const cardFile = outPath(`web-task-card-ai-insight-${theme}.png`)
-  await card.screenshot({ path: cardFile })
-  record(cardFile, 'One task row with AI commentary, signal and score', theme, [
-    `docs:public/images/tasks/web-task-card-ai-insight-${theme}.png`,
-  ])
 
   // Quick panel: double-click the row's own padding (not the title link, not
   // the Done circle), as tests/e2e/quick-panel-overflow.spec.ts does.

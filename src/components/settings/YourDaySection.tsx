@@ -1,6 +1,11 @@
 'use client'
 
-import { useAnchorTimes, useWeekStart, useCheckInDay } from '@/components/PreferencesProvider'
+import {
+  useAnchorTimes,
+  useWeekStart,
+  useCheckInDay,
+  useTaskQueue,
+} from '@/components/PreferencesProvider'
 import type { WeekStart } from '@/lib/week-start'
 import { coerceCheckInDay, type CheckInDay } from '@/lib/task-segments'
 import { CHECK_IN_DAY_NAMES } from '@/lib/task-model-words'
@@ -26,9 +31,18 @@ const CHECK_IN_DAY_ORDER: CheckInDay[] = [7, 1, 2, 3, 4, 5, 6]
  *
  * `timeSlots` is the page's one period list (src/app/settings/page.tsx),
  * shared with Reminder periods, so a period added, renamed or moved there
- * shows in these pickers at once. The four time rows wait for `rowsReady`
+ * shows in these pickers at once. The time rows wait for `rowsReady`
  * (the page's `useFreshAnchorTimes` plus a loaded period list); the two
  * selects below them don't depend on either.
+ *
+ * Day starts at shows only with the server's task-queue switch on: with it
+ * off the day turns at midnight whatever the setting says (`useDayStart`), so
+ * the row would change nothing. Like the Advanced fold
+ * (src/components/settings/AdvancedSection.tsx) it waits for `useTaskQueue`'s
+ * `loaded`, so it never draws on the provider's fallback (off). The other
+ * three time rows wait for it too: `rowsReady` comes from a separate read
+ * (`useFreshAnchorTimes`) that can land first, and Day starts at must not pop
+ * in above rows already drawn.
  */
 export function YourDaySection({
   timeSlots,
@@ -44,6 +58,8 @@ export function YourDaySection({
     resolveTime(anchors.wake, timeSlots).time === resolveTime(anchors.sleep, timeSlots).time
   const { weekStart, setWeekStart } = useWeekStart()
   const { checkInDay, setCheckInDay } = useCheckInDay()
+  const queue = useTaskQueue()
+  const timeRowsReady = rowsReady && queue.loaded
 
   return (
     <SettingsSection
@@ -51,13 +67,16 @@ export function YourDaySection({
       description="When your day and week begin, and the times of day OpenTask uses for you."
     >
       <div className="space-y-4">
-        {rowsReady && (
+        {timeRowsReady && (
           <>
-            {/* Trent, 2026-10-23: one day boundary everywhere, his at 3:00 AM. */}
-            <DayStartRow
-              description="When a new day begins — for Today, reminders, quotas, decks and the task rollover. Before noon, a late night counts as the day before; after noon, the next day starts early (at 11 PM, Sunday 11:30 PM is Monday)."
-              timeSlots={timeSlots}
-            />
+            {/* Trent, 2026-10-23: one day boundary everywhere, his at 3:00 AM.
+                Task queue only: with the switch off the day turns at midnight. */}
+            {queue.enabled && (
+              <DayStartRow
+                description="When a new day begins — for Today, reminders, quotas, decks and the task rollover. Before noon, a late night counts as the day before; after noon, the next day starts early (at 11 PM, Sunday 11:30 PM is Monday)."
+                timeSlots={timeSlots}
+              />
+            )}
             <AnchorTimeRow
               label="Wake time"
               description="When you wake (AI uses it for time-of-day context)."

@@ -6,6 +6,8 @@
  *   holding only its own rows (Defer: Default defer and the Defer all button);
  * - Advanced, the last section, a fold that is closed on every visit and
  *   holds Roll over now; hidden entirely with the task queue off.
+ * - Your day's "Day starts at" row, likewise only with the task queue on
+ *   (with it off the day turns at midnight).
  *
  * Checked at desktop (1280) and phone (375) widths. The task queue is a
  * server-wide switch, so the queue's own user (`queue@opentask.local`, as
@@ -78,6 +80,7 @@ for (const vp of VIEWPORTS) {
       .locator('[data-anchor-row]')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-anchor-row')))
     expect(rows).toEqual(['day_start', 'wake', 'morning', 'sleep'])
+    await expect(day.getByLabel('Day starts at: follows')).toBeVisible()
     await expect(day.getByText('Default task time', { exact: true })).toBeVisible()
     await expect(day.getByLabel('Week starts on')).toBeVisible()
     await expect(day.getByLabel('Check-in day')).toBeVisible()
@@ -124,11 +127,24 @@ for (const vp of VIEWPORTS) {
   })
 }
 
-test('with the task queue off there is no Advanced section', async ({ page }) => {
+test('with the task queue off there is no Advanced section and no Day starts at', async ({
+  page,
+}) => {
   await signIn(page)
   await setQueue(page, false)
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 2, name: 'About' })).toBeVisible()
   await expect(page.getByRole('heading', { level: 2, name: 'Advanced' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Advanced' })).toHaveCount(0)
+
+  // Your day: the three other time rows draw (so the preferences are in), and
+  // Day starts at is not among them.
+  const day = section(page, 'Your day')
+  await expect(day.locator('[data-anchor-row]')).toHaveCount(3)
+  const rows = await day
+    .locator('[data-anchor-row]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-anchor-row')))
+  expect(rows).toEqual(['wake', 'morning', 'sleep'])
+  await expect(page.locator('[data-anchor-row="day_start"]')).toHaveCount(0)
+  await expect(page.getByText('Day starts at')).toHaveCount(0)
 })
