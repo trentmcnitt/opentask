@@ -207,7 +207,10 @@ test.describe('Reminders surface', () => {
       // Slot headers carry the label and the boundary time — visible whether the
       // slot is open or folded.
       await expect(page.getByText('Early morning', { exact: true })).toBeVisible()
-      await expect(page.getByText('7:00 AM')).toBeVisible()
+      // The boundary time is read from the slot header itself: a bare
+      // getByText('7:00 AM') also matched the sidebar's build stamp
+      // ("v0.2.1 · Oct 26, 7:00 AM") when CI happened to build at 7:00 (10-26).
+      await expect(page.getByRole('button', { name: /^Early morning · 7:00 AM\b/ })).toBeVisible()
       await expect(page.getByText('Evening', { exact: true })).toBeVisible()
       // Un-slotted reminders get an honest group rather than disappearing.
       await expect(page.getByText('Anytime', { exact: true })).toBeVisible()
