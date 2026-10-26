@@ -2,9 +2,12 @@
  * THE DEADLINES PAGE'S OWN TEAL (2026-10-26, an experiment for Trent: "change
  * the color on that one and see what that's like"). The deadlines segment's
  * title, its bar in the Tasks card's strip and the /reminders day bar, its
- * hairline and its finished "N of N ✓" / "Nothing today ✓" all wear
- * `--deadlines` (globals.css) — where every other segment turns GREEN when
- * done, this one stays its teal (`segmentDoneColor` in TaskSegmentRow.tsx).
+ * hairline and its finished "N of N ✓" / "Nothing today ✓" all wear its teal
+ * (globals.css) — where every other segment turns GREEN when done, this one
+ * stays its teal (`segmentDoneColor` / `segmentDoneTextColor` in
+ * TaskSegmentRow.tsx). Two tokens in light mode: TEXT (the title, the count's
+ * numbers) is `--deadlines` #008464; FILL (bars, hairline, every ✓ glyph) is
+ * `--deadlines-fill` #0d9488. Dark mode uses #2dd4bf for both.
  *
  * Read from computed styles, against the token and the done green resolved
  * in the page itself (Tailwind 4's green is oklch, so never a hard-coded
@@ -68,7 +71,8 @@ const fillOf = (el: Locator) => el.evaluate((e) => getComputedStyle(e).backgroun
 async function palette(page: Page) {
   return {
     teal: await resolved(page, { prop: 'color', css: 'var(--deadlines)' }),
-    tealFill: await resolved(page, { prop: 'backgroundColor', css: 'var(--deadlines)' }),
+    tealFill: await resolved(page, { prop: 'backgroundColor', css: 'var(--deadlines-fill)' }),
+    tealGlyph: await resolved(page, { prop: 'color', css: 'var(--deadlines-fill)' }),
     greenText: await resolved(page, { prop: 'color', cls: 'text-green-700 dark:text-green-400' }),
     greenFill: await resolved(page, { prop: 'backgroundColor', cls: 'bg-green-600' }),
   }
@@ -107,6 +111,9 @@ for (const viewport of VIEWPORTS) {
         await expect(card).toHaveAttribute('data-tasks-page', 'tasks:deadlines')
         const p = await palette(page)
         expect(p.teal).not.toBe(p.greenText)
+        // The light tokens, as globals.css sets them: text #008464, fill #0d9488.
+        expect(p.teal).toBe('rgb(0, 132, 100)')
+        expect(p.tealFill).toBe('rgb(13, 148, 136)')
 
         // The strip: the deadlines bar's finished fill is the teal; Weekly's green.
         const fill = (key: string) => card.locator(`[data-slot-segment="${key}"] > span > span`)
@@ -117,12 +124,15 @@ for (const viewport of VIEWPORTS) {
         expect(await fillOf(fill('tasks:deadlines'))).toBe(p.tealFill)
         expect(await fillOf(fill('tasks:weeks'))).toBe(p.greenFill)
 
-        // The header: title and "0 of 0 ✓" in the teal; "Nothing today ✓" too.
+        // The header: the title in the text teal; the ✓ glyphs (the header's
+        // and "Nothing today ✓") in the fill teal.
         const title = card.locator('[data-slot-header-toggle] span.uppercase')
         await expect(title).toHaveText(/Task queue · Deadlines/i)
         expect(await colorOf(title)).toBe(p.teal)
-        expect(await colorOf(card.locator('[data-done-check]').first())).toBe(p.teal)
-        expect(await colorOf(card.locator('[data-segment-empty] [data-done-check]'))).toBe(p.teal)
+        expect(await colorOf(card.locator('[data-done-check]').first())).toBe(p.tealGlyph)
+        expect(await colorOf(card.locator('[data-segment-empty] [data-done-check]'))).toBe(
+          p.tealGlyph,
+        )
 
         // Weekly's page: its own title colour, and the done check is green.
         await page.goto('/?tasks=weeks')
@@ -168,14 +178,24 @@ for (const viewport of VIEWPORTS) {
         const dayFill = (key: string) =>
           page.locator(`[data-reminders-headline] [data-day-segment="${key}"] > span > span`)
 
-        // Empty, so done: title, "0 of 0 ✓", hairline and day bar in the teal.
+        // Empty, so done: title and "0 of 0" in the text teal; its ✓, the
+        // "Nothing today ✓", the hairline and the day bar in the fill teal.
         await expect(section('deadlines').locator('[data-segment-empty]')).toBeVisible()
         expect(await colorOf(title('deadlines'))).toBe(p.teal)
         expect(await colorOf(section('deadlines').locator('[data-done-count]'))).toBe(p.teal)
+        expect(
+          await colorOf(section('deadlines').locator('[data-done-count] [data-done-check]')),
+        ).toBe(p.tealGlyph)
+        expect(
+          await colorOf(section('deadlines').locator('[data-segment-empty] [data-done-check]')),
+        ).toBe(p.tealGlyph)
         expect(await fillOf(hairline('deadlines'))).toBe(p.tealFill)
         expect(await fillOf(dayFill('tasks:deadlines'))).toBe(p.tealFill)
         // Weekly, empty too: green as before, and a title of its own colour.
         expect(await colorOf(section('weeks').locator('[data-done-count]'))).toBe(p.greenText)
+        expect(await colorOf(section('weeks').locator('[data-done-count] [data-done-check]'))).toBe(
+          p.greenText,
+        )
         expect(await fillOf(hairline('weeks'))).toBe(p.greenFill)
         expect(await fillOf(dayFill('tasks:weeks'))).toBe(p.greenFill)
         expect(await colorOf(title('weeks'))).not.toBe(p.teal)
@@ -211,8 +231,9 @@ test.describe('dark', () => {
       await page.goto('/reminders')
       await expect(page.locator('html')).toHaveClass(/dark/)
       const p = await palette(page)
-      // #1597b5 in globals.css's `.dark` block.
-      expect(p.teal).toBe('rgb(21, 151, 181)')
+      // #2dd4bf in globals.css's `.dark` block, text and fill alike.
+      expect(p.teal).toBe('rgb(45, 212, 191)')
+      expect(p.tealFill).toBe('rgb(45, 212, 191)')
       const section = page.locator('[data-task-segments] [data-task-segment="deadlines"]')
       expect(await colorOf(section.locator('button span.uppercase').first())).toBe(p.teal)
       expect(await colorOf(section.locator('[data-done-count]'))).toBe(p.teal)

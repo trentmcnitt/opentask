@@ -364,6 +364,7 @@ export function SlotHeaderRow({
   started,
   accent,
   doneAccent,
+  doneColor,
   emptyDone = false,
 }: {
   label: string
@@ -374,9 +375,12 @@ export function SlotHeaderRow({
   started: boolean
   /** A colour for the label — a task segment's teal. */
   accent?: string
-  /** The finished "N of N ✓" in this colour, not green: the deadlines page's
-   *  teal (`segmentDoneColor`). */
+  /** The finished "N of N" numbers in this colour, not green: the deadlines
+   *  page's text teal (`segmentDoneTextColor`). */
   doneAccent?: string
+  /** The finished count's ✓ in this colour (a glyph, so the fill teal:
+   *  `segmentDoneColor`); without it the ✓ takes the count's colour. */
+  doneColor?: string
   /**
    * Empty is DONE (a task segment, Trent 2026-10-24: every segment shows
    * every day, an empty one finished from the start): "0 of 0 ✓", and the
@@ -416,7 +420,13 @@ export function SlotHeaderRow({
       {considered} of {total}
       {/* Same check mark as the dashboard's slot header (2026-09-22), so a
           finished slot reads the same way on both surfaces. */}
-      <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+      <Check
+        data-done-check
+        className="size-3.5"
+        style={doneColor ? { color: doneColor } : undefined}
+        strokeWidth={2.5}
+        aria-hidden="true"
+      />
     </span>
   ) : !started && considered === 0 ? (
     <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">

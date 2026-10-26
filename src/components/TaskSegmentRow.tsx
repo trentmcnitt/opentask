@@ -201,16 +201,27 @@ export function segmentTitleColor(horizon: SegmentKind): string {
  * A segment's FINISHED colour, where it is not the done green. THE ONE PLACE
  * a segment kind opts out of green-when-done (2026-10-26, Trent: "change the
  * color on that one and see what that's like"): the deadlines page — usually
- * empty, so done from the start of the day — keeps its own teal
- * (`--deadlines`) when finished: its strip and day-bar fill, its hairline,
- * its "N of N ✓" and its "Nothing today ✓". `undefined` for every other kind,
- * which then draws the green classes exactly as before. Each surface takes
- * it as `doneColor` (a fill) or `doneAccent` (a count or check), beside
- * `segmentColor` / `segmentTitleColor`. A considered ROW's green circle is
- * the row's own state and stays green on every page.
+ * empty, so done from the start of the day — keeps its own teal when
+ * finished. `undefined` for every other kind, which then draws the green
+ * classes exactly as before. A considered ROW's green circle is the row's own
+ * state and stays green on every page.
+ *
+ * Two flavours, because text needs more contrast than a graphic (globals.css,
+ * `--deadlines` vs `--deadlines-fill`; one colour in dark mode):
+ * - `segmentDoneColor` — the FILL (`--segment-deadlines`): the strip and
+ *   day-bar fill, the hairline, and every ✓ glyph (the pager header's, the
+ *   "N of N ✓" check, "Nothing today ✓"). Passed as `doneColor`, or as
+ *   `doneAccent` where that prop colours only a check.
+ * - `segmentDoneTextColor` — the TEXT (`--segment-title-deadlines`, the
+ *   title's colour): the finished "N of N" count's numbers on /reminders.
  */
 export function segmentDoneColor(horizon: SegmentKind): string | undefined {
   return horizon === 'deadlines' ? segmentColor(horizon) : undefined
+}
+
+/** A segment's finished TEXT colour in place of green — see `segmentDoneColor`. */
+export function segmentDoneTextColor(horizon: SegmentKind): string | undefined {
+  return horizon === 'deadlines' ? segmentTitleColor(horizon) : undefined
 }
 
 /** The pager page / section key of a segment — never a slot id ("tasks:days"). */

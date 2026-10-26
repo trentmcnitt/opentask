@@ -51,9 +51,10 @@
   --segment-queue_previous: #5c9ba3;
   /* The deadlines page (2026-10-22, provisional): first in the strip and the
      only queue page that nags. Never amber or red: those are the deadline
-     chip's (safety net, passed). Its fill AND its title are `--deadlines`
-     (below), and so is its finished state — see `segmentDoneColor`. */
-  --segment-deadlines: var(--deadlines);
+     chip's (safety net, passed). Its fill is `--deadlines-fill` and its
+     title `--deadlines` (below), and so is its finished state — see
+     `segmentDoneColor`. */
+  --segment-deadlines: var(--deadlines-fill);
   /* Titles: one darker teal in light mode, so the small uppercase label
      stays readable on the near-white card (the lighter fills read at ~1.3–2.5:1).
      In dark mode each title is its fill. */
@@ -74,15 +75,21 @@
   --every-time: #0f766e;
   --every-time-foreground: #ffffff;
   /* The deadlines page's OWN teal (2026-10-26, experiment for Trent: "change
-     the color on that one and see what that's like"). Its title, its bar in
-     the Tasks card's strip and the /reminders day bar, and its finished
-     "N of N ✓" — where every other segment turns green when done, this one
-     stays its teal (`segmentDoneColor` in TaskSegmentRow.tsx). A lighter,
-     bluer cyan-teal than every-time's #0f766e (hue ≈226 vs ≈186 in OKLCH),
-     so the two never read as one colour. It is small uppercase text, so it
-     must clear WCAG AA 4.5:1: ≈4.9:1 on the white card, ≈4.75:1 on the
-     segment's bg-muted/30 section. */
-  --deadlines: #0a7a9c;
+     the color on that one and see what that's like"; then "That teal is too
+     blue", so a greener one). Its title, its bar in the Tasks card's strip
+     and the /reminders day bar, its hairline, and its finished "N of N ✓" —
+     where every other segment turns green when done, this one stays its
+     teal (`segmentDoneColor` / `segmentDoneTextColor` in TaskSegmentRow.tsx).
+     Two tokens, because text and graphics have different contrast floors:
+     - `--deadlines` is the TEXT colour (the segment title, the "N of N"
+       numbers, as `--segment-title-deadlines`): #008464, small text, so WCAG
+       AA 4.5:1 — ≈4.53:1 on the segment's ~#fbfbfb bg-muted/30 section,
+       ≈4.68:1 on the white card.
+     - `--deadlines-fill` is the GRAPHICS colour (the strip and day-bar
+       fill, the hairline, the ✓ glyphs, as `--segment-deadlines`): teal-600
+       #0d9488, ≈3.62:1 on the section, over the 3:1 non-text floor. */
+  --deadlines: #008464;
+  --deadlines-fill: #0d9488;
   /* Reminders get their own hue rather than the neutral grey: §6 says a waiting
      thought is never overdue, so it must not be red, but grey read as disabled
      next to a live count (Trent, 2026-09-06). Violet is the surface's own
@@ -130,7 +137,7 @@
   --segment-upcoming: #4cb8d9;
   --segment-queue_today: #36b8c6;
   --segment-queue_previous: #7fbcc4;
-  --segment-deadlines: var(--deadlines);
+  --segment-deadlines: var(--deadlines-fill);
   --segment-title-days: var(--segment-days);
   --segment-title-weeks: var(--segment-weeks);
   --segment-title-months: var(--segment-months);
@@ -143,10 +150,10 @@
   /* The same deep teal: white on it ≈5.4:1, its frame ≈3.4:1 on the dark card. */
   --every-time: #0f766e;
   --every-time-foreground: #ffffff;
-  /* Lifted for text on the dark card: ≈5.8:1 on it, ≈5.4:1 on the segment's
-     section. Deeper than the dark horizons' bright teals beside it in the
-     strip, and still well clear of every-time's #0f766e. */
-  --deadlines: #1597b5;
+  /* Dark: one colour for text and fill, teal-400 #2dd4bf — ≈10.6:1 on the
+     dark card, clear of both floors. */
+  --deadlines: #2dd4bf;
+  --deadlines-fill: var(--deadlines);
   --badge-reminders: oklch(0.62 0.19 295);
   --ai-glow: oklch(0.6 0.18 270);
   --ai-glow-shadow: rgba(129, 140, 248, 0.4);
@@ -201,6 +208,7 @@
   --color-every-time: var(--every-time);
   --color-every-time-foreground: var(--every-time-foreground);
   --color-deadlines: var(--deadlines);
+  --color-deadlines-fill: var(--deadlines-fill);
   --color-badge-reminders: var(--badge-reminders);
   --color-border: var(--border);
   --color-input: var(--input);

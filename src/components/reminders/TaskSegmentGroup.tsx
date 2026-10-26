@@ -20,6 +20,7 @@ import {
   segmentCounts,
   segmentColor,
   segmentDoneColor,
+  segmentDoneTextColor,
   segmentEmpty,
   segmentKey,
   segmentLabel,
@@ -82,7 +83,9 @@ export function TaskSegmentGroup({
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
   const queueOn = useQueueOn(segment.horizon)
   const color = segmentColor(segment.horizon)
-  // Finished in its own colour, not green (the deadlines page only).
+  // Finished in its own colour, not green (the deadlines page only): the
+  // fill teal for the hairline and the ✓ glyphs; the count's numbers take
+  // the text teal (`segmentDoneTextColor`).
   const doneColor = segmentDoneColor(segment.horizon)
   const label = segmentLabel(segment)
   const waiting = waitingRows(segment)
@@ -100,7 +103,8 @@ export function TaskSegmentGroup({
       open={open}
       started
       accent={segmentTitleColor(segment.horizon)}
-      doneAccent={doneColor}
+      doneAccent={segmentDoneTextColor(segment.horizon)}
+      doneColor={doneColor}
       emptyDone
     />
   )
