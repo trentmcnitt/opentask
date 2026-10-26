@@ -245,8 +245,20 @@ async function segmentRowLayout(row: Locator) {
         after.content !== 'none' && after.position === 'absolute'
           ? Math.max(0, -parseFloat(after.top)) + Math.max(0, -parseFloat(after.bottom))
           : 0
-      return { name: b.getAttribute('aria-label') ?? '', height: r.height + grow }
+      const growLeft =
+        after.content !== 'none' && after.position === 'absolute'
+          ? Math.max(0, -parseFloat(after.left))
+          : 0
+      return {
+        name: b.getAttribute('aria-label') ?? '',
+        height: r.height + grow,
+        left: r.left - growLeft,
+        right: r.right,
+      }
     })
+    const today = li.querySelector('[data-segment-actions] [data-target-today]')!
+    const todayRight = today.getBoundingClientRect().right
+    const done = hits[hits.length - 1]
     const p = li.querySelector('p')!
     const text = p.firstChild as Text
     const lines: { left: number; right: number }[] = []
@@ -261,7 +273,13 @@ async function segmentRowLayout(row: Locator) {
         lines.push({ left: r.left, right: r.right })
       } else lines[lines.length - 1].right = r.right
     }
-    return { groupLeft: group.left, titleLeft: p.getBoundingClientRect().left, hits, lines }
+    return {
+      groupLeft: group.left,
+      titleLeft: p.getBoundingClientRect().left,
+      hits,
+      lines,
+      todayToDone: done.left - todayRight,
+    }
   })
 }
 
@@ -276,8 +294,9 @@ async function segmentRowLayout(row: Locator) {
  * segment row's title (`LINK_TITLE`): 375 and 402 (an iPhone 17 Pro) at 100%,
  * 119% ("xxxLarge", Trent's phone) and 150% (the largest accessibility size,
  * `WebView.swift`). There the rows' buttons are checked too: every hit area
- * at least 44px tall, and a long title's first line beside them, its second
- * from the row's left edge.
+ * at least 44px tall, 6px of dead space between Today's and the done square's,
+ * and a long title's first line beside them, its second from the row's left
+ * edge.
  */
 for (const { textSize, widths } of [
   { textSize: '100%', widths: [375, 402, 320] },
@@ -362,6 +381,10 @@ async function dayBarFits(page: Page, widths: number[]) {
       for (const hit of layout.hits) {
         expect(hit.height, `${hit.name}'s hit height at ${width}`).toBeGreaterThanOrEqual(44)
       }
+      // Dead space between Today's and the done square's hit areas, so a tap
+      // meant for one never lands on the other (Trent mis-tapped Today for
+      // done, 2026-10-12; 6px, ruled 2026-10-26).
+      expect(layout.todayToDone, `Today to done at ${width}`).toBeGreaterThanOrEqual(6)
       expect(layout.lines.length, `the long title's lines at ${width}`).toBeGreaterThanOrEqual(2)
       const [first, second] = layout.lines
       expect(first.right, `the first line ends before the buttons at ${width}`).toBeLessThanOrEqual(

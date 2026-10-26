@@ -705,7 +705,7 @@ function useSegmentRowPress({
  * above the row.
  *
  * COMPACT, IN PX (Trent, 2026-10-26, mock "B"): every size in the row's
- * button group is px, never rem, so the group stays 128px wide at any text
+ * button group is px, never rem, so the group stays 134px wide at any text
  * size — the iOS app scales the root font with Dynamic Type, and at 119% the
  * rem sizes made the group 200px and left the title a 76px column. 30px here
  * (32 before).
@@ -720,7 +720,8 @@ const HOVER_BOX = { page: 'h-[30px]', panel: 'h-[26px]' } as const
  * title's first line (24px), or the title's SECOND line wraps short beside
  * it too (it floats in the title's column); the 44px stands 11px above and
  * below.
- * Three of them, the 4px before the done square and its 22px: 128px.
+ * Three of them, the 10px before the done square and its 22px: 134px
+ * (128 for a day, until the 6px between Today and done came back).
  */
 const CONTROL_HIT = '-my-[11px] h-[44px] min-w-[34px]'
 
@@ -800,14 +801,16 @@ function TaskSegmentRowActions({
           replaces={todayReplaces(task, timezone, dayStart)}
           showLabel
           // A 34×44 hit target (`CONTROL_HIT`) around a glyph the size of the
-          // done square; the negative margin keeps the row's height. The 4px
-          // `mr-[4px]` after it is the done square's own hit area (its
-          // `after:` inset), so the two meet but never overlap (Trent
-          // mis-tapped Today for done, 2026-10-12; 12px of dead space until
-          // 2026-10-26). The grey hover block is the inner box, the row
-          // buttons' (`HOVER_BOX`), so it stays inside the row (2026-10-20).
-          // From `sm` up the box has room for the word "Today" too.
-          className={`${CONTROL_HIT} mr-[4px]`}
+          // done square; the negative margin keeps the row's height. The
+          // `mr-[10px]` after it: 4px of it is the done square's own hit area
+          // (its `after:` inset), and 6px is DEAD SPACE between the two hit
+          // areas — Trent mis-tapped Today for done (2026-10-12; 12px until
+          // the compact buttons, 6px since, ruled 2026-10-26). The grey hover
+          // block is the inner box, the row buttons' (`HOVER_BOX`), so it
+          // stays inside the row (2026-10-20). From `sm` up the box has room
+          // for the word "Today" too (icon only on a phone, the word on a
+          // desktop — Trent's ruling).
+          className={`${CONTROL_HIT} mr-[10px]`}
           boxClassName={
             panel
               ? `${HOVER_BOX.panel} min-w-[26px] sm:px-1.5`
