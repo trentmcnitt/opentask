@@ -226,19 +226,28 @@ private struct ReminderCardView: View {
     /// fit, else the segment's word alone ("Upcoming · 1 left" — the
     /// page's colour already says it's the task queue), and only then the
     /// old shrink.
+    ///
+    /// An Upcoming row's label names its section (2026-10-26, ruling 4):
+    /// "Upcoming · Tomorrow · 1 left" doesn't fit either, so a segment card
+    /// next tries its label alone — "Upcoming · Tomorrow", "Daily" — before
+    /// the shrink: the section is the ruling's words, the count the extra.
     private var header: some View {
         let short = TaskWording.withoutTaskQueuePrefix(card.slotLabel)
+        let isSegment = card.segmentTaskId != nil
         return ViewThatFits(in: .horizontal) {
             headerText(card.slotLabel).fixedSize()
             if let short {
                 headerText(short).fixedSize()
             }
-            headerText(short ?? card.slotLabel).minimumScaleFactor(0.75)
+            if isSegment {
+                headerText(short ?? card.slotLabel, count: false).fixedSize()
+            }
+            headerText(short ?? card.slotLabel, count: !isSegment).minimumScaleFactor(0.75)
         }
     }
 
-    private func headerText(_ label: String) -> some View {
-        Text("\(label) · \(card.remainingKeys.count) left")
+    private func headerText(_ label: String, count: Bool = true) -> some View {
+        Text(count ? "\(label) · \(card.remainingKeys.count) left" : label)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(WatchTheme.accent)
             .widgetAccentable()

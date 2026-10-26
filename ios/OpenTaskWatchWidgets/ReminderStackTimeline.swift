@@ -283,14 +283,15 @@ enum ReminderStackTimeline {
     /// staged under (`WatchWidgetState.stagePendingPrompt`, did: false).
     static func segmentItemKey(_ taskId: Int) -> String { "s:\(taskId)" }
 
-    /// A segment's waiting rows as cards, in the server's order.
+    /// A segment's waiting rows as cards, in the server's order (Upcoming's
+    /// Tomorrow rows first, as the server sends them).
     static func segmentCards(_ segment: TaskSegmentDTO, urgent: Int) -> [WatchWidgetEntry.ReminderCard] {
         let rows = segment.waitingTasks
         let keys = rows.map { segmentItemKey($0.id) }
         return rows.map { row in
             WatchWidgetEntry.ReminderCard(
                 itemKey: segmentItemKey(row.id), taskId: row.id, promptKey: nil, title: row.task.title,
-                stripeColor: nil, slotLabel: segment.title, slotKey: segment.pageKey,
+                stripeColor: nil, slotLabel: cardLabel(segment, row: row), slotKey: segment.pageKey,
                 remainingKeys: keys, urgentOverdue: urgent,
                 segmentTaskId: row.id,
                 // Plain spaces so the card's few words a line can break
@@ -299,12 +300,20 @@ enum ReminderStackTimeline {
                 // An Upcoming row's SHORT words (2026-10-12): no weekdays,
                 // the schedule without its time or "on …" — the card is the
                 // smallest surface and shares its lines with the title.
-                segmentMeta: row.task.segmentMeta(segmentHorizon: segment.horizon, upcomingForm: .short)?
+                segmentMeta: row.task.segmentMeta(
+                    segmentHorizon: segment.horizon, upcomingForm: .short, upcomingSection: row.upcomingSection
+                )?
                     .components(separatedBy: TaskDTO.metaJoiner)
                     .map { $0.replacingOccurrences(of: "\u{00A0}", with: " ") }
                     .joined(separator: TaskDTO.metaJoiner)
             )
         }
+    }
+
+    /// The card header's label (`TaskSegmentDTO.cardLabel(for:)`). The count
+    /// after it stays the segment's, as the ⏭ cycles the whole segment.
+    static func cardLabel(_ segment: TaskSegmentDTO, row: SegmentTaskDTO) -> String {
+        segment.cardLabel(for: row)
     }
 
     /// In-flight segment taps drawn over the cached segments: a done row is

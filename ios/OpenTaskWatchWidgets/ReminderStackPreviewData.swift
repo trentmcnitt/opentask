@@ -185,8 +185,8 @@ enum ReminderStackPreviewData {
         snoozeResult: nil, slots: slots, at: at(8, 47)
     )
 
-    /// The Upcoming segment (2026-10-12): "Task queue · Upcoming · 1 left", the
-    /// row's target and the deadline's gap under the title.
+    /// The Upcoming segment (2026-10-12): "Upcoming · Tomorrow · 1 left" (2026-10-26), the
+    /// row's time alone (a Tomorrow row) and the deadline under the title.
     static let upcomingCard: WatchWidgetEntry = ReminderStackTimeline.entry(
         groups: [], tasks: [], skipped: { _ in [] }, pendingDone: [],
         segments: [TaskSegmentDTO(horizon: "upcoming", tasks: [
@@ -195,7 +195,7 @@ enum ReminderStackPreviewData {
                     id: 9301, title: "Renew the car registration", dueAt: "2026-09-25T14:00:00.000Z",
                     deadlineAt: "2026-09-29T22:00:00.000Z"
                 ),
-                state: .waiting, recurring: false
+                state: .waiting, recurring: false, upcomingSection: .tomorrow
             ),
         ])],
         snoozeResult: nil, slots: slots, at: at(8, 47)

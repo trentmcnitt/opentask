@@ -1092,6 +1092,67 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     static func listed(_ segments: [TaskSegmentDTO]) -> [TaskSegmentDTO] {
         segments.filter(\.isListed)
     }
+
+    /// The Smart Stack card's label for one of its rows: the segment's title
+    /// ("Task queue · Daily"), and for an Upcoming row its section
+    /// (2026-10-26, ruling 4): "Upcoming · Tomorrow", "Upcoming · Later".
+    func cardLabel(for row: SegmentTaskDTO) -> String {
+        guard isUpcoming else { return title }
+        return "\(SegmentKind.upcoming.titleWord) · \(row.section.title)"
+    }
+}
+
+/// Upcoming's two sections (2026-10-25 on the server and the web, the
+/// Upcoming split; native 2026-10-26), in the order the page lists them:
+/// Tomorrow (the day before a target or deck day), then Later (the
+/// lead-time heads-up, carried over until seen). The wire values; the words
+/// are `title` (the web's `UPCOMING_SECTION_TITLES`).
+enum UpcomingSection: String, CaseIterable, Codable {
+    case tomorrow, later
+
+    var title: String {
+        switch self {
+        case .tomorrow: return "Tomorrow"
+        case .later: return "Later"
+        }
+    }
+}
+
+/// The Upcoming segment split into its sections — the web's
+/// `upcomingSections` (`src/lib/upcoming-sections.ts`). BOTH sections are
+/// always returned, Tomorrow first, an empty one too (the web draws both
+/// headings always). The segment's own "X of Y", strip bar and "Defer all"
+/// stay the segment's; each section has its own "n of m".
+enum UpcomingSections {
+    struct Section: Equatable {
+        let section: UpcomingSection
+        /// Still waiting, in the server's order.
+        let waiting: [SegmentTaskDTO]
+        /// Considered or deferred today.
+        let handled: [SegmentTaskDTO]
+
+        /// "n of m": n handled, m everything the section held today.
+        var handledCount: Int { handled.count }
+        var total: Int { waiting.count + handled.count }
+        /// Nothing waits — the count goes green with a check ("0 of 0 ✓"
+        /// for an empty section, done from the start).
+        var finished: Bool { waiting.isEmpty }
+        /// No rows at all today: the watch's "Nothing today ✓".
+        var isEmpty: Bool { total == 0 }
+        /// "1 of 3".
+        var countText: String { "\(handledCount) of \(total)" }
+    }
+
+    static func split(_ rows: [SegmentTaskDTO]) -> [Section] {
+        UpcomingSection.allCases.map { section in
+            let mine = rows.filter { $0.section == section }
+            return Section(
+                section: section,
+                waiting: mine.filter { $0.state == .waiting },
+                handled: mine.filter { $0.state != .waiting }
+            )
+        }
+    }
 }
 
 /// A task segment row: the full task plus its `segment_state`. On the wire
@@ -1110,18 +1171,30 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// circle and done only. Falls back to the task's `rrule` when absent (an
     /// older server or cache).
     let recurring: Bool
+    /// An Upcoming row's section (2026-10-25 on the server, the Upcoming
+    /// split; native 2026-10-26): `upcoming_section`, "tomorrow" (the day
+    /// before its target) or "later" (the lead-time heads-up). Nil on every
+    /// other kind's rows, and on an Upcoming row from an older server or
+    /// cache — read it through `section`, where a missing value is Later.
+    let upcomingSection: UpcomingSection?
 
     var id: Int { task.id }
+
+    /// The row's Upcoming section; a missing value reads as Later (the web's
+    /// `sectionOf`).
+    var section: UpcomingSection { upcomingSection ?? .later }
 
     private enum CodingKeys: String, CodingKey {
         case state = "segment_state"
         case recurring
+        case upcomingSection = "upcoming_section"
     }
 
-    init(task: TaskDTO, state: State, recurring: Bool? = nil) {
+    init(task: TaskDTO, state: State, recurring: Bool? = nil, upcomingSection: UpcomingSection? = nil) {
         self.task = task
         self.state = state
         self.recurring = recurring ?? (task.rrule != nil)
+        self.upcomingSection = upcomingSection
     }
 
     init(from decoder: Decoder) throws {
@@ -1132,17 +1205,24 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         let raw = try c.decodeIfPresent(String.self, forKey: .state) ?? State.waiting.rawValue
         state = State(rawValue: raw) ?? .waiting
         recurring = try c.decodeIfPresent(Bool.self, forKey: .recurring) ?? (task.rrule != nil)
+        // An unknown section reads as Later, like a missing one.
+        upcomingSection = (try? c.decodeIfPresent(String.self, forKey: .upcomingSection))
+            .flatMap { $0 }
+            .map { UpcomingSection(rawValue: $0) ?? .later }
     }
 
+    /// Written back for the caches (`WidgetStore`'s, the watch's), so a row
+    /// drawn from cache keeps its section.
     func encode(to encoder: Encoder) throws {
         try task.encode(to: encoder)
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(state, forKey: .state)
         try c.encode(recurring, forKey: .recurring)
+        try c.encodeIfPresent(upcomingSection?.rawValue, forKey: .upcomingSection)
     }
 
     func with(state: State) -> SegmentTaskDTO {
-        SegmentTaskDTO(task: task, state: state, recurring: recurring)
+        SegmentTaskDTO(task: task, state: state, recurring: recurring, upcomingSection: upcomingSection)
     }
 
     /// Whether the row offers "Target today" — the web's

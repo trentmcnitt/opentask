@@ -98,9 +98,10 @@ struct PageAnchor: Codable, Equatable {
 enum ListPaging {
     /// Pages of `range` (default: the whole list): each page takes rows until
     /// the NEXT row genuinely doesn't fit `budget`, breaking only between
-    /// whole rows. A page that would END on a divider, with rows still to
-    /// come in `range`, hands the divider to the next page — unless the
-    /// divider is the page's only row. A row taller than `budget` gets a page
+    /// whole rows. A page that would END on a divider (any keep-with-next
+    /// row: "DONE · N", an Upcoming section heading), with rows still to
+    /// come in `range`, hands it — and any run of them just above it — to
+    /// the next page, as long as the page keeps one row. A row taller than `budget` gets a page
     /// of its own. An empty list is one empty page.
     static func pages(
         heights: [CGFloat], spacing: CGFloat, budget: CGFloat,
@@ -119,7 +120,10 @@ enum ListPaging {
                 used = needed
                 end += 1
             }
-            if end - start > 1, end < range.upperBound, isDivider(end - 1) {
+            // Every trailing keep-with-next row goes to the next page, not
+            // just the last: two can stand together (2026-10-26, Upcoming's
+            // empty "Tomorrow" heading right above "Later").
+            while end - start > 1, end < range.upperBound, isDivider(end - 1) {
                 end -= 1
             }
             pages.append(start..<end)

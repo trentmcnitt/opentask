@@ -289,6 +289,7 @@
 		EA277B98984D91CFC54CB091 /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */; };
 		EB455F1DE47DC1A5BE7BC631 /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */; };
 		EBBFB708EA0FE60E58C79EF4 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BEA167B70531B2904292843 /* SweepDismissal.swift */; };
+		EC3891C03D122A5FA90AD0DB /* UpcomingSectionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 795AAC23EB7E48AEF9D07BCC /* UpcomingSectionsTests.swift */; };
 		ED82B81A737BC79D08FFE378 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		EDC1913FF7AA8FD277F68089 /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3E2F1F151ECE60CDFE1524 /* WidgetPushRegistration.swift */; };
 		EE5A06EF55B46C3132933303 /* time-slots.json in Resources */ = {isa = PBXBuildFile; fileRef = B7DD47E083E073FE32FA2C34 /* time-slots.json */; };
@@ -414,6 +415,7 @@
 		77660CA27D2B28508DE93F7A /* QuotaCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCount.swift; sourceTree = "<group>"; };
 		78F7579086893D2594E48169 /* OpenTaskMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenTaskMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-did.json"; sourceTree = "<group>"; };
+		795AAC23EB7E48AEF9D07BCC /* UpcomingSectionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpcomingSectionsTests.swift; sourceTree = "<group>"; };
 		79B196EB051C2A6103B3CB4E /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogic.swift; sourceTree = "<group>"; };
 		7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppDelegate.swift; sourceTree = "<group>"; };
@@ -685,6 +687,7 @@
 				258C97ABC8DDDAB88EB2BB6C /* TaskSegmentsWidgetTests.swift */,
 				AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */,
 				47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */,
+				795AAC23EB7E48AEF9D07BCC /* UpcomingSectionsTests.swift */,
 				7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */,
 				BBB728AF67D6A2F6BF7B641A /* WebBridgeTests.swift */,
 				C10F1EE098B248D10F6E354B /* WidgetOutboxTests.swift */,
@@ -1201,6 +1204,7 @@
 				1C2F3B649D24FD3C87F57B03 /* TasksScopeTests.swift in Sources */,
 				25A22F2B7A429A5B77F9867A /* TasksTimeline.swift in Sources */,
 				65409598C7F7FB5F418179FF /* TimeSlotStore.swift in Sources */,
+				EC3891C03D122A5FA90AD0DB /* UpcomingSectionsTests.swift in Sources */,
 				1A468232572DBE1C33D50075 /* WatchFormatting.swift in Sources */,
 				62886AC7F979636FE750C08E /* WatchQuotaLogic.swift in Sources */,
 				40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */,
