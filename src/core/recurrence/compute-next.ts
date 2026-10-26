@@ -19,7 +19,8 @@ import { ValidationError } from '@/core/errors'
 import { ordinalsCount, parseRRule, type RRuleComponents } from './rrule-builder'
 import { parseAnchorTime } from './timezone'
 import { toNaiveLocal, fromNaiveLocal } from './utils'
-import { openTaskLocalDay } from '@/lib/opentask-day'
+import { dayStartMoment, openTaskDayOf, periodOpensAt } from '@/lib/opentask-day'
+import { toHHMM } from '@/lib/rrule-draft'
 
 // Map our DOW (0=Mon..6=Sun) to rrule.js Weekday constants
 const DOW_TO_RRULE_WEEKDAY: Weekday[] = [
@@ -501,7 +502,11 @@ export function isRecurring(rrule: string | null): boolean {
  * `useDayStart`), so at 00:30 Monday with a 3:00 AM day start the creation
  * day is still Sunday — every 22 days made then is on Sunday's grid, exactly
  * as if made at 23:30 Sunday (the long first gap included, when Sunday's
- * time has passed). With midnight (the switch off) it is the calendar day.
+ * time has passed). Day 0's occurrence is the one instant at the rule's time
+ * INSIDE that day (`periodOpensAt`), which with a start after 12:00 can be on
+ * the date before: with an 11 PM start, every 3 days at 23:45 made Sun 23:26
+ * (Monday's day) is first Sun 23:45, 19 minutes on (PR #354 review). With
+ * midnight (the switch off) it is the calendar day.
  *
  * Rules that pin their own phase (FREQ=DAILY, BYDAY=SU, BYMONTHDAY=1 at
  * INTERVAL=1) are exactly as before: the next matching time after now.
@@ -520,18 +525,28 @@ export function computeFirstOccurrence(
   if (!phaseFloats(components)) {
     return computeFromDue(rruleStr, anchorTime, timezone, now, null)
   }
-  // Local midnight of today's OpenTask date: the grid takes its date.
-  const today = openTaskLocalDay(now, timezone, dayStart)
-  let day0 = today.toJSDate()
+  const today = openTaskDayOf(now, timezone, dayStart)
   if (pinsDays(components)) {
-    const startOfToday = today.minus({ milliseconds: 1 }).toJSDate()
+    // The first matching day from the moment today's OpenTask day starts.
+    const startOfToday = new Date(dayStartMoment(today, timezone, dayStart).getTime() - 1)
     const everyPeriod = rruleStr
       .split(';')
       .filter((part) => !/^INTERVAL=/i.test(part))
       .join(';')
-    day0 = computeFromDue(everyPeriod, anchorTime, timezone, startOfToday, null)
+    const day0 = computeFromDue(everyPeriod, anchorTime, timezone, startOfToday, null)
+    return computeFromDue(rruleStr, anchorTime, timezone, now, null, day0)
   }
-  return computeFromDue(rruleStr, anchorTime, timezone, now, null, day0)
+  // Day 0's occurrence: the one instant at the rule's time INSIDE today's
+  // OpenTask day (`periodOpensAt`) — its date anchors the grid. With an 11 PM
+  // start, at Sun 23:26 (Monday's day) a 23:45 rule's is Sun 23:45, still
+  // ahead; with a 3:00 AM start, at Mon 00:30 (Sunday's day) a 1:00 AM rule's
+  // is Mon 01:00. With midnight it is today's date, as it always was.
+  const { hour, minute } = ruleTimeOfDay(rruleStr, anchorTime)
+  const day0 = periodOpensAt(today, toHHMM(hour, minute), timezone, dayStart)
+  // A rule with no time of day: day 0's midnight counts as passed (the
+  // promise above), even where the day start leaves it ahead.
+  const timeless = !anchorTime && components.byhour === undefined
+  return computeFromDue(rruleStr, anchorTime, timezone, now, timeless ? day0 : null, day0)
 }
 
 /**

@@ -408,3 +408,174 @@ describe.each(NIGHTS)('TQ-LN: $name', (night) => {
     )
   })
 })
+
+/**
+ * TQ-LN16–20: A DAY START AFTER NOON (an 11 PM start: Monday is Sun 23:00 →
+ * Mon 23:00), from the PR #354 review (2026-10-26). Trent's ruling: a label
+ * WITH A CLOCK TIME shows the moment's own calendar weekday and date, with no
+ * cue — never an OpenTask weekday beside a calendar date ("Wed, Oct 27") —
+ * and the night cue is for a start at or before 12:00 only. Grouping still
+ * follows the OpenTask day. Each expected answer below is main's where the
+ * ruling says so (checked against origin/main's code on the same inputs),
+ * and with midnight (the switch off) every answer is main's.
+ */
+const LATE_START = '23:00'
+
+/** A from-completion repeat, as skip until reads it. */
+function completionRepeat(rrule: string, dueAt: string): Task {
+  return {
+    rrule,
+    recurrence_mode: 'from_completion',
+    anchor_time: null,
+    occurrence_at: dueAt,
+    due_at: dueAt,
+    is_reminder: false,
+    is_tracked: false,
+    progress_target: null,
+    done: false,
+    deleted_at: null,
+    archived_at: null,
+    on_deck_day: null,
+    deadline_at: null,
+    repeat_anchor: null,
+    target_days_before: null,
+    target_time: null,
+    repeat_count: null,
+    repeat_count_used: 0,
+    repeat_until: null,
+  } as unknown as Task
+}
+
+describe('TQ-LN: a day start after noon (11 PM)', () => {
+  const satNoon = local('2026-10-24T12:30')
+  const tue2347 = iso('2026-10-27T23:47')
+
+  test('TQ-LN16: a timed label names the calendar day — "Tue, Oct 27, 11:47 PM", never "Wed, Oct 27" (formatQuickSelectHeader, formatDueTimeParts, formatSnoozeTarget)', () => {
+    // The premise: Tue 23:47 is on Wednesday's list.
+    expect(openTaskDayOf(new Date(tue2347), TZ, LATE_START)).toBe('2026-10-28')
+    for (const dayStart of [LATE_START, DAY_START, CALENDAR_DAY_START]) {
+      expect(formatQuickSelectHeader(tue2347, TZ, dayStart, satNoon)).toBe('Tue, Oct 27, 11:47 PM')
+      expect(formatDueTimeParts(tue2347, TZ, dayStart, satNoon).relative).toBe('Tue 11:47 PM')
+      expect(formatSnoozeTarget(tue2347, TZ, dayStart, satNoon)).toBe('Tue 11:47 PM')
+    }
+    // A word that would contradict the date gives way to the weekday: at Sat
+    // 12:30 a Sat 23:30 target is on Sunday's list ("Tomorrow" on main) but
+    // dated Saturday.
+    const sat2330 = iso('2026-10-24T23:30')
+    expect(formatQuickSelectHeader(sat2330, TZ, LATE_START, satNoon)).toBe('Sat, Oct 24, 11:30 PM')
+    expect(formatDueTimeParts(sat2330, TZ, LATE_START, satNoon).relative).toBe('Sat 11:30 PM')
+    expect(formatSnoozeTarget(sat2330, TZ, LATE_START, satNoon)).toBe('Sat 11:30 PM')
+    // Where the OpenTask day and the date agree, the words stay: seen at Sat
+    // 23:30 (Sunday's day, named Oct 25), Sun 9:00 is today's, Mon 9:00 tomorrow's.
+    const sat2330Now = local('2026-10-24T23:30')
+    expect(formatQuickSelectHeader(iso('2026-10-25T09:00'), TZ, LATE_START, sat2330Now)).toBe(
+      'Today, Oct 25, 9:00 AM',
+    )
+    expect(formatDueTimeParts(iso('2026-10-26T09:00'), TZ, LATE_START, sat2330Now).relative).toBe(
+      'Tomorrow 9:00 AM',
+    )
+    // The whole-day label (beside the day's OpenTask date in the bulk header)
+    // stays the OpenTask day's, as on main.
+    expect(getDayLabel(sat2330, TZ, LATE_START, satNoon)).toBe('Tomorrow')
+    expect(getDayLabel(tue2347, TZ, LATE_START, satNoon)).toBe('Wed')
+    // The switch off: main's words.
+    expect(formatQuickSelectHeader(sat2330, TZ, CALENDAR_DAY_START, satNoon)).toBe(
+      'Today, Oct 24, 11:30 PM',
+    )
+    expect(formatDueTimeParts(sat2330, TZ, CALENDAR_DAY_START, satNoon).relative).toBe('11:30 PM')
+  })
+
+  test('TQ-LN17: past labels — a Sat 23:47 log is "Sat 11:47 PM" whenever it is read (formatLastLogged, formatTaskSince, formatDueTimeParts overdue)', () => {
+    const log = iso('2026-10-24T23:47')
+    const since = (dayStart: string, now: Date) =>
+      formatTaskSince(
+        { rrule: null, due_at: null, original_due_at: null, created_at: log },
+        TZ,
+        dayStart,
+        now,
+      )?.label
+    // Main said "today 11:47 PM" until Sun 23:00 and "yesterday 11:47 PM" on Monday.
+    const reads = ['2026-10-24T23:55', '2026-10-25T10:00', '2026-10-26T10:00', '2026-10-27T10:00']
+    for (const now of reads) {
+      expect(formatLastLogged(log, TZ, LATE_START, local(now))).toBe('Sat 11:47 PM')
+      expect(since(LATE_START, local(now))).toBe('Sat')
+    }
+    // The same day by both counts still says "today": a Sat 22:00 log read at 22:30.
+    const sat22 = iso('2026-10-24T22:00')
+    expect(formatLastLogged(sat22, TZ, LATE_START, local('2026-10-24T22:30'))).toBe(
+      'today 10:00 PM',
+    )
+    // An overdue target: "yesterday" would name Saturday, its date is Friday.
+    const fri2330 = iso('2026-10-23T23:30')
+    const sun10 = local('2026-10-25T10:00')
+    expect(formatDueTimeParts(fri2330, TZ, LATE_START, sun10)).toEqual({
+      relative: 'Fri',
+      absolute: '11:30 PM',
+    })
+    // The switch off: main's answers.
+    expect(formatLastLogged(log, TZ, CALENDAR_DAY_START, sun10)).toBe('yesterday 11:47 PM')
+    expect(since(CALENDAR_DAY_START, sun10)).toBe('yesterday')
+    expect(formatDueTimeParts(fri2330, TZ, CALENDAR_DAY_START, sun10).relative).toBe('2d ago')
+  })
+
+  test('TQ-LN18: "Morning of the deadline" is the morning of the deadline\'s own date (deadlineDayPick)', () => {
+    const ctx = { timezone: TZ, morningTime: '09:00' }
+    for (const dayStart of [LATE_START, CALENDAR_DAY_START]) {
+      expect(deadlineDayPick(tue2347, ctx, satNoon, dayStart)).toEqual({
+        label: 'Morning of the deadline · Tue 9:00 AM (Default task time)',
+        at: iso('2026-10-27T09:00'),
+      })
+    }
+  })
+
+  test('TQ-LN19: skip until, from completion, on a spring-forward night lands as main did (planSkipUntil)', () => {
+    // Every 2 days at 02:30 until Sun Mar 8 2026 (2:00 → 3:00): 03:30 CDT —
+    // Luxon's shift by the gap, as computeNextOccurrence's from-completion step has it.
+    const chicago = completionRepeat(
+      'FREQ=DAILY;INTERVAL=2;BYHOUR=2;BYMINUTE=30',
+      iso('2026-03-06T02:30'),
+    )
+    expect(
+      planSkipUntil(chicago, TZ, '2026-03-08', local('2026-03-05T10:00'), CALENDAR_DAY_START),
+    ).toMatchObject({ kind: 'skip', landing: '2026-03-08T08:30:00.000Z' })
+    // Lord Howe's half-hour change (2:00 → 2:30, Sun Oct 4 2026): weekly at 02:15 → 02:45.
+    const LH = 'Australia/Lord_Howe'
+    const lh = (s: string) => DateTime.fromISO(s, { zone: LH }).toJSDate()
+    const lordHowe = completionRepeat(
+      'FREQ=WEEKLY;BYHOUR=2;BYMINUTE=15',
+      lh('2026-09-27T02:15').toISOString(),
+    )
+    expect(
+      planSkipUntil(lordHowe, LH, '2026-10-04', lh('2026-09-26T10:00'), CALENDAR_DAY_START),
+    ).toMatchObject({ kind: 'skip', landing: '2026-10-03T15:45:00.000Z' })
+  })
+
+  test("TQ-LN20: a floating rule's day 0 is its first occurrence while its time inside the OpenTask day is ahead (computeFirstOccurrence)", () => {
+    const sunNight = local('2026-10-25T23:26') // Monday's day with an 11 PM start
+    const first = (rule: string, now: Date, dayStart: string) =>
+      computeFirstOccurrence(rule, null, TZ, now, dayStart).toISOString()
+    // Every 3 days at 23:45: day 0's 23:45 is Sun 23:45, 19 minutes away (main's answer).
+    const every3 = 'FREQ=DAILY;INTERVAL=3;BYHOUR=23;BYMINUTE=45'
+    expect(first(every3, sunNight, LATE_START)).toBe(iso('2026-10-25T23:45'))
+    expect(first(every3, sunNight, CALENDAR_DAY_START)).toBe(iso('2026-10-25T23:45'))
+    // Every 2 weeks on Sunday at 23:45: the same instant (main's answer).
+    const sundays = 'FREQ=WEEKLY;INTERVAL=2;BYDAY=SU;BYHOUR=23;BYMINUTE=45'
+    expect(first(sundays, sunNight, LATE_START)).toBe(iso('2026-10-25T23:45'))
+    expect(first(sundays, sunNight, CALENDAR_DAY_START)).toBe(iso('2026-10-25T23:45'))
+    // A 7:00 rule's day-0 moment is Mon 07:00, inside Monday's day.
+    expect(first('FREQ=DAILY;INTERVAL=3;BYHOUR=7;BYMINUTE=0', sunNight, LATE_START)).toBe(
+      iso('2026-10-26T07:00'),
+    )
+    // A 3:00 AM start: at Mon 00:30 (Sunday's day) a 1:00 AM rule's day-0
+    // moment is Mon 01:00, still ahead — and the same at Sun 23:30.
+    const oneAm = 'FREQ=DAILY;INTERVAL=3;BYHOUR=1;BYMINUTE=0'
+    for (const now of ['2026-10-26T00:30', '2026-10-25T23:30']) {
+      expect(first(oneAm, local(now), DAY_START)).toBe(iso('2026-10-26T01:00'))
+    }
+    // No time of day: day 0's midnight counts as passed — one period on.
+    expect(first('FREQ=DAILY;INTERVAL=3', sunNight, LATE_START)).toBe(iso('2026-10-29T00:00'))
+    expect(first('FREQ=DAILY;INTERVAL=3', sunNight, CALENDAR_DAY_START)).toBe(
+      iso('2026-10-28T00:00'),
+    )
+  })
+})

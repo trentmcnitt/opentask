@@ -18,7 +18,7 @@ import {
 import { DateTime } from 'luxon'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { parseDeckDay } from '@/lib/task-segments'
-import { NIGHT_SUFFIX, nightDay, nightWeekday } from '@/lib/night-day'
+import { nightDay, nightDayWords, nightWeekday } from '@/lib/night-day'
 import { getPriorityOption } from '@/lib/priority'
 
 /** Maps DB column names to human-readable labels */
@@ -94,21 +94,21 @@ export function formatSnoozeTarget(
 ): string {
   const target = new Date(isoUtc)
   const time = formatTimeInTimezone(isoUtc, timezone)
-  const { todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
-    getTimezoneDayBoundaries(timezone, dayStart, now)
+  const { todayStart, tomorrowStart, nextWeekStart } = getTimezoneDayBoundaries(
+    timezone,
+    dayStart,
+    now,
+  )
 
   if (target >= todayStart && target < tomorrowStart) {
     return time
   }
 
-  // L9's night rule (`nightDay`): "tomorrow night 1:00 AM", "Thu night 1:00 AM".
-  const n = nightDay(target, timezone, dayStart, now)
-  if (target >= tomorrowStart && target < dayAfterTomorrowStart) {
-    return `tomorrow${n.night ? NIGHT_SUFFIX : ''} ${time}`
-  }
-
-  if (target >= dayAfterTomorrowStart && target < nextWeekStart) {
-    return `${nightWeekday(n)} ${time}`
+  // Tomorrow, then the weekday within 7 days — L9's night rule (`nightDay`):
+  // "tomorrow night 1:00 AM", "Thu night 1:00 AM"; and the moment's own
+  // weekday where "tomorrow" would contradict its date (`nightDayWords`).
+  if (target >= tomorrowStart && target < nextWeekStart) {
+    return `${nightDayWords(nightDay(target, timezone, dayStart, now), false)} ${time}`
   }
 
   const dateStr = target.toLocaleDateString('en-US', {
@@ -384,7 +384,8 @@ function buildDeckFragment(
     if (typeof deadline !== 'string' || Date.parse(deadline) <= Date.now()) {
       return 'Taken off deck: the deadline has passed'
     }
-    // The deadline's OpenTask day, "night" in its night (L9: "Thu night").
+    // The deadline's OpenTask day, "night" in its night (L9: "Thu night") —
+    // a day with no time, like the deadline chip's "Deadline Wed".
     const on = nightWeekday(nightDay(new Date(deadline), userTimezone, dayStart, new Date()))
     return `Taken off deck: the deadline is ${on}`
   }

@@ -92,7 +92,7 @@ import { getTaskById } from './read'
 import { seriesEndSkipWords, writeRecurringSkip, writeSeriesEndSkip } from './skip'
 import { stampTargetSet, type CollectedWrite } from './target-set'
 import { DECK_CLEAR_SQL, collectDeckClear } from './deck-clear'
-import { addDays, dayStartMoment, openTaskLocalDay, periodOpensAt } from '@/lib/opentask-day'
+import { addDays, dayStartMoment, openTaskLocalDay, periodOpensOnDate } from '@/lib/opentask-day'
 import { toHHMM } from '@/lib/rrule-draft'
 import { dayBoundaryForUser } from './rollover-time'
 import {
@@ -228,14 +228,15 @@ function walkFromCompletion(
   // A deadline-anchored repeat's occurrence is its deadline: it lands
   // `target_days_before` days on, so its derived target is on the date.
   const lead = isDeadlineAnchored(task) ? (task.target_days_before ?? 0) : 0
-  // The rule's time WITHIN that OpenTask day (`periodOpensAt`): a 1:00 AM
-  // rule's moment on Monday is Tuesday 01:00 with a 3:00 AM day start.
-  const onTheDay = periodOpensAt(
-    addDays(until.day, lead),
-    toHHMM(hour, minute),
-    timezone,
-    until.dayStart,
-  )
+  // The rule's time WITHIN that OpenTask day (`periodOpensOnDate`): a 1:00 AM
+  // rule's moment on Monday is Tuesday 01:00 with a 3:00 AM day start. The
+  // time is set as Luxon sets it, the convention `computeNextOccurrence`'s
+  // from-completion step keeps: on a spring-forward night a 02:30 that does
+  // not exist moves on by the gap, to 03:30 (not `localMoment`'s 03:00).
+  const onDate = periodOpensOnDate(addDays(until.day, lead), toHHMM(hour, minute), until.dayStart)
+  const onTheDay = DateTime.fromISO(onDate, { zone: timezone })
+    .set({ hour, minute, second: 0, millisecond: 0 })
+    .toJSDate()
   const landing = onTheDay > plain ? onTheDay : plain
   return { landing: landing.toISOString(), skipped }
 }

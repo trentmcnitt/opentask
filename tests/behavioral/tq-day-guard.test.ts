@@ -150,9 +150,9 @@ const ALLOWLIST: Record<string, [number, string]> = {
     [1, `${ON_OPENTASK_DATE} (History's previous day: the picked OpenTask date − 1)`],
   'src/app/history/page.tsx: onClick={() => setDate(DateTime.fromISO(date).plus({ days: 1 }).toISODate()!)}':
     [1, `${ON_OPENTASK_DATE} (History's next day: the picked OpenTask date + 1)`],
-  "src/app/history/page.tsx: return `${n.day.toFormat('cccc')}${night} ${formatTime()}`": [
+  "src/app/history/page.tsx: const weekday = `${timedDay(n).toFormat('cccc')}${night}`": [
     1,
-    `${ON_OPENTASK_DATE} (an entry's weekday: its OpenTask day, from nightDay)`,
+    `${ON_OPENTASK_DATE} (an entry's weekday beside its time: in its night the OpenTask day, else its own date — timedDay, from nightDay)`,
   ],
   "src/components/TaskSegmentRow.tsx: return day?.isValid ? `deferred to ${day.toFormat('ccc')}` : 'deferred'":
     [1, `${ON_OPENTASK_DATE} ("deferred to Thu": the lead day, an OpenTask date)`],
@@ -386,11 +386,16 @@ const ALLOWLIST: Record<string, [number, string]> = {
     [1, `${OCCURRENCE_DATE} (the offset between a deadline and a target)`],
   "src/lib/task-segments.ts: wait = Math.min(wait, waitDays(days[i].startOf('day'), days[i - 1].startOf('day')))":
     [1, `${OCCURRENCE_DATE} (a rule's wait between occurrences)`],
-  // ── The switch-off path (TQ-G01 v2) ──
+  'src/lib/task-segments.ts: : DateTime.fromISO(calendarDateOf(at, ctx.timezone), { zone: ctx.timezone })':
+    [
+      1,
+      `${DELIBERATE_CALENDAR} ("Morning of the deadline" out of the night: the morning of the deadline's own date, Trent 2026-10-26 — with an 11 PM start a Tue 23:47 deadline's is Tue 9:00)`,
+    ],
   "src/lib/task-segments.ts: const deadlineDay = local.startOf('day')": [
     1,
-    `${SWITCH_OFF} (autoTargetAt: the automatic target, written only with the task queue off, A1)`,
+    `${OCCURRENCE_DATE} (autoTargetAt: the automatic target counts its lead days back from the deadline's own date — stored by resolveTarget with the task queue off (A1), and also computed whatever the switch says for the AI task summaries' implied target, task-summaries.ts, and by migrate-deadline-targets.ts)`,
   ],
+  // ── The switch-off path (TQ-G01 v2) ──
   'src/lib/task-segments.ts: return rolloverTime ? openTaskDayOf(now, timezone, rolloverTime) : calendarDateOf(now, timezone)':
     [1, `${SWITCH_OFF} (openTaskToday with a null rollover time)`],
 }

@@ -151,7 +151,9 @@ export function initWorkingDate(dueAt: string | null, now?: Date): string {
  * weekday (e.g., "Mon") — by the user's OpenTask days (`dayStart`, "Day
  * starts at" PR 2): with a 3:00 AM start, at 01:30 a 9:00 AM time is
  * "Tomorrow", and a Friday 1:00 AM time is "Thu" (the OpenTask day's weekday,
- * part 2) — the label of the whole day the moment is on.
+ * part 2) — the label of the WHOLE DAY the moment is on, for a label beside
+ * that day's OpenTask date (the bulk header's "Wed, Oct 28, —"). A label
+ * with the moment's own time and date is `formatQuickSelectHeader`'s.
  */
 export function getDayLabel(
   isoUtc: string,
@@ -177,7 +179,12 @@ export function getDayLabel(
  * Between midnight and the day start the day word follows L9's night rule
  * (`nightDay`, part 2): "Tonight, Feb 4, 1:00 AM", "Tomorrow night, Feb 5,
  * 1:00 AM", "Thu night, Feb 6, 1:00 AM" — the word names the OpenTask day
- * the time is on, the date stays the moment's own.
+ * the time is on, the date stays the moment's own. Out of the night the day
+ * is the moment's own (Trent, 2026-10-26): with an 11 PM start a Tue Oct 27
+ * 23:47 target is on Wednesday's list but reads "Tue, Oct 27, 11:47 PM", and
+ * a word that would contradict the date gives way to the weekday — at Sat
+ * 12:30 a Sat 23:30 target is "Sat, Oct 24, 11:30 PM", not "Tomorrow, Oct 24"
+ * (`nightDayWords`).
  */
 export function formatQuickSelectHeader(
   isoUtc: string,
@@ -186,10 +193,7 @@ export function formatQuickSelectHeader(
   now: Date = new Date(),
 ): string {
   const date = new Date(isoUtc)
-  const n = nightDay(date, timezone, dayStart, now)
-  const dayLabel = n.night
-    ? capitalized(nightDayWords(n, date < now))
-    : getDayLabel(isoUtc, timezone, dayStart, now)
+  const dayLabel = capitalized(nightDayWords(nightDay(date, timezone, dayStart, now), date < now))
 
   const timePart = date.toLocaleString('en-US', {
     timeZone: timezone,

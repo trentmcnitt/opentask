@@ -396,10 +396,14 @@ function resolveFixed(w: TargetWrite, ctx: TargetContext | null, now: Date): Res
 
 /**
  * The picker's "Morning of the deadline" (ruling Q8): the user's morning on the
- * deadline's OpenTask day — or the deadline itself, if that is earlier. L9
- * (part 2, 2026-10-26): a deadline between midnight and the day start counts
- * on the evening before ("Deadline Thu night" for Fri 01:00 with a 3:00 AM
- * start), so its morning is Thursday's, not Friday's.
+ * deadline's own local day — or the deadline itself, if that is earlier. L9
+ * (part 2, 2026-10-26): a deadline between midnight and a day start at or
+ * before 12:00 counts on the evening before ("Deadline Thu night" for Fri
+ * 01:00 with a 3:00 AM start), so its morning is Thursday's, not Friday's.
+ * With a start after 12:00 there is no night, and the day is the deadline's
+ * calendar date as it always was: with an 11 PM start a Tue 23:47 deadline is
+ * on Wednesday's list, but its morning is Tuesday 9:00, not Wednesday's (after
+ * the deadline, so the pick collapsed to the deadline itself).
  */
 export function deadlineDayTarget(
   deadlineAt: string,
@@ -408,7 +412,11 @@ export function deadlineDayTarget(
   dayStart: string,
 ): string {
   const deadline = DateTime.fromISO(deadlineAt, { zone: 'utc' })
-  const morning = morningOn(openTaskLocalDay(deadline.toJSDate(), ctx.timezone, dayStart), ctx)
+  const at = deadline.toJSDate()
+  const day = isLateNight(at, ctx.timezone, dayStart)
+    ? openTaskLocalDay(at, ctx.timezone, dayStart)
+    : DateTime.fromISO(calendarDateOf(at, ctx.timezone), { zone: ctx.timezone })
+  const morning = morningOn(day, ctx)
   return (morning < deadline ? morning : deadline).toUTC().toISO()!
 }
 

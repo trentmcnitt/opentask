@@ -13,7 +13,14 @@ import {
   openTaskDaysBetween,
   type DayBoundaries,
 } from '@/lib/opentask-day'
-import { NIGHT_SUFFIX, nightDay, nightWeekday } from '@/lib/night-day'
+import {
+  NIGHT_SUFFIX,
+  capitalized,
+  nightDay,
+  nightDayWords,
+  timedDay,
+  timedWeekday,
+} from '@/lib/night-day'
 
 /**
  * Whole days from `a` to `b` (negative when `b` is earlier), counted on the
@@ -136,8 +143,11 @@ export function formatDueTimeParts(
   now: Date = new Date(),
 ): DueTimeParts {
   const due = new Date(isoUtc)
-  const { yesterdayStart, todayStart, tomorrowStart, dayAfterTomorrowStart, nextWeekStart } =
-    getTimezoneDayBoundaries(timezone, dayStart, now)
+  const { yesterdayStart, todayStart, tomorrowStart, nextWeekStart } = getTimezoneDayBoundaries(
+    timezone,
+    dayStart,
+    now,
+  )
 
   const time = formatTimeInZone(due, timezone)
 
@@ -151,15 +161,13 @@ export function formatDueTimeParts(
     return formatTodayFuture(due, now, time)
   }
 
-  // Tomorrow — "Tomorrow night 1:00 AM" in its night (L9, `nightDay`)
-  const n = nightDay(due, timezone, dayStart, now)
-  if (due < dayAfterTomorrowStart) {
-    return { relative: `Tomorrow${n.night ? NIGHT_SUFFIX : ''} ${time}` }
-  }
-
-  // Within 7 days (after tomorrow): the OpenTask day's weekday ("Thu night 1:00 AM")
+  // Tomorrow, then the weekday within 7 days: "Tomorrow 9:00 AM", "Tomorrow
+  // night 1:00 AM", "Thu night 1:00 AM" (L9, `nightDay`) — and the moment's
+  // own weekday where "Tomorrow" would contradict its date (a start after
+  // noon: "Sat 11:30 PM" at Sat 12:30, `nightDayWords`).
   if (due < nextWeekStart) {
-    return { relative: `${nightWeekday(n)} ${time}` }
+    const n = nightDay(due, timezone, dayStart, now)
+    return { relative: `${capitalized(nightDayWords(n, false))} ${time}` }
   }
 
   // Beyond 7 days
@@ -205,9 +213,10 @@ function formatOverdue(
     return { relative: `${Math.floor(diffMin / 60)}h ago`, absolute: time }
   }
 
-  // Yesterday
+  // Yesterday — "yesterday night" in its night (L9), the moment's own
+  // weekday where "yesterday" would contradict its date (`nightDayWords`)
   if (due >= yesterdayStart) {
-    return { relative: 'yesterday', absolute: time }
+    return { relative: nightDayWords(nightDay(due, timezone, dayStart, now), true), absolute: time }
   }
 
   // Days/weeks/months ago (OpenTask days in timezone)
@@ -310,13 +319,13 @@ export function formatLastLogged(
 ): string {
   const days = daysBetween(new Date(isoUtc), now, timezone, dayStart)
   const time = formatTimeInTimezone(isoUtc, timezone)
-  // L9 (`nightDay`): a 1:00 AM log is the night of the OpenTask day before.
+  // L9 (`nightDay`): a 1:00 AM log is the night of the OpenTask day before;
+  // with a start after noon, a Sat 23:47 log is "Sat 11:47 PM" (its own
+  // date's weekday), never "today 11:47 PM" on Sunday's list (`nightDayWords`).
   const n = nightDay(new Date(isoUtc), timezone, dayStart, now)
-  const suffix = n.night ? NIGHT_SUFFIX : ''
-  if (days <= 0) return n.night ? `${nightWeekday(n)} ${time}` : `today ${time}`
-  if (days === 1) return `yesterday${suffix} ${time}`
+  if (days <= 0 && n.gap > 0) return `today ${time}` // a log a moment ahead (clock skew)
+  if (days < 7 && n.dateGap > -7) return `${nightDayWords(n, true)} ${time}`
   const local = DateTime.fromISO(isoUtc, { zone: timezone })
-  if (days < 7) return `${nightWeekday(n)} ${time}`
   return `${local.toFormat('LLL d')}, ${time}`
 }
 
@@ -454,20 +463,20 @@ export function formatTaskSince(
 
   const timeAgo = formatTimeAgo(anchor, nowDt)
 
-  // "today" / "yesterday" by OpenTask day (`daysBetween`); a weekday is the
-  // OpenTask day's, with L9's "night" for a moment in its night (`nightDay`).
+  // "today" / "yesterday" by OpenTask day (`daysBetween`), with L9's "night"
+  // for a moment in its night (`nightDay`) — else the day of the anchor's
+  // own date, the one `fullDate` shows (`timedDay`: a start after noon).
   const days = daysBetween(anchor.toJSDate(), now, timezone, dayStart)
   const n = nightDay(anchor.toJSDate(), timezone, dayStart, now)
   let label: string
-  if (days === 0) {
-    label = n.night ? nightWeekday(n) : 'today'
-  } else if (days === 1) {
-    label = n.night ? `yesterday${NIGHT_SUFFIX}` : 'yesterday'
+  if (days === 0 || days === 1) {
+    label = nightDayWords(n, true)
   } else if (nowDt.diff(anchor, 'days').days < 7) {
-    label = nightWeekday(n)
+    label = timedWeekday(n)
   } else {
-    // The OpenTask date, "night" in its night (the chip's "Oct 30 night").
-    const date = n.day.toFormat(n.day.year === nowDt.year ? 'LLL d' : 'LLL d, yyyy')
+    // The date, "night" in its night (the chip's "Oct 30 night").
+    const day = timedDay(n)
+    const date = day.toFormat(day.year === nowDt.year ? 'LLL d' : 'LLL d, yyyy')
     label = n.night ? `${date}${NIGHT_SUFFIX}` : date
   }
 
