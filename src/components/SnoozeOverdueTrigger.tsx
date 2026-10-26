@@ -8,6 +8,7 @@ import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { useSnoozePreferences } from '@/components/PreferencesProvider'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import { bulkSnoozeCompactLabel } from '@/lib/snooze'
+import { cn } from '@/lib/utils'
 
 interface SnoozeOverdueTriggerProps {
   /**
@@ -24,20 +25,41 @@ interface SnoozeOverdueTriggerProps {
    * clock the date facet, and neither was what a press moved).
    */
   overdueCount: number
+  /**
+   * Selected task rows (reminders and quotas left out). Above 0 the button
+   * acts on the selection instead — a press and the menu both call
+   * `onSnoozeSelected` — and its badge shows this count.
+   */
+  selectedCount?: number
   /** Whether the user has periods, for the header badge ("Next" needs one). */
   hasPeriods: boolean
   /** Called with optional `until` parameter — omit for the default snooze. */
   onSnoozeOverdue: (until?: string) => void
+  /** The same, for the selection (`useSnoozeOverdue`'s `snoozeSelected`). */
+  onSnoozeSelected?: (until?: string) => void
 }
 
 /**
- * The "snooze all overdue" button, in both of its places.
+ * The Defer button ("snooze all overdue"), in both of its places.
  *
- * - Tap (or Enter/Space): snooze every overdue task — to the next period or
+ * - Tap (or Enter/Space): defer every overdue task — to the next period or
  *   the default option, per the bulk-snooze setting (`useSnoozeOverdue`).
  * - Long-press (400ms, touch or mouse) or right-click: open SnoozeMenu with
  *   the duration choices. `useSimpleLongPress` counts only the primary
  *   button, so a right-click never sweeps.
+ *
+ * WITH A SELECTION (Trent, 2026-10-26: "I would have kind of expected that the
+ * fab button would have just stayed there during selection and the bulk
+ * snooze fab would have just applied to the selected items"). The button
+ * stays, and both the tap and the menu act on the selected tasks only — at
+ * any priority, since a selection is deliberate — and, since a defer only
+ * ever moves a target LATER, only on those whose target is before the defer
+ * time; the rest are counted in the toast ("Deferred 2 tasks · 1 already
+ * later"; `useSnoozeOverdue`, `src/lib/defer-selection.ts`). So that a press can't be
+ * mistaken for a sweep of everything, the badge shows the SELECTED count, in
+ * the selection bar's colours (`bg-primary`) rather than the overdue badge's,
+ * and the label reads "Defer 3 selected". The selection bar keeps Done / More
+ * / Trash: it has no Defer of its own.
  *
  * The top-bar clock and the FAB were two hand copies of this, and had drifted:
  * only the FAB opened its menu on a right-click, and the clock's badge read
@@ -45,23 +67,27 @@ interface SnoozeOverdueTriggerProps {
  * The top-bar clock is kept alongside the FAB on desktop (Trent, 2026-09-29).
  *
  * The FAB sits in `DashboardFabStack`, which places it (phone above the bottom
- * tabs, `md` and up the viewport's bottom-right). From `md` up it is 90%
- * opaque like the overdue jump button stacked above it, since at `xl` it can
- * float over the Quotas column's lower rows. The caller hides both in
- * selection mode.
+ * tabs, `md` and up the viewport's bottom-right) and lifts it clear of the
+ * selection bar where the two would meet. From `md` up it is 90% opaque like
+ * the overdue jump button stacked above it, since at `xl` it can float over
+ * the Quotas column's lower rows.
  */
 export function SnoozeOverdueTrigger({
   variant,
   overdueCount,
+  selectedCount = 0,
   hasPeriods,
   onSnoozeOverdue,
+  onSnoozeSelected,
 }: SnoozeOverdueTriggerProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const { defaultSnoozeOption, bulkSnoozeDefault } = useSnoozePreferences()
+  const selecting = selectedCount > 0 && onSnoozeSelected !== undefined
+  const snooze = (until?: string) => (selecting ? onSnoozeSelected(until) : onSnoozeOverdue(until))
 
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => onSnoozeOverdue(),
+    onShortPress: () => snooze(),
   })
 
   const handlers = {
@@ -74,14 +100,22 @@ export function SnoozeOverdueTrigger({
       setMenuOpen(true)
     },
   }
-  const ariaLabel =
-    overdueCount > 0
+  const ariaLabel = selecting
+    ? `Defer ${selectedCount} selected (hold for options)`
+    : overdueCount > 0
       ? `Defer ${overdueCount} ${OVERDUE_LOWER} tasks (hold for options)`
       : `Defer ${OVERDUE_LOWER} tasks (hold for options)`
-  const countText = overdueCount > 999 ? '999+' : overdueCount
+  const badgeCount = selecting ? selectedCount : overdueCount
+  const countText = badgeCount > 999 ? '999+' : badgeCount
+  // The selected count wears the selection bar's colours, with a ring so it
+  // reads against the blue FAB in both themes; the overdue count keeps its own.
+  const badgeColors = selecting
+    ? 'bg-primary text-primary-foreground ring-2 ring-background'
+    : 'bg-over-target-badge text-white'
+  const badgeAttrs = selecting ? { 'data-snooze-selected-count': '' } : {}
 
   return (
-    <SnoozeMenu open={menuOpen} onOpenChange={setMenuOpen} onSnooze={(u) => onSnoozeOverdue(u)}>
+    <SnoozeMenu open={menuOpen} onOpenChange={setMenuOpen} onSnooze={(u) => snooze(u)}>
       {variant === 'header' ? (
         <Button
           variant="ghost"
@@ -91,8 +125,14 @@ export function SnoozeOverdueTrigger({
           className="relative hidden md:inline-flex"
         >
           <Clock className="size-5" />
-          {overdueCount > 0 && (
-            <span className="bg-over-target-badge absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold text-white">
+          {badgeCount > 0 && (
+            <span
+              {...badgeAttrs}
+              className={cn(
+                badgeColors,
+                'absolute top-0 right-0 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold',
+              )}
+            >
               {countText}
             </span>
           )}
@@ -111,8 +151,14 @@ export function SnoozeOverdueTrigger({
           className="pointer-events-auto relative flex size-12 cursor-pointer items-center justify-center rounded-full bg-blue-500 text-white shadow-lg shadow-blue-500/25 transition-[background-color,opacity] hover:bg-blue-600 active:bg-blue-700 md:opacity-90 md:hover:opacity-100"
         >
           <Clock className="size-5" />
-          {overdueCount > 0 && (
-            <span className="bg-over-target-badge absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white">
+          {badgeCount > 0 && (
+            <span
+              {...badgeAttrs}
+              className={cn(
+                badgeColors,
+                'absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold',
+              )}
+            >
               {countText}
             </span>
           )}

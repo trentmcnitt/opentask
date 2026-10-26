@@ -2,6 +2,7 @@
 
 import { useRef, type CSSProperties, type ReactNode } from 'react'
 import { useToastClearance } from '@/hooks/useToastClearance'
+import { useSelectionBarClearance } from '@/hooks/useSelectionBarClearance'
 
 /**
  * The dashboard's right-hand FAB column — one fixed container for every
@@ -37,10 +38,25 @@ import { useToastClearance } from '@/hooks/useToastClearance'
  * (`useToastClearance`) feeds a `max()` with the usual bottom, so the column
  * only ever moves up. On a wide screen the centred toast never reaches the
  * column, the hook reports nothing, and `md:bottom-6` holds.
+ *
+ * ABOVE THE SELECTION BAR (2026-10-26): the Defer FAB stays in selection mode
+ * now, and on a phone the selection bar's right end meets the column. The bar
+ * keeps its place; the column lifts above it the same way
+ * (`useSelectionBarClearance`, fed into the same variable as the larger of
+ * the two), and only where the two actually overlap.
  */
-export function DashboardFabStack({ children }: { children: ReactNode }) {
+export function DashboardFabStack({
+  selectionBarUp = false,
+  children,
+}: {
+  /** The selection bar is on screen (a task selection) — see below. */
+  selectionBarUp?: boolean
+  children: ReactNode
+}) {
   const ref = useRef<HTMLDivElement>(null)
-  const clearance = useToastClearance(ref)
+  const toast = useToastClearance(ref)
+  const bar = useSelectionBarClearance(ref, selectionBarUp)
+  const clearance = toast === null && bar === null ? null : Math.max(toast ?? 0, bar ?? 0)
   return (
     <div
       ref={ref}
