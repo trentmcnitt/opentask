@@ -105,10 +105,14 @@ async function withProbes(page: Page, body: (p: Probes, tomorrowDue: string) => 
       undated: await make('Defer sel undated', { due_at: null }),
       unselected: await make('Defer sel unselected', { due_at: ago(2) }),
     }
-    await withPreferences(page, { default_grouping: 'unified' }, async () => {
-      await waitForPrefsLoaded(page, () => page.goto('/'), row(page, probes.overdue))
-      await body(probes, tomorrowDue)
-    })
+    await withPreferences(
+      page,
+      { default_grouping: 'unified', bulk_snooze_default: 'next_period' },
+      async () => {
+        await waitForPrefsLoaded(page, () => page.goto('/'), row(page, probes.overdue))
+        await body(probes, tomorrowDue)
+      },
+    )
   } finally {
     if (ids.length > 0) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
   }
