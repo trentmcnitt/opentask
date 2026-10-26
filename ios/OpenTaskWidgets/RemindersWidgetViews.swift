@@ -1910,6 +1910,24 @@ private struct TaskSegmentListView: View {
                 .layoutPriority(1)
                 chevrons
             }
+            // Last (2026-10-26): "Task queue · Quarterly" beside the
+            // chevrons at XXX Large doesn't fit even with undo/redo moved
+            // down, and a title that may not truncate would push the card
+            // sideways — so it goes to two lines. The header is laid out for
+            // real above the list's `RenderedTextReader`, so the second line
+            // comes out of the list's height, never off the card.
+            HStack(alignment: .top, spacing: WidgetTheme.headerSpacing) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Link(destination: WidgetLink.reminders) { wrappingTitle.contentShape(Rectangle()) }
+                    HStack(alignment: .center, spacing: WidgetTheme.headerSpacing) {
+                        Link(destination: WidgetLink.reminders) { subtitle.contentShape(Rectangle()) }
+                        Spacer(minLength: 0)
+                        undoRedo.padding(.vertical, -UndoRedoButtons.verticalPadding)
+                    }
+                }
+                .layoutPriority(1)
+                chevrons
+            }
         }
         .padding(.top, isLarge ? WidgetTheme.headerTopPadding : 0)
     }
@@ -1924,15 +1942,27 @@ private struct TaskSegmentListView: View {
         }
     }
 
-    /// "Tasks · Days" — never truncates (the period title's rule).
+    /// "Task queue · Daily" (2026-10-26, the web's `segmentTitle`; "Tasks ·
+    /// Days" before) — never truncates (the period title's rule).
     private var title: some View {
-        Text("Tasks · \(segment.label)")
+        titleText
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// The header's last resort: the title on up to two lines.
+    private var wrappingTitle: some View {
+        titleText
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var titleText: Text {
+        Text(segment.wrappingTitle)
             .font(.headline)
             // Its horizon's teal (2026-10-11): the page's accent, matching
             // its strip bar and ring.
             .foregroundStyle(WidgetTheme.taskSegmentTitleColor(segment.kind, scheme: colorScheme))
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
     }
 
     /// "5 left", "all clear" — a period's subtitle words (2026-10-11; it

@@ -414,7 +414,7 @@ enum TaskHorizon: String, CaseIterable, Codable {
         }
     }
 
-    /// A task page's TITLE ("Tasks · Days"). Light mode uses one deeper teal
+    /// A task page's TITLE ("Task queue · Daily"). Light mode uses one deeper teal
     /// for every horizon, for legibility on the light card (Trent,
     /// 2026-10-11); dark mode's title is the horizon's own fill.
     var segmentTitleHex: (light: UInt32, dark: UInt32) {
@@ -447,13 +447,32 @@ enum SegmentKind: Hashable {
         }
     }
 
-    /// "Days", "Upcoming" — the web's `segmentWord`.
+    /// "Days", "Upcoming" — the web's `segmentWord`. The row's word (a row's
+    /// set horizon, "Weeks" on a Days page); a page's TITLE uses `titleWord`.
     var label: String {
         switch self {
         case .horizon(let horizon): return horizon.label
         case .upcoming: return "Upcoming"
         }
     }
+
+    /// The segment's TITLE word (2026-10-26, the web's `SEGMENT_TITLES` /
+    /// `UPCOMING_LABEL`, `src/lib/task-model-words.ts`): "Daily", "Weekly",
+    /// "Monthly", "Quarterly", "Upcoming" — the cadence the page comes round
+    /// on. Apart from `label` on purpose: `TaskHorizon.label` is the row's
+    /// "Weeks" word, which keeps its name.
+    var titleWord: String {
+        switch self {
+        case .horizon(.days): return "Daily"
+        case .horizon(.weeks): return "Weekly"
+        case .horizon(.months): return "Monthly"
+        case .horizon(.eventually): return "Quarterly"
+        case .upcoming: return "Upcoming"
+        }
+    }
+
+    /// The page's title, "Task queue · Daily" (`TaskWording.taskQueueTitle`).
+    var title: String { TaskWording.taskQueueTitle(titleWord) }
 
     /// The segment's page key in the widget's and the watch's page ring (the
     /// slot-key Int space): -10…-13 the horizons, as before, and -14 Upcoming
@@ -1024,8 +1043,22 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     /// days. Its rows show the target date, and every row offers Today (repeating ones too, since 2026-10-12).
     var isUpcoming: Bool { kind == .upcoming }
 
-    /// "Days", "Weeks", "Upcoming", … — the segment's page title.
+    /// "Days", "Weeks", "Upcoming", … — the segment's word (its spoken
+    /// "Defer all Days tasks"); the page's TITLE is `title`.
     var label: String { kind?.label ?? horizon.capitalized }
+
+    /// The segment's title everywhere it is named — the widget page's header,
+    /// the strip bar's spoken label, the watch section and the Smart Stack
+    /// card: "Task queue · Daily" (2026-10-26, the web's `segmentTitle`; with
+    /// the task-queue switch off too, as on the web). A kind this build
+    /// doesn't know keeps its raw word ("Task queue · Someday").
+    var title: String { kind?.title ?? TaskWording.taskQueueTitle(horizon.capitalized) }
+
+    /// `title` for a header that may wrap (the widget page's two-line
+    /// fallback, the watch section): the space before the dot is
+    /// non-breaking (`TaskDTO.metaJoiner`), so it breaks "Task queue ·" /
+    /// "Quarterly", never leaving a line that starts with "·".
+    var wrappingTitle: String { title.replacingOccurrences(of: " · ", with: TaskDTO.metaJoiner) }
 
     /// Stable page key for the widget's and the watch's page ring, in the
     /// same Int space as `ReminderGroupDTO.slotKey` (real slot ids are

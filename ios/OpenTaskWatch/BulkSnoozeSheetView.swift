@@ -58,7 +58,9 @@ struct BulkSnoozeSheetView: View {
 
     @ViewBuilder
     private var choosingContent: some View {
-        Text("Defer \(model.overdueTasks.count) \(TaskWording.overdueLower)")
+        // The button's words (`OverdueSweepWords`, 2026-10-26): what the
+        // sweep is expected to move, of every overdue task.
+        Text(OverdueSweepWords.label(count: model.overdueSweepCount, total: model.overdueTasks.count))
             .font(.headline)
             .multilineTextAlignment(.center)
 

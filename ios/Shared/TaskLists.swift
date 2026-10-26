@@ -94,10 +94,22 @@ enum TaskLists {
     /// affect what number a sweep bar PRINTS and whether it shows at all
     /// (N > 0); the server remains the sole authority on what actually moves
     /// when the button is tapped.
-    static func overdueSweepEligibleCount(_ tasks: [TaskDTO], now: Date = Date()) -> Int {
-        let overdue = eligible(tasks).filter { $0.isOverdue(now: now) }
-        let lowCount = overdue.filter { $0.priority < 3 }.count
+    ///
+    /// The tier is the server's `bulkSnoozeTier` (2026-10-12): a task whose
+    /// deadline has PASSED counts as at least High, so it waits for the
+    /// second press like one. ONE HIGH PER PRESS (task queue B8, 2026-10-26
+    /// here): with the server's task-queue switch on (`taskQueue`, the
+    /// cached `task_queue` — `DayStartStore.cachedTaskQueue`), once nothing
+    /// lower is left a press moves ONE task of the High tier, not all of
+    /// them, so the estimate is at most 1 there.
+    static func overdueSweepEligibleCount(_ tasks: [TaskDTO], now: Date = Date(), taskQueue: Bool) -> Int {
+        let high = 3
+        let tiers = eligible(tasks).filter { $0.isOverdue(now: now) }.map { task in
+            TargetAge.isPastDeadline(task, now: now) ? max(task.priority, high) : task.priority
+        }
+        let lowCount = tiers.filter { $0 < high }.count
         if lowCount > 0 { return lowCount }
-        return overdue.filter { $0.priority == 3 }.count
+        let highCount = tiers.filter { $0 == high }.count
+        return taskQueue ? min(1, highCount) : highCount
     }
 }

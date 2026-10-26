@@ -575,6 +575,11 @@ private enum ReminderPreviewData {
                 SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks", ageLabel: ">1 mo"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9202, title: "Research a new laptop bag", dueAt: iso(daysFromNow: 12), horizon: "months"), state: .waiting),
             ]),
+            // The longest title word ("Task queue · Quarterly", 2026-10-26),
+            // for the header's two-line fallback at XXX Large.
+            TaskSegmentDTO(horizon: "eventually", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9401, title: "Sort the old photo albums", horizon: "eventually"), state: .waiting),
+            ]),
         ]
     }
 
@@ -694,6 +699,22 @@ private enum ReminderPreviewData {
     let _ = WidgetStore.clearSlotOverride()
     let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -11)
     ReminderPreviewData.segmentEntry(key: -11)
+}
+
+#Preview("Reminders Large — task segment (Quarterly)", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -13)
+    ReminderPreviewData.segmentEntry(key: -13)
+}
+
+#Preview("Reminders Medium — task segment (Quarterly)", as: .systemMedium) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -13)
+    ReminderPreviewData.segmentEntry(key: -13)
 }
 
 #Preview("Reminders Medium — task segment (Days)", as: .systemMedium) {

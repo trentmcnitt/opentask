@@ -123,6 +123,56 @@ final class SweepSummaryTests: XCTestCase {
         XCTAssertEqual(stored.summaryLines, [.queued(2, at: nil)])
     }
 
+    // MARK: - What the sweep says before it runs (2026-10-26)
+
+    /// One source for the iPhone/Mac Tasks widget bar, the Mac menu bar and
+    /// the watch button: "Defer 2 of 3", "Defer all 3 overdue" when they're
+    /// the same; the bars' form ends with a colon.
+    func testSweepWords() {
+        XCTAssertEqual(OverdueSweepWords.label(count: 2, total: 3), "Defer 2 of 3")
+        XCTAssertEqual(OverdueSweepWords.label(count: 3, total: 3), "Defer all 3 overdue")
+        XCTAssertEqual(OverdueSweepWords.barLabel(count: 2, total: 3), "Defer 2 of 3:")
+        XCTAssertEqual(OverdueSweepWords.barLabel(count: 1, total: 1), "Defer all 1 overdue:")
+    }
+
+    private func overdue(_ id: Int, priority: Int, deadlinePassed: Bool = false) -> TaskDTO {
+        TaskDTO(
+            id: id, projectId: 1, title: "Task \(id)", priority: priority,
+            dueAt: DateHelpers.formatISO(now.addingTimeInterval(-Double(id) * 3600)),
+            deadlineAt: deadlinePassed ? DateHelpers.formatISO(now.addingTimeInterval(-600)) : nil
+        )
+    }
+
+    /// The estimate: below High first; the High tier only once nothing lower
+    /// is left — all of it with the queue off, one per press with it on; never
+    /// Urgent; reminders, quotas and upcoming tasks never count.
+    func testSweepEstimateFollowsTheServerTiers() {
+        let lowAndHigh = [overdue(1, priority: 0), overdue(2, priority: 2), overdue(3, priority: 3), overdue(4, priority: 4)]
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(lowAndHigh, now: now, taskQueue: false), 2)
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(lowAndHigh, now: now, taskQueue: true), 2)
+
+        let highOnly = [overdue(1, priority: 3), overdue(2, priority: 3), overdue(3, priority: 3), overdue(4, priority: 4)]
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(highOnly, now: now, taskQueue: false), 3)
+        XCTAssertEqual(
+            TaskLists.overdueSweepEligibleCount(highOnly, now: now, taskQueue: true), 1, "one High per press"
+        )
+
+        let urgentOnly = [overdue(1, priority: 4)]
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(urgentOnly, now: now, taskQueue: true), 0)
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(cached, now: now, taskQueue: false), 3, "not the reminder, quota or upcoming task")
+    }
+
+    /// A passed deadline holds a task to the High tier (`bulkSnoozeTier`): it
+    /// waits while anything lower is left, and is the High press's one task
+    /// once nothing is.
+    func testSweepEstimateHoldsAPassedDeadlineToTheHighTier() {
+        let tasks = [overdue(1, priority: 1), overdue(2, priority: 1, deadlinePassed: true)]
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(tasks, now: now, taskQueue: false), 1)
+        let held = [overdue(2, priority: 1, deadlinePassed: true), overdue(3, priority: 3)]
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(held, now: now, taskQueue: false), 2)
+        XCTAssertEqual(TaskLists.overdueSweepEligibleCount(held, now: now, taskQueue: true), 1)
+    }
+
     /// A result stored by an older build (no queue fields) still decodes.
     func testStoredResultWithoutQueueFieldsDecodes() throws {
         let json = #"{"at":0,"tasksAffected":1,"snoozedHigh":0,"skippedHigh":0,"skippedUrgent":0,"targetLabel":"Midday"}"#

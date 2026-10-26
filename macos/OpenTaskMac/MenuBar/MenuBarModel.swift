@@ -78,7 +78,11 @@ final class MenuBarModel: ObservableObject {
         return Array(today.filter { !$0.isOverdue(now: now) }.prefix(Self.maxNextUp))
     }
 
-    var sweepCount: Int { TaskLists.overdueSweepEligibleCount(tasks, now: now) }
+    /// The sweep's estimate — the bulk bar's "Defer 2 of 3" (one High per
+    /// press with the task queue on, as the app last cached it).
+    var sweepCount: Int {
+        TaskLists.overdueSweepEligibleCount(tasks, now: now, taskQueue: DayStartStore.cachedTaskQueue)
+    }
 
     /// Where "next period" lands for an overdue task (base = now) — the bulk
     /// bar's label. nil with no cached slots (the server still resolves it).

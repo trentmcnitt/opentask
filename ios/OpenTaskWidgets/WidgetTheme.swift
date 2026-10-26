@@ -1913,7 +1913,7 @@ struct SnoozeAllOverdueBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(count < total ? "Defer \(count) of \(total):" : "Defer all \(count) \(TaskWording.overdueLower):")
+            Text(OverdueSweepWords.barLabel(count: count, total: total))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

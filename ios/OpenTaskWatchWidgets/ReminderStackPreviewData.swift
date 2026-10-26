@@ -171,10 +171,10 @@ enum ReminderStackPreviewData {
 
     // MARK: The states
 
-    /// A task segment (2026-10-10) ahead of the slot: "Tasks · Days · 2 left",
+    /// A task segment (2026-10-10) with no period waiting (a segment takes the card only after them): "Task queue · Daily · 2 left",
     /// a Weeks task pulled into Days with its deadline, ○ considers, ☐ done.
     static let segmentCard: WatchWidgetEntry = ReminderStackTimeline.entry(
-        groups: groups(considered: [11: 1]), tasks: [], skipped: { _ in [] }, pendingDone: [],
+        groups: [], tasks: [], skipped: { _ in [] }, pendingDone: [],
         segments: [TaskSegmentDTO(horizon: "days", tasks: [
             SegmentTaskDTO(
                 task: TaskDTO(id: 9103, title: "Book the dentist for the kids", deadlineAt: "2026-09-29T22:00:00.000Z", horizon: "weeks"),
@@ -185,10 +185,10 @@ enum ReminderStackPreviewData {
         snoozeResult: nil, slots: slots, at: at(8, 47)
     )
 
-    /// The Upcoming segment (2026-10-12): "Tasks · Upcoming · 1 left", the
+    /// The Upcoming segment (2026-10-12): "Task queue · Upcoming · 1 left", the
     /// row's target and the deadline's gap under the title.
     static let upcomingCard: WatchWidgetEntry = ReminderStackTimeline.entry(
-        groups: groups(considered: [11: 1]), tasks: [], skipped: { _ in [] }, pendingDone: [],
+        groups: [], tasks: [], skipped: { _ in [] }, pendingDone: [],
         segments: [TaskSegmentDTO(horizon: "upcoming", tasks: [
             SegmentTaskDTO(
                 task: TaskDTO(
