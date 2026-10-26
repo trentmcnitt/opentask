@@ -458,11 +458,17 @@ async function runEnrichment(
   const { z } = await import('zod')
 
   const now = scenarioNow(input)
+  // The user's periods (2026-10-24): listed in the prompt for a relative
+  // target's period, and mapped against the same rows — as production does.
+  const { DEFAULT_TIME_SLOTS } = await import('@/lib/time-slot-assign')
+  const periods = input.slots ?? [...DEFAULT_TIME_SLOTS]
+  const morningTime = input.morningTime ?? '09:00'
   const prompt = buildEnrichmentUserPrompt({
     timezone: input.timezone,
-    morningTime: input.morningTime ?? '09:00',
+    morningTime,
     wakeTime: input.wakeTime ?? '07:00',
     sleepTime: input.sleepTime ?? '22:00',
+    periods,
     projects: input.projects,
     userContext: input.userContext,
     taskText: input.text,
@@ -523,7 +529,7 @@ async function runEnrichment(
   // Unstated past dates are dropped (`dropUnstatedPastDates`, 2026-10-16).
   // One shared function: the same one production calls.
   const taskModel = postProcessTaskEnrichment(parsed, input.text, input.timezone, {
-    morningTime: input.morningTime ?? '09:00',
+    morningTime,
     // At the scenario's own now, so a pinned 10:57 PM places "today" as production would then.
     todayTarget: targetTodayTime(QUALITY_TEST_USER_ID, input.timezone, now),
     // On deck (D3): A4's "tomorrow" before the rollover — a default user's
@@ -535,6 +541,13 @@ async function runEnrichment(
     now,
     // Every scenario is a new task's first enrichment, as in production.
     newTask: true,
+    // A relative target's time and period (2026-10-24): the scenario's
+    // periods as rows (ids 1..n, as the reminder runner builds them), and the
+    // Default task time custom — what production passes for such a user.
+    relative: {
+      slots: slotRows(periods),
+      defaultTime: { time: morningTime, slot_id: null },
+    },
   })
   if (taskModel.rrule !== parsed.rrule) {
     console.log(
@@ -557,16 +570,57 @@ async function runEnrichment(
   }
 
   logDeckFloor(parsed, taskModel, input.text)
+  logRelativeTarget(parsed, taskModel, input.text)
 
+  // The period a relative target follows, by name — for the Layer 2 judge.
+  const linked = periods[(taskModel.target_slot_id ?? 0) - 1]
   return {
-    // `on_deck_day` always present (null when not on deck), so scenarios can require it.
+    // `on_deck_day` and the relative target always present (null when unset),
+    // so scenarios can require them.
     output: {
       on_deck_day: null,
+      target_days_before: null,
+      target_time: null,
+      target_period: null,
+      target_slot_id: null,
       ...taskModel,
+      target_slot_label: linked?.label ?? null,
       project_name: guarded,
     } as unknown as Record<string, unknown>,
     durationMs: result.durationMs,
     now,
+  }
+}
+
+/** A scenario's periods as `TimeSlot` rows, ids 1..n in order. */
+function slotRows(slots: Array<{ label: string; start_time: string }>) {
+  return slots.map((slot, index) => ({
+    id: index + 1,
+    user_id: QUALITY_TEST_USER_ID,
+    label: slot.label,
+    start_time: slot.start_time,
+    sort_order: index,
+    created_at: new Date().toISOString(),
+  }))
+}
+
+/**
+ * Relative targets (2026-10-24): logged when the floor (`sanitizeTaskModelFields`
+ * / `resolveEnrichmentRelative`) dropped the model's offsets, or the mapping
+ * chose a time the model did not write — so a prompt miss stays visible.
+ */
+function logRelativeTarget(
+  parsed: { target_days_before?: number | null; target_time?: string | null },
+  taskModel: { target_days_before?: number | null; target_time?: string | null },
+  text: string,
+): void {
+  if (parsed.target_days_before == null) return
+  if (taskModel.target_days_before == null) {
+    console.log(`[quality] relative floor dropped ${parsed.target_days_before} day(s) for: ${text}`)
+  } else if (parsed.target_time !== taskModel.target_time) {
+    console.log(
+      `[quality] relative time "${parsed.target_time}" → "${taskModel.target_time}" for: ${text}`,
+    )
   }
 }
 
@@ -643,14 +697,7 @@ async function runReminderEnrichment(
   // Production order: the day pin (`pinUnnamedDay`), then the reminder sanitizer.
   const sanitized = sanitizeReminderEnrichment(
     pinUnnamedDay(parsed, input.text, input.timezone),
-    slots.map((slot, index) => ({
-      id: index + 1,
-      user_id: QUALITY_TEST_USER_ID,
-      label: slot.label,
-      start_time: slot.start_time,
-      sort_order: index,
-      created_at: new Date().toISOString(),
-    })),
+    slotRows(slots),
     input.defaultSlotLabel ?? null,
   )
 
@@ -1481,6 +1528,32 @@ function validateTaskModelFields(id: string, output: Record<string, unknown>): v
     !['days', 'weeks', 'months', 'eventually'].includes(output.horizon as string)
   ) {
     throw new Error(`[${id}] horizon must be days|weeks|months|eventually or null`)
+  }
+  validateRelativeTarget(id, output)
+}
+
+/**
+ * Relative targets (2026-10-24): both offsets or neither; set only beside a
+ * deadline, with no target, no deck and no rule (what production stores).
+ */
+function validateRelativeTarget(id: string, output: Record<string, unknown>): void {
+  const days = output.target_days_before
+  const time = output.target_time
+  if ((days === null) !== (time === null)) {
+    throw new Error(`[${id}] target_days_before and target_time come together`)
+  }
+  if (days === null) return
+  if (typeof days !== 'number' || !Number.isInteger(days) || days < 0) {
+    throw new Error(`[${id}] target_days_before must be a whole number of days, got ${days}`)
+  }
+  if (typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new Error(`[${id}] target_time must be HH:MM, got ${time}`)
+  }
+  if (output.deadline_at === null || output.rrule !== null) {
+    throw new Error(`[${id}] a relative target needs a deadline and no rule`)
+  }
+  if (output.due_at !== null || output.on_deck_day !== null) {
+    throw new Error(`[${id}] a relative target leaves due_at and on_deck_day null`)
   }
 }
 

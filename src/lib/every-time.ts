@@ -63,7 +63,8 @@ import {
   type ScheduleInput,
 } from '@/core/tasks/repeat-schedule'
 import { formatTime } from '@/lib/format-rrule'
-import { relativeDaysWords } from '@/lib/editor-target-labels'
+import { leadDaysWords, relativeDaysWords } from '@/lib/editor-target-labels'
+import { UPCOMING_SECTION_TITLES } from '@/lib/task-model-words'
 import { localMoment } from '@/lib/opentask-day'
 import {
   RULE_DAYS,
@@ -77,8 +78,10 @@ import {
   type RuleFrequency,
 } from '@/lib/rrule-draft'
 import {
+  HEADS_UP_DAY_BEFORE_MIN_WAIT,
   RELATIVE_TARGET_MESSAGES,
   deadlineDateFrom,
+  deadlineLeadDays,
   deadlineWalk,
   defaultRelativeTarget,
   isDeadlineAnchored,
@@ -90,6 +93,7 @@ import {
   targetMoved,
   repeatEndOf,
   repeatStep,
+  ruleWait,
   type RelativeTarget,
   type RelativeTargetProblem,
   type RepeatRule,
@@ -178,10 +182,13 @@ export interface EveryTimeDraft {
    */
   noTarget?: boolean
   /**
-   * The lead override of a deadline-anchored draft with no target (the
-   * deadlines page, 2026-10-22: series-wide, so it is edited here, never in
-   * this-one mode): local days before each deadline its occurrence goes on
-   * the page; null = the default. Present only on such a draft.
+   * The series' lead override (`lead_days`; series-wide, so it is edited
+   * here, never in this-one mode — Trent, 10-22): null = the default table.
+   * On a deadline-anchored draft with no target (the deadlines page,
+   * 2026-10-22) the days before each deadline its occurrence goes on the
+   * page; on any other repeat (2026-10-25, the Upcoming split) the days
+   * before each target it shows in Upcoming's Later section. Absent reads as
+   * the stored value.
    */
   leadDays?: number | null
   mode: Mode
@@ -215,7 +222,7 @@ export interface EveryTimePatch {
   repeat_count?: number | null
   /** "On date": the last local day, yyyy-MM-dd (null: no date). */
   repeat_until?: string | null
-  /** The deadlines page's lead override (a target-less deadline repeat); null = the default. */
+  /** The series' lead override (the deadlines page, or Upcoming's Later); null = the default. */
   lead_days?: number | null
 }
 
@@ -272,6 +279,97 @@ function firstFromNow(rrule: string, ctx: EveryTimeContext): string | null {
 }
 
 // ===========================================================================
+// THE UPCOMING LEAD STEPPER (2026-10-25, the Upcoming split)
+// ===========================================================================
+
+/**
+ * The every-time LEAD row of a repeat WITH a target (target-anchored, or
+ * deadline-anchored with a relative target): how many days before each
+ * occurrence's target it shows in Upcoming's Later section. `fallback` is the
+ * default the table gives the rule's wait (`deadlineLeadDays(ruleWait)` —
+ * the wait after an on-time completion), `max` the server's bound (one less
+ * than the wait, `leadDaysProblem`). Null when the rule has no Upcoming at
+ * all (a wait under 2 days: daily — any override would be refused), when the
+ * draft is the deadlines page's (no target: its own stepper, `NoTargetRow`),
+ * or when the rule can't be read.
+ */
+export function upcomingLeadStep(
+  task: Pick<EveryTimeTask, 'occurrence_at' | 'due_at' | 'deadline_at' | 'lead_days'>,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+): { lead: number; fallback: number; max: number; reset: boolean } | null {
+  if (draft.noTarget) return null
+  const wait = draftWait(task, draft, ctx)
+  if (wait === null || wait < HEADS_UP_DAY_BEFORE_MIN_WAIT) return null
+  const max = Math.max(1, Math.min(90, wait - 1))
+  const fallback = Math.max(1, deadlineLeadDays(wait))
+  const reset = leadResetForRule(task, draft, ctx)
+  return {
+    lead: reset ? fallback : Math.min(max, draft.leadDays ?? fallback),
+    fallback,
+    max,
+    reset,
+  }
+}
+
+/** The draft rule's wait (`ruleWait`) from its first occurrence, or null when it can't be read. */
+function draftWait(
+  task: Pick<EveryTimeTask, 'occurrence_at' | 'due_at' | 'deadline_at'>,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+): number | null {
+  const deadline = draft.anchor === 'deadline'
+  const first =
+    (deadline ? task.deadline_at : (task.occurrence_at ?? task.due_at)) ?? ctx.now.toISOString()
+  try {
+    return ruleWait(
+      {
+        rrule: draftRule(draft),
+        recurrence_mode: draft.mode,
+        anchor_time: deadline ? draft.deadlineTime : draft.targetTime,
+      },
+      first,
+      ctx.timezone,
+    )
+  } catch {
+    return null
+  }
+}
+
+/** The Lead time row's note when `leadResetForRule` holds (Trent's coordinator, 10-25). */
+export const LEAD_RESET_FOR_RULE = 'Lead time back to default for the new rule'
+
+/**
+ * A SHORTER RULE RESETS THE LEAD (2026-10-25): a repeat's lead must be
+ * shorter than its rule's wait (the server's `leadDaysProblem`, a 400). When
+ * the draft's rule makes the stored or staged lead too long — a weekly with a
+ * lead of 3 made daily — the same Save sends `lead_days: null` (back to the
+ * default) instead of failing, and the Lead time row says so
+ * (`LEAD_RESET_FOR_RULE`). Derived, never written into the draft: change the
+ * rule back and the lead is valid again, kept.
+ */
+export function leadResetForRule(
+  task: Pick<EveryTimeTask, 'occurrence_at' | 'due_at' | 'deadline_at' | 'lead_days'>,
+  draft: EveryTimeDraft,
+  ctx: EveryTimeContext,
+): boolean {
+  if (draft.stop) return false
+  const lead = draft.leadDays !== undefined ? draft.leadDays : (task.lead_days ?? null)
+  if (lead === null) return false
+  const wait = draftWait(task, draft, ctx)
+  return wait !== null && lead >= wait
+}
+
+/**
+ * The row's words: "Later 3 days before each one · Tomorrow the day before";
+ * a lead of 1 has no Later — "Tomorrow the day before each one".
+ */
+export function upcomingLeadStepWords(lead: number): string {
+  if (lead <= 1) return `${UPCOMING_SECTION_TITLES.tomorrow} the day before each one`
+  return `${UPCOMING_SECTION_TITLES.later} ${leadDaysWords(lead)} each one · ${UPCOMING_SECTION_TITLES.tomorrow} the day before`
+}
+
+// ===========================================================================
 // draftFromTask
 // ===========================================================================
 
@@ -302,6 +400,7 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
       stop: false,
       refusal: null,
       defaultDay: day ? weekdayOf(day, timezone) : weekdayOf(ctx.now, timezone),
+      leadDays: task.lead_days ?? null,
     }
     if (isDeadlineAnchored(task)) {
       return {
@@ -312,7 +411,7 @@ export function draftFromTask(task: EveryTimeTask, ctx: EveryTimeContext): Every
         daysBefore: task.target_days_before ?? 0,
         targetSlotId: relativeOf(task) ? (task.target_slot_id ?? null) : null,
         ...(task.target_days_before === null || task.target_time === null
-          ? { noTarget: true, leadDays: task.lead_days ?? null }
+          ? { noTarget: true }
           : {}),
       }
     }
@@ -352,7 +451,14 @@ function oneOffDraft(task: EveryTimeTask, ctx: EveryTimeContext): EveryTimeDraft
   const dayFrom = task.deadline_at ?? task.due_at
   const defaultDay = dayFrom ? weekdayOf(dayFrom, timezone) : weekdayOf(ctx.now, timezone)
   const rule: RuleDraft = { ...parseRule(`FREQ=WEEKLY;BYDAY=${defaultDay}`)! }
-  const base = { rule, mode: 'from_due' as Mode, stop: false, refusal: null, defaultDay }
+  const base = {
+    rule,
+    mode: 'from_due' as Mode,
+    stop: false,
+    refusal: null,
+    defaultDay,
+    leadDays: task.lead_days ?? null,
+  }
   if (!task.deadline_at) {
     return {
       ...base,
@@ -462,7 +568,7 @@ export type DraftAction =
   | { type: 'targetTime'; time: string; slotId?: number | null }
   | { type: 'deadlineTime'; time: string }
   | { type: 'daysBefore'; days: number }
-  /** A target-less deadline draft's lead override (null: the default). */
+  /** The series' lead override (null: the default). */
   | { type: 'leadDays'; days: number | null }
   /** "Repeats on" — to Deadline it is "+ Add" at the target's own time. */
   | { type: 'anchor'; anchor: RepeatAnchor; ctx: EveryTimeContext }
@@ -539,7 +645,7 @@ function scheduleAction(d: EveryTimeDraft, action: DraftAction): EveryTimeDraft 
     case 'deadlineTime':
       return deadline ? { ...d, deadlineTime: action.time } : d
     case 'leadDays':
-      return deadline && d.noTarget ? { ...d, leadDays: action.days } : d
+      return { ...d, leadDays: action.days }
     case 'daysBefore':
       return deadline
         ? {
@@ -709,6 +815,11 @@ export function draftToPatch(
   const switching = !!task.rrule && wasDeadline !== (draft.anchor === 'deadline')
   if (switching || !task.rrule || rrule !== storedRuleText(task)) patch.rrule = rrule
   if (draft.mode !== storedMode(task)) patch.recurrence_mode = draft.mode
+  // The series' lead override (the deadlines page, or Upcoming's Later):
+  // only when it changed — or back to the default when the rule makes it
+  // too long (`leadResetForRule`; never a 400).
+  const lead = leadResetForRule(task, draft, ctx) ? null : draft.leadDays
+  if (lead !== undefined && lead !== (task.lead_days ?? null)) patch.lead_days = lead
   if (draft.anchor === 'target') {
     if (switching) patch.repeat_anchor = 'target'
     // A field, not SQL: written as a spread so the SQL-writer guards (UP-090) don't read it as one.
@@ -755,15 +866,6 @@ function deadlinePatch(
     // custom: the time alone, which drops a stored link.
     if (slotId !== null) patch.target_slot_id = slotId
     else patch.target_time = draft.targetTime
-  }
-  // The lead override, series-wide (the deadlines page): only while the
-  // draft has no target, only when it changed.
-  if (
-    draft.noTarget &&
-    draft.leadDays !== undefined &&
-    draft.leadDays !== (task.lead_days ?? null)
-  ) {
-    patch.lead_days = draft.leadDays
   }
   if (wasDeadline) return patch
   patch.repeat_anchor = 'deadline'

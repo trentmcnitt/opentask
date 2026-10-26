@@ -40,8 +40,9 @@
  * relative target — is placed by `deadlinePlace`: from its lead day
  * (`lead_from`) on the `deadlines` segment (FIRST — the only queue page that
  * nags), from the day before its deadline in the safety net (seeing it does
- * not silence it); before its lead day, Upcoming heads-ups counted to that
- * day. Rows carry `safety_net` and `seen`. Sorted priority, then the nearest
+ * not silence it); before its lead day, quiet — never in Upcoming, a future
+ * deck's row included (rule 3 of the Upcoming split, 2026-10-25). Rows carry
+ * `safety_net` and `seen`. Sorted priority, then the nearest
  * deadline, then id (A4). A caller that does not draw it (a shipped native
  * build) gets a target-less one-off in its horizon segment, as before
  * 10-12 (the deadline pulling the horizon in) — a truthful, dated degrade.
@@ -68,6 +69,7 @@ import {
   type CheckInDay,
   type SegmentKind,
   type SegmentState,
+  type UpcomingSection,
 } from '@/lib/task-segments'
 import {
   LEAD_DEFER_MESSAGES,
@@ -99,6 +101,12 @@ export interface SegmentTask {
   safetyNet?: boolean
   /** Deadlines page rows only: considered this OpenTask day. */
   seen?: boolean
+  /**
+   * Upcoming rows only (2026-10-25, the Upcoming split): the section the row
+   * is in — Tomorrow (the day before its anchor) or Later. A left row
+   * (`left`) carries the section the day roster remembered.
+   */
+  section?: UpcomingSection
   /**
    * A row that LEFT the segment today, handled (`segment-roster.ts`): sent
    * as a considered row, saying how it left. Only with `handledRows`.
@@ -182,7 +190,8 @@ function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
  * caller asks for every one (`fill`, the web since 2026-10-24). Within a horizon segment: priority, then id —
  * horizon decides WHETHER a task shows, never where, so acting on one never
  * reorders the rest under the finger (the 09-05 rule). Within Upcoming: the
- * effective target, then id — the order the dates come in. Within a queue
+ * section (Tomorrow first, `UPCOMING_SECTIONS`), then the anchor, then id —
+ * the order the dates come in. Within a queue
  * panel: priority, the older remembered target, then id (`compareQueueRows`).
  *
  * A one-off with a target the user picked is in no horizon segment (spec §1,
@@ -225,8 +234,9 @@ export function getTaskSegments(
     fill?: boolean
     /**
      * The deadlines page (2026-10-22): the caller draws the `deadlines`
-     * segment and the lead day's Upcoming rows (`GET /api/reminders?deadlines=1`).
-     * Only with the task-queue switch on.
+     * segment (`GET /api/reminders?deadlines=1`); a target-less deadline task
+     * is then never in Upcoming (rule 3, 2026-10-25). Only with the
+     * task-queue switch on.
      */
     deadlineRows?: boolean
     /**
@@ -252,7 +262,7 @@ export function getTaskSegments(
   // Upcoming heads-up day and "considered today" is an OpenTask day — the
   // day start with the task queue on, midnight off.
   const dayStart = dayBoundaryForUser(userId)
-  const upcoming: (SegmentTask & { target: string })[] = []
+  const upcoming: (SegmentTask & { target: string; section: UpcomingSection })[] = []
   const add = (kind: SegmentKind, entry: SegmentTask) => {
     const list = byKind.get(kind) ?? []
     list.push(entry)
@@ -268,16 +278,12 @@ export function getTaskSegments(
   }
   const addUpcoming = (task: Task) => {
     const heads = upcomingState(task, timezone, now, dayStart)
-    if (heads) upcoming.push({ task, state: heads.state, target: heads.target })
+    if (heads) upcoming.push({ task, ...heads })
   }
+  // A target-less deadline task (the page drawn) is on the page or nowhere:
+  // never in Upcoming, a future deck's row included (rule 3, 2026-10-25).
   const placeDeadline = deadlinePlacer(userId, timezone, now, deadlineRows, (task, entry) => {
-    if (entry === 'deck') {
-      if (deckRows) addUpcoming(task)
-    } else if (entry.kind === 'upcoming') {
-      upcoming.push({ task, state: entry.state, target: entry.target })
-    } else {
-      add('deadlines', { task, state: entry.state, safetyNet: entry.safetyNet, seen: entry.seen })
-    }
+    add('deadlines', { task, state: entry.state, safetyNet: entry.safetyNet, seen: entry.seen })
   })
   // The queue's panels first (rule 7), then the deadlines page: a task one
   // of them takes is in no other segment. True when it was taken (or hidden).
@@ -328,10 +334,18 @@ export function getTaskSegments(
     if (!placeFirst(task)) placeRepeating(task)
   }
   if (upcoming.length > 0) {
-    upcoming.sort((a, b) => Date.parse(a.target) - Date.parse(b.target) || a.task.id - b.task.id)
+    // Section first: a Tomorrow row's anchor can be a LATER instant than a
+    // Later row's (a deck day's anchor is its local midnight; a target in the
+    // small hours before the day start is still the next OpenTask day).
+    upcoming.sort(
+      (a, b) =>
+        sectionRank(a.section) - sectionRank(b.section) ||
+        Date.parse(a.target) - Date.parse(b.target) ||
+        a.task.id - b.task.id,
+    )
     byKind.set(
       'upcoming',
-      upcoming.map(({ task, state }) => ({ task, state })),
+      upcoming.map(({ task, state, section }) => ({ task, state, section })),
     )
   }
   if (handledRows) {
@@ -361,12 +375,19 @@ export function getTaskSegments(
   })
 }
 
+/** Upcoming's section order: Tomorrow, then Later. */
+function sectionRank(section: UpcomingSection | undefined): number {
+  return section === 'tomorrow' ? 0 : 1
+}
+
 /**
  * The day roster's rows (`segment-roster.ts`): remember what each segment
- * lists now, and add back, as considered rows marked `left`, the ones that
- * left it today handled. After Upcoming's sort, so they never move its dated
- * rows; the other segments sort them in with the rest (they are listed
- * apart, behind "Show N considered", either way).
+ * lists now (Upcoming's rows with their section), and add back, as
+ * considered rows marked `left`, the ones that left it today handled. After
+ * Upcoming's sort, so they never move its dated rows — each goes to the end
+ * of its own SECTION (Tomorrow's still before Later's); the other segments
+ * sort them in with the rest (they are listed apart, behind "Show N
+ * considered", either way).
  */
 function addLeftRows(
   userId: number,
@@ -381,23 +402,33 @@ function addLeftRows(
 ): void {
   // Never add a queue panel of left rows that would not otherwise be drawn.
   const queueShown = shown.queuePanels && taskQueueEnabled()
-  const listed = new Map([...byKind].map(([kind, rows]) => [kind, rows.map((r) => r.task)]))
+  const listed = new Map(
+    [...byKind].map(([kind, rows]) => [
+      kind,
+      rows.map((r) => ({ task: r.task, section: r.section ?? null })),
+    ]),
+  )
   for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
     if (isQueueKind(kind) && !queueShown) continue
     if (kind === 'deadlines' && !shown.deadlines) continue
     const list = byKind.get(kind) ?? []
-    for (const { task, left } of rows) list.push({ task, state: 'considered', left })
+    for (const { task, left, section } of rows) {
+      list.push({ task, state: 'considered', left, ...(section ? { section } : {}) })
+    }
+    // Upcoming: a stable partition keeps every Tomorrow row first.
+    if (kind === 'upcoming') list.sort((a, b) => sectionRank(a.section) - sectionRank(b.section))
     byKind.set(kind, list)
   }
 }
 
-type DeadlineEntry = Exclude<ReturnType<typeof deadlinePlace>, null | { kind: 'deck' }> | 'deck'
+type DeadlineEntry = Exclude<ReturnType<typeof deadlinePlace>, null>
 
 /**
  * The deadlines page's placement for this user and moment (switch on and a
  * caller that draws it), or one that places nothing. Returns whether it took
  * the task (a target-less deadline task — placed, or nowhere today), so the
  * caller's other rules never see it. The rollover time is read once per call.
+ * Before its lead day it is placed nowhere (rule 3, 2026-10-25).
  */
 function deadlinePlacer(
   userId: number,
@@ -412,7 +443,7 @@ function deadlinePlacer(
     if (!isDeadlinePageTask(task)) return false
     if (task.rrule && task.repeat_anchor !== 'deadline') return false
     const placed = deadlinePlace(task, timezone, now, rolloverTime)
-    if (placed) put(task, placed.kind === 'deck' ? 'deck' : placed)
+    if (placed) put(task, placed)
     return true
   }
 }
@@ -548,9 +579,8 @@ export interface DeferLeadResult {
  * D−1), for a day after D−2, or for a task that is not a target-less deadline
  * task (`leadDeferRefusal`). The row simply leaves the page until that day.
  *
- * The write also stamps `target_set_at`, as a target write does: the lead
- * day's Upcoming heads-ups count from the defer, so a row deferred today does
- * not come straight back as a heads-up. One undo entry (`task_segment`) for
+ * The write also stamps `target_set_at`, as a target write does (a later
+ * target's Upcoming days count from it). One undo entry (`task_segment`) for
  * the tasks it moved — none when every one was refused (nothing changed, and
  * the client shows the refusal instead of an Undo). 409 with the task-queue
  * switch off: the page does not exist then.

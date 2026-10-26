@@ -13,9 +13,10 @@
  * membership and carry-over (`segmentState`); the two badges (§7: the age
  * thresholds, `ageLabel`, and attempts, `effectiveAttempts`); a repeating
  * task's occurrence dates (`occurrenceDates`: the target and the deadline of
- * a deadline-anchored repeat); and UPCOMING — the wait,
- * the 3/4 lead (`leadDaysForWait`, shared with the auto target), the heads-up
- * days and their carry-over (`headsUpDays`, `upcomingState`).
+ * a deadline-anchored repeat); and UPCOMING — the wait, the one lead table
+ * (`deadlineLeadDays`, shared with the auto target and the deadlines page),
+ * the Later and Tomorrow days and Later's carry-over (`upcomingDays`,
+ * `upcomingState`).
  *
  * THE MODEL IN ONE PARAGRAPH. A task's `due_at` is its TARGET: when nagging
  * starts. `deadline_at` is the real cutoff, and the target never passes it; a
@@ -1639,7 +1640,8 @@ export function relativeTargetProblem(
  * THE DEADLINE LEAD (A1, decided 2026-10-21): how many local days before a
  * deadline its default target falls, by the WAIT — the local days from the
  * previous deadline to this one. Upcoming's heads-up constants, no new
- * numbers (its day-before heads-up and its 3/4 early one, `headsUpDays`):
+ * numbers (its Tomorrow and its default 3/4-day Later, `upcomingDays`, which
+ * reads this table as its default lead):
  *  - under HEADS_UP_DAY_BEFORE_MIN_WAIT (2): the deadline day itself (0);
  *  - up to HEADS_UP_EARLY_AFTER_WAIT (7): the day before (1);
  *  - over it: `leadDaysForWait` — 3 days under HEADS_UP_LONG_WAIT (16), 4 at
@@ -1834,12 +1836,15 @@ function repeatLeadFrom(
 
 /**
  * A repeat's lead override must be SHORTER than its rule's wait (the smallest
- * gap between deadlines): a weekly rule with a lead of 10 would put every
- * occurrence on the page from the moment the last one was done. Refused like
- * `overlaps_previous` (a 400, never a clamp). Null when it is fine.
+ * gap between occurrences — deadlines on a deadline-anchored rule, targets on
+ * a target-anchored one): a weekly rule with a lead of 10 would put every
+ * occurrence on the page, or in Upcoming's Later, from the moment the last one
+ * was done. Refused like `overlaps_previous` (a 400, never a clamp). Null when
+ * it is fine. The words fit every repeat (2026-10-25: target-anchored repeats
+ * with no deadline are judged too).
  */
 export const LEAD_DAYS_TOO_LONG_MESSAGE =
-  'lead_days must be fewer than the days between this rule’s deadlines'
+  'Lead time (lead_days) must be shorter than the time between occurrences'
 
 export function leadDaysProblem(
   leadDays: number | null,
@@ -1905,11 +1910,10 @@ export interface DeadlinePageFields {
 export type DeadlinePlace =
   /** On the deadlines page. `seen`: considered this OpenTask day. */
   | { kind: 'page'; state: SegmentState; safetyNet: boolean; seen: boolean }
-  /** Before its lead day: an Upcoming heads-up, counted to the lead day. */
-  | { kind: 'upcoming'; state: SegmentState; target: string }
-  /** A future deck before the window (its deck's own Upcoming row decides). */
-  | { kind: 'deck' }
-  /** Nowhere today: before any heads-up, or the On deck section holds it. */
+  /**
+   * Nowhere today: before its lead day (quiet — rule 3, 2026-10-25: no
+   * Upcoming rows, a future deck's included), or the On deck section holds it.
+   */
   | null
 
 /** Whether a task belongs to the page's rules: a deadline, and no target. */
@@ -1938,8 +1942,7 @@ export function inSafetyNet(
  * WHERE A TARGET-LESS DEADLINE TASK STANDS TODAY (the caller has already
  * chosen an open, ordinary, unqueued task with a deadline and no target —
  * `isDeadlinePageTask`). Every "today" here is the OPENTASK day (A7; ruling
- * 3: one day boundary everywhere), so the page and its Upcoming hand-off
- * never meet on the same day (TM-INV-09):
+ * 3: one day boundary everywhere). It is never in Upcoming (TM-INV-14):
  *
  *  - IN THE WINDOW — `lead_from` ≤ today, or the safety net (D−1 on, also
  *    when `lead_from` is missing): the page. State: in the safety net always
@@ -1948,10 +1951,11 @@ export function inSafetyNet(
  *    off — except ON the deck day itself outside the safety net, when the On
  *    deck section holds it (null: rule 7's de-duplication). In the safety net
  *    the page always shows it; the deck does not count there.
- *  - BEFORE THE WINDOW: a future deck's own Upcoming row (`deck`); else the
- *    Upcoming heads-ups counted to the lead day from `target_set_at` (ruling
- *    3: counting to the deadline would land inside the window) — the same
- *    rule as a picked target's (`headsUpDays`), the same carry-over.
+ *  - BEFORE THE WINDOW: quiet (RULE 3 of the Upcoming split, 2026-10-25 —
+ *    until then Upcoming heads-ups counted to the lead day). The deadlines
+ *    page alone holds a target-less deadline task; its lead day is its
+ *    heads-up. STRICT: a future deck on one gets no Upcoming rows either
+ *    (plan Q8) — on the deck day the On deck section holds it.
  */
 export function deadlinePlace(
   task: DeadlinePageFields,
@@ -1973,9 +1977,7 @@ export function deadlinePlace(
     const state: SegmentState = !safetyNet && seen ? 'considered' : 'waiting'
     return { kind: 'page', state, safetyNet, seen }
   }
-  if (task.on_deck_day) return { kind: 'deck' }
-  if (leadDay === null) return null
-  return leadHeadsUp(task, leadDay, today, seen, timezone, dayOf)
+  return null
 }
 
 function derivedLeadDay(
@@ -1999,26 +2001,6 @@ function derivedLeadDay(
     timezone,
     { rolloverTime, now },
   )
-}
-
-/** The Upcoming heads-up counted to the lead day (`deadlinePlace`, before the window). */
-function leadHeadsUp(
-  task: DeadlinePageFields,
-  leadDay: string,
-  today: string,
-  seen: boolean,
-  timezone: string,
-  dayOf: (iso: string) => string,
-): DeadlinePlace {
-  const at = (day: string) => DateTime.fromISO(day, { zone: timezone })
-  const setAt = targetSetAtOf({ ...task, rrule: task.rrule ?? null, segment_deferred_at: null })
-  const heads = headsUpDays(at(leadDay), at(dayOf(setAt)))
-  const latest = [...heads].reverse().find((d) => d <= at(today))
-  if (!latest) return null
-  const target = at(leadDay).toUTC().toISO()!
-  if (seen) return { kind: 'upcoming', state: 'considered', target }
-  if (task.last_considered_at && at(dayOf(task.last_considered_at)) >= latest) return null
-  return { kind: 'upcoming', state: 'waiting', target }
 }
 
 /**
@@ -2080,42 +2062,60 @@ export function lastDeferDay(
 // ===========================================================================
 
 /**
- * UPCOMING — the heads-up segment (2026-10-12, spec §2; docs/TASK-MODEL.md
- * § Upcoming). Read by the server (`src/core/tasks/task-segments.ts`) and the web UI.
+ * UPCOMING — the heads-up segment (2026-10-12, spec §2; split into LATER and
+ * TOMORROW 2026-10-25, plan `plan-upcoming-split-1024.md`; docs/TASK-MODEL.md
+ * § Upcoming). Read by the server (`src/core/tasks/task-segments.ts`) and the
+ * web UI.
  *
  * A target makes a task quiet until its date (spec §1). Upcoming is the one
- * exception: a task whose target hasn't arrived shows on at most two heads-up
- * days before it. It holds one-off tasks with a target the user picked (a
- * deadline task with its automatic target stays in its horizon segment, its
- * deadline pulling it in)
- * and repeating tasks' next occurrences — never reminders or quotas.
+ * exception: a task whose ANCHOR hasn't arrived shows in one of two SECTIONS
+ * of the one Upcoming page before it. It holds one-off tasks with a target the
+ * user picked (a relative target counts: it is a real target), repeating
+ * tasks' next occurrences and future decks — never reminders or quotas, never
+ * a deadline's automatic target (§8.5, its task stays in its horizon segment)
+ * and, with the deadlines page drawn, never a target-less deadline task (rule
+ * 3: the page alone holds it, from its lead day — `deadlinePlace`).
  *
- * THE RULE. wait = the target's local day − the local day of `target_set_at`
- * (when the target was last set, by any path). Then:
- *   1. the day before the target, if wait ≥ 2 — a task made today for
- *      tomorrow gets none: the day before is the day you made it;
- *   2. if wait > 7, one earlier heads-up: 3 days before when wait < 16,
- *      4 days before when it is 16 or more.
- * LOCAL DAYS throughout (Luxon calendar days in the user's zone) — UTC days or
- * 24-hour math give the wrong wait across DST and late at night.
+ * THE RULE (`upcomingDays`). A = the anchor's OpenTask day (the picked target,
+ * else the future deck day); set day = the OpenTask day of `target_set_at`
+ * (when the target was last set, by any path); wait = A − set day; lead =
+ * `lead_days` (the user's override, days ahead of the anchor; series-level on
+ * a repeat) ?? `deadlineLeadDays(wait)` — the one lead table: under 2 → 0, up
+ * to 7 → 1, then 3, from 16 → 4. Then:
+ *   - TOMORROW = A − 1, only when wait ≥ 2 — a task made today for tomorrow
+ *     gets none: the day before is the day you made it (and a defer sweep to
+ *     tomorrow would otherwise fill Tomorrow every evening);
+ *   - LATER = max(A − lead, set day + 1), only when that is ≤ A − 2 — so an
+ *     override longer than the wait is clamped to the day after it was set,
+ *     and a lead of 1 has no Later at all.
+ * Under the default leads these are exactly the 2026-10-12 heads-up days: the
+ * day before when wait ≥ 2, and 3 / 4 days before when wait > 7.
+ * OPENTASK DAYS throughout (Luxon calendar days in the user's zone, cut at the
+ * day start) — UTC days or 24-hour math give the wrong wait across DST and
+ * late at night.
  *
- * Only a PICKED target (§8.5): an automatic deadline target has no rows.
- *
- * CARRY-OVER. An untapped heads-up shows again the next day — as the same,
- * single row — until it is considered or the target's day comes: it shows
- * while the latest heads-up day on or before today is later than the local day
- * of `last_considered_at`. On the target's day it leaves (it is over target).
- * Never counted over target, never notified. The check-in day plays no part.
+ * PLACEMENT, one row a day. A Tomorrow row shows only ON A − 1. A Later row
+ * shows from the Later day and CARRIES OVER — the same single row, day after
+ * day — until it is seen (`last_considered_at` on or after the Later day),
+ * at the latest to A − 2: on A − 1 the task is in Tomorrow, whatever Later
+ * said. Seen is PER SECTION with no new state: seeing it in Later does not
+ * silence Tomorrow, because Tomorrow's day comes after that stamp. On A it
+ * leaves (it is over target, or on deck). Never counted over target, never
+ * notified. The check-in day plays no part. Derived on read, no backfill.
  */
 
-/** The day-before heads-up needs at least this wait (in local days). */
+/** The day-before heads-up (Tomorrow) needs at least this wait (in local days). */
 export const HEADS_UP_DAY_BEFORE_MIN_WAIT = 2
-/** Over this wait, one earlier heads-up as well. */
+/** Up to this wait the default lead is the day before (no Later); over it, 3 or 4. */
 export const HEADS_UP_EARLY_AFTER_WAIT = 7
-/** At or over this wait the earlier heads-up is 4 days out, under it 3. */
+/** At or over this wait the default Later is 4 days out, under it 3. */
 export const HEADS_UP_LONG_WAIT = 16
 export const HEADS_UP_EARLY_LEAD_DAYS = 3
 export const HEADS_UP_LONG_LEAD_DAYS = 4
+
+/** Upcoming's two sections, in the order the page lists them (Tomorrow first). */
+export const UPCOMING_SECTIONS = ['tomorrow', 'later'] as const
+export type UpcomingSection = (typeof UPCOMING_SECTIONS)[number]
 
 /** Whole local days from `setDay` to `targetDay` (both local start-of-day). */
 export function waitDays(targetDay: DateTime, setDay: DateTime): number {
@@ -2123,28 +2123,34 @@ export function waitDays(targetDay: DateTime, setDay: DateTime): number {
 }
 
 /**
- * THE 3/4 LEAD: Upcoming's earlier heads-up, and the far end of the deadline
- * lead table (`deadlineLeadDays`, which the automatic targets use). 3 days
- * when the wait is under HEADS_UP_LONG_WAIT (16) local days, 4 days at 16 or
- * more.
+ * THE 3/4 LEAD: the default Later day for a long wait, and the far end of the
+ * one lead table (`deadlineLeadDays`, which the deadlines page and the
+ * automatic targets use too). 3 days when the wait is under
+ * HEADS_UP_LONG_WAIT (16) local days, 4 days at 16 or more.
  */
 export function leadDaysForWait(wait: number): number {
   return wait < HEADS_UP_LONG_WAIT ? HEADS_UP_EARLY_LEAD_DAYS : HEADS_UP_LONG_LEAD_DAYS
 }
 
 /**
- * The heads-up days for a target set on `setDay`, earliest first (0, 1 or 2
- * local start-of-day DateTimes). Calendar arithmetic, so a DST change between
- * them still lands on local midnight.
+ * THE TWO UPCOMING DAYS for an anchor on `anchorDay` set on `setDay` (both
+ * local start-of-day), with the lead override `leadDays` (null = the default
+ * table): `{ later, tomorrow }`, each a local start-of-day or null (see the
+ * rule above). Calendar arithmetic, so a DST change between them still lands
+ * on local midnight.
  */
-export function headsUpDays(targetDay: DateTime, setDay: DateTime): DateTime[] {
-  const wait = waitDays(targetDay, setDay)
-  const days: DateTime[] = []
-  if (wait > HEADS_UP_EARLY_AFTER_WAIT) {
-    days.push(targetDay.minus({ days: leadDaysForWait(wait) }))
-  }
-  if (wait >= HEADS_UP_DAY_BEFORE_MIN_WAIT) days.push(targetDay.minus({ days: 1 }))
-  return days
+export function upcomingDays(
+  anchorDay: DateTime,
+  setDay: DateTime,
+  leadDays: number | null,
+): { later: DateTime | null; tomorrow: DateTime | null } {
+  const wait = waitDays(anchorDay, setDay)
+  const tomorrow = wait >= HEADS_UP_DAY_BEFORE_MIN_WAIT ? anchorDay.minus({ days: 1 }) : null
+  const lead = leadDays ?? deadlineLeadDays(wait)
+  const earliest = setDay.plus({ days: 1 })
+  const byLead = anchorDay.minus({ days: lead })
+  const later = byLead < earliest ? earliest : byLead
+  return { later: later <= anchorDay.minus({ days: 2 }) ? later : null, tomorrow }
 }
 
 /** The fields the Upcoming rule reads. */
@@ -2154,8 +2160,10 @@ export interface UpcomingTaskFields extends TargetFields {
   last_completed_at?: string | null
   last_considered_at: string | null
   segment_deferred_at: string | null
-  /** On deck (2026-10-20): a future deck's heads-ups count to its day. */
+  /** On deck (2026-10-20): a future deck's day is the anchor. */
   on_deck_day?: string | null
+  /** The lead override (days ahead of the anchor), or null/absent: the default table. */
+  lead_days?: number | null
 }
 
 /**
@@ -2180,54 +2188,85 @@ export function upcomingCandidate(task: Pick<TargetFields, 'due_at' | 'target_au
   return hasPickedTarget(task)
 }
 
+/** Where a task stands in today's Upcoming (`upcomingState`). */
+export interface UpcomingPlace {
+  state: SegmentState
+  /** The anchor instant the row is ordered by (the target, or the deck day's local midnight). */
+  target: string
+  section: UpcomingSection
+}
+
+/**
+ * The anchor's OpenTask day and instant, or null when the task has none: a
+ * future deck's DAY (every deck write stamps `target_set_at`, A6 — a deck and
+ * a picked target never coexist), else a target the user PICKED
+ * (`upcomingCandidate`: one-off, relative target, a repeat's occurrence).
+ */
+function upcomingAnchor(
+  task: UpcomingTaskFields,
+  timezone: string,
+  dayOf: (iso: string) => DateTime,
+): { day: DateTime; target: string } | null {
+  if (task.on_deck_day) {
+    const day = parseDeckDay(task.on_deck_day, timezone)
+    return day ? { day, target: day.toUTC().toISO()! } : null
+  }
+  if (!upcomingCandidate(task)) return null
+  return { day: dayOf(task.due_at!), target: task.due_at! }
+}
+
 /**
  * Where the task stands in today's Upcoming, or null when it is not there:
- * - its target is today or earlier (over target), or it has no picked one;
- * - no heads-up day has come yet;
- * - it was considered on or after the latest heads-up day (but not today).
- * Considered today → 'considered' (listed ticked, so "X of Y" and put-back
- * work); Defer All today → 'deferred'; otherwise 'waiting'. `target` is the
- * target the row is ordered by.
+ * - its anchor is today or earlier (over target / on deck), or it has none;
+ * - neither of its Upcoming days has come (`upcomingDays`);
+ * - in Later, it was seen on or after the Later day (but not today).
+ * The section: Tomorrow on A − 1, else Later (from the Later day, carried
+ * over until seen). Seen today → 'considered' (listed ticked, so "X of Y" and
+ * put-back work); Defer All today → 'deferred'; otherwise 'waiting'. `target`
+ * is the anchor the row is ordered by (within its section).
+ *
+ * ON DECK (2026-10-20, B6, spec rule 5): a future deck is an anchor like a
+ * picked target, its days counted to its DAY from `target_set_at`. On its day
+ * and after, it is in the On deck section (`deckIsToday`), not here. A deck
+ * outranks a deadline's automatic target, which has no Upcoming rows of its own.
  */
 export function upcomingState(
   task: UpcomingTaskFields,
   timezone: string,
   now: Date,
-  /** The user's day boundary (`localDay`): heads-up days are OpenTask days. */
+  /** The user's day boundary (`localDay`): Upcoming days are OpenTask days. */
   dayStart: string,
-): { state: SegmentState; target: string } | null {
+): UpcomingPlace | null {
   const today = openTaskLocalDay(now, timezone, dayStart)
   const dayOf = (iso: string) => localDay(iso, timezone, dayStart)
-  let target: string
-  let targetDay: DateTime
-  if (task.on_deck_day) {
-    // ON DECK (2026-10-20, B6, spec rule 5): a future deck gets the heads-ups
-    // a picked target would, counted to its DAY from `target_set_at` (every
-    // deck write stamps it, A6). On its day and after, it is in the On deck
-    // section (`deckIsToday`), not here. A deck outranks a deadline's
-    // automatic target, which has no Upcoming rows of its own.
-    const day = parseDeckDay(task.on_deck_day, timezone)
-    if (!day) return null
-    targetDay = day
-    target = targetDay.toUTC().toISO()!
-  } else {
-    if (!upcomingCandidate(task)) return null
-    target = task.due_at!
-    targetDay = dayOf(target)
-  }
-  if (targetDay <= today) return null
+  const anchor = upcomingAnchor(task, timezone, dayOf)
+  if (!anchor || anchor.day <= today) return null
+  const { target } = anchor
 
-  const heads = headsUpDays(targetDay, dayOf(targetSetAtOf(task)))
-  const latest = [...heads].reverse().find((d) => d <= today)
-  if (!latest) return null
+  const { later, tomorrow } = upcomingDays(
+    anchor.day,
+    dayOf(targetSetAtOf(task)),
+    task.lead_days ?? null,
+  )
+  let section: UpcomingSection
+  let from: DateTime
+  if (tomorrow && +tomorrow === +today) {
+    section = 'tomorrow'
+    from = tomorrow
+  } else if (later && later <= today) {
+    section = 'later'
+    from = later
+  } else {
+    return null
+  }
 
   const considered = task.last_considered_at ? dayOf(task.last_considered_at) : null
-  if (considered && +considered === +today) return { state: 'considered', target }
-  if (considered && considered >= latest) return null
+  if (considered && +considered === +today) return { state: 'considered', target, section }
+  if (considered && considered >= from) return null
   if (task.segment_deferred_at && +dayOf(task.segment_deferred_at) === +today) {
-    return { state: 'deferred', target }
+    return { state: 'deferred', target, section }
   }
-  return { state: 'waiting', target }
+  return { state: 'waiting', target, section }
 }
 
 /**
@@ -2240,17 +2279,27 @@ export function upcomingState(
 export function upcomingGap(
   task: Pick<TargetFields, 'due_at' | 'deadline_at'> & { on_deck_day?: string | null },
   timezone: string,
+  /**
+   * The row's section (2026-10-25): a TOMORROW row's day goes without saying
+   * (it is tomorrow), so it says only the time — "Target 9:00 AM", or "On
+   * deck" for a deck (a deck has no time). A Later row (or no section) says
+   * the day as before. The deadline keeps its date either way.
+   */
+  section?: UpcomingSection,
 ): { target: string | null; deadline: string | null } {
   const fmt = (iso: string) =>
     DateTime.fromISO(iso, { zone: 'utc' }).setZone(timezone).toFormat('ccc LLL d')
+  const tomorrow = section === 'tomorrow'
   // On deck (2026-10-20): "On deck Sat Oct 24" — the day, no time. It wins
   // over a deadline's automatic target, which is not the plan.
   let target: string | null = null
   const deck = task.on_deck_day ? parseDeckDay(task.on_deck_day, timezone) : null
   if (deck) {
-    target = `On deck ${deck.toFormat('ccc LLL d')}`
+    target = tomorrow ? 'On deck' : `On deck ${deck.toFormat('ccc LLL d')}`
   } else if (task.due_at) {
-    target = `Target ${fmt(task.due_at)}`
+    target = tomorrow
+      ? `Target ${DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone).toFormat('h:mm a')}`
+      : `Target ${fmt(task.due_at)}`
   }
   if (!task.deadline_at) return { target, deadline: null }
   return { target, deadline: `deadline ${fmt(task.deadline_at)}` }
@@ -2260,8 +2309,8 @@ export function upcomingGap(
  * Whether a target can be removed ("Remove target", 2026-10-22 — it replaced
  * "Back to auto"): a one-off with a target the user picked, deadline or not.
  * Removed, a task with no deadline goes back to its horizon segment, and one
- * with a deadline onto the deadlines page from its lead day (Upcoming before
- * it). Null: nothing to offer — no target, a repeating task (its target goes
+ * with a deadline onto the deadlines page from its lead day (quiet before it,
+ * rule 3). Null: nothing to offer — no target, a repeating task (its target goes
  * with its recurrence, in the editor's own menu), or, with the task queue
  * off, the deadline's automatic target (`target_auto`, still written there
  * for one release, A1). Every surface that offers it reads it here: the row

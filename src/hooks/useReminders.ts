@@ -1,6 +1,6 @@
 'use client'
 
-import type { SegmentKind, SegmentLeft, SegmentState } from '@/lib/task-segments'
+import type { SegmentKind, SegmentLeft, SegmentState, UpcomingSection } from '@/lib/task-segments'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { groupBySlot, parseHHMM, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -177,8 +177,8 @@ export interface UseRemindersReturn {
  * considered rows with `segment_left` (src/core/tasks/segment-roster.ts).
  * And it draws the DEADLINES page (`?deadlines=1`, 2026-10-22): a deadline
  * task with no target from its lead day, with `safety_net` and `seen` on each
- * row, and the lead day's Upcoming heads-ups — without it (and with the task
- * queue on) such a task would fall back into its horizon segment.
+ * row, quiet before its lead day (rule 3, 2026-10-25) — without it (and with
+ * the task queue on) such a task would fall back into its horizon segment.
  * And it shows EVERY segment, every day, in fixed positions (`?fill=1`,
  * Trent 2026-10-24): an empty one comes back with no rows and reads as done
  * ("Nothing today ✓").
@@ -229,13 +229,16 @@ export interface TaskSegmentPayload {
    *  `segment_left`: how a row that left the segment today was handled (`?handled=1`).
    *  `safety_net` / `seen` (the deadlines page only, `?deadlines=1`): from the day before the
    *  deadline seeing the row does not silence it — it stays `waiting`, `seen` says it was seen
-   *  this OpenTask day. */
+   *  this OpenTask day.
+   *  `upcoming_section` (Upcoming rows only, 2026-10-25): 'tomorrow' (the day before the
+   *  anchor) or 'later' — Tomorrow's rows first. Read by the sections (PR B). */
   tasks: (Task & {
     segment_state: SegmentState
     recurring?: boolean
     segment_left?: SegmentLeft
     safety_net?: boolean
     seen?: boolean
+    upcoming_section?: UpcomingSection
   })[]
   waiting: number
   considered: number

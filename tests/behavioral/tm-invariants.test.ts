@@ -34,12 +34,13 @@ import { runTaskRollover } from '@/core/tasks/task-rollover'
 import { snoozeTask } from '@/core/tasks/snooze'
 import { getTaskById } from '@/core/tasks/read'
 import { getDb } from '@/core/db'
-import { targetTasksToday } from '@/core/tasks/task-segments'
+import { considerTasks, getTaskSegments, targetTasksToday } from '@/core/tasks/task-segments'
 import { deckTasks } from '@/core/tasks/deck'
 import { getCurrentlyDueTaskIds } from '@/core/tasks/currently-due'
 import { isCurrentlyDue } from '@/core/recurrence/occurrence'
 import {
   segmentState,
+  upcomingDays,
   upcomingState,
   hasPickedTarget,
   occurrenceDates,
@@ -1374,3 +1375,182 @@ function rtDeckedRetime(env: RtEnv, repeatId: number, redo: boolean): void {
   if (redo) executeRedo(TEST_USER_ID)
   env.n.deckRetimes++
 }
+
+// ===========================================================================
+// TM-INV-13 / TM-INV-14: Upcoming's two sections (2026-10-25)
+// ===========================================================================
+
+describe('TM-INV: Upcoming sections (seeded random)', () => {
+  afterAll(() => teardownTestDb())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  /**
+   * TM-INV-13 (the Upcoming split, 2026-10-25; docs/TASK-MODEL.md § Upcoming):
+   * random anchors (across both DST changes), set days and leads.
+   *  1. With no override the days are EXACTLY the 2026-10-12 heads-up days —
+   *     the oracle below is that spec's rule, restated: A − 1 when the wait is
+   *     2+, and 3 / 4 days before (wait 8–15 / 16+) when it is over 7;
+   *  2. any lead: Tomorrow is A − 1 iff the wait is 2+; Later, when there is
+   *     one, is in [set day + 1, A − 2] and is A − lead unless that is before
+   *     set day + 1;
+   *  3. walked day by day through `upcomingState` (random considered stamps):
+   *     at most one row a day; 'tomorrow' only on A − 1; 'later' only from
+   *     the Later day to A − 2, and never after a consider on or after the
+   *     Later day (but before today); nothing on A or after.
+   */
+  test('TM-INV-13: the sections keep the 10-12 days by default and stay in their windows', () => {
+    const r = rng(SEED + 13)
+    const day = (d: DateTime) => d.startOf('day')
+    const oracle = (a: DateTime, set: DateTime): string[] => {
+      const wait = Math.round(a.diff(set, 'days').days)
+      const out: string[] = []
+      if (wait > 7) out.push(a.minus({ days: wait < 16 ? 3 : 4 }).toISODate()!)
+      if (wait >= 2) out.push(a.minus({ days: 1 }).toISODate()!)
+      return out
+    }
+    for (let c = 0; c < 400; c++) {
+      const a = day(
+        DateTime.fromISO(WINDOWS[c % 2], { zone: tz }).plus({ days: Math.floor(r() * 40) }),
+      )
+      const set = a.minus({ days: Math.floor(r() * 60) })
+      const lead = r() < 0.4 ? null : 1 + Math.floor(r() * 30)
+      const label = `seed ${SEED + 13} case ${c} A ${a.toISODate()} set ${set.toISODate()} lead ${lead}`
+      const { later, tomorrow } = upcomingDays(a, set, lead)
+      const wait = Math.round(a.diff(set, 'days').days)
+      if (lead === null) {
+        const got = [later, tomorrow].filter((d) => d !== null).map((d) => d!.toISODate())
+        expect(got, `${label}: default days moved`).toEqual(oracle(a, set))
+      }
+      expect(tomorrow?.toISODate() ?? null, `${label}: tomorrow`).toBe(
+        wait >= 2 ? a.minus({ days: 1 }).toISODate() : null,
+      )
+      if (later) {
+        expect(+later >= +set.plus({ days: 1 }), `${label}: Later before set + 1`).toBe(true)
+        expect(+later <= +a.minus({ days: 2 }), `${label}: Later after A − 2`).toBe(true)
+      }
+      // Walk it: a one-off with a picked target on A, set on `set`.
+      const considerOn = r() < 0.5 ? set.plus({ days: Math.floor(r() * (wait + 1)) }) : null
+      const task = {
+        due_at: a.set({ hour: 9 }).toUTC().toISO()!,
+        target_auto: false,
+        deadline_at: null,
+        rrule: null,
+        target_set_at: set.set({ hour: 10 }).toUTC().toISO()!,
+        created_at: set.set({ hour: 10 }).toUTC().toISO()!,
+        last_considered_at: null as string | null,
+        segment_deferred_at: null,
+        lead_days: lead,
+      }
+      for (let d = set; +d <= +a.plus({ days: 1 }); d = d.plus({ days: 1 })) {
+        if (considerOn && +d > +considerOn) {
+          task.last_considered_at = considerOn.set({ hour: 12 }).toUTC().toISO()!
+        }
+        const placed = upcomingState(task, tz, d.set({ hour: 21 }).toJSDate(), CALENDAR_DAY_START)
+        const l = `${label} on ${d.toISODate()}`
+        if (+d >= +a) {
+          expect(placed, `${l}: Upcoming on or after A`).toBeNull()
+          continue
+        }
+        if (!placed) continue
+        if (placed.section === 'tomorrow') {
+          expect(+d, `${l}: Tomorrow off A − 1`).toBe(+a.minus({ days: 1 }))
+        } else {
+          expect(later, `${l}: Later with no Later day`).not.toBeNull()
+          expect(+d >= +later! && +d <= +a.minus({ days: 2 }), `${l}: Later outside its days`).toBe(
+            true,
+          )
+          if (considerOn && +considerOn >= +later! && +considerOn < +d) {
+            throw new Error(`${l}: a seen Later row came back`)
+          }
+        }
+      }
+    }
+  })
+
+  /**
+   * TM-INV-14 (rule 3 and one place a day, 2026-10-25): random one-offs with
+   * deadlines — some with a picked target, some decked, random leads — read
+   * with the deadlines page drawn (task queue on), day after day, tapping
+   * at random:
+   *  1. a target-less deadline task is NEVER in Upcoming (rule 3, strict:
+   *     a deck on one included);
+   *  2. a task is in at most one segment;
+   *  3. every Upcoming row carries a section, and Tomorrow's rows come first.
+   */
+  test('TM-INV-14: rule 3 holds and every row has one place and a section', () => {
+    const SEED14 = SEED + 14
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    setupTestDb()
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO time_slots (user_id, label, start_time, sort_order) VALUES (?, 'Morning', '06:30', 0)",
+    ).run(TEST_USER_ID)
+    db.prepare("UPDATE users SET last_rollover_date = '2026-10-19' WHERE id = ?").run(TEST_USER_ID)
+    const r = rng(SEED14)
+    const start = DateTime.fromISO('2026-10-20T10:00', { zone: tz })
+    vi.setSystemTime(start.toJSDate())
+    const ids: number[] = []
+    const counts = { upcoming: 0, later: 0, tomorrow: 0, deadlines: 0, decked: 0 }
+    for (let i = 0; i < 40; i++) {
+      const deadline = start.plus({ days: 2 + Math.floor(r() * 30) }).set({ hour: 17, minute: 0 })
+      const kind = r()
+      const input: Record<string, unknown> = {
+        title: `Synthetic ${i}`,
+        deadline_at: deadline.toUTC().toISO(),
+        ...(r() < 0.4 ? { lead_days: 1 + Math.floor(r() * 10) } : {}),
+      }
+      if (kind < 0.35) {
+        const days = Math.floor(r() * Math.max(1, deadline.diff(start, 'days').days))
+        input.due_at = start.plus({ days }).set({ hour: 9 }).toUTC().toISO()
+      }
+      const t = createTask({ userId: TEST_USER_ID, userTimezone: tz, input: input as never })
+      ids.push(t.id)
+      if (kind >= 0.35 && kind < 0.6) {
+        const max = Math.max(1, Math.floor(deadline.diff(start, 'days').days))
+        const deckDay = start.plus({ days: Math.floor(r() * max) }).toISODate()!
+        deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day: deckDay })
+        counts.decked++
+      }
+    }
+    for (let d = 0; d < 34; d++) {
+      const now = start.plus({ days: d }).set({ hour: 21 })
+      vi.setSystemTime(now.toJSDate())
+      const segs = getTaskSegments(TEST_USER_ID, tz, now.toJSDate(), {
+        queuePanels: true,
+        deckRows: true,
+        deadlineRows: true,
+      })
+      const seen = new Map<number, string>()
+      for (const seg of segs) {
+        let laterSeen = false
+        for (const row of seg.tasks) {
+          const l = `seed ${SEED14} ${now.toISODate()} task ${row.task.id}`
+          expect(seen.get(row.task.id), `${l}: in ${seg.horizon} and another`).toBeUndefined()
+          seen.set(row.task.id, seg.horizon)
+          if (seg.horizon === 'deadlines') counts.deadlines++
+          if (seg.horizon !== 'upcoming') continue
+          counts.upcoming++
+          counts[row.section ?? 'later']++
+          expect(
+            row.task.deadline_at !== null && row.task.due_at === null,
+            `${l}: a target-less deadline task in Upcoming`,
+          ).toBe(false)
+          expect(row.section, `${l}: no section`).toMatch(/^(tomorrow|later)$/)
+          if (row.section === 'later') laterSeen = true
+          else expect(laterSeen, `${l}: a Tomorrow row after a Later row`).toBe(false)
+        }
+      }
+      const waiting = segs
+        .flatMap((s) => s.tasks)
+        .filter((row) => row.state === 'waiting' && r() < 0.3)
+        .map((row) => row.task.id)
+      if (waiting.length > 0) considerTasks(TEST_USER_ID, [...new Set(waiting)])
+    }
+    // The list exercised what it claims: decks, the page, both sections.
+    expect(ids.length).toBe(40)
+    for (const [k, n] of Object.entries(counts)) expect(n, `no ${k} rows`).toBeGreaterThan(0)
+  })
+})

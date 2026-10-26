@@ -13,9 +13,14 @@
  *
  * Policy `tap`: every heads-up is considered the day it shows, so a row shows
  * on its heads-up days exactly (carry-over is the Nov 1 pile's subject).
+ *
+ * SECTIONS (2026-10-25, the Upcoming split): the day before the target is
+ * Tomorrow (wait ≥ 2); the default Later day (lead = `deadlineLeadDays(wait)`:
+ * 3 days before at a wait of 8–15, 4 at 16+, none up to 7) is Later — the
+ * same days as the 10-12 heads-ups.
  */
 import type { GoldenScenario } from './types'
-import { iso, headsUps } from './helpers'
+import { iso, upcoming } from './helpers'
 
 /** A one-off made at `created` with a 9:00 target on `target`. */
 function oneOff(
@@ -24,7 +29,7 @@ function oneOff(
   source: string,
   created: string,
   target: string,
-  heads: string[],
+  heads: { later?: string[]; tomorrow?: string[] },
   after: Record<string, string>,
 ): GoldenScenario {
   const lastDay = Object.keys(after).sort().at(-1)!
@@ -42,7 +47,7 @@ function oneOff(
         input: { title: 'Synthetic one-off', due_at: iso(`${target}T09:00`) },
       },
     ],
-    expect: { task: { ...headsUps(heads), ...after } },
+    expect: { task: { ...upcoming(heads), ...after } },
   }
 }
 
@@ -53,7 +58,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'spec §2 reference dates; v7; Trent 10-12 "made Saturday for Tuesday"',
     '2026-10-10T10:00',
     '2026-10-13',
-    ['2026-10-12'],
+    { tomorrow: ['2026-10-12'] },
     { '2026-10-13': 'over 1×', '2026-10-14': 'over 2×' },
   ),
   oneOff(
@@ -62,7 +67,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'spec §2 reference dates; v7; Trent 10-12 "made today for tomorrow"',
     '2026-10-12T10:00',
     '2026-10-13',
-    [],
+    {},
     { '2026-10-13': 'over 1×' },
   ),
   oneOff(
@@ -71,7 +76,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'v7 one-off table',
     '2026-10-12T10:00',
     '2026-10-15',
-    ['2026-10-14'],
+    { tomorrow: ['2026-10-14'] },
     { '2026-10-15': 'over 1×' },
   ),
   oneOff(
@@ -80,7 +85,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'spec §2 reference dates; v7',
     '2026-10-12T10:00',
     '2026-10-20',
-    ['2026-10-17', '2026-10-19'],
+    { later: ['2026-10-17'], tomorrow: ['2026-10-19'] },
     { '2026-10-20': 'over 1×' },
   ),
   oneOff(
@@ -89,7 +94,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'v7 one-off table',
     '2026-10-12T10:00',
     '2026-10-26',
-    ['2026-10-23', '2026-10-25'],
+    { later: ['2026-10-23'], tomorrow: ['2026-10-25'] },
     { '2026-10-26': 'over 1×' },
   ),
   oneOff(
@@ -98,7 +103,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'spec §2 reference dates; Trent 10-12 "snowmobile" (v7 said Thu Oct 29)',
     '2026-10-12T10:00',
     '2026-11-01',
-    ['2026-10-28', '2026-10-31'],
+    { later: ['2026-10-28'], tomorrow: ['2026-10-31'] },
     { '2026-11-01': 'over 1×', '2026-11-02': 'over 2×', '2026-11-03': 'over 3× →remove' },
   ),
   oneOff(
@@ -107,7 +112,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'v7 one-off table (v7 said Sun Oct 25)',
     '2026-09-01T10:00',
     '2026-11-01',
-    ['2026-10-28', '2026-10-31'],
+    { later: ['2026-10-28'], tomorrow: ['2026-10-31'] },
     { '2026-11-01': 'over 1×' },
   ),
   oneOff(
@@ -116,7 +121,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'spec §2 reference dates; Trent 10-12 "taxes" (v7 said Mon Jan 25)',
     '2026-10-12T10:00',
     '2027-02-01',
-    ['2027-01-28', '2027-01-31'],
+    { later: ['2027-01-28'], tomorrow: ['2027-01-31'] },
     { '2027-02-01': 'over 1×' },
   ),
   oneOff(
@@ -125,7 +130,7 @@ export const oneOffScenarios: GoldenScenario[] = [
     'spec §2 reference dates; Trent 10-12 "gutters" (v7 said Sat Apr 10)',
     '2026-10-12T10:00',
     '2027-04-17',
-    ['2027-04-13', '2027-04-16'],
+    { later: ['2027-04-13'], tomorrow: ['2027-04-16'] },
     { '2027-04-17': 'over 1×' },
   ),
   {

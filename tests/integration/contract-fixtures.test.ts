@@ -116,6 +116,12 @@
  *     PATCH /api/tasks/{id} [target_at: a pick] → task-relative-fixed.json
  *     (the offsets and the link cleared: a picked date is a fixed target)
  *
+ * 21. Upcoming's two sections (2026-10-25): a one-off due tomorrow (its
+ *     Tomorrow) and one due in six days with a lead of 6 (its Later is
+ *     today), both targeted 10 days ago (backdated in the DB)
+ *     GET  /api/reminders                       → reminders-upcoming-sections.json
+ *     (every Upcoming row carries `upcoming_section`; Tomorrow's first)
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -979,6 +985,47 @@ describe('contract fixtures (native clients)', () => {
     )
   })
 
+  // 21. Upcoming's two sections (2026-10-25). Its own hook, last.
+  beforeAll(async () => {
+    let placeholder = 101 + Object.keys(created).length
+    const make = async (name: string, body: Record<string, unknown>) => {
+      const res = (await call('/api/tasks', body)) as { data: { id: number } }
+      created[name] = res.data.id
+      ids.register('task', res.data.id, placeholder++)
+    }
+    const day = (n: number) =>
+      DateTime.now()
+        .setZone('America/New_York')
+        .plus({ days: n })
+        .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+        .toUTC()
+        .toISO()
+    // Listed in this order on purpose: the server puts Tomorrow first.
+    await make('sectionLater', { title: 'Plan the garden', target_at: day(6), lead_days: 6 })
+    await make('sectionTomorrow', { title: 'Return the library books', target_at: day(1) })
+    backdate([created.sectionLater, created.sectionTomorrow], 10)
+    captured['reminders-upcoming-sections'] = await call('/api/reminders')
+  })
+
+  test('Upcoming sections: every row carries its section, Tomorrow first', () => {
+    type Row = { id: number; upcoming_section?: string }
+    type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
+    const segs = (captured['reminders-upcoming-sections'] as unknown as Segs).data.task_segments
+    const upcoming = segs.find((s) => s.horizon === 'upcoming')!
+    for (const t of upcoming.tasks) expect(t.upcoming_section).toMatch(/^(tomorrow|later)$/)
+    const mine = upcoming.tasks
+      .filter((t) => t.id === created.sectionLater || t.id === created.sectionTomorrow)
+      .map((t) => [t.id, t.upcoming_section])
+    expect(mine).toEqual([
+      [created.sectionTomorrow, 'tomorrow'],
+      [created.sectionLater, 'later'],
+    ])
+    // No other kind carries it.
+    for (const seg of segs.filter((x) => x.horizon !== 'upcoming')) {
+      for (const t of seg.tasks) expect(t.upcoming_section).toBeUndefined()
+    }
+  })
+
   test('a relative one-off: linked and derived; a pick makes it fixed', () => {
     type T = { data: Record<string, unknown> }
     const linked = (captured['task-relative-one-off'] as unknown as T).data
@@ -1082,6 +1129,7 @@ describe('contract fixtures (native clients)', () => {
     'reminders-deadlines-plain',
     'task-relative-one-off',
     'task-relative-fixed',
+    'reminders-upcoming-sections',
   ]
 
   for (const name of names) {

@@ -122,6 +122,7 @@ function renderEnrichmentPrompt(scenario?: ScenarioInput): string {
     morningTime: scenario?.input.morningTime ?? DEFAULTS.morningTime,
     wakeTime: scenario?.input.wakeTime ?? DEFAULTS.wakeTime,
     sleepTime: scenario?.input.sleepTime ?? DEFAULTS.sleepTime,
+    periods: scenario?.input.slots ?? [...DEFAULT_TIME_SLOTS],
     projects: scenario?.input.projects ?? DEFAULTS.projects,
     userContext: scenario?.input.userContext,
     taskText: scenario?.input.text || '<raw task text would appear here>',

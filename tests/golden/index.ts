@@ -13,6 +13,7 @@ import { repeatAnchorScenarios } from './repeat-anchor'
 import { repeatEndsScenarios } from './repeat-ends'
 import { deadlinesScenarios } from './deadlines'
 import { relativeTargetScenarios } from './relative-target'
+import { upcomingSectionsScenarios } from './upcoming-sections'
 
 export const goldenScenarios = [
   ...oneOffScenarios,
@@ -29,4 +30,5 @@ export const goldenScenarios = [
   ...repeatEndsScenarios,
   ...deadlinesScenarios,
   ...relativeTargetScenarios,
+  ...upcomingSectionsScenarios,
 ]

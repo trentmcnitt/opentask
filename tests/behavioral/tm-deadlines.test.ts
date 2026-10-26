@@ -192,7 +192,7 @@ describe('DL-L: the lead day (pure)', () => {
     ).toBeNull()
   })
 
-  test('DL-L03: deadlinePlace — window, safety net, Upcoming hand-off, deck day', () => {
+  test('DL-L03: deadlinePlace — window, safety net, quiet before it (rule 3), deck day', () => {
     const base = {
       due_at: null,
       deadline_at: at('2026-10-30T23:59'),
@@ -204,11 +204,9 @@ describe('DL-L: the lead day (pure)', () => {
     const on = (local: string, over: Record<string, unknown> = {}) =>
       deadlinePlace({ ...base, ...over }, tz, new Date(at(local)), ROLLOVER)
     expect(on('2026-10-25T21:00')).toBeNull()
-    expect(on('2026-10-26T21:00')).toEqual({
-      kind: 'upcoming',
-      state: 'waiting',
-      target: DateTime.fromISO('2026-10-27', { zone: tz }).toUTC().toISO(),
-    })
+    // Rule 3 (the Upcoming split, 2026-10-25): the day before the lead day is
+    // quiet — no Upcoming heads-up counted to the lead day any more.
+    expect(on('2026-10-26T21:00')).toBeNull()
     expect(on('2026-10-27T21:00')).toEqual({
       kind: 'page',
       state: 'waiting',
@@ -235,8 +233,9 @@ describe('DL-L: the lead day (pure)', () => {
     expect(on('2026-10-29T10:00', { on_deck_day: '2026-10-29' })).toMatchObject({
       kind: 'page',
     })
-    // A future deck before the window: its own Upcoming row decides.
-    expect(on('2026-10-22T10:00', { on_deck_day: '2026-10-24' })).toEqual({ kind: 'deck' })
+    // A future deck before the window: quiet too (rule 3, strict — no deck
+    // Upcoming row on a target-less deadline task).
+    expect(on('2026-10-22T10:00', { on_deck_day: '2026-10-24' })).toBeNull()
   })
 })
 
@@ -332,11 +331,11 @@ describe('DL-W: every writer, switch on', () => {
     updateTask({ ...u, taskId: t.id, input: { due_at: null } })
     expect(task(t.id)).toMatchObject({ due_at: null, target_auto: false, lead_from: '2026-10-22' })
     expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toEqual([])
-    // The removal stamped target_set_at (Tue): wait 2 to the lead day →
-    // the heads-up Wed; Thu (D−1) the page's safety net.
+    // Quiet until its lead day Thu (rule 3, 2026-10-25: no Upcoming
+    // heads-up before it), then the page.
     expect(placesOf(t.id)).toEqual([])
     setClock('2026-10-21T10:00')
-    expect(placesOf(t.id)).toEqual(['upcoming'])
+    expect(placesOf(t.id)).toEqual([])
     setClock('2026-10-22T10:00')
     expect(placesOf(t.id)).toEqual(['deadlines'])
   })

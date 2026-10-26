@@ -10,20 +10,18 @@
  * The queue's own user (`queue@opentask.local`, as tq-queue-panels.spec.ts),
  * with the server's task-queue switch on (decks need it) and off after the
  * file. Isolation: unique titles, every task trashed in `finally`.
- * Clock-independent: "today" is the user's calendar day, read at run time.
+ * Clock-independent: "today" is the user's OpenTask day (`openTaskDay`), read at run time.
  */
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, openTaskDay, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const QUEUE_USER_ID = 2
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 const DAY = 24 * 60 * 60 * 1000
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString()
-/** The user's calendar day, `n` days from today (yyyy-MM-dd). */
-const calendarDay = (n = 0) => DateTime.now().setZone(TZ).plus({ days: n }).toFormat('yyyy-MM-dd')
 
 async function signIn(page: Page) {
   await page.goto('/login')
@@ -183,7 +181,7 @@ test('a horizon row: tap decks it for today (the row leaves), Undo puts it back'
     await expect(r).toHaveCount(0)
     const t = toast(page, `On deck for today: “${title}”`)
     await expect(t).toBeVisible()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))
     expect((await stateOf(page, id)).last_considered_at).not.toBeNull()
 
     await t.getByRole('button', { name: 'Undo' }).click()
@@ -318,7 +316,7 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
     await expect(menu.getByRole('menuitem', { name: 'Remove' })).toHaveCount(0)
     await menu.getByRole('menuitem', { name: /^Tomorrow/ }).click()
     await expect(toast(page, 'On deck for tomorrow')).toBeVisible()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
     const after = await stateOf(page, id)
     expect(after.queued_at).toBeNull()
     await expect(r).toHaveCount(0)
@@ -327,12 +325,14 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
   }
 })
 
-test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', async ({ page }) => {
+test('an Upcoming deck row reads "On deck" in Tomorrow (the day goes without saying), and Today on it is a pick', async ({
+  page,
+}) => {
   const ids: number[] = []
   try {
     const id = await create(page, { title: uniqueTitle('OD upcoming') })
     ids.push(id)
-    await deck(page, [id], calendarDay(1))
+    await deck(page, [id], await openTaskDay(page, 1))
     // Decked ten days ago for tomorrow: today is its heads-up day (and the
     // deck's own "considered" stamp, A7, goes back with it).
     sql(
@@ -343,8 +343,14 @@ test('an Upcoming deck row reads "On deck <day>", and Today on it is a pick', as
     )
     await page.goto('/reminders')
     const r = segRow(segment(page, 'upcoming'), id)
-    const day = DateTime.fromISO(calendarDay(1)).toFormat('ccc LLL d')
-    await expect(r.locator('[data-target-chip]')).toHaveText(`On deck ${day}`)
+    // On deck tomorrow: in Upcoming's Tomorrow section (2026-10-25), whose
+    // rows say no day — "On deck" (a Later row says "On deck Mon Oct 26").
+    await expect(
+      segment(page, 'upcoming')
+        .locator('[data-upcoming-section="tomorrow"]')
+        .locator(`[data-segment-task="${id}"]`),
+    ).toBeVisible()
+    await expect(r.locator('[data-target-chip]')).toHaveText('On deck')
     await expect(r.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     // An Upcoming row reads like every segment row (2026-10-21).
     expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
@@ -440,7 +446,7 @@ test('the Quick panel: an On deck line, staged until Save; "was on deck" in deta
     await expect(line.locator('[data-quick-panel-deck-day]')).toHaveClass(/text-blue-500/)
     expect(await deckOf(page, id)).toBeNull()
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))
 
     // A deck the rollover sent to the queue: "was on deck" in details, not on the row (A9).
     const queued = await create(page, { title: uniqueTitle('OD was') })
@@ -448,7 +454,7 @@ test('the Quick panel: an On deck line, staged until Save; "was on deck" in deta
     sql(
       'UPDATE tasks SET queued_at = ?, queued_from_deck_day = ? WHERE id = ?',
       new Date().toISOString(),
-      calendarDay(-1),
+      await openTaskDay(page, -1),
       queued,
     )
     await page.reload()
@@ -457,7 +463,7 @@ test('the Quick panel: an On deck line, staged until Save; "was on deck" in deta
     await expect(r).not.toContainText('was on deck')
     await openDetails(r)
     await expect(page.getByRole('dialog').locator('[data-quick-panel-was-on-deck]')).toContainText(
-      `was on deck ${DateTime.fromISO(calendarDay(-1)).toFormat('ccc LLL d')}`,
+      `was on deck ${DateTime.fromISO(await openTaskDay(page, -1)).toFormat('ccc LLL d')}`,
     )
   } finally {
     await trash(page, ids)
@@ -582,7 +588,7 @@ test('panel: a staged deadline and deck save in ONE request; the menu greys from
       if (r.method() === 'PATCH' && r.url().endsWith(`/api/tasks/${id}`)) patches.push(r.url())
     })
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
     expect((await stateOf(page, id)).deadline_at).not.toBeNull()
     expect(patches).toHaveLength(1)
     // One undo entry: Undo puts both back.
@@ -664,7 +670,7 @@ test('panel: On deck after a staged target goes back to the deck', async ({ page
     await expect(dialog.locator('[data-quick-panel-deck-day]')).toHaveText('today')
     await expect(dateLine.locator('.text-blue-500')).toHaveCount(0)
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))
     expect((await stateOf(page, id)).target_at).toBeNull()
 
     // On deck already: a staged target shadows it ("Not on deck", blue); a
@@ -710,13 +716,14 @@ test('the date picker: opens on an allowed day, resets on reopen, refuses a day 
       await expect(picker).toBeVisible()
       return picker
     }
-    const dayOf = (n: number) => String(DateTime.now().setZone(TZ).plus({ days: n }).day)
+    const today = DateTime.fromISO(await openTaskDay(page), { zone: TZ })
+    const dayOf = (n: number) => String(today.plus({ days: n }).day)
     let picker = await openPicker(id)
     // Tomorrow, selected, and choosable.
     await expect(picker.locator('[data-selected-single="true"]')).toHaveText(dayOf(1))
     await expect(picker.locator('[data-deck-date-submit]')).toBeEnabled()
     // Pick another day, close without choosing: the next open starts afresh.
-    const three = DateTime.now().setZone(TZ).plus({ days: 3 })
+    const three = today.plus({ days: 3 })
     const key = await page.evaluate(
       ([y, m, d]) => new Date(y, m - 1, d).toLocaleDateString(),
       [three.year, three.month, three.day],
@@ -731,7 +738,7 @@ test('the date picker: opens on an allowed day, resets on reopen, refuses a day 
     picker = await openPicker(id)
     await expect(picker.locator('[data-selected-single="true"]')).toHaveText(dayOf(1))
     await picker.locator('[data-deck-date-submit]').click()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay(1))
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
 
     // A deadline already reminding: every day greyed, and nothing to put on deck.
     await dashRow(page, nagging).hover()
@@ -872,7 +879,7 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     await button.click()
     await expect(r).toHaveCount(0)
     await expect(toast(page, `On deck for today: “${title}”`)).toBeVisible()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))
     const decked = await stateOf(page, id)
     expect(decked).toMatchObject({ target_at: null, queued_at: null })
     expect(decked.occurrence_at).toBe(waiting.occurrence_at)
@@ -880,7 +887,7 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
 
     // Re-deck for tomorrow (hold), backdated so today is its heads-up day:
     // an Upcoming row, "On deck <day>"; Today on it is a pick — the deck goes.
-    await deck(page, [id], calendarDay(1))
+    await deck(page, [id], await openTaskDay(page, 1))
     sql(
       'UPDATE tasks SET target_set_at = ?, last_considered_at = ?, segment_targeted_at = NULL WHERE id = ?',
       daysFromNow(-10),
@@ -889,9 +896,15 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     )
     await page.reload()
     const u = segRow(segment(page, 'upcoming'), id)
-    const day = DateTime.fromISO(calendarDay(1)).toFormat('ccc LLL d')
-    // A repeating row's chip goes on with its schedule ("· every Fri at …").
-    await expect(u.locator('[data-target-chip]')).toHaveText(new RegExp(`^On deck ${day} · every `))
+    // On deck tomorrow: Upcoming's Tomorrow section (2026-10-25), whose rows
+    // say no day — "On deck"; a repeating row's chip goes on with its
+    // schedule ("· every Fri at …").
+    await expect(
+      segment(page, 'upcoming')
+        .locator('[data-upcoming-section="tomorrow"]')
+        .locator(`[data-segment-task="${id}"]`),
+    ).toBeVisible()
+    await expect(u.locator('[data-target-chip]')).toHaveText(/^On deck · every /)
     await expect(u.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
     await page.screenshot({ path: '.tmp/od-repeating-upcoming-1280.png' })
     // Faded on a decked row, it asks first (2026-10-22, plan §5).
@@ -932,7 +945,7 @@ test('REPEATING: a dashboard row over target — tap leaves the nagging list for
     await expect(button).toBeVisible()
     await button.click()
     await expect(toast(page, `On deck for today: “${title}”`)).toBeVisible()
-    await expect.poll(() => deckOf(page, id)).toBe(calendarDay())
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))
     expect(await overdueIds(page)).not.toContain(id)
     const section = page.locator('[data-deck-section]')
     await expect(section.locator(`#task-row-${id}`)).toBeVisible()

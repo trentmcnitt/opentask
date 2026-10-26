@@ -9,8 +9,9 @@
  * queued and moves from "today" to "previous" the next morning.
  *
  * How to read a line (see `dayLine`): "deck" = on deck for today (the On
- * deck section, `onDeckToday`); "upcoming" = a future deck's (or a picked
- * target's) heads-up day; "queue_today queued" / "queue_previous queued" =
+ * deck section, `onDeckToday`); "tomorrow" / "later" = a future deck's (or a
+ * picked target's) Upcoming day, by section (2026-10-25: Tomorrow the day
+ * before, Later the lead's day); "queue_today queued" / "queue_previous queued" =
  * in the task queue's panels. A deck is quiet otherwise: no horizon segment,
  * no over target.
  */
@@ -127,7 +128,7 @@ export const onDeckScenarios: GoldenScenario[] = [
   {
     id: 'od-saturday',
     title: 'A Saturday deck made Monday: Upcoming Friday, on deck Saturday, Queued Sunday',
-    source: 'rule 5 (Upcoming heads-up, wait 5 → the day before); rule 4',
+    source: 'rule 5 (Upcoming heads-up, wait 5 → the day before: Tomorrow); rule 4',
     from: '2026-10-19',
     to: '2026-10-26',
     policy: ['never'],
@@ -136,7 +137,7 @@ export const onDeckScenarios: GoldenScenario[] = [
     events: [{ at: '2026-10-19T10:00', run: deck(['task'], '2026-10-24') }],
     expect: {
       task: {
-        '2026-10-23': 'upcoming',
+        '2026-10-23': 'tomorrow',
         '2026-10-24': 'deck',
         '2026-10-25': 'queue_today queued',
         '2026-10-26': 'queue_previous queued',
@@ -189,8 +190,8 @@ export const onDeckScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        // Picked Tue for Thu (wait 2): the day-before heads-up, Wed.
-        '2026-10-21': 'upcoming',
+        // Picked Tue for Thu (wait 2): Tomorrow on Wed.
+        '2026-10-21': 'tomorrow',
         '2026-10-22': 'over 1×',
         '2026-10-23': 'queue_today queued 1×',
       },
@@ -233,12 +234,11 @@ export const onDeckScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        // The deck's heads-up (wait 5 from Mon): the day before.
-        '2026-10-23': 'upcoming',
+        // Rule 3 (the Upcoming split, 2026-10-25, strict): a target-less
+        // deadline task is never in Upcoming — no deck row before its deck
+        // day, no heads-up before its lead day. The deck day itself is the On
+        // deck section's.
         '2026-10-24': 'deck',
-        // Then the lead day's heads-ups (wait 8 from Mon): Sat Oct 24 (carried
-        // over the deck day) and Mon Oct 26.
-        '2026-10-25..2026-10-26': 'upcoming',
         '2026-10-27..2026-10-28': 'deadlines',
         '2026-10-29..2026-10-31': 'deadlines net',
       },
@@ -280,11 +280,10 @@ export const onDeckScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        // The deadline restamped target_set_at (Tue): wait 2 → the day before.
-        '2026-10-21': 'upcoming',
+        // Rule 3 (2026-10-25, strict): with its deadline it is a target-less
+        // deadline task — no Upcoming row for its deck, none before its lead
+        // day. On deck on its deck day, then the page.
         '2026-10-22': 'deck',
-        // The lead day's heads-up (wait 7 from Tue): the day before.
-        '2026-10-26': 'upcoming',
         '2026-10-27..2026-10-28': 'deadlines',
       },
     },
@@ -319,8 +318,7 @@ export const onDeckScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        // The lead day's heads-up (wait 2 from Tue): the day before.
-        '2026-10-21': 'upcoming',
+        // Quiet until its lead day (rule 3, 2026-10-25: no heads-up before it).
         '2026-10-22..2026-10-25': 'deadlines net',
       },
     },

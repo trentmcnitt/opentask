@@ -6,7 +6,7 @@
  *  - the rule walks the DEADLINE (`occurrence_at` = `deadline_at`); the
  *    target is derived from it, `target_days_before` local days earlier at
  *    `target_time` (`occurrenceDates`), and never after it;
- *  - Upcoming's heads-ups count to the derived target from `target_set_at`
+ *  - Upcoming counts to the derived target from `target_set_at`
  *    (done and skip stamp it): the day before when the wait is 2+, and 3 or 4
  *    days before as well when it is over 7;
  *  - done and skip write the next occurrence's derived dates — a move never
@@ -121,9 +121,9 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Mon for Sun (wait 6): the day before.
-        '2026-10-10': 'upcoming',
+        '2026-10-10': 'tomorrow',
         // Done Sun 15:00 for the next Sunday (wait 7): Saturday only.
-        '2026-10-17': 'upcoming',
+        '2026-10-17': 'tomorrow',
         '2026-10-18': 'over 1×',
         '2026-10-19': 'over 2×',
         '2026-10-20': 'over 3×',
@@ -171,12 +171,12 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Wait 20 (Apr 10 → Fri Apr 30): 4 days before, and the day before.
-        '2027-04-26': 'upcoming',
-        '2027-04-29': 'upcoming',
+        '2027-04-26': 'later',
+        '2027-04-29': 'tomorrow',
         '2027-04-30': 'over 1×',
         // Done Fri Apr 30 → Fri Jun 4 (wait 35): May 31 and Jun 3.
-        '2027-05-31': 'upcoming',
-        '2027-06-03': 'upcoming',
+        '2027-05-31': 'later',
+        '2027-06-03': 'tomorrow',
         '2027-06-04': 'over 1×',
       },
     },
@@ -213,9 +213,9 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        '2027-03-06': 'upcoming',
+        '2027-03-06': 'tomorrow',
         '2027-03-07': 'over 1×',
-        '2027-03-13': 'upcoming',
+        '2027-03-13': 'tomorrow',
         '2027-03-14': 'over 1×',
       },
     },
@@ -252,9 +252,9 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        '2026-10-24': 'upcoming',
+        '2026-10-24': 'tomorrow',
         '2026-10-25': 'over 1×',
-        '2026-10-31': 'upcoming',
+        '2026-10-31': 'tomorrow',
         '2026-11-01': 'over 1×',
       },
     },
@@ -294,11 +294,11 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Mon for Fri 18:00 (wait 4): Thursday.
-        '2026-10-22': 'upcoming',
+        '2026-10-22': 'tomorrow',
         // Over at 18:00 (1×), moved at 19:00 to the deadline: quiet, 1× kept.
         '2026-10-23': 'quiet 1×',
         // Done Sat → Fri Oct 30 18:00 (wait 6): Thursday.
-        '2026-10-29': 'upcoming',
+        '2026-10-29': 'tomorrow',
         '2026-10-30': 'over 1×',
       },
     },
@@ -347,16 +347,16 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Tue Apr 20 for Fri Apr 30 (wait 10): 3 days before, the day before.
-        '2027-04-27': 'upcoming',
+        '2027-04-27': 'later',
         // Done the morning of the 29th: the heads-up is gone by 21:00.
         // Jun 4 (wait 36 from Apr 29): May 31 and Jun 3.
-        '2027-05-31': 'upcoming',
-        '2027-06-03': 'upcoming',
+        '2027-05-31': 'later',
+        '2027-06-03': 'tomorrow',
         '2027-06-04': 'over 1×',
         '2027-06-05': 'over 2×',
         // Jul 2 (wait 26 from Jun 6): Jun 28 and Jul 1.
-        '2027-06-28': 'upcoming',
-        '2027-07-01': 'upcoming',
+        '2027-06-28': 'later',
+        '2027-07-01': 'tomorrow',
         '2027-07-02': 'over 1×',
       },
     },
@@ -411,8 +411,8 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
       task: {
         // Skipped Tue before Thursday's heads-up; then Fri Nov 13 (wait 23
         // from Oct 21): 4 days before, the day before.
-        '2026-11-09': 'upcoming',
-        '2026-11-12': 'upcoming',
+        '2026-11-09': 'later',
+        '2026-11-12': 'tomorrow',
         '2026-11-13': 'over 1×',
       },
     },
@@ -447,7 +447,7 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Mon for Thu 18:00 (wait 3): Wednesday.
-        '2026-10-21': 'upcoming',
+        '2026-10-21': 'tomorrow',
         '2026-10-22': 'deck',
         // The derived target is back (already arrived): the badge counts from the restore.
         '2026-10-23': 'over 1×',
@@ -480,7 +480,7 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     ],
     expect: {
       task: {
-        '2026-10-21': 'upcoming',
+        '2026-10-21': 'tomorrow',
         '2026-10-22': 'over 1×',
         '2026-10-23': 'over 2×',
         '2026-10-24': 'over 3×',
@@ -524,7 +524,7 @@ export const repeatAnchorScenarios: GoldenScenario[] = [
     expect: {
       task: {
         // Made Mon for Wed 09:00 (wait 2): Tuesday.
-        '2026-10-20': 'upcoming',
+        '2026-10-20': 'tomorrow',
         '2026-10-21': 'over 1×',
       },
     },
