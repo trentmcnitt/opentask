@@ -34,3 +34,21 @@ let bulkSnoozeMaxPriority = 2
 func sweepDismissCeiling(_ result: APIClient.BulkSnoozeResult) -> Int {
     result.snoozedHigh > 0 && result.skippedHigh == 0 ? bulkSnoozeMaxPriority + 1 : bulkSnoozeMaxPriority
 }
+
+/// Whether a sweep that dismisses up to `ceiling` clears one delivered banner:
+/// the predicate of `dismissNotifications(atOrBelowPriority:)`.
+///
+/// - A named reminder banner (`REMINDER_NAG`, 2026-10-26) never goes. Its
+///   payload carries no `priority` (`buildReminderNagNotification` in
+///   `src/core/notifications/apns.ts`), so the plain rule would read it as P0
+///   and every sweep would clear it. But a reminder is not an overdue task and
+///   no sweep moves it, so its banner would vanish while it is still waiting.
+///   (Builds before this one do clear it; the reminder's next nag brings it
+///   back.)
+/// - Anything else: its `priority`, a missing one read as 0, at or below
+///   `ceiling`. Other banners without a priority (a period push, "AI
+///   finished", the deadlines nag) keep that reading, as before.
+func sweepClearsBanner(category: String, priority: Int?, ceiling: Int) -> Bool {
+    if category == NotificationCategory.reminderNag { return false }
+    return (priority ?? 0) <= ceiling
+}

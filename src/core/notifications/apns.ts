@@ -496,7 +496,9 @@ export interface ApnsReminderNagPayload {
  * - `data`: `taskId` (what the `dismiss` silent push matches, so considering
  *   it anywhere clears it) and `reminder_day`. NO `priority`, on purpose: a
  *   shipped build's sweep clears banners `atOrBelowPriority`, reading a
- *   missing priority as 0, so any sweep clears a reminder banner too.
+ *   missing priority as 0, so any sweep clears a reminder banner too. (From
+ *   PR 3 the native sweep skips `REMINDER_NAG` banners: `sweepClearsBanner`,
+ *   ios/Shared/SweepDismissal.swift.)
  * - No `badge`: a reminder is never in the badge.
  */
 export function buildReminderNagNotification(

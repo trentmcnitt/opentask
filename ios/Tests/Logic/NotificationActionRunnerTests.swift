@@ -12,6 +12,7 @@ final class NotificationActionRunnerTests: XCTestCase {
 
     private enum Call: Equatable {
         case markDone(Int)
+        case markDoneOnDay(Int, String?)
         case deleteTask(Int)
         case snoozeNextHour(Int)
         case snoozeTo(Int, String)
@@ -30,6 +31,8 @@ final class NotificationActionRunnerTests: XCTestCase {
             tasksAffected: 3, skippedOnPriority: 1, skippedHigh: 1, snoozedHigh: 0
         )
         var slotAffected = 2
+        /// The server's `considered` for a `done` with `day`.
+        var considered = true
 
         private func record(_ call: Call) throws {
             calls.append(call)
@@ -37,6 +40,10 @@ final class NotificationActionRunnerTests: XCTestCase {
         }
 
         func markDone(taskId: Int) async throws { try record(.markDone(taskId)) }
+        func markDone(taskId: Int, day: String?) async throws -> Bool {
+            try record(.markDoneOnDay(taskId, day))
+            return considered
+        }
         func deleteTask(taskId: Int) async throws { try record(.deleteTask(taskId)) }
         func snoozeNextHour(taskId: Int) async throws { try record(.snoozeNextHour(taskId)) }
         func snoozeTo(taskId: Int, dueAt: String) async throws { try record(.snoozeTo(taskId, dueAt)) }
@@ -290,6 +297,79 @@ final class NotificationActionRunnerTests: XCTestCase {
     func testOtherTasklessKindsStillSendNothing() async throws {
         let outcome = try await run("", .bodyTap, userInfo: ["kind": "deadline-cap"])
         XCTAssertEqual(outcome, .missingTaskId)
+    }
+
+    // MARK: - The named reminder push (REMINDER_NAG, 2026-10-26)
+
+    private let reminder = NotificationCategory.reminderNag
+    /// As `buildReminderNagNotification` sends it: no `priority`.
+    private let reminderInfo: [AnyHashable: Any] = ["taskId": 42, "reminder_day": "2026-01-15"]
+
+    func testReminderNagIdentifiers() {
+        XCTAssertEqual(NotificationCategory.reminderNag, "REMINDER_NAG")
+        XCTAssertEqual(ReminderNagKey.day, "reminder_day")
+    }
+
+    /// Considered is the DONE identifier, and sends the payload's day.
+    func testReminderConsideredSendsTheDay() async throws {
+        let outcome = try await run(reminder, .button(NotificationAction.done), userInfo: reminderInfo)
+        XCTAssertEqual(api.calls, [.markDoneOnDay(42, "2026-01-15")])
+        XCTAssertEqual(outcome, .reminderConsidered(taskId: 42, considered: true))
+        XCTAssertEqual(dismissed, [])
+    }
+
+    /// Another day's banner, or a reminder considered elsewhere: the server
+    /// changed nothing, and that is a success — no throw, nothing else sent.
+    func testReminderNotWaitingIsASuccess() async throws {
+        api.considered = false
+        let outcome = try await run(reminder, .button(NotificationAction.done), userInfo: reminderInfo)
+        XCTAssertEqual(api.calls, [.markDoneOnDay(42, "2026-01-15")])
+        XCTAssertEqual(outcome, .reminderConsidered(taskId: 42, considered: false))
+    }
+
+    /// A real failure still throws, as every other action's does.
+    func testReminderConsideredFailurePropagates() async {
+        api.shouldThrow = true
+        do {
+            _ = try await run(reminder, .button(NotificationAction.done), userInfo: reminderInfo)
+            XCTFail("expected the API error to propagate")
+        } catch {
+            XCTAssertTrue(error is StubError)
+        }
+        XCTAssertEqual(api.calls, [.markDoneOnDay(42, "2026-01-15")])
+    }
+
+    /// Without a day there is nothing safe to send: a plain done would
+    /// advance whatever occurrence is current.
+    func testReminderWithoutADaySendsNothing() async throws {
+        let outcome = try await run(reminder, .button(NotificationAction.done), userInfo: ["taskId": 42])
+        XCTAssertEqual(outcome, .ignored)
+        XCTAssertEqual(api.calls, [])
+    }
+
+    func testReminderBodyTapOpensTheTask() async throws {
+        let outcome = try await run(reminder, .bodyTap, userInfo: reminderInfo)
+        XCTAssertEqual(outcome, .openTask(taskId: 42))
+        XCTAssertEqual(api.calls, [])
+    }
+
+    /// No snooze, no sweep, no delete on a reminder banner, whatever arrives.
+    func testReminderIgnoresEveryOtherButton() async throws {
+        for id in [
+            NotificationAction.snooze1hr, NotificationAction.snoozeAll1hr, NotificationAction.snoozeAllSlotNext,
+            NotificationAction.delete, NotificationAction.completeAll,
+        ] {
+            let outcome = try await run(reminder, .button(id), userInfo: reminderInfo)
+            XCTAssertEqual(outcome, .ignored, id)
+        }
+        XCTAssertEqual(api.calls, [])
+        XCTAssertEqual(dismissed, [])
+    }
+
+    func testReminderWithoutATaskIdSendsNothing() async throws {
+        let outcome = try await run(reminder, .button(NotificationAction.done), userInfo: ["reminder_day": "2026-01-15"])
+        XCTAssertEqual(outcome, .missingTaskId)
+        XCTAssertEqual(api.calls, [])
     }
 
     func testUnknownButtonOnATaskSendsNothing() async throws {

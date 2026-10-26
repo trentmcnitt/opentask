@@ -17,6 +17,22 @@ enum NotificationCategory {
     /// Done and Delete. Not in the content extension's category list, so it
     /// gets the system's expanded view.
     static let taskAdded = "TASK_ADDED"
+    /// The named reminder push (2026-10-26, `buildReminderNagNotification` in
+    /// `src/core/notifications/apns.ts`): one Medium+ reminder by its own
+    /// title, thread `ot-reminders`, collapse id `reminder-<id>`. Its payload
+    /// carries `taskId` and `reminder_day` (`ReminderNagKey.day`) and NO
+    /// `priority`. One button, "Considered" (the `DONE` identifier, sending
+    /// the day). Not in the content extension's category list, so it gets the
+    /// system's expanded view.
+    static let reminderNag = "REMINDER_NAG"
+}
+
+/// Payload keys of a `REMINDER_NAG` push.
+enum ReminderNagKey {
+    /// The OpenTask date (yyyy-MM-dd) the reminder was waiting on. Sent back
+    /// as `day` by the Considered button, so a stale banner (yesterday's, or
+    /// a reminder already considered elsewhere) changes nothing.
+    static let day = "reminder_day"
 }
 
 enum NotificationAction {

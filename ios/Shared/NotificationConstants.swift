@@ -47,7 +47,7 @@ func slotSnoozeActions() -> [UNNotificationAction] {
 /// Register notification categories for the app.
 /// Called by both AppDelegate (iOS) and WatchAppDelegate (watchOS).
 ///
-/// Four categories:
+/// Five categories:
 /// - TASK_REMINDER: individual task (Done, +1hr, All +1hr, then one
 ///   All → <slot> action per cached time slot — see `slotSnoozeActions()`)
 /// - TASK_ADDED: the "AI finished" notification for a just-added task
@@ -63,6 +63,11 @@ func slotSnoozeActions() -> [UNNotificationAction] {
 ///   Slot-snooze actions are NOT added here — this category is about a
 ///   slot's own pending reminders, an unrelated §6 feature that happens to
 ///   share the word "slot".
+/// - REMINDER_NAG: the named push for one Medium+ reminder (2026-10-26).
+///   One action, "Considered" — the `DONE` identifier (identifiers are per
+///   category), which `NotificationActionRunner` sends as `done` with the
+///   payload's `reminder_day`. No snooze and no delete: a reminder is
+///   considered or left; the server's own nag cadence brings it back.
 func registerNotificationCategories() {
     let doneAction = UNNotificationAction(
         identifier: NotificationAction.done,
@@ -121,11 +126,25 @@ func registerNotificationCategories() {
         options: []
     )
 
+    let consideredAction = UNNotificationAction(
+        identifier: NotificationAction.done,
+        title: "Considered",
+        options: []
+    )
+
+    let reminderNagCategory = UNNotificationCategory(
+        identifier: NotificationCategory.reminderNag,
+        actions: [consideredAction],
+        intentIdentifiers: [],
+        options: []
+    )
+
     UNUserNotificationCenter.current().setNotificationCategories([
         taskReminderCategory,
         taskSummaryCategory,
         slotReminderCategory,
         taskAddedCategory,
+        reminderNagCategory,
     ])
 }
 
@@ -136,8 +155,12 @@ func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
     let notifications = await center.deliveredNotifications()
     let idsToRemove = notifications
         .filter { notification in
-            let p = notification.request.content.userInfo["priority"] as? Int ?? 0
-            return p <= maxPriority
+            let content = notification.request.content
+            return sweepClearsBanner(
+                category: content.categoryIdentifier,
+                priority: content.userInfo["priority"] as? Int,
+                ceiling: maxPriority
+            )
         }
         .map { $0.request.identifier }
 
@@ -150,6 +173,8 @@ func dismissNotifications(atOrBelowPriority maxPriority: Int) async {
 /// sweep actually moved. P0-P2 always; P3 (High) too when the sweep took the
 /// High tier (`sweepDismissCeiling`, in `SweepDismissal.swift`); P4 (Urgent)
 /// never, since it is never swept. A sweep that moved nothing clears nothing.
+/// A named reminder banner (`REMINDER_NAG`) never goes: a reminder is not an
+/// overdue task, and no sweep moves it (`sweepClearsBanner`).
 ///
 /// Every sweep path calls this — the notification actions on every device
 /// (through `NotificationActionRunner`, which the phone, Mac and Watch
