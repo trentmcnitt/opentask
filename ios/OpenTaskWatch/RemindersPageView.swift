@@ -511,7 +511,7 @@ private struct UpcomingSectionHeader: View {
 /// `EmptySegmentLine`): muted text, a green check.
 private struct NothingTodayLine: View {
     var body: some View {
-        (Text("Nothing today ") + Text(Image(systemName: "checkmark")).foregroundColor(WatchTheme.done))
+        (Text("Nothing today ") + Text(Image(systemName: "checkmark")).foregroundStyle(WatchTheme.done))
             .font(.footnote)
             .foregroundStyle(.secondary)
     }
