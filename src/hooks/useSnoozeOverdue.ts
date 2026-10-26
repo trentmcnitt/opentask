@@ -1,10 +1,10 @@
 /**
- * Shared hook for the "snooze all overdue" action.
+ * Shared hook for the Defer button ("snooze all overdue", or the selection).
  *
- * Used by the dashboard. Sends overdue task IDs to the bulk snooze endpoint
- * and shows a toast with results.
+ * Used by the dashboard. Sends overdue task IDs — or, with a selection, the
+ * selected ones — to the bulk snooze endpoint and shows a toast with results.
  *
- * P0-P2 are always eligible. P3 (High) joins in once nothing lower is left in
+ * Without a selection: P0-P2 are always eligible. P3 (High) joins in once nothing lower is left in
  * the batch, so a list of nothing but overdue High tasks takes two presses
  * rather than refusing to move — with the server's task queue on, one High per
  * press. P4 (Urgent) is never bulk-snoozed. The rule lives in
@@ -24,6 +24,10 @@ import { useDayStart, useDayStartKnown } from '@/components/PreferencesProvider'
 
 interface UseSnoozeOverdueOptions {
   displayTasks: Task[]
+  /** The selected task rows (reminders and quotas already left out). */
+  selectedTasks: Task[]
+  /** After a selection's defer succeeds — the dashboard clears the selection. */
+  onSelectedDone?: () => void
   fetchTasks: () => void
   handleUndo: () => void
   onUndoCountBump?: () => void
@@ -36,15 +40,32 @@ interface UseSnoozeOverdueOptions {
 }
 
 /**
- * Returns a callback that snoozes all overdue tasks from `displayTasks`.
+ * Returns the two presses of the Defer button (`SnoozeOverdueTrigger`):
  *
- * Sends all overdue task IDs to the server — the server handles priority
- * filtering (see the block comment above). The optional `until` parameter
- * allows the snooze-all trigger's long-press menu to override the default duration.
+ * - `snoozeOverdue(until?)` — no selection: every overdue task in
+ *   `displayTasks`. The server handles priority filtering (see the block
+ *   comment above).
+ * - `snoozeSelected(until?)` — a selection (Trent, 2026-10-26: "the bulk
+ *   snooze fab would have just applied to the selected items"): exactly
+ *   `selectedTasks`, overdue or not, at any priority. A selection is
+ *   deliberate, so the ids ride in `include_task_ids` too and High and Urgent
+ *   move like the rest; the deadline cap still applies. It is still a DEFER
+ *   (`source: 'sweep'`): the same button and the same "not now" gesture, so
+ *   with the task queue on a selected task lands and is marked exactly as
+ *   Defer all would have done — see docs/TASK-MODEL.md § Picks and defers.
+ *   `onSelectedDone` (the dashboard clears the selection) runs only once the
+ *   defer succeeded, so a failure leaves the selection to try again.
+ *
+ * Both resolve the destination the same way — the optional `until` from the
+ * long-press menu, else the next period or the default option per the
+ * bulk-snooze setting — into ONE absolute time, so a press is one request and
+ * one undo entry.
  */
 export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
   const {
     displayTasks,
+    selectedTasks,
+    onSelectedDone,
     fetchTasks,
     handleUndo,
     onUndoCountBump,
@@ -57,19 +78,10 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
   const dayStart = useDayStart()
   const dayKnown = useDayStartKnown()
 
-  return useCallback(
-    async (until?: string) => {
+  /** One defer request for `tasks`; resolves true when it went through. */
+  const snoozeTasks = useCallback(
+    async (tasks: Task[], until: string | undefined, selected: boolean): Promise<boolean> => {
       const now = new Date()
-      // THE overdue predicate (`isOverdue`), the one the trigger's badge
-      // counts `displayTasks` with — so a press sweeps exactly the number on
-      // the button. A quota is never late, so it is never swept.
-      const overdueTasks = displayTasks.filter((t) => isOverdue(t, now))
-
-      if (overdueTasks.length === 0) {
-        showToast({ message: `Nothing ${OVERDUE_LOWER}` })
-        return
-      }
-
       // A plain press goes to the NEXT PERIOD by default (Trent, 2026-09-22:
       // "I want the default bulk snooze... to default to next period"), with a
       // setting to flip back to the default snooze option. With no slots there
@@ -87,24 +99,28 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
         snoozeOptionNeedsDay(defaultSnoozeOption)
       ) {
         showToast({ message: 'One moment — loading your settings' })
-        return
+        return false
       }
       const snoozeUntil =
         until ??
         nextPeriod ??
         computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, dayStart, timeSlots)
+      const ids = tasks.map((t) => t.id)
 
       try {
         const res = await fetch('/api/tasks/bulk/snooze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ids: overdueTasks.map((t) => t.id),
+            ids,
             until: snoozeUntil,
-            // Snooze-all is a DEFER (task queue, docs/TASK-MODEL.md § Picks
-            // and defers): with the server switch on, one landing at or after
-            // the next rollover is marked for the Tasks queue. The only web
-            // caller that sends it — every other bulk/snooze is a pick.
+            // A selection is deliberate: every selected task moves, High and
+            // Urgent included — the multi-select edit's rule (`planQuickPanelSave`).
+            ...(selected ? { include_task_ids: ids } : {}),
+            // Defer is a DEFER (task queue, docs/TASK-MODEL.md § Picks and
+            // defers): with the server switch on, one landing at or after the
+            // next rollover is marked for the Tasks queue. This button is the
+            // only web caller that sends it — every other bulk/snooze is a pick.
             source: 'sweep',
           }),
         })
@@ -121,12 +137,13 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
           type: 'success',
           action: tasksAffected > 0 ? { label: 'Undo', onClick: handleUndo } : undefined,
         })
+        return true
       } catch {
         showToast({ message: 'Defer failed', type: 'error' })
+        return false
       }
     },
     [
-      displayTasks,
       fetchTasks,
       handleUndo,
       onUndoCountBump,
@@ -139,6 +156,33 @@ export function useSnoozeOverdue(options: UseSnoozeOverdueOptions) {
       dayKnown,
     ],
   )
+
+  const snoozeOverdue = useCallback(
+    async (until?: string) => {
+      // THE overdue predicate (`isOverdue`), the one the trigger's badge
+      // counts `displayTasks` with — so a press sweeps exactly the number on
+      // the button. A quota is never late, so it is never swept.
+      const overdueTasks = displayTasks.filter((t) => isOverdue(t, new Date()))
+      if (overdueTasks.length === 0) {
+        showToast({ message: `Nothing ${OVERDUE_LOWER}` })
+        return
+      }
+      await snoozeTasks(overdueTasks, until, false)
+    },
+    [displayTasks, snoozeTasks],
+  )
+
+  const snoozeSelected = useCallback(
+    async (until?: string) => {
+      // Task rows only: the dashboard resolves the selection against
+      // `visibleTasks`, so a reminder or a quota never reaches this.
+      if (selectedTasks.length === 0) return
+      if (await snoozeTasks(selectedTasks, until, true)) onSelectedDone?.()
+    },
+    [selectedTasks, snoozeTasks, onSelectedDone],
+  )
+
+  return { snoozeOverdue, snoozeSelected }
 }
 
 /** The bulk snooze response fields the toast reads. */
