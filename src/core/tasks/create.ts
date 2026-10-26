@@ -74,6 +74,15 @@ export interface CreateTaskOptions {
   userId: number
   userTimezone: string
   input: TaskCreateInput
+  /**
+   * `false`: never queue AI enrichment for this row (no `ai-to-process`),
+   * whatever the server's AI setting and the input's shape. For the seed
+   * scripts (`seedTasks` in scripts/seed-utils.ts): their invented data is
+   * final as written, and a title-only seed row would otherwise be rewritten
+   * by the server's enrichment cron. Not on the wire. Default: enrichment
+   * runs as it always has.
+   */
+  enrichment?: boolean
 }
 
 /**
@@ -119,6 +128,19 @@ function enrichmentWillRun(userId: number, input: TaskCreateInput): boolean {
 }
 
 /**
+ * Does the new row get `ai-to-process` (createTask)? AI on, the caller has not
+ * opted out (`enrichment: false`, the seeds), and title-only or `enrich`.
+ */
+function queuesEnrichment(
+  options: CreateTaskOptions,
+  isTitleOnly: boolean,
+  input: TaskCreateInput,
+): boolean {
+  if (options.enrichment === false || !isAIEnabled()) return false
+  return isTitleOnly || input.enrich === true
+}
+
+/**
  * A QUOTA FROM WORDS (quota enrichment, 2026-10-24; plan APPROVED 10-22): a
  * caller that declares a quota with no rule — an Apple Shortcut POSTing
  * `{title: "eggs twice a week", is_tracked: true}` — gets it at once with the
@@ -129,13 +151,17 @@ function enrichmentWillRun(userId: number, input: TaskCreateInput): boolean {
  * worse than an error, so the 400 stays — saying how to avoid it. An explicit
  * `rrule: null` is not "unsaid": it is refused as before (`assertQuotaShape`).
  */
-function withProvisionalQuotaRule(userId: number, input: TaskCreateInput): TaskCreateInput {
+function withProvisionalQuotaRule(
+  userId: number,
+  input: TaskCreateInput,
+  enrichment: boolean,
+): TaskCreateInput {
   const tracked = isTracked({
     is_tracked: input.is_tracked ?? false,
     progress_target: input.progress_target ?? 1,
   })
   if (!tracked || input.rrule !== undefined) return input
-  if (!enrichmentWillRun(userId, input)) {
+  if (!enrichment || !enrichmentWillRun(userId, input)) {
     throw new ValidationError(
       `${QUOTA_PERIOD_MESSAGE}, or turn on AI enrichment to have the period read from the title`,
     )
@@ -434,7 +460,7 @@ export function createTask(options: CreateTaskOptions): Task {
   // creator's own periods — the creator is the owner).
   const linked = linkTargetTime(userId, options.input)
   // A quota declared with no rule gets its provisional period (2026-10-24).
-  const input = withProvisionalQuotaRule(userId, linked.input)
+  const input = withProvisionalQuotaRule(userId, linked.input, options.enrichment !== false)
 
   // Get user's inbox project if no project_id specified
   let projectId = input.project_id
@@ -532,7 +558,7 @@ export function createTask(options: CreateTaskOptions): Task {
   // need it for the schedule it sent; it now sends only the title and the
   // server's default slot does not count against title-only, but it still
   // sets `enrich` — harmless, and explicit about intent.)
-  if (isAIEnabled() && (isTitleOnly || input.enrich === true)) {
+  if (queuesEnrichment(options, isTitleOnly, input)) {
     taskLabels.push('ai-to-process')
   }
   const labelsJson = JSON.stringify(taskLabels)

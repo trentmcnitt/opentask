@@ -15,9 +15,8 @@ import { seedSystemLabels } from '../src/core/labels'
 import { seedDefaultTimeSlots } from '../src/core/time-slots'
 import { getDb, closeDb } from '../src/core/db'
 import { hashToken, tokenPreview } from '../src/core/auth/token-hash'
-import { deriveAnchorFields } from '../src/core/recurrence/anchor-derivation'
 import { RRulePatterns, parseRRule } from '../src/core/recurrence/rrule-builder'
-import { localToUtcIso, daysUntilWeekday } from './seed-utils'
+import { localToUtcIso, daysUntilWeekday, seedTasks, type SeedTaskRow } from './seed-utils'
 
 const TIMEZONE = 'America/Chicago'
 const SALT_ROUNDS = 10
@@ -242,35 +241,12 @@ function getDevTasks(): DevTaskDef[] {
   return [...OVERDUE, ...UPCOMING, ...RECURRING, ...NO_DUE, ...COMPLETED, ...TRASHED]
 }
 
-function seedDevTasks(
-  db: ReturnType<typeof getDb>,
-  userId: number,
-  projectMap: ProjectMap,
-): number {
-  const insertTask = db.prepare(`
-    INSERT INTO tasks (
-      user_id, project_id, title, done, done_at, priority, due_at,
-      rrule, anchor_time, anchor_dow, anchor_dom,
-      original_due_at, deleted_at, archived_at, labels, notes,
-      completion_count, snooze_count, first_completed_at, last_completed_at,
-      created_at, updated_at
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?
-    )
-  `)
-
+function seedDevTasks(userId: number, projectMap: ProjectMap): number {
   const now = DateTime.utc().toISO()!
   const tasks = getDevTasks()
 
-  for (const task of tasks) {
-    const priority = task.priority ?? UNSET
-    const notes = task.notes ?? null
-    const labels = JSON.stringify(task.labels ?? [])
-
+  // Through createTask (`seedTasks`, scripts/seed-utils.ts), then aged.
+  const rows: SeedTaskRow[] = tasks.map((task) => {
     // Due date computation
     let dueAt: string | null = null
     if (!task.noDue) {
@@ -284,41 +260,27 @@ function seedDevTasks(
       }
       dueAt = localToUtcIso(offset, h, m)
     }
-
-    const anchors = deriveAnchorFields(task.rrule ?? null, dueAt, TIMEZONE)
-
-    const done = task.done ? 1 : 0
-    const doneAt = task.done ? dueAt : null
-    const archivedAt = task.done ? dueAt : null
-    const deletedAt = task.trashed ? now : null
-    const createdAt = localToUtcIso(-(task.createdDaysAgo ?? 5), 10, 0)
-
-    insertTask.run(
-      userId,
-      projectMap[task.project],
-      task.title,
-      done,
-      doneAt,
-      priority,
-      dueAt,
-      task.rrule ?? null,
-      anchors.anchor_time,
-      anchors.anchor_dow,
-      anchors.anchor_dom,
-      dueAt, // original_due_at
-      deletedAt,
-      archivedAt,
-      labels,
-      notes,
-      0, // completion_count
-      0, // snooze_count
-      null, // first_completed_at
-      null, // last_completed_at
-      createdAt,
-      now,
-    )
-  }
-
+    return {
+      input: {
+        title: task.title,
+        project_id: projectMap[task.project],
+        priority: task.priority ?? UNSET,
+        due_at: dueAt,
+        rrule: task.rrule ?? null,
+        labels: task.labels ?? [],
+        // The dev labels are not in a new user's registry: registered as the
+        // tasks are made (the raw rows waited for the startup backfill).
+        create_label: true,
+        notes: task.notes ?? null,
+      },
+      createdAt: localToUtcIso(-(task.createdDaysAgo ?? 5), 10, 0),
+      updatedAt: now,
+      doneAt: task.done ? dueAt : null,
+      archivedAt: task.done ? dueAt : null,
+      deletedAt: task.trashed ? now : null,
+    }
+  })
+  seedTasks(userId, TIMEZONE, rows)
   return tasks.length
 }
 
@@ -341,6 +303,18 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
+  await seedDevUser(db)
+  closeDb()
+  console.log(`\nDev seed complete! Login with username "dev", password "dev".`)
+}
+
+/**
+ * The dev user and everything it owns, into the open database (`getDb()`).
+ * Exported for the seed guard test (tests/behavioral/seed-occurrence-guard.test.ts).
+ *
+ * @returns The user's ID
+ */
+export async function seedDevUser(db: ReturnType<typeof getDb>): Promise<number> {
   // Create dev user
   const passwordHash = await bcrypt.hash('dev', SALT_ROUNDS)
   const userResult = db
@@ -386,14 +360,18 @@ async function main(): Promise<void> {
   console.log(`  API token created`)
 
   // Seed tasks
-  const count = seedDevTasks(db, userId, projectMap)
+  const count = seedDevTasks(userId, projectMap)
   console.log(`  Inserted ${count} tasks`)
-
-  closeDb()
-  console.log(`\nDev seed complete! Login with username "dev", password "dev".`)
+  return userId
 }
 
-main().catch((err) => {
-  console.error('Dev seed failed:', err)
-  process.exit(1)
-})
+// Only run main() when executed directly (not when imported by the seed guard
+// test, tests/behavioral/seed-occurrence-guard.test.ts).
+const isDirectRun =
+  process.argv[1]?.endsWith('seed-dev.ts') || process.argv[1]?.endsWith('seed-dev.js')
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error('Dev seed failed:', err)
+    process.exit(1)
+  })
+}
