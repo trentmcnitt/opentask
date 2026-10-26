@@ -1467,10 +1467,16 @@ export type AdvanceTask = Parameters<typeof scheduleBase>[0] & RepeatEndFields
 /**
  * WHERE A ONE-OCCURRENCE ADVANCE LANDS, end-blind: the rule's next occurrence
  * after the scheduled one (`scheduleBase`), counted from `completedAt` when
- * that is later (a from_completion rule: from `completedAt`). Done, skip,
- * the defer cap and the snooze guard all ask this — through `nextOrEnd`.
+ * that is later (a from_completion rule: from `completedAt`'s OpenTask date,
+ * so `dayStart` — the owner's day boundary, `dayBoundaryForUser`). Done,
+ * skip, the defer cap and the snooze guard all ask this — through `nextOrEnd`.
  */
-export function nextLanding(task: AdvanceTask, timezone: string, completedAt: Date): string {
+export function nextLanding(
+  task: AdvanceTask,
+  timezone: string,
+  completedAt: Date,
+  dayStart: string,
+): string {
   const prev = scheduleBase(task, timezone)
   return computeNextOccurrence({
     rrule: task.rrule!,
@@ -1478,6 +1484,7 @@ export function nextLanding(task: AdvanceTask, timezone: string, completedAt: Da
     anchorTime: task.anchor_time,
     timezone,
     completedAt,
+    dayStart,
     prevDueAt: prev ? new Date(prev) : null,
     // A floating rule's grid (every N, or bare) runs from the task's own occurrence.
     anchorAt: prev ? new Date(prev) : null,
@@ -1491,12 +1498,13 @@ export function nextLanding(task: AdvanceTask, timezone: string, completedAt: Da
 export function nextOrEnd(
   task: AdvanceTask,
   timezone: string,
-  opts: { completedAt: Date; closes?: number },
+  /** `dayStart`: the owner's day boundary (`nextLanding`). */
+  opts: { completedAt: Date; closes?: number; dayStart: string },
 ): RepeatStep {
   const end = repeatEndOf(task)
   const closes = opts.closes ?? 1
   const countEnds = end.repeat_count !== null && end.repeat_count_used + closes >= end.repeat_count
-  const landing = countEnds ? null : nextLanding(task, timezone, opts.completedAt)
+  const landing = countEnds ? null : nextLanding(task, timezone, opts.completedAt, opts.dayStart)
   return repeatStep(end, landing, closes, timezone)
 }
 
@@ -1515,6 +1523,8 @@ export function isLastOccurrence(
   task: AdvanceTask & { done?: boolean; archived_at?: string | null },
   timezone: string,
   now: Date,
+  /** The owner's day boundary: a from_completion rule counts from now's OpenTask date. */
+  dayStart: string,
 ): boolean {
   if (!task.rrule || task.done || task.archived_at || !hasRepeatEnd(task)) return false
   const end = repeatEndOf(task)
@@ -1522,7 +1532,7 @@ export function isLastOccurrence(
   const occurrence = task.occurrence_at ?? task.due_at
   const at = occurrence && Date.parse(occurrence) > now.getTime() ? new Date(occurrence) : now
   try {
-    return nextOrEnd(task, timezone, { completedAt: at }).ended
+    return nextOrEnd(task, timezone, { completedAt: at, dayStart }).ended
   } catch {
     // A rule with no next occurrence: this one is the last there is.
     return true
@@ -1571,6 +1581,15 @@ export interface RepeatRule {
 /**
  * The occurrence after `from` on the task's rule, `from` being one of its own
  * occurrences (a from_completion rule: as if done at `from`).
+ *
+ * A STEP FROM AN OCCURRENCE, not from a completion: a from_completion rule
+ * steps the occurrence's OWN date (`CALENDAR_DAY_START`), never a user's day.
+ * For an occurrence at the rule's time this is the same answer under every
+ * day start (Done counts from the OpenTask date and places the rule's time
+ * back inside the landing day, `computeFromCompletion` — the occurrence's
+ * OpenTask date maps back to its own date), so the deadline walk and
+ * everything built on it (the relative-target checks, the rule's wait) need
+ * no user's day.
  */
 function followingOccurrence(rule: RepeatRule, from: Date, timezone: string): Date {
   return computeNextOccurrence({
@@ -1579,6 +1598,7 @@ function followingOccurrence(rule: RepeatRule, from: Date, timezone: string): Da
     anchorTime: rule.anchor_time,
     timezone,
     completedAt: from,
+    dayStart: CALENDAR_DAY_START,
     prevDueAt: from,
     anchorAt: from,
   })

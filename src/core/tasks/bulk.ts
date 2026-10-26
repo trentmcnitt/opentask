@@ -176,6 +176,8 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
 
   const completedAt = new Date()
   const nowStr = nowUtc()
+  // A from_completion repeat counts from the completion's OpenTask date.
+  const dayStart = dayBoundaryForUser(userId)
 
   // Validate all tasks exist and user has access before starting transaction (BO-002: atomic)
   const validated =
@@ -212,7 +214,7 @@ export function bulkDone(options: BulkDoneOptions): BulkDoneResult {
   const result = withTransaction((tx) => {
     for (const task of tasks) {
       // Compute state changes using shared helper
-      const computation = computeMarkDone(task, userTimezone, completedAt, nowStr, () =>
+      const computation = computeMarkDone(task, userTimezone, completedAt, nowStr, dayStart, () =>
         rolloverTimeForUser(task.user_id),
       )
       computation.fieldsChanged.forEach((f) => fieldsChanged.add(f))
@@ -597,6 +599,12 @@ interface DeferContext {
   source: BulkSnoozeSource | undefined
   timezone: string
   now: Date
+  /**
+   * The user's day boundary (`dayBoundaryForUser`): the occurrence cap asks
+   * where a skip would land, and a from_completion rule counts from now's
+   * OpenTask date.
+   */
+  dayStart: string
   /** The next rollover moment (`nextRollover`), when a defer or Try Tomorrow needs it. */
   rollover: Date | null
 }
@@ -608,14 +616,15 @@ function deferContext(
   now: Date,
 ): DeferContext {
   const defer = taskQueueEnabled() && source !== undefined
+  const dayStart = dayBoundaryForUser(userId)
   if (!defer && source !== 'try_tomorrow') {
-    return { defer, source, timezone, now, rollover: null }
+    return { defer, source, timezone, now, dayStart, rollover: null }
   }
   // The rollover is the user's "Day starts at" (unset: 3:00 AM). Read here
   // rather than passed in,
   // so every caller gets the same answer.
   const rollover = nextRollover(now, timezone, rolloverTimeForUser(userId))
-  return { defer, source, timezone, now, rollover }
+  return { defer, source, timezone, now, dayStart, rollover }
 }
 
 /** Where one task lands, and what the landing says about it. */
@@ -664,7 +673,7 @@ function planLanding(task: Task, landing: string, ctx: DeferContext): Landing {
     }
   }
   if (belowHigh && isRecurring(task.rrule)) {
-    const next = nextOccurrenceOf(task, ctx.timezone, ctx.now)
+    const next = nextOccurrenceOf(task, ctx.timezone, ctx.now, ctx.dayStart)
     if (next && Date.parse(landing) > Date.parse(next)) {
       return { ...plain, dueAt: next, cappedOccurrence: true }
     }
@@ -680,11 +689,16 @@ function planLanding(task: Task, landing: string, ctx: DeferContext): Landing {
  * whose cap, with the lead shorter than the gap, always binds first). Null
  * when the current occurrence is the series' last (repeat ends).
  */
-function nextOccurrenceOf(task: Task, timezone: string, now: Date): string | null {
+function nextOccurrenceOf(
+  task: Task,
+  timezone: string,
+  now: Date,
+  dayStart: string,
+): string | null {
   if (!task.rrule) return null
   // Repeat ends (2026-10-22): on the last occurrence there is no next one,
   // so there is no cap (`nextOccurrenceAfterSkip` → null).
-  const next = nextOccurrenceAfterSkip(task, timezone, now)
+  const next = nextOccurrenceAfterSkip(task, timezone, now, dayStart)
   return next ? occurrenceDates(task, next, timezone).targetAt : null
 }
 

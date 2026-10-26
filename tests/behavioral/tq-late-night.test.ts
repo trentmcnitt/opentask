@@ -21,9 +21,17 @@
  * The scan guards (TQ-G01..G04, tq-day-guard.test.ts) catch the way a day is
  * worked out; this catches what it comes to, through any helper.
  */
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
+import { computeNextOccurrence } from '@/core/recurrence'
+import { getDb } from '@/core/db'
+import { createTask, markDone } from '@/core/tasks'
+import { getTaskById } from '@/core/tasks/read'
+import { skipOccurrence } from '@/core/tasks/skip'
+
+import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
+import { setupTestDb, teardownTestDb, TEST_USER_ID } from '../helpers/setup'
 import { draftFromTask, type EveryTimeContext, type EveryTimeTask } from '@/lib/every-time'
 import { pinUnnamedDay, resolveDeckDay } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
@@ -31,7 +39,7 @@ import { computeFirstOccurrence } from '@/core/recurrence/compute-next'
 import { deckMenuDays } from '@/lib/deck-menu'
 import { formatQuickSelectHeader, getDayLabel } from '@/lib/quick-select-dates'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
-import { parseUntil, planSkipUntil } from '@/core/tasks/skip-until'
+import { parseUntil, planSkipUntil, skipUntil } from '@/core/tasks/skip-until'
 import { skipUntilFirstDay } from '@/lib/task-segments'
 import { repeatEndProblem } from '@/core/tasks/repeat-schedule'
 import { deadlineChip } from '@/lib/deadline-chip'
@@ -577,5 +585,198 @@ describe('TQ-LN: a day start after noon (11 PM)', () => {
     expect(first('FREQ=DAILY;INTERVAL=3', sunNight, CALENDAR_DAY_START)).toBe(
       iso('2026-10-28T00:00'),
     )
+  })
+})
+
+/**
+ * TQ-LN21–26: A REPEAT COUNTED FROM COMPLETION COUNTS FROM THE OPENTASK DAY
+ * (Trent, 2026-10-26). Done at 00:30 Monday with a 3:00 AM day start is
+ * Sunday's Done, exactly as at 23:30 Sunday: "every 2 days at 09:00" lands
+ * Tuesday 09:00 either way (main: Wednesday from 00:30). The engine
+ * (`computeFromCompletion`) drives Done, skipping one occurrence and the
+ * skip-until floor, so all three are pinned here through the real core. The
+ * base is the completion's OpenTask date (`openTaskDayOf`), the interval is
+ * calendar maths on it, and the rule's time is placed inside the landing
+ * OpenTask day (`periodOpensOnDate`, skip until's rule). With midnight (the
+ * switch off) every answer is main's — TQ-LN25 checks it against main's
+ * formula over a sweep.
+ */
+const EVERY_2_DAYS_9 = 'FREQ=DAILY;INTERVAL=2;BYHOUR=9;BYMINUTE=0'
+const SUN_2330 = '2026-10-25T23:30'
+const MON_0030 = '2026-10-26T00:30'
+
+/** The engine's from-completion answer, as a Chicago wall-clock string. */
+function fromCompletion(rrule: string, done: string, dayStart: string, zone = TZ): string {
+  const next = computeNextOccurrence({
+    rrule,
+    recurrenceMode: 'from_completion',
+    anchorTime: null,
+    timezone: zone,
+    completedAt: DateTime.fromISO(done, { zone }).toJSDate(),
+    dayStart,
+  })
+  return DateTime.fromJSDate(next).setZone(zone).toFormat("yyyy-MM-dd'T'HH:mm")
+}
+
+describe('TQ-LN: from-completion repeats count from the OpenTask day (real core)', () => {
+  const u = { userId: TEST_USER_ID, userTimezone: TZ }
+
+  /** A from-completion repeat whose current occurrence was Sun 09:00 (over target). */
+  function overdueRepeat(rrule = EVERY_2_DAYS_9): number {
+    const t = createTask({ ...u, input: { title: 'Water the ferns', rrule } })
+    const sunNine = iso('2026-10-25T09:00')
+    getDb()
+      .prepare(
+        "UPDATE tasks SET recurrence_mode = 'from_completion', occurrence_at = ?, due_at = ?, original_due_at = ? WHERE id = ?",
+      )
+      .run(sunNine, sunNine, sunNine, t.id)
+    return t.id
+  }
+
+  const occurrence = (id: number) => getTaskById(id)!.occurrence_at
+
+  /** Each of the three ways the engine runs, at `now` (wall clock), on a fresh database. */
+  function runAt(now: string, act: (id: number) => void): string | null {
+    vi.setSystemTime(local(now))
+    setupTestDb()
+    try {
+      const id = overdueRepeat()
+      act(id)
+      return occurrence(id)
+    } finally {
+      teardownTestDb()
+    }
+  }
+
+  const done = (id: number) => markDone({ ...u, taskId: id })
+  const skipOne = (id: number) => skipOccurrence({ ...u, taskId: id })
+  const skipUntilTue = (id: number) => skipUntil({ ...u, taskIds: [id], until: '2026-10-27' })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  test('TQ-LN21: Done — 00:30 Mon lands Tue 09:00, as 23:30 Sun does (main: Wed 09:00)', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    expect(openTaskDayOf(local(MON_0030), TZ, DAY_START)).toBe('2026-10-25')
+    expect(runAt(SUN_2330, done)).toBe(iso('2026-10-27T09:00'))
+    expect(runAt(MON_0030, done)).toBe(iso('2026-10-27T09:00'))
+  })
+
+  test('TQ-LN22: skip one occurrence — the same Tue 09:00 from both instants', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    expect(runAt(SUN_2330, skipOne)).toBe(iso('2026-10-27T09:00'))
+    expect(runAt(MON_0030, skipOne)).toBe(iso('2026-10-27T09:00'))
+  })
+
+  test('TQ-LN23: skip until Tue — lands Tue 27 09:00 from both instants (main: Wed 28 from 00:30, the floor)', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
+    expect(runAt(SUN_2330, skipUntilTue)).toBe(iso('2026-10-27T09:00'))
+    expect(runAt(MON_0030, skipUntilTue)).toBe(iso('2026-10-27T09:00'))
+  })
+
+  test('TQ-LN24: the switch off — the day turns at midnight, and every answer is main’s', () => {
+    vi.stubEnv('OPENTASK_TASK_QUEUE', '')
+    expect(dayBoundaryForUser(TEST_USER_ID)).toBe(CALENDAR_DAY_START)
+    // 23:30 Sunday: Tuesday, as before.
+    expect(runAt(SUN_2330, done)).toBe(iso('2026-10-27T09:00'))
+    expect(runAt(SUN_2330, skipOne)).toBe(iso('2026-10-27T09:00'))
+    expect(runAt(SUN_2330, skipUntilTue)).toBe(iso('2026-10-27T09:00'))
+    // 00:30 Monday is Monday: Wednesday, exactly main's answers.
+    expect(runAt(MON_0030, done)).toBe(iso('2026-10-28T09:00'))
+    expect(runAt(MON_0030, skipOne)).toBe(iso('2026-10-28T09:00'))
+    expect(runAt(MON_0030, skipUntilTue)).toBe(iso('2026-10-28T09:00'))
+  })
+})
+
+describe('TQ-LN: from-completion repeats count from the OpenTask day (the engine)', () => {
+  test('TQ-LN25: weekly and monthly — the base is the OpenTask date', () => {
+    const weekly = 'FREQ=WEEKLY;BYHOUR=9;BYMINUTE=0'
+    expect(fromCompletion(weekly, MON_0030, DAY_START)).toBe('2026-11-01T09:00')
+    expect(fromCompletion(weekly, SUN_2330, DAY_START)).toBe('2026-11-01T09:00')
+    expect(fromCompletion(weekly, MON_0030, CALENDAR_DAY_START)).toBe('2026-11-02T09:00')
+    // Monthly from Sat Oct 31 (Sun Nov 1 00:30 is still Saturday's): Nov 30,
+    // the month's last day as Luxon clamps it — main from 00:30: Dec 1.
+    const monthly = 'FREQ=MONTHLY;BYHOUR=9;BYMINUTE=0'
+    expect(fromCompletion(monthly, '2026-11-01T00:30', DAY_START)).toBe('2026-11-30T09:00')
+    expect(fromCompletion(monthly, '2026-10-31T23:30', DAY_START)).toBe('2026-11-30T09:00')
+    expect(fromCompletion(monthly, '2026-11-01T00:30', CALENDAR_DAY_START)).toBe('2026-12-01T09:00')
+  })
+
+  test('TQ-LN26: the rule’s time sits inside the landing OpenTask day — a 1:00 AM rule is that day’s end', () => {
+    // With 3:00 AM, Tuesday's 1:00 AM is Wed 01:00 (skip until's landing rule,
+    // `periodOpensOnDate`): two OpenTask days after Sunday, at either instant
+    // and at any hour of Sunday's day. Main: Tue 01:00 — Monday's night.
+    const oneAm = 'FREQ=DAILY;INTERVAL=2;BYHOUR=1;BYMINUTE=0'
+    for (const done of [MON_0030, SUN_2330, '2026-10-25T10:00']) {
+      expect(fromCompletion(oneAm, done, DAY_START)).toBe('2026-10-28T01:00')
+    }
+    expect(fromCompletion(oneAm, '2026-10-25T10:00', CALENDAR_DAY_START)).toBe('2026-10-27T01:00')
+  })
+
+  test('TQ-LN27: a day start after noon (11 PM) — Sun 23:30 is Monday’s, so every 2 days is Wednesday', () => {
+    expect(openTaskDayOf(local(SUN_2330), TZ, LATE_START)).toBe('2026-10-26')
+    expect(fromCompletion(EVERY_2_DAYS_9, SUN_2330, LATE_START)).toBe('2026-10-28T09:00')
+    // Monday's day runs Sun 23:00 → Mon 23:00: Mon 22:30 is the same day.
+    expect(fromCompletion(EVERY_2_DAYS_9, '2026-10-26T22:30', LATE_START)).toBe('2026-10-28T09:00')
+    // Sun 22:30 is still Sunday's: Tuesday.
+    expect(fromCompletion(EVERY_2_DAYS_9, '2026-10-25T22:30', LATE_START)).toBe('2026-10-27T09:00')
+    // A 23:30 rule inside Wednesday's day (Tue 23:00 → Wed 23:00) is Tue 23:30.
+    const lateRule = 'FREQ=DAILY;INTERVAL=2;BYHOUR=23;BYMINUTE=30'
+    expect(fromCompletion(lateRule, SUN_2330, LATE_START)).toBe('2026-10-27T23:30')
+    // Main (midnight): Tuesday for both rules.
+    expect(fromCompletion(EVERY_2_DAYS_9, SUN_2330, CALENDAR_DAY_START)).toBe('2026-10-27T09:00')
+    expect(fromCompletion(lateRule, SUN_2330, CALENDAR_DAY_START)).toBe('2026-10-27T23:30')
+  })
+
+  test('TQ-LN28: with midnight every answer is main’s formula — a sweep over DST nights and month ends', () => {
+    // Main's from-completion step, verbatim: the completion moved by the
+    // interval, then set to the rule's time.
+    const main = (rrule: string, completedAt: Date, zone: string, hour: number, minute: number) => {
+      const dt = DateTime.fromJSDate(completedAt).setZone(zone)
+      const interval = Number(/INTERVAL=(\d+)/.exec(rrule)?.[1] ?? 1)
+      const freq = /FREQ=(\w+)/.exec(rrule)![1]
+      const unit = { DAILY: 'days', WEEKLY: 'weeks', MONTHLY: 'months', YEARLY: 'years' }[freq]!
+      return dt
+        .plus({ [unit]: interval })
+        .set({ hour, minute, second: 0, millisecond: 0 })
+        .toJSDate()
+        .toISOString()
+    }
+    const rules: [string, number, number][] = [
+      ['FREQ=DAILY;INTERVAL=2;BYHOUR=9;BYMINUTE=0', 9, 0],
+      ['FREQ=DAILY;BYHOUR=2;BYMINUTE=30', 2, 30], // the spring-forward gap
+      ['FREQ=DAILY;BYHOUR=1;BYMINUTE=30', 1, 30], // the fall-back repeat
+      ['FREQ=WEEKLY;INTERVAL=2;BYHOUR=23;BYMINUTE=45', 23, 45],
+      ['FREQ=MONTHLY;BYHOUR=0;BYMINUTE=15', 0, 15],
+      ['FREQ=YEARLY;BYHOUR=7;BYMINUTE=0', 7, 0],
+    ]
+    const zones = [TZ, 'Australia/Lord_Howe', 'Asia/Kolkata']
+    // Around the US spring-forward (Mar 8) and fall-back (Nov 1) nights, Lord
+    // Howe's half-hour change (Oct 4) and a month end with a leap day.
+    const windows = ['2026-03-06', '2026-10-02', '2026-10-30', '2028-02-27']
+    let checked = 0
+    for (const zone of zones) {
+      for (const start of windows) {
+        const from = DateTime.fromISO(start, { zone })
+        for (let m = 0; m < 4 * 24 * 60; m += 45) {
+          const completedAt = from.plus({ minutes: m }).toJSDate()
+          for (const [rrule, hour, minute] of rules) {
+            const engine = computeNextOccurrence({
+              rrule,
+              recurrenceMode: 'from_completion',
+              anchorTime: null,
+              timezone: zone,
+              completedAt,
+              dayStart: CALENDAR_DAY_START,
+            }).toISOString()
+            expect(engine).toBe(main(rrule, completedAt, zone, hour, minute))
+            checked++
+          }
+        }
+      }
+    }
+    expect(checked).toBe(3 * 4 * 128 * rules.length)
   })
 })

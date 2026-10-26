@@ -385,6 +385,7 @@ describe('from_completion mode', () => {
       anchorTime: '09:00',
       timezone: TIMEZONE,
       completedAt,
+      dayStart: CALENDAR_DAY_START,
     })
 
     const nextLocal = getLocalTime(next)
@@ -407,6 +408,7 @@ describe('from_completion mode', () => {
       anchorTime: '10:00',
       timezone: TIMEZONE,
       completedAt,
+      dayStart: CALENDAR_DAY_START,
     })
 
     const nextLocal = getLocalTime(next)
@@ -818,6 +820,7 @@ describe('RD-014: prevDueAt advances past early completion', () => {
       anchorTime: '09:00',
       timezone: TIMEZONE,
       completedAt,
+      dayStart: CALENDAR_DAY_START,
       prevDueAt,
     })
 

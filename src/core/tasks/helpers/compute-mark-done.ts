@@ -94,6 +94,11 @@ export function computeMarkDone(
   userTimezone: string,
   completedAt: Date,
   nowStr: string,
+  /**
+   * The user's day boundary (`dayBoundaryForUser`): a from_completion repeat
+   * counts from the completion's OpenTask date (`computeFromCompletion`).
+   */
+  dayStart: string,
   /** The owner's rollover time, read only for a target-less deadline-anchored repeat. */
   rolloverTime: () => string | null = () => null,
 ): MarkDoneComputation {
@@ -124,7 +129,7 @@ export function computeMarkDone(
     // REPEAT ENDS (2026-10-22): the landing is judged by the one end judge
     // (`nextOrEnd` = `scheduleBase` + the engine + `repeatStep`); done on the
     // last occurrence ends the series instead of advancing it.
-    const step = isTracked(task) ? null : nextOrEnd(task, userTimezone, { completedAt })
+    const step = isTracked(task) ? null : nextOrEnd(task, userTimezone, { completedAt, dayStart })
     if (step?.ended) return seriesEnd(task, step.used, stats)
     const usedAfter = step ? step.used : repeatEndOf(task).repeat_count_used
     const nextOccurrenceAt = step ? step.occurrenceAt : null

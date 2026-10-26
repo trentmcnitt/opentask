@@ -51,7 +51,11 @@
  * - a from_completion rule (resolution 7): it has no schedule to walk, so it
  *   lands on the date at the rule's time of day, and the interval restarts
  *   from there — never earlier than the plain (no-date) skip would land.
- *   See `walkFromCompletion`.
+ *   See `walkFromCompletion`. Both the landing and that floor count OpenTask
+ *   days (2026-10-26): the rule's time sits inside the date's OpenTask day
+ *   (`periodOpensOnDate`), and the floor is Done's step from now's OpenTask
+ *   date (`computeFromCompletion`), so at 00:30 Monday (3:00 AM start)
+ *   every 2 days skipped until Tuesday lands Tuesday, as at 23:30 Sunday.
  *
  * Only repeating tasks. A one-off, a reminder, a quota, or a trashed /
  * archived task in the batch is left alone and COUNTED, never a refusal of the
@@ -185,8 +189,9 @@ function walkFromDue(
   timezone: string,
   untilStart: Date,
   now: Date,
+  dayStart: string,
 ): { landing: string; skipped: number } {
-  const first = new Date(nextLanding(task, timezone, now))
+  const first = new Date(nextLanding(task, timezone, now, dayStart))
   if (first >= untilStart) return { landing: first.toISOString(), skipped: 1 }
   const { count, firstOnOrAfter } = occurrencesFromDue({
     rrule: task.rrule!,
@@ -222,8 +227,8 @@ function walkFromCompletion(
 ): { landing: string; skipped: number } {
   // The floor: exactly where "skip this occurrence" lands (end-blind; the end
   // is judged on the landing in `planSkipUntil`).
-  const plain = new Date(nextLanding(task, timezone, now))
-  const skipped = completionSkipsBefore(task, timezone, until.start, now)
+  const plain = new Date(nextLanding(task, timezone, now, until.dayStart))
+  const skipped = completionSkipsBefore(task, timezone, until.start, now, until.dayStart)
   const { hour, minute } = ruleTimeOfDay(task.rrule!, task.anchor_time)
   // A deadline-anchored repeat's occurrence is its deadline: it lands
   // `target_days_before` days on, so its derived target is on the date.
@@ -244,9 +249,16 @@ function walkFromCompletion(
 /**
  * A from_completion rule's skips before `before`: interval steps from the
  * current occurrence (from now, when it has passed), as if each had been
- * done on time — the current occurrence is the first.
+ * done on time — the current occurrence is the first. Each step counts from
+ * its OpenTask date (`dayStart`), as Done does.
  */
-function completionSkipsBefore(task: PlanTask, timezone: string, before: Date, now: Date): number {
+function completionSkipsBefore(
+  task: PlanTask,
+  timezone: string,
+  before: Date,
+  now: Date,
+  dayStart: string,
+): number {
   const step = (from: Date) =>
     computeNextOccurrence({
       rrule: task.rrule!,
@@ -254,6 +266,7 @@ function completionSkipsBefore(task: PlanTask, timezone: string, before: Date, n
       anchorTime: task.anchor_time,
       timezone,
       completedAt: from,
+      dayStart,
     })
   const current = task.occurrence_at ?? task.due_at
   let at = step(current && Date.parse(current) > now.getTime() ? new Date(current) : now)
@@ -266,11 +279,17 @@ function completionSkipsBefore(task: PlanTask, timezone: string, before: Date, n
 }
 
 /** The occurrences a skip closes before `before`, the current one included (either mode). */
-function skipsBefore(task: PlanTask, timezone: string, before: Date, now: Date): number {
+function skipsBefore(
+  task: PlanTask,
+  timezone: string,
+  before: Date,
+  now: Date,
+  dayStart: string,
+): number {
   if (task.recurrence_mode === 'from_completion') {
-    return completionSkipsBefore(task, timezone, before, now)
+    return completionSkipsBefore(task, timezone, before, now, dayStart)
   }
-  return walkFromDue(task, timezone, before, now).skipped
+  return walkFromDue(task, timezone, before, now, dayStart).skipped
 }
 
 /**
@@ -286,6 +305,7 @@ function judgeSkip(
   walked: { landing: string; skipped: number },
   keepDeck: boolean,
   now: Date,
+  dayStart: string,
 ): SkipUntilPlan {
   const end = repeatEndOf(task)
   const step = repeatStep(end, walked.landing, walked.skipped, timezone)
@@ -304,7 +324,7 @@ function judgeSkip(
       .startOf('day')
       .plus({ days: 1 })
       .toJSDate()
-    consumed = Math.min(walked.skipped, skipsBefore(task, timezone, dayAfter, now))
+    consumed = Math.min(walked.skipped, skipsBefore(task, timezone, dayAfter, now, dayStart))
   }
   return { kind: 'skip', landing: null, skipped: consumed, keepDeck: false, ended: true }
 }
@@ -337,7 +357,7 @@ export function planSkipUntil(
   if (reason) return { kind: 'leave', reason }
   if (until === null) {
     // Exactly `skipOccurrence`: one occurrence, judged by `nextOrEnd`.
-    const step = nextOrEnd(task, timezone, { completedAt: now })
+    const step = nextOrEnd(task, timezone, { completedAt: now, dayStart })
     return step.ended
       ? { kind: 'skip', landing: null, skipped: step.consumed, keepDeck: false, ended: true }
       : { kind: 'skip', landing: step.occurrenceAt, skipped: 1, keepDeck: false, ended: false }
@@ -369,13 +389,14 @@ export function planSkipUntil(
   const walked =
     task.recurrence_mode === 'from_completion'
       ? walkFromCompletion(task, timezone, { day: until, start: untilStart, dayStart }, now)
-      : walkFromDue(task, timezone, untilStart, now)
+      : walkFromDue(task, timezone, untilStart, now, dayStart)
   return judgeSkip(
     task,
     timezone,
-    targetOnOrAfter(task, timezone, untilStart, walked),
+    targetOnOrAfter(task, timezone, untilStart, walked, dayStart),
     keepDeck,
     now,
+    dayStart,
   )
 }
 
@@ -398,13 +419,19 @@ function targetOnOrAfter(
   timezone: string,
   untilStart: Date,
   walked: { landing: string; skipped: number },
+  dayStart: string,
 ): { landing: string; skipped: number } {
   let { landing, skipped } = walked
   // An occurrence with no target (L1) is judged by its deadline.
   const nagsAt = (at: string) => occurrenceDates(task, at, timezone).targetAt ?? at
   while (Date.parse(nagsAt(landing)) < untilStart.getTime()) {
     if (++skipped > MAX_SKIPPED) throw tooManySkips()
-    landing = nextLanding({ ...task, occurrence_at: landing }, timezone, new Date(landing))
+    landing = nextLanding(
+      { ...task, occurrence_at: landing },
+      timezone,
+      new Date(landing),
+      dayStart,
+    )
   }
   return { landing, skipped }
 }

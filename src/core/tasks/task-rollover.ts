@@ -563,8 +563,10 @@ function occurrenceFrom(
   task: Task,
   timezone: string,
   m: Date,
+  /** The user's rollover time: a from_completion step counts OpenTask days. */
+  dayStart: string,
 ): { at: string; skipped: boolean } | null {
-  const next = landingFrom(task, timezone, m)
+  const next = landingFrom(task, timezone, m, dayStart)
   if (!next || !next.skipped) return next
   return repeatStep(repeatEndOf(task), next.at, 1, timezone).ended ? null : next
 }
@@ -574,6 +576,7 @@ function landingFrom(
   task: Task,
   timezone: string,
   m: Date,
+  dayStart: string,
 ): { at: string; skipped: boolean } | null {
   const prev = task.occurrence_at ?? task.due_at
   if (!prev) return null
@@ -589,7 +592,12 @@ function landingFrom(
     // (a daily rule years stale still ends): the guard is generous.
     let at = new Date(prev)
     for (let i = 0; i < 5000 && at.getTime() < m.getTime(); i++) {
-      at = computeNextOccurrence({ ...base, recurrenceMode: 'from_completion', completedAt: at })
+      at = computeNextOccurrence({
+        ...base,
+        recurrenceMode: 'from_completion',
+        completedAt: at,
+        dayStart,
+      })
     }
     if (at.getTime() < m.getTime()) {
       // The guard ran out before reaching M: leave the task alone, loudly,
@@ -739,7 +747,7 @@ function rollRepeating(
   deckDay: string | null = null,
 ): 'rolled' | 'rolled-skip' | 'waiting' | 'untouched' {
   const db = getDb()
-  const next = occurrenceFrom(task, user.timezone, m)
+  const next = occurrenceFrom(task, user.timezone, m, rolloverTime)
   if (!next) return 'untouched'
   if (Date.parse(next.at) < nextM.getTime()) {
     // Rule 5a: roll to this day's occurrence. The missed one is a skip — a

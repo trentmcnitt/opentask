@@ -214,7 +214,7 @@ describe('RE: the judge (pure)', () => {
       repeat_count_used: 1,
       repeat_until: null,
     }
-    expect(nextOrEnd(t, tz, { completedAt: new Date() })).toEqual({
+    expect(nextOrEnd(t, tz, { completedAt: new Date(), dayStart: CALENDAR_DAY_START })).toEqual({
       ended: true,
       used: 2,
       consumed: 1,
@@ -231,17 +231,33 @@ describe('RE: the judge (pure)', () => {
       due_at: at('2026-10-23T09:00'),
     }
     const now = new Date(at('2026-10-20T10:00'))
-    expect(isLastOccurrence({ ...base }, tz, now)).toBe(false)
-    expect(isLastOccurrence({ ...base, repeat_count: 3, repeat_count_used: 1 }, tz, now)).toBe(
-      false,
-    )
-    expect(isLastOccurrence({ ...base, repeat_count: 3, repeat_count_used: 2 }, tz, now)).toBe(true)
+    expect(isLastOccurrence({ ...base }, tz, now, CALENDAR_DAY_START)).toBe(false)
+    expect(
+      isLastOccurrence(
+        { ...base, repeat_count: 3, repeat_count_used: 1 },
+        tz,
+        now,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(false)
+    expect(
+      isLastOccurrence(
+        { ...base, repeat_count: 3, repeat_count_used: 2 },
+        tz,
+        now,
+        CALENDAR_DAY_START,
+      ),
+    ).toBe(true)
     // A date: the next Friday (Oct 30) is after Oct 29 — this one is the last.
-    expect(isLastOccurrence({ ...base, repeat_until: '2026-10-29' }, tz, now)).toBe(true)
-    expect(isLastOccurrence({ ...base, repeat_until: '2026-10-30' }, tz, now)).toBe(false)
+    expect(
+      isLastOccurrence({ ...base, repeat_until: '2026-10-29' }, tz, now, CALENDAR_DAY_START),
+    ).toBe(true)
+    expect(
+      isLastOccurrence({ ...base, repeat_until: '2026-10-30' }, tz, now, CALENDAR_DAY_START),
+    ).toBe(false)
     // A closed row is never "the last".
     const closed = { ...base, repeat_count: 3, repeat_count_used: 3, done: true }
-    expect(isLastOccurrence(closed, tz, now)).toBe(false)
+    expect(isLastOccurrence(closed, tz, now, CALENDAR_DAY_START)).toBe(false)
     // An ended-by-skip series needs the end: an archived repeat without one is not.
     const archived = { rrule: FRIDAY_9, done: false, archived_at: at('2026-10-20T10:00') }
     expect(seriesEndedBySkip({ ...archived, repeat_count: 2, repeat_count_used: 2 })).toBe(true)
@@ -732,7 +748,7 @@ describe('RE: skip, skip until', () => {
 describe('RE: the defer cap, the snooze guard', () => {
   test('RE-W20: no next occurrence on the last one — no cap, no guard, the sweep succeeds', () => {
     const t = daily({ repeat_count: 1 })
-    expect(nextOccurrenceAfterSkip(task(t.id), tz)).toBeNull()
+    expect(nextOccurrenceAfterSkip(task(t.id), tz, new Date(), CALENDAR_DAY_START)).toBeNull()
     expect(nextScheduledOccurrence(task(t.id), tz)).toBeNull()
     // Not the last: the guard sees tomorrow's.
     const going = daily({ repeat_count: 2 })
