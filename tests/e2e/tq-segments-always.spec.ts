@@ -462,6 +462,26 @@ async function dayBarFits(page: Page, widths: number[]) {
       )
       expect(overflow, `sideways scroll at ${width}`).toBeLessThanOrEqual(0)
 
+      // A wrapped headline line never starts with the " · " (2026-10-26, Trent:
+      // "drop the dot at the wrap"): every separator that begins a line sits in
+      // the clipped strip left of its box, so none is visible there.
+      const dotStartsALine = await headline.evaluate((root) => {
+        const lines = new Map<number, { left: number; sep: boolean }>()
+        for (const box of root.querySelectorAll<HTMLElement>('[data-joined]')) {
+          const clip = box.getBoundingClientRect()
+          for (const item of box.querySelectorAll<HTMLElement>('[data-joined-item]')) {
+            const r = item.getBoundingClientRect()
+            const sep = item.querySelector('[data-joined-sep]')!
+            const sepVisible = sep.textContent !== '' && r.left >= clip.left - 0.5
+            const top = Math.round(r.top)
+            const seen = lines.get(top)
+            if (!seen || r.left < seen.left) lines.set(top, { left: r.left, sep: sepVisible })
+          }
+        }
+        return [...lines.values()].some((l) => l.sep)
+      })
+      expect(dotStartsALine, `a headline line starts with a dot at ${width}`).toBe(false)
+
       // And its title wraps inside its column (a title spilling over a row
       // still inside the page is no better).
       const titleSpills = await linkRow

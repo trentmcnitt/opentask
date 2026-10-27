@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment, type ReactNode } from 'react'
 import { CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
@@ -243,23 +244,23 @@ function HeadlineLine({
   if (summary.waitingSoFar === 0 && summary.nextUp) {
     return (
       <span data-caught-up data-tasks-waiting={counts.tasks ? tasksWaiting : undefined}>
-        <span className="text-foreground font-medium whitespace-nowrap">
-          Caught up until {summary.nextUp.slot.label}
-        </span>
-        <span className="text-muted-foreground">
-          {' · '}
-          <span className="whitespace-nowrap">
-            {formatClockTime(summary.nextUp.slot.start_time)}
-          </span>
-        </span>
-        {tasksWaiting > 0 && (
-          <>
-            <span className="text-muted-foreground">{' · '}</span>
-            <span className="text-foreground font-medium whitespace-nowrap">
-              {tasksWaitingText(tasksWaiting)}
-            </span>
-          </>
-        )}
+        <Joined
+          items={[
+            <span key="until" className="text-foreground font-medium">
+              Caught up until {summary.nextUp.slot.label}
+            </span>,
+            <span key="at" className="text-muted-foreground">
+              {formatClockTime(summary.nextUp.slot.start_time)}
+            </span>,
+            ...(tasksWaiting > 0
+              ? [
+                  <span key="tasks" className="text-foreground font-medium">
+                    {tasksWaitingText(tasksWaiting)}
+                  </span>,
+                ]
+              : []),
+          ]}
+        />
       </span>
     )
   }
@@ -274,14 +275,47 @@ function HeadlineLine({
   )
 }
 
-/** Runs of text joined by " · ", each unbroken: a line wraps only between them. */
-function Runs({ runs }: { runs: string[] }) {
-  return runs.map((run, i) => (
-    <span key={i}>
-      {i > 0 && ' · '}
-      <span className="whitespace-nowrap">{run}</span>
+/**
+ * Runs joined by " · ", each unbroken, so a line wraps only between them — and
+ * a wrapped line never ends (or starts) with the dot (Trent, 2026-10-26: "drop
+ * the dot at the wrap"). CSS can't ask "did this break here?", so each item
+ * carries its separator at its START, and the whole line is shifted left by one
+ * separator's width inside a box that clips: a separator that begins a line
+ * (the first item's, or one after a wrap) lands in the clipped strip and
+ * vanishes, while one mid-line shows as usual. The first item's box is
+ * empty: it only fills the clipped strip, so the text never starts with a dot. (Non-breaking spaces round the
+ * dot keep the text " · " for search and tests; the box's fixed width is what
+ * the shift cancels.) `<wbr>` between items is the
+ * break opportunity (no space, so nothing else moves). The separator is
+ * `aria-hidden`: a screen reader hears the runs, not the dots.
+ */
+function Joined({ items }: { items: ReactNode[] }) {
+  return (
+    <span className="block overflow-hidden" data-joined>
+      <span className="-ml-[1.25em] block">
+        {items.map((item, i) => (
+          <Fragment key={i}>
+            {i > 0 && <wbr />}
+            <span className="whitespace-nowrap" data-joined-item>
+              <span
+                data-joined-sep
+                aria-hidden
+                className="text-muted-foreground inline-block w-[1.25em] text-center"
+              >
+                {i > 0 ? '\u00a0·\u00a0' : null}
+              </span>
+              {item}
+            </span>
+          </Fragment>
+        ))}
+      </span>
     </span>
-  ))
+  )
+}
+
+/** Runs of plain text joined by " · " (`Joined`). */
+function Runs({ runs }: { runs: string[] }) {
+  return <Joined items={runs} />
 }
 
 /**
@@ -290,21 +324,22 @@ function Runs({ runs }: { runs: string[] }) {
  * muted.
  */
 function CountRuns({ runs }: { runs: CountPart[][] }) {
-  return runs.map((run, i) => (
-    <span key={i}>
-      {i > 0 && <span className="text-muted-foreground"> · </span>}
-      <span className="whitespace-nowrap">
-        {run.map((p, j) => (
-          <span
-            key={j}
-            className={p.strong ? 'text-foreground font-medium' : 'text-muted-foreground'}
-          >
-            {p.text}
-          </span>
-        ))}
-      </span>
-    </span>
-  ))
+  return (
+    <Joined
+      items={runs.map((run, i) => (
+        <span key={i}>
+          {run.map((p, j) => (
+            <span
+              key={j}
+              className={p.strong ? 'text-foreground font-medium' : 'text-muted-foreground'}
+            >
+              {p.text}
+            </span>
+          ))}
+        </span>
+      ))}
+    />
+  )
 }
 
 /** How narrow an empty task segment's bar may get when the day bar runs out of room. */
