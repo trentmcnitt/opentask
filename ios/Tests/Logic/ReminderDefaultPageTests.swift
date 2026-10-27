@@ -20,8 +20,8 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
 
     private var day: OpenTaskDay { DayStartStore.current }
 
-    private func at(_ hour: Int, _ minute: Int = 0) -> Date {
-        Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 27, hour: hour, minute: minute))!
+    private func at(_ hour: Int, _ minute: Int = 0, day: Int = 27) -> Date {
+        Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
     }
 
     // MARK: Builders
@@ -100,10 +100,12 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
     /// The ruling's step 3 lists the queue's kinds without Deadlines: once
     /// its rows are all seen, it is never the default — even with every
     /// period done and nothing else waiting (its bar stays purple; the
-    /// default is the clock's "Complete").
+    /// default is the latest opened period, completed — step 5).
     func testDeadlinesWithOnlySeenRowsIsNotAQueueStep() {
         let segments = strip(["deadlines": [row(1, safetyNet: true, seen: true)]])
-        XCTAssertEqual(key(periods(), segments, at(13)), 2, "the clock's Midday, Complete")
+        XCTAssertEqual(key(periods(), segments, at(13)), 2, "Midday, the latest opened, Complete — not Deadlines")
+        XCTAssertEqual(key(periods(), segments, at(20)), 3, "Evening, the latest opened — not Deadlines")
+        XCTAssertEqual(key(periods(), segments, at(4)), 1, "before Morning opens: Morning — not Deadlines")
         // A later queue segment waiting is the default instead.
         let withDaily = strip(["deadlines": [row(1, safetyNet: true, seen: true)], "days": [row(2)]])
         XCTAssertEqual(key(periods(), withDaily, at(13)), dailyKey)
@@ -197,24 +199,92 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
         XCTAssertEqual(boundary.slotIndex, 2)
     }
 
-    // MARK: Step 5 — everything done: "Complete"
+    // MARK: Step 5 — everything done: the latest opened period, completed
 
-    func testEverythingDoneIsTheClocksPeriod() {
+    /// Trent (2026-10-27): "When everything's complete, the widget should,
+    /// unless the user overrides it, automatically jump to the latest
+    /// reminder period."
+    func testEverythingDoneIsTheLatestOpenedPeriod() {
+        XCTAssertEqual(key(periods(), strip(), at(7, 30)), 1, "only Morning has opened")
         XCTAssertEqual(key(periods(), strip(), at(13)), 2)
+        XCTAssertEqual(key(periods(), strip(), at(17, 59)), 2)
+        XCTAssertEqual(key(periods(), strip(), at(18)), 3)
         XCTAssertEqual(key(periods(), strip(), at(20)), 3)
-        // With every segment empty too, the clock's period says so.
-        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: periods(), segments: strip(), displayedIndex: 1), .dayComplete)
-        // A queue row handled today but Evening still to come: "Complete".
-        XCTAssertEqual(key(periods(evening: 1), strip(["days": [row(2, .considered)]]), at(13)), 2)
-        XCTAssertEqual(
-            ReminderDayProgress.emptyBody(
-                groups: periods(evening: 1), segments: strip(["days": [row(2, .considered)]]), displayedIndex: 1
-            ),
-            .periodDone
-        )
-        // No periods at all: the first segment.
+        // 00:30 on the 28th is still the 27th's OpenTask day (3:00 start).
+        XCTAssertEqual(key(periods(), strip(), at(0, 30, day: 28)), 3)
+        // A 1:00 AM period ends the day: the latest once it has opened.
+        let late = periods() + [period(4, "01:00", handled: 1)]
+        XCTAssertEqual(key(late, strip(), at(0, 30, day: 28)), 3, "the 1:00 AM period hasn't opened")
+        XCTAssertEqual(key(late, strip(), at(1, 30, day: 28)), 4)
+        // Every segment finished or empty too: the period draws "Day complete".
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: periods(), segments: strip(), displayedIndex: 2), .dayComplete)
+    }
+
+    /// Later periods still to come (not opened, something waiting): the
+    /// latest OPENED one, drawn "Complete" — never forward into one that
+    /// hasn't opened.
+    func testWithLaterPeriodsToComeTheLatestOpenedReadsComplete() {
+        let groups = periods(evening: 1)
+        let segments = strip(["days": [row(2, .considered)]])
+        XCTAssertEqual(key(groups, segments, at(13)), 2)
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, segments: segments, displayedIndex: 1), .periodDone)
+    }
+
+    /// The server sends every slot; one with nothing in it today has no strip
+    /// bar and nothing to show completed, so it is never step 5's period.
+    func testAnEmptyPeriodIsNotTheFinishedDefault() {
+        let groups = [period(1, "07:00", handled: 2), period(2, "12:00", handled: 1), period(3, "18:00")]
+        XCTAssertEqual(key(groups, strip(), at(20)), 2, "Midday, not the empty Evening")
+        XCTAssertEqual(ReminderDayProgress.emptyBody(groups: groups, segments: strip(), displayedIndex: 1), .dayComplete)
+        // Nor "Anytime", which has no place in the day.
+        XCTAssertEqual(key(groups + [period(9, nil, handled: 1)], strip(), at(20)), 2)
+        // No period has anything today: the clock's.
+        let empty = [period(1, "07:00"), period(2, "12:00"), period(3, "18:00")]
+        XCTAssertEqual(key(empty, strip(), at(13)), 2)
+    }
+
+    /// Between the day start and the first period nothing has opened, and the
+    /// payload is TODAY's groups: yesterday's last period isn't there, and
+    /// today's would draw not started. So: the next period to open that has
+    /// anything in it.
+    func testBeforeTheFirstPeriodTheNextToOpen() {
+        XCTAssertEqual(key(periods(morning: 2, midday: 1, evening: 1), strip(), at(4)), 1)
+        // Morning has nothing today: Midday, the next with anything in it.
+        let groups = [period(1, "07:00"), period(2, "12:00", waiting: 1), period(3, "18:00", waiting: 2)]
+        XCTAssertEqual(key(groups, strip(), at(4)), 2)
+    }
+
+    func testNoPeriodsAtAllIsTheFirstSegment() {
         XCTAssertEqual(key([], strip(), at(13)), deadlinesKey)
         XCTAssertNil(key([], [], at(13)))
+    }
+
+    /// A flip made with everything done holds while the default does — an
+    /// EMPTY period opening doesn't move it — and lapses when a period with
+    /// something waiting opens.
+    func testAFlipInTheFinishedStateHoldsThenLapses() throws {
+        let groups = [
+            period(1, "07:00", handled: 2), period(2, "12:00", handled: 1), period(5, "15:00"),
+            period(3, "18:00", waiting: 1),
+        ]
+        let segments = TaskSegmentDTO.listed(strip())
+        let natural = try XCTUnwrap(RemindersTimeline.naturalPageKey(groups: groups, segments: segments, now: at(13)))
+        XCTAssertEqual(natural, 2, "Midday, the latest opened")
+        WidgetStore.setSlotOverride(slotKey: 1, naturalSlotKey: natural) // back to Morning
+        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: groups, segments: segments, now: at(14)), 1)
+        // The empty 15:00 period opens: the default stays Midday, the flip holds.
+        let quiet = RemindersTimeline.scheduledPage(
+            groups: groups, segments: segments, now: at(15), override: WidgetStore.slotOverride()
+        )
+        XCTAssertEqual(quiet.slotIndex, 0)
+        XCTAssertNil(quiet.segmentIndex)
+        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: groups, segments: segments, now: at(16)), 1)
+        // Evening opens with something waiting: the flip lapses to it.
+        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: groups, segments: segments, now: at(18)), 3)
+        XCTAssertNil(WidgetStore.slotOverride())
+        // Evening finished: the default stays on it, the latest opened.
+        let done = groups.map { $0.slot?.id == 3 ? period(3, "18:00", handled: 1) : $0 }
+        XCTAssertEqual(RemindersTimeline.displayedPageKey(groups: done, segments: segments, now: at(18, 30)), 3)
     }
 
     // MARK: The widget's manual override and auto-advance
@@ -318,6 +388,11 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
         let key1 = key(groups, strip(["deadlines": [row(1)]]), at(13))
         XCTAssertNil(groups.firstIndex { $0.slotKey == key1 })
         XCTAssertEqual(WatchSlotLogic.naturalSlotIndex(in: groups, now: at(13), day: day), 1)
+        // Rule 5: everything done — the latest opened period with anything
+        // in it (the watch maps the key the same way), skipping an empty Evening.
+        let finished = [period(1, "07:00", handled: 2), period(2, "12:00", handled: 1), period(3, "18:00")]
+        let key5 = key(finished, strip(), at(20))
+        XCTAssertEqual(finished.firstIndex { $0.slotKey == key5 }, 1)
     }
 }
 

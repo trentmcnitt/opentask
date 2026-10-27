@@ -110,11 +110,12 @@ final class WatchViewModel: ObservableObject {
     /// The default is the phone widget's rule, `ReminderDefaultPage.key`
     /// (Trent's ruling 2026-10-27; ios/Shared): Deadlines while it has an
     /// unseen row, else the earliest opened period with something waiting,
-    /// else the first waiting queue segment, else the clock's period. The
-    /// watch pages through PERIODS only — every task segment is listed under
-    /// whichever period is on screen — so when the rule answers a segment
-    /// (rules 1 and 3) the page shows the clock's period with the segments
-    /// under it, as before; when it answers a period (rule 2), that period.
+    /// else the first waiting queue segment, else — everything done — the
+    /// latest opened period, completed (Trent, 10-27). The watch pages
+    /// through PERIODS only — every task segment is listed under whichever
+    /// period is on screen — so when the rule answers a segment (rules 1 and
+    /// 3) the page shows the clock's period with the segments under it, as
+    /// before; when it answers a period (rules 2 and 5), that period.
     var displayedSlotIndex: Int {
         if let override = slotOverride, reminderGroups.indices.contains(override) {
             return override

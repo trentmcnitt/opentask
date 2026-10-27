@@ -21,8 +21,20 @@ import Foundation
 ///    (periods sit left of the queue): the rule is re-evaluated, never
 ///    latched. The widget's pre-scheduled boundary entries re-run it at each
 ///    period's opening.
-/// 5. Everything done: the clock's period, which reads "Complete" (or "Day
-///    complete"), as before.
+/// 5. Everything done — TRENT (2026-10-27): "When everything's complete,
+///    the widget should, unless the user overrides it, automatically jump to
+///    the latest reminder period." So with nothing unfinished (every opened
+///    period done, no queue segment waiting, Deadlines empty or only SEEN
+///    rows) the default is the **latest opened period that had anything in
+///    it today**, drawn in its completed state — "Complete", or
+///    "Congratulations · Day complete" when every period is done — never a
+///    separate page and never Deadlines (`finishedSlotIndex`). A period with
+///    nothing in it today is skipped: the server sends every slot, and an
+///    empty one has no strip bar and nothing to show completed. Before the
+///    first period opens nothing has opened, and the payload is TODAY'S
+///    groups — yesterday's last period isn't in it (today's last period is
+///    there, but not started, with its rows waiting) — so the default is the
+///    next period to open that has anything in it.
 ///
 /// A manual page flip still sticks as it always has: the widget's override
 /// is anchored to the default page it was made against and lapses when this
@@ -64,10 +76,36 @@ enum ReminderDefaultPage {
         if let segment = segments.first(where: { $0.kind != .deadlines && $0.hasWaiting }) {
             return segment.pageKey
         }
-        // 5. Everything done: the clock's period ("Complete"); with no
-        // periods at all, the first segment.
+        // 5. Everything done: the latest opened period, in its completed
+        // state; with no periods at all, the first segment.
         guard !groups.isEmpty else { return segments.first?.pageKey }
-        return groups[clockSlotIndex(in: groups, now: now, day: day)].slotKey
+        return groups[finishedSlotIndex(in: groups, now: now, day: day)].slotKey
+    }
+
+    /// Step 5's period, when nothing is unfinished. Only TIMED periods with
+    /// anything in them today (waiting or handled) count — "Anytime" has no
+    /// place in the day, and an empty period has no bar and nothing to show
+    /// completed:
+    /// 1. the latest that has opened (`ReminderDayProgress.hasStarted`'s
+    ///    test, within the OpenTask day) — Trent's "latest reminder period";
+    /// 2. none has opened (between the day start and the first period): the
+    ///    next to open — the payload holds today's groups only, so yesterday's
+    ///    last period can't be drawn, and today's would draw not started;
+    /// 3. no timed period has anything today: the clock's (`clockSlotIndex`).
+    static func finishedSlotIndex(in groups: [ReminderGroupDTO], now: Date, day: OpenTaskDay) -> Int {
+        let timed = groups.indices.compactMap { index -> (index: Int, start: Int)? in
+            let group = groups[index]
+            guard let raw = group.slot?.startMinutes, group.waitingCount + group.consideredCount > 0 else { return nil }
+            return (index, day.minutesIntoDay(raw))
+        }
+        let minutes = day.minutesIntoDay(of: now)
+        if let latest = timed.filter({ $0.start <= minutes }).max(by: { $0.start < $1.start }) {
+            return latest.index
+        }
+        if let next = timed.min(by: { $0.start < $1.start }) {
+            return next.index
+        }
+        return clockSlotIndex(in: groups, now: now, day: day)
     }
 
     /// Step 1's test: a deadlines-page row still waiting that is not a seen
