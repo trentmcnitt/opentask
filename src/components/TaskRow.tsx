@@ -606,8 +606,7 @@ export function TaskRow({
         <div className="flex items-start gap-2">
           {isSelectionMode ? (
             <span className={cn('line-clamp-3 font-medium', pri.title)}>
-              {!justAddedBadge && corner.spacer}
-              {task.title}
+              <ClampedTitle spacer={justAddedBadge ? null : corner.spacer} title={task.title} />
             </span>
           ) : (
             <Link
@@ -619,8 +618,7 @@ export function TaskRow({
                 e.stopPropagation()
               }}
             >
-              {!justAddedBadge && corner.spacer}
-              {task.title}
+              <ClampedTitle spacer={justAddedBadge ? null : corner.spacer} title={task.title} />
             </Link>
           )}
           {justAddedBadge && (
@@ -864,6 +862,30 @@ function dayControlClasses(onTouch: boolean, visible: boolean): string {
 }
 
 /**
+ * The title inside its `line-clamp-3` box, with the corner's float spacer
+ * (`rowCorner`) — in ONE block, so the clamp box has a single child.
+ *
+ * `line-clamp-3` is `display: -webkit-box`, which WebKit (Safari, the iOS app's
+ * web view) lays out as a legacy flexbox: each direct child is a box item of
+ * its own, stacked vertically, and `float` does nothing to one. The spacer
+ * used to be a direct child, so in WebKit it took a row of its own ABOVE the
+ * text instead of floating beside it — a blank band as tall as the spacer
+ * (31px under the horizon dot on a phone; 4px under a priority tab alone)
+ * over the title of every corner row (Trent's iPhone, 2026-10-26). Chromium
+ * floats it either way. Inside this block the float is an ordinary float in
+ * both engines, and the clamp still counts the block's lines (ellipsis
+ * included).
+ */
+function ClampedTitle({ spacer, title }: { spacer: React.ReactNode; title: string }) {
+  return (
+    <span className="block">
+      {spacer}
+      {title}
+    </span>
+  )
+}
+
+/**
  * The just-now tag's words. A deck for a later day (2026-10-22: "On deck
  * tomorrow", "On deck Oct 27", `deckTagLabel`) is twice as wide as the other
  * tags, and on a phone, beside the corner's reserve, it squeezed the title
@@ -1035,7 +1057,23 @@ function buildMetaSegments(
  * enlarged hit box to its left, less what already sits to the right of the
  * title (the row's 12px padding; from `md` up, the snooze button and its gap
  * too) — and as tall as the tabs, or the dot's hit box (32px with a mouse,
- * 44px with a finger, measured from the row's top border).
+ * 44px with a finger, measured from the row's top border), but NEVER TALLER
+ * THAN ONE TITLE LINE (`min(…, 1lh)`, 2026-10-26).
+ *
+ * Why the cap: the title's clamp box contains its floats, so a spacer taller
+ * than the title's first line made the box taller than the title. A one-line
+ * title then sat above the done circle's centre (3.5px at the default size on
+ * a phone: a 31px spacer beside a 24px line) and the meta line below it
+ * dropped by the difference — every dot row's title sat higher than a row
+ * without a tab. Capped, the title lands where it would with no corner at
+ * all. What it gives up, on touch only: when a title wraps, the end of its
+ * SECOND line can run under the bottom few px of the dot's 44px hit box
+ * (31px − 1lh: 7px at the default size, ~2.4px at the iOS app's 119%, none
+ * with a mouse), where a tap opens the horizon menu. The tabs themselves
+ * (18px, 4px into the content) are always inside the first line.
+ *
+ * The spacer sits inside `ClampedTitle`'s block, not directly in the clamp
+ * box — see there for the WebKit band that placement prevents.
  *
  * A "New" / "Targeted" tag (`justAddedBadge`) sits after the title in the
  * title's flex row, so it is the one beside the corner: then the spacer is left
@@ -1089,8 +1127,10 @@ function rowCorner({
       className={cn(
         'float-right w-(--sw-f) md:w-(--sw-mf) pointer-coarse:w-(--sw-c) md:pointer-coarse:w-(--sw-mc)',
         // Content starts 13px below the row's outer top (1px border + 12px
-        // padding): the tabs end 4px in, the dot's hit box 18px / 30px in.
-        dot ? 'h-[19px] pointer-coarse:h-[31px]' : 'h-1',
+        // padding): the tabs end 4px in, the dot's hit box 18px / 30px in —
+        // capped at one title line (`1lh`, the title's own line height; see
+        // above).
+        dot ? 'h-[min(19px,1lh)] pointer-coarse:h-[min(31px,1lh)]' : 'h-1',
       )}
     />
   )

@@ -96,7 +96,10 @@ export function waitForPreferenceSave(page: Page, field: string) {
  * the list backdates the tasks it made first. The server reads SQLite in WAL mode, so the next
  * fetch sees the write.
  */
-export function backdateCreated(ids: number[], opts: { inSegments?: boolean } = {}): void {
+export function backdateCreated(
+  ids: number[],
+  opts: { inSegments?: boolean; keepHorizon?: boolean } = {},
+): void {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const stmt = db.prepare(
@@ -108,9 +111,15 @@ export function backdateCreated(ids: number[], opts: { inSegments?: boolean } = 
     // horizon (first Saturday of a quarter) and considered a day ahead — not
     // now, which would keep it in today's segment as a considered row (and a
     // page of the dashboard panel's pager); see globalSetup.ts.
+    // `keepHorizon`: leave the horizon as made (an unset one stays unset, for
+    // a spec that needs the dashed dot) — considered a day ahead keeps it out
+    // of the segments on its own.
     const hide = db.prepare(
-      `UPDATE tasks SET horizon = COALESCE(horizon, 'eventually'),
-         last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day') WHERE id = ?`,
+      opts.keepHorizon
+        ? `UPDATE tasks SET
+             last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day') WHERE id = ?`
+        : `UPDATE tasks SET horizon = COALESCE(horizon, 'eventually'),
+             last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day') WHERE id = ?`,
     )
     for (const id of ids) {
       stmt.run(id)
