@@ -358,6 +358,8 @@ enum ReminderStackPreviewData {
 } timeline: {
     ReminderStackPreviewData.supplements
     ReminderStackPreviewData.overdue
+    // The full ring: green, not the filling purple (2026-10-26).
+    ReminderStackPreviewData.caughtUp
 }
 
 #Preview("Corner", as: .accessoryCorner) {

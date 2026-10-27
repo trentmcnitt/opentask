@@ -470,8 +470,18 @@ enum ReminderStackMetrics {
 
 /// Count-left-with-a-ring, shared by `.accessoryCircular` and
 /// `.accessoryCorner`. Overdue (snoozable) wins the ring when present, in
-/// red, matching the card's own precedence; otherwise the active slot's
-/// reminders left, filling as they're considered. Glanceable only — a tap
+/// plum, matching the card's own precedence; otherwise the active slot's
+/// reminders left, filling as they're considered.
+///
+/// Colour (Trent, 2026-10-26): a progress indicator like every bar, so the
+/// same rule — the reminders' purple while it fills
+/// (`WatchTheme.dayBarFilling`), the done green once full (`ringSummary`'s
+/// "Complete": fraction 1 only when no started period has anything
+/// waiting). It was indigo (`WatchTheme.accent`) until then. Overdue keeps
+/// its plum and wins first. On a tinted or monochrome face the system's
+/// tint replaces all of these; the colours show in full-colour contexts.
+///
+/// Glanceable only — a tap
 /// opens the app on the matching page (`deepLink`); a button inside a
 /// watch-face-sized ring would be a mis-tap machine, even though watchOS 11+
 /// technically supports interactivity in every family.
@@ -485,7 +495,12 @@ private struct RingContent: View {
             Text("\(ring.count)")
         }
         .gaugeStyle(.accessoryCircularCapacity)
-        .tint(ring.isOverdue ? WatchTheme.overdue : WatchTheme.accent)
+        .tint(tint)
+    }
+
+    private var tint: Color {
+        if ring.isOverdue { return WatchTheme.overdue }
+        return ring.fraction >= 1 ? WatchTheme.done : WatchTheme.dayBarFilling
     }
 }
 

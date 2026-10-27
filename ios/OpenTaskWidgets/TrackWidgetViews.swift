@@ -778,7 +778,13 @@ private struct QuotasCircularView: View {
 /// visual as the OLD single-item `QuotaRing` but fed the WHOLE corpus'
 /// `met`/`total` instead of one task's progress; there is no single
 /// "selected" quota to ring any more (see `QuotasSmallView`'s doc).
+///
+/// Colour (Trent, 2026-10-26): a progress indicator like every bar, so the
+/// same rule — the reminders' purple while it fills
+/// (`WidgetTheme.dayBarFilling`, `DayBarColors.fillingHex`), the done green
+/// once every quota is met. It was indigo until then.
 private struct OverallRing: View {
+    @Environment(\.colorScheme) private var colorScheme
     let met: Int
     let total: Int
     let diameter: CGFloat
@@ -795,7 +801,7 @@ private struct OverallRing: View {
             Circle()
                 .trim(from: 0, to: fraction)
                 .stroke(
-                    allMet ? WidgetTheme.trackMetTint : WidgetTheme.indigoAccent,
+                    allMet ? WidgetTheme.trackMetTint : WidgetTheme.dayBarFilling(colorScheme),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))

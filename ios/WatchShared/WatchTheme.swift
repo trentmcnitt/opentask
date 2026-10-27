@@ -3,8 +3,9 @@ import SwiftUI
 /// Visual vocabulary for the watchOS app and its Smart Stack widget.
 ///
 /// One accent hue (indigo) for anything interactive/"in progress", green only
-/// for "done" — except the strip's bars, which fill in the reminders' purple
-/// (`dayBarFilling`, 2026-10-26, the rule every progress bar follows) — mirrors Trent's UI rule from the phone surfaces (see
+/// for "done" — except the strip's bars and the Smart Stack's circular/corner
+/// gauge, which fill in the reminders' purple (`dayBarFilling`, 2026-10-26,
+/// the rule every progress indicator follows) — mirrors Trent's UI rule from the phone surfaces (see
 /// `WidgetTheme.swift`'s "monochrome chrome, color only where it carries
 /// meaning") but is NOT a port of that file: `ios/OpenTaskWidgets` is off
 /// limits for this target (other agents are editing it tonight on other
@@ -12,8 +13,8 @@ import SwiftUI
 /// the same palette rules for the watch's much smaller canvas.
 enum WatchTheme {
     /// The one accent hue. Used for any primary action control, toggles
-    /// and the in-progress counts. NOT the strip's fill since 2026-10-26
-    /// (`dayBarFilling`, the reminders' purple).
+    /// and the in-progress counts. NOT the strip's fill or the Smart Stack
+    /// gauge's since 2026-10-26 (`dayBarFilling`, the reminders' purple).
     static let accent = Color.indigo
 
     /// "Considered"/complete state — the only other color allowed to carry
@@ -32,8 +33,9 @@ enum WatchTheme {
     }
 
     /// Every strip bar's fill while it fills — a period's and a task
-    /// segment's alike (2026-10-26, the web's PR #383): the reminders'
-    /// purple, the dark value of the one shared source
+    /// segment's alike (2026-10-26, the web's PR #383), and the Smart Stack's
+    /// circular/corner gauge (`RingContent`, Trent's ruling the same day):
+    /// the reminders' purple, the dark value of the one shared source
     /// (`DayBarColors.fillingHex`, the web's dark `--badge-reminders`).
     /// Not `accent`: buttons, toggles and the other indigo stay indigo.
     static let dayBarFilling = rgb(DayBarColors.fillingHex.dark)
