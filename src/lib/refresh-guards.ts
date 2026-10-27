@@ -51,6 +51,9 @@ export function shouldResumeRefresh(
 export interface LatestRequestGuard {
   begin(): number
   isLatest(seq: number): boolean
+  /** The most recent `begin()`'s seq (0 before any): a payload with a greater
+   *  seq was requested after now (`src/lib/pending-overlay.ts`). */
+  latest(): number
 }
 
 export function createLatestRequestGuard(): LatestRequestGuard {
@@ -62,6 +65,9 @@ export function createLatestRequestGuard(): LatestRequestGuard {
     },
     isLatest(seq) {
       return seq === latest
+    },
+    latest() {
+      return latest
     },
   }
 }

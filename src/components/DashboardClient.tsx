@@ -100,6 +100,17 @@ import { useExitModes } from '@/hooks/useExitModes'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
+import {
+  activePending,
+  addPending,
+  applyRowChanges,
+  dropPending,
+  nextPendingToken,
+  settlePending,
+  type PendingMap,
+  type RowChange,
+  type RowPending,
+} from '@/lib/pending-overlay'
 import type { FormattedTask } from '@/lib/format-task'
 
 interface DashboardClientProps {
@@ -127,6 +138,31 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
   // resolve out of order; only the most recently STARTED one may set state,
   // so an older payload never overwrites a newer one.
   const [requestGuard] = useState(createLatestRequestGuard)
+  /**
+   * Each row tap's change (done, defer, deck, a save), drawn over every
+   * payload until one requested after its write answered lands
+   * (`src/lib/pending-overlay.ts`, 2026-10-26). Without it a refresh started
+   * before the next tap's write — landing after that tap took its row off —
+   * put the row back for a moment, and a quick next tap hit it.
+   */
+  const pendingRef = useRef<PendingMap<number, RowChange<Task>>>(new Map())
+  const pending = useMemo<RowPending<Task>>(
+    () => ({
+      add(id, change) {
+        const token = nextPendingToken()
+        // A factory: a row change is itself a function.
+        pendingRef.current = addPending(pendingRef.current, [id], () => change, token)
+        return token
+      },
+      settle(id, token) {
+        pendingRef.current = settlePending(pendingRef.current, [id], token, requestGuard.latest())
+      },
+      drop(id, token) {
+        pendingRef.current = dropPending(pendingRef.current, [id], token)
+      },
+    }),
+    [requestGuard],
+  )
 
   const fetchTasks = useCallback(async () => {
     const seq = requestGuard.begin()
@@ -139,7 +175,8 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
       if (!res.ok) throw new Error('Failed to fetch tasks')
       const data = await res.json()
       if (!requestGuard.isLatest(seq)) return
-      setTasks(data.data?.tasks || [])
+      const changes = activePending(pendingRef.current, seq)
+      setTasks(applyRowChanges<Task>(data.data?.tasks || [], changes))
       setError(null)
     } catch (err) {
       if (!requestGuard.isLatest(seq)) return
@@ -152,6 +189,7 @@ function useFetchData(router: ReturnType<typeof useRouter>, initialTasks?: Forma
   return {
     tasks,
     setTasks,
+    pending,
     loading,
     setLoading,
     error,
@@ -168,6 +206,7 @@ function useDashboardActions(
   fetchTasks: () => Promise<void>,
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
+  pending: RowPending<Task>,
   onViewTask: (task: Task) => void,
   onCreated?: (task: Task) => void,
 ): ListTaskActionsReturn & { handleQuickAdd: (title: string) => Promise<number | null> } {
@@ -176,6 +215,7 @@ function useDashboardActions(
     onRefresh: fetchTasks,
     tasks,
     setTasks,
+    pending,
   }) as ListTaskActionsReturn
 
   const handleQuickAdd = useCallback(
@@ -380,7 +420,16 @@ function HomeContent({
   const timezone = useTimezone()
   const { timeSlots, refresh: refreshTimeSlots } = useTimeSlots(initialTimeSlots)
   const data = useFetchData(router, initialTasks)
-  const { tasks, setTasks, loading: tasksLoading, error, setError, setLoading, fetchTasks } = data
+  const {
+    tasks,
+    setTasks,
+    pending,
+    loading: tasksLoading,
+    error,
+    setError,
+    setLoading,
+    fetchTasks,
+  } = data
   const { projects, projectsLoaded, refreshProjects } = useProjects()
   // The page counts as loading until the projects are in too: All names each
   // group after its project, and a notification link unfolds a group by that
@@ -480,7 +529,7 @@ function HomeContent({
   // below for the full rationale.
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null)
   const clearHighlight = useCallback(() => setHighlightTaskId(null), [])
-  const actions = useDashboardActions(refreshAll, tasks, setTasks, handleViewTask)
+  const actions = useDashboardActions(refreshAll, tasks, setTasks, pending, handleViewTask)
 
   const handleQuickAddWithQuickTake = useCallback(
     async (title: string) => {

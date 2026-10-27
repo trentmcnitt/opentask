@@ -18,6 +18,14 @@ import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request
 import type { Task } from '@/types'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { openTaskDaysBetween } from '@/lib/opentask-day'
+import {
+  activePending,
+  addPending,
+  dropPending,
+  nextPendingToken,
+  settlePending,
+  type PendingMap,
+} from '@/lib/pending-overlay'
 
 /**
  * The task segments' actions (2026-10-10, docs/TASK-MODEL.md § Task segments).
@@ -25,7 +33,10 @@ import { openTaskDaysBetween } from '@/lib/opentask-day'
  * OPTIMISTIC: a tap changes the row at once (perf is Trent's top irritation),
  * then the request goes out and the surface refreshes. The overlay is a map of
  * task id → what the tap made of it; a failure takes the entry back out and
- * says so. Every write has an Undo on its toast — a misfire is undone with the
+ * says so. An entry is drawn until a payload requested AFTER its write
+ * answered is on screen (`src/lib/pending-overlay.ts`, 2026-10-26): never
+ * dropped against an older payload, which brought a burst's rows back for a
+ * moment and moved the next tap onto the wrong row. Every write has an Undo on its toast — a misfire is undone with the
  * standard Undo (spec §3), never a confirm.
  *
  * - circle → consider: "I saw it", never a completion
@@ -130,6 +141,10 @@ export interface SegmentView {
 
 interface UseTaskSegmentsOptions {
   segments: TaskSegmentPayload[]
+  /** The request seq of the `segments` payload (`useReminders().payloadSeq`). */
+  payloadSeq: number
+  /** The reminders fetch's latest request seq now (`useReminders().requestSeq`). */
+  requestSeq: () => number
   /** The user's timezone, for the Today menu's toast. */
   timezone: string
   refresh: () => Promise<void>
@@ -150,22 +165,18 @@ async function post(url: string, body: unknown): Promise<unknown> {
 
 export function useTaskSegments({
   segments,
+  payloadSeq,
+  requestSeq,
   timezone,
   refresh,
   onUndo,
   onCompleted,
 }: UseTaskSegmentsOptions) {
-  const [overlay, setOverlay] = useState<Map<number, Overlay>>(new Map())
-  // The payload the overlay was made against. A fresh payload is the truth, so
-  // it replaces the overlay — but only once every request out has answered,
-  // or a refresh landing mid-request would flash the old state back.
-  const inFlight = useRef(0)
-  const seenSegments = useRef(segments)
-  if (seenSegments.current !== segments && inFlight.current === 0) {
-    seenSegments.current = segments
-    if (overlay.size > 0) setOverlay(new Map())
-  }
-
+  const [pending, setPending] = useState<PendingMap<number, Overlay>>(new Map())
+  const ops = usePendingOps(setPending, requestSeq)
+  // Each tap's change, until the payload on screen was requested after its
+  // write answered (`src/lib/pending-overlay.ts`).
+  const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
   const view = useMemo(() => segmentViews(segments, overlay), [segments, overlay])
   // Which rows are the deadlines page's, and which of those its safety net
   // holds — what a consider or a deck does to a row depends on it. Read
@@ -184,32 +195,23 @@ export function useTaskSegments({
       send: () => Promise<unknown>,
       message: string,
     ) => {
-      setOverlay((prev) => {
-        const next = new Map(prev)
-        for (const id of ids) next.set(id, typeof to === 'function' ? to(id) : to)
-        return next
-      })
-      inFlight.current++
+      const token = ops.add(ids, to)
       try {
         await send()
+        ops.settle(ids, token)
         toastResult(message, onUndo)
         onCompleted?.()
       } catch (err) {
-        setOverlay((prev) => {
-          const next = new Map(prev)
-          for (const id of ids) next.delete(id)
-          return next
-        })
+        ops.drop(ids, token)
         showToast({
           message: err instanceof Error && err.message ? err.message : 'Something went wrong',
           type: 'error',
         })
       } finally {
-        inFlight.current--
         void refresh()
       }
     },
-    [onUndo, onCompleted, refresh],
+    [ops, onUndo, onCompleted, refresh],
   )
 
   // In the safety net a consider marks the row seen and keeps it waiting.
@@ -265,7 +267,7 @@ export function useTaskSegments({
     },
     [run],
   )
-  const setHorizon = useSetHorizon(inFlight, onUndo, refresh, onCompleted)
+  const setHorizon = useSetHorizon(onUndo, refresh, onCompleted)
 
   // Put back (2026-10-11): a considered or deferred row from "Show N
   // considered" waits again — the slots' put-back.
@@ -281,7 +283,7 @@ export function useTaskSegments({
   )
 
   const considerAll = useConsiderAll(run, considered)
-  const deferLead = useDeferLead(setOverlay, inFlight, onUndo, refresh, onCompleted)
+  const deferLead = useDeferLead(ops, onUndo, refresh, onCompleted)
   // The peek bubble's Open: the Quick panel, which task is open
   // (`SegmentDetailsModal`).
   const [detailsTask, setDetailsTask] = useState<Task | null>(null)
@@ -289,7 +291,7 @@ export function useTaskSegments({
   const remove = useRemoveTask(run)
 
   const removeTarget = useRemoveTarget(run)
-  const deck = useDeck(setOverlay, inFlight, timezone, onUndo, refresh, onCompleted, pageRows)
+  const deck = useDeck(ops, timezone, onUndo, refresh, onCompleted, pageRows)
   const actions = {
     deck,
     deferLead,
@@ -414,15 +416,9 @@ function useRemoveTask(run: RunSegmentAction) {
  * The horizon dot's menu (switch off) — a PATCH of `horizon`, with Undo. Not
  * through `run`: the row stays where it is until the refresh says otherwise.
  */
-function useSetHorizon(
-  inFlight: { current: number },
-  onUndo: () => void,
-  refresh: () => Promise<void>,
-  onCompleted?: () => void,
-) {
+function useSetHorizon(onUndo: () => void, refresh: () => Promise<void>, onCompleted?: () => void) {
   return useCallback(
     async (task: Task, horizon: HorizonValue | null, segment?: SegmentKind) => {
-      inFlight.current++
       try {
         const res = await fetch(`/api/tasks/${task.id}`, {
           method: 'PATCH',
@@ -439,11 +435,10 @@ function useSetHorizon(
       } catch (err) {
         showToast({ message: err instanceof Error ? err.message : 'Failed', type: 'error' })
       } finally {
-        inFlight.current--
         void refresh()
       }
     },
-    [inFlight, onUndo, onCompleted, refresh],
+    [onUndo, onCompleted, refresh],
   )
 }
 
@@ -467,6 +462,40 @@ function useConsiderAll(run: RunSegmentAction, considered: (id: number) => Overl
   )
 }
 
+/** One tap's optimistic change, from the tap to the payload that includes it. */
+interface PendingOps {
+  /** Draws `value` over `ids` now; returns the tap's token. */
+  add(ids: number[], value: Overlay | ((id: number) => Overlay)): number
+  /** The write answered: drawn until a payload requested from now on is on screen. */
+  settle(ids: number[], token: number): void
+  /** The write failed or changed nothing: the rows go back at once. */
+  drop(ids: number[], token: number): void
+}
+
+function usePendingOps(
+  setPending: React.Dispatch<React.SetStateAction<PendingMap<number, Overlay>>>,
+  requestSeq: () => number,
+): PendingOps {
+  return useMemo(
+    () => ({
+      add(ids, value) {
+        const token = nextPendingToken()
+        setPending((prev) => addPending(prev, ids, value, token))
+        return token
+      },
+      settle(ids, token) {
+        // Read now, not in the updater: the mark is the moment the write answered.
+        const settledAt = requestSeq()
+        setPending((prev) => settlePending(prev, ids, token, settledAt))
+      },
+      drop(ids, token) {
+        setPending((prev) => dropPending(prev, ids, token))
+      },
+    }),
+    [setPending, requestSeq],
+  )
+}
+
 type RunSegmentAction = (
   ids: number[],
   to: Overlay | ((id: number) => Overlay),
@@ -480,8 +509,7 @@ type RunSegmentAction = (
  * puts the row back and toasts the server's reason as an error.
  */
 function useDeck(
-  setOverlay: React.Dispatch<React.SetStateAction<Map<number, Overlay>>>,
-  inFlight: { current: number },
+  ops: PendingOps,
   timezone: string,
   onUndo: () => void,
   refresh: () => Promise<void>,
@@ -491,23 +519,16 @@ function useDeck(
   const dayStart = useDayStart()
   return useCallback(
     async (task: Task, day: string | null | undefined) => {
-      const putBack = () =>
-        setOverlay((prev) => {
-          const next = new Map(prev)
-          next.delete(task.id)
-          return next
-        })
       // Decked: handled today, counted (the day roster). Taken off deck (an
       // Upcoming deck row): the deck's consider stamp stays, so the server
       // keeps it here as handled (`segment_left: 'considered'`) — the same.
-      setOverlay((prev) =>
-        new Map(prev).set(task.id, deckOverlay(task, day, timezone, dayStart, pageRows)),
-      )
-      inFlight.current++
+      const token = ops.add([task.id], deckOverlay(task, day, timezone, dayStart, pageRows))
+      const putBack = () => ops.drop([task.id], token)
       try {
         const result = await sendDeck([task.id], day)
         const message = deckToastMessage(result, task.title, timezone, dayStart)
         if (message) {
+          ops.settle([task.id], token)
           toastResult(message, onUndo)
           onCompleted?.()
         } else {
@@ -521,11 +542,10 @@ function useDeck(
           type: 'error',
         })
       } finally {
-        inFlight.current--
         void refresh()
       }
     },
-    [setOverlay, inFlight, timezone, dayStart, onUndo, refresh, onCompleted, pageRows],
+    [ops, timezone, dayStart, onUndo, refresh, onCompleted, pageRows],
   )
 }
 
@@ -560,30 +580,22 @@ function deckOverlay(
  * deadline) moves nothing, so the row comes back and the toast says why.
  */
 function useDeferLead(
-  setOverlay: React.Dispatch<React.SetStateAction<Map<number, Overlay>>>,
-  inFlight: { current: number },
+  ops: PendingOps,
   onUndo: () => void,
   refresh: () => Promise<void>,
   onCompleted?: () => void,
 ) {
   return useCallback(
     async (task: Task, day: string) => {
-      const putBack = () =>
-        setOverlay((prev) => {
-          const next = new Map(prev)
-          next.delete(task.id)
-          return next
-        })
-      setOverlay((prev) =>
-        new Map(prev).set(task.id, { left: 'deferred', patch: { lead_from: day } }),
-      )
-      inFlight.current++
+      const token = ops.add([task.id], { left: 'deferred', patch: { lead_from: day } })
+      const putBack = () => ops.drop([task.id], token)
       try {
         const result = (await post('/api/task-segments/defer-lead', {
           ids: [task.id],
           day,
         })) as { deferred: number; refused: { message: string }[]; summary: string } | undefined
         if (result && result.deferred > 0) {
+          ops.settle([task.id], token)
           toastResult(`${result.summary}: “${task.title}”`, onUndo)
           onCompleted?.()
         } else {
@@ -600,11 +612,10 @@ function useDeferLead(
           type: 'error',
         })
       } finally {
-        inFlight.current--
         void refresh()
       }
     },
-    [setOverlay, inFlight, onUndo, refresh, onCompleted],
+    [ops, onUndo, refresh, onCompleted],
   )
 }
 
