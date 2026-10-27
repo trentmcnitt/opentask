@@ -258,7 +258,10 @@ jobs:
   # double E2E time).
   e2e-webkit:
     name: E2E WebKit
-    runs-on: ubuntu-latest
+    # Pinned: this Playwright release has no WebKit build for ubuntu-latest
+    # (26.04 since late 2026) — "Playwright does not support webkit on
+    # ubuntu26.04-x64". Move with the next Playwright upgrade.
+    runs-on: ubuntu-24.04
     needs: [changes]
     if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
     env:
