@@ -18,7 +18,6 @@ import {
   handledRows,
   offersDeferAll,
   segmentCounts,
-  segmentColor,
   segmentDoneColor,
   segmentDoneTextColor,
   segmentEmpty,
@@ -82,7 +81,6 @@ export function TaskSegmentGroup({
 }) {
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
   const queueOn = useQueueOn(segment.horizon)
-  const color = segmentColor(segment.horizon)
   // Finished in its own colour, not green (the deadlines page only): the
   // fill teal for the hairline and the ✓ glyphs; the count's numbers take
   // the text teal (`segmentDoneTextColor`).
@@ -164,7 +162,6 @@ export function TaskSegmentGroup({
         label={label}
         considered={handledCount}
         total={total}
-        color={color}
         doneColor={doneColor}
         // Empty is done: a full green line (`doneColor`'s), not an empty track.
         fraction={empty ? 1 : undefined}

@@ -9,7 +9,6 @@ import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import { MIN_SEGMENT_PX, SegmentDivider } from '@/components/ReminderSlotBar'
 import {
-  segmentColor,
   segmentCounts,
   segmentDoneColor,
   segmentKey,
@@ -30,7 +29,9 @@ import type { SegmentView } from '@/hooks/useTaskSegments'
  * win each time — and the number goes green when the day is.
  *
  * The task segments follow the slots (2026-10-11), after a faint divider, in
- * their teal — every one, every day (2026-10-24; an empty one green) — the dashboard strip's bars, so a segment reads the same on
+ * the same purple as a slot while filling and green when done (the deadlines
+ * page: its teal) — every one, every day (2026-10-24; an empty one done) —
+ * the dashboard strip's bars, so a segment reads the same on
  * both surfaces; a tap scrolls to its section. They are NOT in the line or
  * the count: task rows never count in "N waiting so far" or "X of Y
  * considered" (docs/TASK-MODEL.md § Task segments).
@@ -159,7 +160,6 @@ export function RemindersHeadline({
                 considered={handled}
                 total={total}
                 started
-                color={segmentColor(segment.horizon)}
                 doneColor={segmentDoneColor(segment.horizon)}
                 emptyDone
                 share={share}
@@ -217,10 +217,11 @@ function fitShare(count: number, divider: boolean): string {
 }
 
 /**
- * One segment of the day bar: a slot, or a task segment in its teal. Blue (a
- * task segment: its teal) while still filling, green the moment it's done —
- * matches the dashboard's `ReminderSlotBar` (2026-09-22), so a segment reads
- * the same way on both surfaces.
+ * One segment of the day bar: a slot or a task segment. Purple while still
+ * filling, green the moment it's done (the deadlines page: its teal) —
+ * matches the dashboard's `ReminderSlotBar` (two hues since 2026-09-22,
+ * purple and one rule for every segment since 2026-10-26), so a segment
+ * reads the same way on both surfaces.
  */
 function DayBarButton({
   id,
@@ -228,7 +229,6 @@ function DayBarButton({
   considered,
   total,
   started,
-  color,
   doneColor,
   emptyDone = false,
   share,
@@ -239,7 +239,6 @@ function DayBarButton({
   considered: number
   total: number
   started: boolean
-  color?: string
   /** Its fill once done, in place of green: the deadlines page's teal (`segmentDoneColor`). */
   doneColor?: string
   /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
@@ -287,11 +286,12 @@ function DayBarButton({
         <span
           className={cn(
             'block h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-            done ? !doneColor && 'bg-green-600' : 'bg-indigo-600',
+            // Purple while it fills, slot or task segment alike (2026-10-26,
+            // `ReminderSlotBar`'s header); green when done.
+            done ? !doneColor && 'bg-green-600' : 'bg-badge-reminders',
           )}
           style={{
             width: `${total > 0 ? (considered / total) * 100 : done ? 100 : 0}%`,
-            ...(color && !done ? { backgroundColor: color } : {}),
             ...(doneColor && done ? { backgroundColor: doneColor } : {}),
           }}
         />

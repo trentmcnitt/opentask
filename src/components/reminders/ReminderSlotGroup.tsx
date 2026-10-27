@@ -490,7 +490,6 @@ export function SlotHairline({
   label,
   considered,
   total,
-  color,
   doneColor,
   fraction: fractionOverride,
   ariaLabel,
@@ -501,9 +500,6 @@ export function SlotHairline({
   label: string
   considered: number
   total: number
-  /** A task segment's teal (2026-10-11) in place of the slots' indigo while
-   *  it fills. Finished is green, like a slot — unless `doneColor`. */
-  color?: string
   /** The finished fill in place of green: the deadlines page's teal (`segmentDoneColor`). */
   doneColor?: string
   /** The fill, 0..1, when it is not `considered / total` (a quota period). */
@@ -528,13 +524,13 @@ export function SlotHairline({
       <div
         className={cn(
           'h-full rounded-full transition-[width,background-color] duration-500 ease-out',
-          // Blue while still filling, green the moment it's done — matches
-          // the dashboard's `ReminderSlotBar` (2026-09-22).
-          fraction >= 1 ? !doneColor && 'bg-green-600' : 'bg-indigo-600',
+          // Purple while still filling (a slot, a task segment, a quota
+          // period alike), green the moment it's done — matches the
+          // dashboard's `ReminderSlotBar` (2026-09-22; purple 2026-10-26).
+          fraction >= 1 ? !doneColor && 'bg-green-600' : 'bg-badge-reminders',
         )}
         style={{
           width: `${Math.min(1, fraction) * 100}%`,
-          ...(color && fraction < 1 ? { backgroundColor: color } : {}),
           ...(doneColor && fraction >= 1 ? { backgroundColor: doneColor } : {}),
         }}
       />
