@@ -109,6 +109,20 @@ export function selectUndoEntries(
 }
 
 /**
+ * Where one of a user's undo_log entries stands, for a by-id undo or redo
+ * that found it is not the entry it may act on (`undoLatest`, `redoNext`):
+ * `live` (not undone), `undone`, or `gone` — purged, never existed, or
+ * another user's (told apart from none, so an id never says whose it is).
+ */
+export function entryState(userId: number, id: number): 'live' | 'undone' | 'gone' {
+  const row = getDb()
+    .prepare('SELECT undone FROM undo_log WHERE id = ? AND user_id = ?')
+    .get(id, userId) as { undone: number } | undefined
+  if (!row) return 'gone'
+  return row.undone === 1 ? 'undone' : 'live'
+}
+
+/**
  * After an undo/redo transaction commits: refresh open tabs and widgets,
  * resync the app-icon badge (an undo can put a task back in the past or take
  * it out), then send a task.updated webhook for every task each entry touched.

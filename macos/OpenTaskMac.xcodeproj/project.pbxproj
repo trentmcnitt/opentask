@@ -33,6 +33,7 @@
 		10C0CFD2650A63BF90C8D597 /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B46ABD580807D58325D969 /* TaskDayProgress.swift */; };
 		10DB7856F371B70147038E72 /* MenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38BA76FEFE40A03A2F3E709E /* MenuActions.swift */; };
 		13C171445BAAE1B485D14139 /* RowCorner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66322EE9B0CF0A477B85DE55 /* RowCorner.swift */; };
+		14150674AC9A762B8C6E8154 /* undo-by-id.json in Resources */ = {isa = PBXBuildFile; fileRef = A121674B59985D7978F37455 /* undo-by-id.json */; };
 		1493600E01F55BF186B4680D /* MacAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6A5B920B06CC0DCE444608 /* MacAppDelegate.swift */; };
 		156A48A4D3D55B69E284CFA4 /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3E2F1F151ECE60CDFE1524 /* WidgetPushRegistration.swift */; };
 		161ED908F8B6F869443891BD /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
@@ -450,6 +451,7 @@
 		9B67D1CA5EAEFEF18E424B05 /* notification-action-not-waiting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "notification-action-not-waiting.json"; sourceTree = "<group>"; };
 		9DD5A0D38F3F38C3D5EC9D21 /* RowCornerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowCornerTests.swift; sourceTree = "<group>"; };
 		A0E46D554CC0579F108371F0 /* OpenTaskCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskCommands.swift; sourceTree = "<group>"; };
+		A121674B59985D7978F37455 /* undo-by-id.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "undo-by-id.json"; sourceTree = "<group>"; };
 		A13865C4D7DA320D5CAA82CE /* QuotaCountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCountTests.swift; sourceTree = "<group>"; };
 		A267152C9A5ACCB59C629CEB /* TaskSnoozePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlan.swift; sourceTree = "<group>"; };
 		A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewLocalData.swift; sourceTree = "<group>"; };
@@ -563,6 +565,7 @@
 				5EC6908F672BD8B854E45E9F /* task-segments-target-today-repeating.json */,
 				6676B0D8909B96B0AAA98C71 /* tasks.json */,
 				B7DD47E083E073FE32FA2C34 /* time-slots.json */,
+				A121674B59985D7978F37455 /* undo-by-id.json */,
 				8F19FED31D51A4F31E33C37B /* undo-status.json */,
 				B494CCB1EBBEBD1900184F2D /* user-preferences.json */,
 			);
@@ -982,6 +985,7 @@
 				422D698F05972EA445D2250C /* task-segments-target-today-repeating.json in Resources */,
 				DBCA794BCC63F980AE658F47 /* tasks.json in Resources */,
 				EE5A06EF55B46C3132933303 /* time-slots.json in Resources */,
+				14150674AC9A762B8C6E8154 /* undo-by-id.json in Resources */,
 				D69FFE9776386998102E6583 /* undo-status.json in Resources */,
 				1F72F1ABDCE460D6BB84FED1 /* user-preferences.json in Resources */,
 			);

@@ -19,6 +19,7 @@ import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -70,6 +71,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // The ids this call actually moved (2026-10-26), queued ones included:
       // a client clears exactly these tasks' banners, nothing else.
       moved_ids: result.snoozedIds,
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (err instanceof AuthError) {

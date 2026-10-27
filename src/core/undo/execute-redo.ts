@@ -16,7 +16,7 @@ import { ensureLead, withoutAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
 import { healRelativeLinks, rowsLinkedTo } from '@/core/tasks/relative-link-heal'
 import { applyPromptDefault, applySlotRow, applyTargetRows, applyUserSettings } from './slot-row'
-import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
+import { afterUndoRedo, entryState, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
  * Redo a single parsed entry within an existing transaction.
@@ -90,6 +90,55 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   tx.prepare('UPDATE undo_log SET undone = 0 WHERE id = ?').run(entry.id)
 }
 
+/** Why a by-id redo refused: the entry is not the one a bare redo would take. */
+export type RedoConflictReason = 'not_next' | 'not_undone' | 'gone'
+
+/** What `redoNext` did. */
+export type RedoOutcome =
+  | { status: 'redone'; id: number; result: RedoResult }
+  | { status: 'empty' }
+  | { status: 'conflict'; reason: RedoConflictReason; next_redoable_id: number | null }
+
+/**
+ * Redo the entry a bare redo would take — the oldest undone one, since undo
+ * marks entries from the top of the stack down — only if it is `expectedId`,
+ * when one is given (2026-10-26, scoped native Undo; `undoLatest`'s twin).
+ * `not_undone`: that entry is live (redone already, or never undone);
+ * `not_next`: it is undone, but another undone entry comes first. Checked in
+ * the redo's own transaction. Without `expectedId` this is the bare redo.
+ */
+export function redoNext(userId: number, expectedId?: number): RedoOutcome {
+  const outcome = withTransaction((tx): RedoOutcome & { entry?: ParsedUndoEntry } => {
+    const [parsed] = selectUndoEntries(userId, { undone: true, limit: 1 })
+    if (expectedId !== undefined && parsed?.id !== expectedId) {
+      const state = entryState(userId, expectedId)
+      return {
+        status: 'conflict',
+        reason: state === 'gone' ? 'gone' : state === 'live' ? 'not_undone' : 'not_next',
+        next_redoable_id: parsed?.id ?? null,
+      }
+    }
+    if (!parsed) return { status: 'empty' }
+
+    redoEntry(tx, parsed)
+    return {
+      status: 'redone',
+      id: parsed.id,
+      entry: parsed,
+      result: {
+        redone_action: parsed.action as RedoResult['redone_action'],
+        description: parsed.description,
+        tasks_affected: parsed.snapshots.length,
+      },
+    }
+  })
+
+  if (outcome.status !== 'redone') return outcome
+  const { entry, ...done } = outcome
+  afterUndoRedo(userId, [entry!], 'redo')
+  return done
+}
+
 /**
  * Execute redo for the most recently undone action
  *
@@ -97,24 +146,6 @@ export function redoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
  * @returns The result of the redo operation, or null if nothing to redo
  */
 export function executeRedo(userId: number): RedoResult | null {
-  // The most recently undone action for this user: the oldest undone entry,
-  // since undo marks entries from the top of the stack down
-  const [parsed] = selectUndoEntries(userId, { undone: true, limit: 1 })
-  if (!parsed) {
-    return null
-  }
-
-  const result = withTransaction((tx) => {
-    redoEntry(tx, parsed)
-
-    return {
-      redone_action: parsed.action as RedoResult['redone_action'],
-      description: parsed.description,
-      tasks_affected: parsed.snapshots.length,
-    }
-  })
-
-  afterUndoRedo(userId, [parsed], 'redo')
-
-  return result
+  const outcome = redoNext(userId)
+  return outcome.status === 'redone' ? outcome.result : null
 }

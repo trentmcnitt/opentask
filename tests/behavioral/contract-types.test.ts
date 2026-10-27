@@ -380,10 +380,11 @@ describe('contract fixtures match the TS types', () => {
 
   test('the progress response is a FormattedTask plus met/description', () => {
     const d = data('task-progress')
+    expect(typeof d.undo_id).toBe('number')
     expect(typeof d.met).toBe('boolean')
     expect(typeof d.description).toBe('string')
     const task = Object.fromEntries(
-      Object.entries(d).filter(([k]) => k !== 'met' && k !== 'description'),
+      Object.entries(d).filter(([k]) => !['met', 'description', 'undo_id'].includes(k)),
     )
     expectShape(task, TASK, 'task-progress')
   })
@@ -600,7 +601,7 @@ describe('contract fixtures: the deadlines page (2026-10-22)', () => {
 
   test('defer-lead answers day, deferred, refused and summary', () => {
     const d = data('task-segments-defer-lead')
-    expect(Object.keys(d).sort()).toEqual(['day', 'deferred', 'refused', 'summary'])
+    expect(Object.keys(d).sort()).toEqual(['day', 'deferred', 'refused', 'summary', 'undo_id'])
     expect(d).toMatchObject({ deferred: 1, refused: [] })
     expect(d.day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(d.summary).toEqual(expect.any(String))
@@ -648,6 +649,50 @@ describe('contract fixtures: a bulk snooze names what it moved (2026-10-26)', ()
       for (const id of ids) expect(Number.isInteger(id), name).toBe(true)
       expect(ids).toHaveLength(d.tasks_affected as number)
       expect(new Set(ids).size).toBe(ids.length)
+    }
+  })
+
+  test('undo_id (2026-10-26): every captured mutation answers its own undo entry', () => {
+    // An integer when the request logged an entry, null when it logged
+    // nothing (another day's Considered changes nothing).
+    const mutations = [
+      'quota-prompts-did',
+      'quota-prompts-consider',
+      'quota-prompts-restore',
+      'task-progress',
+      'bulk-complete',
+      'bulk-snooze',
+      'bulk-snooze-overdue',
+      'task-segments-consider',
+      'task-segments-target-today-repeating',
+      'task-segments-defer-lead',
+      'task-relative-fixed',
+      'notification-action-considered',
+    ]
+    for (const name of mutations) {
+      expect(Number.isInteger(data(name).undo_id), `${name}.undo_id`).toBe(true)
+    }
+    expect(data('notification-action-not-waiting').undo_id).toBeNull()
+  })
+
+  test('undo status: the stack ids beside latest_id; undo by id names what it undid', () => {
+    const status = data('undo-status')
+    expect(Object.keys(status).sort()).toEqual(
+      [
+        'latest_id',
+        'newest_undoable_id',
+        'next_redoable_id',
+        'redoable_count',
+        'undoable_count',
+      ].sort(),
+    )
+    // Nothing undone at that point: the newest entry is the newest undoable one.
+    expect(status.newest_undoable_id).toBe(status.latest_id)
+    expect(status.next_redoable_id).toBeNull()
+    const undone = data('undo-by-id')
+    expect(undone.undone_id).toBe(data('quota-prompts-consider').undo_id)
+    for (const k of ['undoable_count', 'redoable_count', 'tasks_affected']) {
+      expect(typeof undone[k]).toBe('number')
     }
   })
 })

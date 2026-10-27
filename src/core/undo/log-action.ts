@@ -6,7 +6,7 @@
 
 import type Database from 'better-sqlite3'
 import { getDb } from '@/core/db'
-import { currentAttribution } from '@/core/request-context'
+import { currentAttribution, recordUndoId } from '@/core/request-context'
 import type { UndoAction, UndoSnapshot, Task, SlotUndoState } from '@/types'
 
 /**
@@ -21,7 +21,8 @@ import type { UndoAction, UndoSnapshot, Task, SlotUndoState } from '@/types'
  *   (see `SlotUndoState`); omitted by every task-only action
  *
  * The entry records which client made it (`client`, `token_name`), read from
- * the request context — `system` outside a request (`request-context.ts`).
+ * the request context — `system` outside a request (`request-context.ts`) —
+ * and leaves its id there for the route's `undo_id` (`recordUndoId`).
  */
 export function logAction(
   userId: number,
@@ -69,7 +70,9 @@ export function logAction(
       attribution.tokenName,
     )
 
-  return Number(result.lastInsertRowid)
+  const id = Number(result.lastInsertRowid)
+  recordUndoId(id)
+  return id
 }
 
 /**

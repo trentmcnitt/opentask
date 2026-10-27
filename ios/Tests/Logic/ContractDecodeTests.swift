@@ -189,7 +189,8 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(task.progressTarget, 3)
         XCTAssertEqual(task.progressCurrent, 0, "a consider logs nothing")
         let raw = try Fixtures.object("quota-prompts-consider")
-        XCTAssertEqual(Set(raw.keys), ["considered", "did", "tasks"])
+        // `undo_id` (2026-10-26): the entry this consider wrote, for scoped Undo.
+        XCTAssertEqual(Set(raw.keys), ["considered", "did", "tasks", "undo_id"])
     }
 
     // MARK: POST /api/quota-prompts/restore (2026-09-25)
@@ -338,7 +339,9 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
     func testUndoStatus() throws {
         let status = try Fixtures.decode(UndoStatusPage.self, "undo-status")
-        XCTAssertEqual(status.latestId, 901)
+        // An undo-entry placeholder: 903 since the mutations before it carry
+        // `undo_id` (2026-10-26) — the bulk complete's own entry.
+        XCTAssertEqual(status.latestId, 903)
         // 6 creates + did + progress + bulk complete.
         XCTAssertEqual(status.undoableCount, 9)
         XCTAssertEqual(status.redoableCount, 0)
@@ -867,7 +870,9 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let result = try Fixtures.decode(APIClient.ReminderConsiderResult.self, "notification-action-not-waiting")
         XCTAssertFalse(result.considered)
         let raw = try Fixtures.object("notification-action-not-waiting")
-        XCTAssertEqual(Set(raw.keys), ["action", "task_id", "considered"])
+        // `undo_id` is null (2026-10-26): nothing was logged.
+        XCTAssertEqual(Set(raw.keys), ["action", "task_id", "considered", "undo_id"])
+        XCTAssertTrue(raw["undo_id"] is NSNull)
         XCTAssertEqual(raw["considered"] as? Bool, false)
         XCTAssertEqual(raw["task_id"] as? Int, Fixtures.namedReminder)
     }
