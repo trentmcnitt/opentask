@@ -73,15 +73,36 @@ enum WidgetTheme {
     // MARK: - Shared accents
 
     /// The one indigo used across all three widget kinds for "this is
-    /// active / worth noticing right now" — `ReminderSlotStrip`'s "behind,
-    /// still waiting" segment fill (`RemindersWidgetViews.swift`), the "show
-    /// completed"/"show met" dot's ON state (`CompletedDotToggle` below,
-    /// shared by all three kinds since 2026-09-24), and — after merging with
-    /// the parallel Quotas widget rebuild (2026-09-23, `feat/quotas-widget`,
-    /// PR #58) — every in-progress quota chip/bar. ONE named constant, not several
-    /// independently-chosen `Color.indigo` literals, so all three widgets'
-    /// accent can never drift apart pixel-by-pixel across files.
+    /// active / worth noticing right now" — the "show completed"/"show met"
+    /// dot's ON state (`CompletedDotToggle` below, shared by all three kinds
+    /// since 2026-09-24), the primary bar buttons, the selection wash, and
+    /// — after merging with the parallel Quotas widget rebuild (2026-09-23,
+    /// `feat/quotas-widget`, PR #58) — every in-progress quota count. ONE
+    /// named constant, not several independently-chosen `Color.indigo`
+    /// literals, so all three widgets' accent can never drift apart
+    /// pixel-by-pixel across files. NOT the progress bars' fill any more
+    /// (2026-10-26): those fill in `dayBarFilling`, the reminders' purple.
     static let indigoAccent = Color.indigo
+
+    /// Every progress bar's fill while it fills (2026-10-26, the web's PR
+    /// #383) — the Reminders strip's period AND task segment bars, the
+    /// Quotas widget's period bars: the reminders' purple
+    /// (`DayBarColors.fillingHex`, the web's `--badge-reminders`), resolved
+    /// from the view's `colorScheme` like `overTarget(_:)`. Finished is the
+    /// done green (`trackMetTint`), or a segment's own `stripDoneColor`.
+    static func dayBarFilling(_ scheme: ColorScheme) -> Color {
+        let hex = DayBarColors.fillingHex
+        return rgb(scheme == .dark ? hex.dark : hex.light)
+    }
+
+    /// A Reminders strip bar's fill once finished: the done green at the
+    /// strip's 0.85, or the segment's own `doneColorHex` where it has one
+    /// (the web's deadlines page finishes in its teal; no native kind does
+    /// yet, so today this is always the green).
+    static func stripDoneColor(_ kind: SegmentKind?, scheme: ColorScheme) -> Color {
+        guard let hex = kind?.doneColorHex else { return trackMetTint.opacity(0.85) }
+        return rgb(scheme == .dark ? hex.dark : hex.light)
+    }
 
     // MARK: - Track (§5)
 
@@ -96,13 +117,11 @@ enum WidgetTheme {
     ///
     /// No named "in-progress" constant here (removed `trackTint`,
     /// `feat/quotas-widget` review pass, 2026-09-23) — the Quotas widget's
-    /// in-progress color is the plain SwiftUI `Color.indigo`, referenced
-    /// directly at each call site in `TrackWidgetViews.swift`, the SAME
-    /// literal `ReminderSlotStrip.color(for:)` already uses for its
-    /// `.behind` state (`RemindersWidgetViews.swift`) — the app's one
-    /// existing "in progress" accent, not a second hue. `trackTint` briefly
-    /// aliased this to `Color.teal`, which was caught in review as an
-    /// accidental second accent hue and reverted before merge.
+    /// in-progress counts use `indigoAccent`, the app's one "in progress"
+    /// accent, not a second hue. `trackTint` briefly aliased this to
+    /// `Color.teal`, which was caught in review as an accidental second
+    /// accent hue and reverted before merge. Its period BARS fill in
+    /// `dayBarFilling` since 2026-10-26, like every progress bar.
     static let trackMetTint = Color.green
 
     /// The "day complete" wash (2026-09-29, mockup r3-c): a faint layer of
@@ -130,7 +149,7 @@ enum WidgetTheme {
     /// (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on the
     /// dark card measured 3.0:1 as text; lifted it is 6.0:1. Light mode is
     /// unchanged (#9E4594, 5.6:1 on white). Resolved from the view's
-    /// `colorScheme` (see `taskSegmentColor`), not a dynamic platform color.
+    /// `colorScheme` (see `dayBarFilling`), not a dynamic platform color.
     static func overTarget(_ scheme: ColorScheme) -> Color {
         rgb(scheme == .dark ? 0xC97CD5 : 0x9E4594)
     }
@@ -144,24 +163,15 @@ enum WidgetTheme {
         rgb(scheme == .dark ? 0x92429E : 0x9E4594)
     }
 
-    /// A task segment's teal (2026-10-11, Trent's pick: mockup
-    /// task-segment-colors-2 option 3) — its strip bar's fill while a row
-    /// waits (grown while its page is on screen) and its page title. One shade per
-    /// horizon, the exact values the web uses (`TaskHorizon.segmentColorHex`);
-    /// Upcoming (2026-10-12) its own blue-teal (`SegmentKind.colorHex`).
-    /// A finished segment's bar is green like a period's, and its track the
-    /// same gray. Resolved from the view's `colorScheme`, not a dynamic
-    /// platform color, so the macOS image renders (`ios/Tests/Renders`) draw
-    /// the dark values when told to.
-    static func taskSegmentColor(_ kind: SegmentKind?, scheme: ColorScheme) -> Color {
-        // Only a segment this build doesn't know falls back to Weeks' teal.
-        let hex = (kind ?? .horizon(.weeks)).colorHex
-        return rgb(scheme == .dark ? hex.dark : hex.light)
-    }
-
     /// A task page's title color: one deeper teal (#0b7a6f) for every horizon
     /// in light mode, for legibility (Trent, 2026-10-11); the horizon's own
-    /// fill in dark mode (`TaskHorizon.segmentTitleHex`).
+    /// teal in dark mode (`TaskHorizon.segmentTitleHex`), Upcoming its
+    /// blue-teal (`SegmentKind.titleHex`). Since 2026-10-26 the segment
+    /// teals live on in the titles only: the strip bar fills in
+    /// `dayBarFilling` like every bar (there was a `taskSegmentColor` for
+    /// the bar's teal fill; it went with it). Resolved from the view's
+    /// `colorScheme`, not a dynamic platform color, so the macOS image
+    /// renders (`ios/Tests/Renders`) draw the dark values when told to.
     static func taskSegmentTitleColor(_ kind: SegmentKind?, scheme: ColorScheme) -> Color {
         let hex = (kind ?? .horizon(.weeks)).titleHex
         return rgb(scheme == .dark ? hex.dark : hex.light)

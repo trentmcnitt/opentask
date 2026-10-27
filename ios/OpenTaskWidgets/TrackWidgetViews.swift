@@ -363,6 +363,8 @@ private struct QuotaLinesView: View {
 private struct QuotaHeadingRow: View {
     let section: QuotaSection
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HStack(spacing: 6) {
             Text(section.heading.uppercased())
@@ -383,8 +385,12 @@ private struct QuotaHeadingRow: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.25))
+                    // The reminders' purple while filling, green once every
+                    // quota is met — the rule every progress bar follows
+                    // (2026-10-26, the web's PR #383: `PeriodHeading`'s
+                    // `SlotHairline`). The counts keep their indigo.
                     Capsule()
-                        .fill(section.allMet ? WidgetTheme.trackMetTint : WidgetTheme.indigoAccent)
+                        .fill(section.allMet ? WidgetTheme.trackMetTint : WidgetTheme.dayBarFilling(colorScheme))
                         .frame(width: max(geo.size.width * section.barFraction, 0))
                     // The notch: how much of the period's clock has already
                     // run. `Color.primary` rather than a hardcoded white —

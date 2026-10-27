@@ -402,9 +402,12 @@ enum TaskHorizon: String, CaseIterable, Codable {
     /// The task segment's color (Trent, 2026-10-11, mockup
     /// task-segment-colors-2 option 3): one teal per horizon, nearest
     /// first, EXACT values shared with the web — change them together.
-    /// Teal is clear of every other strip/row color: indigo (a period's
-    /// fill), green (done), the plum of over target, red, and the priority
-    /// colors. As 0xRRGGBB; `WidgetTheme`/`WatchTheme` make the `Color`.
+    /// Since 2026-10-26 it colours the segment's TITLE only (dark mode's
+    /// title is this value, `segmentTitleHex`): no bar fills in it any more —
+    /// every bar fills in the reminders' purple (`DayBarColors`). Teal stays
+    /// clear of the purple, green (done), the plum of over target, red, and
+    /// the priority colors. As 0xRRGGBB; `WidgetTheme`/`WatchTheme` make the
+    /// `Color`.
     var segmentColorHex: (light: UInt32, dark: UInt32) {
         switch self {
         case .days: return (0x0F9D8F, 0x2BB5A6)
@@ -420,6 +423,22 @@ enum TaskHorizon: String, CaseIterable, Codable {
     var segmentTitleHex: (light: UInt32, dark: UInt32) {
         (0x0B7A6F, segmentColorHex.dark)
     }
+}
+
+/// The day bars' fill (2026-10-26, the web's PR #383; Trent: "Have them all
+/// just use the purple and green except for the deadlines, which finish the
+/// teal color that they currently finish at. That's the special one."):
+/// every progress bar — a reminder period's, every task segment's, a quota
+/// period's — fills in the reminders' PURPLE while it fills and turns the
+/// done green when finished (a segment's `doneColorHex` may replace the
+/// green). The purple is the web's `--badge-reminders`: oklch(0.55 0.2 295)
+/// light ≈ #7e4ed7, oklch(0.62 0.19 295) dark ≈ #9167ea. EXACT values
+/// shared with the web — change together. The ONE source: `WidgetTheme`
+/// (phone and Mac widgets) and `WatchTheme` (the watch, always dark) make
+/// the `Color` from it. Only bar fills use it: buttons, toggles, selection
+/// and the day word keep their indigo.
+enum DayBarColors {
+    static let fillingHex: (light: UInt32, dark: UInt32) = (0x7E4ED7, 0x9167EA)
 }
 
 /// A task segment's identity (2026-10-12): a horizon, or Upcoming — the web's
@@ -484,13 +503,30 @@ enum SegmentKind: Hashable {
         }
     }
 
-    /// The segment's fill, as 0xRRGGBB. Upcoming is the web's
-    /// `--segment-upcoming` (2026-10-12): a blue-teal, apart from the
-    /// horizons' teals. EXACT values shared with the web — change together.
+    /// The segment's own colour, as 0xRRGGBB — the web's `--segment-*`
+    /// token. Upcoming is `--segment-upcoming` (2026-10-12): a blue-teal,
+    /// apart from the horizons' teals. EXACT values shared with the web —
+    /// change together. Since 2026-10-26 it is the TITLE's colour only (the
+    /// dark title, and the base of `titleHex`); the segment's strip bar
+    /// fills in `DayBarColors.fillingHex` like every other bar.
     var colorHex: (light: UInt32, dark: UInt32) {
         switch self {
         case .horizon(let horizon): return horizon.segmentColorHex
         case .upcoming: return (0x1A8FB0, 0x4CB8D9)
+        }
+    }
+
+    /// The segment's FINISHED bar colour in place of the done green, or nil
+    /// for green (2026-10-26, the web's `segmentDoneColor`). Every kind this
+    /// build knows finishes green. The one exception on the web is the
+    /// deadlines page, which finishes in its own teal (`--deadlines-fill`,
+    /// #0d9488 light, `--deadlines` dark); no native build draws that page
+    /// yet (no `?deadlines=1`, no `SegmentKind` for it). The switch is
+    /// exhaustive on purpose: adding that case won't compile until it
+    /// picks its colour here.
+    var doneColorHex: (light: UInt32, dark: UInt32)? {
+        switch self {
+        case .horizon, .upcoming: return nil
         }
     }
 

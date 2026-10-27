@@ -151,8 +151,9 @@ enum ReminderDayProgress {
     /// One bar of the Reminders widget's strip.
     struct StripBar: Equatable {
         enum Kind: Equatable { case period, taskSegment }
-        /// indigo while something waits, green once nothing does, a faint
-        /// track while the period's time hasn't come.
+        /// Purple while something waits, green once nothing does, a faint
+        /// track while the period's time hasn't come — the same for a period
+        /// and a task segment (2026-10-26, `DayBarColors`).
         enum State: Equatable { case behind, done, upcoming }
 
         /// The page this bar jumps to — a period's `slotKey` or a segment's
@@ -166,8 +167,9 @@ enum ReminderDayProgress {
         /// The bar's width weight: the period's (or segment's) day total, so
         /// checking things off moves the fill but never resizes a bar.
         let total: Int
-        /// A task segment's kind — its horizon or Upcoming, which picks its
-        /// colour (`SegmentKind.colorHex`); nil for a period.
+        /// A task segment's kind — its horizon or Upcoming, which may pick
+        /// its finished colour (`SegmentKind.doneColorHex`; green for every
+        /// kind native knows); nil for a period.
         var segment: SegmentKind? = nil
 
         /// How far it has filled.
@@ -183,7 +185,7 @@ enum ReminderDayProgress {
     ///
     /// A segment's bar is weighed and filled by its "X of Y" (`PeriodCount(
     /// segment)`), and is always STARTED — it is shown today, so it is never
-    /// the faint "not yet" track: indigo while a row waits, green once none
+    /// the faint "not yet" track: purple while a row waits, green once none
     /// does. A period that was finished early reads done whatever the clock
     /// says (the web `ReminderSlotBar`'s rule).
     static func stripBars(
