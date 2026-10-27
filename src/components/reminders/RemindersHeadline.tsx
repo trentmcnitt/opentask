@@ -6,11 +6,11 @@ import { formatClockTime } from '@/lib/time-utils'
 import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
 import {
   dayCountLabel,
-  dayCountParts,
-  dayDoneText,
+  dayCountRuns,
+  dayDoneRuns,
   headlineCounts,
+  tasksWaitingText,
   waitingSoFarRuns,
-  waitingSoFarText,
   type CountPart,
   type HeadlineCounts,
   type RemindersSummary,
@@ -55,19 +55,25 @@ import type { SegmentView } from '@/hooks/useTaskSegments'
  * it is dropped — never "0 tasks"):
  *
  *   line    "14 reminders · 3 tasks waiting so far" / "3 tasks waiting so far"
- *           phone: "14 rem · 3 tasks waiting so far", wrapping only at
- *           the " · " (it broke "waiting so / far" beside "All so far")
- *           "Caught up until Evening · 6:00 PM" (no task waiting either)
+ *           "Caught up until Evening · 6:00 PM" (only later periods hold
+ *           reminders), "… · 6:00 PM · 3 tasks waiting" while tasks wait
+ *           (Trent, 2026-10-26: keep the caught-up phrase, append the tasks)
  *           "All clear for today" (nothing waiting of either kind)
  *   count   "40 of 75 reminders · 30 of 84 tasks considered"
- *           phone: "40/75 rem · 30/84 tasks" (the full words squeeze the bar
- *           to slivers at 375-402px)
  *   done    "All 75 reminders · 84 tasks considered today", green — only
- *           once BOTH halves are handled; phone: "All 75 rem · 84 tasks"
+ *           once BOTH halves are handled
  *
- * With the switch off (or no segment drawn) the headline reads exactly as
- * before: "14 waiting so far", "40 of 75 considered", "All 75 considered
- * today" — the segments still on the bar, uncounted.
+ * FULL WORDS AT EVERY WIDTH; ON A PHONE THE COUNT GETS ITS OWN LINE (Trent,
+ * 2026-10-26, layout "b"; no "rem" abbreviation anywhere). Beside the bar the
+ * full words left a phone's bar 0-2px wide, so below 640px the count drops
+ * under the bar, which keeps the whole width. Every line there wraps only at
+ * a " · ", never inside a run (it broke "waiting so / far" beside "All so
+ * far"). From 640px up it is one line, the count beside the bar.
+ *
+ * With the switch off (or no segment drawn) the words read as before the
+ * split: "14 waiting so far", "40 of 75 considered", "All 75 considered
+ * today" — the segments still on the bar, uncounted. (A phone's count is
+ * full words under the bar there too; it was "40 / 75" beside it.)
  */
 export function RemindersHeadline({
   summary,
@@ -92,12 +98,13 @@ export function RemindersHeadline({
     countTasks && taskSegments.length > 0 ? taskSegments.map(segmentCounts) : null,
   )
   const segments = [...summary.started, ...summary.later]
-  // THE BAR FITS, THE COUNT NEVER MOVES (2026-10-24). With every task
-  // segment on the bar every day, five or six periods and eight segments at
-  // their thumb-wide minimum are wider than a phone — the bar pushed the
-  // count off the screen (7px sideways scroll at 375 on real data). So the
-  // count keeps its width, the bar takes what is left (`flex-1 min-w-0`,
-  // measured as a size container), and each segment's minimum is its thumb
+  // THE BAR FITS (2026-10-24). With every task segment on the bar every
+  // day, five or six periods and eight segments at their thumb-wide minimum
+  // are wider than a phone — the bar pushed the count off the screen (7px
+  // sideways scroll at 375 on real data). So the bar takes the width it is
+  // given (beside the count from 640px, `sm:flex-1 min-w-0`; the whole row on
+  // a phone, the count on the line under it — layout "b", 2026-10-26),
+  // measured as a size container, and each segment's minimum is its thumb
   // width OR its even share of the bar, whichever is smaller (`fitShare`):
   // with room, nothing changes; without, every segment gives way evenly and
   // the minimums never add up to more than the bar.
@@ -127,7 +134,7 @@ export function RemindersHeadline({
         )}
       </div>
 
-      <div className="mt-3 flex items-center">
+      <div className="mt-3 flex flex-col sm:flex-row sm:items-center" data-day-row>
         {/* EACH SEGMENT GOES TO ITS PERIOD (2026-09-25) — the dashboard card's
             `ReminderSlotBar` pages to a slot on a tap, and this is the same
             idea on a page that scrolls: open the section if it was folded,
@@ -143,7 +150,7 @@ export function RemindersHeadline({
             negative margin) so a thumb can land on it; hover only darkens the
             track a shade, since the fill is the thing to read. */}
         <div
-          className="-my-1.5 flex min-w-0 flex-1 gap-[3px]"
+          className="-my-1.5 flex min-w-0 gap-[3px] sm:flex-1"
           style={{ containerType: 'inline-size' }}
           role="group"
           aria-label="Go to a period"
@@ -190,7 +197,7 @@ export function RemindersHeadline({
           })}
         </div>
         <span
-          className="ml-3 shrink-0 text-xs whitespace-nowrap tabular-nums"
+          className="mt-2 shrink-0 text-xs tabular-nums sm:mt-0 sm:ml-3 sm:whitespace-nowrap"
           data-day-count
           role="progressbar"
           aria-valuemin={0}
@@ -200,20 +207,10 @@ export function RemindersHeadline({
         >
           {dayDone ? (
             <span className="text-green-700 dark:text-green-400">
-              {counts.tasks ? (
-                <>
-                  <span className="hidden sm:inline">{dayDoneText(counts, 'full')}</span>
-                  <span className="sm:hidden">{dayDoneText(counts, 'compact')}</span>
-                </>
-              ) : (
-                dayDoneText(counts, 'full')
-              )}
+              <Runs runs={dayDoneRuns(counts)} />
             </span>
           ) : (
-            <>
-              <CountParts parts={dayCountParts(counts, 'full')} className="hidden sm:inline" />
-              <CountParts parts={dayCountParts(counts, 'compact')} className="sm:hidden" />
-            </>
+            <CountRuns runs={dayCountRuns(counts)} />
           )}
         </span>
       </div>
@@ -223,7 +220,8 @@ export function RemindersHeadline({
 
 /**
  * The headline's one line: "All clear for today" once nothing of either kind
- * waits, "Caught up until …" while only later periods hold anything, else
+ * waits, "Caught up until …" while only later periods hold reminders (any
+ * tasks waiting appended), else
  * what is waiting so far (both halves — the states in the docblock above).
  */
 function HeadlineLine({
@@ -239,17 +237,30 @@ function HeadlineLine({
   if (allWaitingDone && tasksWaiting === 0) {
     return <span className="text-foreground font-medium">All clear for today</span>
   }
-  if (summary.waitingSoFar === 0 && tasksWaiting === 0 && summary.nextUp) {
+  // Caught up: no reminder waits in a started period, a later one holds
+  // some. Tasks waiting no longer take the phrase away (Trent, 2026-10-26):
+  // they are appended, "Caught up until Evening · 6:00 PM · 3 tasks waiting".
+  if (summary.waitingSoFar === 0 && summary.nextUp) {
     return (
-      <>
-        <span className="text-foreground font-medium">
+      <span data-caught-up data-tasks-waiting={counts.tasks ? tasksWaiting : undefined}>
+        <span className="text-foreground font-medium whitespace-nowrap">
           Caught up until {summary.nextUp.slot.label}
         </span>
         <span className="text-muted-foreground">
-          {' '}
-          &middot; {formatClockTime(summary.nextUp.slot.start_time)}
+          {' · '}
+          <span className="whitespace-nowrap">
+            {formatClockTime(summary.nextUp.slot.start_time)}
+          </span>
         </span>
-      </>
+        {tasksWaiting > 0 && (
+          <>
+            <span className="text-muted-foreground">{' · '}</span>
+            <span className="text-foreground font-medium whitespace-nowrap">
+              {tasksWaitingText(tasksWaiting)}
+            </span>
+          </>
+        )}
+      </span>
     )
   }
   return (
@@ -258,46 +269,42 @@ function HeadlineLine({
       data-waiting-so-far={summary.waitingSoFar}
       data-tasks-waiting={counts.tasks ? tasksWaiting : undefined}
     >
-      {counts.tasks ? (
-        <>
-          <WaitingRuns runs={waitingSoFarRuns(counts, 'full')} className="hidden sm:inline" />
-          <WaitingRuns runs={waitingSoFarRuns(counts, 'compact')} className="sm:hidden" />
-        </>
-      ) : (
-        waitingSoFarText(counts)
-      )}
+      <Runs runs={waitingSoFarRuns(counts)} />
     </span>
   )
 }
 
-/** The waiting line's runs, each unbroken, wrapping only at the " · " between them. */
-function WaitingRuns({ runs, className }: { runs: string[]; className: string }) {
-  return (
-    <span className={className}>
-      {runs.map((run, i) => (
-        <span key={i}>
-          {i > 0 && ' · '}
-          <span className="whitespace-nowrap">{run}</span>
-        </span>
-      ))}
+/** Runs of text joined by " · ", each unbroken: a line wraps only between them. */
+function Runs({ runs }: { runs: string[] }) {
+  return runs.map((run, i) => (
+    <span key={i}>
+      {i > 0 && ' · '}
+      <span className="whitespace-nowrap">{run}</span>
     </span>
-  )
+  ))
 }
 
-/** The open day's count: each handled number in the foreground, the rest muted. */
-function CountParts({ parts, className }: { parts: CountPart[]; className: string }) {
-  return (
-    <span className={className}>
-      {parts.map((p, i) => (
-        <span
-          key={i}
-          className={p.strong ? 'text-foreground font-medium' : 'text-muted-foreground'}
-        >
-          {p.text}
-        </span>
-      ))}
+/**
+ * The open day's count, one unbroken run per half joined by " · " (a phone
+ * wraps only between them): each handled number in the foreground, the rest
+ * muted.
+ */
+function CountRuns({ runs }: { runs: CountPart[][] }) {
+  return runs.map((run, i) => (
+    <span key={i}>
+      {i > 0 && <span className="text-muted-foreground"> · </span>}
+      <span className="whitespace-nowrap">
+        {run.map((p, j) => (
+          <span
+            key={j}
+            className={p.strong ? 'text-foreground font-medium' : 'text-muted-foreground'}
+          >
+            {p.text}
+          </span>
+        ))}
+      </span>
     </span>
-  )
+  ))
 }
 
 /** How narrow an empty task segment's bar may get when the day bar runs out of room. */

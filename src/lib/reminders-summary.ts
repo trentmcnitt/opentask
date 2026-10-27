@@ -162,9 +162,13 @@ export function headlineCounts(
 
 type HalfKind = 'reminders' | 'tasks'
 
-/** "75 reminders", "1 task" — or a phone's shorter "75 rem". */
-function noun(n: number, kind: HalfKind, compact = false): string {
-  if (kind === 'reminders') return compact ? 'rem' : n === 1 ? 'reminder' : 'reminders'
+/**
+ * "75 reminders", "1 task" — full words at every width (Trent, 2026-10-26:
+ * no "rem" abbreviation anywhere; on a phone the count takes a line of its
+ * own under the bar instead, so the words fit).
+ */
+function noun(n: number, kind: HalfKind): string {
+  if (kind === 'reminders') return n === 1 ? 'reminder' : 'reminders'
   return n === 1 ? 'task' : 'tasks'
 }
 
@@ -187,22 +191,30 @@ const SEP = ' · '
 /**
  * The line, in the runs it may wrap between (never inside one — a phone
  * broke "waiting so / far"): ["14 reminders", "3 tasks waiting so far"],
- * shown joined by " · ". `compact` (a phone, both halves waiting): "14 rem",
- * the count's word, so the line fits beside "All so far" on one line. With no
- * task half, as before: ["14 waiting so far"].
+ * shown joined by " · ". With no task half, as before: ["14 waiting so far"].
  */
-export function waitingSoFarRuns(c: HeadlineCounts, form: 'full' | 'compact' = 'full'): string[] {
+export function waitingSoFarRuns(c: HeadlineCounts): string[] {
   if (!c.tasks) return [`${c.reminders.waiting} waiting so far`]
   const shown = shownHalves(c, (h) => h.waiting)
-  const compact = form === 'compact' && shown.length > 1
-  const runs = shown.map(([k, h]) => `${h.waiting} ${noun(h.waiting, k, compact)}`)
+  const runs = shown.map(([k, h]) => `${h.waiting} ${noun(h.waiting, k)}`)
   runs[runs.length - 1] += ' waiting so far'
   return runs
 }
 
 /** The line as one string: "14 reminders · 3 tasks waiting so far" ("14 waiting so far" with no task half). */
-export function waitingSoFarText(c: HeadlineCounts, form: 'full' | 'compact' = 'full'): string {
-  return waitingSoFarRuns(c, form).join(SEP)
+export function waitingSoFarText(c: HeadlineCounts): string {
+  return waitingSoFarRuns(c).join(SEP)
+}
+
+/**
+ * What "Caught up until Evening · 6:00 PM" gains while tasks still wait
+ * (Trent, 2026-10-26: keep the caught-up phrase, append the tasks): "3 tasks
+ * waiting", "1 task waiting". Tasks have no period, so they are never
+ * "until" anything; the line reads "Caught up until Evening · 6:00 PM · 3
+ * tasks waiting".
+ */
+export function tasksWaitingText(n: number): string {
+  return `${n} ${noun(n, 'tasks')} waiting`
 }
 
 /** A run of text in the count; `strong` is a handled number, drawn in the foreground. */
@@ -212,42 +224,52 @@ export interface CountPart {
 }
 
 /**
- * The count beside the bar while the day is open. `full` (desktop): "40 of 75
- * reminders · 30 of 84 tasks considered"; `compact` (a phone): "40/75 rem ·
- * 30/84 tasks". With no task half, as before: "40 of 75 considered" / "40 / 75".
+ * The count while the day is open, one run per half (a phone may wrap
+ * between the runs, never inside one): [["40", " of 75 reminders"], ["30",
+ * " of 84 tasks considered"]], shown joined by " · " — "40 of 75 reminders ·
+ * 30 of 84 tasks considered". With no task half, as before: "40 of 75
+ * considered".
  */
-export function dayCountParts(c: HeadlineCounts, form: 'full' | 'compact'): CountPart[] {
+export function dayCountRuns(c: HeadlineCounts): CountPart[][] {
   if (!c.tasks) {
-    const rest = form === 'full' ? ` of ${c.reminders.total} considered` : ` / ${c.reminders.total}`
-    return [{ text: String(c.reminders.handled), strong: true }, { text: rest }]
+    return [
+      [
+        { text: String(c.reminders.handled), strong: true },
+        { text: ` of ${c.reminders.total} considered` },
+      ],
+    ]
   }
-  const parts: CountPart[] = []
-  shownHalves(c, (h) => h.total).forEach(([k, h], i) => {
-    if (i > 0) parts.push({ text: SEP })
-    parts.push({ text: String(h.handled), strong: true })
-    parts.push({
-      text:
-        form === 'full'
-          ? ` of ${h.total} ${noun(h.total, k)}`
-          : `/${h.total} ${noun(h.total, k, true)}`,
-    })
-  })
-  if (form === 'full') parts.push({ text: ' considered' })
-  return parts
+  const runs = shownHalves(c, (h) => h.total).map(([k, h]): CountPart[] => [
+    { text: String(h.handled), strong: true },
+    { text: ` of ${h.total} ${noun(h.total, k)}` },
+  ])
+  runs[runs.length - 1].push({ text: ' considered' })
+  return runs
+}
+
+/** The open day's count as one string: "40 of 75 reminders · 30 of 84 tasks considered". */
+export function dayCountText(c: HeadlineCounts): string {
+  return dayCountRuns(c)
+    .map((run) => run.map((p) => p.text).join(''))
+    .join(SEP)
 }
 
 /**
- * The count once the day is done (green): "All 75 reminders · 84 tasks
- * considered today", on a phone "All 75 rem · 84 tasks". With no task half,
- * as before: "All 75 considered today" at every width.
+ * The count once the day is done (green), in runs as `dayCountRuns`: ["All
+ * 75 reminders", "84 tasks considered today"] — "All 75 reminders · 84 tasks
+ * considered today". With no task half, as before: ["All 75 considered today"].
  */
-export function dayDoneText(c: HeadlineCounts, form: 'full' | 'compact'): string {
-  if (!c.tasks) return `All ${c.reminders.total} considered today`
-  const compact = form === 'compact'
-  const parts = shownHalves(c, (h) => h.total).map(
-    ([k, h]) => `${h.total} ${noun(h.total, k, compact)}`,
-  )
-  return `All ${parts.join(SEP)}${compact ? '' : ' considered today'}`
+export function dayDoneRuns(c: HeadlineCounts): string[] {
+  if (!c.tasks) return [`All ${c.reminders.total} considered today`]
+  const runs = shownHalves(c, (h) => h.total).map(([k, h]) => `${h.total} ${noun(h.total, k)}`)
+  runs[0] = `All ${runs[0]}`
+  runs[runs.length - 1] += ' considered today'
+  return runs
+}
+
+/** The done count as one string: "All 75 reminders · 84 tasks considered today". */
+export function dayDoneText(c: HeadlineCounts): string {
+  return dayDoneRuns(c).join(SEP)
 }
 
 /**

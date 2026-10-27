@@ -6,18 +6,22 @@
  * `summarizeReminders`) as one half and every task segment the day bar draws
  * as the other, each segment by `segmentCounts` — the number its own header
  * shows. With no task half (the task queue off, or no segment drawn) every
- * string reads exactly as before the split. Pure: no database.
+ * string reads as before the split. Full words at every width (layout "b",
+ * 2026-10-26: no "rem" abbreviation; a phone puts the count on its own line
+ * instead). Pure: no database.
  */
 import { describe, expect, test } from 'vitest'
 import {
   dayCountLabel,
-  dayCountParts,
+  dayCountRuns,
+  dayCountText,
+  dayDoneRuns,
   dayDoneText,
   headlineCounts,
   summarizeReminders,
+  tasksWaitingText,
   waitingSoFarRuns,
   waitingSoFarText,
-  type HeadlineCounts,
 } from '@/lib/reminders-summary'
 import { segmentCounts } from '@/lib/task-segments'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -48,15 +52,6 @@ function segment(waiting: number, considered: number, deferred: number) {
   }
 }
 
-const full = (c: HeadlineCounts) =>
-  dayCountParts(c, 'full')
-    .map((p) => p.text)
-    .join('')
-const compact = (c: HeadlineCounts) =>
-  dayCountParts(c, 'compact')
-    .map((p) => p.text)
-    .join('')
-
 const morning = slot(1, 'Morning', '08:00')
 const evening = slot(2, 'Evening', '18:00')
 
@@ -80,18 +75,38 @@ describe('the headline counts reminders and tasks apart', () => {
     expect(c.done).toBe(false)
 
     expect(waitingSoFarText(c)).toBe('14 reminders · 13 tasks waiting so far')
-    // A phone's line: the count's short word, wrapping only between the runs.
-    expect(waitingSoFarText(c, 'compact')).toBe('14 rem · 13 tasks waiting so far')
-    expect(waitingSoFarRuns(c, 'compact')).toEqual(['14 rem', '13 tasks waiting so far'])
-    expect(full(c)).toBe('40 of 75 reminders · 71 of 84 tasks considered')
-    expect(compact(c)).toBe('40/75 rem · 71/84 tasks')
+    // A phone wraps only between the runs, never inside one.
+    expect(waitingSoFarRuns(c)).toEqual(['14 reminders', '13 tasks waiting so far'])
+    expect(dayCountText(c)).toBe('40 of 75 reminders · 71 of 84 tasks considered')
     expect(dayCountLabel(c)).toBe('40 of 75 reminders and 71 of 84 tasks considered today')
-    // The handled numbers are the emphasised runs.
+    // One run per half; the handled numbers are the emphasised parts.
+    const runs = dayCountRuns(c)
+    expect(runs.map((r) => r.map((p) => p.text).join(''))).toEqual([
+      '40 of 75 reminders',
+      '71 of 84 tasks considered',
+    ])
     expect(
-      dayCountParts(c, 'full')
+      runs
+        .flat()
         .filter((p) => p.strong)
         .map((p) => p.text),
     ).toEqual(['40', '71'])
+  })
+
+  test('no "rem" abbreviation anywhere', () => {
+    const summary = summarizeReminders([group(morning, 14, 40)], TZ, NOW, DAY_START)
+    const open = headlineCounts(summary, [{ handled: 30, total: 84 }])
+    const done = headlineCounts(summarizeReminders([group(morning, 0, 75)], TZ, NOW, DAY_START), [
+      { handled: 84, total: 84 },
+    ])
+    for (const text of [
+      waitingSoFarText(open),
+      dayCountText(open),
+      dayCountLabel(open),
+      dayDoneText(done),
+    ]) {
+      expect(text).not.toMatch(/\brem\b|\d\/\d/)
+    }
   })
 
   test('done only when both halves are handled', () => {
@@ -100,15 +115,15 @@ describe('the headline counts reminders and tasks apart', () => {
     const tasksLeft = headlineCounts(summary, [{ handled: 80, total: 84 }])
     expect(tasksLeft.done).toBe(false)
     expect(waitingSoFarText(tasksLeft)).toBe('4 tasks waiting so far')
-    expect(full(tasksLeft)).toBe('75 of 75 reminders · 80 of 84 tasks considered')
+    expect(dayCountText(tasksLeft)).toBe('75 of 75 reminders · 80 of 84 tasks considered')
 
     const allDone = headlineCounts(summary, [
       { handled: 22, total: 22 },
       { handled: 62, total: 62 },
     ])
     expect(allDone.done).toBe(true)
-    expect(dayDoneText(allDone, 'full')).toBe('All 75 reminders · 84 tasks considered today')
-    expect(dayDoneText(allDone, 'compact')).toBe('All 75 rem · 84 tasks')
+    expect(dayDoneText(allDone)).toBe('All 75 reminders · 84 tasks considered today')
+    expect(dayDoneRuns(allDone)).toEqual(['All 75 reminders', '84 tasks considered today'])
     expect(dayCountLabel(allDone)).toBe('75 of 75 reminders and 84 of 84 tasks considered today')
 
     const remindersLeft = headlineCounts(
@@ -129,31 +144,27 @@ describe('the headline counts reminders and tasks apart', () => {
     ])
     expect(noTasks.tasks).toEqual({ waiting: 0, handled: 0, total: 0 })
     expect(waitingSoFarText(noTasks)).toBe('2 reminders waiting so far')
-    // One half alone keeps its full word on a phone too: it fits.
-    expect(waitingSoFarText(noTasks, 'compact')).toBe('2 reminders waiting so far')
-    expect(full(noTasks)).toBe('3 of 5 reminders considered')
-    expect(compact(noTasks)).toBe('3/5 rem')
+    expect(dayCountText(noTasks)).toBe('3 of 5 reminders considered')
     expect(dayCountLabel(noTasks)).toBe('3 of 5 reminders considered today')
 
     // Tasks there, but none waiting: the waiting line drops them, the count keeps them.
     const tasksHandled = headlineCounts(summary, [{ handled: 4, total: 4 }])
     expect(waitingSoFarText(tasksHandled)).toBe('2 reminders waiting so far')
-    expect(full(tasksHandled)).toBe('3 of 5 reminders · 4 of 4 tasks considered')
+    expect(dayCountText(tasksHandled)).toBe('3 of 5 reminders · 4 of 4 tasks considered')
 
     const doneNoTasks = headlineCounts(
       summarizeReminders([group(morning, 0, 5)], TZ, NOW, DAY_START),
       [{ handled: 0, total: 0 }],
     )
     expect(doneNoTasks.done).toBe(true)
-    expect(dayDoneText(doneNoTasks, 'full')).toBe('All 5 reminders considered today')
-    expect(dayDoneText(doneNoTasks, 'compact')).toBe('All 5 rem')
+    expect(dayDoneText(doneNoTasks)).toBe('All 5 reminders considered today')
 
     // One of each: singular.
     const one = headlineCounts(summarizeReminders([group(morning, 1, 0)], TZ, NOW, DAY_START), [
       { handled: 0, total: 1 },
     ])
     expect(waitingSoFarText(one)).toBe('1 reminder · 1 task waiting so far')
-    expect(full(one)).toBe('0 of 1 reminder · 0 of 1 task considered')
+    expect(dayCountText(one)).toBe('0 of 1 reminder · 0 of 1 task considered')
   })
 
   test('reminders in a later period are not "so far"; every task waiting is', () => {
@@ -166,10 +177,29 @@ describe('the headline counts reminders and tasks apart', () => {
     const c = headlineCounts(summary, [{ handled: 1, total: 3 }])
     expect(c.reminders.waiting).toBe(0)
     expect(waitingSoFarText(c)).toBe('2 tasks waiting so far')
-    expect(full(c)).toBe('4 of 10 reminders · 1 of 3 tasks considered')
+    expect(dayCountText(c)).toBe('4 of 10 reminders · 1 of 3 tasks considered')
   })
 
-  test('no task half (the task queue off, or no segment drawn): exactly as before', () => {
+  test('caught up until a later period, tasks waiting: the phrase stays, the tasks appended', () => {
+    // Morning done, Evening (not started) holds 6: "Caught up until Evening ·
+    // 6:00 PM" — and with tasks waiting, "· 2 tasks waiting" after it
+    // (Trent, 2026-10-26). The phrase is the component's; its parts are here.
+    const summary = summarizeReminders(
+      [group(morning, 0, 4), group(evening, 6, 0)],
+      TZ,
+      NOW,
+      DAY_START,
+    )
+    expect(summary.waitingSoFar).toBe(0)
+    expect(summary.nextUp?.slot.label).toBe('Evening')
+    const c = headlineCounts(summary, [{ handled: 1, total: 3 }])
+    expect(c.tasks?.waiting).toBe(2)
+    expect(tasksWaitingText(c.tasks!.waiting)).toBe('2 tasks waiting')
+    expect(tasksWaitingText(1)).toBe('1 task waiting')
+    expect(tasksWaitingText(3)).toBe('3 tasks waiting')
+  })
+
+  test('no task half (the task queue off, or no segment drawn): the words as before', () => {
     const summary = summarizeReminders(
       [group(morning, 14, 40), group(evening, 21, 0)],
       TZ,
@@ -181,8 +211,7 @@ describe('the headline counts reminders and tasks apart', () => {
       expect(c.handled).toBe(40)
       expect(c.total).toBe(75)
       expect(waitingSoFarText(c)).toBe('14 waiting so far')
-      expect(full(c)).toBe('40 of 75 considered')
-      expect(compact(c)).toBe('40 / 75')
+      expect(dayCountText(c)).toBe('40 of 75 considered')
       expect(dayCountLabel(c)).toBe('40 of 75 considered today')
     }
 
@@ -191,8 +220,7 @@ describe('the headline counts reminders and tasks apart', () => {
       null,
     )
     expect(done.done).toBe(true)
-    expect(dayDoneText(done, 'full')).toBe('All 75 considered today')
-    expect(dayDoneText(done, 'compact')).toBe('All 75 considered today')
+    expect(dayDoneText(done)).toBe('All 75 considered today')
   })
 
   test('segmentCounts: handled is considered + deferred, total every row drawn', () => {
