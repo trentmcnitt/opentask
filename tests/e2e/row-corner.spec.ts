@@ -538,7 +538,10 @@ test.describe('Row corner · phone', () => {
       // Measured on the title's TEXT (the invisible float spacer itself sits
       // under the corner on purpose).
       const overlap = await title.evaluate((el, c) => {
-        const text = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE)!
+        // The title's text node, inside the clamp box's one block (`ClampedTitle`).
+        const text = [...el.firstElementChild!.childNodes].find(
+          (n) => n.nodeType === Node.TEXT_NODE,
+        )!
         const range = document.createRange()
         range.selectNodeContents(text)
         return [...range.getClientRects()].some(

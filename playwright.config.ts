@@ -48,6 +48,13 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    // WebKit, opt-in (`E2E_WEBKIT=1 npx playwright test --project webkit <specs>`).
+    // Some layout differs only in Safari's engine — the dashboard row's title
+    // band (row-title-band.spec.ts, 2026-10-26) never showed in Chromium. CI's
+    // "E2E WebKit" job runs the specs it lists in this project (ci.yml).
+    ...(process.env.E2E_WEBKIT === '1'
+      ? [{ name: 'webkit', use: { ...devices['Desktop Safari'] } }]
+      : []),
   ],
   webServer: {
     command: `${build}npx next start -p ${port}`,
