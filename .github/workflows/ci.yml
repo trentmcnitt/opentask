@@ -249,22 +249,73 @@ jobs:
             test-results/
           retention-days: 30
 
+  # WebKit (2026-10-26): the specs whose layout differs in Safari's engine —
+  # the engine the iOS and Mac apps run on. The dashboard row's title band
+  # (row-title-band.spec.ts) only ever showed in WebKit, so a Chromium-only
+  # suite could not catch it coming back. Only the specs listed here run; the
+  # project exists only with `E2E_WEBKIT=1` (playwright.config.ts). Whether
+  # the whole suite should run in WebKit is an open question (it would roughly
+  # double E2E time).
+  e2e-webkit:
+    name: E2E WebKit
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
+    env:
+      E2E_WEBKIT: '1'
+      WEBKIT_SPECS: tests/e2e/row-title-band.spec.ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'app/**') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
+            ${{ runner.os }}-nextjs-
+      - name: Cache Playwright WebKit
+        id: playwright-webkit-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-webkit-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright WebKit
+        if: steps.playwright-webkit-cache.outputs.cache-hit != 'true'
+        run: npx playwright install webkit
+      - name: Install Playwright OS dependencies
+        run: npx playwright install-deps webkit
+      - run: npm run test:e2e -- --project webkit $WEBKIT_SPECS
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-webkit
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 30
+
   # The one "E2E" result the main-protection ruleset requires; the shards'
-  # names ("E2E shard (1)"…) aren't in it. Passes when every shard passed, or
+  # names ("E2E shard (1)"…, "E2E WebKit") aren't in it. Passes when every shard passed, or
   # when the shards were skipped because the PR has no code to test (docs or
   # native only). `always()` makes it report even when a shard failed, since a
   # job skipped by a failed dependency would count as passing.
   e2e-result:
     name: E2E
     runs-on: ubuntu-latest
-    needs: [changes, e2e]
+    needs: [changes, e2e, e2e-webkit]
     if: always() && github.event_name == 'pull_request'
     steps:
       - run: |
-          echo "changes=${{ needs.changes.result }} code=${{ needs.changes.outputs.code }} shards=${{ needs.e2e.result }}"
+          echo "changes=${{ needs.changes.result }} code=${{ needs.changes.outputs.code }} shards=${{ needs.e2e.result }} webkit=${{ needs.e2e-webkit.result }}"
           [ "${{ needs.changes.result }}" = success ] || exit 1
-          [ "${{ needs.e2e.result }}" = success ] && exit 0
-          [ "${{ needs.e2e.result }}" = skipped ] && [ "${{ needs.changes.outputs.code }}" != true ] && exit 0
+          [ "${{ needs.e2e.result }}" = success ] && [ "${{ needs.e2e-webkit.result }}" = success ] && exit 0
+          [ "${{ needs.e2e.result }}" = skipped ] && [ "${{ needs.e2e-webkit.result }}" = skipped ] && [ "${{ needs.changes.outputs.code }}" != true ] && exit 0
           exit 1
 
   dependency-review:

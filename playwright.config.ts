@@ -50,8 +50,8 @@ export default defineConfig({
     },
     // WebKit, opt-in (`E2E_WEBKIT=1 npx playwright test --project webkit <specs>`).
     // Some layout differs only in Safari's engine — the dashboard row's title
-    // band (row-title-band.spec.ts, 2026-10-26) never showed in Chromium. CI
-    // installs Chromium only, so this project is for local runs.
+    // band (row-title-band.spec.ts, 2026-10-26) never showed in Chromium. CI's
+    // "E2E WebKit" job runs the specs it lists in this project (ci.yml).
     ...(process.env.E2E_WEBKIT === '1'
       ? [{ name: 'webkit', use: { ...devices['Desktop Safari'] } }]
       : []),
