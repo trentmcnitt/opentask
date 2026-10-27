@@ -36,6 +36,7 @@ struct ConsiderReminderIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        WatchCache.installUndoRecorder()
         let claim = "consider-\(taskId)"
         guard WatchWidgetState.tryClaim(claim) else { return .result() }
         defer { WatchWidgetState.releaseClaim(claim) }
@@ -87,6 +88,7 @@ struct ActOnPromptCardIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        WatchCache.installUndoRecorder()
         let claim = "prompt-\(promptKey)"
         guard WatchWidgetState.tryClaim(claim) else { return .result() }
         defer { WatchWidgetState.releaseClaim(claim) }
@@ -136,6 +138,7 @@ struct ConsiderSegmentCardIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        WatchCache.installUndoRecorder()
         let key = "s:\(taskId)"
         guard WatchWidgetState.tryClaim(key) else { return .result() }
         defer { WatchWidgetState.releaseClaim(key) }
@@ -144,7 +147,7 @@ struct ConsiderSegmentCardIntent: AppIntent {
         WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
         do {
             try await APIClient.shared.considerSegmentTasks(ids: [taskId])
-            WatchCache.setSegmentRow(taskId: taskId, state: .considered)
+            WatchCache.editSegmentRow(taskId: taskId) { $0.consideredByTap() }
         } catch {
             WatchWidgetState.clearPendingPrompt(key: key)
         }
@@ -172,6 +175,7 @@ struct CompleteSegmentCardIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        WatchCache.installUndoRecorder()
         let claim = "segment-done-\(taskId)"
         guard WatchWidgetState.tryClaim(claim) else { return .result() }
         defer { WatchWidgetState.releaseClaim(claim) }
@@ -180,7 +184,7 @@ struct CompleteSegmentCardIntent: AppIntent {
         WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
         do {
             try await APIClient.shared.markDone(taskId: taskId)
-            WatchCache.setSegmentRow(taskId: taskId, state: nil)
+            WatchCache.editSegmentRow(taskId: taskId) { $0.left == nil ? $0.leaving(.done) : $0 }
         } catch {
             WatchWidgetState.clearPendingDone(taskId: taskId)
         }
@@ -251,6 +255,7 @@ struct SnoozeOverdueNextPeriodIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        WatchCache.installUndoRecorder()
         await OverdueSweep.run(label: targetLabel.isEmpty ? nil : targetLabel) {
             try await APIClient.shared.snoozeOverdue(slot: "next", notify: false)
         }
@@ -270,6 +275,7 @@ struct SnoozeOverduePlusHourIntent: AppIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
+        WatchCache.installUndoRecorder()
         await OverdueSweep.run(label: nil) {
             try await APIClient.shared.snoozeOverdue(deltaMinutes: 60, notify: false)
         }

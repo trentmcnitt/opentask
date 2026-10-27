@@ -129,10 +129,16 @@ extension WatchCache {
     /// defer, nil to drop the row (done) — so the Smart Stack card agrees
     /// even when its own fetch fails.
     static func setSegmentRow(taskId: Int, state: SegmentTaskDTO.State?) {
+        editSegmentRow(taskId: taskId) { row in state.map { row.with(state: $0) } }
+    }
+
+    /// Mirror any edit of one row (native PR E): a done or Today that LEFT
+    /// the segment (`leaving`), a safety-net row seen (`consideredByTap`);
+    /// nil drops the row.
+    static func editSegmentRow(taskId: Int, _ edit: (SegmentTaskDTO) -> SegmentTaskDTO?) {
         saveTaskSegments(loadTaskSegments().map { segment in
             segment.replacingTasks(segment.tasks.compactMap { row in
-                guard row.id == taskId else { return row }
-                return state.map { row.with(state: $0) }
+                row.id == taskId ? edit(row) : row
             })
         })
     }
@@ -164,5 +170,35 @@ extension WatchCache {
     static var showMetQuotas: Bool {
         get { defaults?.bool(forKey: showMetQuotasKey) ?? false }
         set { defaults?.set(newValue, forKey: showMetQuotasKey) }
+    }
+}
+
+// MARK: - Scoped Undo (2026-10-26, `UndoScope`)
+
+extension WatchCache {
+    /// The watch's ONE undo surface: the watch app and its Smart Stack card
+    /// (two processes, one App Group). Every mutation either sends records its
+    /// `undo_id` here (`APIClient.undoRecorder`, set in `OpenTaskWatchApp`
+    /// and `OpenTaskWatchWidgetBundle`), so the app's toolbar Undo takes back
+    /// a Smart Stack tap too — and never what the phone, the Mac or the web
+    /// did. A disjoint `watch.*` key, like every key here.
+    private static let undoScopeStore = UndoScopeStore(key: "watch.undoScope.v1") { WatchCache.defaults }
+
+    static var undoScope: UndoScope { undoScopeStore.load() }
+
+    /// Point `APIClient.undoRecorder` here (idempotent). Set at process start
+    /// (`OpenTaskWatchApp`, `OpenTaskWatchWidgetBundle`) and again by each
+    /// Smart Stack intent before it sends, so no tap's id can be missed.
+    static func installUndoRecorder() {
+        APIClient.undoRecorder = { WatchCache.recordOwnUndo($0) }
+    }
+
+    static func recordOwnUndo(_ id: Int) {
+        undoScopeStore.update { $0.recordOwn(id) }
+    }
+
+    @discardableResult
+    static func updateUndoScope<T>(_ body: (inout UndoScope) -> T) -> T {
+        undoScopeStore.update(body)
     }
 }

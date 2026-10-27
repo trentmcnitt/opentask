@@ -97,7 +97,9 @@ enum TaskFeed {
                 fetchedTasks, projects: fetchedProjects, completions: completionsOrEmpty, fetchStartedAt: now
             )
             if let status {
-                WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
+                // The counts and, scoped (2026-10-26), the ids `UndoScope` compares
+                // its own stack with — applied only if sent after the last tap.
+                WidgetStore.applyUndoStatus(status, requestedAt: now)
             }
             return staged(fetchedTasks, fetchedProjects, completionsOrEmpty, staleSince: nil, now: now)
         } catch {

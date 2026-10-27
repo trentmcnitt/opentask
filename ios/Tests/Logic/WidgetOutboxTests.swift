@@ -422,6 +422,70 @@ final class WidgetOutboxTests: WidgetStoreTestCase {
         XCTAssertNil(WidgetStore.cancelQueuedOutboxEntry { _ in false })
     }
 
+    // MARK: Scoped Undo (2026-10-26, `UndoScope`)
+
+    /// The drain sends oldest first, so the widget surface's own stack is
+    /// in TAP order — each answer's `undo_id` recorded as it lands — and Undo
+    /// is offered for the newest.
+    func testDrainedTapsRecordTheirUndoIdsInTapOrder() async throws {
+        APIClient.undoRecorder = { WidgetStore.recordOwnUndo($0) }
+        for id in [301, 302, 303] { tapComplete(id) }
+        let transport = StubOutboxTransport()
+        transport.undoIds = [9001, 9002, 9003]
+        await makeDrainer(transport).drain()
+        XCTAssertEqual(WidgetStore.undoScope.own, [9001, 9002, 9003])
+        XCTAssertEqual(WidgetStore.undoScope.undoTarget, 9003)
+        XCTAssertTrue(WidgetStore.canUndo)
+        XCTAssertFalse(WidgetStore.canRedo, "a new action clears the redo stack")
+    }
+
+    /// A tap still in the outbox lights Undo before it is sent (Undo takes it
+    /// back locally), even when nothing of the scope's own is the newest
+    /// entry; once sent, its own id keeps it lit.
+    func testAQueuedTapEnablesUndoBeforeItIsSent() async throws {
+        APIClient.undoRecorder = { WidgetStore.recordOwnUndo($0) }
+        WidgetStore.applyUndoStatus(
+            APIClient.UndoStatus(undoableCount: 4, redoableCount: 0, newestUndoableId: 40, scoped: true),
+            requestedAt: t0
+        )
+        XCTAssertFalse(WidgetStore.canUndo, "scoped, and nothing of ours")
+        tapComplete(301)
+        XCTAssertTrue(WidgetStore.canUndo, "queued: Undo takes it back locally")
+        let transport = StubOutboxTransport()
+        transport.undoIds = [41]
+        await makeDrainer(transport).drain()
+        XCTAssertTrue(WidgetStore.canUndo, "sent: its own id is the newest")
+        XCTAssertEqual(WidgetStore.undoScope.undoTarget, 41)
+    }
+
+    /// Another device acted after this surface's last tap: the status names
+    /// a newer entry, and Undo DISABLES (never hides — the button is drawn
+    /// either way). A status sent BEFORE the tap can't do that.
+    func testAnotherDevicesActionDisablesUndo() {
+        APIClient.undoRecorder = { WidgetStore.recordOwnUndo($0) }
+        APIClient.undoRecorder?(41)
+        let before = Date().addingTimeInterval(-60)
+        WidgetStore.applyUndoStatus(
+            APIClient.UndoStatus(undoableCount: 5, redoableCount: 0, newestUndoableId: 40, scoped: true),
+            requestedAt: before
+        )
+        XCTAssertTrue(WidgetStore.canUndo, "a status older than the tap is ignored")
+        WidgetStore.applyUndoStatus(
+            APIClient.UndoStatus(undoableCount: 6, redoableCount: 0, newestUndoableId: 42, scoped: true),
+            requestedAt: Date().addingTimeInterval(1)
+        )
+        XCTAssertFalse(WidgetStore.canUndo)
+        XCTAssertEqual(WidgetStore.undoScope.own, [41], "kept: it is ours again if 42 is undone elsewhere")
+    }
+
+    /// An older server: no ids anywhere — the counts decide, as before.
+    func testAnOlderServerKeepsTheCountBasedButtons() {
+        WidgetStore.applyUndoStatus(APIClient.UndoStatus(undoableCount: 2, redoableCount: 0), requestedAt: t0)
+        XCTAssertFalse(WidgetStore.undoScope.scoped)
+        XCTAssertTrue(WidgetStore.canUndo)
+        XCTAssertFalse(WidgetStore.canRedo)
+    }
+
     func testLocalTakeBackForgetsTheOptimisticUndoCount() {
         WidgetStore.setUndoRedoCounts(undoable: 2, redoable: 0)
         WidgetStore.recordLocalMutationForUndoCount()
@@ -507,6 +571,17 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
     var taskStates: [Int: [Result<APIClient.TaskState?, Error>]] = [:]
     /// Suspend inside `markDone`, so concurrent drains really interleave.
     var yieldsInMarkDone = false
+    /// The `undo_id` each successful call answers, in order — handed to
+    /// `APIClient.undoRecorder` exactly as `APIClient`'s request does with a
+    /// real answer (scoped Undo, 2026-10-26). Empty: answers carry none.
+    var undoIds: [Int] = []
+
+    private func answered() {
+        lock.lock()
+        let id = undoIds.isEmpty ? nil : undoIds.removeFirst()
+        lock.unlock()
+        if let id { APIClient.undoRecorder?(id) }
+    }
     var markDoneGate: Gate?
 
     var calls: [Call] {
@@ -550,35 +625,46 @@ final class StubOutboxTransport: WidgetOutboxTransport, @unchecked Sendable {
         }
         if yieldsInMarkDone { await Task.yield() }
         try pop(&markDoneResults, default: ()).get()
+        answered()
     }
 
     func considerPrompts(keys: [String]) async throws -> APIClient.PromptActionResult {
         record(.consider(keys))
-        return try pop(&promptResults, default: APIClient.PromptActionResult(considered: keys.count, did: 0, tasks: [])).get()
+        let result = try pop(&promptResults, default: APIClient.PromptActionResult(considered: keys.count, did: 0, tasks: [])).get()
+        answered()
+        return result
     }
 
     func didPrompts(keys: [String], source: ProgressSource?) async throws -> APIClient.PromptActionResult {
         recordSource(source)
         record(.did(keys))
-        return try pop(&promptResults, default: APIClient.PromptActionResult(considered: 0, did: keys.count, tasks: [])).get()
+        let result = try pop(&promptResults, default: APIClient.PromptActionResult(considered: 0, did: keys.count, tasks: [])).get()
+        answered()
+        return result
     }
 
     func logProgress(taskId: Int, delta: Int, source: ProgressSource?) async throws -> TaskDTO? {
         recordSource(source)
         record(.progress(taskId, delta))
-        return try pop(&progressResults, default: nil).get()
+        let result = try pop(&progressResults, default: nil).get()
+        answered()
+        return result
     }
 
     @discardableResult
     func considerSegmentTasks(ids: [Int]) async throws -> Int {
         record(.considerSegment(ids))
-        return try pop(&segmentResults, default: ids.count).get()
+        let result = try pop(&segmentResults, default: ids.count).get()
+        answered()
+        return result
     }
 
     @discardableResult
     func targetSegmentTasksToday(ids: [Int]) async throws -> APIClient.SegmentTargetResult {
         record(.targetToday(ids))
-        return try pop(&targetResults, default: APIClient.SegmentTargetResult(affected: ids.count)).get()
+        let result = try pop(&targetResults, default: APIClient.SegmentTargetResult(affected: ids.count)).get()
+        answered()
+        return result
     }
 
     func fetchTaskState(taskId: Int) async throws -> APIClient.TaskState? {

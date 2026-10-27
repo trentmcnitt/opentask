@@ -83,6 +83,13 @@ enum Fixtures {
     /// 2026-10-26, the named quota-prompt push's Considered), created after
     /// the named reminder.
     static let namedQuota = 132
+    /// The task queue's rows (`reminders-queue.json`, `reminders-native.json`):
+    /// "Previous pulls" — a stripped one-off and a waiting weekly task —
+    /// then "Today's pulls" — a one-off (done in `reminders-native.json`, a
+    /// left row) and a Try Tomorrow row; then the two decked tasks of
+    /// `reminders-deck.json`, a one-off and a repeat, on deck tomorrow.
+    static let queueOld = 117, queueWeekly = 118, queueNew = 119, queueTryTomorrow = 120
+    static let decked = 121, deckedRepeating = 122
 
     static func promptKey(_ taskId: Int, _ k: Int) -> String { "q:\(taskId):\(k):\(pinnedDate)" }
 }
@@ -107,6 +114,7 @@ class WidgetStoreTestCase: XCTestCase {
         WidgetStore.suiteOverride?.removePersistentDomain(forName: suiteName)
         WidgetStore.suiteOverride = nil
         DayStartStore.suiteOverride = nil
+        APIClient.undoRecorder = nil
         super.tearDown()
     }
 

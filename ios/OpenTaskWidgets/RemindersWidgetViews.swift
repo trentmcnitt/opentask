@@ -212,7 +212,7 @@ private struct RemindersSmallView: View {
             WidgetEmptyView(symbol: "checkmark.seal.fill", message: "Day complete", compact: true)
         case .periodDone:
             WidgetEmptyView(symbol: "checkmark.seal.fill", message: "Complete", compact: true)
-        case .nothingHere:
+        case .nothingHere, .nothingToday:
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here", compact: true)
         }
     }
@@ -653,7 +653,7 @@ private struct RemindersListView: View {
             DayCompleteView(isLarge: isLarge)
         case .periodDone:
             PeriodDoneView(isLarge: isLarge)
-        case .nothingHere:
+        case .nothingHere, .nothingToday:
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here")
         }
     }
@@ -1115,8 +1115,9 @@ private struct ReminderSlotStrip: View {
     /// track. Until 2026-10-26 each filled in its horizon's teal; Trent:
     /// "Have them all just use the purple and green except for the
     /// deadlines, which finish the teal color that they currently finish at.
-    /// That's the special one." (no native build draws the deadlines page
-    /// yet; its teal would come through `SegmentKind.doneColorHex`). The task page's own bar grows exactly as the
+    /// That's the special one." — the deadlines page (native PR E) finishes
+    /// in its teal, through `SegmentKind.doneColorHex`; an EMPTY segment is
+    /// finished from the start, a full bar). The task page's own bar grows exactly as the
     /// on-screen period's does — no outline (Trent, 2026-10-11: "The
     /// reminder segments don't have an outline and neither should this. It
     /// should just grow, same as Reminders.").
@@ -1146,7 +1147,7 @@ private struct ReminderSlotStrip: View {
     /// One rule for every bar, period or task segment (2026-10-26, the
     /// web's PR #383): the reminders' purple while filling, green once
     /// finished — or the segment's own finished colour
-    /// (`SegmentKind.doneColorHex`, none yet on native).
+    /// (`SegmentKind.doneColorHex`: the deadlines page's teal).
     private func color(for bar: ReminderDayProgress.StripBar) -> Color {
         switch bar.state {
         case .done: return WidgetTheme.stripDoneColor(bar.segment, scheme: colorScheme)
@@ -1579,6 +1580,18 @@ enum SegmentRowMetrics {
     static func titleWidth(in width: CGFloat, showsTargetToday: Bool = true) -> CGFloat {
         width - 2 * WidgetTheme.rowMarkerSize - (showsTargetToday ? targetTodayWidth : 0) - gap
     }
+
+    /// A row that LEFT its segment today (native PR E, `segment_left`): no
+    /// Today, no done checkbox — only the filled circle in its column (the
+    /// web's `ConsideredSegmentRow`) — so its title takes the rest.
+    static func leftTitleWidth(in width: CGFloat) -> CGFloat {
+        width - WidgetTheme.rowMarkerSize - gap
+    }
+
+    /// The width a row's label wraps in — the row and the pager use the same.
+    static func titleWidth(in width: CGFloat, row: SegmentTaskDTO) -> CGFloat {
+        row.left != nil ? leftTitleWidth(in: width) : titleWidth(in: width, showsTargetToday: row.offersTargetToday)
+    }
 }
 
 /// A task segment page of the Reminders widget (2026-10-10): one horizon's
@@ -1771,7 +1784,8 @@ private struct TaskSegmentListView: View {
     }
 
     private func label(_ row: SegmentTaskDTO, placement: SegmentMetaPlacement, form: UpcomingMetaForm) -> String {
-        row.task.segmentLabelText(
+        if row.left != nil { return row.leftLabelText }
+        return row.task.segmentLabelText(
             segmentHorizon: segment.horizon, now: entry.date, placement: placement, upcomingForm: form,
             upcomingSection: row.upcomingSection
         )
@@ -1815,10 +1829,17 @@ private struct TaskSegmentListView: View {
             let task = row.task
             let isWaiting: Bool
             if case .waiting = item { isWaiting = true } else { isWaiting = false }
-            let titleWidth = SegmentRowMetrics.titleWidth(in: width, showsTargetToday: row.offersTargetToday)
+            let titleWidth = SegmentRowMetrics.titleWidth(in: width, row: row)
             let weight = isWaiting ? WidgetTheme.priorityWeight(task.priority) : .regular
             func lines(_ text: String, hasNotes: Bool) -> (lines: Int, shrinks: Bool) {
                 metrics.titleLines(text, width: titleWidth, weight: weight, maxHeight: budget, hasNotes: hasNotes)
+            }
+            // A row that left today (native PR E): its title and the web's
+            // words ("· done"), nothing else — one string, measured as drawn.
+            if row.left != nil {
+                let fit = lines(row.leftLabelText, hasNotes: task.hasNotes)
+                if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
+                return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
             }
             func meta(_ form: UpcomingMetaForm) -> String? {
                 task.segmentMeta(
@@ -1861,7 +1882,7 @@ private struct TaskSegmentListView: View {
         case .waiting(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                upcomingSection: row.upcomingSection,
+                upcomingSection: row.upcomingSection, left: nil, seenInSafetyNet: row.isSeenInSafetyNet,
                 considered: false, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
@@ -1870,7 +1891,8 @@ private struct TaskSegmentListView: View {
         case .considered(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                upcomingSection: row.upcomingSection,
+                upcomingSection: row.upcomingSection, left: row.left, leftLabel: row.leftLabelText,
+                seenInSafetyNet: false,
                 considered: true, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
@@ -1888,6 +1910,14 @@ private struct TaskSegmentListView: View {
             DayCompleteView(isLarge: isLarge)
         case .periodDone:
             PeriodDoneView(isLarge: isLarge)
+        case .nothingToday:
+            // An empty segment (native PR E, `?fill=1`): done from the start,
+            // the web's "Nothing today ✓", its check in the done colour (the
+            // deadlines page's teal).
+            WidgetEmptyView(
+                symbol: "checkmark.circle", message: "Nothing today",
+                tint: WidgetTheme.stripDoneColor(segment.kind, scheme: colorScheme)
+            )
         case .noReminders, .nothingHere:
             WidgetEmptyView(symbol: "checkmark.circle", message: "Nothing left here")
         }
@@ -1908,21 +1938,28 @@ private struct TaskSegmentListView: View {
     private func bottomLeading(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
         let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
         let deferWidth = WidgetTheme.measuredWidth(for: "Defer all", font: metrics.caption2Font(weight: .semibold))
-        let showsDefer = segment.hasWaiting && WidgetTheme.fitsLeftOfPager(
+        // Never on the queue's panels or the deadlines page (native PR E, the
+        // web's `offersDeferAll`): the deadlines page's Defer is one row's
+        // lead day, which native leaves to the app (the row's link).
+        let showsDefer = segment.hasWaiting && segment.offersDeferAll && WidgetTheme.fitsLeftOfPager(
             width: deferWidth, cardWidth: width, pagerText: pagerText, metrics: metrics
         )
         let count = ReminderDayProgress.PeriodCount(segment)
-        let countWidth = WidgetTheme.measuredWidth(for: count.text, font: metrics.caption2Font)
-        let showsCount = count.total > 0 && WidgetTheme.fitsLeftOfPager(
+        // An EMPTY segment reads "0 of 0 ✓" (native PR E, the web's): done
+        // from the start; the check is measured as a space plus a glyph.
+        let checked = segment.isEmpty
+        let countWidth = WidgetTheme.measuredWidth(
+            for: checked ? count.text + "\u{00A0}\u{2713}" : count.text, font: metrics.caption2Font
+        )
+        let showsCount = (count.total > 0 || checked) && WidgetTheme.fitsLeftOfPager(
             width: (showsDefer ? deferWidth + Self.bottomGap : 0) + countWidth,
             cardWidth: width, pagerText: pagerText, metrics: metrics
         )
         HStack(spacing: Self.bottomGap) {
             if showsCount {
-                Text(count.text)
+                countText(count, checked: checked)
                     .font(.caption2)
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize()
                     .accessibilityLabel(Text("\(count.handled) of \(count.total) considered in \(segment.label)"))
@@ -1935,6 +1972,16 @@ private struct TaskSegmentListView: View {
 
     /// "Defer all" and the count: the Tasks row's "Select" gap.
     private static let bottomGap: CGFloat = 8
+
+    /// "4 of 7" in the period's quiet secondary; an empty segment's "0 of 0 ✓"
+    /// with the check in its done colour.
+    private func countText(_ count: ReminderDayProgress.PeriodCount, checked: Bool) -> Text {
+        let words = Text(count.text).foregroundStyle(.secondary)
+        guard checked else { return words }
+        return words + Text("\u{00A0}\u{2713}")
+            .fontWeight(.bold)
+            .foregroundStyle(WidgetTheme.stripDoneColor(segment.kind, scheme: colorScheme))
+    }
 
     /// "Defer all", measured in the semibold caption2 it is drawn in.
     private func deferAllButton(metrics: WidgetTextMetrics) -> some View {
@@ -2131,6 +2178,15 @@ private struct SegmentTaskRow: View {
     let segmentHorizon: String
     /// An Upcoming row's section: a Tomorrow row's target is its time alone.
     let upcomingSection: UpcomingSection?
+    /// How the row LEFT its segment today (native PR E): drawn with its
+    /// words and no controls but the filled circle (the web's
+    /// `ConsideredSegmentRow`). Nil for every other row.
+    let left: SegmentLeft?
+    /// The left row's whole label (`SegmentTaskDTO.leftLabelText`).
+    var leftLabel: String = ""
+    /// A deadlines-page safety-net row seen today: still waiting, its circle
+    /// drawn filled and inert (a tap would change nothing).
+    let seenInSafetyNet: Bool
     let considered: Bool
     let now: Date
     /// Where the small words go (`ReminderRowLayout.metaPlacement`, measured
@@ -2152,6 +2208,11 @@ private struct SegmentTaskRow: View {
     }
 
     private var spoken: String {
+        if left != nil {
+            return NotesGlyph.accessibilityLabel(
+                leftLabel.replacingOccurrences(of: "\u{00A0}", with: " "), hasNotes: task.hasNotes
+            )
+        }
         let meta = meta.map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
         return NotesGlyph.accessibilityLabel("\(task.title)\(meta)", hasNotes: task.hasNotes)
     }
@@ -2173,23 +2234,34 @@ private struct SegmentTaskRow: View {
             }
 
             HStack(alignment: .top, spacing: 0) {
-                if showsTargetToday {
-                    targetTodayButton
-                }
+                // A row that LEFT today has nothing to act on (native PR E):
+                // done is done, a deck or Today moved it on; its way back is
+                // Undo. Only the filled circle, as on the web.
+                if left == nil {
+                    if showsTargetToday {
+                        targetTodayButton
+                    }
 
-                // Both markers take the priority colour for High/Urgent only
-                // (`WidgetTheme.rowMarkColor`, 2026-10-16): a Medium row's
-                // yellow read as a priority mark, which the rule gives none.
-                Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
-                    marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.rowMarkColor(task.priority))
+                    // Both markers take the priority colour for High/Urgent only
+                    // (`WidgetTheme.rowMarkColor`, 2026-10-16): a Medium row's
+                    // yellow read as a priority mark, which the rule gives none.
+                    Button(intent: CompleteTaskIntent(taskId: task.id, kind: RemindersWidget.kind)) {
+                        marker(Image(systemName: "square"), color: considered ? .secondary : WidgetTheme.rowMarkColor(task.priority))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -markerBleed)
+                    .accessibilityLabel(Text("Done: \(spoken)"))
                 }
-                .buttonStyle(.plain)
-                .padding(.vertical, -markerBleed)
-                .accessibilityLabel(Text("Done: \(spoken)"))
 
                 if considered {
                     marker(Image(systemName: "circle.inset.filled"), color: .secondary)
                         .accessibilityLabel(Text("Considered today: \(spoken)"))
+                } else if seenInSafetyNet {
+                    // Seen in the safety net (the web's seen ring): the
+                    // deadline is close, so it stays on the page, waiting —
+                    // and another tap would change nothing.
+                    marker(Image(systemName: "circle.inset.filled"), color: WidgetTheme.rowMarkColor(task.priority))
+                        .accessibilityLabel(Text("Seen today, the deadline is close, so it stays: \(spoken)"))
                 } else {
                     Button(intent: ConsiderSegmentTaskIntent(taskId: task.id)) {
                         marker(Image(systemName: "circle"), color: WidgetTheme.rowMarkColor(task.priority))
@@ -2233,6 +2305,10 @@ private struct SegmentTaskRow: View {
         let title = Text(task.title)
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
             .foregroundStyle(considered ? Color.secondary : Color.primary)
+        // A left row: its title, then the web's words ("· done"), secondary.
+        if left != nil {
+            return title + Text(String(leftLabel.dropFirst(task.title.count))).foregroundStyle(.secondary)
+        }
         guard let meta else { return title }
         let words = metaPlacement.joined(meta: meta)
         if let badge = TargetAge.attemptsBadge(task), words.hasSuffix(badge) {

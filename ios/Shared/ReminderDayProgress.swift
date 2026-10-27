@@ -87,9 +87,14 @@ enum ReminderDayProgress {
             total = segment.tasks.count
         }
 
-        /// "4 of 7". The caller hides it when `total == 0` — "0 of 0" reports
-        /// nothing.
+        /// "4 of 7". A period's caller hides it when `total == 0` — "0 of 0"
+        /// reports nothing there. An EMPTY task segment shows it, finished
+        /// (native PR E, the web's "0 of 0 ✓"): `finished`.
         var text: String { "\(handled) of \(total)" }
+
+        /// Nothing left: every row handled — "0 of 0" for an empty segment,
+        /// done from the start of the day. The ✓ beside the count.
+        var finished: Bool { handled >= total }
     }
 
     // MARK: What the body shows when the on-screen period has no rows
@@ -107,6 +112,11 @@ enum ReminderDayProgress {
         case periodDone
         /// This period never had anything.
         case nothingHere
+        /// A task segment with no rows at all today (native PR E, the
+        /// server's `?fill=1`): done from the start — "Nothing today ✓", the
+        /// web's `segmentEmpty`, in the segment's done colour (the deadlines
+        /// page's teal).
+        case nothingToday
     }
 
     static func emptyBody(
@@ -123,12 +133,14 @@ enum ReminderDayProgress {
     /// The same question on a task segment page (2026-10-11) — a segment
     /// with nothing waiting reads like a finished period: "Congratulations /
     /// Day complete" when the whole day is, else the seal and "Complete".
-    /// (It used to say "All considered".) A listed segment always holds a
-    /// row, so `.nothingHere` is only a guard.
+    /// (It used to say "All considered".) A segment with no rows at all
+    /// today (`?fill=1`, native PR E) reads "Nothing today" — it was never
+    /// anything to finish — unless the whole day is complete.
     static func emptyBody(
         segment: TaskSegmentDTO, groups: [ReminderGroupDTO], segments: [TaskSegmentDTO]
     ) -> EmptyBody {
         if isDayComplete(groups, segments: segments) { return .dayComplete }
+        if segment.isEmpty { return .nothingToday }
         return segment.handledCount > 0 ? .periodDone : .nothingHere
     }
 
@@ -172,8 +184,12 @@ enum ReminderDayProgress {
         /// kind native knows); nil for a period.
         var segment: SegmentKind? = nil
 
-        /// How far it has filled.
-        var fraction: Double { total > 0 ? Double(handled) / Double(total) : 0 }
+        /// How far it has filled. An EMPTY segment's bar (native PR E,
+        /// `?fill=1`) is done from the start: full.
+        var fraction: Double {
+            guard total > 0 else { return state == .done ? 1 : 0 }
+            return Double(handled) / Double(total)
+        }
     }
 
     /// The strip, left to right: one bar per period with anything in it
@@ -182,6 +198,12 @@ enum ReminderDayProgress {
     /// bizarre that it doesn't have segments for the tasks. you have to <-
     /// and -> to get to it and there is no indication that it's there or how
     /// complete it is").
+    ///
+    /// EVERY segment, an empty one too (native PR E, the server's `?fill=1`;
+    /// full parity with the web: "always show every queue segment, every
+    /// day, in fixed positions"): an empty one is DONE from the start — a
+    /// full bar in its done colour (green; the deadlines page's teal), at the
+    /// strip's width floor (`SegmentWidths`: its weight is 0).
     ///
     /// A segment's bar is weighed and filled by its "X of Y" (`PeriodCount(
     /// segment)`), and is always STARTED — it is shown today, so it is never
@@ -207,7 +229,7 @@ enum ReminderDayProgress {
         }
         let tasks = segments.compactMap { segment -> StripBar? in
             let count = PeriodCount(segment)
-            guard segment.isListed, count.total > 0 else { return nil }
+            guard segment.isListed else { return nil }
             return StripBar(
                 key: segment.pageKey, kind: .taskSegment, label: segment.title,
                 state: segment.hasWaiting ? .behind : .done, handled: count.handled, total: count.total,

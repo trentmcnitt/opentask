@@ -734,11 +734,14 @@ final class APIClient {
     /// `session_start_id` to scope its undo/redo COUNTS to the page's
     /// session, but the undo itself always targets "the last action", and a
     /// widget has no session watermark to send in the first place — its
-    /// counts are always all-time (see `fetchUndoStatus`).
+    /// counts are always all-time (see `fetchUndoStatus`). The BARE form,
+    /// kept for an older server (scoped native Undo falls back to it, see
+    /// `UndoScope`); a surface that knows its own last id calls
+    /// `undo(id:)`.
     @discardableResult
     func undoLastAction() async throws -> UndoRedoResult {
         let data = try await post(path: "/api/undo", body: [:])
-        return try parseUndoRedoResult(data)
+        return try Self.parseUndoRedoResult(data)
     }
 
     /// Redo the most recently undone action (2026-09-23) — the twin of
@@ -747,7 +750,49 @@ final class APIClient {
     @discardableResult
     func redoLastAction() async throws -> UndoRedoResult {
         let data = try await post(path: "/api/redo", body: [:])
-        return try parseUndoRedoResult(data)
+        return try Self.parseUndoRedoResult(data)
+    }
+
+    /// What a scoped undo or redo did (scoped native Undo, 2026-10-26).
+    enum ScopedUndoOutcome {
+        /// The server undid (redid) exactly `id`.
+        case done(UndoRedoResult)
+        /// 409: `id` is no longer the entry a bare undo (redo) would take —
+        /// something newer happened, or it was already undone, or it is gone.
+        /// `newest` is `details.newest_undoable_id` for an undo,
+        /// `details.next_redoable_id` for a redo.
+        case conflict(reason: UndoConflictReason, newest: Int?)
+    }
+
+    /// `POST /api/undo { id }` (server PR #390): undo ONLY that entry, and
+    /// only while it is still the one a bare undo would take. The surface's
+    /// own last `undo_id` (`UndoScope.undoTarget`) — so a widget's Undo never
+    /// reverses what another device did.
+    func undo(id: Int) async throws -> ScopedUndoOutcome {
+        try await scopedUndoRedo(path: "/api/undo", id: id, newestKey: "newest_undoable_id")
+    }
+
+    /// `POST /api/redo { id }`: redo only that entry, while it is the next redo.
+    func redo(id: Int) async throws -> ScopedUndoOutcome {
+        try await scopedUndoRedo(path: "/api/redo", id: id, newestKey: "next_redoable_id")
+    }
+
+    private func scopedUndoRedo(path: String, id: Int, newestKey: String) async throws -> ScopedUndoOutcome {
+        let (status, data) = try await rawRequest(method: "POST", path: path, body: ["id": id])
+        if status == 409 {
+            return Self.parseUndoConflict(data, newestKey: newestKey)
+        }
+        guard (200...299).contains(status) else { throw APIError.serverError(statusCode: status) }
+        return .done(try Self.parseUndoRedoResult(data))
+    }
+
+    /// A 409's `details` — `{ reason, newest_undoable_id }` from `/api/undo`,
+    /// `{ reason, next_redoable_id }` from `/api/redo`. Pure, for the tests.
+    static func parseUndoConflict(_ data: Data, newestKey: String) -> ScopedUndoOutcome {
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let details = json?["details"] as? [String: Any]
+        let reason = (details?["reason"] as? String).flatMap(UndoConflictReason.init(rawValue:)) ?? .unknown
+        return .conflict(reason: reason, newest: details?[newestKey] as? Int)
     }
 
     /// The shared response shape of `/api/undo` and `/api/redo`: a
@@ -755,15 +800,18 @@ final class APIClient {
     /// widget header's subtitle for ~60s — see `WidgetStore.
     /// recordLastAction`), and the resulting all-time counts (the server is
     /// the source of truth for whether the buttons should still be enabled
-    /// after this call).
+    /// after this call). `actedId` is the entry undone or redone
+    /// (`undone_id` / `redone_id`, server PR #390; nil from an older server).
     struct UndoRedoResult {
         let description: String
         let tasksAffected: Int
         let undoableCount: Int
         let redoableCount: Int
+        var actedId: Int? = nil
     }
 
-    private func parseUndoRedoResult(_ data: Data) throws -> UndoRedoResult {
+    /// Pure, for the tests (`ContractDecodeTests.testUndoById`).
+    static func parseUndoRedoResult(_ data: Data) throws -> UndoRedoResult {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseData = json["data"] as? [String: Any],
               let description = responseData["description"] as? String
@@ -774,7 +822,8 @@ final class APIClient {
             description: description,
             tasksAffected: responseData["tasks_affected"] as? Int ?? 0,
             undoableCount: responseData["undoable_count"] as? Int ?? 0,
-            redoableCount: responseData["redoable_count"] as? Int ?? 0
+            redoableCount: responseData["redoable_count"] as? Int ?? 0,
+            actedId: (responseData["undone_id"] as? Int) ?? (responseData["redone_id"] as? Int)
         )
     }
 
@@ -782,24 +831,44 @@ final class APIClient {
     /// every widget data fetch (`RemindersProvider`, `TaskFeed`) so the
     /// always-present Undo/Redo buttons' enabled state reflects the server
     /// even when the last change came from the web app or another device,
-    /// not just this widget's own taps.
+    /// not just this widget's own taps. Since scoped native Undo
+    /// (2026-10-26) also the two ids a surface compares its own stack with
+    /// (`UndoScope.apply`), and whether the server sends them at all.
     struct UndoStatus {
         let undoableCount: Int
         let redoableCount: Int
+        var newestUndoableId: Int? = nil
+        var nextRedoableId: Int? = nil
+        /// False from a server that predates scoped Undo.
+        var scoped: Bool = false
     }
 
     func fetchUndoStatus() async throws -> UndoStatus {
         let page = try await get(path: "/api/undo/status", as: UndoStatusPage.self)
-        return UndoStatus(undoableCount: page.undoableCount, redoableCount: page.redoableCount)
+        return UndoStatus(
+            undoableCount: page.undoableCount, redoableCount: page.redoableCount,
+            newestUndoableId: page.newestUndoableId, nextRedoableId: page.nextRedoableId, scoped: page.scoped
+        )
     }
 
     // MARK: - Widget Data
+
+    /// The question every native Reminders surface asks (native PR E,
+    /// 2026-10-26): EXACTLY the web's (`REMINDERS_URL`,
+    /// `src/lib/reminders-query.ts`) — the task queue's panels (`queue`), a
+    /// future deck's Upcoming row (`deck`), the day roster's left rows
+    /// (`handled`), the deadlines page (`deadlines`) and every segment kind,
+    /// an empty one too (`fill`). Guarded against drift by
+    /// `tests/fixtures/contract/reminders-query.json`
+    /// (`ContractDecodeTests.testRemindersPathIsTheWebsQuery`). An older
+    /// server ignores the flags it doesn't know.
+    static let remindersPath = "/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1"
 
     /// Today's incomplete reminders grouped by time slot (§6), the groups in
     /// the OpenTask day's order (`RemindersPayload.orderedByDay` — the one
     /// place every widget, watch and cache reader gets them from).
     func fetchReminders(day: OpenTaskDay = DayStartStore.current) async throws -> RemindersPayload {
-        try await get(path: "/api/reminders", as: RemindersPayload.self).orderedByDay(day)
+        try await get(path: Self.remindersPath, as: RemindersPayload.self).orderedByDay(day)
     }
 
     /// Open (not-done) tasks. The server has no "today" filter — the dashboard
@@ -952,6 +1021,40 @@ final class APIClient {
 
     @discardableResult
     private func request(method: String, path: String, body: [String: Any]?) async throws -> Data {
+        let (status, data) = try await rawRequest(method: method, path: path, body: body)
+        guard (200...299).contains(status) else {
+            throw APIError.serverError(statusCode: status)
+        }
+        return data
+    }
+
+    // MARK: - Scoped native Undo: the recorder (2026-10-26)
+
+    /// Where this process keeps its OWN undo ids (`UndoScope`): set once at
+    /// process start by the widget extension (`WidgetStore.recordOwnUndo`,
+    /// iOS and Mac — all three widget kinds are one surface), the watch app
+    /// and the watch's Smart Stack extension (`WatchCache.recordOwnUndo` —
+    /// one surface). Nil — the iPhone app, its notification extension, the
+    /// Mac app — records nothing. Every successful non-GET request's
+    /// `data.undo_id` reaches it (a null one doesn't: a tap that logged
+    /// nothing keeps the previous id) — so a widget tap sent later by the
+    /// outbox drain is recorded the moment its answer lands, in tap order.
+    static var undoRecorder: ((Int) -> Void)?
+
+    /// A mutation response's own undo entry (`data.undo_id`), or nil when it
+    /// logged nothing (`null`) or the server predates it (absent). Pure, for
+    /// the tests.
+    static func undoId(in data: Data) -> Int? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = json["data"] as? [String: Any]
+        else { return nil }
+        return payload["undo_id"] as? Int
+    }
+
+    /// The request with its HTTP status, for a caller that reads a non-2xx
+    /// body (the scoped undo's 409 `details`). Records a 2xx mutation's
+    /// `undo_id` (`undoRecorder`).
+    private func rawRequest(method: String, path: String, body: [String: Any]?) async throws -> (Int, Data) {
         guard let urlString = serverURL,
               let url = URL(string: "\(urlString)\(path)"),
               let token = bearerToken
@@ -973,11 +1076,11 @@ final class APIClient {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError(statusCode: httpResponse.statusCode)
+        if method != "GET", (200...299).contains(httpResponse.statusCode),
+           let recorder = Self.undoRecorder, let id = Self.undoId(in: data) {
+            recorder(id)
         }
-
-        return data
+        return (httpResponse.statusCode, data)
     }
 }
 

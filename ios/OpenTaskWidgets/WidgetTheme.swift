@@ -99,9 +99,9 @@ enum WidgetTheme {
     }
 
     /// A Reminders strip bar's fill once finished: the done green at the
-    /// strip's 0.85, or the segment's own `doneColorHex` where it has one
-    /// (the web's deadlines page finishes in its teal; no native kind does
-    /// yet, so today this is always the green).
+    /// strip's 0.85, or the segment's own `doneColorHex` where it has one —
+    /// the deadlines page finishes in its teal (#0d9488 light, #2dd4bf dark;
+    /// native PR E), also its "0 of 0 ✓" check and "Nothing today".
     static func stripDoneColor(_ kind: SegmentKind?, scheme: ColorScheme) -> Color {
         guard let hex = kind?.doneColorHex else { return trackMetTint.opacity(0.85) }
         return rgb(scheme == .dark ? hex.dark : hex.light)
@@ -1642,12 +1642,15 @@ struct WidgetEmptyView: View {
     let symbol: String
     let message: String
     var compact = false
+    /// The symbol's colour: the done green, or a segment's own done colour
+    /// (the deadlines page's teal, native PR E).
+    var tint: Color = .green.opacity(0.85)
 
     var body: some View {
         VStack(spacing: compact ? 4 : 8) {
             Image(systemName: symbol)
                 .font(compact ? .body : .title2)
-                .foregroundStyle(.green.opacity(0.85))
+                .foregroundStyle(tint)
             Text(message)
                 .font(compact ? .caption2 : .footnote)
                 .foregroundStyle(.secondary)

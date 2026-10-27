@@ -146,6 +146,19 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// rows show the target.
     let occurrenceAt: String?
 
+    // MARK: On deck and the deadlines page (native PR E, 2026-10-26)
+
+    /// The OpenTask day (yyyy-MM-dd) the task is ON DECK for (2026-10-20,
+    /// docs/TASK-MODEL.md § On deck), or nil. A decked task has no picked
+    /// target; its Upcoming row says "On deck" (Tomorrow) or "On deck Sat
+    /// Oct 24" (Later), and a deadlines-page row decked for a later day says
+    /// "On deck Sat" (`TaskDTO.deckWords`).
+    let onDeckDay: String?
+    /// A deadlines-page task's lead day (yyyy-MM-dd, `lead_from`): the day
+    /// it joins the page. A row whose lead day was DEFERRED today reads
+    /// "· deferred to Thu" from it (`SegmentLeft.words`).
+    let leadFrom: String?
+
     enum CodingKeys: String, CodingKey {
         case id
         case projectId = "project_id"
@@ -178,6 +191,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case growthKeptAt = "growth_kept_at"
         case targetAuto = "target_auto"
         case occurrenceAt = "occurrence_at"
+        case onDeckDay = "on_deck_day"
+        case leadFrom = "lead_from"
     }
 
     /// Decode-only: the server's raw `notes`. Deliberately NOT in
@@ -233,6 +248,8 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         growthKeptAt = try c.decodeIfPresent(String.self, forKey: .growthKeptAt)
         targetAuto = try c.decodeIfPresent(Bool.self, forKey: .targetAuto) ?? false
         occurrenceAt = try c.decodeIfPresent(String.self, forKey: .occurrenceAt)
+        onDeckDay = try c.decodeIfPresent(String.self, forKey: .onDeckDay)
+        leadFrom = try c.decodeIfPresent(String.self, forKey: .leadFrom)
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -272,8 +289,12 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         progressPeriodEnd: String? = nil,
         periodInterval: Int? = nil,
         periodLastDay: String? = nil,
-        periodLabel: String? = nil
+        periodLabel: String? = nil,
+        onDeckDay: String? = nil,
+        leadFrom: String? = nil
     ) {
+        self.onDeckDay = onDeckDay
+        self.leadFrom = leadFrom
         self.id = id
         self.projectId = projectId
         self.title = title
@@ -454,34 +475,68 @@ enum DayBarColors {
 enum SegmentKind: Hashable {
     case horizon(TaskHorizon)
     case upcoming
+    /// The DEADLINES page (2026-10-22 on the server and the web; native PR
+    /// E, 2026-10-26): a deadline task with no target, from its lead day.
+    /// First in the ring, the only queue page that nags. Sent only with the
+    /// task-queue switch on and `?deadlines=1`.
+    case deadlines
+    /// The task queue's two panels (task-queue PR 3; native PR E): "Today's
+    /// pulls" (`queue_today`, queued at or after the latest rollover) and
+    /// "Previous pulls" (`queue_previous`). Sent only with the switch on and
+    /// `?queue=1`, after the deadlines page and before Days.
+    case queueToday
+    case queuePrevious
 
     static let upcomingRaw = "upcoming"
+    static let deadlinesRaw = "deadlines"
+    static let queueTodayRaw = "queue_today"
+    static let queuePreviousRaw = "queue_previous"
 
     /// Nil for a string this build doesn't know (a future segment).
     init?(raw: String) {
-        if raw == Self.upcomingRaw {
-            self = .upcoming
-        } else if let horizon = TaskHorizon(rawValue: raw) {
+        switch raw {
+        case Self.upcomingRaw: self = .upcoming
+        case Self.deadlinesRaw: self = .deadlines
+        case Self.queueTodayRaw: self = .queueToday
+        case Self.queuePreviousRaw: self = .queuePrevious
+        default:
+            guard let horizon = TaskHorizon(rawValue: raw) else { return nil }
             self = .horizon(horizon)
-        } else {
-            return nil
         }
     }
 
+    /// The wire string (`TaskSegmentDTO.horizon`).
+    var raw: String {
+        switch self {
+        case .horizon(let horizon): return horizon.rawValue
+        case .upcoming: return Self.upcomingRaw
+        case .deadlines: return Self.deadlinesRaw
+        case .queueToday: return Self.queueTodayRaw
+        case .queuePrevious: return Self.queuePreviousRaw
+        }
+    }
+
+    /// One of the task queue's two panels (the web's `isQueueKind`).
+    var isQueue: Bool { self == .queueToday || self == .queuePrevious }
+
     /// "Days", "Upcoming" — the web's `segmentWord`. The row's word (a row's
     /// set horizon, "Weeks" on a Days page); a page's TITLE uses `titleWord`.
+    /// The queue's panels and the deadlines page have no row word of their
+    /// own: their title word stands in (the spoken "Defer all …" label).
     var label: String {
         switch self {
         case .horizon(let horizon): return horizon.label
         case .upcoming: return "Upcoming"
+        case .deadlines, .queueToday, .queuePrevious: return titleWord
         }
     }
 
     /// The segment's TITLE word (2026-10-26, the web's `SEGMENT_TITLES` /
-    /// `UPCOMING_LABEL`, `src/lib/task-model-words.ts`): "Daily", "Weekly",
-    /// "Monthly", "Quarterly", "Upcoming" — the cadence the page comes round
-    /// on. Apart from `label` on purpose: `TaskHorizon.label` is the row's
-    /// "Weeks" word, which keeps its name.
+    /// `UPCOMING_LABEL` / `DEADLINES_PAGE_TITLE` / `QUEUE_PANEL_TITLES`,
+    /// `src/lib/task-model-words.ts`): "Daily", "Weekly", "Monthly",
+    /// "Quarterly", "Upcoming", "Deadlines", "Today's pulls", "Previous
+    /// pulls". Apart from `label` on purpose: `TaskHorizon.label` is the
+    /// row's "Weeks" word, which keeps its name.
     var titleWord: String {
         switch self {
         case .horizon(.days): return "Daily"
@@ -489,57 +544,104 @@ enum SegmentKind: Hashable {
         case .horizon(.months): return "Monthly"
         case .horizon(.eventually): return "Quarterly"
         case .upcoming: return "Upcoming"
+        case .deadlines: return "Deadlines"
+        case .queueToday: return "Today's pulls"
+        case .queuePrevious: return "Previous pulls"
         }
     }
 
-    /// The page's title, "Task queue · Daily" (`TaskWording.taskQueueTitle`).
+    /// The page's title, "Task queue · Daily" (`TaskWording.taskQueueTitle`,
+    /// the web's `segmentTitle`).
     var title: String { TaskWording.taskQueueTitle(titleWord) }
 
     /// The segment's page key in the widget's and the watch's page ring (the
-    /// slot-key Int space): -10…-13 the horizons, as before, and -14 Upcoming
-    /// — a key of its own, so a stored override never lands on another page.
+    /// slot-key Int space): -10…-13 the horizons, as before, -14 Upcoming,
+    /// -16 the deadlines page, -17 / -18 the queue's two panels — keys of
+    /// their own, so a stored override never lands on another page. -15 is
+    /// a segment this build doesn't know (`TaskSegmentDTO.pageKey`).
     var pageKey: Int {
         switch self {
         case .horizon(let horizon): return -(10 + horizon.order)
         case .upcoming: return -14
+        case .deadlines: return -16
+        case .queueToday: return -17
+        case .queuePrevious: return -18
         }
     }
 
     /// The segment's own colour, as 0xRRGGBB — the web's `--segment-*`
     /// token. Upcoming is `--segment-upcoming` (2026-10-12): a blue-teal,
-    /// apart from the horizons' teals. EXACT values shared with the web —
-    /// change together. Since 2026-10-26 it is the TITLE's colour only (the
-    /// dark title, and the base of `titleHex`); the segment's strip bar
-    /// fills in `DayBarColors.fillingHex` like every other bar.
+    /// apart from the horizons' teals; the queue's panels
+    /// `--segment-queue_today` / `--segment-queue_previous`; the deadlines
+    /// page `--deadlines-fill` (#0d9488, dark #2dd4bf). EXACT values shared
+    /// with the web — change together. Since 2026-10-26 it is the TITLE's
+    /// colour only (the dark title, and the base of `titleHex`); every strip
+    /// bar fills in `DayBarColors.fillingHex` — and the deadlines page's
+    /// FINISHED bar is this teal (`doneColorHex`).
     var colorHex: (light: UInt32, dark: UInt32) {
         switch self {
         case .horizon(let horizon): return horizon.segmentColorHex
         case .upcoming: return (0x1A8FB0, 0x4CB8D9)
+        case .deadlines: return (0x0D9488, 0x2DD4BF)
+        case .queueToday: return (0x0D7F8C, 0x36B8C6)
+        case .queuePrevious: return (0x5C9BA3, 0x7FBCC4)
         }
     }
 
     /// The segment's FINISHED bar colour in place of the done green, or nil
-    /// for green (2026-10-26, the web's `segmentDoneColor`). Every kind this
-    /// build knows finishes green. The one exception on the web is the
-    /// deadlines page, which finishes in its own teal (`--deadlines-fill`,
-    /// #0d9488 light, `--deadlines` dark); no native build draws that page
-    /// yet (no `?deadlines=1`, no `SegmentKind` for it). The switch is
-    /// exhaustive on purpose: adding that case won't compile until it
-    /// picks its colour here.
+    /// for green (2026-10-26, the web's `segmentDoneColor`). The one
+    /// exception is the deadlines page — usually empty, so done from the
+    /// start of the day — which finishes in its own teal (`--deadlines-fill`:
+    /// #0d9488 light, #2dd4bf dark): its bar, its "0 of 0 ✓" check and the
+    /// watch's "Nothing today ✓". Every other kind finishes green. The switch
+    /// is exhaustive on purpose: a new case won't compile until it picks its
+    /// colour here.
     var doneColorHex: (light: UInt32, dark: UInt32)? {
         switch self {
-        case .horizon, .upcoming: return nil
+        case .deadlines: return colorHex
+        case .horizon, .upcoming, .queueToday, .queuePrevious: return nil
         }
     }
 
     /// The page title's colour: one deeper shade in light mode for
-    /// legibility, the fill in dark (`--segment-title-upcoming`).
+    /// legibility, the fill in dark (`--segment-title-*`): Upcoming #136f8a,
+    /// both queue panels #0a6670, the deadlines page `--deadlines` #008464
+    /// (its dark title is `--deadlines` too, #2dd4bf).
     var titleHex: (light: UInt32, dark: UInt32) {
         switch self {
         case .horizon(let horizon): return horizon.segmentTitleHex
         case .upcoming: return (0x136F8A, 0x4CB8D9)
+        case .deadlines: return (0x008464, 0x2DD4BF)
+        case .queueToday: return (0x0A6670, 0x36B8C6)
+        case .queuePrevious: return (0x0A6670, 0x7FBCC4)
         }
     }
+
+    /// Whether the page has "Defer all" (the web's `offersDeferAll`): not
+    /// the queue's two panels (spec rule 8: consider, Today and done), and
+    /// not the deadlines page, whose Defer moves ONE row's lead day
+    /// (`/api/task-segments/defer-lead`) — on native that is the row's deep
+    /// link into the app, never a widget button.
+    var offersDeferAll: Bool {
+        switch self {
+        case .horizon, .upcoming: return true
+        case .deadlines, .queueToday, .queuePrevious: return false
+        }
+    }
+
+    /// Whether a row's small words may name its own set horizon when it
+    /// differs from the page's ("Weeks" on a Days page). Only a horizon page
+    /// has a horizon to differ from: on the queue's panels and the deadlines
+    /// page the web shows no horizon word.
+    var namesRowHorizon: Bool {
+        if case .horizon = self { return true }
+        return false
+    }
+
+    /// Whether a row wears the two badges ("3×", ">1 mo"). No badges on a
+    /// queue row (designer, 10-19): the queue is read at a glance, and a
+    /// waiting repeating task there would read "226×".
+    var showsBadges: Bool { !isQueue }
 }
 
 // MARK: - Notes mark (2026-09-25)
@@ -1118,15 +1220,30 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     /// marked done leaves the payload entirely). So a page listing 2 rows can
     /// read "3 of 5"; that is the web header's count, on purpose.
     var handledCount: Int { tasks.count - waitingCount }
-    /// Whether the segment is a page today: anything listed (waiting, or
-    /// considered — so it can go green). All-deferred segments drop out.
-    var isListed: Bool { !listedTasks.isEmpty }
+    /// No rows at all today (native PR E, the server's `?fill=1`): the
+    /// segment is DONE from the start of the day — a full bar in the done
+    /// colour, "0 of 0 ✓", "Nothing today ✓" — and stays on the strip and in
+    /// the ring, in its fixed place.
+    var isEmpty: Bool { tasks.isEmpty }
+
+    /// Whether the segment is a page today. EVERY segment the server sends
+    /// (native PR E, 2026-10-26, Trent 10-24 on the web: "always show every
+    /// queue segment, every day, in fixed positions" — the server's `?fill=1`
+    /// sends every kind, an empty one with no rows). Before PR E an empty or
+    /// all-deferred segment dropped out of the ring; an older server, which
+    /// ignores `fill`, simply sends fewer segments.
+    var isListed: Bool { true }
+
+    /// "Defer all" on this page (`SegmentKind.offersDeferAll`): never on the
+    /// queue's panels or the deadlines page. A kind this build doesn't know
+    /// offers it as the horizons do (its rows are ordinary segment rows).
+    var offersDeferAll: Bool { kind?.offersDeferAll ?? true }
 
     func replacingTasks(_ tasks: [SegmentTaskDTO]) -> TaskSegmentDTO {
         TaskSegmentDTO(horizon: horizon, tasks: tasks, nudge: nudge)
     }
 
-    /// Segments with a page today, in screen order.
+    /// Segments with a page today, in screen order — every one (`isListed`).
     static func listed(_ segments: [TaskSegmentDTO]) -> [TaskSegmentDTO] {
         segments.filter(\.isListed)
     }
@@ -1216,23 +1333,73 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// cache — read it through `section`, where a missing value is Later.
     let upcomingSection: UpcomingSection?
 
+    /// How the row LEFT its segment today, handled (native PR E; the
+    /// server's `segment_left`, sent with `?handled=1` — the day roster,
+    /// `src/core/tasks/segment-roster.ts`): done, decked, targeted (Today),
+    /// considered out of the queue, or — the deadlines page — its lead day
+    /// deferred. Such a row is always `considered`, counts in the segment's
+    /// "N of M", is listed behind the done dot with its words
+    /// (`SegmentLeft.words`) and has NO controls: its way back is Undo.
+    let left: SegmentLeft?
+    /// The deadlines page's SAFETY NET (`safety_net`, from the day before
+    /// the deadline): seeing the row doesn't silence it, so a consider marks
+    /// it `seen` and it stays waiting. False off the deadlines page.
+    let safetyNet: Bool
+    /// A safety-net row considered this OpenTask day (`seen`): still
+    /// waiting, its circle drawn filled and inert (a tap would change
+    /// nothing). False off the deadlines page.
+    let seen: Bool
+    /// "Today's pulls" Try Tomorrow mark (`try_tomorrow`, the web's left-edge
+    /// mark). Decoded; Try Tomorrow itself is app only, nothing native draws
+    /// the mark yet.
+    let tryTomorrow: Bool
+
     var id: Int { task.id }
 
     /// The row's Upcoming section; a missing value reads as Later (the web's
     /// `sectionOf`).
     var section: UpcomingSection { upcomingSection ?? .later }
 
+    /// A seen safety-net row: waiting, but its circle does nothing (the web's
+    /// `seenInNet`).
+    var isSeenInSafetyNet: Bool { safetyNet && seen }
+
+    /// Whether the circle considers: a waiting row, unless it is a seen
+    /// safety-net row.
+    var isConsiderable: Bool { state == .waiting && !isSeenInSafetyNet }
+
+    /// A row that LEFT today, as one string: its title, then the web's words
+    /// for how it left ("Fix the gate · done", "… · deferred to Thu"), the
+    /// words' spaces non-breaking; the title alone for a row considered out
+    /// of the queue. The widget row draws and measures exactly this; the
+    /// watch row shows the same. Only meaningful when `left` is set.
+    var leftLabelText: String {
+        guard let words = left?.words(leadFrom: task.leadFrom) else { return task.title }
+        return task.title + TaskDTO.metaJoiner + words.replacingOccurrences(of: " ", with: "\u{00A0}")
+    }
+
     private enum CodingKeys: String, CodingKey {
         case state = "segment_state"
         case recurring
         case upcomingSection = "upcoming_section"
+        case left = "segment_left"
+        case safetyNet = "safety_net"
+        case seen
+        case tryTomorrow = "try_tomorrow"
     }
 
-    init(task: TaskDTO, state: State, recurring: Bool? = nil, upcomingSection: UpcomingSection? = nil) {
+    init(
+        task: TaskDTO, state: State, recurring: Bool? = nil, upcomingSection: UpcomingSection? = nil,
+        left: SegmentLeft? = nil, safetyNet: Bool = false, seen: Bool = false, tryTomorrow: Bool = false
+    ) {
         self.task = task
         self.state = state
         self.recurring = recurring ?? (task.rrule != nil)
         self.upcomingSection = upcomingSection
+        self.left = left
+        self.safetyNet = safetyNet
+        self.seen = seen
+        self.tryTomorrow = tryTomorrow
     }
 
     init(from decoder: Decoder) throws {
@@ -1247,20 +1414,58 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         upcomingSection = (try? c.decodeIfPresent(String.self, forKey: .upcomingSection))
             .flatMap { $0 }
             .map { UpcomingSection(rawValue: $0) ?? .later }
+        // An unknown way of leaving reads as a plain considered one: the row
+        // still left handled, it just says nothing more.
+        left = (try? c.decodeIfPresent(String.self, forKey: .left))
+            .flatMap { $0 }
+            .map { SegmentLeft(rawValue: $0) ?? .considered }
+        safetyNet = try c.decodeIfPresent(Bool.self, forKey: .safetyNet) ?? false
+        seen = try c.decodeIfPresent(Bool.self, forKey: .seen) ?? false
+        tryTomorrow = try c.decodeIfPresent(Bool.self, forKey: .tryTomorrow) ?? false
     }
 
     /// Written back for the caches (`WidgetStore`'s, the watch's), so a row
-    /// drawn from cache keeps its section.
+    /// drawn from cache keeps its section, how it left, and its safety net.
     func encode(to encoder: Encoder) throws {
         try task.encode(to: encoder)
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(state, forKey: .state)
         try c.encode(recurring, forKey: .recurring)
         try c.encodeIfPresent(upcomingSection?.rawValue, forKey: .upcomingSection)
+        try c.encodeIfPresent(left?.rawValue, forKey: .left)
+        try c.encode(safetyNet, forKey: .safetyNet)
+        try c.encode(seen, forKey: .seen)
+        try c.encode(tryTomorrow, forKey: .tryTomorrow)
     }
 
     func with(state: State) -> SegmentTaskDTO {
-        SegmentTaskDTO(task: task, state: state, recurring: recurring, upcomingSection: upcomingSection)
+        SegmentTaskDTO(
+            task: task, state: state, recurring: recurring, upcomingSection: upcomingSection,
+            left: left, safetyNet: safetyNet, seen: seen, tryTomorrow: tryTomorrow
+        )
+    }
+
+    /// The row as it reads once it has LEFT the segment handled (`?handled=1`
+    /// — what the server sends back after a done or a Today): considered,
+    /// with `left`. The optimistic draw of a done or Today tap, so "N of M"
+    /// never shrinks under the finger.
+    func leaving(_ how: SegmentLeft) -> SegmentTaskDTO {
+        SegmentTaskDTO(
+            task: task, state: .considered, recurring: recurring, upcomingSection: upcomingSection,
+            left: how, safetyNet: safetyNet, seen: seen, tryTomorrow: tryTomorrow
+        )
+    }
+
+    /// A consider as this row takes it: a safety-net row is SEEN and keeps
+    /// waiting (the deadline is close, so it stays); any other row is
+    /// considered. The optimistic draw, and what `confirmSegmentConsider`
+    /// writes into the cache.
+    func consideredByTap() -> SegmentTaskDTO {
+        guard safetyNet else { return state == .waiting ? with(state: .considered) : self }
+        return SegmentTaskDTO(
+            task: task, state: state, recurring: recurring, upcomingSection: upcomingSection,
+            left: left, safetyNet: safetyNet, seen: true, tryTomorrow: tryTomorrow
+        )
     }
 
     /// Whether the row offers "Target today" — the web's
@@ -1269,9 +1474,42 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// schedule in `occurrence_at` apart from its target, so Today moves only
     /// the target and done still advances to the next scheduled occurrence.
     /// It was `!recurring` while Today on a repeating task could reset its
-    /// schedule. Kept as a property (and `recurring` kept decoded) so a row
-    /// that ever needs to hide it again has one place to say so.
-    var offersTargetToday: Bool { true }
+    /// schedule. A row that LEFT the segment (`left`) has no controls at all.
+    var offersTargetToday: Bool { left == nil }
+}
+
+/// How a row left its segment today, handled (the web's `SegmentLeft`,
+/// `src/lib/task-segments.ts`; the API's `segment_left`).
+enum SegmentLeft: String, Codable, CaseIterable {
+    case done, deck, target, considered, deferred
+
+    /// The words after the title on a row that left (the web's
+    /// `ConsideredSegmentRow` / `leftWords`, EXACTLY — no more, no less):
+    /// "done", "on deck", "targeted", "deferred to Thu" (the lead day's
+    /// weekday, `lead_from`; "deferred" without one); nil for a row
+    /// considered out of the queue, which says nothing more.
+    func words(leadFrom: String?) -> String? {
+        switch self {
+        case .done: return "done"
+        case .deck: return "on deck"
+        case .target: return "targeted"
+        case .considered: return nil
+        case .deferred:
+            guard let day = leadFrom.flatMap({ LocalDate($0) }) else { return "deferred" }
+            return "deferred to \(day.shortWeekday)"
+        }
+    }
+}
+
+extension LocalDate {
+    private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    /// "Thu" — the web's `ccc` of a bare date (no zone: a date is a date).
+    var shortWeekday: String { Self.weekdays[(weekday - 1 + 7) % 7] }
+
+    /// "Oct 24" — the web's `LLL d` of a bare date.
+    var shortMonthDay: String { "\(Self.months[max(0, min(11, month - 1))]) \(day)" }
 }
 
 // MARK: - Completions
@@ -1408,11 +1646,35 @@ struct UndoStatusPage: Decodable {
     let latestId: Int?
     let undoableCount: Int
     let redoableCount: Int
+    /// The entry a bare undo would take next (scoped native Undo, server PR
+    /// #390, 2026-10-26), or nil when nothing is undoable. A native surface
+    /// offers Undo only when its own last `undo_id` is this one
+    /// (`UndoScope`).
+    let newestUndoableId: Int?
+    /// The entry a bare redo would take next, or nil.
+    let nextRedoableId: Int?
+    /// Whether the server sent `newest_undoable_id` at all (even null): a
+    /// server that predates scoped Undo doesn't, and then every surface
+    /// keeps the older count-based buttons. `decodeIfPresent` alone can't
+    /// tell a missing key from a null one.
+    let scoped: Bool
 
     enum CodingKeys: String, CodingKey {
         case latestId = "latest_id"
         case undoableCount = "undoable_count"
         case redoableCount = "redoable_count"
+        case newestUndoableId = "newest_undoable_id"
+        case nextRedoableId = "next_redoable_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        latestId = try c.decodeIfPresent(Int.self, forKey: .latestId)
+        undoableCount = try c.decode(Int.self, forKey: .undoableCount)
+        redoableCount = try c.decode(Int.self, forKey: .redoableCount)
+        newestUndoableId = try c.decodeIfPresent(Int.self, forKey: .newestUndoableId)
+        nextRedoableId = try c.decodeIfPresent(Int.self, forKey: .nextRedoableId)
+        scoped = c.contains(.newestUndoableId)
     }
 }
 
