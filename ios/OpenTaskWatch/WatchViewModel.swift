@@ -92,12 +92,12 @@ final class WatchViewModel: ObservableObject {
     @Published private(set) var lastActionDescription: String?
 
     /// Manual override for the Reminders page's on-screen slot, set by the
-    /// ‹ › controls. `nil` means "follow the natural (current) slot" — the
-    /// moment new data loads with a different natural slot, the override is
-    /// NOT auto-cleared (unlike the phone widget's auto-advance): the watch
-    /// has no slot-completion auto-advance requirement in this task's scope,
-    /// so a user who has manually paged away stays there until they page
-    /// again or relaunch. Clamped into range by `displayedSlotIndex`.
+    /// ‹ › controls. `nil` means "follow the default page" — the moment new
+    /// data loads with a different default, the override is NOT auto-cleared
+    /// (unlike the phone widget's, which is anchored to the default it was
+    /// made against): the watch has no slot-completion auto-advance, so a
+    /// user who has manually paged away stays there until they page again
+    /// or relaunch. Clamped into range by `displayedSlotIndex`.
     @Published var slotOverride: Int?
 
     private let api = APIClient.shared
@@ -105,12 +105,27 @@ final class WatchViewModel: ObservableObject {
     var isConfigured: Bool { api.isConfigured }
 
     /// The slot index actually on screen: the manual override if one is set
-    /// and still in range, else the natural (current-time) slot.
+    /// and still in range, else the default page's period.
+    ///
+    /// The default is the phone widget's rule, `ReminderDefaultPage.key`
+    /// (Trent's ruling 2026-10-27; ios/Shared): Deadlines while it has an
+    /// unseen row, else the earliest opened period with something waiting,
+    /// else the first waiting queue segment, else the clock's period. The
+    /// watch pages through PERIODS only — every task segment is listed under
+    /// whichever period is on screen — so when the rule answers a segment
+    /// (rules 1 and 3) the page shows the clock's period with the segments
+    /// under it, as before; when it answers a period (rule 2), that period.
     var displayedSlotIndex: Int {
         if let override = slotOverride, reminderGroups.indices.contains(override) {
             return override
         }
-        return WatchSlotLogic.naturalSlotIndex(in: reminderGroups)
+        let now = Date()
+        let day = DayStartStore.current
+        let key = ReminderDefaultPage.key(groups: reminderGroups, segments: listedSegments, now: now, day: day)
+        if let key, let index = reminderGroups.firstIndex(where: { $0.slotKey == key }) {
+            return index
+        }
+        return WatchSlotLogic.naturalSlotIndex(in: reminderGroups, now: now, day: day)
     }
 
     var displayedGroup: ReminderGroupDTO? {

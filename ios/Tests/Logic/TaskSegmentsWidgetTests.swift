@@ -62,33 +62,30 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
     }
 
     /// The fixture at 12:30 has prompts waiting in 07:00 and 09:00, so an
-    /// earlier slot is unfinished and the clock's slot stays natural.
-    func testTheClocksSlotIsNaturalEvenWhileASegmentWaits() throws {
+    /// earlier slot is unfinished: the default page is the EARLIEST of them
+    /// (the default-page ruling of 2026-10-27, `ReminderDefaultPageTests`;
+    /// it was the clock's slot before), and a waiting segment waits behind it.
+    func testTheEarliestUnfinishedSlotIsNaturalEvenWhileASegmentWaits() throws {
         let groups = try Fixtures.reminders()
         let listed = TaskSegmentDTO.listed(segments())
-        let natural = RemindersTimeline.naturalSlotIndex(in: groups, now: noon)
-        XCTAssertEqual(
-            RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), groups[natural].slotKey
-        )
+        XCTAssertFalse(groups[0].hasNothingWaiting)
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), groups[0].slotKey)
         let page = RemindersTimeline.displayedPage(groups: groups, segments: listed, now: noon)
         XCTAssertNil(page.segmentIndex)
-        XCTAssertEqual(page.slotIndex, natural)
+        XCTAssertEqual(page.slotIndex, 0)
 
         // No slots at all: the first waiting segment is the page.
         let daysDone = TaskSegmentDTO.listed(segments(daysWaiting: false))
         XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: [], segments: daysDone, now: noon), -11)
     }
 
-    func testWithNothingWaitingTheClocksSlotIsNatural() throws {
+    func testWithNoSegmentWaitingTheEarliestUnfinishedSlotIsNatural() throws {
         let groups = try Fixtures.reminders()
         let considered = [TaskSegmentDTO(horizon: "days", tasks: [row(1, .considered)])]
-        let natural = RemindersTimeline.naturalSlotIndex(in: groups, now: noon)
-        XCTAssertEqual(
-            RemindersTimeline.naturalPageKey(groups: groups, segments: considered, now: noon), groups[natural].slotKey
-        )
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: considered, now: noon), groups[0].slotKey)
         let page = RemindersTimeline.displayedPage(groups: groups, segments: considered, now: noon)
         XCTAssertNil(page.segmentIndex)
-        XCTAssertEqual(page.slotIndex, natural)
+        XCTAssertEqual(page.slotIndex, 0)
     }
 
     func testAnOverrideOntoASegmentPageResolvesToIt() throws {
@@ -99,9 +96,10 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(RemindersTimeline.displayedPage(groups: groups, segments: considered, now: noon).segmentIndex, 0)
     }
 
-    /// Auto-advance anchors its override to the natural page — the clock's
-    /// slot now that segments sit after the slots.
-    func testAutoAdvanceAnchorsToTheNaturalPage() throws {
+    /// Auto-advance off a finished slot the user flipped to drops the flip,
+    /// so the display follows the default page (2026-10-27; it used to
+    /// write an override of its own, anchored to the natural page).
+    func testAutoAdvanceOffAFinishedFlippedSlotDropsTheFlip() throws {
         let groups = try Fixtures.reminders()
         let segs = segments()
         // Stand on a finished slot after the clock's (Anytime, always started).
@@ -112,9 +110,10 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         )
         WidgetStore.setSlotOverride(slotKey: anytime.slotKey, naturalSlotKey: naturalKey)
         RemindersTimeline.autoAdvanceSlot(in: groups, segments: segs, now: noon)
-        if let override = WidgetStore.slotOverride() {
-            XCTAssertEqual(override.naturalSlotKey, naturalKey)
-        }
+        XCTAssertNil(WidgetStore.slotOverride())
+        XCTAssertEqual(
+            RemindersTimeline.displayedPageKey(groups: groups, segments: TaskSegmentDTO.listed(segs), now: noon), naturalKey
+        )
     }
 
     // MARK: Segments as slots (2026-10-11): the natural page and auto-advance
@@ -142,10 +141,13 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(page.slotIndex, 1, "the slot-only families keep the clock's slot")
     }
 
+    /// An earlier unfinished slot wins over the segments — and over the
+    /// clock's finished slot (2026-10-27: it is the default page itself, not
+    /// only where auto-advance lands; this read 2, the clock's, before).
     func testAnEarlierUnfinishedSlotStillWins() {
         let groups = [slot(1, "07:00", waiting: [101]), slot(2, "12:00", considered: 1)]
         let listed = TaskSegmentDTO.listed(segments())
-        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), 2)
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: groups, segments: listed, now: noon), 1)
     }
 
     func testTheClocksSlotWaitingIsNatural() {

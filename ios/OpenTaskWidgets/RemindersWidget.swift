@@ -85,15 +85,19 @@ struct RemindersProvider: TimelineProvider {
 
             var entries = [entry]
             if !entry.isSignedOut {
-                // Boundary entries always show the *natural* page for their
-                // moment, so crossing into a new slot visibly overrides
-                // whatever the user had chevroned to. A waiting task segment
-                // is the natural page only while every slot through the
-                // clock's is finished, so a boundary into a slot with
-                // something waiting takes the widget back to that slot.
+                // Boundary entries re-run the default-page rule at each
+                // period's opening (Trent's ruling 10-27, rule 4: when the
+                // next period opens with something waiting, the widget goes
+                // back to it — periods sit left of the queue). A manual flip
+                // is kept only while it would still hold there: its anchor
+                // is the default page at that moment, so an opening that
+                // moves the default drops it, and one that doesn't (the
+                // period has nothing waiting, Deadlines still unseen) leaves
+                // it on screen (`scheduledPage`).
+                let override = WidgetStore.slotOverride()
                 for boundary in RemindersTimeline.upcomingBoundaries(in: entry.groups, now: entry.date).prefix(8) {
-                    let page = RemindersTimeline.naturalPage(
-                        groups: entry.groups, segments: entry.segments, now: boundary.date
+                    let page = RemindersTimeline.scheduledPage(
+                        groups: entry.groups, segments: entry.segments, now: boundary.date, override: override
                     )
                     entries.append(
                         RemindersEntry(

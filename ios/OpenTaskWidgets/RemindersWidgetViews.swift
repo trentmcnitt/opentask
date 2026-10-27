@@ -1834,10 +1834,12 @@ private struct TaskSegmentListView: View {
             func lines(_ text: String, hasNotes: Bool) -> (lines: Int, shrinks: Bool) {
                 metrics.titleLines(text, width: titleWidth, weight: weight, maxHeight: budget, hasNotes: hasNotes)
             }
-            // A row that left today (native PR E): its title and the web's
-            // words ("· done"), nothing else — one string, measured as drawn.
-            if row.left != nil {
-                let fit = lines(row.leftLabelText, hasNotes: task.hasNotes)
+            // A CONSIDERED row (the web's `ConsideredSegmentRow`, 2026-10-27):
+            // its title and only the web's words ("· done", "· on deck Sat"),
+            // nothing else — one string, measured as drawn
+            // (`SegmentTaskDTO.consideredLabelText`).
+            if !isWaiting {
+                let fit = lines(row.consideredLabelText(now: entry.date), hasNotes: task.hasNotes)
                 if fit.shrinks { return ReminderRowLayout(lines: fit.lines, height: budget, shrinks: true) }
                 return ReminderRowLayout(lines: fit.lines, height: metrics.titleHeight(lines: fit.lines))
             }
@@ -1891,7 +1893,8 @@ private struct TaskSegmentListView: View {
         case .considered(let row):
             SegmentTaskRow(
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                upcomingSection: row.upcomingSection, left: row.left, leftLabel: row.leftLabelText,
+                upcomingSection: row.upcomingSection, left: row.left,
+                consideredLabel: row.consideredLabelText(now: entry.date),
                 seenInSafetyNet: false,
                 considered: true, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
@@ -2182,8 +2185,10 @@ private struct SegmentTaskRow: View {
     /// words and no controls but the filled circle (the web's
     /// `ConsideredSegmentRow`). Nil for every other row.
     let left: SegmentLeft?
-    /// The left row's whole label (`SegmentTaskDTO.leftLabelText`).
-    var leftLabel: String = ""
+    /// A considered row's whole label (`SegmentTaskDTO.consideredLabelText`:
+    /// the web's `ConsideredSegmentRow` words — "· done", "· on deck Sat" —
+    /// or the title alone). Unused on a waiting row.
+    var consideredLabel: String = ""
     /// A deadlines-page safety-net row seen today: still waiting, its circle
     /// drawn filled and inert (a tap would change nothing).
     let seenInSafetyNet: Bool
@@ -2208,9 +2213,9 @@ private struct SegmentTaskRow: View {
     }
 
     private var spoken: String {
-        if left != nil {
+        if considered {
             return NotesGlyph.accessibilityLabel(
-                leftLabel.replacingOccurrences(of: "\u{00A0}", with: " "), hasNotes: task.hasNotes
+                consideredLabel.replacingOccurrences(of: "\u{00A0}", with: " "), hasNotes: task.hasNotes
             )
         }
         let meta = meta.map { ", \($0.replacingOccurrences(of: "\u{00A0}", with: " "))" } ?? ""
@@ -2305,9 +2310,10 @@ private struct SegmentTaskRow: View {
         let title = Text(task.title)
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
             .foregroundStyle(considered ? Color.secondary : Color.primary)
-        // A left row: its title, then the web's words ("· done"), secondary.
-        if left != nil {
-            return title + Text(String(leftLabel.dropFirst(task.title.count))).foregroundStyle(.secondary)
+        // A considered row: its title, then only the web's words ("· done",
+        // "· on deck Sat"), secondary.
+        if considered {
+            return title + Text(String(consideredLabel.dropFirst(task.title.count))).foregroundStyle(.secondary)
         }
         guard let meta else { return title }
         let words = metaPlacement.joined(meta: meta)

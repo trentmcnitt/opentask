@@ -1,7 +1,8 @@
 import SwiftUI
 import WatchKit
 
-/// Reminders page: the current time slot's reminders (`GET /api/reminders`,
+/// Reminders page: the default period's reminders (`ReminderDefaultPage`,
+/// via `WatchViewModel.displayedSlotIndex`; `GET /api/reminders`,
 /// same payload the phone widgets render — read-only aside from checking
 /// items off, no create/edit on the watch). Title + "N left", a slim
 /// per-slot progress strip, ‹ › to page between slots, tap a row to consider
