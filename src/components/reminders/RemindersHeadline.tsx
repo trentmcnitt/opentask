@@ -292,7 +292,7 @@ function HeadlineLine({
 function Joined({ items }: { items: ReactNode[] }) {
   return (
     <span className="block overflow-hidden" data-joined>
-      <span className="-ml-[1.25em] block">
+      <span className="-ml-[0.85em] block">
         {items.map((item, i) => (
           <Fragment key={i}>
             {i > 0 && <wbr />}
@@ -300,7 +300,7 @@ function Joined({ items }: { items: ReactNode[] }) {
               <span
                 data-joined-sep
                 aria-hidden
-                className="text-muted-foreground inline-block w-[1.25em] text-center"
+                className="text-muted-foreground inline-block w-[0.85em] text-center"
               >
                 {i > 0 ? '\u00a0·\u00a0' : null}
               </span>
