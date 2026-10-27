@@ -10,7 +10,7 @@ struct OpenTaskWatchWidgetBundle: WidgetBundle {
     /// watch's own action — the watch app's toolbar Undo takes it back
     /// (`WatchCache.undoScope`, shared through the App Group).
     init() {
-        APIClient.undoRecorder = { WatchCache.recordOwnUndo($0) }
+        WatchCache.installUndoRecorder()
     }
 
     var body: some Widget {

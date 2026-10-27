@@ -186,6 +186,13 @@ extension WatchCache {
 
     static var undoScope: UndoScope { undoScopeStore.load() }
 
+    /// Point `APIClient.undoRecorder` here (idempotent). Set at process start
+    /// (`OpenTaskWatchApp`, `OpenTaskWatchWidgetBundle`) and again by each
+    /// Smart Stack intent before it sends, so no tap's id can be missed.
+    static func installUndoRecorder() {
+        APIClient.undoRecorder = { WatchCache.recordOwnUndo($0) }
+    }
+
     static func recordOwnUndo(_ id: Int) {
         undoScopeStore.update { $0.recordOwn(id) }
     }

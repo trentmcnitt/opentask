@@ -8,7 +8,7 @@ struct OpenTaskWatchApp: App {
     /// Stack card are one surface — every mutation either sends records its
     /// `undo_id` in `WatchCache.undoScope`.
     init() {
-        APIClient.undoRecorder = { WatchCache.recordOwnUndo($0) }
+        WatchCache.installUndoRecorder()
     }
 
     var body: some Scene {

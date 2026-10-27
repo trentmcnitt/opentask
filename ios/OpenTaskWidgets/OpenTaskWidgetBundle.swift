@@ -17,7 +17,7 @@ struct OpenTaskWidgetBundle: WidgetBundle {
     /// surface's own. One surface for all three kinds (and on the Mac, its
     /// widgets alone).
     init() {
-        APIClient.undoRecorder = { WidgetStore.recordOwnUndo($0) }
+        installWidgetUndoRecorder()
     }
 
     var body: some Widget {

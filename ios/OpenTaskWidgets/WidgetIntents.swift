@@ -154,6 +154,18 @@ func reloadOpenTaskWidgets() {
     WidgetCenter.shared.reloadTimelines(ofKind: TrackWidget.kind)
 }
 
+// MARK: - Scoped Undo's recorder (2026-10-26, `UndoScope`)
+
+/// Point `APIClient.undoRecorder` at this extension's scope, so every
+/// mutation it sends records its `undo_id` as the widgets' own. Set in
+/// `OpenTaskWidgetBundle.init()`, and again — idempotently — before any send
+/// here (`kickWidgetOutbox`, and each intent that calls the server itself):
+/// if the extension ever ran an intent without building its bundle first,
+/// a missed id would leave Undo dim with no error anywhere.
+func installWidgetUndoRecorder() {
+    APIClient.undoRecorder = { WidgetStore.recordOwnUndo($0) }
+}
+
 // MARK: - Outbox (2026-09-30, instant check-off)
 
 /// The extension's one outbox drainer — see `WidgetOutboxDrainer`'s doc
@@ -207,6 +219,7 @@ func applyOutboxReloads(_ report: OutboxDrainReport) {
 /// the extension from being napped mid-send, and the same persistence
 /// covers the rest.
 func kickWidgetOutbox() {
+    installWidgetUndoRecorder()
     guard !WidgetStore.outboxEntries().isEmpty else { return }
     #if os(macOS)
     Task.detached {
@@ -633,6 +646,7 @@ struct DeferSegmentIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         let (_, segments) = RemindersTimeline.cachedPages()
         // Never on the queue's panels or the deadlines page (native PR E,
         // `offersDeferAll`): the button isn't drawn there, but one archived on
@@ -693,6 +707,7 @@ struct RestorePromptIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         // Put back before the action it reverses was ever sent (the outbox,
         // 2026-09-30): take the queued action back locally — nothing to tell
         // the server, and nothing for Undo to find later.
@@ -1124,6 +1139,7 @@ struct UndoLastActionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         // Atomic claim (see WidgetStore.tryClaimUndoRedo's doc): a
         // concurrent tap — a real double-tap, a second perform() while this
         // one's network call is still in flight, or an overlapping Redo tap
@@ -1276,6 +1292,7 @@ struct RedoLastActionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         // Shared claim with Undo — see UndoLastActionIntent's doc.
         guard WidgetStore.tryClaimUndoRedo() else { return .result() }
         defer { WidgetStore.releaseUndoRedoClaim() }
@@ -1498,6 +1515,7 @@ struct UncompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         // Restored before its completion was ever sent (the outbox,
         // 2026-09-30 — a Tasks check-off is drawn in DONE while still
         // queued): take the queued completion back locally. The server never
@@ -1737,6 +1755,7 @@ struct SnoozeSelectedTasksIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         let scope = TasksTimeline.currentScope()
         let selected = WidgetStore.selectedTaskIds(for: scope)
         guard !selected.isEmpty else { return .result() }
@@ -1779,6 +1798,7 @@ struct CompleteSelectedTasksIntent: AppIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         let scope = TasksTimeline.currentScope()
         let ids = Array(WidgetStore.selectedTaskIds(for: scope))
         guard !ids.isEmpty else { return .result() }
@@ -1833,6 +1853,7 @@ struct SnoozeTaskRowIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         // See `SnoozeSelectedTasksIntent`: zero planned requests (⏭ with no
         // cached slots) still falls through to `clearInteraction()` + reload.
         let requests = TaskSnoozePlan.requests(
@@ -1869,6 +1890,7 @@ struct SnoozeAllOverdueIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        installWidgetUndoRecorder()
         do {
             let result = switch TaskSnoozeTarget(rawValue: target) {
             case .nextPeriod, .none:
