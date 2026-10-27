@@ -40,17 +40,29 @@ import { cn } from '@/lib/utils'
  * another color when it's finished." This is NOT the violet mistake come
  * back — that cut ran two hues to express the same thing (state) in the same
  * space, and they fought each other. This runs two hues to express two
- * DIFFERENT things: blue means "time has come, still filling in"; green still
- * means only what it always has here — fully considered. The fill is what
+ * DIFFERENT things: the filling hue (blue then; PURPLE since 2026-10-26,
+ * below) means "time has come, still filling in"; green still means only
+ * what it always has here — fully considered. The fill is what
  * changes hue now, gated on nothing left waiting (`considered >= total`),
  * not on `state`, so a slot fully considered before its own time has come
- * (still `'upcoming'`) reads as finished rather than lying blue. The track
+ * (still `'upcoming'`) reads as finished rather than lying "still filling". The track
  * underneath is untouched by any of this — still weight-only, still the tell
  * for "behind" vs "upcoming".
  *
+ * THE RULE NOW (2026-10-26): PURPLE WHILE FILLING, GREEN WHEN DONE, ON EVERY
+ * SEGMENT; THE DEADLINES PAGE FINISHES IN ITS TEAL. The blue
+ * became the reminders' own purple (`--badge-reminders`), and the task
+ * segments, which had filled in one teal each, fill in it too (Trent: "Have
+ * them all just use the purple and green except for the deadlines, which
+ * finish the teal color that they currently finish at. That's the special
+ * one." — a teal per segment made the page too noisy). Finished is green
+ * on every segment except the deadlines page, which finishes in its own
+ * teal (`doneColor`). The Reminders page's day bar and section hairlines
+ * and the Quotas page's period bars follow the same rule.
+ *
  * Nothing here is ever red or amber. §6: a reminder is never overdue and
  * carries no debt, so the bar may report that a slot is unfinished but must
- * never dress it as a failure. Blue reads as "in progress", not "wrong".
+ * never dress it as a failure. Purple reads as "in progress", not "wrong".
  *
  * SEGMENTS ARE PROPORTIONAL TO WHAT THEY HOLD. Equal widths were the first
  * cut, on the reasoning that Trent's own slots happen to be evenly sized so
@@ -73,7 +85,7 @@ import { cn } from '@/lib/utils'
  * a bar here, after the slots' — same states, same proportions, same tap. The
  * bar takes plain items rather than `ReminderGroup`s for that reason. A task
  * segment has no start time: it is today's all day, so it is "started" and
- * reads blue while anything in it waits, green once it is all handled.
+ * fills while anything in it waits, green once it is all handled.
  */
 
 /** Small enough to stay roughly proportional, wide enough to hit. Shared with
@@ -91,9 +103,10 @@ export interface SlotBarItem {
   total: number
   /** Its time has come. Always true for a task segment. */
   started: boolean
-  /** A task segment's teal (`segmentColor`): its fill while it fills. The
-   *  page on screen grows like a slot's, with no ring. Absent for a slot. */
-  color?: string
+  /** A task segment, not a slot: the divider goes before the first one. It
+   *  fills in the same purple as a slot; the page on screen grows like a
+   *  slot's, with no ring. */
+  taskSegment?: boolean
   /** Its fill once finished, in place of green: the deadlines page's teal
    *  (`segmentDoneColor`). Absent for a slot and every other segment. */
   doneColor?: string
@@ -163,9 +176,9 @@ export function ReminderSlotBar({
   return (
     <div className="flex items-center gap-1 px-3 pb-2" role="group" aria-label={ariaLabel}>
       {shown.map(({ item, index: i }, n) => {
-        const { considered, total, label, color, doneColor } = item
+        const { considered, total, label, doneColor } = item
         // The divider goes before the first task segment, after a slot.
-        const divider = color !== undefined && n > 0 && shown[n - 1].item.color === undefined
+        const divider = item.taskSegment && n > 0 && !shown[n - 1].item.taskSegment
         const state = slotState(item)
         // An empty task segment is done: a full green fill (`emptyDone`).
         const fraction = total > 0 ? considered / total : 1
@@ -226,17 +239,16 @@ export function ReminderSlotBar({
                 {fraction > 0 && (
                   <span
                     className={cn(
-                      // Blue while there's still something waiting; green the
+                      // Purple while there's still something waiting; green the
                       // moment there isn't. A step change in colour, not an
                       // increment in length — see the header comment.
                       'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
-                      complete ? !doneColor && 'bg-green-600' : 'bg-indigo-600',
+                      complete ? !doneColor && 'bg-green-600' : 'bg-badge-reminders',
                     )}
                     style={{
                       width: `${Math.min(1, fraction) * 100}%`,
-                      // Teal for a task segment while it fills; green when done
-                      // — or its own `doneColor` (the deadlines page).
-                      ...(color && !complete ? { backgroundColor: color } : {}),
+                      // Done in its own `doneColor` (the deadlines page's teal)
+                      // in place of green.
                       ...(doneColor && complete ? { backgroundColor: doneColor } : {}),
                     }}
                   />

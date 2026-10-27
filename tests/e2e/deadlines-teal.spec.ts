@@ -12,7 +12,9 @@
  * Read from computed styles, against the token and the done green resolved
  * in the page itself (Tailwind 4's green is oklch, so never a hard-coded
  * rgb). The other segments keep green: an empty Weekly, done from the start
- * of the day, is the control beside the empty deadlines page.
+ * of the day, is the control beside the empty deadlines page. While a bar
+ * FILLS it is the reminders' purple on every segment (2026-10-26), the
+ * deadlines page's included: a part-filled Daily is the check.
  *
  * Its own user (`queue@opentask.local`, as deadlines-page): with the switch
  * on, the minute cron's rollover would strip the shared user's past-target
@@ -39,6 +41,12 @@ async function create(page: Page, data: Record<string, unknown>): Promise<number
   const res = await page.request.post('/api/tasks', { data })
   expect(res.ok(), `create ${JSON.stringify(data)}`).toBeTruthy()
   return (await res.json()).data.id as number
+}
+
+/** Considers `id` on its task segment, so the segment is part-way filled. */
+async function consider(page: Page, id: number) {
+  const res = await page.request.post('/api/task-segments/consider', { data: { ids: [id] } })
+  expect(res.ok(), `consider ${id}`).toBeTruthy()
 }
 
 async function trash(page: Page, ids: number[]) {
@@ -75,6 +83,8 @@ async function palette(page: Page) {
     tealGlyph: await resolved(page, { prop: 'color', css: 'var(--deadlines-fill)' }),
     greenText: await resolved(page, { prop: 'color', cls: 'text-green-700 dark:text-green-400' }),
     greenFill: await resolved(page, { prop: 'backgroundColor', cls: 'bg-green-600' }),
+    // Every bar fills in the reminders' purple while it fills (2026-10-26).
+    purpleFill: await resolved(page, { prop: 'backgroundColor', css: 'var(--badge-reminders)' }),
   }
 }
 
@@ -103,9 +113,12 @@ for (const viewport of VIEWPORTS) {
     }) => {
       const ids: number[] = []
       try {
-        // A Daily row, so the card is a pager (not the one-line done card);
-        // the deadlines page and Weekly are empty — done from the start.
+        // Two Daily rows, one considered: the card is a pager (not the
+        // one-line done card) and Daily's bar is part-way filled; the
+        // deadlines page and Weekly are empty — done from the start.
         ids.push(await create(page, { title: uniqueTitle('DT daily'), horizon: 'days' }))
+        ids.push(await create(page, { title: uniqueTitle('DT daily 2'), horizon: 'days' }))
+        await consider(page, ids[1])
         await page.goto('/?tasks=deadlines')
         const card = page.locator('[data-tasks-panel]')
         await expect(card).toHaveAttribute('data-tasks-page', 'tasks:deadlines')
@@ -123,6 +136,9 @@ for (const viewport of VIEWPORTS) {
         )
         expect(await fillOf(fill('tasks:deadlines'))).toBe(p.tealFill)
         expect(await fillOf(fill('tasks:weeks'))).toBe(p.greenFill)
+        // Daily, filling: the reminders' purple, not a teal of its own.
+        expect(p.purpleFill).not.toBe(p.tealFill)
+        expect(await fillOf(fill('tasks:days'))).toBe(p.purpleFill)
 
         // The header: the title in the text teal; the ✓ glyphs (the header's
         // and "Nothing today ✓") in the fill teal.
@@ -153,6 +169,8 @@ for (const viewport of VIEWPORTS) {
       const ids: number[] = []
       try {
         ids.push(await create(page, { title: uniqueTitle('DT daily'), horizon: 'days' }))
+        ids.push(await create(page, { title: uniqueTitle('DT daily 2'), horizon: 'days' }))
+        await consider(page, ids[1])
         // A reminder in the first period: without one the page is its empty
         // state, with no headline and so no day bar.
         const slots = (await (await page.request.get('/api/time-slots')).json()).data
@@ -200,6 +218,9 @@ for (const viewport of VIEWPORTS) {
         expect(await fillOf(dayFill('tasks:weeks'))).toBe(p.greenFill)
         expect(await colorOf(title('weeks'))).not.toBe(p.teal)
         expect(await colorOf(title('days'))).not.toBe(p.teal)
+        // Daily, one of two considered: its hairline and day bar fill purple.
+        expect(await fillOf(hairline('days'))).toBe(p.purpleFill)
+        expect(await fillOf(dayFill('tasks:days'))).toBe(p.purpleFill)
 
         // With a row on the page (filling): the title is still the teal.
         const deadline = await create(page, {

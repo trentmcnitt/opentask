@@ -32,7 +32,9 @@
      and white on it measured ≈2.9:1 (2026-10-12 QA). Same hue, darker. */
   --over-target-badge: var(--over-target);
   /* Task segments (2026-10-11, Trent picked): one teal per horizon, darkest
-     for the soonest. Bars, the current page's ring, and the segment titles.
+     for the soonest. The segment titles (and, in dark mode, the titles'
+     colour). Since 2026-10-26 no bar fills in them: every bar, slot or
+     segment, fills in the reminders' purple (`ReminderSlotBar`).
      The native apps use the same hex values, light and dark. Teal stays
      clear of the reminders' indigo/violet, the plum of over target, the red
      of a passed deadline, the priority colours and the green of done. */
@@ -76,8 +78,10 @@
   --every-time-foreground: #ffffff;
   /* The deadlines page's OWN teal (2026-10-26, experiment for Trent: "change
      the color on that one and see what that's like"; then "That teal is too
-     blue", so a greener one). Its title, its bar in the Tasks card's strip
-     and the /reminders day bar, its hairline, and its finished "N of N ✓" —
+     blue", so a greener one). Its title, its FINISHED bar in the Tasks
+     card's strip and the /reminders day bar and its finished hairline (while
+     filling, every bar is the reminders' purple, 2026-10-26), and its
+     finished "N of N ✓" —
      where every other segment turns green when done, this one stays its
      teal (`segmentDoneColor` / `segmentDoneTextColor` in TaskSegmentRow.tsx).
      Two tokens, because text and graphics have different contrast floors:

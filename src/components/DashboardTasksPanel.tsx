@@ -18,7 +18,6 @@ import {
   TaskSegmentRow,
   handledRows,
   offersDeferAll,
-  segmentColor,
   segmentCounts,
   segmentDoneColor,
   segmentEmpty,
@@ -48,7 +47,8 @@ import {
  * across the segments (with the switch on the deadlines page first, then the
  * task queue's two panels; then Daily, Upcoming, Weekly, Monthly, Quarterly —
  * `SEGMENT_ORDER`), its own strip of
- * teal bars (the current one taller, as a slot's is; green when finished), the
+ * bars (the current one taller, as a slot's is; purple while filling, green
+ * when finished, the deadlines page teal — `ReminderSlotBar`), the
  * same header (the title, "TASK QUEUE · DAILY", as a slot shows its name; "X of Y"
  * that opens what was considered with put-back, ‹ ›), the same rows, and
  * "Defer all" behind the header tap where a slot has "Considered all".
@@ -91,7 +91,7 @@ export function DashboardTasksPanel({
       considered: handled,
       total,
       started: true,
-      color: segmentColor(segment.horizon),
+      taskSegment: true,
       doneColor: segmentDoneColor(segment.horizon),
       emptyDone: true,
     }

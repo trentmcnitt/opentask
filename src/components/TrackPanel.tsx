@@ -1139,7 +1139,7 @@ function PeriodHeading({ section }: { section: TrackSection }) {
  * (`SlotHairline`), UNDER the heading row and the width of the card — Trent,
  * 2026-10-16: "Why do the quotas have their bar fat and on the same line as
  * the heading, whereas the ones for the reminders have them casually
- * underneath the heading?" Same element, so the same 4px, track, indigo fill
+ * underneath the heading?" Same element, so the same 4px, track, purple fill
  * and green when every quota in the section is met (`barFraction` reaches 1
  * exactly then: partial credit is capped per quota). Its accessible text says
  * how much of the period has run (`barAriaLabel`); the old in-row bar's

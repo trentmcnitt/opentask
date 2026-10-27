@@ -181,9 +181,10 @@ export function segmentLabel(segment: SegmentView): string {
 /**
  * A segment's colour (2026-10-11, Trent's pick): one teal per horizon, darkest
  * for the soonest — the `--segment-*` tokens in globals.css, light and dark.
- * It fills the segment's bar while it fills (finished is green, like a slot —
- * except the deadlines page, `segmentDoneColor`),
- * rings the bar of the page on screen, and colours the segment's title.
+ * Since 2026-10-26 no bar fills in it (every bar fills in the reminders'
+ * purple, `ReminderSlotBar`); the titles keep their teals
+ * (`segmentTitleColor`), and the deadlines page finishes in its own
+ * (`segmentDoneColor`).
  */
 export function segmentColor(horizon: SegmentKind): string {
   return `var(--segment-${horizon})`
