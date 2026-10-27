@@ -147,6 +147,18 @@
  *     `already_undone` naming the entry below — asserted, not captured:
  *     native reads only the status and `details`)
  *
+ * 25. The native apps' question (native PR E, 2026-10-26): the web's own
+ *     `REMINDERS_URL` (`src/lib/reminders-query.ts`), written as
+ *                                               → reminders-query.json
+ *     (the Swift `ContractDecodeTests` asserts `APIClient.remindersPath`
+ *     equals it — the drift guard), then, switch on, step 19's safety-net row
+ *     considered (seen, still waiting) and step 15's "Call the plumber" done
+ *     from "Today's pulls"
+ *     GET  REMINDERS_URL                       → reminders-native.json
+ *     (every kind, an empty one with no rows (`fill`); a left done row and
+ *     step 19's left deferred row (`handled`); the seen safety-net row; step
+ *     16's deck row; step 15's Try Tomorrow row)
+ *
  * Every captured mutation carries `undo_id` (2026-10-26), and undo-status
  * `newest_undoable_id` / `next_redoable_id`: undo-entry placeholders, like
  * `latest_id`, numbered 901.. in the order the fixtures are checked.
@@ -191,6 +203,7 @@ import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
 import { describe, test, expect, beforeAll } from 'vitest'
 import { apiFetchB, resetTestData, setTaskQueue } from './helpers'
+import { REMINDERS_URL } from '@/lib/reminders-query'
 
 const FIXTURE_DIR = path.join(process.cwd(), 'tests', 'fixtures', 'contract')
 const WRITE = process.env.CONTRACT_WRITE === '1'
@@ -1119,6 +1132,8 @@ describe('contract fixtures (native clients)', () => {
 
   // 24. Scoped native Undo (2026-10-26). Its own hook, last: it undoes.
   let undoAgain: { status: number; body: Json } | null = null
+  // The status right after, read here: step 25's mutations clear the redo stack.
+  let statusAfterUndo: Json = null
   beforeAll(async () => {
     const consider = captured['quota-prompts-consider'] as { data: { undo_id: number } }
     captured['undo-by-id'] = await call('/api/undo', { id: consider.data.undo_id })
@@ -1129,6 +1144,72 @@ describe('contract fixtures (native clients)', () => {
       body: { id: consider.data.undo_id },
     })
     undoAgain = { status: again.status, body: (await again.json()) as Json }
+    statusAfterUndo = await call('/api/undo/status')
+  })
+
+  // 25. The native apps' question (native PR E). Its own hook, last of all:
+  //     it considers and completes.
+  beforeAll(async () => {
+    captured['reminders-query'] = { data: { path: REMINDERS_URL } }
+    await setTaskQueue(true)
+    try {
+      // Seen in the safety net: it stays waiting, `seen: true`.
+      await call('/api/task-segments/consider', { ids: [created.deadlinePassed] })
+      // Read once, so the day roster remembers what is listed (it remembers
+      // only rows a `handled=1` read listed), then done from "Today's
+      // pulls": back as a considered row, `segment_left: done`.
+      await call(REMINDERS_URL)
+      await call(`/api/tasks/${created.queueNew}/done`, {})
+      captured['reminders-native'] = await call(REMINDERS_URL)
+    } finally {
+      await setTaskQueue(false)
+    }
+  })
+
+  test('the native question: every kind in order, left rows, the seen safety net, deck and Try Tomorrow', () => {
+    type Row = {
+      id: number
+      segment_state: string
+      segment_left?: string
+      safety_net?: boolean
+      seen?: boolean
+      try_tomorrow?: boolean
+      on_deck_day: string | null
+    }
+    type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
+    const segs = (captured['reminders-native'] as unknown as Segs).data.task_segments
+    expect(segs.map((s) => s.horizon)).toEqual([
+      'deadlines',
+      'queue_today',
+      'queue_previous',
+      'days',
+      'upcoming',
+      'weeks',
+      'months',
+      'eventually',
+    ])
+    const row = (horizon: string, id: number) =>
+      segs.find((s) => s.horizon === horizon)!.tasks.find((t) => t.id === id)
+    expect(row('deadlines', created.deadlinePassed)).toMatchObject({
+      segment_state: 'waiting',
+      safety_net: true,
+      seen: true,
+    })
+    expect(row('deadlines', created.deadlineWindow)).toMatchObject({
+      segment_state: 'considered',
+      segment_left: 'deferred',
+    })
+    expect(row('queue_today', created.queueNew)).toMatchObject({
+      segment_state: 'considered',
+      segment_left: 'done',
+    })
+    expect(row('queue_today', created.queueTryTomorrow)?.try_tomorrow).toBe(true)
+    expect(row('upcoming', created.decked)?.on_deck_day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // `fill`: at least one kind came back empty, with no rows.
+    expect(segs.some((s) => s.tasks.length === 0)).toBe(true)
+    expect((captured['reminders-query'] as { data: { path: string } }).data.path).toBe(
+      REMINDERS_URL,
+    )
   })
 
   test("undo by id: the consider's own undo_id is undone; the same id again is a 409", async () => {
@@ -1137,7 +1218,7 @@ describe('contract fixtures (native clients)', () => {
     const undone = (captured['undo-by-id'] as unknown as U).data
     expect(undone.undone_id).toBe(consider.data.undo_id)
     expect(undone.undone_action).toBe('quota_prompt')
-    const status = (await call('/api/undo/status')) as {
+    const status = statusAfterUndo as unknown as {
       data: { newest_undoable_id: number; next_redoable_id: number }
     }
     expect(status.data.next_redoable_id).toBe(consider.data.undo_id)
@@ -1312,6 +1393,8 @@ describe('contract fixtures (native clients)', () => {
     'notification-action-considered',
     'quota-prompts-consider',
     'undo-by-id',
+    'reminders-query',
+    'reminders-native',
   ]
 
   for (const name of names) {

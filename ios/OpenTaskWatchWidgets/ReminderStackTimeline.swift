@@ -200,7 +200,9 @@ enum ReminderStackTimeline {
         // started slot has anything waiting. Their own card, never a slot's
         // item, never in a slot's "N left".
         let liveSegments = applyingPending(done: pendingDone, prompts: pendingPrompts, to: segments)
-        if let segment = TaskSegmentDTO.listed(liveSegments).first(where: \.hasWaiting) {
+        // A row to CONSIDER, that is (native PR E): a seen safety-net row on
+        // the deadlines page still waits, but its ○ would do nothing.
+        if let segment = TaskSegmentDTO.listed(liveSegments).first(where: { !segmentCards($0, urgent: urgent).isEmpty }) {
             let skips = skipped(segment.pageKey)
             let remaining = segmentCards(segment, urgent: urgent)
             let index = remaining.firstIndex { !skips.contains($0.itemKey) } ?? 0
@@ -284,9 +286,11 @@ enum ReminderStackTimeline {
     static func segmentItemKey(_ taskId: Int) -> String { "s:\(taskId)" }
 
     /// A segment's waiting rows as cards, in the server's order (Upcoming's
-    /// Tomorrow rows first, as the server sends them).
+    /// Tomorrow rows first, as the server sends them). Not a seen safety-net
+    /// row (native PR E): it stays waiting on the deadlines page, but its ○
+    /// is inert, so it is no card.
     static func segmentCards(_ segment: TaskSegmentDTO, urgent: Int) -> [WatchWidgetEntry.ReminderCard] {
-        let rows = segment.waitingTasks
+        let rows = segment.waitingTasks.filter(\.isConsiderable)
         let keys = rows.map { segmentItemKey($0.id) }
         return rows.map { row in
             WatchWidgetEntry.ReminderCard(
@@ -316,15 +320,18 @@ enum ReminderStackTimeline {
         segment.cardLabel(for: row)
     }
 
-    /// In-flight segment taps drawn over the cached segments: a done row is
-    /// gone, a considered one (staged under its `s:` key) is considered.
+    /// In-flight segment taps drawn over the cached segments: a done row has
+    /// LEFT handled (native PR E, `?handled=1` — considered, "· done", so the
+    /// segment's count never shrinks), a considered one (staged under its
+    /// `s:` key) is considered — a safety-net one seen, still waiting.
     static func applyingPending(
         done: Set<Int>, prompts: [String: Bool], to segments: [TaskSegmentDTO]
     ) -> [TaskSegmentDTO] {
         segments.map { segment in
-            segment.replacingTasks(segment.tasks.compactMap { row in
-                if done.contains(row.id) { return nil }
-                if prompts[segmentItemKey(row.id)] != nil, row.state == .waiting { return row.with(state: .considered) }
+            segment.replacingTasks(segment.tasks.map { row in
+                guard row.left == nil else { return row }
+                if done.contains(row.id) { return row.leaving(.done) }
+                if prompts[segmentItemKey(row.id)] != nil, row.isConsiderable { return row.consideredByTap() }
                 return row
             })
         }

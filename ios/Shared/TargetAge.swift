@@ -158,25 +158,45 @@ extension TaskDTO {
     ///
     /// `upcomingSection`: an Upcoming row's section (2026-10-26) — a Tomorrow
     /// row's target says only its time (`upcomingParts`).
+    ///
+    /// The queue's panels and the deadlines page (native PR E, the web's
+    /// `TaskSegmentMeta`): no horizon word (`SegmentKind.namesRowHorizon` —
+    /// there is no page horizon to differ from), no badges on a queue row
+    /// (`showsBadges`), and a deadlines-page row decked for a later day ends
+    /// with its deck day, "On deck Sat" / "On deck today" (`deckWords`).
     func segmentMeta(
         segmentHorizon: String? = nil, now: Date = Date(), calendar: Calendar = .current,
         upcomingForm: UpcomingMetaForm = .full, dayStart: String = DayStartStore.current.dayStart,
         upcomingSection: UpcomingSection? = nil
     ) -> String? {
+        let kind = segmentHorizon.flatMap(SegmentKind.init(raw:))
         let parts: [String?]
         if segmentHorizon == SegmentKind.upcomingRaw {
             parts = upcomingParts(calendar: calendar, form: upcomingForm, dayStart: dayStart, section: upcomingSection)
         } else {
-            let horizonWord = (segmentHorizon != nil && horizon == segmentHorizon) ? nil : horizonLabel
+            let namesHorizon = kind?.namesRowHorizon ?? true
+            let horizonWord = !namesHorizon || (segmentHorizon != nil && horizon == segmentHorizon) ? nil : horizonLabel
             let deadline = deadlineDate.map {
                 "deadline \(TargetAge.dayText($0, calendar: calendar, dayStart: dayStart))"
             }
             let target = TargetAge.futureTargetChip(self, now: now, calendar: calendar, dayStart: dayStart)
-            parts = [horizonWord, target, deadline]
+            let deck = kind == .deadlines
+                ? deckWords(now: now, day: OpenTaskDay(dayStart: dayStart, timeZone: calendar.timeZone))
+                : nil
+            parts = [horizonWord, target, deadline, deck]
         }
-        let all = (parts + [ageLabel, TargetAge.attemptsBadge(self)])
+        let badges = kind?.showsBadges ?? true ? [ageLabel, TargetAge.attemptsBadge(self)] : []
+        let all = (parts + badges)
             .compactMap { $0?.replacingOccurrences(of: " ", with: "\u{00A0}") }
         return all.isEmpty ? nil : all.joined(separator: Self.metaJoiner)
+    }
+
+    /// A deck day's words (the web's `todayReplaces` / `deckChipWords`): "On
+    /// deck today" when it is today's OpenTask date, else "On deck Sat"; nil
+    /// when the task is not on deck (or the day doesn't parse).
+    func deckWords(now: Date = Date(), day: OpenTaskDay = DayStartStore.current) -> String? {
+        guard let deck = onDeckDay.flatMap({ LocalDate($0) }) else { return nil }
+        return deck == day.openTaskDay(of: now) ? "On deck today" : "On deck \(deck.shortWeekday)"
     }
 
     /// An UPCOMING row's small words (2026-10-12) — after the web's
@@ -217,9 +237,19 @@ extension TaskDTO {
                 ? TargetAge.weekdayDayText(date, calendar: calendar, dayStart: dayStart)
                 : TargetAge.dayText(date, calendar: calendar, dayStart: dayStart)
         }
-        let target = section == .tomorrow
+        // On deck (native PR E, the web's `upcomingGap`): "On deck" on a
+        // Tomorrow row — its section says the day — else "On deck Sat Oct
+        // 24" ("On deck Oct 24" in the forms without weekdays). A deck has
+        // no time. It wins over any target.
+        let deck = onDeckDay.flatMap { LocalDate($0) }.map { date -> String in
+            guard section != .tomorrow else { return "On deck" }
+            return form.includesWeekdays
+                ? "On deck \(date.shortWeekday) \(date.shortMonthDay)"
+                : "On deck \(date.shortMonthDay)"
+        }
+        let target = deck ?? (section == .tomorrow
             ? dueDate.map { TargetAge.tomorrowTimeText($0, calendar: calendar, dayStart: dayStart) }
-            : dueDate.map(day)
+            : dueDate.map(day))
         var deadline: String?
         if let deadlineDate {
             deadline = "deadline \(day(deadlineDate))"

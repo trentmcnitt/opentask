@@ -15,6 +15,7 @@ import {
 } from '@/lib/quota-prompts'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
+import { REMINDERS_URL } from '@/lib/reminders-query'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -175,23 +176,12 @@ export interface UseRemindersReturn {
 }
 
 /**
- * The web shows the task queue's panels (task-queue PR 3), so it opts in to
- * them (`?queue=1`); without it the server leaves queued tasks out of
- * `task_segments` altogether, for native builds that predate the queue.
- * It draws a future deck's Upcoming row ("On deck Sat Oct 24", On deck D2)
- * too (`?deck=1`); without it a decked task is left out of Upcoming.
- * And it keeps each segment's "N of M" fixed for the day (`?handled=1`, the
- * day roster, 2026-10-22): rows decked, targeted or done today come back as
- * considered rows with `segment_left` (src/core/tasks/segment-roster.ts).
- * And it draws the DEADLINES page (`?deadlines=1`, 2026-10-22): a deadline
- * task with no target from its lead day, with `safety_net` and `seen` on each
- * row, quiet before its lead day (rule 3, 2026-10-25) — without it (and with
- * the task queue on) such a task would fall back into its horizon segment.
- * And it shows EVERY segment, every day, in fixed positions (`?fill=1`,
- * Trent 2026-10-24): an empty one comes back with no rows and reads as done
- * ("Nothing today ✓").
+ * The question this hook asks the server: `REMINDERS_URL`
+ * (`src/lib/reminders-query.ts` says what each flag opts in to). Re-exported,
+ * so the hook stays where the web's query is read from; the native apps ask
+ * the same (`APIClient.remindersPath`, guarded by `reminders-query.json`).
  */
-const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1'
+export { REMINDERS_URL }
 
 export interface ReminderCreateInput {
   title: string

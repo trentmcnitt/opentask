@@ -226,7 +226,9 @@ struct RemindersProvider: TimelineProvider {
             let (payload, status) = try await (reminders, undoStatus)
             WidgetStore.saveReminders(payload.groups, taskSegments: payload.taskSegments, fetchStartedAt: now)
             if let status {
-                WidgetStore.setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
+                // The counts and, scoped (2026-10-26), the ids `UndoScope` compares
+                // its own stack with — applied only if sent after the last tap.
+                WidgetStore.applyUndoStatus(status, requestedAt: now)
             }
             // Filter even the fresh fetch: a tombstoned completion may not have
             // committed server-side yet, and resurrecting it for one refresh

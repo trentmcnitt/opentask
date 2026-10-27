@@ -41,8 +41,8 @@ enum WatchTheme {
     static let dayBarFilling = rgb(DayBarColors.fillingHex.dark)
 
     /// A strip bar's fill once finished: `done`, or the segment's own
-    /// finished colour (`SegmentKind.doneColorHex`; none native yet — the
-    /// web's deadlines page finishes in its teal).
+    /// finished colour (`SegmentKind.doneColorHex`: the deadlines page
+    /// finishes in its teal, #2dd4bf — its bar and its "Nothing today ✓").
     static func dayBarDone(_ kind: SegmentKind?) -> Color {
         guard let hex = kind?.doneColorHex else { return done }
         return rgb(hex.dark)

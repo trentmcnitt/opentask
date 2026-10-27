@@ -345,6 +345,147 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // 6 creates + did + progress + bulk complete.
         XCTAssertEqual(status.undoableCount, 9)
         XCTAssertEqual(status.redoableCount, 0)
+        // Scoped Undo (2026-10-26): nothing undone yet, so the newest entry is
+        // the newest undoable one, and there is no redo.
+        XCTAssertTrue(status.scoped)
+        XCTAssertEqual(status.newestUndoableId, 903)
+        XCTAssertNil(status.nextRedoableId)
+        let raw = try Fixtures.object("undo-status")
+        XCTAssertTrue(raw.keys.contains("next_redoable_id"), "present, and null")
+    }
+
+    /// An older server's status: no ids at all — `scoped` false, so every
+    /// surface keeps the count-based buttons and the bare undo.
+    func testUndoStatusFromAnOlderServerIsNotScoped() throws {
+        let json = #"{"data":{"latest_id":5,"undoable_count":3,"redoable_count":0}}"#
+        let status = try JSONDecoder().decode(APIEnvelope<UndoStatusPage>.self, from: Data(json.utf8)).data
+        XCTAssertFalse(status.scoped)
+        XCTAssertNil(status.newestUndoableId)
+    }
+
+    /// `POST /api/undo { id }`'s answer: the entry undone is the consider's
+    /// own `undo_id` — what the recorder pushed for it.
+    func testUndoById() throws {
+        let consider = try Fixtures.data("quota-prompts-consider")
+        let ownId = try XCTUnwrap(APIClient.undoId(in: consider), "every native mutation answers undo_id")
+        let result = try APIClient.parseUndoRedoResult(try Fixtures.data("undo-by-id"))
+        XCTAssertEqual(result.actedId, ownId)
+        XCTAssertEqual(result.description, "Considered \"Practice guitar\"")
+        XCTAssertEqual(result.undoableCount, 48)
+        XCTAssertEqual(result.redoableCount, 1)
+        // A mutation that logged nothing answers `undo_id: null`: no own id
+        // (the previous one is kept).
+        XCTAssertNil(APIClient.undoId(in: try Fixtures.data("notification-action-not-waiting")))
+        XCTAssertNotNil(APIClient.undoId(in: try Fixtures.data("notification-action-considered")))
+        // Every captured mutation the widgets and the watch send carries it.
+        for name in [
+            "bulk-complete", "bulk-snooze", "bulk-snooze-overdue", "quota-prompts-did", "quota-prompts-restore",
+            "task-progress", "task-segments-consider", "task-segments-target-today-repeating",
+            "task-segments-defer-lead",
+        ] {
+            XCTAssertNotNil(APIClient.undoId(in: try Fixtures.data(name)), name)
+        }
+    }
+
+    /// The 409 of a stale `POST /api/undo { id }` (the shape PR #390's
+    /// integration test asserts): the reason and the newest undoable entry.
+    func testUndoConflictParses() {
+        let body = #"{"error":"That action was already undone","code":"CONFLICT","details":{"reason":"already_undone","newest_undoable_id":911}}"#
+        guard case .conflict(let reason, let newest) = APIClient.parseUndoConflict(
+            Data(body.utf8), newestKey: "newest_undoable_id"
+        ) else { return XCTFail("a conflict") }
+        XCTAssertEqual(reason, .alreadyUndone)
+        XCTAssertEqual(newest, 911)
+        let redo = #"{"details":{"reason":"not_next","next_redoable_id":null}}"#
+        guard case .conflict(let redoReason, let next) = APIClient.parseUndoConflict(
+            Data(redo.utf8), newestKey: "next_redoable_id"
+        ) else { return XCTFail("a conflict") }
+        XCTAssertEqual(redoReason, .notNext)
+        XCTAssertNil(next)
+    }
+
+    // MARK: The native question (native PR E, 2026-10-26)
+
+    /// The drift guard: native asks EXACTLY the web's question
+    /// (`REMINDERS_URL`, `src/lib/reminders-query.ts`), written into the
+    /// fixture by the contract writer.
+    func testRemindersPathIsTheWebsQuery() throws {
+        let raw = try Fixtures.object("reminders-query")
+        XCTAssertEqual(APIClient.remindersPath, raw["path"] as? String)
+    }
+
+    /// `GET REMINDERS_URL` with the task queue on, after a rich day: every
+    /// kind in the server's order, empty ones with no rows (`fill`), a row
+    /// done from "Today's pulls" and one whose lead day was deferred, both
+    /// left (`handled`), a SEEN safety-net row, a deck row and a Try Tomorrow
+    /// row.
+    func testRemindersNativeQuestion() throws {
+        let payload = try Fixtures.decode(RemindersPayload.self, "reminders-native")
+        let segments = payload.taskSegments
+        XCTAssertEqual(
+            segments.map(\.horizon),
+            ["deadlines", "queue_today", "queue_previous", "days", "upcoming", "weeks", "months", "eventually"]
+        )
+        XCTAssertEqual(
+            segments.compactMap(\.kind),
+            [.deadlines, .queueToday, .queuePrevious, .horizon(.days), .upcoming, .horizon(.weeks),
+             .horizon(.months), .horizon(.eventually)],
+            "every kind is known"
+        )
+        XCTAssertEqual(segments.map(\.pageKey), [-16, -17, -18, -10, -14, -11, -12, -13])
+        XCTAssertEqual(TaskSegmentDTO.listed(segments).count, 8, "every segment is a page, empty ones too")
+        XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
+        XCTAssertEqual(segments.map(\.title)[0...2], ["Task queue · Deadlines", "Task queue · Today's pulls", "Task queue · Previous pulls"])
+
+        // The deadlines page: the seen safety-net row waits, inert; the
+        // deferred one LEFT, "· deferred to <its lead day>".
+        let deadlines = segments[0]
+        let net = try XCTUnwrap(deadlines.tasks.first { $0.id == Fixtures.deadlinePassed })
+        XCTAssertEqual(net.state, .waiting)
+        XCTAssertTrue(net.safetyNet)
+        XCTAssertTrue(net.seen)
+        XCTAssertFalse(net.isConsiderable)
+        XCTAssertTrue(deadlines.hasWaiting, "the safety net keeps the page open")
+        let deferred = try XCTUnwrap(deadlines.tasks.first { $0.id == Fixtures.deadlineWindow })
+        XCTAssertEqual(deferred.state, .considered)
+        XCTAssertEqual(deferred.left, .deferred)
+        XCTAssertEqual(deferred.task.leadFrom, Fixtures.pinnedDate)
+        // 2026-01-15 is a Thursday.
+        XCTAssertEqual(deferred.leftLabelText, "File the quarterly report\u{00A0}· deferred\u{00A0}to\u{00A0}Thu")
+        XCTAssertFalse(deferred.offersTargetToday, "a left row has no controls")
+        XCTAssertFalse(deadlines.offersDeferAll)
+
+        // "Today's pulls": the done row LEFT ("· done"); the Try Tomorrow row.
+        let today = segments[1]
+        let done = try XCTUnwrap(today.tasks.first { $0.id == Fixtures.queueNew })
+        XCTAssertEqual(done.state, .considered)
+        XCTAssertEqual(done.left, .done)
+        XCTAssertEqual(done.leftLabelText, "Call the plumber\u{00A0}· done")
+        XCTAssertEqual(ReminderDayProgress.PeriodCount(today).text, "1 of 2", "the left row counts in N and M")
+        let tryTomorrow = try XCTUnwrap(today.tasks.first { $0.id == Fixtures.queueTryTomorrow })
+        XCTAssertTrue(tryTomorrow.tryTomorrow)
+        XCTAssertFalse(done.tryTomorrow)
+        XCTAssertFalse(today.offersDeferAll)
+
+        // Upcoming: the deck rows say "On deck" (Tomorrow).
+        let upcoming = segments[4]
+        let deck = try XCTUnwrap(upcoming.tasks.first { $0.id == Fixtures.decked })
+        XCTAssertEqual(deck.task.onDeckDay, Fixtures.pinnedDate)
+        XCTAssertEqual(deck.section, .tomorrow)
+        XCTAssertEqual(deck.task.upcomingMeta(section: .tomorrow), "On\u{00A0}deck")
+        XCTAssertEqual(deck.task.upcomingMeta(section: .later), "On\u{00A0}deck\u{00A0}Thu\u{00A0}Jan\u{00A0}15")
+        XCTAssertEqual(deck.task.upcomingMeta(form: .short, section: .later), "On\u{00A0}deck\u{00A0}Jan\u{00A0}15")
+
+        // The raw keys the DTO reads, so a renamed key can't decode as false.
+        let raw = try Fixtures.object("reminders-native")
+        let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
+        let rawDeadlines = try XCTUnwrap(rawSegments.first?["tasks"] as? [[String: Any]])
+        XCTAssertTrue(rawDeadlines.contains { $0["seen"] as? Bool == true && $0["safety_net"] as? Bool == true })
+        XCTAssertTrue(rawDeadlines.contains { $0["segment_left"] as? String == "deferred" })
+
+        // Round-trips through a cache with everything intact.
+        let encoded = try JSONEncoder().encode(segments)
+        XCTAssertEqual(try JSONDecoder().decode([TaskSegmentDTO].self, from: encoded), segments)
     }
 
     // MARK: Task segments (2026-10-10)
@@ -370,16 +511,26 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     }
 
     /// THE DEADLINES PAGE (2026-10-22), `GET /api/reminders?…&deadlines=1`:
-    /// a build that predates it still decodes the payload — the unknown
-    /// `deadlines` kind decodes (no `SegmentKind`), which is why the server
-    /// sends it only to a caller that opts in (plan L5). Its rows carry no
-    /// target, and the one-offs read `deadline_nag_off` true, so a build
-    /// from 10-10..10-12 implies no target of its own.
+    /// native draws it since PR E (2026-10-26, `SegmentKind.deadlines`); a
+    /// build that predates it still decodes the payload (an unknown kind),
+    /// which is why the server sends it only to a caller that opts in (plan
+    /// L5). Its rows carry no target, and the one-offs read
+    /// `deadline_nag_off` true, so a build from 10-10..10-12 implies no
+    /// target of its own.
     func testRemindersDeadlinesPageDecodes() throws {
         let payload = try Fixtures.decode(RemindersPayload.self, "reminders-deadlines")
         let page = try XCTUnwrap(payload.taskSegments.first)
         XCTAssertEqual(page.horizon, "deadlines")
-        XCTAssertNil(page.kind, "a kind this build does not know")
+        // Native PR E: a kind this build draws — first, its own page key and
+        // title, no Defer all, finishing in its teal.
+        XCTAssertEqual(page.kind, .deadlines)
+        XCTAssertEqual(page.pageKey, -16)
+        XCTAssertEqual(page.title, "Task queue · Deadlines")
+        XCTAssertFalse(page.offersDeferAll)
+        XCTAssertNotNil(page.kind?.doneColorHex)
+        XCTAssertEqual(page.tasks.map(\.safetyNet), [true, false, false])
+        XCTAssertEqual(page.tasks.map(\.seen), [false, false, false])
+        XCTAssertTrue(page.tasks.allSatisfy(\.isConsiderable))
         XCTAssertEqual(
             page.tasks.map(\.id),
             [Fixtures.deadlinePassed, Fixtures.deadlineRepeatTargetless, Fixtures.deadlineWindow]
@@ -483,19 +634,27 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
     // MARK: The task queue's panels (task-queue PR 3, docs/TASK-MODEL.md § The task queue)
 
-    /// `GET /api/reminders` with the server's task queue on: two new segment
-    /// kinds, `queue_today` and `queue_previous`, FIRST. This build doesn't
-    /// know them — the payload must still decode, every row intact, and
-    /// `SegmentKind(raw:)` must return nil for both (a future kind, -15).
-    func testRemindersQueueSegmentsDecodeAsUnknownKinds() throws {
+    /// `GET /api/reminders?queue=1` with the server's task queue on: two
+    /// segment kinds, `queue_today` and `queue_previous`, FIRST. Until native
+    /// PR E (2026-10-26) this build didn't know them (a future kind, -15);
+    /// now they decode as `SegmentKind.queueToday` / `.queuePrevious`.
+    func testRemindersQueueSegmentsDecodeAsTheirKinds() throws {
         let payload = try Fixtures.decode(RemindersPayload.self, "reminders-queue")
         let horizons = payload.taskSegments.map(\.horizon)
         XCTAssertEqual(Array(horizons.prefix(2)), ["queue_today", "queue_previous"])
-        for segment in payload.taskSegments.prefix(2) {
-            XCTAssertNil(SegmentKind(raw: segment.horizon))
-            XCTAssertNil(segment.kind)
+        // Native PR E: kinds this build draws, with their own page keys and
+        // titles, and no Defer all.
+        let expected: [(SegmentKind, Int, String)] = [
+            (.queueToday, -17, "Task queue · Today's pulls"), (.queuePrevious, -18, "Task queue · Previous pulls"),
+        ]
+        for (segment, (kind, key, title)) in zip(payload.taskSegments.prefix(2), expected) {
+            XCTAssertEqual(SegmentKind(raw: segment.horizon), kind)
+            XCTAssertEqual(segment.kind, kind)
+            XCTAssertTrue(segment.kind?.isQueue ?? false)
             XCTAssertNil(segment.horizonValue)
-            XCTAssertEqual(segment.pageKey, -15)
+            XCTAssertEqual(segment.pageKey, key)
+            XCTAssertEqual(segment.title, title)
+            XCTAssertFalse(segment.offersDeferAll)
             XCTAssertEqual(segment.tasks.count, 2)
             XCTAssertEqual(segment.tasks.map(\.state), [.waiting, .waiting])
         }
@@ -515,6 +674,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
         let rawToday = try XCTUnwrap(rawSegments.first?["tasks"] as? [[String: Any]])
         XCTAssertEqual(rawToday.map { $0["try_tomorrow"] as? Bool }, [false, true])
+        XCTAssertEqual(today.tasks.map(\.tryTomorrow), [false, true])
         XCTAssertEqual(rawToday.map { $0["queued_from_due_at"] as? String }, [Fixtures.pinnedTimestamp, Fixtures.pinnedTimestamp])
     }
 

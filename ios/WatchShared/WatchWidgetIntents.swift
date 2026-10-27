@@ -144,7 +144,7 @@ struct ConsiderSegmentCardIntent: AppIntent {
         WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
         do {
             try await APIClient.shared.considerSegmentTasks(ids: [taskId])
-            WatchCache.setSegmentRow(taskId: taskId, state: .considered)
+            WatchCache.editSegmentRow(taskId: taskId) { $0.consideredByTap() }
         } catch {
             WatchWidgetState.clearPendingPrompt(key: key)
         }
@@ -180,7 +180,7 @@ struct CompleteSegmentCardIntent: AppIntent {
         WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
         do {
             try await APIClient.shared.markDone(taskId: taskId)
-            WatchCache.setSegmentRow(taskId: taskId, state: nil)
+            WatchCache.editSegmentRow(taskId: taskId) { $0.left == nil ? $0.leaving(.done) : $0 }
         } catch {
             WatchWidgetState.clearPendingDone(taskId: taskId)
         }

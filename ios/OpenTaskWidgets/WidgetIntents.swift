@@ -549,6 +549,10 @@ struct ConsiderSegmentTaskIntent: AppIntent {
         guard !WidgetStore.pendingSegmentConsiders(now: mutationInstant).contains(taskId) else {
             return .result()
         }
+        // A seen safety-net row's circle does nothing (native PR E): the view
+        // draws it inert, and a button archived before it was seen lands here.
+        let row = WidgetStore.loadReminders()?.value.taskSegments.lazy.flatMap(\.tasks).first { $0.id == taskId }
+        if let row, !row.isConsiderable { return .result() }
         let title = WidgetStore.cachedTaskInfo(taskId).title
         WidgetStore.stagePendingSegmentConsider(taskId, now: mutationInstant)
         WidgetStore.enqueueOutbox(WidgetStore.OutboxEntry(
@@ -630,7 +634,12 @@ struct DeferSegmentIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let (_, segments) = RemindersTimeline.cachedPages()
-        guard let segment = segments.first(where: { $0.horizon == horizon }) else { return .result() }
+        // Never on the queue's panels or the deadlines page (native PR E,
+        // `offersDeferAll`): the button isn't drawn there, but one archived on
+        // an older build's page could still fire.
+        guard let segment = segments.first(where: { $0.horizon == horizon }), segment.offersDeferAll else {
+            return .result()
+        }
         let ids = segment.waitingTasks.map(\.id)
         guard !ids.isEmpty else { return .result() }
         do {
@@ -1072,22 +1081,27 @@ struct ToggleQuotasTakebackModeIntent: AppIntent {
 
 // MARK: - Undo / Redo (2026-09-23)
 
-/// Undo the most recent action from ANY of the three widget kinds. Trent:
+/// Undo the widgets' last action, from ANY of the three widget kinds. Trent:
 /// "I need some way to ... undo the accidental tap" and "the undo should not
 /// disappear like that. Even if you're not on that segment, undoing it
 /// should still be allowed with some indication about what was undone."
 ///
 /// Shown as one of `UndoRedoButtons`' two always-present icon buttons —
-/// dimmed/disabled by `WidgetStore.canUndo`, the server's own undoable
-/// count, not by a local clock (the old 60s-window design this replaced).
+/// dimmed/disabled by `WidgetStore.canUndo` (the scope's own id against the
+/// server's newest undoable entry; the server's count before scoping), not
+/// by a local clock (the old 60s-window design this replaced).
 ///
-/// Calls the SAME `/api/undo` the web app's toast Undo button does
-/// (`useTaskActions.handleUndo`, `src/app/api/undo/route.ts`): it undoes the
-/// single most recent action for the signed-in user, with no task id in the
-/// request or response. That means this intent cannot target "the task THIS
-/// header's row was for" — only "whatever changed last" — exactly like the
-/// web toast, and exactly why `WidgetStore.clearAllPendingState()` below
-/// clears every optimistic marker rather than one.
+/// SCOPED (2026-10-26, `UndoScope`; Trent: the widget's Undo undid what
+/// another device did, "whether it was undone or not"): it undoes only THIS
+/// widget extension's own last action — any of the three kinds, one surface
+/// — sending its `undo_id` (`POST /api/undo { id }`). The server refuses
+/// (409) when anything newer happened anywhere: then nothing is undone and
+/// the header says "Changed elsewhere — can't undo". The button is enabled
+/// only while that id is the server's newest undoable entry. Against an
+/// older server it is the bare `/api/undo` the web toast calls ("whatever
+/// changed last"). Either way the response names no task, which is why
+/// `WidgetStore.clearAllPendingState()` below clears every optimistic marker
+/// rather than one.
 ///
 /// ONE reload per kind, AFTER the refetch (2026-09-25, "Quotas stuck at 1/2
 /// after Undo") — see `reloadAfterUndoRedo`'s doc for the bug and why.
@@ -1117,12 +1131,13 @@ struct UndoLastActionIntent: AppIntent {
         guard WidgetStore.tryClaimUndoRedo() else { return .result() }
         defer { WidgetStore.releaseUndoRedoClaim() }
 
-        // The outbox first (2026-09-30, instant check-off): `/api/undo`
-        // reverses the server's LAST action, so a tap still queued would make
-        // it reverse the one before — the wrong tap. Send what's queued, then
-        // undo. If something is still queued after that (offline), the
-        // newest tap that never left the device is the "last action", and
-        // taking it back is local: no server call at all.
+        // The outbox first (2026-09-30, instant check-off): Undo reverses
+        // this surface's LAST action, so a tap still queued would make it
+        // reverse the one before — the wrong tap. Send what's queued (each
+        // answer records its `undo_id`, in tap order), then undo. If
+        // something is still queued after that (offline), the newest tap that
+        // never left the device is the "last action", and taking it back is
+        // local: no server call at all.
         await widgetOutbox.drain()
         if let cancelled = WidgetStore.cancelNewestQueuedOutboxEntry() {
             WidgetStore.revertOptimisticState(of: cancelled)
@@ -1139,7 +1154,30 @@ struct UndoLastActionIntent: AppIntent {
         // and it cost the one reload per kind that mattered (see
         // `reloadAfterUndoRedo`).
         do {
-            let result = try await APIClient.shared.undoLastAction()
+            // SCOPED (2026-10-26, `UndoScope`): only this extension's own
+            // last action, by its id; the server refuses (409) if anything
+            // newer happened anywhere. An older server: the bare undo.
+            let scope = WidgetStore.undoScope
+            let result: APIClient.UndoRedoResult
+            if scope.scoped {
+                guard let id = scope.undoTarget else {
+                    // Drawn enabled from a cache older than the last change
+                    // (another device acted since): nothing of ours to undo.
+                    await changedElsewhere()
+                    return .result()
+                }
+                switch try await APIClient.shared.undo(id: id) {
+                case .done(let done):
+                    WidgetStore.updateUndoScope { $0.undid(done.actedId ?? id) }
+                    result = done
+                case .conflict(let reason, let newest):
+                    WidgetStore.updateUndoScope { $0.undoConflict(id: id, reason: reason, newest: newest) }
+                    await changedElsewhere()
+                    return .result()
+                }
+            } else {
+                result = try await APIClient.shared.undoLastAction()
+            }
             // No task id to target — see this type's doc — so every
             // optimistic/confirmed marker is cleared rather than one guessed
             // at. See WidgetStore.clearAllPendingState's doc.
@@ -1159,7 +1197,9 @@ struct UndoLastActionIntent: AppIntent {
             // redrawing, and clear the interaction stamp so the providers take
             // the network path, or the undone item never comes back (Trent,
             // 2026-09-23: "I pressed undo and nothing actually undid it" —
-            // the server had undone it).
+            // the server had undone it). The refetch includes the undo
+            // status: the scope's next own id is offered only once the server
+            // says it is the newest undoable entry.
             WidgetStore.clearInteraction()
             await refetchAllPayloads()
             // If the action just reversed was a Reminders completion that
@@ -1194,11 +1234,26 @@ struct UndoLastActionIntent: AppIntent {
         await reloadAfterUndoRedo(tappedKind: kind)
         return .result()
     }
+
+    /// A stale Undo (the scope's id is no longer the newest undoable entry —
+    /// the server's 409, or no own id to send): nothing is undone. The
+    /// header says "Changed elsewhere — can't undo" for the usual 60s
+    /// (`recordLastAction`), the button is drawn disabled from the updated
+    /// scope, and the tapped kind repaints from a FETCH — something changed
+    /// elsewhere, so its cache may be stale too.
+    private func changedElsewhere() async {
+        WidgetStore.recordLastAction(description: UndoScope.changedElsewhere)
+        WidgetStore.clearInteraction()
+        await reloadTappedWidget(kind: kind)
+    }
 }
 
 /// Redo the most recently undone action — the twin of `UndoLastActionIntent`,
 /// calling `POST /api/redo` (`src/app/api/redo/route.ts`). Trent: "For undo
 /// and redo I think we want undo and redo, ideally with an icon."
+///
+/// Scoped the same way (2026-10-26, `UndoScope`): only an entry this
+/// extension undid, by its id, while it is the server's next redo.
 ///
 /// Deliberately does NOT touch the auto-advance-slot-override snapshot
 /// `UndoLastActionIntent` restores: that snapshot only ever records "the
@@ -1232,7 +1287,25 @@ struct RedoLastActionIntent: AppIntent {
 
         // No reload before the server call — see UndoLastActionIntent.
         do {
-            let result = try await APIClient.shared.redoLastAction()
+            let scope = WidgetStore.undoScope
+            let result: APIClient.UndoRedoResult
+            if scope.scoped {
+                guard let id = scope.redoTarget else {
+                    await changedElsewhere()
+                    return .result()
+                }
+                switch try await APIClient.shared.redo(id: id) {
+                case .done(let done):
+                    WidgetStore.updateUndoScope { $0.redid(done.actedId ?? id) }
+                    result = done
+                case .conflict(let reason, let next):
+                    WidgetStore.updateUndoScope { $0.redoConflict(id: id, reason: reason, next: next) }
+                    await changedElsewhere()
+                    return .result()
+                }
+            } else {
+                result = try await APIClient.shared.redoLastAction()
+            }
             WidgetStore.clearAllPendingState()
             WidgetStore.setUndoRedoCounts(undoable: result.undoableCount, redoable: result.redoableCount)
             WidgetStore.recordLastAction(description: "Redid: \(result.description)")
@@ -1243,6 +1316,13 @@ struct RedoLastActionIntent: AppIntent {
         }
         await reloadAfterUndoRedo(tappedKind: kind)
         return .result()
+    }
+
+    /// See `UndoLastActionIntent.changedElsewhere`.
+    private func changedElsewhere() async {
+        WidgetStore.recordLastAction(description: UndoScope.changedElsewhere)
+        WidgetStore.clearInteraction()
+        await reloadTappedWidget(kind: kind)
     }
 }
 
@@ -1257,13 +1337,20 @@ struct RedoLastActionIntent: AppIntent {
 /// this call site to pass SOMETHING, and passing `[]` would wipe the DONE
 /// list cache on every undo/redo.
 ///
+/// And the undo status (scoped Undo, 2026-10-26): after an undo the newest
+/// undoable entry is unknown until the server says it, so the scope's next
+/// own id lights Undo only once this lands.
+///
 /// Each side saves only if its fetch succeeded; one that failed keeps the
 /// fetch-required stamp `clearInteraction()` just set, so the reload that
 /// follows fetches it instead of repainting the stale cache.
 private func refetchAllPayloads() async {
+    let requestedAt = Date()
     async let reminders: Void = refetchReminders()
     async let tasks: Void = refetchTasks()
-    _ = await (reminders, tasks)
+    async let status: APIClient.UndoStatus? = try? APIClient.shared.fetchUndoStatus()
+    let (_, _, fetchedStatus) = await (reminders, tasks, status)
+    if let fetchedStatus { WidgetStore.applyUndoStatus(fetchedStatus, requestedAt: requestedAt) }
 }
 
 private func refetchReminders() async {

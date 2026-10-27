@@ -608,10 +608,12 @@ enum WidgetStore {
                     prompts: group.prompts
                 )
             }
-            // A done task segment row (2026-10-10) leaves its segment: the
-            // server's payload drops a completed task from `task_segments`.
+            // A done task segment row (2026-10-10) leaves its segment HANDLED
+            // (native PR E, `?handled=1`): the server sends it back as a
+            // considered row with `segment_left: done`, so the segment's "N of
+            // M" never shrinks — the cache says the same.
             let segments = cached.value.taskSegments.map { segment in
-                segment.replacingTasks(segment.tasks.filter { $0.id != id })
+                segment.replacingTasks(segment.tasks.map { $0.id == id && $0.left == nil ? $0.leaving(.done) : $0 })
             }
             save(RemindersCache(groups: groups, taskSegments: segments), forKey: remindersKey, at: cached.fetchedAt)
         }
@@ -860,14 +862,59 @@ enum WidgetStore {
     /// old design there is no time window to expire, so a pre-scheduled
     /// FUTURE timeline entry simply carries forward whatever was true when
     /// it was built (same limitation `staleSince` already accepts).
-    static var canUndo: Bool { undoableCount != 0 }
-    static var canRedo: Bool { redoableCount != 0 }
+    ///
+    /// SCOPED (2026-10-26, `UndoScope`): enabled only while this widget
+    /// extension's own last action is the server's newest undoable entry —
+    /// or while a tap still waits in the outbox (Undo takes it back
+    /// locally). DISABLED, never hidden, otherwise. Against an older server
+    /// the counts decide, as before.
+    static var canUndo: Bool {
+        undoScope.canUndo(queuedTaps: !outboxEntries().isEmpty, legacyUndoable: undoableCount)
+    }
+    static var canRedo: Bool { undoScope.canRedo(legacyRedoable: redoableCount) }
 
     /// Overwrite both counts with server truth — from `GET /api/undo/status`
     /// or an `/api/undo`/`/api/redo` response, both exact.
     static func setUndoRedoCounts(undoable: Int, redoable: Int) {
         undoableCount = undoable
         redoableCount = redoable
+    }
+
+    // MARK: Scoped Undo (2026-10-26, `UndoScope`)
+    //
+    // ONE surface for all three widget kinds: a check-off on Reminders, a
+    // `+1` on Quotas and a snooze on Tasks share one stack, and any widget's
+    // Undo takes back the newest of them. Ids arrive through
+    // `APIClient.undoRecorder` (set in `OpenTaskWidgetBundle`), which this
+    // extension points at `recordOwnUndo` — so the outbox drain's sends are
+    // recorded as their answers land, in tap order.
+
+    private static let undoScopeStore = UndoScopeStore(key: "widget.undoScope.v1") { WidgetStore.defaults }
+
+    /// This extension's undo scope as stored.
+    static var undoScope: UndoScope { undoScopeStore.load() }
+
+    /// A widget mutation answered `undo_id`.
+    static func recordOwnUndo(_ id: Int) {
+        undoScopeStore.update { $0.recordOwn(id) }
+    }
+
+    /// Edit the scope (the Undo/Redo intents' outcomes).
+    @discardableResult
+    static func updateUndoScope<T>(_ body: (inout UndoScope) -> T) -> T {
+        undoScopeStore.update(body)
+    }
+
+    /// A `GET /api/undo/status` answer, sent at `requestedAt`: the counts
+    /// (the older server's rule) and the two ids the scope compares with.
+    static func applyUndoStatus(_ status: APIClient.UndoStatus, requestedAt: Date) {
+        setUndoRedoCounts(undoable: status.undoableCount, redoable: status.redoableCount)
+        undoScopeStore.update {
+            $0.apply(
+                newestUndoable: status.newestUndoableId, nextRedoable: status.nextRedoableId,
+                scoped: status.scoped, requestedAt: requestedAt
+            )
+        }
     }
 
     /// Optimistically reflect a just-SUCCEEDED local mutation
@@ -1187,31 +1234,41 @@ enum WidgetStore {
     }
 
     /// The segment twin of `filterPending(_ groups:)` — every render path
-    /// passes the cached or fetched segments through this. A completed row
-    /// is hidden; a considered one is drawn considered. Order is never
+    /// passes the cached or fetched segments through this. Order is never
     /// changed: acting on one row never moves the rest under the finger.
+    ///
+    /// - A done row and a "Target today" row LEAVE the segment handled
+    ///   (native PR E, `?handled=1`): drawn as the server will send them
+    ///   back — considered, `segment_left` done / target — so "N of M" stays
+    ///   fixed for the day (the web's day roster). A row the server already
+    ///   sends as left is drawn as it is.
+    /// - A considered row is drawn considered; a consider on a deadlines-page
+    ///   SAFETY-NET row draws it SEEN, still waiting (`consideredByTap`).
     static func filterPendingSegments(_ segments: [TaskSegmentDTO], now: Date = Date()) -> [TaskSegmentDTO] {
-        // A done row and a "Target today" row both leave the segment.
-        let leaving = pendingCompletions(now: now).union(pendingSegmentTargets(now: now))
+        let done = pendingCompletions(now: now)
+        let targeted = pendingSegmentTargets(now: now)
         let considering = pendingSegmentConsiders(now: now)
-        guard !leaving.isEmpty || !considering.isEmpty else { return segments }
+        guard !done.isEmpty || !targeted.isEmpty || !considering.isEmpty else { return segments }
         return segments.map { segment in
-            segment.replacingTasks(segment.tasks.compactMap { row in
-                if leaving.contains(row.id) { return nil }
-                if considering.contains(row.id), row.state != .considered { return row.with(state: .considered) }
+            segment.replacingTasks(segment.tasks.map { row in
+                guard row.left == nil else { return row }
+                if done.contains(row.id) { return row.leaving(.done) }
+                if targeted.contains(row.id) { return row.leaving(.target) }
+                if considering.contains(row.id) { return row.consideredByTap() }
                 return row
             })
         }
     }
 
-    /// The server took a consider: the row is `considered` in the cache, so
-    /// the next tap repaints from cache with it ticked, and the tombstone goes.
+    /// The server took a consider: the row is `considered` (or, in the
+    /// safety net, `seen`) in the cache, so the next tap repaints from cache
+    /// with it ticked, and the tombstone goes.
     static func confirmSegmentConsider(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
         if let cached = loadReminders() {
             let segments = cached.value.taskSegments.map { segment in
-                segment.replacingTasks(segment.tasks.map { $0.id == id ? $0.with(state: .considered) : $0 })
+                segment.replacingTasks(segment.tasks.map { $0.id == id ? $0.consideredByTap() : $0 })
             }
             save(
                 RemindersCache(groups: cached.value.groups, taskSegments: segments),
@@ -1259,15 +1316,17 @@ enum WidgetStore {
         return ids
     }
 
-    /// The server took a "Target today": the row is out of the cached
-    /// segments. The task's new target lives in the Tasks payload, which the
-    /// next pass fetches (`requireTasksFetch` — the server chose the time).
+    /// The server took a "Target today": the row LEFT the cached segments
+    /// handled (`segment_left: target`, native PR E — the server's own
+    /// answer with `?handled=1`). The task's new target lives in the Tasks
+    /// payload, which the next pass fetches (`requireTasksFetch` — the
+    /// server chose the time).
     static func confirmSegmentTarget(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
         if let cached = loadReminders() {
             let segments = cached.value.taskSegments.map { segment in
-                segment.replacingTasks(segment.tasks.filter { $0.id != id })
+                segment.replacingTasks(segment.tasks.map { $0.id == id && $0.left == nil ? $0.leaving(.target) : $0 })
             }
             save(
                 RemindersCache(groups: cached.value.groups, taskSegments: segments),

@@ -26,15 +26,39 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
 
     // MARK: Ring
 
-    func testSegmentsComeAfterTheSlotsAndAllDeferredOnesDropOut() throws {
+    /// EVERY segment is a page (native PR E, `?fill=1`: "always show every
+    /// queue segment, every day, in fixed positions") — an all-deferred one
+    /// and an empty one too, which used to drop out of the ring.
+    func testSegmentsComeAfterTheSlotsAndEverySegmentIsAPage() throws {
         let groups = try Fixtures.reminders()
-        let listed = TaskSegmentDTO.listed(segments())
-        XCTAssertEqual(listed.map(\.horizon), ["days", "weeks"], "months has only a deferred row")
+        let listed = TaskSegmentDTO.listed(segments() + [TaskSegmentDTO(horizon: "eventually", tasks: [])])
+        XCTAssertEqual(listed.map(\.horizon), ["days", "weeks", "months", "eventually"])
         // Under the slots (Trent, 10-11), so after them in the ring.
         XCTAssertEqual(
             RemindersTimeline.pageKeys(groups: groups, segments: listed),
-            groups.map(\.slotKey) + [-10, -11]
+            groups.map(\.slotKey) + [-10, -11, -12, -13]
         )
+        XCTAssertTrue(listed[3].isEmpty)
+        XCTAssertFalse(listed[3].hasWaiting, "an empty segment waits for nothing")
+    }
+
+    /// The queue's panels and the deadlines page (native PR E): their own
+    /// page keys, so an override never lands on another page.
+    func testTheNewKindsHaveTheirOwnPageKeys() {
+        let kinds: [String: Int] = ["deadlines": -16, "queue_today": -17, "queue_previous": -18]
+        for (raw, key) in kinds {
+            let segment = TaskSegmentDTO(horizon: raw, tasks: [])
+            XCTAssertEqual(segment.pageKey, key, raw)
+            XCTAssertEqual(segment.kind?.raw, raw)
+            XCTAssertFalse(segment.offersDeferAll, "no Defer all on \(raw)")
+        }
+        XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).pageKey, -15, "an unknown kind")
+        XCTAssertTrue(TaskSegmentDTO(horizon: "days", tasks: []).offersDeferAll)
+        XCTAssertTrue(TaskSegmentDTO(horizon: "upcoming", tasks: []).offersDeferAll)
+        // An empty deadlines page waits for nothing: the clock's slot stays
+        // natural, and with no slots the first waiting segment wins over it.
+        let ring = [TaskSegmentDTO(horizon: "deadlines", tasks: [])] + segments()
+        XCTAssertEqual(RemindersTimeline.naturalPageKey(groups: [], segments: ring, now: noon), -10)
     }
 
     /// The fixture at 12:30 has prompts waiting in 07:00 and 09:00, so an
@@ -175,25 +199,53 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
 
     // MARK: Optimistic render and cache
 
-    func testConsiderDrawsTheRowConsideredAndDoneHidesIt() {
+    /// A done row LEAVES handled (native PR E, `?handled=1`): drawn as the
+    /// server sends it back — considered, `segment_left: done` — so "N of M"
+    /// stays fixed for the day.
+    func testConsiderDrawsTheRowConsideredAndDoneLeavesItHandled() {
         WidgetStore.stagePendingSegmentConsider(3, now: t0)
         WidgetStore.stagePendingCompletion(1, now: t0)
         let drawn = WidgetStore.filterPendingSegments(segments(), now: t0)
-        XCTAssertEqual(drawn[0].tasks.map(\.id), [2], "the done row is gone, the rest keep their order")
+        XCTAssertEqual(drawn[0].tasks.map(\.id), [1, 2], "the done row stays, nothing moves")
+        XCTAssertEqual(drawn[0].tasks.map(\.state), [.considered, .considered])
+        XCTAssertEqual(drawn[0].tasks.map(\.left), [.done, nil])
+        XCTAssertEqual(ReminderDayProgress.PeriodCount(drawn[0]).text, "2 of 2", "M never shrinks")
         XCTAssertEqual(drawn[1].tasks.map(\.state), [.considered, .deferred])
         XCTAssertFalse(drawn[1].hasWaiting)
         XCTAssertTrue(WidgetStore.hasRecentInteraction(now: t0), "a consider repaints from cache")
     }
 
-    func testCacheWritesKeepSegmentsAndConfirmCompletionDropsTheRow() throws {
+    /// The deadlines page's SAFETY NET (native PR E): a consider marks the
+    /// row seen and it keeps waiting; a seen row is no longer considerable.
+    func testAConsiderInTheSafetyNetSeesTheRowAndKeepsItWaiting() throws {
+        let net = SegmentTaskDTO(task: TaskDTO(id: 7, title: "Task 7"), state: .waiting, safetyNet: true)
+        let plain = row(8)
+        let deadlines = [TaskSegmentDTO(horizon: "deadlines", tasks: [net, plain])]
+        WidgetStore.stagePendingSegmentConsider(7, now: t0)
+        WidgetStore.stagePendingSegmentConsider(8, now: t0)
+        let drawn = WidgetStore.filterPendingSegments(deadlines, now: t0)
+        XCTAssertEqual(drawn[0].tasks.map(\.state), [.waiting, .considered])
+        XCTAssertEqual(drawn[0].tasks.map(\.seen), [true, false])
+        XCTAssertFalse(drawn[0].tasks[0].isConsiderable, "its circle is inert now")
+        XCTAssertTrue(drawn[0].hasWaiting, "the deadline is close, so it stays")
+        // The server's answer, written in: seen, still waiting.
+        WidgetStore.saveReminders([], taskSegments: deadlines, fetchStartedAt: t0)
+        WidgetStore.confirmSegmentConsider(7)
+        let cached = try XCTUnwrap(WidgetStore.loadReminders()?.value.taskSegments.first?.tasks.first)
+        XCTAssertEqual(cached.state, .waiting)
+        XCTAssertTrue(cached.seen)
+    }
+
+    func testCacheWritesKeepSegmentsAndConfirmCompletionLeavesTheRowHandled() throws {
         WidgetStore.saveReminders(try Fixtures.reminders(), taskSegments: segments(), fetchStartedAt: t0)
         WidgetStore.confirmCompletion(1)
         WidgetStore.confirmSegmentConsider(3)
         WidgetStore.confirmSegmentDefer([2])
         let cached = try XCTUnwrap(WidgetStore.loadReminders()?.value)
         XCTAssertEqual(cached.groups.count, 6)
-        XCTAssertEqual(cached.taskSegments[0].tasks.map(\.id), [2])
-        XCTAssertEqual(cached.taskSegments[0].tasks.map(\.state), [.deferred])
+        XCTAssertEqual(cached.taskSegments[0].tasks.map(\.id), [1, 2])
+        XCTAssertEqual(cached.taskSegments[0].tasks.map(\.state), [.considered, .deferred])
+        XCTAssertEqual(cached.taskSegments[0].tasks.first?.left, .done)
         XCTAssertEqual(cached.taskSegments[1].tasks.first?.state, .considered)
         XCTAssertTrue(WidgetStore.pendingSegmentConsiders(now: t0).isEmpty)
     }
@@ -262,10 +314,12 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         ))
     }
 
-    func testTargetTodayTakesTheRowOutOfTheSegment() {
+    func testTargetTodayLeavesTheRowHandled() {
         tapTargetToday(3)
         let drawn = WidgetStore.filterPendingSegments(segments(), now: t0.addingTimeInterval(600))
-        XCTAssertEqual(drawn[1].tasks.map(\.id), [4], "queued = still gone")
+        XCTAssertEqual(drawn[1].tasks.map(\.id), [3, 4], "queued = still drawn as it left")
+        XCTAssertEqual(drawn[1].tasks.first?.left, .target)
+        XCTAssertEqual(drawn[1].tasks.first?.state, .considered)
         XCTAssertFalse(drawn[1].hasWaiting)
         XCTAssertEqual(drawn[0].tasks.map(\.id), [1, 2], "nothing else moves")
     }
@@ -278,7 +332,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         await WidgetOutboxDrainer(transport: transport, clock: { [t0] in t0 }) { reports.append($0) }.drain()
         XCTAssertEqual(transport.calls, [.targetToday([3])])
         XCTAssertTrue(WidgetStore.outboxEntries().isEmpty)
-        XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.map(\.id), [4])
+        XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.map(\.id), [3, 4])
+        XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.first?.left, .target)
         XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
         XCTAssertEqual(reports.all.first?.dependentKinds, [TasksWidget.kind], "the task now has a target today")
     }

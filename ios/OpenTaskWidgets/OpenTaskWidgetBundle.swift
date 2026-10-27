@@ -12,6 +12,14 @@ import WidgetKit
 /// Gallery order is §8's order of importance: Reminders, Tasks, Track.
 @main
 struct OpenTaskWidgetBundle: WidgetBundle {
+    /// Scoped Undo (2026-10-26, `UndoScope`): every mutation this extension
+    /// sends — the outbox drain's included — records its `undo_id` as this
+    /// surface's own. One surface for all three kinds (and on the Mac, its
+    /// widgets alone).
+    init() {
+        APIClient.undoRecorder = { WidgetStore.recordOwnUndo($0) }
+    }
+
     var body: some Widget {
         RemindersWidget()
         TasksWidget()

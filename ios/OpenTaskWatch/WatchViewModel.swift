@@ -77,7 +77,14 @@ final class WatchViewModel: ObservableObject {
     /// chrome with nothing to show, not about lying while data is still in
     /// flight).
     @Published private(set) var hasLoadedOnce = false
+    /// The toolbar Undo's enabled state (scoped since 2026-10-26,
+    /// `UndoScope`): only while the watch's OWN last action — this app's or
+    /// its Smart Stack card's (`WatchCache.undoScope`) — is the server's
+    /// newest undoable entry. Against an older server, the server's undoable
+    /// count, as before. Kept in step by `refreshUndo()`.
     @Published private(set) var canUndo = false
+    /// The server's undoable count — the older server's rule.
+    private var legacyUndoable = 0
     /// Shown in place of the Reminders header subtitle for a few seconds after
     /// an undo, same idea as the phone widgets' "Undid: …" (§ widgets doc) —
     /// simplified to a plain timed clear rather than a scheduled timeline entry,
@@ -161,6 +168,9 @@ final class WatchViewModel: ObservableObject {
         guard isConfigured else { return }
         isLoading = true
         loadError = nil
+        // A status sent before a tap must not dim the Undo that tap lit
+        // (`UndoScope.apply`'s race note).
+        let loadStartedAt = Date()
         // See `settleCounter`: quotas settled after this point keep our copy.
         let settleCounterAtStart = settleCounter
 
@@ -213,8 +223,15 @@ final class WatchViewModel: ObservableObject {
         }
 
         if case let .success(status) = undo {
-            canUndo = status.undoableCount > 0
+            legacyUndoable = status.undoableCount
+            WatchCache.updateUndoScope {
+                $0.apply(
+                    newestUndoable: status.newestUndoableId, nextRedoable: status.nextRedoableId,
+                    scoped: status.scoped, requestedAt: loadStartedAt
+                )
+            }
         }
+        refreshUndo()
 
         // Colors only — a failure falls back to the cached config (or none:
         // every stripe draws neutral), never to an error state.
@@ -301,13 +318,15 @@ final class WatchViewModel: ObservableObject {
     /// back (the `pendingPromptActions` rule).
     @Published private var pendingSegmentConsiders: Set<Int> = []
 
-    /// Segments with a row on today's list, in screen order, with in-flight
-    /// considers drawn. The Reminders page shows each one that still has a
-    /// row waiting, under the time slot's rows.
+    /// Every segment the server sent (`?fill=1`, native PR E — empty ones
+    /// too), in screen order, with in-flight considers drawn (a safety-net
+    /// row SEEN, still waiting — `consideredByTap`). The Reminders page
+    /// shows each one that still has a row waiting under the time slot's
+    /// rows, and the deadlines page always (`TaskSegmentSection`).
     var listedSegments: [TaskSegmentDTO] {
         let drawn = pendingSegmentConsiders.isEmpty ? taskSegments : taskSegments.map { segment in
             segment.replacingTasks(segment.tasks.map {
-                pendingSegmentConsiders.contains($0.id) && $0.state == .waiting ? $0.with(state: .considered) : $0
+                pendingSegmentConsiders.contains($0.id) && $0.isConsiderable ? $0.consideredByTap() : $0
             })
         }
         return TaskSegmentDTO.listed(drawn)
@@ -315,12 +334,19 @@ final class WatchViewModel: ObservableObject {
 
     /// Edit one row of the live segments: a new state, or nil to drop it.
     private func setSegmentRow(_ taskId: Int, state: SegmentTaskDTO.State?) {
+        editSegmentRow(taskId) { row in state.map { row.with(state: $0) } }
+    }
+
+    /// Any edit of one row of the live segments; nil drops it.
+    private func editSegmentRow(_ taskId: Int, _ edit: (SegmentTaskDTO) -> SegmentTaskDTO?) {
         taskSegments = taskSegments.map { segment in
-            segment.replacingTasks(segment.tasks.compactMap { row in
-                guard row.id == taskId else { return row }
-                return state.map { row.with(state: $0) }
-            })
+            segment.replacingTasks(segment.tasks.compactMap { row in row.id == taskId ? edit(row) : row })
         }
+    }
+
+    /// The row as it is now, to put back if a tap fails.
+    private func segmentRow(_ taskId: Int) -> SegmentTaskDTO? {
+        taskSegments.lazy.flatMap(\.tasks).first { $0.id == taskId }
     }
 
     /// The circle (or a tap on the row): "I saw it" — `POST
@@ -334,21 +360,27 @@ final class WatchViewModel: ObservableObject {
     /// after a success — twenty taps used to mean twenty chimes and twenty
     /// full reloads, each redrawing the list under the finger. The toolbar
     /// Undo takes a misfire back.
+    ///
+    /// On the deadlines page's SAFETY NET (native PR E) a consider marks the
+    /// row seen and it stays waiting (`consideredByTap`); a seen one's circle
+    /// does nothing, so it never gets here.
     func considerSegmentTask(_ task: TaskDTO) {
-        guard !pendingSegmentConsiders.contains(task.id) else { return }
+        guard !pendingSegmentConsiders.contains(task.id), let before = segmentRow(task.id),
+              before.isConsiderable
+        else { return }
         pendingSegmentConsiders.insert(task.id)
-        setSegmentRow(task.id, state: .considered)
-        WatchCache.setSegmentRow(taskId: task.id, state: .considered)
-        canUndo = true
+        editSegmentRow(task.id) { $0.consideredByTap() }
+        WatchCache.editSegmentRow(taskId: task.id) { $0.consideredByTap() }
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.considerSegmentTasks(ids: [task.id])
                 pendingSegmentConsiders.remove(task.id)
+                noteOwnAction()
             } catch {
                 pendingSegmentConsiders.remove(task.id)
-                setSegmentRow(task.id, state: .waiting)
-                WatchCache.setSegmentRow(taskId: task.id, state: .waiting)
+                editSegmentRow(task.id) { _ in before }
+                WatchCache.editSegmentRow(taskId: task.id) { _ in before }
                 WKInterfaceDevice.current().play(.failure)
                 await refreshReminders()
             }
@@ -357,17 +389,19 @@ final class WatchViewModel: ObservableObject {
     }
 
     /// The checkbox: done — the ordinary completion (`markDone`), the row
-    /// leaves its segment.
+    /// LEAVES its segment handled (native PR E, `?handled=1`): drawn as the
+    /// server sends it back, a considered row "· done", so the segment's "N
+    /// of M" never shrinks.
     func completeSegmentTask(_ task: TaskDTO) {
         // Instant like a consider: the row leaves on the tap, a failure
         // reloads it back from the server.
-        setSegmentRow(task.id, state: nil)
-        WatchCache.setSegmentRow(taskId: task.id, state: nil)
-        canUndo = true
+        editSegmentRow(task.id) { $0.left == nil ? $0.leaving(.done) : $0 }
+        WatchCache.editSegmentRow(taskId: task.id) { $0.left == nil ? $0.leaving(.done) : $0 }
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.markDone(taskId: task.id)
+                noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 WKInterfaceDevice.current().play(.failure)
@@ -387,6 +421,7 @@ final class WatchViewModel: ObservableObject {
             do {
                 try await api.deferSegmentTasks(ids: ids)
                 ids.forEach { WatchCache.setSegmentRow(taskId: $0, state: .deferred) }
+                noteOwnAction()
                 // The click was the feedback; no success chime (2026-10-11).
                 WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
             } catch {
@@ -444,7 +479,7 @@ final class WatchViewModel: ObservableObject {
                     : try await api.considerPrompts(keys: [prompt.promptKey])
                 settleConfirmedQuotas(result.tasks)
                 // The click was the feedback; no success chime (2026-10-11).
-                canUndo = true
+                noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 // Most likely a key from before midnight (the server refuses
@@ -491,7 +526,7 @@ final class WatchViewModel: ObservableObject {
                 )
                 try await api.setQuotaPromptConfig(taskId: prompt.taskId, config: config)
                 // The tap's click was the feedback (no success chime, 2026-10-11).
-                canUndo = true
+                noteOwnAction()
                 let note = "Moved to \(slot.label)"
                 lastActionDescription = note
                 WidgetCenter.shared.reloadAllTimelines()
@@ -576,7 +611,7 @@ final class WatchViewModel: ObservableObject {
             let moved = await TaskSnoozePlan.send(requests)
             if moved.contains(task.id) {
                 // The tap's click was the feedback (no success chime, 2026-10-11).
-                canUndo = true
+                noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
             } else {
                 WKInterfaceDevice.current().play(.failure)
@@ -625,7 +660,7 @@ final class WatchViewModel: ObservableObject {
                 let confirmed = try await api.logProgress(taskId: task.id, delta: delta, source: .watch)
                 settleQuota(task.id, delta: delta, confirmed: confirmed)
                 // The tap's click was the feedback (no success chime, 2026-10-11).
-                canUndo = true
+                noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
                 // Logged, but the body didn't decode: nothing trustworthy to
                 // draw, so fetch the truth.
@@ -731,28 +766,79 @@ final class WatchViewModel: ObservableObject {
 
     // MARK: - Undo
 
-    /// Same server-wide "undo whatever changed last" endpoint the phone
-    /// widgets' Undo button calls — see `APIClient.undoLastAction`'s doc for
-    /// why it carries no task id.
+    /// Recompute `canUndo` from the scope (`UndoScope.canUndo`).
+    private func refreshUndo() {
+        canUndo = WatchCache.undoScope.canUndo(legacyUndoable: legacyUndoable)
+    }
+
+    /// A tap of this app's landed: its `undo_id` is already in the scope
+    /// (`APIClient.undoRecorder` records it before the call returns), so this
+    /// only redraws the button — and, against an older server, counts the
+    /// new entry the way the counts would.
+    private func noteOwnAction() {
+        if !WatchCache.undoScope.scoped { legacyUndoable = max(legacyUndoable, 0) + 1 }
+        refreshUndo()
+    }
+
+    /// The toolbar Undo (scoped since 2026-10-26, `UndoScope`): only the
+    /// watch's OWN last action — a tap here or on the Smart Stack card —
+    /// sent by its id (`POST /api/undo { id }`). The server refuses (409)
+    /// when anything newer happened anywhere: nothing is undone, the button
+    /// goes disabled and the header says "Changed elsewhere — can't undo".
+    /// Against an older server, the bare `/api/undo` ("whatever changed
+    /// last", the phone widgets' old rule).
     func undo() {
         guard canUndo else { return }
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
-                let result = try await api.undoLastAction()
-                lastActionDescription = "Undid: \(result.description)"
-                canUndo = result.undoableCount > 0
+                let scope = WatchCache.undoScope
+                let result: APIClient.UndoRedoResult
+                if scope.scoped {
+                    guard let id = scope.undoTarget else {
+                        await showChangedElsewhere()
+                        return
+                    }
+                    switch try await api.undo(id: id) {
+                    case .done(let done):
+                        WatchCache.updateUndoScope { $0.undid(done.actedId ?? id) }
+                        result = done
+                    case .conflict(let reason, let newest):
+                        WatchCache.updateUndoScope { $0.undoConflict(id: id, reason: reason, newest: newest) }
+                        await showChangedElsewhere()
+                        return
+                    }
+                } else {
+                    result = try await api.undoLastAction()
+                    legacyUndoable = result.undoableCount
+                }
+                let note = "Undid: \(result.description)"
+                lastActionDescription = note
+                refreshUndo()
                 // The tap's click was the feedback (no success chime, 2026-10-11).
                 WidgetCenter.shared.reloadAllTimelines()
+                // Also fetches the undo status: the scope's next own id is
+                // offered once the server says it is the newest entry.
                 await load()
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
-                if lastActionDescription == "Undid: \(result.description)" {
-                    lastActionDescription = nil
-                }
+                if lastActionDescription == note { lastActionDescription = nil }
             } catch {
                 WKInterfaceDevice.current().play(.failure)
             }
         }
+    }
+
+    /// A stale Undo: the failure buzz, the button disabled from the updated
+    /// scope, "Changed elsewhere — can't undo" under the header for a few
+    /// seconds, and a fetch — something changed elsewhere.
+    private func showChangedElsewhere() async {
+        WKInterfaceDevice.current().play(.failure)
+        refreshUndo()
+        let note = UndoScope.changedElsewhere
+        lastActionDescription = note
+        await load()
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+        if lastActionDescription == note { lastActionDescription = nil }
     }
 }
 

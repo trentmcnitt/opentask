@@ -41,9 +41,11 @@ struct RemindersPageView: View {
                 // Task segments UNDER the time slot (Trent, 10-11: "Tasks
                 // should go underneath Reminders"; 10-10 had them first).
                 // Their own sections, never inside the slot's list or its
-                // "N left".
+                // "N left". The deadlines page ALWAYS (native PR E): the one
+                // queue page that nags reads "Nothing today ✓" in its teal
+                // when nothing waits, like an empty Upcoming section.
                 if model.hasLoadedOnce {
-                    ForEach(model.listedSegments.filter(\.hasWaiting)) { segment in
+                    ForEach(model.listedSegments.filter(TaskSegmentSection.shows)) { segment in
                         TaskSegmentSection(segment: segment, model: model)
                     }
                 }
@@ -150,7 +152,7 @@ struct RemindersPageView: View {
             AllCaughtUpView(symbol: "checkmark.seal.fill", title: "Congratulations", detail: "Day complete")
         case .periodDone:
             AllCaughtUpView(symbol: "checkmark.seal.fill", title: "Complete")
-        case .noReminders, .nothingHere:
+        case .noReminders, .nothingHere, .nothingToday:
             AllCaughtUpView(title: "Nothing left here")
         }
     }
@@ -434,18 +436,31 @@ struct TaskSegmentSection: View {
     let segment: TaskSegmentDTO
     @ObservedObject var model: WatchViewModel
 
+    /// Which segments the page shows: every one with a row waiting, and the
+    /// deadlines page always (native PR E) — finished or empty it reads
+    /// "Nothing today ✓", finishing in its teal.
+    static func shows(_ segment: TaskSegmentDTO) -> Bool {
+        segment.hasWaiting || segment.kind == .deadlines
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(segment.wrappingTitle)
                     .font(.headline)
                     .foregroundStyle(WatchTheme.taskSegment(segment.kind))
-                Text("\(segment.waitingCount) left")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if segment.hasWaiting {
+                    Text("\(segment.waitingCount) left")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.top, 6)
-            if segment.isUpcoming {
+            if !segment.hasWaiting {
+                // Only the deadlines page gets here (`shows`): done, in its
+                // own teal (`WatchTheme.dayBarDone`).
+                NothingTodayLine(tint: WatchTheme.dayBarDone(segment.kind))
+            } else if segment.isUpcoming {
                 // Upcoming in two sections (2026-10-26, ruling 1), drawn like
                 // the web: each section's heading and its own "n of m", its
                 // rows, and "Nothing today ✓" when it holds none.
@@ -460,17 +475,21 @@ struct TaskSegmentSection: View {
                 rows(segment.waitingTasks)
             }
             // An ordinary watch action button (the bulk-snooze sheet's
-            // weight), not a small tinted link.
-            Button {
-                model.deferSegment(segment)
-            } label: {
-                Label("Defer all", systemImage: "arrow.turn.down.right")
-                    .font(.footnote.weight(.semibold))
-                    .frame(maxWidth: .infinity)
+            // weight), not a small tinted link. Never on the queue's panels
+            // or the deadlines page (native PR E, `offersDeferAll`): the
+            // deadlines page's Defer is one row's lead day, in the app.
+            if segment.hasWaiting, segment.offersDeferAll {
+                Button {
+                    model.deferSegment(segment)
+                } label: {
+                    Label("Defer all", systemImage: "arrow.turn.down.right")
+                        .font(.footnote.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
         }
     }
 
@@ -478,6 +497,7 @@ struct TaskSegmentSection: View {
         ForEach(rows) { row in
             SegmentRowView(
                 task: row.task, segmentHorizon: segment.horizon, upcomingSection: row.upcomingSection,
+                seenInSafetyNet: row.isSeenInSafetyNet,
                 consider: { model.considerSegmentTask(row.task) },
                 done: { model.completeSegmentTask(row.task) }
             )
@@ -511,10 +531,13 @@ private struct UpcomingSectionHeader: View {
 }
 
 /// "Nothing today ✓" — an empty Upcoming section (Trent's words, the web's
-/// `EmptySegmentLine`): muted text, a green check.
+/// `EmptySegmentLine`): muted text, a green check — the deadlines page's own
+/// teal there (native PR E, `tint`).
 private struct NothingTodayLine: View {
+    var tint: Color = WatchTheme.done
+
     var body: some View {
-        (Text("Nothing today ") + Text(Image(systemName: "checkmark")).foregroundStyle(WatchTheme.done))
+        (Text("Nothing today ") + Text(Image(systemName: "checkmark")).foregroundStyle(tint))
             .font(.footnote)
             .foregroundStyle(.secondary)
     }
@@ -532,6 +555,9 @@ struct SegmentRowView: View {
     let segmentHorizon: String
     /// An Upcoming row's section: a Tomorrow row's target is its time alone.
     var upcomingSection: UpcomingSection? = nil
+    /// A deadlines-page safety-net row seen today (native PR E): it stays,
+    /// waiting, its circle filled and the tap inert.
+    var seenInSafetyNet = false
     let consider: () -> Void
     let done: () -> Void
 
@@ -578,7 +604,7 @@ struct SegmentRowView: View {
         HStack(alignment: .top, spacing: 4) {
             Button(action: consider) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "circle")
+                    Image(systemName: seenInSafetyNet ? "circle.inset.filled" : "circle")
                         .foregroundStyle(WatchTheme.accent)
                         .font(.caption)
                         .padding(.top, 3)
@@ -598,7 +624,10 @@ struct SegmentRowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Considered: \(spoken)"))
+            .disabled(seenInSafetyNet)
+            .accessibilityLabel(Text(
+                seenInSafetyNet ? "Seen today, the deadline is close, so it stays: \(spoken)" : "Considered: \(spoken)"
+            ))
 
             Button(action: done) {
                 Image(systemName: "square")
