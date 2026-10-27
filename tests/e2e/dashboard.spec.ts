@@ -2,6 +2,7 @@ import {
   test,
   expect,
   backdateCreated,
+  openTaskDay,
   uniqueTitle,
   waitForPreferenceSave,
   waitForPrefsLoaded,
@@ -92,6 +93,53 @@ test.describe('Dashboard', () => {
     await page.getByRole('link', { name: 'Reminders' }).click()
     await page.waitForURL('/reminders')
     await expect(page.locator('aside [data-tasks-badge]')).toHaveText(navPills.join(''))
+  })
+
+  test('each nav badge opens the dashboard filtered to exactly those tasks', async ({
+    authenticatedPage: page,
+  }) => {
+    // 2026-10-27, Trent: the sidebar's purple (overdue) and grey (today)
+    // numbers are links to the top bar pills' filter — on the dashboard and
+    // from any other page (src/lib/nav-filter.ts). A badge never clears it.
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const ids: number[] = []
+    const make = async (title: string, due_at: string) => {
+      const res = await page.request.post('/api/tasks', { data: { title, due_at } })
+      ids.push((await res.json()).data.id as number)
+    }
+    try {
+      await make(uniqueTitle('Badge overdue'), new Date(Date.now() - 26 * 3600_000).toISOString())
+      // Later today on the OpenTask day, whatever the hour: two minutes before
+      // the day ends (the next day's start), never past and never tomorrow's.
+      const tz = process.env.E2E_TZ || 'America/Chicago'
+      const prefs = (await (await page.request.get('/api/user/preferences')).json()).data as {
+        rollover_time: string
+      }
+      const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${prefs.rollover_time}`, {
+        zone: tz,
+      })
+      await make(uniqueTitle('Badge today'), dayEnd.minus({ minutes: 2 }).toUTC().toISO()!)
+      await page.goto('/reminders')
+      const badge = (filter: string) => page.locator(`aside [data-tasks-badge-filter="${filter}"]`)
+      const todayPill = page.getByRole('button', { name: /for today — clear the today filter/ })
+      const overdueChip = page.locator('[data-pinned-date-chip="overdue"]')
+
+      // From another page: Today's badge lands on the dashboard, today only.
+      await expect(badge('today')).toHaveAttribute('aria-label', /^Show \d+ for today$/)
+      await badge('today').click()
+      await page.waitForURL('/')
+      await expect(todayPill).toBeVisible()
+
+      // On the dashboard: Overdue's badge swaps the filter to overdue only.
+      await badge('overdue').click()
+      await expect(overdueChip).toHaveAttribute('aria-pressed', 'true')
+      await expect(todayPill).toHaveCount(0)
+      // A second click keeps it on (a badge never clears the filter).
+      await badge('overdue').click()
+      await expect(overdueChip).toHaveAttribute('aria-pressed', 'true')
+    } finally {
+      if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
+    }
   })
 })
 

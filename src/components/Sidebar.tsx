@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { useNavigationGuard } from '@/components/NavigationGuardProvider'
 import { addActionLabel } from '@/lib/add-action'
 import { PROCESS_ACTION, requestOpenProcess } from '@/lib/process-client'
+import { requestNavFilter, type NavFilter } from '@/lib/nav-filter'
 
 interface SidebarProps {
   onAddClick?: () => void
@@ -70,52 +71,43 @@ export function Sidebar({ onAddClick }: SidebarProps) {
             const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
             const Icon = item.icon
 
+            const badges =
+              item.href === '/' &&
+              taskCounts &&
+              (taskCounts.overdue > 0 || taskCounts.today > 0) ? (
+                <DashboardCountBadges
+                  overdue={taskCounts.overdue}
+                  today={taskCounts.today}
+                  onDashboard={pathname === '/'}
+                />
+              ) : null
+
             return (
-              <GuardedLink
-                key={item.href}
-                href={item.href}
-                onClick={item.href === '/' ? onDashboardClick : undefined}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                  isActive
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-                {item.href === '/' &&
-                  taskCounts &&
-                  (taskCounts.overdue > 0 || taskCounts.today > 0) && (
-                    <span className="ml-auto flex items-center gap-1" data-tasks-badge>
-                      {taskCounts.overdue > 0 && (
-                        <span
-                          className="bg-over-target/15 text-over-target rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                          aria-label={`${taskCounts.overdue} ${OVERDUE_LOWER}`}
-                        >
-                          {taskCounts.overdue}
-                        </span>
-                      )}
-                      {taskCounts.today > 0 && (
-                        <span
-                          className="bg-primary/15 text-primary rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                          aria-label={`${taskCounts.today} for today`}
-                        >
-                          {taskCounts.today}
-                        </span>
-                      )}
+              <div key={item.href} className="relative">
+                <GuardedLink
+                  href={item.href}
+                  onClick={item.href === '/' ? onDashboardClick : undefined}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                    isActive
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {item.label}
+                  {item.href === '/reminders' && remindersWaiting > 0 && (
+                    <span
+                      data-reminders-badge
+                      className="bg-badge-reminders text-destructive-foreground ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                      aria-label={`${remindersWaiting} reminders waiting so far today`}
+                    >
+                      {remindersWaiting}
                     </span>
                   )}
-                {item.href === '/reminders' && remindersWaiting > 0 && (
-                  <span
-                    data-reminders-badge
-                    className="bg-badge-reminders text-destructive-foreground ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
-                    aria-label={`${remindersWaiting} reminders waiting so far today`}
-                  >
-                    {remindersWaiting}
-                  </span>
-                )}
-              </GuardedLink>
+                </GuardedLink>
+                {badges}
+              </div>
             )
           })}
         </div>
@@ -218,5 +210,65 @@ function SidebarProcessButton() {
       <ListChecks className="size-4" />
       Process
     </button>
+  )
+}
+
+/**
+ * The Dashboard row's overdue (purple) and for-today (grey) counts, each a
+ * link to the dashboard filtered to exactly those tasks (2026-10-27, Trent;
+ * `src/lib/nav-filter.ts`). They sit over the row's right end as siblings of
+ * its link — a link can't hold links — so a click on the label still opens
+ * the unfiltered dashboard. Off the dashboard each is a `?filter=` link; on it,
+ * a request to the mounted page (`requestNavFilter`).
+ */
+function DashboardCountBadges({
+  overdue,
+  today,
+  onDashboard,
+}: {
+  overdue: number
+  today: number
+  onDashboard: boolean
+}) {
+  const badge = (filter: NavFilter, count: number, label: string, colour: string) => (
+    <GuardedLink
+      href={`/?filter=${filter}`}
+      onClick={(e) => {
+        if (!onDashboard || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        e.preventDefault()
+        requestNavFilter(filter)
+      }}
+      title={label}
+      aria-label={label}
+      data-tasks-badge-filter={filter}
+      className={cn(
+        'rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-colors',
+        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+        colour,
+      )}
+    >
+      {count}
+    </GuardedLink>
+  )
+  return (
+    <span
+      className="absolute top-1/2 right-3 flex -translate-y-1/2 items-center gap-1"
+      data-tasks-badge
+    >
+      {overdue > 0 &&
+        badge(
+          'overdue',
+          overdue,
+          `Show ${overdue} ${OVERDUE_LOWER}`,
+          'bg-over-target/15 text-over-target hover:bg-over-target/30',
+        )}
+      {today > 0 &&
+        badge(
+          'today',
+          today,
+          `Show ${today} for today`,
+          'bg-primary/15 text-primary hover:bg-primary/30',
+        )}
+    </span>
   )
 }

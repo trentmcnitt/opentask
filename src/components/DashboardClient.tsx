@@ -100,6 +100,7 @@ import { useExitModes } from '@/hooks/useExitModes'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
+import { NAV_FILTER_EVENT, type NavFilter } from '@/lib/nav-filter'
 import {
   activePending,
   addPending,
@@ -1958,6 +1959,27 @@ function notifyOverdueFilterCleared() {
   showToast({ message: `Nothing ${OVERDUE_LOWER} left — ${OVERDUE_WORD} filter cleared` })
 }
 
+/**
+ * The sidebar's Dashboard count badges (`src/lib/nav-filter.ts`, 2026-10-27):
+ * on the dashboard a badge asks for its filter through a window event — the
+ * top bar's pill filter, but always ON (a badge never clears it), then the
+ * same jump to the list.
+ */
+function useNavFilterRequests(
+  activePillFilter: HeaderPillFilter | null,
+  onExclusiveDateFilter: (filter: HeaderPillFilter) => void,
+  requestJump: () => void,
+) {
+  useEffect(() => {
+    const onRequest = (e: Event) => {
+      const filter = (e as CustomEvent<NavFilter>).detail
+      if (activePillFilter !== filter) onExclusiveDateFilter(filter)
+      requestJump()
+    }
+    window.addEventListener(NAV_FILTER_EVENT, onRequest)
+    return () => window.removeEventListener(NAV_FILTER_EVENT, onRequest)
+  }, [activePillFilter, onExclusiveDateFilter, requestJump])
+}
 function DashboardView({
   tasks,
   sortedGroups,
@@ -2314,6 +2336,7 @@ function DashboardView({
     if (activePillFilter !== filter) requestJump()
     onExclusiveDateFilter(filter)
   }
+  useNavFilterRequests(activePillFilter, onExclusiveDateFilter, requestJump)
   // The jump button is a toggle: lit (Overdue among the date filters — the
   // pinned chip's own "on"), a tap just takes Overdue off and leaves the page
   // where it is, like tapping the lit pill.
