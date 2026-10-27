@@ -7,11 +7,15 @@
  *
  * Clients connect via EventSource, which handles reconnection automatically.
  * A heartbeat every 30s keeps the connection alive through Caddy.
+ *
+ * Each stream registers its cleanup (`registerSyncStream`), so a SIGTERM can
+ * end every open stream and the server can exit; see sync-events.ts § OPEN
+ * STREAMS AND SHUTDOWN. A stream asked for while shutting down gets a 503.
  */
 
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
-import { unauthorized } from '@/lib/api-response'
+import { serviceUnavailable, unauthorized } from '@/lib/api-response'
 import {
   onSyncEvent,
   offSyncEvent,
@@ -19,6 +23,8 @@ import {
   offEnrichmentCompleteEvent,
   onTaskCreatedEvent,
   offTaskCreatedEvent,
+  registerSyncStream,
+  isSyncShuttingDown,
   type SyncListener,
   type EnrichmentListener,
   type TaskCreatedListener,
@@ -30,6 +36,7 @@ export const dynamic = 'force-dynamic'
 const HEARTBEAT_INTERVAL_MS = 30_000
 
 export const GET = withLogging(async function GET(request: NextRequest) {
+  if (isSyncShuttingDown()) return serviceUnavailable('Server is restarting')
   let user
   try {
     user = await getAuthUser(request)
@@ -99,8 +106,12 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         }
       }, HEARTBEAT_INTERVAL_MS)
 
-      // Cleanup on client disconnect
-      request.signal.addEventListener('abort', () => {
+      // Cleanup, once: on client disconnect, or when the server shuts down.
+      let closed = false
+      const cleanup = () => {
+        if (closed) return
+        closed = true
+        unregister()
         offSyncEvent(listener)
         offEnrichmentCompleteEvent(enrichmentListener)
         offTaskCreatedEvent(taskCreatedListener)
@@ -110,7 +121,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         } catch {
           // Already closed
         }
-      })
+      }
+      const unregister = registerSyncStream(cleanup)
+      request.signal.addEventListener('abort', cleanup)
 
       // Send initial connected event
       controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'))

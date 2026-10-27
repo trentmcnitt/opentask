@@ -338,7 +338,8 @@ export async function register() {
         log.info('ai', 'SDK not available — warm slots disabled')
       }
 
-      // Graceful shutdown: close warm slots on SIGTERM
+      // Graceful shutdown: close warm slots on SIGTERM (the open sync streams
+      // are ended by their own handler, below, AI or not)
       if (isSdkAvailableSync()) {
         process.on('SIGTERM', () => {
           log.info('ai', 'SIGTERM received — shutting down warm slots')
@@ -347,5 +348,16 @@ export async function register() {
         })
       }
     }
+
+    // Graceful shutdown: end every open sync stream on SIGTERM, so Next's
+    // server.close() can finish and the process exits at once. Without it an
+    // open tab held the old process until systemd's 90 s stop timeout killed
+    // it (src/lib/sync-events.ts § OPEN STREAMS AND SHUTDOWN). Registered
+    // whatever the AI settings are.
+    const { closeAllSyncStreams } = await import('@/lib/sync-events')
+    process.on('SIGTERM', () => {
+      const n = closeAllSyncStreams()
+      log.info('sync', `SIGTERM received: ended ${n} open sync stream${n === 1 ? '' : 's'}`)
+    })
   }
 }
