@@ -158,6 +158,14 @@ export interface UseRemindersReturn {
    * acted on through `useTaskSegments`.
    */
   taskSegments: TaskSegmentPayload[]
+  /** The request seq of the payload on screen (0: the cache's) — see `requestSeq`. */
+  payloadSeq: number
+  /**
+   * The fetch's latest request seq now. A payload with a greater seq was
+   * requested after this moment, so it includes every write answered before
+   * it (`src/lib/pending-overlay.ts`).
+   */
+  requestSeq: () => number
   /**
    * Create a reminder. A daily one is placed in its slot the moment the server
    * answers; any other cadence waits for the refresh, since only the server
@@ -379,6 +387,12 @@ export function useReminders({
   const [taskSegments, setTaskSegments] = useState<TaskSegmentPayload[]>(
     remindersCache?.taskSegments ?? [],
   )
+  /**
+   * The request seq (`requestGuard`) of the payload on screen — 0 for the
+   * cache's. With `requestSeq()`, how a surface's optimistic changes know a
+   * payload already includes their write (`src/lib/pending-overlay.ts`).
+   */
+  const [payloadSeq, setPayloadSeq] = useState(0)
   const [loading, setLoading] = useState(remindersCache === null)
   const [error, setError] = useState<string | null>(null)
   const [completingIds, setCompletingIds] = useState<Set<number | string>>(new Set())
@@ -488,6 +502,7 @@ export function useReminders({
         notToday: parsed.notToday,
         taskSegments: parsed.taskSegments,
       })
+      setPayloadSeq(seq)
       setError(null)
       setHydrated(true)
     } catch (err) {
@@ -870,6 +885,8 @@ export function useReminders({
     refresh,
     notToday,
     taskSegments,
+    payloadSeq,
+    requestSeq: requestGuard.latest,
     create,
   }
 }

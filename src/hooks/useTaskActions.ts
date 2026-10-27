@@ -18,6 +18,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import { occurrenceDates, openTaskToday } from '@/lib/task-segments'
 import { useDayStart } from '@/components/PreferencesProvider'
+import type { RowPending } from '@/lib/pending-overlay'
 
 /**
  * Shared task action handlers used by the dashboard and the task detail page.
@@ -44,6 +45,12 @@ interface UseTaskActionsListConfig {
   onRefresh: () => void
   tasks: Task[]
   setTasks: Dispatch<SetStateAction<Task[]>>
+  /**
+   * The list's pending row changes (`src/lib/pending-overlay.ts`): each tap
+   * below records what it did to its row, so a refresh that predates its
+   * write cannot undo it on screen.
+   */
+  pending: RowPending<Task>
 }
 
 interface UseTaskActionsSingleConfig {
@@ -162,16 +169,18 @@ function useHandleDeck(
       if (cfg.mode !== 'list') return
       const zone = timezoneRef.current
       const next = day === undefined ? openTaskToday(zone, new Date(), dayStartRef.current) : day
-      cfg.setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? optimisticDeck(t, next, zone) : t)),
-      )
+      const decked = (t: Task) => optimisticDeck(t, next, zone)
+      const token = cfg.pending.add(task.id, decked)
+      cfg.setTasks((prev) => prev.map((t) => (t.id === task.id ? decked(t) : t)))
       try {
         const result = await sendDeck([task.id], day)
         const message = deckToastMessage(result, task.title, zone, dayStartRef.current)
         if (!message) {
+          cfg.pending.drop(task.id, token)
           showToast({ message: deckErrorMessage(result, task), type: 'error' })
           return
         }
+        cfg.pending.settle(task.id, token)
         bumpUndoCount()
         showToast({
           message,
@@ -179,8 +188,53 @@ function useHandleDeck(
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })
       } catch (err) {
+        cfg.pending.drop(task.id, token)
         showSaveError(err)
       } finally {
+        cfg.onRefresh()
+      }
+    },
+    [configRef, bumpUndoCount, handleUndoRef],
+  )
+}
+
+/**
+ * Defer one row to a time (list mode): its target moves at once, and the
+ * change is held over any refresh older than the write (`pending`).
+ */
+function useHandleSnooze(
+  configRef: MutableRefObject<UseTaskActionsConfig>,
+  bumpUndoCount: () => void,
+  handleUndoRef: MutableRefObject<(() => Promise<void>) | null>,
+) {
+  return useCallback(
+    async (taskId: number, until: string) => {
+      const cfg = configRef.current
+      if (cfg.mode !== 'list') return
+      const token = cfg.pending.add(taskId, (t) => ({ ...t, due_at: until }))
+      cfg.setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/snooze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ until }),
+        })
+        // A snooze past the deadline stops AT it (§8.2, 2026-10-12): the
+        // server's description says so ("Deferred to deadline …"), and the
+        // toast below shows it. There is no "Defer anyway".
+        if (!res.ok) throw new Error('Failed to defer')
+        const data = await res.json()
+        cfg.pending.settle(taskId, token)
+        cfg.onRefresh()
+        bumpUndoCount()
+        showToast({
+          message: data.data?.description || 'Task deferred',
+          type: 'success',
+          action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
+        })
+      } catch {
+        cfg.pending.drop(taskId, token)
         cfg.onRefresh()
       }
     },
@@ -208,6 +262,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       if (!task) return
 
       // Optimistic: remove non-recurring tasks immediately
+      const token = task.rrule ? null : cfg.pending.add(taskId, () => null)
       if (!task.rrule) {
         cfg.setTasks((prev) => prev.filter((t) => t.id !== taskId))
       }
@@ -216,8 +271,15 @@ export function useTaskActions(config: UseTaskActionsConfig) {
         const res = await fetch(`/api/tasks/${taskId}/done`, { method: 'POST' })
         if (!res.ok) throw new Error('Failed to mark done')
         const data = await res.json()
+        if (token !== null) cfg.pending.settle(taskId, token)
         if (data.data?.task?.rrule) {
-          cfg.setTasks((prev) => prev.map((t) => (t.id === taskId ? data.data.task : t)))
+          // The advanced occurrence, held over older payloads the same way.
+          const advanced = data.data.task as Task
+          cfg.pending.settle(
+            taskId,
+            cfg.pending.add(taskId, () => advanced),
+          )
+          cfg.setTasks((prev) => prev.map((t) => (t.id === taskId ? advanced : t)))
         }
         // Bump undo count since a new action was logged
         bumpUndoCount()
@@ -228,6 +290,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })
       } catch {
+        if (token !== null) cfg.pending.drop(taskId, token)
         cfg.onRefresh()
       }
     },
@@ -253,37 +316,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
     }
   }, [bumpUndoCount])
 
-  const handleSnooze = useCallback(
-    async (taskId: number, until: string) => {
-      const cfg = configRef.current
-      if (cfg.mode !== 'list') return
-      cfg.setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, due_at: until } : t)))
-
-      try {
-        const res = await fetch(`/api/tasks/${taskId}/snooze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ until }),
-        })
-        // A snooze past the deadline stops AT it (§8.2, 2026-10-12): the
-        // server's description says so ("Deferred to deadline …"), and the
-        // toast below shows it. There is no "Defer anyway".
-        if (!res.ok) throw new Error('Failed to defer')
-        const data = await res.json()
-        cfg.onRefresh()
-        bumpUndoCount()
-        showToast({
-          message: data.data?.description || 'Task deferred',
-          type: 'success',
-          action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
-        })
-      } catch {
-        cfg.onRefresh()
-      }
-    },
-    [bumpUndoCount, handleUndoRef],
-  )
-
+  const handleSnooze = useHandleSnooze(configRef, bumpUndoCount, handleUndoRef)
   const handleTargetAt = useHandleTargetAt(configRef, bumpUndoCount, handleUndoRef)
   const handleDeck = useHandleDeck(configRef, bumpUndoCount, handleUndoRef)
 
@@ -296,12 +329,17 @@ export function useTaskActions(config: UseTaskActionsConfig) {
       const optimistic: Partial<Task> = {}
       if (changes.priority !== undefined) optimistic.priority = changes.priority
       if (changes.due_at !== undefined) optimistic.due_at = changes.due_at
-      if (Object.keys(optimistic).length > 0) {
+      const token =
+        Object.keys(optimistic).length > 0
+          ? cfg.pending.add(taskId, (t) => ({ ...t, ...optimistic }))
+          : null
+      if (token !== null) {
         cfg.setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...optimistic } : t)))
       }
 
       try {
         const { description } = await saveTaskChanges(taskId, changes)
+        if (token !== null) cfg.pending.settle(taskId, token)
         cfg.onRefresh()
         bumpUndoCount()
         showToast({
@@ -310,6 +348,7 @@ export function useTaskActions(config: UseTaskActionsConfig) {
           action: { label: 'Undo', onClick: () => handleUndoRef.current?.() },
         })
       } catch (err) {
+        if (token !== null) cfg.pending.drop(taskId, token)
         cfg.onRefresh()
         showSaveError(err)
         // Reported above; rethrown so the dashboard's quick-action popover

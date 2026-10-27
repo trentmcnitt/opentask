@@ -142,12 +142,16 @@ export function RemindersView({
     refresh,
     notToday,
     taskSegments,
+    payloadSeq,
+    requestSeq,
     create,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   // Task segments (2026-10-10): tasks whose target hasn't arrived, as sections
   // after the slots (2026-10-11). Never counted in the headline or the badge.
   const segments = useTaskSegments({
     segments: taskSegments,
+    payloadSeq,
+    requestSeq,
     timezone,
     refresh,
     onUndo,
