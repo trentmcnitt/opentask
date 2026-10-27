@@ -150,7 +150,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
 
     /// The OpenTask day (yyyy-MM-dd) the task is ON DECK for (2026-10-20,
     /// docs/TASK-MODEL.md § On deck), or nil. A decked task has no picked
-    /// target; its Upcoming row says "On deck" (Tomorrow) or "On deck Sat
+    /// target; its Upcoming row says "On deck tomorrow" (Tomorrow) or "On deck Sat
     /// Oct 24" (Later), and a deadlines-page row decked for a later day says
     /// "On deck Sat" (`TaskDTO.deckWords`).
     let onDeckDay: String?

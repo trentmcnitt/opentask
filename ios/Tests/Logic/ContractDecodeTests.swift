@@ -467,12 +467,12 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertFalse(done.tryTomorrow)
         XCTAssertFalse(today.offersDeferAll)
 
-        // Upcoming: the deck rows say "On deck" (Tomorrow).
+        // Upcoming: the deck rows say "On deck tomorrow" (Tomorrow, 2026-10-27).
         let upcoming = segments[4]
         let deck = try XCTUnwrap(upcoming.tasks.first { $0.id == Fixtures.decked })
         XCTAssertEqual(deck.task.onDeckDay, Fixtures.pinnedDate)
         XCTAssertEqual(deck.section, .tomorrow)
-        XCTAssertEqual(deck.task.upcomingMeta(section: .tomorrow), "On\u{00A0}deck")
+        XCTAssertEqual(deck.task.upcomingMeta(section: .tomorrow), "On\u{00A0}deck\u{00A0}tomorrow")
         XCTAssertEqual(deck.task.upcomingMeta(section: .later), "On\u{00A0}deck\u{00A0}Thu\u{00A0}Jan\u{00A0}15")
         XCTAssertEqual(deck.task.upcomingMeta(form: .short, section: .later), "On\u{00A0}deck\u{00A0}Jan\u{00A0}15")
 
