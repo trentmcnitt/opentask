@@ -923,9 +923,10 @@ private struct PeriodDoneView: View {
 /// this answers the whole-day question a header alone cannot.
 ///
 /// Mirrors the web's `ReminderSlotBar` (`src/components/ReminderSlotBar.tsx`)
-/// for STATE and COLOR, not layout: `.behind` (started, still waiting) draws
-/// indigo, `.done` (started, nothing waiting, something WAS considered) draws
-/// green, `.upcoming` (time hasn't come) draws a barely-there neutral — "the
+/// for STATE and COLOR, not layout: `.behind` (started, still waiting) fills
+/// in the reminders' purple (`WidgetTheme.dayBarFilling`, indigo until
+/// 2026-10-26), `.done` (started, nothing waiting, something WAS considered)
+/// draws green, `.upcoming` (time hasn't come) draws a barely-there neutral — "the
 /// things that haven't happened yet don't need a colour... they're obviously
 /// going to be undone" (Trent, same feature, web side). The on-screen slot
 /// (`currentIndex`) draws taller, the web's way of marking "you are here"
@@ -969,8 +970,9 @@ private struct PeriodDoneView: View {
 ///
 /// TASK SEGMENTS ARE BARS TOO (2026-10-11): after the periods, one bar per
 /// task segment shown today — sized by its rows today, filled by its "X of
-/// Y" (considered + deferred), indigo while a row waits and green once none
-/// does, never the faint "not yet" track. Trent: "it's really bizarre that
+/// Y" (considered + deferred), purple while a row waits and green once none
+/// does (2026-10-26; each filled in its horizon's teal before), never the
+/// faint "not yet" track. Trent: "it's really bizarre that
 /// it doesn't have segments for the tasks. you have to <- and -> to get to
 /// it and there is no indication that it's there or how complete it is."
 /// A task page's own bar grows like the on-screen period's (no outline),
@@ -1092,11 +1094,12 @@ private struct ReminderSlotStrip: View {
         }
     }
 
-    /// One slot: a faint track, filled INDIGO as far as it has been considered
-    /// and GREEN end to end once it is done — the web's `ReminderSlotBar`
-    /// (Trent, 2026-09-23: "when it's partially full, it's either showing full
-    /// indigo or full green when really the indigo should be filling up"). A
-    /// slot whose time has not come shows only the track.
+    /// One slot: a faint track, filled PURPLE as far as it has been
+    /// considered and GREEN end to end once it is done — the web's
+    /// `ReminderSlotBar` (Trent, 2026-09-23: "when it's partially full, it's
+    /// either showing full indigo or full green when really the indigo should
+    /// be filling up"; the indigo became the reminders' purple on
+    /// 2026-10-26). A slot whose time has not come shows only the track.
     ///
     /// THE CURRENT SLOT IS TWICE AS THICK (option A of five he was shown,
     /// rendered side by side). Option B — current at full strength, the rest
@@ -1107,9 +1110,13 @@ private struct ReminderSlotStrip: View {
     /// look at, which the widget also clipped at both rounded ends. Nothing is
     /// drawn outside the bar's own frame, so nothing can be clipped.
     ///
-    /// TASK SEGMENT BARS (2026-10-11, option 3): filled in their horizon's
-    /// teal while a row waits, green once none does (like a period), on the
-    /// same gray track. The task page's own bar grows exactly as the
+    /// TASK SEGMENT BARS (2026-10-11): filled exactly like a period's —
+    /// purple while a row waits, green once none does — on the same gray
+    /// track. Until 2026-10-26 each filled in its horizon's teal; Trent:
+    /// "Have them all just use the purple and green except for the
+    /// deadlines, which finish the teal color that they currently finish at.
+    /// That's the special one." (no native build draws the deadlines page
+    /// yet; its teal would come through `SegmentKind.doneColorHex`). The task page's own bar grows exactly as the
     /// on-screen period's does — no outline (Trent, 2026-10-11: "The
     /// reminder segments don't have an outline and neither should this. It
     /// should just grow, same as Reminders.").
@@ -1125,7 +1132,7 @@ private struct ReminderSlotStrip: View {
                 // what makes the clock's period read as "now" (type doc). A
                 // task segment is shown today, so it is never `.upcoming`.
                 Capsule().fill(Color.primary.opacity(bar.state == .upcoming ? 0.055 : 0.14))
-                // Any progress fills, started or not — indigo while something
+                // Any progress fills, started or not — purple while something
                 // waits, green once nothing does (`color(for:)`), as on the web.
                 if bar.fraction > 0 {
                     Capsule()
@@ -1136,19 +1143,16 @@ private struct ReminderSlotStrip: View {
         }
     }
 
+    /// One rule for every bar, period or task segment (2026-10-26, the
+    /// web's PR #383): the reminders' purple while filling, green once
+    /// finished — or the segment's own finished colour
+    /// (`SegmentKind.doneColorHex`, none yet on native).
     private func color(for bar: ReminderDayProgress.StripBar) -> Color {
-        if bar.kind == .taskSegment, bar.state != .done {
-            return WidgetTheme.taskSegmentColor(bar.segment, scheme: colorScheme)
-        }
         switch bar.state {
-        case .done: return WidgetTheme.trackMetTint.opacity(0.85)
-        // `WidgetTheme.indigoAccent` (2026-09-23) — the same named constant
-        // the "show completed" dot's ON state now uses, so this
-        // segment's fill and that toggle can never drift into two
-        // different indigos.
+        case .done: return WidgetTheme.stripDoneColor(bar.segment, scheme: colorScheme)
         // A period not yet started but with some already considered fills
-        // indigo too, as far as it goes (its faint track says "not yet").
-        case .behind, .upcoming: return WidgetTheme.indigoAccent
+        // purple too, as far as it goes (its faint track says "not yet").
+        case .behind, .upcoming: return WidgetTheme.dayBarFilling(colorScheme)
         }
     }
 }
@@ -2019,8 +2023,9 @@ private struct TaskSegmentListView: View {
     private var titleText: Text {
         Text(segment.wrappingTitle)
             .font(.headline)
-            // Its horizon's teal (2026-10-11): the page's accent, matching
-            // its strip bar and ring.
+            // Its horizon's teal (2026-10-11): the page's accent. Its strip
+            // bar no longer matches it — every bar fills purple since
+            // 2026-10-26 — the teals live on in the titles.
             .foregroundStyle(WidgetTheme.taskSegmentTitleColor(segment.kind, scheme: colorScheme))
     }
 

@@ -229,7 +229,7 @@ final class ReminderDayProgressTests: XCTestCase {
     }
 
     /// Trent's picked teals (2026-10-11, option 3) — shared with the web, so
-    /// pinned exactly.
+    /// pinned exactly. Since 2026-10-26 they colour the segment titles only.
     func testTaskSegmentTealsAreTheWebsValues() {
         let light = TaskHorizon.allCases.map { $0.segmentColorHex.light }
         let dark = TaskHorizon.allCases.map { $0.segmentColorHex.dark }
@@ -240,7 +240,24 @@ final class ReminderDayProgressTests: XCTestCase {
         let bars = ReminderDayProgress.stripBars(
             groups: [], segments: [TaskSegmentDTO(horizon: "months", tasks: [row(1, .waiting)])], now: noon, day: day
         )
-        XCTAssertEqual(bars.first?.segment, .horizon(.months), "a task bar carries its kind for its teal")
+        XCTAssertEqual(bars.first?.segment, .horizon(.months), "a task bar carries its kind for its finished colour")
+    }
+
+    /// Every bar fills in the reminders' purple (2026-10-26, the web's
+    /// PR #383): `--badge-reminders`, oklch(0.55 0.2 295) light and
+    /// oklch(0.62 0.19 295) dark, pinned exactly.
+    func testDayBarsFillInTheRemindersPurple() {
+        XCTAssertEqual(DayBarColors.fillingHex.light, 0x7E4ED7)
+        XCTAssertEqual(DayBarColors.fillingHex.dark, 0x9167EA)
+    }
+
+    /// Every segment native knows finishes green, like a period: only the
+    /// web's deadlines page (no native kind yet) finishes in its own teal.
+    func testEveryKnownSegmentFinishesGreen() {
+        let kinds = TaskHorizon.allCases.map(SegmentKind.horizon) + [.upcoming]
+        for kind in kinds {
+            XCTAssertNil(kind.doneColorHex, "\(kind) finishes green")
+        }
     }
 
     func testAnytimeCountsAsStarted() {

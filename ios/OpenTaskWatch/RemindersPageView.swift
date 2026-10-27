@@ -245,15 +245,18 @@ struct RemindersPageView: View {
     }
 }
 
-/// One segment per slot with something in it — indigo while waiting, green
-/// once finished, a faint placeholder before it starts. The on-screen
+/// One segment per slot with something in it — the reminders' purple while
+/// waiting (`WatchTheme.dayBarFilling`, indigo until 2026-10-26), green once
+/// finished, a faint placeholder before it starts. The on-screen
 /// segment draws twice as thick so it's identifiable without reading text —
 /// the phone widget's `ReminderSlotStrip` treatment. It also wore an outline
 /// until 2026-10-11 (Trent: no outline on any bar; it should just grow).
 ///
 /// Then one bar per task segment shown today (2026-10-11, "segments as
-/// slots", the phone widget's strip): its horizon's teal while a row waits (option 3, 2026-10-11), green once
-/// none does, never the faint "not started" look — a segment is shown today.
+/// slots", the phone widget's strip): purple while a row waits, green once
+/// none does — a period's colours (2026-10-26; each filled in its horizon's
+/// teal before) — never the faint "not started" look: a segment is shown
+/// today.
 /// Never ringed: the page doesn't page to a segment, it lists every waiting
 /// segment's rows under whichever period is on screen, so the bar's job is
 /// "there is more below, and this much of it is done".
@@ -282,12 +285,12 @@ private struct SlotProgressStrip: View {
                     .padding(.horizontal, 2)
                     .accessibilityHidden(true)
             }
-            // Teal per horizon while a row waits, green once none does —
-            // option 3's colors. Whole-bar fills, like the watch's slot bars
-            // (which have no partial fill either).
+            // Purple while a row waits, green once none does — a period's
+            // colours. Whole-bar fills, like the watch's slot bars (which
+            // have no partial fill either).
             ForEach(segments) { segment in
                 Capsule()
-                    .fill(segment.hasWaiting ? WatchTheme.taskSegment(segment.kind) : WatchTheme.done)
+                    .fill(segment.hasWaiting ? WatchTheme.dayBarFilling : WatchTheme.dayBarDone(segment.kind))
                     .frame(height: 3)
                     .accessibilityLabel(Text(segment.title))
             }
@@ -298,7 +301,7 @@ private struct SlotProgressStrip: View {
     private func color(for group: ReminderGroupDTO) -> Color {
         switch WatchSlotLogic.state(for: group) {
         case .notStarted: return Color.secondary.opacity(0.25)
-        case .waiting: return WatchTheme.accent
+        case .waiting: return WatchTheme.dayBarFilling
         case .finished: return WatchTheme.done
         }
     }

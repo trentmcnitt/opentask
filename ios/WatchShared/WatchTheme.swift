@@ -3,15 +3,17 @@ import SwiftUI
 /// Visual vocabulary for the watchOS app and its Smart Stack widget.
 ///
 /// One accent hue (indigo) for anything interactive/"in progress", green only
-/// for "done" — mirrors Trent's UI rule from the phone surfaces (see
+/// for "done" — except the strip's bars, which fill in the reminders' purple
+/// (`dayBarFilling`, 2026-10-26, the rule every progress bar follows) — mirrors Trent's UI rule from the phone surfaces (see
 /// `WidgetTheme.swift`'s "monochrome chrome, color only where it carries
 /// meaning") but is NOT a port of that file: `ios/OpenTaskWidgets` is off
 /// limits for this target (other agents are editing it tonight on other
 /// branches), so this is a deliberately small, independent re-derivation of
 /// the same palette rules for the watch's much smaller canvas.
 enum WatchTheme {
-    /// The one accent hue. Used for the current slot segment, the "still
-    /// waiting" strip fill, and any primary action control.
+    /// The one accent hue. Used for any primary action control, toggles
+    /// and the in-progress counts. NOT the strip's fill since 2026-10-26
+    /// (`dayBarFilling`, the reminders' purple).
     static let accent = Color.indigo
 
     /// "Considered"/complete state — the only other color allowed to carry
@@ -21,11 +23,27 @@ enum WatchTheme {
     /// A task segment's teal (2026-10-11, mockup task-segment-colors-2
     /// option 3; the web's and the phone widget's exact values,
     /// `TaskHorizon.segmentColorHex`). The watch is always dark, so the dark
-    /// shades: the strip bar's fill while a row waits and the section title.
-    /// Upcoming (2026-10-12) is its own blue-teal (`SegmentKind.colorHex`);
-    /// only a segment this build doesn't know falls back to Weeks'.
+    /// shades: the section TITLE only — since 2026-10-26 the strip bar
+    /// fills in `dayBarFilling` like a period's. Upcoming (2026-10-12) is
+    /// its own blue-teal (`SegmentKind.colorHex`); only a segment this build
+    /// doesn't know falls back to Weeks'.
     static func taskSegment(_ kind: SegmentKind?) -> Color {
         rgb((kind ?? .horizon(.weeks)).colorHex.dark)
+    }
+
+    /// Every strip bar's fill while it fills — a period's and a task
+    /// segment's alike (2026-10-26, the web's PR #383): the reminders'
+    /// purple, the dark value of the one shared source
+    /// (`DayBarColors.fillingHex`, the web's dark `--badge-reminders`).
+    /// Not `accent`: buttons, toggles and the other indigo stay indigo.
+    static let dayBarFilling = rgb(DayBarColors.fillingHex.dark)
+
+    /// A strip bar's fill once finished: `done`, or the segment's own
+    /// finished colour (`SegmentKind.doneColorHex`; none native yet — the
+    /// web's deadlines page finishes in its teal).
+    static func dayBarDone(_ kind: SegmentKind?) -> Color {
+        guard let hex = kind?.doneColorHex else { return done }
+        return rgb(hex.dark)
     }
 
     /// The faint divider between the period bars and the task bars (#55555b).
