@@ -3,7 +3,8 @@ import SwiftUI
 /// Visual vocabulary for the watchOS app and its Smart Stack widget.
 ///
 /// One accent hue (indigo) for anything interactive/"in progress", green only
-/// for "done" — mirrors Trent's UI rule from the phone surfaces (see
+/// for "done" — except the strip's bars, which fill in the reminders' purple
+/// (`dayBarFilling`, 2026-10-26, the rule every progress bar follows) — mirrors Trent's UI rule from the phone surfaces (see
 /// `WidgetTheme.swift`'s "monochrome chrome, color only where it carries
 /// meaning") but is NOT a port of that file: `ios/OpenTaskWidgets` is off
 /// limits for this target (other agents are editing it tonight on other
