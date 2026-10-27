@@ -292,7 +292,7 @@ jobs:
         run: npx playwright install webkit
       - name: Install Playwright OS dependencies
         run: npx playwright install-deps webkit
-      - run: npm run test:e2e -- --project webkit $WEBKIT_SPECS
+      - run: npm run test:e2e -- $WEBKIT_SPECS --project=webkit
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
