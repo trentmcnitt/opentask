@@ -25,8 +25,13 @@ import { TOKEN_A } from './helpers'
 const DB_PATH = path.join(process.cwd(), 'data', 'test-integration-shutdown.db')
 const NEXT_BIN = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next')
 
-/** How long a clean shutdown may take: far below systemd's 90 s, far above a normal exit. */
-const PROMPT_EXIT_MS = 10_000
+/**
+ * How long a clean shutdown may take. A clean exit is milliseconds. The two
+ * failures this catches: the stream never ending (no exit until systemd's 90 s
+ * timeout), and the ended stream's keep-alive socket holding close() for Node's
+ * keep-alive timeout (~5 s).
+ */
+const PROMPT_EXIT_MS = 2_000
 
 let server: ChildProcess
 let base = ''

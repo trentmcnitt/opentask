@@ -134,7 +134,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
+      // Not keep-alive: when the stream ends (a SIGTERM's closeAllSyncStreams),
+      // the socket closes with it. Kept alive, the idle connection held the
+      // server's close() for Node's keep-alive timeout (~5 s more per restart).
+      // A stream lives for minutes, so reusing its connection saves nothing.
+      Connection: 'close',
     },
   })
 })
