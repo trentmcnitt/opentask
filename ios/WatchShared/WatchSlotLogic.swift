@@ -26,25 +26,13 @@ enum WatchSlotLogic {
     /// "Anytime" group. Empty `groups` (fresh fetch, or an account with no
     /// reminders at all) returns 0 — callers must check `groups.isEmpty`
     /// themselves before indexing.
+    ///
+    /// The one implementation is `ReminderDefaultPage.clockSlotIndex`
+    /// (ios/Shared), shared with the phone widget's `RemindersTimeline`.
     static func naturalSlotIndex(
         in groups: [ReminderGroupDTO], now: Date = Date(), day: OpenTaskDay = DayStartStore.current
     ) -> Int {
-        guard !groups.isEmpty else { return 0 }
-        let nowMinutes = day.minutesIntoDay(of: now)
-
-        var best = -1
-        var bestStart = -1
-        for (index, group) in groups.enumerated() {
-            guard let raw = group.slot?.startMinutes else { continue }
-            let start = day.minutesIntoDay(raw)
-            if start <= nowMinutes && start > bestStart {
-                bestStart = start
-                best = index
-            }
-        }
-        if best >= 0 { return best }
-        // Nothing has started yet today — use the first real (non-"Anytime") slot.
-        return groups.firstIndex(where: { $0.slot != nil }) ?? 0
+        ReminderDefaultPage.clockSlotIndex(in: groups, now: now, day: day)
     }
 
     /// Draw state for one segment of the Reminders progress strip. "Started"

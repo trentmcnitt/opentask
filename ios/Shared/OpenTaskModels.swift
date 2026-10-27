@@ -1378,6 +1378,22 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         return task.title + TaskDTO.metaJoiner + words.replacingOccurrences(of: " ", with: "\u{00A0}")
     }
 
+    /// A row behind the "CONSIDERED" divider, as one string — the web's
+    /// `ConsideredSegmentRow` exactly (2026-10-27): the title and only the
+    /// words it adds, never the waiting row's small words (horizon, target,
+    /// deadline, badges). A row that left: `leftLabelText`. A row considered
+    /// and still on deck (a deadlines-page row decked for a later day):
+    /// "Fix the gate · on deck Sat" / "… · on deck today", lower-case as on
+    /// the web (`deckChipWords(…).replace('On deck', 'on deck')`). Otherwise
+    /// the title alone. It read "Fix the gate · deadline Jan 20 · On deck
+    /// Sat" before.
+    func consideredLabelText(now: Date = Date(), day: OpenTaskDay = DayStartStore.current) -> String {
+        if left != nil { return leftLabelText }
+        guard let deck = task.deckWords(now: now, day: day) else { return task.title }
+        let words = deck.replacingOccurrences(of: "On deck", with: "on deck")
+        return task.title + TaskDTO.metaJoiner + words.replacingOccurrences(of: " ", with: "\u{00A0}")
+    }
+
     private enum CodingKeys: String, CodingKey {
         case state = "segment_state"
         case recurring

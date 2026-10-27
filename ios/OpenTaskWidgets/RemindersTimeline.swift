@@ -14,39 +14,14 @@ import Foundation
 enum RemindersTimeline {
 
     /// The group the clock is in right now: latest slot whose `start_time` is
-    /// at or before the current local time.
-    ///
-    /// Before the first boundary of the day (the small hours) no slot has
-    /// started yet. That falls back to the first slot rather than to the
-    /// trailing "Anytime" group — at 5am the useful answer is "here's what's
-    /// coming", not "here's the bucket for items with no time".
-    ///
-    /// Within the OpenTask day ("Day starts at" PR 3, the web's
-    /// `naturalSlotIndex`): every start is counted from the day start
-    /// (`minutesIntoDay`), so at 00:30 with the day starting at 3:00 the
-    /// evening's slot is still the latest started, and from the day start
-    /// until the first slot it is the first.
+    /// at or before the current local time, within the OpenTask day; before
+    /// the first slot, the first slot (never the trailing "Anytime"). The
+    /// one implementation is `ReminderDefaultPage.clockSlotIndex`
+    /// (ios/Shared), shared with the watch.
     static func naturalSlotIndex(
         in groups: [ReminderGroupDTO], now: Date = Date(), day: OpenTaskDay = DayStartStore.current
     ) -> Int {
-        guard !groups.isEmpty else { return 0 }
-
-        let minutes = day.minutesIntoDay(of: now)
-
-        var best: Int?
-        var bestStart = -1
-        for (index, group) in groups.enumerated() {
-            guard let raw = group.slot?.startMinutes else { continue }
-            let start = day.minutesIntoDay(raw)
-            guard start <= minutes, start > bestStart else {
-                continue
-            }
-            bestStart = start
-            best = index
-        }
-        if let best { return best }
-
-        return groups.firstIndex(where: { $0.slot != nil }) ?? 0
+        ReminderDefaultPage.clockSlotIndex(in: groups, now: now, day: day)
     }
 
     // MARK: The page ring (2026-10-10, task segments)
@@ -61,13 +36,11 @@ enum RemindersTimeline {
     // per-page index and the chevrons all address a segment page with no
     // new storage.
     //
-    // The NATURAL page treats the task segments as periods AFTER the slots
-    // (2026-10-11, "segments as slots"): it is the clock's slot — unless every
-    // slot from the day's first through the clock's own has nothing waiting,
-    // in which case it is the first task segment with a row waiting. An
-    // earlier unfinished slot always wins (auto-advance's "earliest undone"
-    // rule, extended past the last started slot). Segments never enter
-    // `groups`; the strip draws them as their own bars after the slots
+    // The NATURAL page is the default page (Trent's ruling, 2026-10-27):
+    // `ReminderDefaultPage.key` (ios/Shared, shared with the watch) — the
+    // leftmost unfinished page in the strip, except Deadlines goes first
+    // while it has unseen rows. Its doc has the five steps. Segments never
+    // enter `groups`; the strip draws them as their own bars after the slots
     // (`ReminderDayProgress.stripBars`), and day complete asks them
     // separately.
 
@@ -85,31 +58,14 @@ enum RemindersTimeline {
         groups.map(\.slotKey) + segments.map(\.pageKey)
     }
 
-    /// The natural page's key, or nil when there are no pages at all:
-    /// - the first task segment with a row waiting, once every slot up to and
-    ///   including the clock's has nothing waiting (2026-10-11 — finishing
-    ///   the day so far carries the widget on to the tasks, as finishing a
-    ///   slot carries it to the earliest undone one);
-    /// - otherwise the clock's slot (an earlier unfinished slot is reached by
-    ///   auto-advance, never skipped for a segment);
-    /// - with no slots, the first segment still waiting, else the first.
-    ///
-    /// Slots AFTER the clock's — not started yet, plus a trailing "Anytime"
-    /// — don't hold the segment back: they aren't "earlier", and
-    /// `naturalSlotIndex` never picks Anytime as the day's current period
-    /// while a timed slot exists.
+    /// The natural page's key — `ReminderDefaultPage.key`, the default-page
+    /// rule — or nil when there are no pages at all. `segments` must already
+    /// be listed and pending-filtered.
     static func naturalPageKey(
-        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()
+        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date(),
+        day: OpenTaskDay = DayStartStore.current
     ) -> Int? {
-        guard !groups.isEmpty else {
-            return (segments.first(where: \.hasWaiting) ?? segments.first)?.pageKey
-        }
-        let natural = naturalSlotIndex(in: groups, now: now)
-        if groups[0...natural].allSatisfy(\.hasNothingWaiting),
-           let waiting = segments.first(where: \.hasWaiting) {
-            return waiting.pageKey
-        }
-        return groups[natural].slotKey
+        ReminderDefaultPage.key(groups: groups, segments: segments, now: now, day: day)
     }
 
     /// The page `key` names, with `naturalSlot` standing in for the slot on
@@ -126,8 +82,7 @@ enum RemindersTimeline {
         return DisplayedPage(slotIndex: naturalSlot, segmentIndex: nil)
     }
 
-    /// The natural page at `now`, ignoring any override — what a pre-
-    /// scheduled boundary entry shows.
+    /// The natural page at `now`, ignoring any override.
     static func naturalPage(
         groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()
     ) -> DisplayedPage {
@@ -137,24 +92,60 @@ enum RemindersTimeline {
         )
     }
 
+    /// The override's page key while `override` still holds at `now` — its
+    /// anchor is the natural page there and its page is still in the ring —
+    /// else nil. Pure: no side effect.
+    static func honoredOverrideKey(
+        _ override: WidgetStore.SlotOverride?, groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date
+    ) -> Int? {
+        guard let override,
+              let naturalKey = naturalPageKey(groups: groups, segments: segments, now: now),
+              override.naturalSlotKey == naturalKey,
+              pageKeys(groups: groups, segments: segments).contains(override.slotKey)
+        else { return nil }
+        return override.slotKey
+    }
+
+    /// What a PRE-SCHEDULED entry at `now` shows (a period's opening): the
+    /// manual override while it would still hold at that moment, else the
+    /// natural page there. No side effect — a stale override is only
+    /// cleared against the real clock (`displayedPage`).
+    ///
+    /// 2026-10-27 (the default-page ruling): boundary entries used to show
+    /// the natural page outright. With the clock's slot as the natural page,
+    /// a period opening always moved it, so that was the same thing; now the
+    /// natural page often stays put when a period opens (Deadlines still
+    /// unseen, or the new period has nothing waiting), and showing it
+    /// outright would yank a manual flip away until the next reload put it
+    /// back. When the opening DOES move the default (rule 4: a period with
+    /// something waiting opens), the anchor no longer matches and the
+    /// default shows, as before.
+    static func scheduledPage(
+        groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date, override: WidgetStore.SlotOverride?
+    ) -> DisplayedPage {
+        guard let key = honoredOverrideKey(override, groups: groups, segments: segments, now: now) else {
+            return naturalPage(groups: groups, segments: segments, now: now)
+        }
+        return page(forKey: key, groups: groups, segments: segments, naturalSlot: naturalSlotIndex(in: groups, now: now))
+    }
+
     /// The page actually shown: the user's chevron override while it is still
     /// valid, otherwise the natural page.
     ///
     /// SIDE EFFECT: a stale override is deleted here. An override is stale once
-    /// the natural page has moved off the one the user was standing on when
-    /// they navigated — real time moved into a new slot, or a waiting segment
-    /// was finished — the "reset the override when the timeline refreshes
-    /// into a new slot" rule, expressed as data rather than as a timer.
+    /// the natural (default) page has moved off the one it was made against —
+    /// a period with something waiting opened, the Deadlines page's last
+    /// unseen row was seen, a page was finished — the "reset the override
+    /// when the timeline refreshes into a new slot" rule, expressed as data
+    /// rather than as a timer.
     static func displayedPage(
         groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()
     ) -> DisplayedPage {
         let naturalSlot = naturalSlotIndex(in: groups, now: now)
-        let naturalKey = naturalPageKey(groups: groups, segments: segments, now: now)
-        var key = naturalKey
+        var key = naturalPageKey(groups: groups, segments: segments, now: now)
         if let override = WidgetStore.slotOverride() {
-            if let naturalKey, override.naturalSlotKey == naturalKey,
-               pageKeys(groups: groups, segments: segments).contains(override.slotKey) {
-                key = override.slotKey
+            if let honored = honoredOverrideKey(override, groups: groups, segments: segments, now: now) {
+                key = honored
             } else {
                 WidgetStore.clearSlotOverride()
             }
@@ -215,74 +206,56 @@ enum RemindersTimeline {
     }
 
     /// After completing an item that leaves the ON-SCREEN slot with nothing
-    /// waiting, jump to the EARLIEST slot that still has something — Trent,
-    /// 2026-09-23: "once I finish morning it should take me automatically
-    /// back to early morning ... so I can keep checking things off and
-    /// automatically switch." Also the fix for his other complaint that
-    /// prompted this: "I finished everything for the morning ... I didn't
-    /// even realize I actually did not finish the things for early
-    /// morning" — an already-passed slot with leftovers should not go
+    /// waiting, move on — Trent, 2026-09-23: "once I finish morning it should
+    /// take me automatically back to early morning ... so I can keep checking
+    /// things off and automatically switch." Also the fix for his other
+    /// complaint that prompted this: "I finished everything for the morning
+    /// ... I didn't even realize I actually did not finish the things for
+    /// early morning" — an already-passed slot with leftovers should not go
     /// unnoticed just because a later one is on screen.
     ///
-    /// Searches index 0 through the NATURAL slot (the clock's own position)
-    /// inclusive — never a slot whose time hasn't come, and never forward of
-    /// "now" even if the on-screen slot was itself ahead of natural. A no-op
-    /// (stays put) when the on-screen slot still has something, or when
-    /// nothing earlier does either. Writes through the EXISTING slot-override
-    /// mechanism (`WidgetStore.setSlotOverride`), so this reads to
-    /// `displayedSlotIndex` exactly like a manual chevron tap — including
-    /// self-expiring once the real clock moves into a new natural slot.
+    /// WHERE TO (2026-10-27, the default-page ruling): to the default page,
+    /// `ReminderDefaultPage.key` — Deadlines while it has an unseen row, else
+    /// the earliest opened period with something waiting, else the first
+    /// waiting queue segment. That rule already IS "the earliest undone
+    /// page", so auto-advance no longer picks a target of its own: it drops
+    /// the manual override that kept the finished slot on screen, and the
+    /// display follows the rule. With no override the display is already the
+    /// rule's page, which moves on by itself as the tap finishes it, so there
+    /// is nothing to do. (Before 10-27 the natural page was the clock's
+    /// slot, so auto-advance wrote an override onto the earliest unfinished
+    /// slot through the clock's, else the first waiting segment.)
     ///
     /// `groups` should be the CACHED payload as of the moment of the tap
     /// (`WidgetStore.loadReminders()`); this filters it with
     /// `WidgetStore.filterPending` itself, so the just-tapped item (already
-    /// staged as a tombstone by the caller) reads as gone here too.
+    /// staged as a tombstone by the caller) reads as gone here too. The
+    /// caller snapshots the override first
+    /// (`snapshotSlotOverrideBeforeAutoAdvance`), so a failed completion or
+    /// a later Undo puts the flip back.
     ///
     /// Waiting quota prompts (2026-09-24) count as "something waiting" here,
     /// exactly like reminders: a slot whose reminders are done but whose
     /// prompts are not is not finished, and acting on a slot's last prompt
     /// advances just as checking off its last reminder does.
     ///
-    /// Task segments come after the slots (2026-10-11, "segments as
-    /// slots"): when nothing from the day's first slot through the clock's
-    /// is waiting, the widget lands on the first task segment with a row
-    /// waiting — the natural page by then (`naturalPageKey`). The override is
-    /// anchored to that natural PAGE. A tap on a segment page does nothing
-    /// here: finishing a segment moves the natural page on by itself (to the
-    /// next waiting segment, else back to the clock's slot).
+    /// A tap on a SEGMENT page does nothing here (as before 10-27): its
+    /// considered rows keep Done and Today, so a tap there can't tell
+    /// "finished it" from "acted on a row of a page already finished"; an
+    /// override parked on a finished segment page lapses when the default
+    /// page next moves.
     static func autoAdvanceSlot(in groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()) {
+        guard WidgetStore.slotOverride() != nil else { return }
         let filtered = WidgetStore.filterPending(groups, now: now)
         let listed = TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(segments, now: now))
         guard !filtered.isEmpty else { return }
 
         let shown = displayedPage(groups: filtered, segments: listed, now: now)
         guard shown.segmentIndex == nil else { return }
-        let displayed = shown.slotIndex
-        guard filtered.indices.contains(displayed), filtered[displayed].hasNothingWaiting else {
+        guard filtered.indices.contains(shown.slotIndex), filtered[shown.slotIndex].hasNothingWaiting else {
             return // the on-screen slot still has something waiting
         }
-
-        let natural = naturalSlotIndex(in: filtered, now: now)
-        guard filtered.indices.contains(natural),
-              let naturalKey = naturalPageKey(groups: filtered, segments: listed, now: now)
-        else { return }
-        guard let target = filtered[0...natural].firstIndex(where: { !$0.hasNothingWaiting }) else {
-            // Nothing from the day's first slot through now is waiting: on to
-            // the first waiting task segment, the natural page by now. With
-            // none waiting either, stay — the slot says it's done.
-            if let segment = listed.first(where: \.hasWaiting) {
-                setSlotOverride(slotKey: segment.pageKey, naturalSlotKey: naturalKey)
-            }
-            return
-        }
-
-        setSlotOverride(slotKey: filtered[target].slotKey, naturalSlotKey: naturalKey)
-    }
-
-    /// Thin wrapper so `autoAdvanceSlot` reads as plainly as the intents that
-    /// call the same store function directly.
-    private static func setSlotOverride(slotKey: Int, naturalSlotKey: Int) {
-        WidgetStore.setSlotOverride(slotKey: slotKey, naturalSlotKey: naturalSlotKey)
+        WidgetStore.clearSlotOverride()
         WidgetStore.markInteraction()
     }
 }
