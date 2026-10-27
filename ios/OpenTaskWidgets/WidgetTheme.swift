@@ -81,12 +81,15 @@ enum WidgetTheme {
     /// named constant, not several independently-chosen `Color.indigo`
     /// literals, so all three widgets' accent can never drift apart
     /// pixel-by-pixel across files. NOT the progress bars' fill any more
-    /// (2026-10-26): those fill in `dayBarFilling`, the reminders' purple.
+    /// (2026-10-26): those — and the Quotas 2×2's met ring — fill in
+    /// `dayBarFilling`, the reminders' purple.
     static let indigoAccent = Color.indigo
 
     /// Every progress bar's fill while it fills (2026-10-26, the web's PR
     /// #383) — the Reminders strip's period AND task segment bars, the
-    /// Quotas widget's period bars: the reminders' purple
+    /// Quotas widget's period bars and its 2×2 met ring (`OverallRing`,
+    /// Trent's ruling the same day: a ring is a progress indicator too):
+    /// the reminders' purple
     /// (`DayBarColors.fillingHex`, the web's `--badge-reminders`), resolved
     /// from the view's `colorScheme` like `overTarget(_:)`. Finished is the
     /// done green (`trackMetTint`), or a segment's own `stripDoneColor`.
@@ -120,8 +123,9 @@ enum WidgetTheme {
     /// in-progress counts use `indigoAccent`, the app's one "in progress"
     /// accent, not a second hue. `trackTint` briefly aliased this to
     /// `Color.teal`, which was caught in review as an accidental second
-    /// accent hue and reverted before merge. Its period BARS fill in
-    /// `dayBarFilling` since 2026-10-26, like every progress bar.
+    /// accent hue and reverted before merge. Its period BARS and the 2×2's
+    /// met ring fill in `dayBarFilling` since 2026-10-26, like every
+    /// progress indicator.
     static let trackMetTint = Color.green
 
     /// The "day complete" wash (2026-09-29, mockup r3-c): a faint layer of

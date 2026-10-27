@@ -435,8 +435,10 @@ enum TaskHorizon: String, CaseIterable, Codable {
 /// light ≈ #7e4ed7, oklch(0.62 0.19 295) dark ≈ #9167ea. EXACT values
 /// shared with the web — change together. The ONE source: `WidgetTheme`
 /// (phone and Mac widgets) and `WatchTheme` (the watch, always dark) make
-/// the `Color` from it. Only bar fills use it: buttons, toggles, selection
-/// and the day word keep their indigo.
+/// the `Color` from it. Only progress fills use it — the bars, the Quotas
+/// 2×2's met ring and the watch Smart Stack's circular/corner gauge (Trent,
+/// the same day: rings are progress indicators too); buttons, toggles,
+/// selection, the quota count boxes and the day word keep their indigo.
 enum DayBarColors {
     static let fillingHex: (light: UInt32, dark: UInt32) = (0x7E4ED7, 0x9167EA)
 }
