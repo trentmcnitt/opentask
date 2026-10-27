@@ -76,6 +76,12 @@ const openStreams = globalForSync.__syncStreams!
  */
 export function registerSyncStream(close: () => void): () => void {
   openStreams.add(close)
+  // A request that passed the route's shutdown check just before SIGTERM can
+  // register just after closeAllSyncStreams ran. It's ended too, on a
+  // microtask, so the caller has its unregister in hand first. Without this,
+  // that one stream held the process for the full 90 s again (seen on dev2,
+  // 10-26).
+  if (isSyncShuttingDown()) queueMicrotask(close)
   return () => {
     openStreams.delete(close)
   }
