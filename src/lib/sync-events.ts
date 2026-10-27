@@ -47,14 +47,58 @@ export type TaskCreatedListener = (userId: number, payload: TaskCreatedPayload) 
 
 const globalForSync = globalThis as typeof globalThis & {
   __syncEmitter?: EventEmitter
+  __syncStreams?: Set<() => void>
+  __syncShuttingDown?: boolean
 }
 
 if (!globalForSync.__syncEmitter) {
   globalForSync.__syncEmitter = new EventEmitter()
   globalForSync.__syncEmitter.setMaxListeners(100)
 }
+if (!globalForSync.__syncStreams) globalForSync.__syncStreams = new Set()
 
 const emitter = globalForSync.__syncEmitter!
+const openStreams = globalForSync.__syncStreams!
+
+/**
+ * OPEN STREAMS AND SHUTDOWN (2026-10-26). Each open `/api/sync/stream`
+ * registers its cleanup here, so the server can end them all on SIGTERM
+ * (`closeAllSyncStreams`, called from instrumentation.ts).
+ *
+ * Why: Next's standalone server answers SIGTERM with `server.close()`, which
+ * waits for every open connection to end, and it force-closes them only in
+ * dev. An SSE response never ends on its own, so one open tab kept the old
+ * process alive until systemd's stop timeout (90 s) killed it. Prod was
+ * down for that whole time on every deploy with a client connected, and the
+ * unit was marked failed. Ending the streams lets `server.close()` finish and
+ * the process exit 0. Clients reconnect by themselves (EventSource), against
+ * the new server.
+ */
+export function registerSyncStream(close: () => void): () => void {
+  openStreams.add(close)
+  // A request that passed the route's shutdown check just before SIGTERM can
+  // register just after closeAllSyncStreams ran. It's ended too, on a
+  // microtask, so the caller has its unregister in hand first. Without this,
+  // that one stream held the process for the full 90 s again (seen on dev2,
+  // 10-26).
+  if (isSyncShuttingDown()) queueMicrotask(close)
+  return () => {
+    openStreams.delete(close)
+  }
+}
+
+/** Whether the server is shutting down: a new stream is refused (503). */
+export function isSyncShuttingDown(): boolean {
+  return globalForSync.__syncShuttingDown === true
+}
+
+/** End every open stream and refuse new ones. Returns how many were open. */
+export function closeAllSyncStreams(): number {
+  globalForSync.__syncShuttingDown = true
+  const closers = [...openStreams]
+  for (const close of closers) close()
+  return closers.length
+}
 
 const SYNC_EVENT = 'sync'
 const ENRICHMENT_COMPLETE_EVENT = 'enrichment_complete'
