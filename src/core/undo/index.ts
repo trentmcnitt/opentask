@@ -6,8 +6,10 @@
  */
 
 export { logAction, createTaskSnapshot, createQuotaSnapshot } from './log-action'
-export { executeUndo } from './execute-undo'
-export { executeRedo } from './execute-redo'
+export { executeUndo, undoLatest } from './execute-undo'
+export type { UndoOutcome, UndoConflictReason } from './execute-undo'
+export { executeRedo, redoNext } from './execute-redo'
+export type { RedoOutcome, RedoConflictReason } from './execute-redo'
 export { executeBatchUndo, executeBatchRedo } from './batch'
 export type { BatchUndoOptions, BatchRedoOptions, BatchResult } from './batch'
 
@@ -120,4 +122,28 @@ export function getLatestUndoId(userId: number): number | null {
     .prepare('SELECT MAX(id) as latest_id FROM undo_log WHERE user_id = ?')
     .get(userId) as { latest_id: number | null }
   return row.latest_id
+}
+
+/**
+ * The entry a bare undo would take next: the newest not-undone one, or null
+ * (2026-10-26). Unlike `getLatestUndoId`, an undone entry never counts. A
+ * native surface enables its Undo only while its own last `undo_id` is this.
+ */
+export function getNewestUndoableId(userId: number): number | null {
+  const row = getDb()
+    .prepare('SELECT MAX(id) AS id FROM undo_log WHERE user_id = ? AND undone = 0')
+    .get(userId) as { id: number | null }
+  return row.id
+}
+
+/**
+ * The entry a bare redo would take next: the oldest undone one (undo marks
+ * from the top down, so it is the last one undone), or null (2026-10-26).
+ * The same pick as `executeRedo` (`selectUndoEntries`, id ASC).
+ */
+export function getNextRedoableId(userId: number): number | null {
+  const row = getDb()
+    .prepare('SELECT MIN(id) AS id FROM undo_log WHERE user_id = ? AND undone = 1')
+    .get(userId) as { id: number | null }
+  return row.id
 }

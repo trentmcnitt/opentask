@@ -15,6 +15,7 @@
     "snoozed_high_name": null,
     "queued_until": null,
     "summary": "Deferred 2 tasks (1 urgent skipped)",
-    "moved_ids": [107, 108]
+    "moved_ids": [107, 108],
+    "undo_id": 907
   }
 }

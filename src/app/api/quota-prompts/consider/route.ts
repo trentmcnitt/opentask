@@ -26,6 +26,7 @@ import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { ZodError } from 'zod'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -49,6 +50,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       considered: result.considered,
       did: result.did,
       tasks: result.tasks.map((t) => formatTaskResponse(t, user.timezone)),
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

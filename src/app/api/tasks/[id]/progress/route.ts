@@ -19,6 +19,7 @@ import { withLogging } from '@/lib/with-logging'
 import { z, ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 import { progressSource } from '@/core/validation/quota-prompt'
+import { requestUndoId } from '@/core/request-context'
 
 const progressSchema = z.object({
   /** Defaults to +1. Negative corrects a mis-log. */
@@ -45,7 +46,12 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       source,
     })
 
-    return success({ ...formatTaskResponse(task, user.timezone), met, description })
+    return success({
+      ...formatTaskResponse(task, user.timezone),
+      met,
+      description,
+      undo_id: requestUndoId(),
+    })
   } catch (err) {
     if (err instanceof ZodError) return handleZodError(err)
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/progress error:', err)

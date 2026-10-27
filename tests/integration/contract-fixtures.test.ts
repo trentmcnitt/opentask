@@ -140,6 +140,17 @@
  *     POST /api/quota-prompts/consider and /did with YESTERDAY's key → 400
  *     (asserted, not captured: native reads only the status)
  *
+ * 24. Scoped native Undo (2026-10-26): step 23's consider answered its
+ *     `undo_id`; undone by that id, as a widget or the watch sends it
+ *     POST /api/undo {id}                       → undo-by-id.json
+ *     (`undone_id` is that `undo_id`; the same id again is a 409
+ *     `already_undone` naming the entry below — asserted, not captured:
+ *     native reads only the status and `details`)
+ *
+ * Every captured mutation carries `undo_id` (2026-10-26), and undo-status
+ * `newest_undoable_id` / `next_redoable_id`: undo-entry placeholders, like
+ * `latest_id`, numbered 901.. in the order the fixtures are checked.
+ *
  * Final state (as of step 6): daily #1 done, daily #2 waiting; weekly done today (and
  * considered); monthly waiting; morning reminder considered, evening waiting.
  *
@@ -245,6 +256,20 @@ function idKind(obj: Record<string, Json>): 'task' | 'slot' | 'project' | 'compl
   throw new Error(`contract normaliser: can't tell what this id belongs to: ${Object.keys(obj)}`)
 }
 
+/**
+ * Keys whose value is an undo_log id: the status's `latest_id`, and (scoped
+ * native Undo, 2026-10-26) a mutation's own entry, the status's two stack
+ * ids, and the entry an undo/redo took.
+ */
+const UNDO_ID_KEYS = new Set([
+  'latest_id',
+  'undo_id',
+  'newest_undoable_id',
+  'next_redoable_id',
+  'undone_id',
+  'redone_id',
+])
+
 function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string, Json>): Json {
   if (Array.isArray(value)) return value.map((v) => normalise(v, ids, key, parent))
   if (value !== null && typeof value === 'object') {
@@ -271,9 +296,8 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
         return ids.map('slot', value)
       case 'project_id':
         return ids.map('project', value)
-      case 'latest_id':
-        return ids.map('undo', value)
     }
+    if (UNDO_ID_KEYS.has(key!)) return ids.map('undo', value)
     return value
   }
   if (typeof value === 'string') return normaliseString(value, ids, key)
@@ -1093,6 +1117,41 @@ describe('contract fixtures (native clients)', () => {
     staleStatus = { consider: consider.status, did: did.status }
   })
 
+  // 24. Scoped native Undo (2026-10-26). Its own hook, last: it undoes.
+  let undoAgain: { status: number; body: Json } | null = null
+  beforeAll(async () => {
+    const consider = captured['quota-prompts-consider'] as { data: { undo_id: number } }
+    captured['undo-by-id'] = await call('/api/undo', { id: consider.data.undo_id })
+    // The same id again: already undone. Not captured — native reads only the
+    // status and `details`.
+    const again = await apiFetchB('/api/undo', {
+      method: 'POST',
+      body: { id: consider.data.undo_id },
+    })
+    undoAgain = { status: again.status, body: (await again.json()) as Json }
+  })
+
+  test("undo by id: the consider's own undo_id is undone; the same id again is a 409", async () => {
+    type U = { data: { undone_id: number; undone_action: string } }
+    const consider = captured['quota-prompts-consider'] as { data: { undo_id: number } }
+    const undone = (captured['undo-by-id'] as unknown as U).data
+    expect(undone.undone_id).toBe(consider.data.undo_id)
+    expect(undone.undone_action).toBe('quota_prompt')
+    const status = (await call('/api/undo/status')) as {
+      data: { newest_undoable_id: number; next_redoable_id: number }
+    }
+    expect(status.data.next_redoable_id).toBe(consider.data.undo_id)
+    expect(undoAgain).toEqual({
+      status: 409,
+      body: {
+        error: expect.any(String),
+        code: 'CONFLICT',
+        details: { reason: 'already_undone', newest_undoable_id: status.data.newest_undoable_id },
+      },
+    })
+    expect(status.data.newest_undoable_id).toBeLessThan(consider.data.undo_id)
+  })
+
   test("quota prompt by key: today's consider answers the quotas, another day's key is a 400", () => {
     type A = { data: { considered: number; did: number; tasks: { id: number }[] } }
     const data = (captured['quota-prompts-consider'] as unknown as A).data
@@ -1107,7 +1166,13 @@ describe('contract fixtures (native clients)', () => {
   test('Considered with a day: true when waiting today, false (and no result) for another day', () => {
     type A = { data: Record<string, unknown> }
     const stale = (captured['notification-action-not-waiting'] as unknown as A).data
-    expect(stale).toEqual({ action: 'done', task_id: created.namedReminder, considered: false })
+    // Nothing logged, so no undo entry (2026-10-26).
+    expect(stale).toEqual({
+      action: 'done',
+      task_id: created.namedReminder,
+      considered: false,
+      undo_id: null,
+    })
     const done = (captured['notification-action-considered'] as unknown as A).data
     expect(done).toMatchObject({ action: 'done', task_id: created.namedReminder, considered: true })
     expect(done.result).toBeDefined()
@@ -1246,6 +1311,7 @@ describe('contract fixtures (native clients)', () => {
     'notification-action-not-waiting',
     'notification-action-considered',
     'quota-prompts-consider',
+    'undo-by-id',
   ]
 
   for (const name of names) {

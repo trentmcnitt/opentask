@@ -27,6 +27,7 @@ import { ZodError } from 'zod'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { requestUndoId } from '@/core/request-context'
 
 export const GET = withLogging(async function GET(request: NextRequest, context: RouteContext) {
   try {
@@ -92,6 +93,7 @@ export const PATCH = withLogging(async function PATCH(request: NextRequest, cont
       fields_changed: fieldsChanged,
       description,
       capped_at_deadline: cappedAtDeadline === true,
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (err instanceof ZodError) {

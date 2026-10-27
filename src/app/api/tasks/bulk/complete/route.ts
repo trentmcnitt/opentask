@@ -21,6 +21,7 @@ import { validateBulkComplete } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { ZodError } from 'zod'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -48,6 +49,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       quota_skipped: result.quotaSkipped,
       prompts_considered: result.promptsConsidered,
       prompts_did: result.promptsDid,
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (err instanceof AuthError) return unauthorized(err.message)

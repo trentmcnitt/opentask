@@ -23,13 +23,14 @@ import { validateSegmentTarget } from '@/core/validation'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
 import { ZodError } from 'zod'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request)
     const { ids, at } = validateSegmentTarget(await request.json())
     const result = targetTasksToday(user.id, user.timezone, ids, at)
-    return success(result)
+    return success({ ...result, undo_id: requestUndoId() })
   } catch (err) {
     if (err instanceof ZodError) return handleZodError(err)
     if (!(err instanceof AppError))

@@ -23,6 +23,17 @@
  *
  * better-sqlite3 transactions are synchronous, so a write inside
  * `withTransaction` reads the same store as the code around it.
+ *
+ * The undo entry (2026-10-26, scoped native Undo): `logAction` also records
+ * the undo_log id it wrote here (`recordUndoId`), and every mutation route the
+ * native apps call answers it as `undo_id` (`requestUndoId`) — so a widget or
+ * the watch can later undo exactly ITS action (`POST /api/undo { id }`), not
+ * whatever came last from any device. A request that logs more than one entry
+ * answers the newest (each write overwrites). Nothing is recorded under
+ * `runAsSystem` or outside a request: a system write (enrichment, the quota
+ * rollover) is never "the request's" action, and since `runAsSystem` opens a
+ * store of its own, work it does inside a request can't overwrite the
+ * request's id either.
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -40,6 +51,8 @@ export interface RequestContext {
   hint: ClientId | null
   /** Set by `runAsSystem`: every write in it is `system`. */
   system?: boolean
+  /** The newest undo_log id this request wrote (`recordUndoId`), or null. */
+  undoId: number | null
 }
 
 export interface Attribution {
@@ -64,6 +77,7 @@ export function runWithRequestContext<T>(
       tokenName: null,
       tokenSource: null,
       hint: null,
+      undoId: null,
     },
     fn,
   )
@@ -84,6 +98,7 @@ export function runAsSystem<T>(fn: () => T): T {
       tokenSource: null,
       hint: null,
       system: true,
+      undoId: null,
     },
     fn,
   )
@@ -111,6 +126,19 @@ export function setClientHint(hint: ClientId): void {
   const ctx = storage.getStore()
   if (!ctx || ctx.system) return
   ctx.hint = hint
+}
+
+/** Record the undo_log id `logAction` just wrote. A no-op outside a request and as the system. */
+export function recordUndoId(id: number): void {
+  const ctx = storage.getStore()
+  if (!ctx || ctx.system) return
+  ctx.undoId = id
+}
+
+/** The newest undo_log id this request wrote — a route's `undo_id` — or null. */
+export function requestUndoId(): number | null {
+  const ctx = storage.getStore()
+  return !ctx || ctx.system ? null : ctx.undoId
 }
 
 /** Who is writing right now: `system` outside a request. */

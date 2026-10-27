@@ -43,6 +43,7 @@ import { log } from '@/lib/logger'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { withLogging } from '@/lib/with-logging'
 import type { AuthUser } from '@/types'
+import { requestUndoId } from '@/core/request-context'
 
 /**
  * Snooze length in minutes per notification action. `computeSnoozeTime` (the
@@ -94,7 +95,7 @@ function isLocalDate(value: unknown): value is string {
 function doneAction(user: AuthUser, taskId: number, day: string | null): Response {
   if (day !== null && !reminderWaitingOn(user.id, user.timezone, taskId, day)) {
     log.info('notifications', `Action skipped: task ${taskId} is not waiting on ${day}`)
-    return success({ action: 'done', task_id: taskId, considered: false })
+    return success({ action: 'done', task_id: taskId, considered: false, undo_id: null })
   }
   const result = markDone({ userId: user.id, taskId, userTimezone: user.timezone })
   log.info('notifications', `Action complete: done on task ${taskId}`)
@@ -103,6 +104,7 @@ function doneAction(user: AuthUser, taskId: number, day: string | null): Respons
     task_id: taskId,
     ...(day !== null ? { considered: true } : {}),
     result,
+    undo_id: requestUndoId(),
   })
 }
 
@@ -160,6 +162,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
           until: landed,
           capped_at_deadline: result.cappedAtDeadline,
           result,
+          undo_id: requestUndoId(),
         })
       }
 
@@ -168,7 +171,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         // bare task), so a client reads `result.task` for every action.
         const task = deleteTask({ userId: user.id, taskId: task_id })
         log.info('notifications', `Action complete: delete on task ${task_id}`)
-        return success({ action: 'delete', task_id, result: { task } })
+        return success({ action: 'delete', task_id, result: { task }, undo_id: requestUndoId() })
       }
 
       default:

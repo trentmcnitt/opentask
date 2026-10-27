@@ -16,6 +16,7 @@ import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { requestUndoId } from '@/core/request-context'
 
 /** `?name=true` → true, any other value → false, absent → undefined. */
 function boolParam(params: URLSearchParams, name: string): boolean | undefined {
@@ -171,11 +172,16 @@ export const POST = withLogging(async function POST(request: NextRequest) {
     }
 
     notifyDemoEngagement(user.name, 'create')
-    if (input.wait !== true) return success(formatTaskResponse(task, user.timezone), 201)
+    // The create's own entry: captured now, before enrichment (which runs
+    // as the system and records nothing here anyway) can log one of its own.
+    const undoId = requestUndoId()
+    if (input.wait !== true) {
+      return success({ ...formatTaskResponse(task, user.timezone), undo_id: undoId }, 201)
+    }
 
     const ai = await waitForEnrichment(task.id, user.id, enrichment)
     const current = getTaskById(task.id) ?? task
-    return success({ ...formatTaskResponse(current, user.timezone), ai }, 201)
+    return success({ ...formatTaskResponse(current, user.timezone), ai, undo_id: undoId }, 201)
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorized(err.message)

@@ -16,6 +16,7 @@ import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -35,7 +36,7 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
     })
 
     notifyDemoEngagement(user.name, 'update')
-    return success(formatTaskResponse(task, user.timezone))
+    return success({ ...formatTaskResponse(task, user.timezone), undo_id: requestUndoId() })
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/undone error:', err)
     return handleError(err)

@@ -321,6 +321,8 @@ describe('POST /api/notifications/actions — done with day', () => {
       action: 'done',
       task_id: reminder.id,
       considered: false,
+      // Nothing logged, so no undo entry to name (2026-10-26).
+      undo_id: null,
     })
     expect((await getTask(reminder.id)).done).toBe(false)
     expect(await undoStatus()).toEqual(before)

@@ -17,7 +17,7 @@ import { ensureLead, withoutAutoTarget } from './auto-target-fence'
 import { compensate, countBefore } from './progress-compensation'
 import { healRelativeLinks, rowsLinkedTo } from '@/core/tasks/relative-link-heal'
 import { applyPromptDefault, applySlotRow, applyTargetRows, applyUserSettings } from './slot-row'
-import { afterUndoRedo, selectUndoEntries, type ParsedUndoEntry } from './entries'
+import { afterUndoRedo, entryState, selectUndoEntries, type ParsedUndoEntry } from './entries'
 
 /**
  * Undo a single parsed entry within an existing transaction.
@@ -94,6 +94,59 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
   tx.prepare('UPDATE undo_log SET undone = 1 WHERE id = ?').run(entry.id)
 }
 
+/** Why a by-id undo refused: the entry is not the one a bare undo would take. */
+export type UndoConflictReason = 'not_latest' | 'already_undone' | 'gone'
+
+/** What `undoLatest` did. */
+export type UndoOutcome =
+  | { status: 'undone'; id: number; result: UndoResult }
+  | { status: 'empty' }
+  | { status: 'conflict'; reason: UndoConflictReason; newest_undoable_id: number | null }
+
+/**
+ * Undo the user's newest not-undone entry — only if it is `expectedId`, when
+ * one is given (2026-10-26, scoped native Undo).
+ *
+ * A widget or the watch keeps the `undo_id` of its own last action and sends
+ * it back: "undo THIS". If anything newer has been logged since (another
+ * device, the web), or that entry was already undone or purged, nothing is
+ * undone and the caller hears why (`conflict`, with what IS newest), instead
+ * of an Undo quietly reversing someone else's action. The check reads the
+ * stack inside the same transaction as the undo, so no write can land
+ * between them. Without `expectedId` this is the bare undo, unchanged.
+ */
+export function undoLatest(userId: number, expectedId?: number): UndoOutcome {
+  const outcome = withTransaction((tx): UndoOutcome & { entry?: ParsedUndoEntry } => {
+    const [parsed] = selectUndoEntries(userId, { undone: false, limit: 1 })
+    if (expectedId !== undefined && parsed?.id !== expectedId) {
+      const state = entryState(userId, expectedId)
+      return {
+        status: 'conflict',
+        reason: state === 'gone' ? 'gone' : state === 'undone' ? 'already_undone' : 'not_latest',
+        newest_undoable_id: parsed?.id ?? null,
+      }
+    }
+    if (!parsed) return { status: 'empty' }
+
+    undoEntry(tx, parsed)
+    return {
+      status: 'undone',
+      id: parsed.id,
+      entry: parsed,
+      result: {
+        undone_action: parsed.action as UndoResult['undone_action'],
+        description: parsed.description,
+        tasks_affected: parsed.snapshots.length,
+      },
+    }
+  })
+
+  if (outcome.status !== 'undone') return outcome
+  const { entry, ...done } = outcome
+  afterUndoRedo(userId, [entry!], 'undo')
+  return done
+}
+
 /**
  * Execute undo for the most recent non-undone action
  *
@@ -101,23 +154,6 @@ export function undoEntry(tx: Database.Database, entry: ParsedUndoEntry): void {
  * @returns The result of the undo operation, or null if nothing to undo
  */
 export function executeUndo(userId: number): UndoResult | null {
-  // The most recent non-undone action for this user
-  const [parsed] = selectUndoEntries(userId, { undone: false, limit: 1 })
-  if (!parsed) {
-    return null
-  }
-
-  const result = withTransaction((tx) => {
-    undoEntry(tx, parsed)
-
-    return {
-      undone_action: parsed.action as UndoResult['undone_action'],
-      description: parsed.description,
-      tasks_affected: parsed.snapshots.length,
-    }
-  })
-
-  afterUndoRedo(userId, [parsed], 'undo')
-
-  return result
+  const outcome = undoLatest(userId)
+  return outcome.status === 'undone' ? outcome.result : null
 }

@@ -1,1 +1,9 @@
-{ "data": { "latest_id": 901, "undoable_count": 9, "redoable_count": 0 } }
+{
+  "data": {
+    "latest_id": 903,
+    "undoable_count": 9,
+    "redoable_count": 0,
+    "newest_undoable_id": 903,
+    "next_redoable_id": null
+  }
+}

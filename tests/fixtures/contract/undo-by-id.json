@@ -1,0 +1,10 @@
+{
+  "data": {
+    "undone_action": "quota_prompt",
+    "description": "Considered \"Practice guitar\"",
+    "tasks_affected": 1,
+    "undone_id": 912,
+    "undoable_count": 48,
+    "redoable_count": 1
+  }
+}

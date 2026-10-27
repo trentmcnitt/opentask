@@ -39,7 +39,7 @@ import { log } from '@/lib/logger'
 import { getDb } from '@/core/db'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
-import { setClientHint } from '@/core/request-context'
+import { setClientHint, requestUndoId } from '@/core/request-context'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
 import { planSweepFeedback, sendSweepFeedback } from '@/core/notifications/sweep-feedback'
 
@@ -120,6 +120,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         summary: bulkSnoozeMessage({ affected: 0, high: 0, urgent: 0 }),
         moved_ids: [],
         feedback_notification: false,
+        undo_id: null,
       })
     }
 
@@ -204,6 +205,7 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       // Whether this call sent the feedback push — so a Shortcut can show
       // `message` only when no notification is coming.
       feedback_notification: feedback !== null,
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (err instanceof AuthError) {
