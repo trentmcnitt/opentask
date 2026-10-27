@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { TargetTodayButton } from '@/components/TargetMenu'
-import { DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
+import { DECK_LIT, DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
 import {
   deckReplaces,
   deckTomorrowIfKnown,
@@ -879,6 +879,9 @@ function SegmentDeckSlot({
       timezone={timezone}
       onDeck={(t, day) => void actions.deck(t, day)}
       replaces={deckReplaces(row.task, timezone)}
+      // Lit for TODAY's deck only: tomorrow's lights On deck tomorrow
+      // (`DeckTomorrowButton`), a later one neither (2026-10-27).
+      litFor="today"
       // Icon only (Trent, 2026-10-20): the tooltip and the name say "On deck".
       className={CONTROL_HIT}
       boxClassName={panel ? DECK_BOX.panel : DECK_BOX.page}
@@ -961,11 +964,15 @@ function DeckTomorrowButton({
     if (replaces && day !== null) setPending(day)
     else void actions.deck(task, day)
   }
+  const tomorrow = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
+  // LIT (2026-10-27, Trent): on deck for tomorrow — On deck's own active
+  // state, its filled icon and teal (`DECK_LIT`), on the button that names
+  // the day. A tap then takes it off deck, as a lit On deck does (one rule).
+  const lit = tomorrow !== null && task.on_deck_day === tomorrow
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
     onShortPress: () => {
-      const day = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
-      if (day !== null) act(day)
+      if (tomorrow !== null) act(lit ? null : tomorrow)
     },
     // The tap takes the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
@@ -974,6 +981,7 @@ function DeckTomorrowButton({
     <button
       type="button"
       data-deck-tomorrow
+      data-deck-tomorrow-active={lit ? '' : undefined}
       data-replaces={replaces ? '' : undefined}
       data-no-row-press
       onClick={(e) => {
@@ -990,14 +998,19 @@ function DeckTomorrowButton({
         e.stopPropagation()
         setMenuOpen(true)
       }}
+      // The state is in aria-pressed; the name stays the same (On deck's).
+      aria-pressed={lit}
       aria-label={`On deck tomorrow: “${task.title}” (hold for a day)`}
       title={
         replaces
           ? `On deck tomorrow — replaces ${replaces} · hold for a day`
-          : 'On deck tomorrow · hold for a day'
+          : lit
+            ? 'On deck tomorrow · tap to take off · hold for a day'
+            : 'On deck tomorrow · hold for a day'
       }
       className={cn(
-        'group/deck-tomorrow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+        'group/deck-tomorrow relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+        lit ? DECK_LIT : 'text-muted-foreground hover:text-foreground',
         replaces && 'opacity-45 hover:opacity-100',
         SLOT_HIT,
       )}
@@ -1013,6 +1026,7 @@ function DeckTomorrowButton({
           className={panel ? 'size-[18px]' : 'size-[20px]'}
           // On deck's `OnDeckIcon` weight beside it (`DeckFace`).
           strokeWidth={1.75}
+          filled={lit}
         />
       </span>
     </button>
@@ -1322,7 +1336,8 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
  * An UPCOMING row's second line (2026-10-12, spec §2): the project, the
  * deadline chip (2026-10-22), the priority, then "Target Tue Nov 3" — on a
  * TOMORROW row (2026-10-25, the Upcoming split) just the time, "Target 9:00
- * AM", or "On deck": its section already says the day (`upcomingGap`). A
+ * AM": its section already says the day (`upcomingGap`) — but a deck, which
+ * has no time, says "On deck tomorrow" (2026-10-27). A
  * target-less deadline task is never in Upcoming since rule 3 (2026-10-25:
  * the deadlines page alone holds it), so the "on the deadlines page from …"
  * hand-off it used to carry is gone. The "Target …" part is a chip that opens a one-item menu

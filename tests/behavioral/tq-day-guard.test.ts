@@ -154,8 +154,6 @@ const ALLOWLIST: Record<string, [number, string]> = {
     1,
     `${ON_OPENTASK_DATE} (an entry's weekday beside its time: in its night the OpenTask day, else its own date — timedDay, from nightDay)`,
   ],
-  "src/components/TaskSegmentRow.tsx: return day?.isValid ? `deferred to ${day.toFormat('ccc')}` : 'deferred'":
-    [1, `${ON_OPENTASK_DATE} ("deferred to Thu": the lead day, an OpenTask date)`],
   'src/core/ai/enrichment.ts: const base = today.weekday === 7 ? today.minus({ days: 1 }) : saturday':
     [1, `${ON_OPENTASK_DATE} ("this weekend": weekendDeckDay is given the OpenTask today)`],
   'src/core/ai/enrichment.ts: const day = base.plus({ days: named[0] - 6 })': [
@@ -250,7 +248,7 @@ const ALLOWLIST: Record<string, [number, string]> = {
     1,
     `${ON_OPENTASK_DATE} (upcomingDays: the OpenTask day after the set day)`,
   ],
-  "src/lib/task-segments.ts: target = tomorrow ? 'On deck' : `On deck ${deck.toFormat('ccc LLL d')}`":
+  "src/lib/task-segments.ts: target = tomorrow ? 'On deck tomorrow' : `On deck ${deck.toFormat('ccc LLL d')}`":
     [1, `${ON_OPENTASK_DATE} (a deck day as words)`],
   "src/lib/task-segments.ts: return d.isValid ? d.startOf('day') : null": [
     1,
