@@ -94,6 +94,27 @@ export function onlyWithQueue(kind: SegmentKind): boolean {
 }
 
 /**
+ * "X of Y" for a segment, the slots' count (Trent, 2026-10-11): X is what was
+ * handled today and Y everything that came round today, so the number climbs
+ * rather than counting down. ONE rule for every panel (the queue's two,
+ * Upcoming, the horizons; /reminders sections and the dashboard pager alike).
+ *
+ * Since 2026-10-22 (Trent's phone review, "29 of 44" → "29 of 43" after a
+ * deck): handled is considered, deferred, AND decked, targeted (Today) or
+ * done — a row that leaves the segment that way stays in it as a considered
+ * row (`left`, the server's day roster, src/core/tasks/segment-roster.ts), so
+ * acting on a row raises X and never shrinks Y. Only a row that left
+ * unhandled (trashed, its heads-up over) drops out of Y.
+ */
+export function segmentCounts(segment: {
+  rows: readonly unknown[]
+  considered: number
+  deferred: number
+}): { handled: number; total: number } {
+  return { handled: segment.considered + segment.deferred, total: segment.rows.length }
+}
+
+/**
  * The order the screens walk the segments: the DEADLINES page first (Trent,
  * 10-22: "the deadlines page is FIRST in the queue carousel" — it is the only
  * queue page that nags), then the queue's two panels (spec rule 6: "the first

@@ -94,8 +94,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       // days, repeating ones included. A TOP-LEVEL array, deliberately not inside
       // `groups` — a native build that predates it ignores the key, and its
       // "Complete all" can never reach a real task. None of these counts
-      // include task rows: segments never feed the headline count, the nav
-      // badge or the slot notifications. With the task queue on, the queue's
+      // include task rows: segments never feed the nav badge or the slot
+      // notifications (the web's headline counts them itself, as its own
+      // tasks half — `headlineCounts`). With the task queue on, the queue's
       // two panels come first — only for a caller that sent `?queue=1`.
       task_segments: getTaskSegments(user.id, user.timezone, now, {
         queuePanels,

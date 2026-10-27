@@ -10,12 +10,13 @@ import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import { slotAtMinutes } from '@/lib/reminder-rule'
 import { saveReminderDetail } from '@/lib/save-reminder-detail'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
+import { onlyWithQueue } from '@/lib/task-segments'
 import { showToast } from '@/lib/toast'
 import { useReminders, type ReminderCreateInput } from '@/hooks/useReminders'
 import { useSelectionMode } from '@/hooks/useSelectionMode'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
-import { useDayStart } from '@/components/PreferencesProvider'
+import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
 import { usePromptDeepLink } from '@/hooks/useRemindersDeepLinks'
@@ -145,7 +146,9 @@ export function RemindersView({
     create,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   // Task segments (2026-10-10): tasks whose target hasn't arrived, as sections
-  // after the slots (2026-10-11). Never counted in the headline or the badge.
+  // after the slots (2026-10-11). Never counted in the nav badge; with the
+  // task queue on, the headline counts them as its tasks half (2026-10-26,
+  // ruling "B" — `headlineCounts`).
   const segments = useTaskSegments({
     segments: taskSegments,
     timezone,
@@ -153,6 +156,14 @@ export function RemindersView({
     onUndo,
     onCompleted,
   })
+  // The headline's tasks half is the task queue's (ruling "B", 2026-10-26):
+  // off, it reads as before. A queue panel or the deadlines page in the
+  // payload means the switch is on before the preferences load
+  // (`onlyWithQueue`, as `useQueueUi` reads it), so the headline does not
+  // change form when they land.
+  const taskQueue = useTaskQueue()
+  const countTasks =
+    (taskQueue.loaded && taskQueue.enabled) || taskSegments.some((s) => onlyWithQueue(s.horizon))
   const router = useRouter()
   // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
   const selection = useSelectionMode<number | string>()
@@ -688,6 +699,7 @@ export function RemindersView({
             onConsiderSoFar={() => considerAll.askSoFar(summary)}
             onGoToSlot={goToSlot}
             taskSegments={segments.segments}
+            countTasks={countTasks}
           />
           {/* The slot cards stay once the day is clear (Trent, 2026-09-05:
               "once everything is clear there's no way to expand it… in case I

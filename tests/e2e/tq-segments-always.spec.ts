@@ -197,7 +197,89 @@ for (const viewport of VIEWPORTS) {
         await trash(page, ids)
       }
     })
+
+    test('/reminders headline: reminders and tasks counted apart, done only when both are', async ({
+      page,
+    }) => {
+      await headlineCountsApart(page, viewport.width < 640)
+    })
   })
+}
+
+/**
+ * REMINDERS AND TASKS, COUNTED APART (Trent, 2026-10-26, ruling "B"): with
+ * the switch on the headline counts the periods as reminders and every task
+ * segment as tasks, by each segment's own "X of Y" — the line, the count and
+ * the progressbar alike — and turns green only once both are handled. A
+ * phone shows the compact forms. Two Anytime reminders (always "so far",
+ * whatever the hour) and one Daily task.
+ */
+async function headlineCountsApart(page: Page, phone: boolean) {
+  const ids: number[] = []
+  try {
+    const taskId = await create(page, { title: uniqueTitle('SA headline'), horizon: 'days' })
+    ids.push(taskId)
+    for (const n of [1, 2]) {
+      ids.push(
+        await create(page, {
+          title: uniqueTitle(`SA anytime ${n}`),
+          is_reminder: true,
+          rrule: null,
+        }),
+      )
+    }
+    await page.goto('/reminders')
+    const headline = page.locator('[data-reminders-headline]')
+    const line = headline.locator('h1')
+    const count = headline.locator('[data-day-count]')
+
+    await expect(line).toHaveText(
+      phone ? '2 rem · 1 task waiting so far' : '2 reminders · 1 task waiting so far',
+      { useInnerText: true },
+    )
+    await expect(count).toHaveText(
+      phone ? '0/2 rem · 0/1 task' : '0 of 2 reminders · 0 of 1 task considered',
+      { useInnerText: true },
+    )
+    await expect(count).toHaveAttribute('aria-valuenow', '0')
+    await expect(count).toHaveAttribute('aria-valuemax', '3')
+    await expect(count).toHaveAttribute(
+      'aria-label',
+      '0 of 2 reminders and 0 of 1 task considered today',
+    )
+
+    // The task considered: the tasks half leaves the line, climbs in the count.
+    await page
+      .locator(`[data-task-segments] [data-segment-task="${taskId}"]`)
+      .getByRole('button', { name: /as considered/ })
+      .click()
+    // One half alone keeps its full word on a phone too.
+    await expect(line).toHaveText('2 reminders waiting so far', { useInnerText: true })
+    await expect(count).toHaveText(
+      phone ? '0/2 rem · 1/1 task' : '0 of 2 reminders · 1 of 1 task considered',
+      { useInnerText: true },
+    )
+    await expect(count).toHaveAttribute('aria-valuenow', '1')
+
+    // "Considered all so far" is the reminders' (it says so), and with
+    // both halves handled the day is done.
+    await page
+      .getByRole('button', { name: 'Mark all 2 reminders waiting so far as considered' })
+      .click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Consider all 2' }).click()
+    await expect(line).toHaveText('All clear for today')
+    await expect(count).toHaveText(
+      phone ? 'All 2 rem · 1 task' : 'All 2 reminders · 1 task considered today',
+      { useInnerText: true },
+    )
+    await expect(count).toHaveAttribute('aria-valuenow', '3')
+    await expect(count).toHaveAttribute(
+      'aria-label',
+      '2 of 2 reminders and 1 of 1 task considered today',
+    )
+  } finally {
+    await trash(page, ids)
+  }
 }
 
 /**

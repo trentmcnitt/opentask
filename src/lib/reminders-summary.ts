@@ -97,3 +97,167 @@ export function summarizeReminders<G extends SummaryGroup>(
     nextUp: next && next.slot ? { slot: next.slot, waiting: groupWaiting(next) } : null,
   }
 }
+
+/**
+ * REMINDERS AND TASKS, COUNTED APART (Trent, 2026-10-26, ruling "B"): the
+ * Reminders headline counts "reminders and queue tasks SEPARATELY, e.g. '75
+ * reminders · 84 tasks considered'", and counts everything the day bar under
+ * it shows, so its sum matches the bar: every period (its reminders and quota
+ * prompts — `summarizeReminders`) and every task segment the bar draws (the
+ * deadlines page, the queue's two panels, Daily, Upcoming, Weekly, Monthly,
+ * Quarterly), each segment through `segmentCounts` (src/lib/task-segments.ts)
+ * — the very numbers its own header shows, so the headline and the headers
+ * can never disagree.
+ *
+ * A task half exists only with the task queue on and a segment drawn
+ * (`tasks: null` otherwise): then the headline reads exactly as it did before
+ * the split ("14 waiting so far", "40 of 75 considered", "All 75 considered
+ * today"). With one, a half that is empty is dropped rather than read "0
+ * tasks". Tasks have no period, so every task waiting is waiting "so far".
+ *
+ * The nav badge, "Considered all so far" and the dashboard card are not this:
+ * they stay reminders-only (`summarizeReminders`).
+ */
+export interface HeadlineHalf {
+  /** Waiting now: reminders in started periods + Anytime; every task waiting. */
+  waiting: number
+  /** Considered (reminders, prompts) or handled (a task segment's X). */
+  handled: number
+  /** The day's total: a period's waiting + considered; a segment's Y. */
+  total: number
+}
+
+export interface HeadlineCounts {
+  reminders: HeadlineHalf
+  /** null: no task half — the task queue is off, or no segment is drawn. */
+  tasks: HeadlineHalf | null
+  /** Both halves, for the progressbar (`aria-valuenow` / `aria-valuemax`). */
+  handled: number
+  total: number
+  /** The day is done: every reminder AND every task handled. */
+  done: boolean
+}
+
+export function headlineCounts(
+  summary: Pick<RemindersSummary, 'waitingSoFar' | 'consideredTotal' | 'dayTotal'>,
+  taskSegments: readonly { handled: number; total: number }[] | null,
+): HeadlineCounts {
+  const reminders: HeadlineHalf = {
+    waiting: summary.waitingSoFar,
+    handled: summary.consideredTotal,
+    total: summary.dayTotal,
+  }
+  let tasks: HeadlineHalf | null = null
+  if (taskSegments && taskSegments.length > 0) {
+    const handled = taskSegments.reduce((n, s) => n + s.handled, 0)
+    const total = taskSegments.reduce((n, s) => n + s.total, 0)
+    tasks = { waiting: total - handled, handled, total }
+  }
+  const handled = reminders.handled + (tasks?.handled ?? 0)
+  const total = reminders.total + (tasks?.total ?? 0)
+  const halfDone = (h: HeadlineHalf) => h.handled >= h.total
+  const done = total > 0 && halfDone(reminders) && (tasks === null || halfDone(tasks))
+  return { reminders, tasks, handled, total, done }
+}
+
+type HalfKind = 'reminders' | 'tasks'
+
+/** "75 reminders", "1 task" — or a phone's shorter "75 rem". */
+function noun(n: number, kind: HalfKind, compact = false): string {
+  if (kind === 'reminders') return compact ? 'rem' : n === 1 ? 'reminder' : 'reminders'
+  return n === 1 ? 'task' : 'tasks'
+}
+
+/**
+ * The halves to show, reminders first, dropping one `pick` finds empty (no
+ * "0 tasks"). Both empty: the reminders half alone, so the line still reads.
+ */
+function shownHalves(
+  c: HeadlineCounts,
+  pick: (h: HeadlineHalf) => number,
+): [HalfKind, HeadlineHalf][] {
+  const all: [HalfKind, HeadlineHalf][] = [['reminders', c.reminders]]
+  if (c.tasks) all.push(['tasks', c.tasks])
+  const shown = all.filter(([, h]) => pick(h) > 0)
+  return shown.length > 0 ? shown : all.slice(0, 1)
+}
+
+const SEP = ' · '
+
+/**
+ * The line, in the runs it may wrap between (never inside one — a phone
+ * broke "waiting so / far"): ["14 reminders", "3 tasks waiting so far"],
+ * shown joined by " · ". `compact` (a phone, both halves waiting): "14 rem",
+ * the count's word, so the line fits beside "All so far" on one line. With no
+ * task half, as before: ["14 waiting so far"].
+ */
+export function waitingSoFarRuns(c: HeadlineCounts, form: 'full' | 'compact' = 'full'): string[] {
+  if (!c.tasks) return [`${c.reminders.waiting} waiting so far`]
+  const shown = shownHalves(c, (h) => h.waiting)
+  const compact = form === 'compact' && shown.length > 1
+  const runs = shown.map(([k, h]) => `${h.waiting} ${noun(h.waiting, k, compact)}`)
+  runs[runs.length - 1] += ' waiting so far'
+  return runs
+}
+
+/** The line as one string: "14 reminders · 3 tasks waiting so far" ("14 waiting so far" with no task half). */
+export function waitingSoFarText(c: HeadlineCounts, form: 'full' | 'compact' = 'full'): string {
+  return waitingSoFarRuns(c, form).join(SEP)
+}
+
+/** A run of text in the count; `strong` is a handled number, drawn in the foreground. */
+export interface CountPart {
+  text: string
+  strong?: boolean
+}
+
+/**
+ * The count beside the bar while the day is open. `full` (desktop): "40 of 75
+ * reminders · 30 of 84 tasks considered"; `compact` (a phone): "40/75 rem ·
+ * 30/84 tasks". With no task half, as before: "40 of 75 considered" / "40 / 75".
+ */
+export function dayCountParts(c: HeadlineCounts, form: 'full' | 'compact'): CountPart[] {
+  if (!c.tasks) {
+    const rest = form === 'full' ? ` of ${c.reminders.total} considered` : ` / ${c.reminders.total}`
+    return [{ text: String(c.reminders.handled), strong: true }, { text: rest }]
+  }
+  const parts: CountPart[] = []
+  shownHalves(c, (h) => h.total).forEach(([k, h], i) => {
+    if (i > 0) parts.push({ text: SEP })
+    parts.push({ text: String(h.handled), strong: true })
+    parts.push({
+      text:
+        form === 'full'
+          ? ` of ${h.total} ${noun(h.total, k)}`
+          : `/${h.total} ${noun(h.total, k, true)}`,
+    })
+  })
+  if (form === 'full') parts.push({ text: ' considered' })
+  return parts
+}
+
+/**
+ * The count once the day is done (green): "All 75 reminders · 84 tasks
+ * considered today", on a phone "All 75 rem · 84 tasks". With no task half,
+ * as before: "All 75 considered today" at every width.
+ */
+export function dayDoneText(c: HeadlineCounts, form: 'full' | 'compact'): string {
+  if (!c.tasks) return `All ${c.reminders.total} considered today`
+  const compact = form === 'compact'
+  const parts = shownHalves(c, (h) => h.total).map(
+    ([k, h]) => `${h.total} ${noun(h.total, k, compact)}`,
+  )
+  return `All ${parts.join(SEP)}${compact ? '' : ' considered today'}`
+}
+
+/**
+ * The progressbar's label, both halves spelled out: "40 of 75 reminders and
+ * 30 of 84 tasks considered today" ("40 of 75 considered today" with no task half).
+ */
+export function dayCountLabel(c: HeadlineCounts): string {
+  if (!c.tasks) return `${c.reminders.handled} of ${c.reminders.total} considered today`
+  const parts = shownHalves(c, (h) => h.total).map(
+    ([k, h]) => `${h.handled} of ${h.total} ${noun(h.total, k)}`,
+  )
+  return `${parts.join(' and ')} considered today`
+}
