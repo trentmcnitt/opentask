@@ -1,10 +1,21 @@
 'use client'
 
+import { Fragment, type ReactNode } from 'react'
 import { CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
 import { slotGroupKey, slotLabel } from '@/lib/reminder-slots'
-import type { RemindersSummary } from '@/lib/reminders-summary'
+import {
+  dayCountLabel,
+  dayCountRuns,
+  dayDoneRuns,
+  headlineCounts,
+  tasksWaitingText,
+  waitingSoFarRuns,
+  type CountPart,
+  type HeadlineCounts,
+  type RemindersSummary,
+} from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import { MIN_SEGMENT_PX, SegmentDivider } from '@/components/ReminderSlotBar'
@@ -32,9 +43,38 @@ import type { SegmentView } from '@/hooks/useTaskSegments'
  * the same purple as a slot while filling and green when done (the deadlines
  * page: its teal) — every one, every day (2026-10-24; an empty one done) —
  * the dashboard strip's bars, so a segment reads the same on
- * both surfaces; a tap scrolls to its section. They are NOT in the line or
- * the count: task rows never count in "N waiting so far" or "X of Y
- * considered" (docs/TASK-MODEL.md § Task segments).
+ * both surfaces; a tap scrolls to its section.
+ *
+ * REMINDERS AND TASKS, COUNTED APART (Trent, 2026-10-26, ruling "B": count
+ * "reminders and queue tasks SEPARATELY, e.g. '75 reminders · 84 tasks
+ * considered'"). With the task queue on, the line and the count count what
+ * the bar draws — the periods as reminders, every task segment as tasks, by
+ * each segment's own header numbers (`headlineCounts`, `segmentCounts`) — so
+ * the sum always matches the bar. Before the split task rows never counted
+ * here; they still never count in the nav badge or "Considered all so far"
+ * (docs/TASK-MODEL.md § Task segments). The states (a half with nothing in
+ * it is dropped — never "0 tasks"):
+ *
+ *   line    "14 reminders · 3 tasks waiting so far" / "3 tasks waiting so far"
+ *           "Caught up until Evening · 6:00 PM" (only later periods hold
+ *           reminders), "… · 6:00 PM · 3 tasks waiting" while tasks wait
+ *           (Trent, 2026-10-26: keep the caught-up phrase, append the tasks)
+ *           "All clear for today" (nothing waiting of either kind)
+ *   count   "40 of 75 reminders · 30 of 84 tasks considered"
+ *   done    "All 75 reminders · 84 tasks considered today", green — only
+ *           once BOTH halves are handled
+ *
+ * FULL WORDS AT EVERY WIDTH; ON A PHONE THE COUNT GETS ITS OWN LINE (Trent,
+ * 2026-10-26, layout "b"; no "rem" abbreviation anywhere). Beside the bar the
+ * full words left a phone's bar 0-2px wide, so below 640px the count drops
+ * under the bar, which keeps the whole width. Every line there wraps only at
+ * a " · ", never inside a run (it broke "waiting so / far" beside "All so
+ * far"). From 640px up it is one line, the count beside the bar.
+ *
+ * With the switch off (or no segment drawn) the words read as before the
+ * split: "14 waiting so far", "40 of 75 considered", "All 75 considered
+ * today" — the segments still on the bar, uncounted. (A phone's count is
+ * full words under the bar there too; it was "40 / 75" beside it.)
  */
 export function RemindersHeadline({
   summary,
@@ -42,61 +82,50 @@ export function RemindersHeadline({
   onConsiderSoFar,
   onGoToSlot,
   taskSegments = [],
+  countTasks = false,
 }: {
   summary: RemindersSummary<ReminderGroup>
   allWaitingDone: boolean
   onConsiderSoFar: () => void
   /** A segment was tapped: open that slot and scroll to it (`goToSlot` in `RemindersView`). */
   onGoToSlot: (key: string) => void
-  /** Today's task segments, drawn after the slots (never counted). */
+  /** Today's task segments, drawn after the slots. */
   taskSegments?: SegmentView[]
+  /** Count the task segments as the tasks half (the task queue is on). */
+  countTasks?: boolean
 }) {
-  let line: React.ReactNode
-  if (allWaitingDone) {
-    line = <span className="text-foreground font-medium">All clear for today</span>
-  } else if (summary.waitingSoFar === 0 && summary.nextUp) {
-    line = (
-      <>
-        <span className="text-foreground font-medium">
-          Caught up until {summary.nextUp.slot.label}
-        </span>
-        <span className="text-muted-foreground">
-          {' '}
-          &middot; {formatClockTime(summary.nextUp.slot.start_time)}
-        </span>
-      </>
-    )
-  } else {
-    line = (
-      <span className="text-foreground font-medium" data-waiting-so-far={summary.waitingSoFar}>
-        {summary.waitingSoFar} waiting so far
-      </span>
-    )
-  }
-
+  const counts = headlineCounts(
+    summary,
+    countTasks && taskSegments.length > 0 ? taskSegments.map(segmentCounts) : null,
+  )
   const segments = [...summary.started, ...summary.later]
-  // THE BAR FITS, THE COUNT NEVER MOVES (2026-10-24). With every task
-  // segment on the bar every day, five or six periods and eight segments at
-  // their thumb-wide minimum are wider than a phone — the bar pushed the
-  // count off the screen (7px sideways scroll at 375 on real data). So the
-  // count keeps its width, the bar takes what is left (`flex-1 min-w-0`,
-  // measured as a size container), and each segment's minimum is its thumb
+  // THE BAR FITS (2026-10-24). With every task segment on the bar every
+  // day, five or six periods and eight segments at their thumb-wide minimum
+  // are wider than a phone — the bar pushed the count off the screen (7px
+  // sideways scroll at 375 on real data). So the bar takes the width it is
+  // given (beside the count from 640px, `sm:flex-1 min-w-0`; the whole row on
+  // a phone, the count on the line under it — layout "b", 2026-10-26),
+  // measured as a size container, and each segment's minimum is its thumb
   // width OR its even share of the bar, whichever is smaller (`fitShare`):
   // with room, nothing changes; without, every segment gives way evenly and
   // the minimums never add up to more than the bar.
   const showDivider = taskSegments.length > 0 && segments.length > 0
   const share = fitShare(segments.length + taskSegments.length, showDivider)
-  const dayDone = summary.dayTotal > 0 && summary.consideredTotal >= summary.dayTotal
+  const dayDone = counts.done
 
   return (
     <div className="mb-4 px-2" data-reminders-headline>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="min-w-0 text-sm">{line}</h1>
+        <h1 className="min-w-0 text-sm">
+          <HeadlineLine summary={summary} counts={counts} allWaitingDone={allWaitingDone} />
+        </h1>
         {summary.waitingSoFar > 0 && (
           <button
             type="button"
             onClick={onConsiderSoFar}
-            aria-label={`Mark all ${summary.waitingSoFar} waiting so far as considered`}
+            // Reminders only (Consider-all for tasks is on hold): with a task
+            // half it says so, as the line beside it counts both.
+            aria-label={`Mark all ${summary.waitingSoFar}${counts.tasks ? ' reminders' : ''} waiting so far as considered`}
             className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />
@@ -106,7 +135,7 @@ export function RemindersHeadline({
         )}
       </div>
 
-      <div className="mt-3 flex items-center">
+      <div className="mt-3 flex flex-col sm:flex-row sm:items-center" data-day-row>
         {/* EACH SEGMENT GOES TO ITS PERIOD (2026-09-25) — the dashboard card's
             `ReminderSlotBar` pages to a slot on a tap, and this is the same
             idea on a page that scrolls: open the section if it was folded,
@@ -122,7 +151,7 @@ export function RemindersHeadline({
             negative margin) so a thumb can land on it; hover only darkens the
             track a shade, since the fill is the thing to read. */}
         <div
-          className="-my-1.5 flex min-w-0 flex-1 gap-[3px]"
+          className="-my-1.5 flex min-w-0 gap-[3px] sm:flex-1"
           style={{ containerType: 'inline-size' }}
           role="group"
           aria-label="Go to a period"
@@ -169,31 +198,147 @@ export function RemindersHeadline({
           })}
         </div>
         <span
-          className="ml-3 shrink-0 text-xs whitespace-nowrap tabular-nums"
+          className="mt-2 shrink-0 text-xs tabular-nums sm:mt-0 sm:ml-3 sm:whitespace-nowrap"
           data-day-count
           role="progressbar"
           aria-valuemin={0}
-          aria-valuemax={summary.dayTotal}
-          aria-valuenow={summary.consideredTotal}
-          aria-label={`${summary.consideredTotal} of ${summary.dayTotal} considered today`}
+          aria-valuemax={counts.total}
+          aria-valuenow={counts.handled}
+          aria-label={dayCountLabel(counts)}
         >
           {dayDone ? (
             <span className="text-green-700 dark:text-green-400">
-              All {summary.dayTotal} considered today
+              <Runs runs={dayDoneRuns(counts)} />
             </span>
           ) : (
-            <>
-              <span className="text-foreground font-medium">{summary.consideredTotal}</span>
-              <span className="text-muted-foreground hidden sm:inline">
-                {' '}
-                of {summary.dayTotal} considered
-              </span>
-              <span className="text-muted-foreground sm:hidden"> / {summary.dayTotal}</span>
-            </>
+            <CountRuns runs={dayCountRuns(counts)} />
           )}
         </span>
       </div>
     </div>
+  )
+}
+
+/**
+ * The headline's one line: "All clear for today" once nothing of either kind
+ * waits, "Caught up until …" while only later periods hold reminders (any
+ * tasks waiting appended), else
+ * what is waiting so far (both halves — the states in the docblock above).
+ */
+function HeadlineLine({
+  summary,
+  counts,
+  allWaitingDone,
+}: {
+  summary: RemindersSummary<ReminderGroup>
+  counts: HeadlineCounts
+  allWaitingDone: boolean
+}) {
+  const tasksWaiting = counts.tasks?.waiting ?? 0
+  if (allWaitingDone && tasksWaiting === 0) {
+    return <span className="text-foreground font-medium">All clear for today</span>
+  }
+  // Caught up: no reminder waits in a started period, a later one holds
+  // some. Tasks waiting no longer take the phrase away (Trent, 2026-10-26):
+  // they are appended, "Caught up until Evening · 6:00 PM · 3 tasks waiting".
+  if (summary.waitingSoFar === 0 && summary.nextUp) {
+    return (
+      <span data-caught-up data-tasks-waiting={counts.tasks ? tasksWaiting : undefined}>
+        <Joined
+          items={[
+            <span key="until" className="text-foreground font-medium">
+              Caught up until {summary.nextUp.slot.label}
+            </span>,
+            <span key="at" className="text-muted-foreground">
+              {formatClockTime(summary.nextUp.slot.start_time)}
+            </span>,
+            ...(tasksWaiting > 0
+              ? [
+                  <span key="tasks" className="text-foreground font-medium">
+                    {tasksWaitingText(tasksWaiting)}
+                  </span>,
+                ]
+              : []),
+          ]}
+        />
+      </span>
+    )
+  }
+  return (
+    <span
+      className="text-foreground font-medium"
+      data-waiting-so-far={summary.waitingSoFar}
+      data-tasks-waiting={counts.tasks ? tasksWaiting : undefined}
+    >
+      <Runs runs={waitingSoFarRuns(counts)} />
+    </span>
+  )
+}
+
+/**
+ * Runs joined by " · ", each unbroken, so a line wraps only between them — and
+ * a wrapped line never ends (or starts) with the dot (Trent, 2026-10-26: "drop
+ * the dot at the wrap"). CSS can't ask "did this break here?", so each item
+ * carries its separator at its START, and the whole line is shifted left by one
+ * separator's width inside a box that clips: a separator that begins a line
+ * (the first item's, or one after a wrap) lands in the clipped strip and
+ * vanishes, while one mid-line shows as usual. The first item's box is
+ * empty: it only fills the clipped strip, so the text never starts with a dot. (Non-breaking spaces round the
+ * dot keep the text " · " for search and tests; the box's fixed width is what
+ * the shift cancels.) `<wbr>` between items is the
+ * break opportunity (no space, so nothing else moves). The separator is
+ * `aria-hidden`: a screen reader hears the runs, not the dots.
+ */
+function Joined({ items }: { items: ReactNode[] }) {
+  return (
+    <span className="block overflow-hidden" data-joined>
+      <span className="-ml-[0.85em] block">
+        {items.map((item, i) => (
+          <Fragment key={i}>
+            {i > 0 && <wbr />}
+            <span className="whitespace-nowrap" data-joined-item>
+              <span
+                data-joined-sep
+                aria-hidden
+                className="text-muted-foreground inline-block w-[0.85em] text-center"
+              >
+                {i > 0 ? '\u00a0·\u00a0' : null}
+              </span>
+              {item}
+            </span>
+          </Fragment>
+        ))}
+      </span>
+    </span>
+  )
+}
+
+/** Runs of plain text joined by " · " (`Joined`). */
+function Runs({ runs }: { runs: string[] }) {
+  return <Joined items={runs} />
+}
+
+/**
+ * The open day's count, one unbroken run per half joined by " · " (a phone
+ * wraps only between them): each handled number in the foreground, the rest
+ * muted.
+ */
+function CountRuns({ runs }: { runs: CountPart[][] }) {
+  return (
+    <Joined
+      items={runs.map((run, i) => (
+        <span key={i}>
+          {run.map((p, j) => (
+            <span
+              key={j}
+              className={p.strong ? 'text-foreground font-medium' : 'text-muted-foreground'}
+            >
+              {p.text}
+            </span>
+          ))}
+        </span>
+      ))}
+    />
   )
 }
 

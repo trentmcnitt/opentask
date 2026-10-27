@@ -68,8 +68,9 @@ import {
  * finished the card collapses to one line ("Tasks · 75 of 75 ✓"), whose count
  * still opens what was considered.
  *
- * Never counted in the reminders headline,
- * the nav badge or "Considered all so far" (docs/TASK-MODEL.md § Task segments).
+ * Never counted in the nav badge or "Considered all so far"; the Reminders
+ * page's headline counts them (task queue on) as its tasks half, apart from
+ * the reminders (docs/TASK-MODEL.md § Task segments).
  */
 export function DashboardTasksPanel({
   actions,

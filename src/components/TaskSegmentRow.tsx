@@ -48,6 +48,7 @@ import {
   SEGMENT_NUDGE_THRESHOLD,
   isQueueKind,
   onlyWithQueue,
+  segmentCounts,
   type HorizonValue,
   type SegmentKind,
   type SegmentLeft,
@@ -74,7 +75,9 @@ import { useTimezone } from '@/hooks/useTimezone'
  * section shaped like a slot's on /reminders (`reminders/TaskSegmentGroup`).
  * This file holds what both draw inside that frame: the row, its horizon chip,
  * the over-50 nudge, and the considered row with its put-back. Never counted
- * in the headline, the nav badge or "Considered all so far".
+ * in the nav badge or "Considered all so far"; with the task queue on, the
+ * Reminders headline counts them as its tasks half (ruling "B", 2026-10-26,
+ * `headlineCounts` in src/lib/reminders-summary.ts).
  *
  * The row copies the reminder row (`ReminderRow`) where it can — the circle on
  * the left in the same place, the 16px wrapping title, never truncated — and
@@ -112,21 +115,11 @@ export function handledRows(segment: SegmentView): SegmentRow[] {
 }
 
 /**
- * "X of Y" for a segment, the slots' count (Trent, 2026-10-11): X is what was
- * handled today and Y everything that came round today, so the number climbs
- * rather than counting down. ONE rule for every panel (the queue's two,
- * Upcoming, the horizons; /reminders sections and the dashboard pager alike).
- *
- * Since 2026-10-22 (Trent's phone review, "29 of 44" → "29 of 43" after a
- * deck): handled is considered, deferred, AND decked, targeted (Today) or
- * done — a row that leaves the segment that way stays in it as a considered
- * row (`left`, the server's day roster, src/core/tasks/segment-roster.ts), so
- * acting on a row raises X and never shrinks Y. Only a row that left
- * unhandled (trashed, its heads-up over) drops out of Y.
+ * "X of Y" for a segment — `segmentCounts` in src/lib/task-segments.ts (pure,
+ * so the Reminders headline's sum and its tests read the same numbers as
+ * every segment header). Re-exported here, where the surfaces import it.
  */
-export function segmentCounts(segment: SegmentView): { handled: number; total: number } {
-  return { handled: segment.considered + segment.deferred, total: segment.rows.length }
-}
+export { segmentCounts }
 
 /**
  * Whether the task queue's UI applies (PR 3): the switch from GET

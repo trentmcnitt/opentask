@@ -51,7 +51,7 @@ A single task might be snoozed many times in one day and still get completed tha
 - Over-target marks for P0-3 should be subtle; the target-age badge carries how stale a target is (gray, then amber at 3 days, red at 7)
 - A passed deadline gets its own marker on the row, at any priority
 - The bulk snooze button must remain fast and frictionless — it's used dozens of times per day
-- Task segments must keep the reminders screen's bite-size, finishable feel: they never count in its headline, its badge or its notifications
+- Task segments must keep the reminders screen's bite-size, finishable feel: they never count in its badge or its notifications, and its headline counts them apart from the reminders ("75 reminders · 84 tasks considered", 2026-10-26)
 
 ## Snooze Mechanics (Technical)
 

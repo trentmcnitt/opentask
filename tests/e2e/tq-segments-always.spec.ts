@@ -197,7 +197,106 @@ for (const viewport of VIEWPORTS) {
         await trash(page, ids)
       }
     })
+
+    test('/reminders headline: reminders and tasks counted apart, done only when both are', async ({
+      page,
+    }) => {
+      await headlineCountsApart(page, viewport.width < 640)
+    })
   })
+}
+
+/**
+ * REMINDERS AND TASKS, COUNTED APART (Trent, 2026-10-26, ruling "B"): with
+ * the switch on the headline counts the periods as reminders and every task
+ * segment as tasks, by each segment's own "X of Y" — the line, the count and
+ * the progressbar alike — and turns green only once both are handled. Full
+ * words at every width (layout "b": no "rem"); on a phone the count has its
+ * own line under the full-width bar, from 640px it sits beside the bar. Two
+ * Anytime reminders (always "so far", whatever the hour) and one Daily task.
+ */
+async function headlineCountsApart(page: Page, phone: boolean) {
+  const ids: number[] = []
+  try {
+    const taskId = await create(page, { title: uniqueTitle('SA headline'), horizon: 'days' })
+    ids.push(taskId)
+    for (const n of [1, 2]) {
+      ids.push(
+        await create(page, {
+          title: uniqueTitle(`SA anytime ${n}`),
+          is_reminder: true,
+          rrule: null,
+        }),
+      )
+    }
+    await page.goto('/reminders')
+    const headline = page.locator('[data-reminders-headline]')
+    const line = headline.locator('h1')
+    const count = headline.locator('[data-day-count]')
+
+    await expect(line).toHaveText('2 reminders · 1 task waiting so far', { useInnerText: true })
+    await expect(count).toHaveText('0 of 2 reminders · 0 of 1 task considered', {
+      useInnerText: true,
+    })
+    await expect(count).toHaveAttribute('aria-valuenow', '0')
+    await expect(count).toHaveAttribute('aria-valuemax', '3')
+    await expect(count).toHaveAttribute(
+      'aria-label',
+      '0 of 2 reminders and 0 of 1 task considered today',
+    )
+    await expectCountPlacement(headline, phone)
+
+    // The task considered: the tasks half leaves the line, climbs in the count.
+    await page
+      .locator(`[data-task-segments] [data-segment-task="${taskId}"]`)
+      .getByRole('button', { name: /as considered/ })
+      .click()
+    await expect(line).toHaveText('2 reminders waiting so far', { useInnerText: true })
+    await expect(count).toHaveText('0 of 2 reminders · 1 of 1 task considered', {
+      useInnerText: true,
+    })
+    await expect(count).toHaveAttribute('aria-valuenow', '1')
+
+    // "Considered all so far" is the reminders' (it says so), and with
+    // both halves handled the day is done.
+    await page
+      .getByRole('button', { name: 'Mark all 2 reminders waiting so far as considered' })
+      .click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Consider all 2' }).click()
+    await expect(line).toHaveText('All clear for today')
+    await expect(count).toHaveText('All 2 reminders · 1 task considered today', {
+      useInnerText: true,
+    })
+    await expect(count).toHaveAttribute('aria-valuenow', '3')
+    await expect(count).toHaveAttribute(
+      'aria-label',
+      '2 of 2 reminders and 1 of 1 task considered today',
+    )
+    await expectCountPlacement(headline, phone)
+  } finally {
+    await trash(page, ids)
+  }
+}
+
+/**
+ * Layout "b" (Trent, 2026-10-26). A phone: the count on its own line, wholly
+ * below the bar, and the bar the full width of its row. From 640px: one
+ * line, the count beside the bar (their boxes share a band, the count to the
+ * bar's right).
+ */
+async function expectCountPlacement(headline: Locator, phone: boolean) {
+  const bar = (await headline.locator('[data-day-bar]').boundingBox())!
+  const row = (await headline.locator('[data-day-row]').boundingBox())!
+  const count = (await headline.locator('[data-day-count]').boundingBox())!
+  if (phone) {
+    expect(count.y, 'the count starts below the bar').toBeGreaterThanOrEqual(bar.y + bar.height)
+    expect(bar.width, "the bar takes the row's whole width").toBe(row.width)
+    expect(bar.x).toBe(row.x)
+  } else {
+    expect(count.y, 'the count shares the bar’s line').toBeLessThan(bar.y + bar.height)
+    expect(count.y + count.height).toBeGreaterThan(bar.y)
+    expect(count.x, 'the count is right of the bar').toBeGreaterThanOrEqual(bar.x + bar.width)
+  }
 }
 
 /**
@@ -363,6 +462,26 @@ async function dayBarFits(page: Page, widths: number[]) {
       )
       expect(overflow, `sideways scroll at ${width}`).toBeLessThanOrEqual(0)
 
+      // A wrapped headline line never starts with the " · " (2026-10-26, Trent:
+      // "drop the dot at the wrap"): every separator that begins a line sits in
+      // the clipped strip left of its box, so none is visible there.
+      const dotStartsALine = await headline.evaluate((root) => {
+        const lines = new Map<number, { left: number; sep: boolean }>()
+        for (const box of root.querySelectorAll<HTMLElement>('[data-joined]')) {
+          const clip = box.getBoundingClientRect()
+          for (const item of box.querySelectorAll<HTMLElement>('[data-joined-item]')) {
+            const r = item.getBoundingClientRect()
+            const sep = item.querySelector('[data-joined-sep]')!
+            const sepVisible = sep.textContent !== '' && r.left >= clip.left - 0.5
+            const top = Math.round(r.top)
+            const seen = lines.get(top)
+            if (!seen || r.left < seen.left) lines.set(top, { left: r.left, sep: sepVisible })
+          }
+        }
+        return [...lines.values()].some((l) => l.sep)
+      })
+      expect(dotStartsALine, `a headline line starts with a dot at ${width}`).toBe(false)
+
       // And its title wraps inside its column (a title spilling over a row
       // still inside the page is no better).
       const titleSpills = await linkRow
@@ -407,13 +526,16 @@ async function dayBarFits(page: Page, widths: number[]) {
       const clipped = await count.evaluate((el) => el.scrollWidth > el.clientWidth)
       expect(clipped).toBe(false)
 
-      // Every bar on screen too, and none collapsed to nothing.
+      // Every bar on screen too, none collapsed to nothing, all above the
+      // count (a phone's count has its own line — layout "b", 2026-10-26).
       const bars = await headline
         .locator('[data-day-segment]')
         .evaluateAll((els) => els.map((el) => el.getBoundingClientRect()))
       for (const r of bars) {
         expect(r.width).toBeGreaterThan(0)
-        expect(r.right).toBeLessThanOrEqual(box.x)
+        expect(r.left).toBeGreaterThanOrEqual(0)
+        expect(r.right).toBeLessThanOrEqual(width)
+        expect(r.bottom).toBeLessThanOrEqual(box.y)
       }
     }
   } finally {
