@@ -237,12 +237,12 @@ extension TaskDTO {
                 ? TargetAge.weekdayDayText(date, calendar: calendar, dayStart: dayStart)
                 : TargetAge.dayText(date, calendar: calendar, dayStart: dayStart)
         }
-        // On deck (native PR E, the web's `upcomingGap`): "On deck" on a
-        // Tomorrow row — its section says the day — else "On deck Sat Oct
-        // 24" ("On deck Oct 24" in the forms without weekdays). A deck has
-        // no time. It wins over any target.
+        // On deck (native PR E, the web's `upcomingGap`): "On deck tomorrow"
+        // on a Tomorrow row (2026-10-27, as the web: a bare "On deck" read as
+        // "on deck now?"), else "On deck Sat Oct 24" ("On deck Oct 24" in the
+        // forms without weekdays). A deck has no time. It wins over any target.
         let deck = onDeckDay.flatMap { LocalDate($0) }.map { date -> String in
-            guard section != .tomorrow else { return "On deck" }
+            guard section != .tomorrow else { return "On deck tomorrow" }
             return form.includesWeekdays
                 ? "On deck \(date.shortWeekday) \(date.shortMonthDay)"
                 : "On deck \(date.shortMonthDay)"
