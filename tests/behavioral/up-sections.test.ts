@@ -108,7 +108,7 @@ describe('Upcoming sections on the web (pure)', () => {
     ])
   })
 
-  test('UP-124: a Tomorrow row says only the time ("Target 9:00 AM", "On deck"); Later says the day', () => {
+  test('UP-124: a Tomorrow row says only the time ("Target 9:00 AM") — a deck "On deck tomorrow"; Later says the day', () => {
     const t = { due_at: at('2026-11-03T09:00'), deadline_at: at('2026-11-07T23:59') }
     expect(upcomingGap(t, tz, CALENDAR_DAY_START, 'tomorrow')).toEqual({
       target: 'Target 9:00 AM',
@@ -119,7 +119,8 @@ describe('Upcoming sections on the web (pure)', () => {
       deadline: 'deadline Sat Nov 7',
     })
     const deck = { due_at: null, deadline_at: null, on_deck_day: '2026-10-31' }
-    expect(upcomingGap(deck, tz, CALENDAR_DAY_START, 'tomorrow').target).toBe('On deck')
+    // A deck has no time to say: its day, "tomorrow" (2026-10-27).
+    expect(upcomingGap(deck, tz, CALENDAR_DAY_START, 'tomorrow').target).toBe('On deck tomorrow')
     expect(upcomingGap(deck, tz, CALENDAR_DAY_START, 'later').target).toBe('On deck Sat Oct 31')
     expect(upcomingGap(deck, tz, CALENDAR_DAY_START).target).toBe('On deck Sat Oct 31')
   })

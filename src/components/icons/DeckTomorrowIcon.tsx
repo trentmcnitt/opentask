@@ -16,10 +16,13 @@ const HALO_WIDTH = 4.5
 const ARC = 'M6.5 8a6 6 0 0 1 11 0'
 const ARROWHEAD = 'm17.9 4.8-.4 3.2-3.1-.6'
 
-export function DeckTomorrowIcon(props: DeckIconProps) {
+export function DeckTomorrowIcon({ filled, ...props }: DeckIconProps & { filled?: boolean }) {
   return (
     <DeckLayersIcon
       {...props}
+      // Filled: on deck for tomorrow (its button lit, 2026-10-27), the top
+      // card solid like `OnDeckIcon`'s; the arc sits above it, haloed as ever.
+      filled={filled}
       idPrefix="deck-tomorrow"
       mark={[ARC, ARROWHEAD]}
       haloWidth={HALO_WIDTH}

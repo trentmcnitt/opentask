@@ -2354,9 +2354,10 @@ export function upcomingGap(
   dayStart: string,
   /**
    * The row's section (2026-10-25): a TOMORROW row's day goes without saying
-   * (it is tomorrow), so it says only the time — "Target 9:00 AM", or "On
-   * deck" for a deck (a deck has no time). A Later row (or no section) says
-   * the day as before. The deadline keeps its date either way.
+   * (it is tomorrow), so it says only the time — "Target 9:00 AM" — except a
+   * deck, which has no time: "On deck tomorrow" (2026-10-27, Trent: a bare
+   * "On deck" read as "on deck now?"). A Later row (or no section) says the
+   * day as before. The deadline keeps its date either way.
    */
   section?: UpcomingSection,
 ): { target: string | null; deadline: string | null } {
@@ -2371,7 +2372,7 @@ export function upcomingGap(
   let target: string | null = null
   const deck = task.on_deck_day ? parseDeckDay(task.on_deck_day, timezone) : null
   if (deck) {
-    target = tomorrow ? 'On deck' : `On deck ${deck.toFormat('ccc LLL d')}`
+    target = tomorrow ? 'On deck tomorrow' : `On deck ${deck.toFormat('ccc LLL d')}`
   } else if (task.due_at) {
     const time = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone).toFormat('h:mm a')
     // A Tomorrow row's 1:00 AM is tomorrow NIGHT's, not tonight's: said.

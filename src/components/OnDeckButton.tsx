@@ -68,6 +68,7 @@ export function OnDeckButton({
   iconClassName,
   boxClassName,
   replaces = null,
+  litFor = 'any',
 }: {
   task: Task
   timezone: string
@@ -83,6 +84,13 @@ export function OnDeckButton({
   iconClassName?: string
   /** The inner HOVER BOX (segment rows), as on `TargetTodayButton`. */
   boxClassName?: string
+  /**
+   * Which decks light it (`DECK_LIT`). `'any'` (the dashboard row, the Quick
+   * panel): any deck day — there it is the only deck button. `'today'`: a
+   * segment row, where On deck tomorrow lights for tomorrow's deck and a
+   * later deck lights neither (the meta names its day).
+   */
+  litFor?: 'any' | 'today'
 }) {
   // "Today" for a deck is the OpenTask day ("Day starts at" PR 2).
   const dayStart = useDayStart()
@@ -101,10 +109,11 @@ export function OnDeckButton({
     // The tap can take the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
-  const active = !!task.on_deck_day
-  // What a tap toggles: on deck for TODAY. A later deck wears the filled icon (the
-  // row's only sign of it) but is not "pressed" — a tap moves it to today.
-  const forToday = active && deckIsToday(task, timezone, new Date(), dayStart)
+  // What a tap toggles: on deck for TODAY. With `litFor` 'any' a later deck
+  // wears the filled icon too (the row's only sign of it) but is not
+  // "pressed" — a tap moves it to today.
+  const forToday = deckIsToday(task, timezone, new Date(), dayStart)
+  const active = litFor === 'today' ? forToday : !!task.on_deck_day
   const title = replaces
     ? `On deck — replaces ${replaces} · hold for a day`
     : forToday
@@ -157,7 +166,7 @@ export function OnDeckButton({
             title={title}
             className={cn(
               'flex shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md text-xs font-medium select-none [-webkit-touch-callout:none]',
-              active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              active ? DECK_LIT : 'text-muted-foreground hover:text-foreground',
               // Faded: it would replace a target (plan §5).
               replaces && 'opacity-45 hover:opacity-100',
               // On deck: a full-strength, FILLED icon (`DeckFace`) — no grey
@@ -185,6 +194,14 @@ export function OnDeckButton({
     </span>
   )
 }
+
+/**
+ * A LIT deck button's colour (2026-10-27, Trent: a solid black icon "looks
+ * unfinished"): the task queue's teal — the hue of "Today's pulls", where a
+ * deck lands — not bare foreground. Light and dark come from the token. On
+ * deck and On deck tomorrow (`TaskSegmentRow`) both wear it.
+ */
+export const DECK_LIT = 'text-(--segment-title-queue_today)'
 
 /**
  * The faded button's confirm (`ReplaceConfirm`), or the button alone when

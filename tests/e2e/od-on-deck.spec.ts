@@ -325,7 +325,7 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
   }
 })
 
-test('an Upcoming deck row reads "On deck" in Tomorrow (the day goes without saying), and Today on it is a pick', async ({
+test('an Upcoming deck row reads "On deck tomorrow" in Tomorrow, On deck tomorrow lit, and Today on it is a pick', async ({
   page,
 }) => {
   const ids: number[] = []
@@ -343,15 +343,20 @@ test('an Upcoming deck row reads "On deck" in Tomorrow (the day goes without say
     )
     await page.goto('/reminders')
     const r = segRow(segment(page, 'upcoming'), id)
-    // On deck tomorrow: in Upcoming's Tomorrow section (2026-10-25), whose
-    // rows say no day — "On deck" (a Later row says "On deck Mon Oct 26").
+    // On deck tomorrow: in Upcoming's Tomorrow section (2026-10-25). Its
+    // rows say only the time, but a deck has none: "On deck tomorrow"
+    // (2026-10-27; a Later row says "On deck Mon Oct 26").
     await expect(
       segment(page, 'upcoming')
         .locator('[data-upcoming-section="tomorrow"]')
         .locator(`[data-segment-task="${id}"]`),
     ).toBeVisible()
-    await expect(r.locator('[data-target-chip]')).toHaveText('On deck')
-    await expect(r.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
+    await expect(r.locator('[data-target-chip]')).toHaveText('On deck tomorrow')
+    // The button that names the day is the lit one (2026-10-27): On deck
+    // tomorrow, not On deck (today's).
+    await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute('data-deck-tomorrow-active', '')
+    await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(r.locator('[data-on-deck]')).not.toHaveAttribute('data-on-deck-active', '')
     // An Upcoming row reads like every segment row (2026-10-21).
     expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
     // A one-off with a picked target (2026-10-22, plan §5): On deck and On
@@ -402,6 +407,34 @@ test('an Upcoming deck row reads "On deck" in Tomorrow (the day goes without say
     await expect(w.locator('[data-target-today]')).toBeVisible()
     await expect(w.locator('[data-on-deck]')).toHaveCount(1)
     await expect(w.locator('[data-on-deck]')).not.toHaveAttribute('data-on-deck-active', '')
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+/**
+ * A LIT BUTTON TOGGLES OFF (2026-10-27, Trent): tomorrow's deck lights On deck
+ * tomorrow, and a tap on it takes the task off deck — as a tap on a lit On
+ * deck does for today's. One rule.
+ */
+test('a lit On deck tomorrow: a tap takes the task off deck', async ({ page }) => {
+  const ids: number[] = []
+  try {
+    const id = await create(page, { title: uniqueTitle('OD lit tomorrow') })
+    ids.push(id)
+    await deck(page, [id], await openTaskDay(page, 1))
+    sql(
+      'UPDATE tasks SET target_set_at = ?, last_considered_at = ?, segment_targeted_at = NULL WHERE id = ?',
+      daysFromNow(-10),
+      daysFromNow(-10),
+      id,
+    )
+    await page.goto('/reminders')
+    const button = segRow(segment(page, 'upcoming'), id).locator('[data-deck-tomorrow]')
+    await expect(button).toHaveAttribute('data-deck-tomorrow-active', '')
+    await expect(button).toHaveAttribute('title', /tap to take off/)
+    await button.click()
+    await expect.poll(() => deckOf(page, id)).toBeNull()
   } finally {
     await trash(page, ids)
   }
@@ -896,16 +929,16 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     )
     await page.reload()
     const u = segRow(segment(page, 'upcoming'), id)
-    // On deck tomorrow: Upcoming's Tomorrow section (2026-10-25), whose rows
-    // say no day — "On deck"; a repeating row's chip goes on with its
-    // schedule ("· every Fri at …").
+    // On deck tomorrow: Upcoming's Tomorrow section (2026-10-25), "On deck
+    // tomorrow"; a repeating row's chip goes on with its schedule ("· every
+    // Fri at …").
     await expect(
       segment(page, 'upcoming')
         .locator('[data-upcoming-section="tomorrow"]')
         .locator(`[data-segment-task="${id}"]`),
     ).toBeVisible()
-    await expect(u.locator('[data-target-chip]')).toHaveText(/^On deck · every /)
-    await expect(u.locator('[data-on-deck]')).toHaveAttribute('data-on-deck-active', '')
+    await expect(u.locator('[data-target-chip]')).toHaveText(/^On deck tomorrow · every /)
+    await expect(u.locator('[data-deck-tomorrow]')).toHaveAttribute('data-deck-tomorrow-active', '')
     await page.screenshot({ path: '.tmp/od-repeating-upcoming-1280.png' })
     // Faded on a decked row, it asks first (2026-10-22, plan §5).
     await u.locator('[data-target-today]').click()
