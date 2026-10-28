@@ -52,7 +52,8 @@ final class RowCornerTests: XCTestCase {
         XCTAssertEqual(RowCorner.dotStyle(.eventually), S(radius: 2.25, opacity: 0.42, ring: false))
         // Unset: a closed hollow ring, the Weeks dot's 6pt across (r 2.5 + a
         // 1pt stroke) — no dashes since 2026-10-28.
-        XCTAssertEqual(RowCorner.dotStyle(nil), S(radius: 2.5, opacity: 0.8, ring: true), "unset: a ring, Weeks size")
+        XCTAssertEqual(RowCorner.dotStyle(nil), S(radius: 2.5, opacity: 0.36, ring: true), "unset: a ring, Weeks size")
+        XCTAssertLessThan(RowCorner.dotStyle(nil).opacity, RowCorner.dotStyle(.eventually).opacity, "unset is quieter than any set dot")
         XCTAssertEqual(RowCorner.dotStyle(nil).radius * 2 + RowCorner.unsetStroke, RowCorner.dotStyle(.weeks).radius * 2)
         // Each step smaller and fainter than the one before.
         let filled = TaskHorizon.allCases.map(RowCorner.dotStyle)
