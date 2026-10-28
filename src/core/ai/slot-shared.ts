@@ -114,3 +114,17 @@ export function checkCircuitBreaker(
     newTime: now,
   }
 }
+
+/**
+ * A warm slot could not take the query: dead (its backoff not yet run out, or
+ * the re-init just failed) or not started. The task was never sent, so the
+ * pipeline does not spend one of its attempts on it — it waits for the slot
+ * (`handleFailure` in enrichment.ts, 2026-10-28). It lives here, not in the
+ * slot module, so a test that mocks that module still has the class.
+ */
+export class SlotUnavailableError extends Error {
+  constructor(label: string, state: string) {
+    super(`${label} slot is ${state} — cannot process query`)
+    this.name = 'SlotUnavailableError'
+  }
+}

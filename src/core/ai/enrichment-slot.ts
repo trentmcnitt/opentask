@@ -9,14 +9,21 @@
  *
  * Concurrency: FIFO queue — a busy slot queues the caller, so every request
  * gets its own answer. The slot pins the enrichment JSON schema, so its
- * warmup is checked by shape (validateSchemaWarmup). Errors THROW, and the
- * enrichment pipeline retries.
+ * warmup is a real enrichment request (`enrichmentWarmupProbe`), checked by
+ * shape (validateSchemaWarmup). Errors THROW, and the enrichment pipeline
+ * retries — a slot that can't take the query (`SlotUnavailableError`) without
+ * spending the task's attempts.
  */
 
 import { logAIActivity } from './activity'
 import { log } from '@/lib/logger'
-import { ENRICHMENT_SYSTEM_PROMPT } from './prompts'
-import { type BaseSlotStats, validateSchemaWarmup, parseEnvInt } from './slot-shared'
+import { buildEnrichmentUserPrompt, ENRICHMENT_SYSTEM_PROMPT } from './prompts'
+import {
+  type BaseSlotStats,
+  validateSchemaWarmup,
+  parseEnvInt,
+  SlotUnavailableError,
+} from './slot-shared'
 import { EnrichmentResultSchema } from './types'
 import { resolveSDKModel } from './models'
 import { createWarmSlot, fifoQueuePolicy, type FifoQueueState } from './warm-slot'
@@ -32,6 +39,29 @@ function getModel(): string {
 
 function getQueryTimeout(): number {
   return parseEnvInt(process.env.OPENTASK_AI_QUERY_TIMEOUT_MS, DEFAULT_QUERY_TIMEOUT_MS)
+}
+
+/**
+ * The WARMUP PROBE (2026-10-28): an ordinary enrichment request on an invented
+ * task, in the prompt builder's own words, so the warmup asks exactly what
+ * the schema can answer. The slot used "Respond with exactly: READY" against
+ * its enforced schema — a request at odds with itself — and on prod the model
+ * intermittently answered it with a refusal (`stop_reason` "refusal", no
+ * structured output): the slot died at birth, and 5 tasks went ai-failed in
+ * two days. The answer is a real enrichment object, about the size the READY
+ * warmup already produced (the CLI made the model fill the schema anyway).
+ * No user's data: a fixed zone, the default times, one project.
+ */
+export function enrichmentWarmupProbe(): string {
+  return buildEnrichmentUserPrompt({
+    timezone: 'UTC',
+    morningTime: '09:00',
+    wakeTime: '07:00',
+    sleepTime: '22:00',
+    projects: [{ id: 1, name: 'Inbox' }],
+    taskText: 'water the plants',
+    dayStart: '03:00',
+  })
 }
 
 export interface EnrichmentSlotStats extends BaseSlotStats {
@@ -51,8 +81,9 @@ const slot = createWarmSlot<{ taskId: number | null; inputText: string | null },
     maxTurns: 50,
     getSystemPrompt: () => ENRICHMENT_SYSTEM_PROMPT,
     getOutputSchema: () => EnrichmentResultSchema,
+    getWarmupMessage: enrichmentWarmupProbe,
     // This slot pins a JSON schema, so the warmup answer comes back as an
-    // object rather than the word READY — see validateSchemaWarmup.
+    // object — see validateSchemaWarmup.
     validateWarmup: (r) => validateSchemaWarmup(r.text, r.structuredOutput, EnrichmentResultSchema),
   },
   fifoQueuePolicy,
@@ -91,9 +122,7 @@ export async function enrichmentQuery(
   if (slot.getState() === 'dead') {
     await slot.init()
   }
-  if (!slot.isUsable()) {
-    throw new Error(`Enrichment slot is ${slot.getState()} — cannot process query`)
-  }
+  if (!slot.isUsable()) throw new SlotUnavailableError('Enrichment', slot.getState())
 
   try {
     const result = await slot.send(prompt, timeoutMs, {

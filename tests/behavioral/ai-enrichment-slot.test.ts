@@ -18,6 +18,7 @@ process.env.OPENTASK_AI_ENRICHMENT_SDK_MODEL = 'test-model'
 vi.mock('@/lib/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
+import { log } from '@/lib/logger'
 
 vi.mock('@/core/ai/activity', () => ({
   logAIActivity: vi.fn(),
@@ -43,6 +44,7 @@ import {
   shutdownEnrichmentSlot,
   _resetSlotForTesting,
 } from '@/core/ai/enrichment-slot'
+import { SlotUnavailableError } from '@/core/ai/slot-shared'
 
 // --- Setup ---
 
@@ -210,6 +212,40 @@ describe('enrichment slot initialization', () => {
     await initPromise
 
     expect(getEnrichmentSlotStats().state).toBe('dead')
+  })
+
+  // The WARMUP PROBE (2026-10-28): "Respond with exactly: READY" against the
+  // enforced schema was answered with a refusal, intermittently, on prod. The
+  // warmup is now an ordinary enrichment request the schema can answer.
+  test('the warmup is an enrichment request on an invented task, not READY', async () => {
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+    const { prompt } = mockQuery.mock.calls[0][0] as { prompt: AsyncIterable<unknown> }
+    const first = await prompt[Symbol.asyncIterator]().next()
+    const sent = JSON.stringify(first.value)
+    expect(sent).toContain('water the plants')
+    expect(sent).not.toContain('Respond with exactly: READY')
+    currentStream.emit(makeSuccessResult('READY'))
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+  })
+
+  // "warmup validation failed … : null" sent every diagnosis to the SDK's
+  // debug file; the log line now says what came back.
+  test('a refused warmup is named in the log', async () => {
+    const initPromise = initEnrichmentSlot()
+    await waitForStream()
+    currentStream.emit({ ...makeSuccessResult(''), stop_reason: 'refusal' })
+    await vi.advanceTimersByTimeAsync(0)
+    await initPromise
+
+    expect(getEnrichmentSlotStats().state).toBe('dead')
+    const line = vi
+      .mocked(log.error)
+      .mock.calls.find(
+        (c) => String(c[0]).startsWith('ai') && String(c[1]).includes('warmup validation failed'),
+      )
+    expect(line?.[2]).toBe('subtype success, stop refusal, no structured output, text (none)')
   })
 
   test('double init when already available is a no-op', async () => {
@@ -768,8 +804,9 @@ describe('dead-state recovery', () => {
 
     const queryCallsBefore = mockQuery.mock.calls.length
 
-    // Don't advance timers — slot is still in cooldown
-    await expect(enrichmentQuery('test')).rejects.toThrow('dead')
+    // Don't advance timers — slot is still in cooldown. The error is typed:
+    // the pipeline spends no attempt on it (2026-10-28).
+    await expect(enrichmentQuery('test')).rejects.toThrow(SlotUnavailableError)
 
     // No new subprocess should have been spawned
     expect(mockQuery.mock.calls.length).toBe(queryCallsBefore)

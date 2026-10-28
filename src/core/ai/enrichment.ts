@@ -11,6 +11,10 @@
  *     → Success: remove `ai-to-process`, apply enrichment, and — for a task
  *       added in the last 15 minutes — one quiet "AI finished" push
  *       (`announceEnrichmentFinished`, src/core/notifications/enrichment-notify.ts)
+ *     → Slot unavailable (`SlotUnavailableError`: the warm slot dead or not
+ *       started, the task never sent): keep `ai-to-process`, spend no
+ *       attempt, and wait for the slot — up to SLOT_WAIT_LIMIT_MS, then
+ *       `ai-failed` as below (2026-10-28)
  *     → Failure attempt 1: keep `ai-to-process` (retry on next cycle)
  *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`, and one
  *       quiet "AI couldn't process" push — however old the task is
@@ -103,6 +107,7 @@ import { applyFieldChanges, collectFieldChanges, settleQuotaPeriod } from '@/cor
 import type { FieldChangesInput } from '@/core/tasks/helpers/collect-field-changes'
 import type { EnrichmentResult } from './types'
 import { enrichmentQuery } from './enrichment-slot'
+import { SlotUnavailableError } from './slot-shared'
 import { enrichmentApiQuery } from './enrichment-api'
 import { resolveFeatureAIConfig } from './models'
 import { getUserFeatureModes, resolveFeatureTimeout } from './user-context'
@@ -139,6 +144,8 @@ interface EnrichmentPipelineGlobals {
   processingTasks: Set<number>
   /** Retry tracking (taskId → attempt count). Resets on restart. */
   retryCount: Map<number, number>
+  /** When each task first found the slot unavailable (taskId → ms). Resets on restart. */
+  slotWaitSince: Map<number, number>
   circuitBreaker: CircuitBreakerState
 }
 
@@ -156,14 +163,28 @@ if (!globalForPipeline.__enrichmentPipelineState) {
     processing: false,
     processingTasks: new Set<number>(),
     retryCount: new Map<number, number>(),
+    slotWaitSince: new Map<number, number>(),
     circuitBreaker: { failureTimestamps: [], pausedUntil: null },
   }
 }
 
 const pipeline = globalForPipeline.__enrichmentPipelineState
-const { processingTasks, retryCount, circuitBreaker } = pipeline
+// A dev server's hot reload keeps the globals of the code before this field.
+pipeline.slotWaitSince ??= new Map<number, number>()
+const { processingTasks, retryCount, slotWaitSince, circuitBreaker } = pipeline
 
 const MAX_ATTEMPTS = 2
+
+/**
+ * How long a task waits for an UNAVAILABLE warm slot before it is marked
+ * `ai-failed` (2026-10-28). Above the slot's longest re-init backoff (10
+ * minutes, `REINIT_BACKOFF_SCHEDULE_MS`), so a slot that dies and comes back
+ * gets every waiting task done. Before this, a dead slot failed the on-demand
+ * attempt at once and the next minute's queue retry too — both inside one
+ * backoff — and five of Trent's tasks went `ai-failed` without the model ever
+ * seeing them.
+ */
+export const SLOT_WAIT_LIMIT_MS = 30 * 60_000
 
 /**
  * Circuit breaker state.
@@ -222,6 +243,7 @@ export function _resetCircuitBreaker(): void {
 export function _resetProcessingState(): void {
   processingTasks.clear()
   retryCount.clear()
+  slotWaitSince.clear()
   pipeline.processing = false
 }
 
@@ -264,34 +286,100 @@ function removeLabel(taskId: number, label: string): void {
 }
 
 /**
+ * What became of a failed enrichment: `retry` (an attempt spent, the next
+ * cycle tries again), `waiting` (the slot was unavailable — no attempt spent),
+ * or `failed` (this call marked the task `ai-failed`).
+ */
+export type FailureOutcome = 'retry' | 'waiting' | 'failed'
+
+/**
  * Handle enrichment failure for a task.
  *
- * Tracks attempts in-memory. On first failure, keeps `ai-to-process` for retry.
- * On second failure, swaps `ai-to-process` → `ai-failed` — the only place that
- * label is ever written.
+ * An UNAVAILABLE SLOT (`SlotUnavailableError`) spends no attempt: the task
+ * keeps `ai-to-process` and the queue tries it again each minute, so it is
+ * done as soon as the slot is back — unless it has waited SLOT_WAIT_LIMIT_MS,
+ * when it is marked `ai-failed` like any other.
  *
- * Returns true when this attempt marked the task `ai-failed`, so the caller
- * announces it (`announceEnrichmentFailed`) once its own cleanup is done —
- * outside its error handling, as with the success push.
+ * Any other error spends an attempt, tracked in memory. On the first, keeps
+ * `ai-to-process` for retry; on the second, swaps `ai-to-process` →
+ * `ai-failed` — with the wait limit above, the only places that label is ever
+ * written.
+ *
+ * `failed` tells the caller to announce it (`announceEnrichmentFailed`) once
+ * its own cleanup is done — outside its error handling, as with the success
+ * push. The caller logs the error itself, except for `waiting`, which this
+ * logs once per task.
  */
-function handleFailure(taskId: number): boolean {
+function handleFailure(taskId: number, err: unknown, now = Date.now()): FailureOutcome {
+  if (err instanceof SlotUnavailableError) {
+    const since = slotWaitSince.get(taskId)
+    if (since === undefined) {
+      slotWaitSince.set(taskId, now)
+      log.info('ai', `Task ${taskId}: ${err.message} — waiting for it (no attempt spent)`)
+      return 'waiting'
+    }
+    if (now - since < SLOT_WAIT_LIMIT_MS) return 'waiting'
+    slotWaitSince.delete(taskId)
+    retryCount.delete(taskId)
+    swapLabel(taskId, 'ai-to-process', 'ai-failed')
+    log.warn(
+      'ai',
+      `Task ${taskId}: the enrichment slot was unavailable for ${SLOT_WAIT_LIMIT_MS / 60_000} minutes — marked ai-failed`,
+    )
+    return 'failed'
+  }
+
   const attempts = (retryCount.get(taskId) ?? 0) + 1
   retryCount.set(taskId, attempts)
 
   if (attempts >= MAX_ATTEMPTS) {
     swapLabel(taskId, 'ai-to-process', 'ai-failed')
     retryCount.delete(taskId)
+    slotWaitSince.delete(taskId)
     log.warn(
       'ai',
       `Task ${taskId} enrichment failed after ${MAX_ATTEMPTS} attempts — marked ai-failed`,
     )
-    return true
+    return 'failed'
   }
   log.info(
     'ai',
     `Task ${taskId} enrichment failed (attempt ${attempts}/${MAX_ATTEMPTS}) — will retry`,
   )
-  return false
+  return 'retry'
+}
+
+/**
+ * A queue attempt's failure: handled (`handleFailure`), and — unless the task
+ * is only waiting for the slot, which never had it — logged and counted
+ * towards the circuit breaker.
+ */
+function queueFailure(taskId: number, err: unknown): FailureOutcome {
+  const result = handleFailure(taskId, err)
+  if (result === 'waiting') return result
+  log.error('ai', `Enrichment failed for task ${taskId}:`, err)
+  recordFailure()
+  return result
+}
+
+/** The queue cycle's log line: "Queue cycle: 0 processed, 1 failed, 0 skipped, 2 waiting for the slot (3 picked up)". */
+function cycleSummary(
+  processed: number,
+  failures: Record<FailureOutcome, number>,
+  skipped: number,
+  pickedUp: number,
+): string {
+  const waiting = failures.waiting ? `, ${failures.waiting} waiting for the slot` : ''
+  return (
+    `Queue cycle: ${processed} processed, ${failures.retry + failures.failed} failed, ` +
+    `${skipped} skipped${waiting} (${pickedUp} picked up)`
+  )
+}
+
+/** A task enriched: its failure tracking goes. */
+function clearFailures(taskId: number): void {
+  retryCount.delete(taskId)
+  slotWaitSince.delete(taskId)
 }
 
 /**
@@ -392,8 +480,9 @@ export async function processEnrichmentQueue(): Promise<void> {
     if (fairQueue.length === 0) return
 
     let processed = 0
-    let failed = 0
     let skipped = 0
+    // Failures by outcome: `waiting` is not one (`queueFailure`).
+    const failures: Record<FailureOutcome, number> = { retry: 0, failed: 0, waiting: 0 }
 
     for (const picked of fairQueue) {
       // `picked` is from the SELECT at the top of the cycle, and every row
@@ -413,7 +502,7 @@ export async function processEnrichmentQueue(): Promise<void> {
         const outcome = await enrichTask(row)
         const enrichedFields = outcome ?? []
         modelRan = outcome !== null
-        retryCount.delete(row.id)
+        clearFailures(row.id)
         processed++
         succeeded = true
         // The queue normally only refreshes tabs silently — the toast belongs to
@@ -426,10 +515,9 @@ export async function processEnrichmentQueue(): Promise<void> {
         // count, often by a Shortcut, and the cron is what usually finishes it.
         if (isReminderOrQuota(row)) emitEnrichmentComplete(row.id, row.user_id, enrichedFields)
       } catch (err) {
-        log.error('ai', `Enrichment failed for task ${row.id}:`, err)
-        markedFailed = handleFailure(row.id)
-        failed++
-        recordFailure()
+        const result = queueFailure(row.id, err)
+        failures[result]++
+        markedFailed = result === 'failed'
       } finally {
         processingTasks.delete(row.id)
       }
@@ -451,11 +539,7 @@ export async function processEnrichmentQueue(): Promise<void> {
       if (!succeeded && isCircuitBreakerOpen()) break
     }
 
-    log.info(
-      'ai',
-      `Queue cycle: ${processed} processed, ${failed} failed, ${skipped} skipped` +
-        ` (${fairQueue.length} picked up)`,
-    )
+    log.info('ai', cycleSummary(processed, failures, skipped, fairQueue.length))
   } finally {
     pipeline.processing = false
   }
@@ -572,11 +656,13 @@ async function enrichSingleTaskAsSystem(taskId: number, userId: number): Promise
     const outcome = await enrichTask(row)
     enrichedFields = outcome ?? []
     modelRan = outcome !== null
-    retryCount.delete(taskId)
+    clearFailures(taskId)
     enrichmentSucceeded = true
   } catch (err) {
-    log.error('ai', `On-demand enrichment failed for task ${row.id}:`, err)
-    markedFailed = handleFailure(taskId)
+    const result = handleFailure(taskId, err)
+    if (result !== 'waiting')
+      log.error('ai', `On-demand enrichment failed for task ${row.id}:`, err)
+    markedFailed = result === 'failed'
   } finally {
     processingTasks.delete(taskId)
   }

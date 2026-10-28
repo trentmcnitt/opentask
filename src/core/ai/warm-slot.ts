@@ -132,6 +132,14 @@ export interface WarmSlotGlobals<TOp, S> {
   totalRecycles: number
   lastRequestAt: Date | null
   warmupResolver: ((ok: boolean) => void) | null
+  /**
+   * Why the current init's warmup failed, for its log line and error notice
+   * (`describeResult`): "subtype success, stop refusal, no structured output,
+   * text …". It was `null` before (2026-10-28), and the log said only
+   * "warmup validation failed … : null", which sent every diagnosis to the
+   * SDK's own debug file.
+   */
+  warmupFailure: string | null
   // Single-flight guard for init(). The public `state` field can read
   // 'initializing' from two paths (recycleSlot pre-set it, or init itself is
   // running) — this flag distinguishes them so concurrent callers don't spawn
@@ -206,6 +214,14 @@ export interface WarmSlotConfig {
   getSystemPrompt: () => string
   /** When set, the subprocess answers as JSON matching this schema. */
   getOutputSchema?: () => z.ZodType
+  /**
+   * The warmup message (default `WARMUP_MESSAGE`, "Respond with exactly:
+   * READY"). A slot that pins a schema sends a request the schema can answer
+   * instead (2026-10-28): "READY" against an enforced schema asks for two
+   * things at once, and the enrichment slot's warmups were answered with a
+   * refusal, intermittently, on prod (5 tasks ai-failed in two days).
+   */
+  getWarmupMessage?: () => string
   /** Accept or reject the first (warmup) result. */
   validateWarmup: (result: SlotResult) => boolean
 }
@@ -386,6 +402,7 @@ export function createWarmSlot<TOp, S>(
       totalRecycles: 0,
       lastRequestAt: null,
       warmupResolver: null,
+      warmupFailure: null,
       initInProgress: false,
       shutdownInitiated: false,
       currentOp: null,
@@ -517,12 +534,13 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
   try {
     g.slot.state = 'initializing'
     g.slot.resultCount = 0
+    g.warmupFailure = null
     policy.onFreshSubprocess(ctx)
 
     const channel = createMessageChannel()
     g.slot.channel = channel
 
-    channel.push(WARMUP_MESSAGE)
+    channel.push(config.getWarmupMessage?.() ?? WARMUP_MESSAGE)
     log.debug('ai', `${label}: warmup sent`)
 
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
@@ -555,7 +573,12 @@ async function init<TOp, S>(rt: Runtime<TOp, S>): Promise<void> {
     if (abandoned()) return
 
     if (!warmupOk) {
-      markInitFailure(rt, 'warmup validation failed', null)
+      markInitFailure(
+        rt,
+        'warmup validation failed',
+        g.warmupFailure ??
+          `no warmup result (timed out after ${WARMUP_TIMEOUT_MS}ms, or the stream ended)`,
+      )
       return
     }
 
@@ -694,13 +717,29 @@ function parseResultMessage(message: { subtype?: string }): SlotResult {
   return result
 }
 
+/**
+ * An SDK `result` message in a few words, for a failed warmup's log line:
+ * "subtype success, stop refusal, no structured output, text (none)".
+ */
+function describeResult(message: { subtype?: string; stop_reason?: string | null }): string {
+  const { structuredOutput, text } = parseResultMessage(message)
+  return [
+    `subtype ${message.subtype ?? '?'}`,
+    `stop ${message.stop_reason ?? '?'}`,
+    structuredOutput ? 'structured output' : 'no structured output',
+    `text ${text ? JSON.stringify(text.slice(0, 80)) : '(none)'}`,
+  ].join(', ')
+}
+
 /** Check the first (warmup) result and hand the verdict to the waiting init. */
-function settleWarmup<TOp, S>({ g, label, config }: Runtime<TOp, S>, result: SlotResult): boolean {
+function settleWarmup<TOp, S>(
+  { g, label, config }: Runtime<TOp, S>,
+  result: SlotResult,
+  detail: string,
+): boolean {
   const warmupOk = config.validateWarmup(result)
-  log.debug(
-    'ai',
-    `${label}: warmup ${warmupOk ? 'OK' : 'FAILED'} (text: ${result.text?.slice(0, 50)}, structured: ${result.structuredOutput ? Object.keys(result.structuredOutput).join(',') : 'none'})`,
-  )
+  if (warmupOk) log.debug('ai', `${label}: warmup OK (${detail})`)
+  else g.warmupFailure = detail
   g.warmupResolver?.(warmupOk)
   g.warmupResolver = null
   return warmupOk
@@ -735,13 +774,17 @@ async function consumeStream<TOp, S>(
       // Stale consumer guard
       if (g.slot.generation !== myGeneration) return
 
-      const message = iterResult.value as { type: string; subtype?: string }
+      const message = iterResult.value as {
+        type: string
+        subtype?: string
+        stop_reason?: string | null
+      }
       if (message.type !== 'result') continue
       resultCount++
       const result = parseResultMessage(message)
 
       if (resultCount === 1) {
-        warmedUp = settleWarmup(rt, result)
+        warmedUp = settleWarmup(rt, result, describeResult(message))
         if (!warmedUp) break
         continue
       }
@@ -766,6 +809,7 @@ async function consumeStream<TOp, S>(
   } catch (err) {
     if (g.slot.generation !== myGeneration) return
     log.error('ai', `${label} stream error:`, err)
+    if (!warmedUp) g.warmupFailure = `stream error before warmup: ${String(err).slice(0, 160)}`
     g.slot.deliverResult?.(null)
   } finally {
     if (g.slot.generation !== myGeneration) {
