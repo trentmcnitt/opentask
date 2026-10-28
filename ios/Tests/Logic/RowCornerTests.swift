@@ -46,12 +46,14 @@ final class RowCornerTests: XCTestCase {
     /// `HORIZON_DOT` / `HORIZON_DOT_UNSET`, exact values shared with the web.
     func testDotSizesAndOpacitiesMatchTheWeb() {
         typealias S = RowCorner.DotStyle
-        XCTAssertEqual(RowCorner.dotStyle(.days), S(radius: 4, opacity: 1, dashed: false))
-        XCTAssertEqual(RowCorner.dotStyle(.weeks), S(radius: 3, opacity: 0.7, dashed: false))
-        XCTAssertEqual(RowCorner.dotStyle(.months), S(radius: 2.5, opacity: 0.55, dashed: false))
-        XCTAssertEqual(RowCorner.dotStyle(.eventually), S(radius: 2.25, opacity: 0.42, dashed: false))
-        XCTAssertEqual(RowCorner.dotStyle(nil), S(radius: 3, opacity: 0.8, dashed: true), "unset: dashed Weeks size")
-        XCTAssertEqual(RowCorner.unsetDash, [1.6, 1.3])
+        XCTAssertEqual(RowCorner.dotStyle(.days), S(radius: 4, opacity: 1, ring: false))
+        XCTAssertEqual(RowCorner.dotStyle(.weeks), S(radius: 3, opacity: 0.7, ring: false))
+        XCTAssertEqual(RowCorner.dotStyle(.months), S(radius: 2.5, opacity: 0.55, ring: false))
+        XCTAssertEqual(RowCorner.dotStyle(.eventually), S(radius: 2.25, opacity: 0.42, ring: false))
+        // Unset: a closed hollow ring, the Weeks dot's 6pt across (r 2.5 + a
+        // 1pt stroke) — no dashes since 2026-10-28.
+        XCTAssertEqual(RowCorner.dotStyle(nil), S(radius: 2.5, opacity: 0.8, ring: true), "unset: a ring, Weeks size")
+        XCTAssertEqual(RowCorner.dotStyle(nil).radius * 2 + RowCorner.unsetStroke, RowCorner.dotStyle(.weeks).radius * 2)
         // Each step smaller and fainter than the one before.
         let filled = TaskHorizon.allCases.map(RowCorner.dotStyle)
         XCTAssertEqual(filled.map(\.radius), filled.map(\.radius).sorted(by: >))

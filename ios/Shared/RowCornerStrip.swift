@@ -23,7 +23,7 @@ struct RowCornerStrip: View {
     let dot: TaskHorizon??
     let tab: RowCorner.PriorityTab?
 
-    /// `dot`: nil = no dot; `.some(nil)` = the unset (dashed) dot.
+    /// `dot`: nil = no dot; `.some(nil)` = the unset ring.
     init(dot: TaskHorizon??, tab: RowCorner.PriorityTab?) {
         self.dot = dot
         self.tab = tab
@@ -94,7 +94,7 @@ struct RowCornerStrip: View {
 }
 
 /// The R1 "perspective dot" (`HorizonDotMark` on the web): one dot that
-/// shrinks and fades with distance, a dashed Weeks-size outline for unset.
+/// shrinks and fades with distance, a hollow Weeks-size ring for unset.
 /// Sizes and opacities are `RowCorner.dotStyle`, drawn in the primary colour
 /// at 80% (the web's `text-foreground/80`), so it follows the theme.
 struct HorizonDotMark: View {
@@ -104,16 +104,10 @@ struct HorizonDotMark: View {
         let style = RowCorner.dotStyle(horizon)
         let diameter = CGFloat(style.radius * 2)
         Group {
-            if style.dashed {
+            if style.ring {
                 Circle()
-                    .stroke(
-                        Color.primary.opacity(0.8),
-                        style: StrokeStyle(
-                            lineWidth: CGFloat(RowCorner.unsetStroke),
-                            dash: RowCorner.unsetDash.map { CGFloat($0) }
-                        )
-                    )
-                    // The web strokes the r=3 circle on its centre line.
+                    .stroke(Color.primary.opacity(0.8), lineWidth: CGFloat(RowCorner.unsetStroke))
+                    // The web strokes the r=2.5 circle on its centre line.
                     .frame(width: diameter, height: diameter)
             } else {
                 Circle()

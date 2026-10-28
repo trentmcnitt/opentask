@@ -71,25 +71,25 @@ enum RowCorner {
     struct DotStyle: Equatable {
         let radius: Double
         let opacity: Double
-        /// Unset only: drawn as a dashed outline, not a fill.
-        let dashed: Bool
+        /// Unset only: drawn as a hollow ring, not a fill.
+        let ring: Bool
     }
 
     static func dotStyle(_ horizon: TaskHorizon?) -> DotStyle {
         switch horizon {
-        case .days: return DotStyle(radius: 4, opacity: 1, dashed: false)
-        case .weeks: return DotStyle(radius: 3, opacity: 0.7, dashed: false)
-        case .months: return DotStyle(radius: 2.5, opacity: 0.55, dashed: false)
-        case .eventually: return DotStyle(radius: 2.25, opacity: 0.42, dashed: false)
-        // Unset (read as weeks, never shown as set): a dashed outline the
-        // size of the Weeks dot — `HORIZON_DOT_UNSET`, dash "1.6 1.3",
-        // stroke 1, opacity 0.8.
-        case nil: return DotStyle(radius: 3, opacity: 0.8, dashed: true)
+        case .days: return DotStyle(radius: 4, opacity: 1, ring: false)
+        case .weeks: return DotStyle(radius: 3, opacity: 0.7, ring: false)
+        case .months: return DotStyle(radius: 2.5, opacity: 0.55, ring: false)
+        case .eventually: return DotStyle(radius: 2.25, opacity: 0.42, ring: false)
+        // Unset (read as weeks, never shown as set): a hollow ring the size of
+        // the Weeks dot — `HORIZON_DOT_UNSET`, r 2.5 + stroke 1 = 6pt across,
+        // opacity 0.8. Dashed (r 3, "1.6 1.3") until 2026-10-28: on a 1x
+        // monitor the dashes broke up, and the ring was Trent's pick.
+        case nil: return DotStyle(radius: 2.5, opacity: 0.8, ring: true)
         }
     }
 
-    /// The unset outline's dash pattern and stroke, `HORIZON_DOT_UNSET`.
-    static let unsetDash: [Double] = [1.6, 1.3]
+    /// The unset ring's stroke, `HORIZON_DOT_UNSET`.
     static let unsetStroke: Double = 1
 
     /// The box the dot sits in — the web's 12×12 `viewBox`.
