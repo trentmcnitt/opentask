@@ -540,6 +540,15 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE api_tokens ADD COLUMN last_used_at TEXT DEFAULT NULL')
   }
 
+  // Before the backfill, which would re-register a task's leftover copy.
+  const retired = retireAiLockedLabel(database)
+  if (retired.registry > 0 || retired.tasks > 0) {
+    log.info(
+      'db',
+      `ai-locked retired (2026-10-28): ${retired.registry} registry row(s), ` +
+        `stripped from ${retired.tasks} task(s)`,
+    )
+  }
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
   // After the periods are backfilled: the rollover time is the first period.
@@ -839,6 +848,37 @@ function backfillTimeSlots(database: Database.Database): void {
   })
 
   run()
+}
+
+/**
+ * `ai-locked` RETIRED (2026-10-28, Trent: "let's just get rid of AI locked as
+ * a concept"). It only made enrichment skip a task, and no task carried it.
+ * The backfill seeded it into every user's registry as system vocabulary;
+ * this deletes it there (Trent approved all four accounts) and strips it from
+ * any task that still has it, so the label is simply gone. Runs BEFORE the
+ * backfill, which would otherwise re-register a task's copy as a domain label.
+ * Idempotent: a second run finds nothing.
+ */
+export function retireAiLockedLabel(database: Database.Database): {
+  registry: number
+  tasks: number
+} {
+  const run = database.transaction(() => {
+    const rows = database
+      .prepare(
+        `SELECT id, labels FROM tasks
+         WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'ai-locked')`,
+      )
+      .all() as { id: number; labels: string }[]
+    const update = database.prepare('UPDATE tasks SET labels = ? WHERE id = ?')
+    for (const row of rows) {
+      const labels = (JSON.parse(row.labels) as string[]).filter((l) => l !== 'ai-locked')
+      update.run(JSON.stringify(labels), row.id)
+    }
+    const registry = database.prepare("DELETE FROM labels WHERE name = 'ai-locked'").run().changes
+    return { registry, tasks: rows.length }
+  })
+  return run()
 }
 
 /**

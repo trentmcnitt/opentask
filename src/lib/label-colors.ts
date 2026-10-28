@@ -67,7 +67,6 @@ export const LABEL_COLOR_NAMES = Object.keys(LABEL_COLORS) as LabelColor[]
 /** Built-in colors for internal AI labels — always applied regardless of user config. */
 const AI_LABEL_COLORS: Record<string, string> = {
   'ai-failed': `${LABEL_COLORS.red.bg} ${LABEL_COLORS.red.text}`,
-  'ai-locked': `${LABEL_COLORS.purple.bg} ${LABEL_COLORS.purple.text}`,
 }
 
 /**

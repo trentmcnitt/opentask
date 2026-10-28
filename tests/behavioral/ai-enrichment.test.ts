@@ -6,7 +6,6 @@
  * - Tasks created with title-only get the `ai-to-process` label when AI is enabled
  * - Tasks created with fields set skip AI enrichment
  * - The enrichment queue picks up tasks with `ai-to-process` label
- * - ai-locked tasks are skipped and have ai-to-process removed
  * - Failed enrichments use retry logic (ai-failed after 2 attempts)
  * - In-memory processing guard prevents double-processing
  * - Circuit breaker trips after rapid failures and resets after pause
@@ -213,33 +212,6 @@ describe('AI enrichment trigger (label-based)', () => {
 
     const fromDb = getTaskById(task.id)
     expect(fromDb!.labels).not.toContain('ai-to-process')
-  })
-})
-
-describe('processEnrichmentQueue ai-locked skip', () => {
-  beforeEach(() => clearPendingEnrichment())
-
-  test('ai-locked task has ai-to-process removed when processed through the queue', async () => {
-    const db = getDb()
-
-    const task = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'do not enrich me' },
-    })
-
-    expect(getTaskById(task.id)!.labels).toContain('ai-to-process')
-
-    // Manually add ai-locked label alongside ai-to-process
-    const labels = JSON.stringify(['ai-to-process', 'ai-locked'])
-    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(labels, task.id)
-
-    await processEnrichmentQueue()
-
-    const after = getTaskById(task.id)
-    expect(after!.labels).not.toContain('ai-to-process')
-    expect(after!.labels).toContain('ai-locked')
-    expect(after!.title).toBe('do not enrich me')
   })
 })
 
@@ -453,25 +425,6 @@ describe('enrichSingleTask (fire-and-forget)', () => {
     expect(mockEnrichmentQuery).not.toHaveBeenCalled()
     const after = getTaskById(task.id)!
     expect(after.title).toBe('Explicit task')
-  })
-
-  test('skips task with ai-locked label', async () => {
-    const db = getDb()
-    const task = createTask({
-      userId: TEST_USER_ID,
-      userTimezone: TEST_TIMEZONE,
-      input: { title: 'locked task' },
-    })
-
-    const labels = JSON.stringify(['ai-to-process', 'ai-locked'])
-    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(labels, task.id)
-
-    await enrichSingleTask(task.id, TEST_USER_ID)
-
-    expect(mockEnrichmentQuery).not.toHaveBeenCalled()
-    const after = getTaskById(task.id)!
-    expect(after.labels).not.toContain('ai-to-process')
-    expect(after.labels).toContain('ai-locked')
   })
 
   test('handles failure with retry tracking', async () => {

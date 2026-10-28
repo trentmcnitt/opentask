@@ -19,8 +19,6 @@
  *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`, and one
  *       quiet "AI failed to process" push — however old the task is
  *       (`announceEnrichmentFailed`, src/core/notifications/enrichment-failed-notify.ts)
- *   [Task has both `ai-locked` + `ai-to-process`] → skip (ai-locked wins),
- *     remove `ai-to-process`
  *
  * Processing guard: a task is CLAIMED before any async work (`claimTask`) —
  * an in-memory Set<number> of task IDs in flight, checked together with a
@@ -389,8 +387,7 @@ function clearFailures(taskId: number): void {
  * the Set add — better-sqlite3 is synchronous, so no other enrichment can run
  * in between — which makes "check, re-read, mark in flight" atomic within the
  * process. Returns null when the task is already in flight, no longer carries
- * `ai-to-process` (someone finished it), is deleted, or is `ai-locked` (in
- * which case the trigger label is removed, as before). The caller owns the
+ * `ai-to-process` (someone finished it), or is deleted. The caller owns the
  * claim and must `processingTasks.delete(id)` in a `finally`.
  *
  * A claimed task is being enriched again, so an earlier "AI failed to process"
@@ -412,13 +409,6 @@ function claimTask(taskId: number, userId: number): PendingTaskRow | null {
     .get(taskId, userId) as PendingTaskRow | undefined
   if (!row) return null
 
-  const labels: string[] = JSON.parse(row.labels)
-  if (labels.includes('ai-locked')) {
-    removeLabel(row.id, 'ai-to-process')
-    log.info('ai', `Task ${row.id} has ai-locked label, removing ai-to-process`)
-    return null
-  }
-
   processingTasks.add(taskId)
   releaseEnrichmentFailedNotice(taskId)
   return row
@@ -427,8 +417,8 @@ function claimTask(taskId: number, userId: number): PendingTaskRow | null {
 /**
  * Process the enrichment queue. Called by cron every minute.
  *
- * Picks up tasks with the `ai-to-process` label (excluding those with
- * `ai-locked`), processes them one at a time, and applies the enrichment
+ * Picks up tasks with the `ai-to-process` label, processes them one at a
+ * time, and applies the enrichment
  * result. Sequential processing avoids overwhelming the server with
  * concurrent SDK subprocesses.
  *
@@ -445,8 +435,6 @@ export async function processEnrichmentQueue(): Promise<void> {
 
     // Pick up tasks with ai-to-process label.
     // Uses json_each() to query the JSON labels array.
-    // ai-locked filtering is done in the processing loop (so we can clean up
-    // the ai-to-process label when both labels are present).
     const pendingTasks = db
       .prepare(
         `SELECT id, user_id, title, original_title, labels, priority, due_at, on_deck_day, rrule, is_reminder,
