@@ -10,8 +10,9 @@ import type { LabelConfig } from '@/types'
  * A task's label chips — the dashboard row's (`TaskRow`), and since
  * 2026-10-22 the task-segment rows' too (Trent's phone review: a queue row
  * showed no labels, so "ai-added" or "house" was only visible on the
- * dashboard). The first two labels in their registry colours, then "+N".
- * `ai-to-process` is never shown (the row's shimmer says it). An `ai-failed`
+ * dashboard). EVERY label, in its registry colour (Trent, 2026-10-28: "I
+ * don't want to hide tags" — it showed two, then "+N"); they wrap with the
+ * meta line. `ai-to-process` is never shown (the row's shimmer says it). An `ai-failed`
  * chip gets a retry button when the row can reprocess.
  *
  * A chip is NEVER cut (Trent, 2026-10-24). The group sits in a row's
@@ -44,7 +45,7 @@ export function LabelBadges({
       data-label-badges
       className={cn('flex max-w-full min-w-0 flex-wrap items-center gap-1', className)}
     >
-      {visibleLabels.slice(0, 2).map((label) => {
+      {visibleLabels.map((label) => {
         const colorClasses = getLabelClasses(label, labelConfig)
         const isAiFailed = label === 'ai-failed'
         return (
@@ -92,9 +93,6 @@ export function LabelBadges({
           </span>
         )
       })}
-      {visibleLabels.length > 2 && (
-        <span className="text-muted-foreground text-xs">+{visibleLabels.length - 2}</span>
-      )}
     </div>
   )
 }

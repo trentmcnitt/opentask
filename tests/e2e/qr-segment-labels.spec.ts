@@ -3,7 +3,7 @@
  *
  * The task-segment rows (the dashboard's Tasks card and /reminders) show the
  * task's labels on their meta line with the dashboard row's chips
- * (`LabelBadges`: two, then "+N"). Until 10-24 they were clipped into what the
+ * (`LabelBadges`: every label since 2026-10-28; two, then "+N", before). Until 10-24 they were clipped into what the
  * line had left, with a fade (a long chip lost its end on a phone); now the
  * meta line wraps and the chips move, whole, to a second meta line — the
  * dashboard's `TaskRow` approach. The row's controls stay where they are.
@@ -232,5 +232,51 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
     if (quota) ids.push(quota)
     if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
     for (const name of labels) await page.request.delete(`/api/labels/${encodeURIComponent(name)}`)
+  }
+})
+
+/**
+ * EVERY LABEL SHOWS (2026-10-28, Trent: "I don't want to hide tags"): a row
+ * with five labels shows five whole chips and no "+N" — the segment row (the
+ * dashboard's Tasks card and /reminders) and the dashboard's task row —
+ * wrapping with the meta line, at a phone's width and a desktop's.
+ */
+test('every label shows: five chips, no "+N"', async ({ page }) => {
+  const ids: number[] = []
+  const stamp = Date.now().toString(36)
+  const five = ['errands', 'kitchen', 'weekend', 'call-back', 'paperwork'].map(
+    (l) => `${l}-${stamp}`,
+  )
+  try {
+    for (const name of five) {
+      const res = await page.request.post('/api/labels', { data: { name } })
+      expect(res.ok(), `label ${name}`).toBeTruthy()
+    }
+    // Upcoming: on the Tasks card, on /reminders and in the Now list.
+    const id = await create(page, {
+      title: uniqueTitle('SL five labels'),
+      target_at: tomorrowAt(10),
+      labels: five,
+    })
+    ids.push(id)
+    targetedLongAgo([id])
+    for (const size of [SIZES[0], SIZES[1]]) {
+      await page.setViewportSize(size)
+      for (const url of ['/', '/reminders']) {
+        await page.goto(url)
+        const rows = [
+          page.locator('[data-task-segment="upcoming"]').locator(`[data-segment-task="${id}"]`),
+        ]
+        if (url === '/') rows.push(page.locator(`#task-row-${id}`))
+        for (const row of rows) {
+          await expect(row).toBeVisible()
+          await chipsWhole(row, five)
+          await expect(row.locator('[data-label-badges]')).not.toContainText(/\+\d/)
+        }
+      }
+    }
+  } finally {
+    if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
+    for (const name of five) await page.request.delete(`/api/labels/${encodeURIComponent(name)}`)
   }
 })
