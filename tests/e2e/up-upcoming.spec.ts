@@ -115,16 +115,17 @@ test.describe('Upcoming', () => {
       await expect(gap.locator('> *').nth(0)).toHaveAttribute('data-segment-project')
       await expect(gap.locator('> *').nth(1)).toHaveAttribute('data-deadline-chip', 'ahead')
       await expect(gap.locator('[data-deadline-chip]')).toHaveText(/^Deadline \w+/)
-      // A Tomorrow row (2026-10-25, the Upcoming split): just the time.
-      await expect(gap).toContainText('Target 9:00 AM')
-      await expect(gap).not.toContainText(/Target \w{3} \w{3} \d+/)
+      // A Tomorrow row (2026-10-25, the Upcoming split): just the time, in
+      // the target's chip (no "Target" word since the time chips, 10-28).
+      const targetChip = '[data-target-chip], [data-time-chip="target"]'
+      await expect(gap.locator(targetChip)).toHaveText(/^9:00 AM$/)
       // The repeating row names its schedule, never a bare "repeats".
       await expect(row(page, t.repeating).locator('[data-upcoming-gap]')).not.toContainText(
         'repeats',
       )
-      await expect(row(page, t.plain).locator('[data-upcoming-gap]')).toContainText(
-        'Target 10:00 AM',
-      )
+      await expect(
+        row(page, t.plain).locator('[data-upcoming-gap]').locator(targetChip),
+      ).toHaveText(/^10:00 AM$/)
       // All three are due tomorrow: in the Tomorrow section.
       for (const id of Object.values(t)) {
         await expect(
