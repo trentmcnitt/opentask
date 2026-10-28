@@ -1,5 +1,5 @@
 /**
- * The "AI couldn't process" notification (2026-10-05): one quiet push when AI
+ * The "AI failed to process" notification (2026-10-05): one quiet push when AI
  * enrichment of a task fails for good (`ai-failed`). See
  * src/core/notifications/enrichment-failed-notify.ts.
  *
@@ -155,17 +155,17 @@ function taskFixture(overrides: Partial<Task> = {}): Task {
 describe('content', () => {
   test('title names the kind of item; body is the text the user typed', () => {
     expect(buildEnrichmentFailedNotificationContent(taskFixture())).toEqual({
-      title: "AI couldn't process a task",
+      title: 'AI failed to process a task',
       body: 'call the dentist tomorrow',
     })
   })
 
   test('a reminder and a quota say so', () => {
     expect(buildEnrichmentFailedNotificationContent(taskFixture({ is_reminder: true })).title).toBe(
-      "AI couldn't process a reminder",
+      'AI failed to process a reminder',
     )
     expect(buildEnrichmentFailedNotificationContent(taskFixture({ is_tracked: true })).title).toBe(
-      "AI couldn't process a quota",
+      'AI failed to process a quota',
     )
   })
 
@@ -242,7 +242,7 @@ describe('the enrichment pipeline', () => {
 
     expect(apnsFailed).toHaveBeenCalledTimes(1)
     expect(apnsFailed).toHaveBeenCalledWith(TEST_USER_ID, {
-      title: "AI couldn't process a task",
+      title: 'AI failed to process a task',
       body: 'call the dentist tomorrow 9am',
       taskId: id,
     })
@@ -250,7 +250,7 @@ describe('the enrichment pipeline', () => {
     const [userId, payload, options] = webPush.mock.calls[0]
     expect(userId).toBe(TEST_USER_ID)
     expect(payload).toEqual({
-      title: "AI couldn't process a task",
+      title: 'AI failed to process a task',
       body: 'call the dentist tomorrow 9am',
       data: { url: `http://localhost:3000/?task=${id}`, taskId: id },
       tag: `ai-failed-${id}`,
@@ -281,7 +281,7 @@ describe('the enrichment pipeline', () => {
     await flush()
 
     expect(apnsFailed.mock.calls[0][1]).toEqual({
-      title: "AI couldn't process a reminder",
+      title: 'AI failed to process a reminder',
       body: 'stretch every evening',
       taskId: id,
     })
