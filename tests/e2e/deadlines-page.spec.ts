@@ -85,6 +85,51 @@ const choice = (page: Page, name: RegExp) =>
     .filter({ hasText: name })
     .first()
 
+/**
+ * A chip's text-on-background contrast, as drawn: its text colour against its
+ * own (translucent) background composited over the nearest opaque ancestor.
+ * Colours go through a canvas, so any CSS colour syntax (oklch included)
+ * comes back as sRGB.
+ */
+async function chipContrast(chip: Locator): Promise<number> {
+  return chip.evaluate((el) => {
+    const ctx = document.createElement('canvas').getContext('2d')!
+    const paint = (...colors: string[]) => {
+      ctx.clearRect(0, 0, 1, 1)
+      for (const c of colors) {
+        ctx.fillStyle = c
+        ctx.fillRect(0, 0, 1, 1)
+      }
+      return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]
+    }
+    const opaque = (c: string) => {
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = c
+      ctx.fillRect(0, 0, 1, 1)
+      return ctx.getImageData(0, 0, 1, 1).data[3] === 255
+    }
+    let base = 'white'
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      const bg = getComputedStyle(a).backgroundColor
+      if (opaque(bg)) {
+        base = bg
+        break
+      }
+    }
+    const lum = ([r, g, b]: number[]) => {
+      const f = (v: number) => {
+        const c = v / 255
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+      }
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    }
+    const style = getComputedStyle(el)
+    const back = lum(paint(base, style.backgroundColor))
+    const text = lum(paint(base, style.backgroundColor, style.color))
+    return (Math.max(back, text) + 0.05) / (Math.min(back, text) + 0.05)
+  })
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.beforeEach(async ({ page }) => {
@@ -271,6 +316,13 @@ for (const viewport of VIEWPORTS) {
         await expect(chip(ahead)).toContainText('Deadline')
         await expect(chip(past)).toHaveAttribute('data-deadline-chip', 'passed')
         await expect(chip(past)).toContainText('Past deadline')
+        // Readable (2026-10-28): its red text on its own red tint is at least
+        // 4.5:1, light and dark (it was 3.99:1 in both).
+        for (const scheme of ['light', 'dark'] as const) {
+          await page.emulateMedia({ colorScheme: scheme })
+          expect(await chipContrast(chip(past)), scheme).toBeGreaterThanOrEqual(4.5)
+        }
+        await page.emulateMedia({ colorScheme: null })
         // Right after the project (Trent's 10-20 rule: every row's project
         // starts at the same x).
         const meta = row(s, ahead).locator('p + div > *')

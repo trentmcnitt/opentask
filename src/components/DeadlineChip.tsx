@@ -16,8 +16,12 @@ import { useTaskQueue } from '@/components/PreferencesProvider'
  * user's rollover time: with the task queue off, or before the preferences
  * load, calendar days.
  */
+// Each tinted tone's text is a step darker (lighter in dark mode) than its
+// tint, as amber's: `text-destructive` on its own 10% tint was 3.99:1 in both
+// themes, under the 4.5:1 small text needs; red-700 / red-400 are 5.4 / 6.6
+// (2026-10-28).
 const TONE: Record<DeadlineTone, string> = {
-  passed: 'bg-destructive/10 text-destructive',
+  passed: 'bg-destructive/10 text-red-700 dark:text-red-400',
   close: 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
   ahead: 'bg-foreground/[0.06] text-foreground',
 }
