@@ -57,8 +57,10 @@ import {
   enrichSingleTask,
   _resetCircuitBreaker,
   _resetProcessingState,
+  SLOT_WAIT_LIMIT_MS,
 } from '@/core/ai/enrichment'
 import { enrichmentQuery } from '@/core/ai/enrichment-slot'
+import { SlotUnavailableError } from '@/core/ai/slot-shared'
 
 const mockEnrichmentQuery = vi.mocked(enrichmentQuery)
 
@@ -561,6 +563,85 @@ describe('retry logic', () => {
     expect(afterSuccess.labels).not.toContain('ai-to-process')
     expect(afterSuccess.labels).not.toContain('ai-failed')
     expect(afterSuccess.title).toBe('Retry then succeed')
+  })
+})
+
+/**
+ * A DEAD SLOT SPENDS NO ATTEMPT (2026-10-28): the warm slot's warmup was
+ * refused on prod, the slot died, and the on-demand attempt and the next
+ * minute's retry both met it dead — five tasks ai-failed that the model never
+ * saw. Now a task the slot could not take waits for it, up to
+ * SLOT_WAIT_LIMIT_MS.
+ */
+describe('slot unavailable', () => {
+  beforeEach(() => clearPendingEnrichment())
+  afterEach(() => vi.useRealTimers())
+
+  const unavailable = () => new SlotUnavailableError('Enrichment', 'dead')
+
+  test('spends no attempt: the task waits through several tries, then is enriched', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'slot dead, wait for it' },
+    })
+    mockEnrichmentQuery.mockRejectedValueOnce(unavailable())
+    await enrichSingleTask(task.id, TEST_USER_ID)
+    for (let i = 0; i < 3; i++) {
+      mockEnrichmentQuery.mockRejectedValueOnce(unavailable())
+      await processEnrichmentQueue()
+    }
+    const waiting = getTaskById(task.id)!
+    expect(waiting.labels).toContain('ai-to-process')
+    expect(waiting.labels).not.toContain('ai-failed')
+
+    mockEnrichmentQuery.mockResolvedValueOnce(
+      mockResult({ title: 'Slot dead, wait for it', priority: 0, labels: [] }),
+    )
+    await processEnrichmentQueue()
+    const done = getTaskById(task.id)!
+    expect(done.labels).not.toContain('ai-to-process')
+    expect(done.labels).not.toContain('ai-failed')
+  })
+
+  test('a real failure after waiting still has both its attempts', async () => {
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'wait, then fail once' },
+    })
+    mockEnrichmentQuery.mockRejectedValueOnce(unavailable())
+    await processEnrichmentQueue()
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error'))
+    await processEnrichmentQueue()
+    expect(getTaskById(task.id)!.labels).toContain('ai-to-process')
+    mockEnrichmentQuery.mockRejectedValueOnce(new Error('SDK error 2'))
+    await processEnrichmentQueue()
+    expect(getTaskById(task.id)!.labels).toContain('ai-failed')
+  })
+
+  test('waiting longer than SLOT_WAIT_LIMIT_MS marks it ai-failed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = new Date('2026-10-28T12:00:00Z')
+    vi.setSystemTime(start)
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'slot dead for good' },
+    })
+    mockEnrichmentQuery.mockRejectedValueOnce(unavailable())
+    await processEnrichmentQueue()
+    vi.setSystemTime(start.getTime() + SLOT_WAIT_LIMIT_MS - 1)
+    mockEnrichmentQuery.mockRejectedValueOnce(unavailable())
+    await processEnrichmentQueue()
+    expect(getTaskById(task.id)!.labels).toContain('ai-to-process')
+
+    vi.setSystemTime(start.getTime() + SLOT_WAIT_LIMIT_MS)
+    mockEnrichmentQuery.mockRejectedValueOnce(unavailable())
+    await processEnrichmentQueue()
+    const after = getTaskById(task.id)!
+    expect(after.labels).not.toContain('ai-to-process')
+    expect(after.labels).toContain('ai-failed')
   })
 })
 

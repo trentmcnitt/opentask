@@ -133,11 +133,12 @@ describe('quick take slot initialization', () => {
     await initPromise
 
     expect(getQuickTakeSlotStats().state).toBe('dead')
-    // A dead slot alerts the same way enrichment's does
+    // A dead slot alerts the same way enrichment's does — naming what the
+    // warmup got back (2026-10-28; it was the bare reason before).
     expect(mockNotifyError).toHaveBeenCalledWith(
       'slot-failure',
       'Quick Take slot warmup validation failed',
-      'warmup validation failed',
+      'subtype success, stop end_turn, no structured output, text "SOMETHING ELSE"',
     )
   })
 
