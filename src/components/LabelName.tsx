@@ -6,8 +6,8 @@ import { PROVENANCE_LABELS } from '@/lib/label-vocabulary'
  * it appears" — a label the assistant put there wears a small robot, so it
  * never reads as one Trent chose. The system labels that say something about
  * the AI: provenance (`ai-added`, `ai-proposed`, `ai-monitored`) and
- * enrichment's `ai-failed`. `ai-locked` is on hold (Trent hasn't ruled where
- * it goes) and `ai-to-process` is never shown (the row's shimmer says it).
+ * enrichment's `ai-failed`. `ai-to-process` is never shown (the row's
+ * shimmer says it).
  *
  * WHERE: on a task row only the AI labels that ask something of him —
  * `ai-proposed` (bless it) and `ai-failed` (retry it). `ai-added` and
