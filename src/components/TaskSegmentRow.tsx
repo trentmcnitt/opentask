@@ -937,17 +937,24 @@ function DeckTomorrowSlot({
   if (!offersDeck(row.task)) {
     return <span aria-hidden data-deck-tomorrow-empty className={SLOT_HIT} />
   }
-  return <DeckTomorrowButton task={row.task} actions={actions} timezone={timezone} panel={panel} />
+  return (
+    <DeckTomorrowButton task={row.task} onDeck={actions.deck} timezone={timezone} panel={panel} />
+  )
 }
 
-function DeckTomorrowButton({
+/**
+ * On deck tomorrow: a tap decks the task for tomorrow (lit, a tap takes it
+ * off); a hold or right-click picks a day. Exported for the dashboard-modes
+ * prototype's lean row, which passes the dashboard's own deck action.
+ */
+export function DeckTomorrowButton({
   task,
-  actions,
+  onDeck,
   timezone,
   panel,
 }: {
   task: Task
-  actions: TaskSegmentActions
+  onDeck: (task: Task, day: string | null) => unknown
   timezone: string
   panel: boolean
 }) {
@@ -963,7 +970,7 @@ function DeckTomorrowButton({
   if (!replaces && pending) setPending(null)
   const act = (day: string | null) => {
     if (replaces && day !== null) setPending(day)
-    else void actions.deck(task, day)
+    else void onDeck(task, day)
   }
   const tomorrow = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
   // LIT (2026-10-27, Trent): on deck for tomorrow — On deck's own active
@@ -1054,7 +1061,7 @@ function DeckTomorrowButton({
             message={`Replaces ${replaces}`}
             confirmLabel="Deck"
             onConfirm={() => {
-              if (pending) void actions.deck(task, pending)
+              if (pending) void onDeck(task, pending)
             }}
           >
             {button}

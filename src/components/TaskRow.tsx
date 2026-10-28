@@ -1,7 +1,9 @@
 'use client'
 
-import { useRef, useCallback, useEffect, useState } from 'react'
-import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
+import { useCallback, useState } from 'react'
+import { useSimpleLongPress } from '@/hooks/useLongPress'
+import { useRowPress } from '@/hooks/useRowPress'
+import { useRowHighlight } from '@/hooks/useRowHighlight'
 import Link from 'next/link'
 import { DateTime } from 'luxon'
 import {
@@ -23,7 +25,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
 import { isTracked, taskPeriodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts } from '@/lib/format-date'
 import {
@@ -318,103 +319,21 @@ export function TaskRow({
   ])
   const snoozePress = useSimpleLongPress({ onLongPress: openSnoozeMenu, onShortPress: snoozeNow })
 
-  /**
-   * `highlighted` (the widget's `?task=<id>&highlight=1` link): keep the row
-   * centred for as long as the highlight is alive, not just once on mount.
-   *
-   * Unlike RemindersView's `?reminder=<id>` (a plain `ref={highlighted ?
-   * scrollRowIntoView : undefined}` — see `scrollRowIntoView`'s doc comment),
-   * the dashboard has several panels — Reminders, Track, AI Insights
-   * annotations — that fetch and mount AFTER this row does, each one pushing
-   * the row further down the page. A single scroll on mount goes stale the
-   * moment any of them lands; found by browser-verifying against Trent's
-   * real dev account, where the row scrolled off-screen again within a
-   * second of landing on it.
-   *
-   * A `ResizeObserver` on `document.body` re-centers on every layout change
-   * instead of guessing a delay — no timeout, no retry count, just a
-   * response to the actual event (the page's height changing). It also
-   * fires once immediately on `observe()`, so the initial scroll comes for
-   * free. Torn down the moment the highlight's flash ends (`onHighlightDone`
-   * flips `highlighted` false via `onAnimationEnd` below), so it never
-   * outlives the thing it's centering.
-   */
-  const rowRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!highlighted) return
-    const ro = new ResizeObserver(() => scrollRowIntoView(rowRef.current))
-    ro.observe(document.body)
-    return () => ro.disconnect()
-  }, [highlighted])
+  // The widget's `?task=<id>&highlight=1` landing: kept centred while it
+  // flashes (`useRowHighlight`, shared with the lean row).
+  const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
 
-  // Long-press: range-select when already in selection mode, otherwise toggle
-  const longPressAction = isSelectionMode && onRangeSelect ? onRangeSelect : onSelect
-  const pointer = useLongPress({ onLongPress: longPressAction, trackDoubleClick: true })
-
-  // Expose long-press cancel function to parent (SwipeableRow)
-  useEffect(() => {
-    if (cancelLongPressRef) {
-      cancelLongPressRef.current = pointer.onPointerLeave
-    }
-  }, [cancelLongPressRef, pointer.onPointerLeave])
-
-  /**
-   * Selection behavior by input type:
-   *
-   * | Context              | Input                   | Action                                     |
-   * |----------------------|-------------------------|--------------------------------------------|
-   * | Not in selection mode| Desktop click           | activate - show blue glow only (no select) |
-   * | Not in selection mode| Desktop double-click    | onDoubleClick - open QuickActionPanel      |
-   * | Not in selection mode| Mobile tap              | onDoubleClick - open QuickActionPanel      |
-   * | In selection mode    | Desktop plain click     | selectOnly - replace selection             |
-   * | In selection mode    | Desktop Cmd/Ctrl+click  | toggle - accumulate selection              |
-   * | In selection mode    | Desktop Shift+click     | rangeSelect - select range                 |
-   * | In selection mode    | Mobile tap              | toggle - accumulate (no blue glow)         |
-   *
-   * Rationale: Desktop click just shows focus (blue glow) like Finder - you use Space to
-   * actually select. Double-click opens QuickActionPanel for quick edits.
-   * Long-press enters selection mode on both desktop and mobile. Mobile tap opens
-   * the QuickActionPanel (same as desktop double-click) for quick edits.
-   * This separates "where you are" (focus/blue glow) from "what's selected" (checkboxes).
-   */
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (pointer.didFire()) {
-        e.preventDefault()
-        return
-      }
-
-      e.preventDefault()
-
-      // Double-click opens QuickActionPanel (desktop quick edit)
-      if (!isSelectionMode && pointer.didDoubleClick() && onDoubleClick) {
-        onDoubleClick()
-        return
-      }
-
-      // In selection mode, also move keyboard focus (blue glow) to the clicked task
-      if (e.shiftKey && onRangeSelect) {
-        onRangeSelect()
-        onActivate?.()
-      } else if ((e.metaKey || e.ctrlKey) && onSelect) {
-        onSelect()
-        onActivate?.()
-      } else if (isSelectionMode && pointer.wasTouch() && onSelect) {
-        // Touch in selection mode: toggle selection only, no keyboard focus (blue glow).
-        // Keyboard focus is a desktop affordance (arrow keys, Space, Cmd+D) with no
-        // purpose on mobile — showing it on touch just creates visual noise.
-        onSelect()
-      } else if (isSelectionMode && onSelectOnly) {
-        onSelectOnly()
-        onActivate?.()
-      } else if (pointer.wasTouch() && onDoubleClick) {
-        onDoubleClick()
-      } else if (onActivate) {
-        onActivate()
-      }
-    },
-    [isSelectionMode, onSelect, onSelectOnly, onRangeSelect, onActivate, onDoubleClick, pointer],
-  )
+  // The row's press: selection, activation and double-click (`useRowPress`,
+  // shared with the dashboard-modes prototype's lean row).
+  const { pointer, handleClick } = useRowPress({
+    isSelectionMode,
+    onSelect,
+    onSelectOnly,
+    onRangeSelect,
+    onActivate,
+    onDoubleClick,
+    cancelLongPressRef,
+  })
 
   // The user's Priority Display settings, read through the rule every row
   // shares (`priorityRowStyles`: reminders, quota prompts and chips too).
@@ -506,14 +425,7 @@ export function TaskRow({
     <div
       {...rowProps}
       ref={rowRef}
-      data-task-highlight={highlighted ? '' : undefined}
-      onAnimationEnd={(e) => {
-        // Filtered: this row can also run `animate-ai-processing`, whose
-        // `animationend` must not spend the one-shot highlight early.
-        if (e.target === e.currentTarget && e.animationName === 'row-highlight') {
-          onHighlightDone?.()
-        }
-      }}
+      {...highlightProps}
       className={cn(
         'group relative flex items-center gap-3 rounded-lg p-3 select-none',
         // min-h-[62px] matches the natural height when snooze button is present:
