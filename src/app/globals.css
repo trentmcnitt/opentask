@@ -68,6 +68,10 @@
   --segment-title-queue_today: #0a6670;
   --segment-title-queue_previous: #0a6670;
   --segment-title-deadlines: var(--deadlines);
+  /* A lit deck button (`DECK_LIT`, 2026-10-28, Trent's "T2"): the queue's
+     teal drained toward slate, quieter on the dashboard — its own token, so
+     the "Today's pulls" title keeps its teal. 6.8:1 on the card. */
+  --deck-lit: #465f63;
   --badge-neutral: oklch(0.368 0 0);
   /* Every-time mode (2026-10-22, editor PR 4c; Trent: "Teal's fine"): the
      Quick panel's framed "EDITING EVERY TIME" banner and frame. A MODE, not a
@@ -150,6 +154,7 @@
   --segment-title-queue_today: var(--segment-queue_today);
   --segment-title-queue_previous: var(--segment-queue_previous);
   --segment-title-deadlines: var(--deadlines);
+  --deck-lit: #85adb2;
   --badge-neutral: oklch(0.803 0 0);
   /* The same deep teal: white on it ≈5.4:1, its frame ≈3.4:1 on the dark card. */
   --every-time: #0f766e;
