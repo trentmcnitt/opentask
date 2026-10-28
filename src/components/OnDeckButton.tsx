@@ -196,12 +196,14 @@ export function OnDeckButton({
 }
 
 /**
- * A LIT deck button's colour (2026-10-27, Trent: a solid black icon "looks
- * unfinished"): the task queue's teal — the hue of "Today's pulls", where a
- * deck lands — not bare foreground. Light and dark come from the token. On
- * deck and On deck tomorrow (`TaskSegmentRow`) both wear it.
+ * A LIT deck button's colour: its own token, `--deck-lit` (light and dark in
+ * globals.css). 2026-10-27 (Trent: a solid black icon "looks unfinished"):
+ * the task queue's teal; 2026-10-28 (Trent's "T2", after mocks in context):
+ * that teal drained toward slate, quieter on the dashboard. On deck, On deck
+ * tomorrow (`TaskSegmentRow`), the dashboard row and the Quick panel all wear
+ * it; the "Today's pulls" title keeps its teal.
  */
-export const DECK_LIT = 'text-(--segment-title-queue_today)'
+export const DECK_LIT = 'text-(--deck-lit)'
 
 /**
  * The faded button's confirm (`ReplaceConfirm`), or the button alone when
