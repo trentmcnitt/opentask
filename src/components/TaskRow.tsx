@@ -43,6 +43,7 @@ import { OnDeckButton } from '@/components/OnDeckButton'
 import { DeadlineChip } from '@/components/DeadlineChip'
 import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
+import { TimeChip } from '@/components/TimeChip'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { queuedRepeatOccurrence } from '@/lib/editor-target-labels'
 import { useTimezone } from '@/hooks/useTimezone'
@@ -937,27 +938,34 @@ function TaskRowMeta({
   // quota, which carries no deadline.
   const deadline = task.deadline_at && !isTracked(task) ? task.deadline_at : null
   if (segments.length === 0 && !offer && !deadline) return null
-  // The segments after the target time, or all of them when it is plain text.
-  const rest = timeControl ? segments.filter((seg) => !seg.target) : segments
+  // The target time is a chip (`TimeChip`, 2026-10-28): a control when the
+  // row allows it, the same chip as a label otherwise (selection mode).
+  const targetParts = segments.filter((seg) => seg.target)
+  const over = targetParts.some((seg) => seg.over)
+  const rest = segments.filter((seg) => !seg.target)
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-sm">
       {deadline && (
         <DeadlineChip deadlineAt={deadline} timezone={timezone} className="mr-0.5 text-xs" />
       )}
-      {timeControl && (
-        <TargetTimeText
-          task={task}
-          timezone={timezone}
-          relative={segments[0].text}
-          absolute={segments[1]?.target ? segments[1].text : null}
-          relativeClassName={segments[0].className}
-          onMove={(until) => onSnooze(task.id, until)}
-          onRemoveTarget={onRemoveTarget}
-        />
-      )}
+      {targetParts.length > 0 &&
+        (timeControl ? (
+          <TargetTimeText
+            task={task}
+            timezone={timezone}
+            text={targetChipText(targetParts)}
+            over={over}
+            onMove={(until) => onSnooze(task.id, until)}
+            onRemoveTarget={onRemoveTarget}
+          />
+        ) : (
+          <TimeChip tone={over ? 'over' : 'target'} className="text-xs" data-target-time-label="">
+            {targetChipText(targetParts)}
+          </TimeChip>
+        ))}
       {rest.map((seg, i) => (
         <span key={i} className="contents">
-          {(i > 0 || timeControl) && <span className="text-muted-foreground/50">·</span>}
+          {(i > 0 || targetParts.length > 0) && <span className="text-muted-foreground/50">·</span>}
           <span
             className={cn('whitespace-nowrap', seg.className)}
             data-age-label={seg.ageLabel ? seg.text : undefined}
@@ -986,6 +994,12 @@ function TaskRowMeta({
   )
 }
 
+/** A target chip's words: "Tomorrow 7:00 AM", "3h ago · 5:00 PM", "Yesterday · 10:00 AM". */
+function targetChipText(parts: MetaSegment[]): string {
+  const text = parts.map((p) => p.text).join(' · ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 interface MetaSegment {
   text: string
   className?: string
@@ -993,6 +1007,8 @@ interface MetaSegment {
   ageLabel?: boolean
   /** Part of the target time ("3h ago", "9:00 AM") — `TargetTimeText`. */
   target?: boolean
+  /** The target has passed: its chip is plum (`TimeChip`). */
+  over?: boolean
 }
 
 /** "2 / 4 this week" — a quota's standing, as its row's only metadata. */
@@ -1026,12 +1042,8 @@ function buildMetaSegments(
     })
   } else if (task.due_at) {
     const dueParts = formatDueTimeParts(task.due_at, timezone, dayStart)
-    segments.push({
-      text: dueParts.relative,
-      className: isOverdue ? 'text-over-target font-medium' : undefined,
-      target: true,
-    })
-    if (dueParts.absolute) segments.push({ text: dueParts.absolute, target: true })
+    segments.push({ text: dueParts.relative, target: true, over: isOverdue })
+    if (dueParts.absolute) segments.push({ text: dueParts.absolute, target: true, over: isOverdue })
   }
 
   if (task.rrule) {
