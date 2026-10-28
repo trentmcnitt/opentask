@@ -280,3 +280,49 @@ test('every label shows: five chips, no "+N"', async ({ page }) => {
     for (const name of five) await page.request.delete(`/api/labels/${encodeURIComponent(name)}`)
   }
 })
+
+/**
+ * AI LABELS (2026-10-28, Trent: "anything AI shows the Bot glyph, wherever it
+ * appears"): on a row, `ai-proposed` and `ai-failed` wear the glyph and
+ * `ai-added` / `ai-monitored` aren't shown ("irrelevant unless I'm doing
+ * forensics"); the editor shows every one, the AI ones with the glyph. The
+ * task keeps all its labels — display only.
+ */
+test('AI labels: the Bot glyph; ai-added and ai-monitored only in the editor', async ({ page }) => {
+  const ids: number[] = []
+  const stamp = Date.now().toString(36)
+  const plain = `chores-${stamp}`
+  const ai = ['ai-proposed', 'ai-failed', 'ai-added', 'ai-monitored']
+  try {
+    expect((await page.request.post('/api/labels', { data: { name: plain } })).ok()).toBeTruthy()
+    const id = await create(page, {
+      title: uniqueTitle('SL ai labels'),
+      target_at: tomorrowAt(10),
+      labels: [plain, ...ai],
+    })
+    ids.push(id)
+    targetedLongAgo([id])
+    // The task keeps every label.
+    const stored = (await (await page.request.get(`/api/tasks/${id}`)).json()).data.labels
+    expect([...stored].sort()).toEqual([plain, ...ai].sort())
+
+    await page.goto('/')
+    const chips = page.locator(`#task-row-${id} [data-label-badges] [data-slot="badge"]`)
+    await expect(chips).toHaveText([plain, 'ai-proposed', 'ai-failed'])
+    await expect(chips.nth(0).locator('[data-ai-label-glyph]')).toHaveCount(0)
+    await expect(chips.nth(1).locator('[data-ai-label-glyph]')).toHaveCount(1)
+    await expect(chips.nth(2).locator('[data-ai-label-glyph]')).toHaveCount(1)
+
+    await page.goto(`/tasks/${id}`)
+    for (const name of ai) {
+      const chip = page.locator('[data-slot="badge"]', { hasText: name }).first()
+      await expect(chip).toBeVisible()
+      await expect(chip.locator('[data-ai-label-glyph]')).toHaveCount(1)
+    }
+    const plainChip = page.locator('[data-slot="badge"]', { hasText: plain }).first()
+    await expect(plainChip.locator('[data-ai-label-glyph]')).toHaveCount(0)
+  } finally {
+    if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
+    await page.request.delete(`/api/labels/${encodeURIComponent(plain)}`)
+  }
+})
