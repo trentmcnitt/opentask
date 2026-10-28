@@ -3,7 +3,7 @@
  *
  * - the priority tab (E2b): Urgent red, High orange; Medium, Low and None
  *   show nothing (2026-10-15), and the old priority word under the title is gone;
- * - the horizon dot (R1): a size per horizon, a dashed outline when unset, a
+ * - the horizon dot (R1): a size per horizon, a hollow ring when unset, a
  *   tooltip saying when it comes back, hidden on a row with a picked target;
  *   the corner reads dot · attempts · priority;
  * - the target time's menu (Remove target / Move… — a deadline task's too
@@ -184,7 +184,7 @@ test.describe('Row corner · desktop', () => {
     }
   })
 
-  test('horizon dot: a size per horizon, dashed when unset, tooltip, hidden on a picked target', async ({
+  test('horizon dot: a size per horizon, a closed ring when unset, tooltip, hidden on a picked target', async ({
     authenticatedPage: page,
   }) => {
     const horizons = ['days', 'weeks', 'months', 'eventually', null] as const
@@ -211,10 +211,14 @@ test.describe('Row corner · desktop', () => {
         Number(await dot(h).locator('circle').getAttribute('opacity'))
       expect(await opacity('eventually')).toBeLessThan(await opacity('months'))
       expect(await opacity('eventually')).toBeGreaterThanOrEqual(0.4)
-      // Unset: the dashed Weeks-size outline.
+      // Unset: a CLOSED hollow ring the Weeks dot's size (2026-10-28; it was
+      // dashed, and broke up at 1x) — r 2.5 + a 1px stroke = 6px, no dashes.
       await expect(dot('null')).toHaveAttribute('data-horizon-dot', 'unset')
-      await expect(dot('null').locator('circle')).toHaveAttribute('stroke-dasharray', /\d/)
-      expect(await radius('null')).toBe(3)
+      const ring = dot('null').locator('circle')
+      await expect(ring).not.toHaveAttribute('stroke-dasharray')
+      await expect(ring).toHaveAttribute('fill', 'none')
+      await expect(ring).toHaveAttribute('stroke-width', '1')
+      expect(await radius('null')).toBe(2.5)
       // Tooltips (the test user's check-in day is the default, Saturday).
       await expect(dot('weeks')).toHaveAttribute('title', 'Weeks · comes back Saturdays')
       await expect(dot('days')).toHaveAttribute('title', 'Days · comes back daily')

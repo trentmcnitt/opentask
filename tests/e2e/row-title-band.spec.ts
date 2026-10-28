@@ -22,8 +22,8 @@
  * always puts its time on the meta line — so "no tab" and "a priority tab
  * alone" have no title-only row):
  *
- *   title only:  dot (Days) · dashed dot (unset) · dot + priority tab
- *   meta line:   no tab · priority tab · dot · dashed dot — each with the same
+ *   title only:  dot (Days) · ring (unset) · dot + priority tab
+ *   meta line:   no tab · priority tab · dot · ring — each with the same
  *                one line (the deadline chip and a target time)
  *   long title:  dot, clamped at three lines, wrapping around the corner
  *
@@ -134,7 +134,7 @@ test.describe('Row title band · phone', () => {
     const deadline = new Date(Date.now() + 10 * DAY).toISOString()
     const titleOnly = {
       dot: await create(page, { title: uniqueTitle('RB dot'), horizon: 'days' }),
-      dashed: await create(page, { title: uniqueTitle('RB dashed') }),
+      unset: await create(page, { title: uniqueTitle('RB unset') }),
       dotHigh: await create(page, { title: uniqueTitle('RB high'), horizon: 'weeks', priority: 3 }),
     }
     const withMeta = {
@@ -156,7 +156,7 @@ test.describe('Row title band · phone', () => {
         horizon: 'days',
         deadline_at: deadline,
       }),
-      dashed: await create(page, { title: uniqueTitle('RB dashed'), deadline_at: deadline }),
+      unset: await create(page, { title: uniqueTitle('RB unset'), deadline_at: deadline }),
     }
     // A title long enough to clamp: the fix must keep the wrap around the
     // corner and the three-line clamp.
@@ -180,13 +180,13 @@ test.describe('Row title band · phone', () => {
         'data-horizon-dot',
         'days',
       )
-      await expect(row(titleOnly.dashed).locator('[data-horizon-dot]')).toBeVisible()
+      await expect(row(titleOnly.unset).locator('[data-horizon-dot]')).toBeVisible()
       await expect(row(titleOnly.dotHigh).locator('[data-priority-tab]')).toBeVisible()
       await expect(row(withMeta.plain).locator('[data-row-corner]')).toHaveCount(0)
       await expect(row(withMeta.high).locator('[data-horizon-dot]')).toHaveCount(0)
       await expect(row(withMeta.high).locator('[data-priority-tab]')).toBeVisible()
       await expect(row(withMeta.dot).locator('[data-horizon-dot]')).toBeVisible()
-      await expect(row(withMeta.dashed).locator('[data-horizon-dot]')).toBeVisible()
+      await expect(row(withMeta.unset).locator('[data-horizon-dot]')).toBeVisible()
       for (const id of Object.values(titleOnly)) {
         await expect(row(id).locator('[data-target-time]')).toHaveCount(0)
       }
