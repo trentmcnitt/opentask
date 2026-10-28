@@ -219,6 +219,8 @@ test.describe('Row corner · desktop', () => {
       await expect(ring).toHaveAttribute('fill', 'none')
       await expect(ring).toHaveAttribute('stroke-width', '1')
       expect(await radius('null')).toBe(2.5)
+      // Quieter than any set dot (2026-10-28): it reads as "nothing set".
+      expect(await opacity('null')).toBeLessThan(await opacity('eventually'))
       // Tooltips (the test user's check-in day is the default, Saturday).
       await expect(dot('weeks')).toHaveAttribute('title', 'Weeks · comes back Saturdays')
       await expect(dot('days')).toHaveAttribute('title', 'Days · comes back daily')
