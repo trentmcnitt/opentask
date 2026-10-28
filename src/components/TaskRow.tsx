@@ -96,7 +96,7 @@ import type { Task, LabelColor } from '@/types'
  * Snooze button:  desktop only (hover) — mobile uses swipe
  */
 
-interface TaskRowProps {
+export interface TaskRowProps {
   task: Task
   /** The user's periods, so a "Next period" default snooze resolves (see TaskList). */
   timeSlots?: TimeSlot[]

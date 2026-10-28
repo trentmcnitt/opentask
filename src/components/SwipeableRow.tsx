@@ -12,7 +12,20 @@ interface SwipeableRowProps {
   threshold?: number // fraction of width, default 0.4
   disabled?: boolean // disable swiping (e.g. during selection mode)
   leftAction?: 'snooze' | 'edit' // controls swipe-left label and color (default: 'snooze')
+  /**
+   * What the row sits on: 'card' (the card rows: rounded, `bg-card`) or
+   * 'flat' (the lean rows: square edges on the page's own background). The
+   * foreground stays opaque either way, so the swipe's action colour never
+   * shows through a row that is not being dragged.
+   */
+  surface?: 'card' | 'flat'
 }
+
+/** Each surface's container and (always opaque) foreground. */
+const SURFACE = {
+  card: { outer: 'rounded-lg', foreground: 'bg-card rounded-lg' },
+  flat: { outer: '', foreground: 'bg-background' },
+} as const
 
 export function SwipeableRow({
   children,
@@ -22,6 +35,7 @@ export function SwipeableRow({
   threshold = 0.4,
   disabled = false,
   leftAction = 'snooze',
+  surface = 'card',
 }: SwipeableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
@@ -109,7 +123,11 @@ export function SwipeableRow({
   return (
     <div
       ref={containerRef}
-      className={cn('relative rounded-lg', offset !== 0 ? 'overflow-hidden' : 'overflow-visible')}
+      className={cn(
+        'relative',
+        SURFACE[surface].outer,
+        offset !== 0 ? 'overflow-hidden' : 'overflow-visible',
+      )}
     >
       {/* Background revealed by swipe */}
       {offset !== 0 && (
@@ -126,7 +144,7 @@ export function SwipeableRow({
          action labels never bleed through semi-transparent child backgrounds */}
       <div
         {...(disabled ? {} : bind())}
-        className="bg-card rounded-lg"
+        className={SURFACE[surface].foreground}
         style={{
           transform: `translateX(${offset}px)`,
           transition: offset === 0 || swiped ? 'transform 0.2s ease-out' : 'none',
