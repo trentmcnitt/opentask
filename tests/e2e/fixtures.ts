@@ -112,7 +112,7 @@ export function backdateCreated(
     // now, which would keep it in today's segment as a considered row (and a
     // page of the dashboard panel's pager); see globalSetup.ts.
     // `keepHorizon`: leave the horizon as made (an unset one stays unset, for
-    // a spec that needs the dashed dot) — considered a day ahead keeps it out
+    // a spec that needs the unset ring) — considered a day ahead keeps it out
     // of the segments on its own.
     const hide = db.prepare(
       opts.keepHorizon

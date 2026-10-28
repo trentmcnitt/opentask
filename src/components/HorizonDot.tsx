@@ -25,7 +25,7 @@ import type { Task } from '@/types'
 /**
  * The HORIZON DOT (2026-10-14, Trent's pick "R1 · perspective dot"): one dot
  * that shrinks and fades with distance — Days big and dark, Eventually small
- * and light — and a dashed Weeks-size outline for unset. Sizes and opacities
+ * and light — and a hollow Weeks-size ring for unset (`HORIZON_DOT_UNSET`). Sizes and opacities
  * are `HORIZON_DOT` in `src/lib/row-corner.ts`. Drawn in the foreground
  * colour at 78%, so it follows the theme.
  */
@@ -60,7 +60,6 @@ export function HorizonDotMark({
           fill="none"
           stroke="currentColor"
           strokeWidth="1"
-          strokeDasharray={HORIZON_DOT_UNSET.dash}
           opacity={HORIZON_DOT_UNSET.opacity}
         />
       )}

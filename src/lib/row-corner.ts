@@ -97,10 +97,17 @@ export const HORIZON_DOT: Record<HorizonValue, { r: number; opacity: number }> =
 }
 
 /**
- * Unset (null, read as weeks — never reported as set): a dashed outline the
- * size of the Weeks dot, so it reads "about weeks, not chosen".
+ * Unset (null, read as weeks — never reported as set): a HOLLOW RING the size
+ * of the Weeks dot — hollow = not chosen, filled = chosen. A 1px stroke on
+ * r 2.5 fills exactly the Weeks dot's 6px, and lies on whole pixels.
+ *
+ * It was a DASHED outline (r 3, dashes 1.6/1.3) until 2026-10-28, when Trent
+ * saw it break up on a 1x monitor: the dashes didn't divide the circle evenly
+ * and the stroke straddled pixel rows, so at 1x it drew as uneven grey
+ * blotches. Mocked against pixel-aligned dashes (`.tmp/horizon-ring/`, 1x and
+ * 2x, light and dark); the ring was his pick.
  */
-export const HORIZON_DOT_UNSET = { r: 3, dash: '1.6 1.3', opacity: 0.8 } as const
+export const HORIZON_DOT_UNSET = { r: 2.5, opacity: 0.8 } as const
 
 /** The horizon value a stored string stands for, or null when unset/unknown. */
 export function horizonOf(value: string | null | undefined): HorizonValue | null {
