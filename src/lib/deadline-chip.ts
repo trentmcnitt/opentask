@@ -8,12 +8,11 @@
  * write its own way. Pure, so the rows and the tests share one copy
  * (`tests/behavioral/dl-deadline-chip.test.ts`); drawn by `DeadlineChip`.
  *
- * TONE, one meaning each:
+ * TONE, one meaning each (Trent, 2026-10-28, the time chips — `TimeChip`):
  *  - 'passed' (red): the deadline has passed — red means only that, app-wide;
- *  - 'close' (amber): the SAFETY NET — from the day before the deadline's
- *    OpenTask day (`inSafetyNet`), when only a target or done takes a
- *    target-less task off the deadlines page;
- *  - 'ahead' (neutral, bold): anything further out.
+ *  - 'today' (solid teal): the deadline is on today's OpenTask day;
+ *  - 'ahead' (teal): any later day. The day before is no longer amber (the
+ *    safety net's own colour until 2026-10-28): "Deadline tomorrow" says it.
  *
  * WORDS: "Deadline today" / "tomorrow" / "Fri" (within the week) / "Oct 30";
  * passed, "Past deadline Oct 20" ("… yesterday", "… today").
@@ -25,10 +24,10 @@
  * before, not as a calendar-day surprise. The tooltip keeps the exact moment.
  */
 import { DateTime } from 'luxon'
-import { inSafetyNet, isPastDeadline } from '@/lib/task-segments'
+import { isPastDeadline } from '@/lib/task-segments'
 import { LAST_NIGHT, nightDay, nightWeekday } from '@/lib/night-day'
 
-export type DeadlineTone = 'passed' | 'close' | 'ahead'
+export type DeadlineTone = 'passed' | 'today' | 'ahead'
 
 export interface DeadlineChipFacts {
   text: string
@@ -58,10 +57,7 @@ export function deadlineChip(
     return { text: `Past deadline ${past}`, tone: 'passed', title }
   }
   const words = dayWords(day, gap, night)
-  const tone: DeadlineTone = inSafetyNet(deadlineAt, timezone, now, rolloverTime)
-    ? 'close'
-    : 'ahead'
-  return { text: `Deadline ${words}`, tone, title }
+  return { text: `Deadline ${words}`, tone: gap === 0 ? 'today' : 'ahead', title }
 }
 
 /** "today", "tomorrow", "yesterday", "Fri", "Oct 30" — "… night" on L9's evening-before day ("last night", not "yesterday night"). */

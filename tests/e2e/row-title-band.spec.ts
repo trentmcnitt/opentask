@@ -62,9 +62,15 @@ async function create(page: Page, data: Record<string, unknown>): Promise<number
 }
 
 /** Tomorrow at 10:00 local — a picked target well ahead of now. */
-function tomorrowAt10(): string {
+/**
+ * Three days out at 10:00: "Sat 10:00 AM", the weekday form whatever today
+ * is — shorter than "Tomorrow 10:00 AM", so the target and deadline chips
+ * (`TimeChip`, 2026-10-28: padded, the deadline flagged) share one meta line
+ * on a phone at the iOS app's 119% text, as the rows this compares need.
+ */
+function inThreeDaysAt10(): string {
   const tz = process.env.E2E_TZ || 'America/Chicago'
-  return DateTime.now().setZone(tz).plus({ days: 1 }).set({ hour: 10, minute: 0 }).toUTC().toISO()!
+  return DateTime.now().setZone(tz).plus({ days: 3 }).set({ hour: 10, minute: 0 }).toUTC().toISO()!
 }
 
 /** The test's project group, with its Now fold opened so every row shows. */
@@ -140,13 +146,13 @@ test.describe('Row title band · phone', () => {
     const withMeta = {
       plain: await create(page, {
         title: uniqueTitle('RB plain'),
-        target_at: tomorrowAt10(),
+        target_at: inThreeDaysAt10(),
         deadline_at: deadline,
       }),
       high: await create(page, {
         title: uniqueTitle('RB high'),
         priority: 3,
-        target_at: tomorrowAt10(),
+        target_at: inThreeDaysAt10(),
         deadline_at: deadline,
       }),
       // No picked target: the dot shows (the deadline's automatic target, or

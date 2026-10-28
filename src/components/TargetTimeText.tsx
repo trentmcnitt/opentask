@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { timeChipClasses } from '@/components/TimeChip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,24 +39,23 @@ import type { Task } from '@/types'
 export function TargetTimeText({
   task,
   timezone,
-  relative,
-  absolute,
-  relativeClassName,
+  text,
+  over,
   onMove,
   onRemoveTarget,
 }: {
   task: Task
   timezone: string
-  relative: string
-  absolute: string | null
-  relativeClassName?: string
+  /** The chip's words ("Tomorrow 7:00 AM", "3h ago · 5:00 PM"). */
+  text: string
+  /** The target has passed: a plum chip. */
+  over: boolean
   onMove: (at: string) => void
   onRemoveTarget?: (task: Task) => void
 }) {
   const [moveOpen, setMoveOpen] = useState(false)
   const { reset } = targetTimeMenu(task)
   const resetWord = onRemoveTarget && reset ? REMOVE_TARGET : null
-  const label = absolute ? `${relative} · ${absolute}` : relative
   return (
     <span
       className="contents"
@@ -74,18 +74,18 @@ export function TargetTimeText({
           <DropdownMenu>
             <DropdownMenuTrigger
               data-target-time
+              data-time-chip={over ? 'over' : 'target'}
               data-no-row-press
               onClick={(e) => e.stopPropagation()}
-              aria-label={`Target ${label}. Options`}
-              className="hover:bg-foreground/5 data-[state=open]:bg-foreground/10 -mx-1 -my-0.5 inline-flex touch-manipulation items-center gap-1 rounded px-1 py-0.5 whitespace-nowrap"
-            >
-              <span className={relativeClassName}>{relative}</span>
-              {absolute && (
-                <>
-                  <span className="text-muted-foreground/50">·</span>
-                  <span>{absolute}</span>
-                </>
+              aria-label={`Target ${text}. Options`}
+              // The chip is the control (`TimeChip`): it dims a little on
+              // hover and while its menu is open.
+              className={timeChipClasses(
+                over ? 'over' : 'target',
+                'touch-manipulation text-xs transition-opacity hover:opacity-80 data-[state=open]:opacity-80',
               )}
+            >
+              {text}
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"

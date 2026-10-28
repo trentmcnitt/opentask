@@ -17,7 +17,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, openTaskDay, uniqueTitle } from './fixtures'
+import { test, expect, openTaskDay, uniqueTitle, chipContrast } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
@@ -84,51 +84,6 @@ const choice = (page: Page, name: RegExp) =>
     .locator('[role="menuitem"], [data-slot="sheet-content"] button')
     .filter({ hasText: name })
     .first()
-
-/**
- * A chip's text-on-background contrast, as drawn: its text colour against its
- * own (translucent) background composited over the nearest opaque ancestor.
- * Colours go through a canvas, so any CSS colour syntax (oklch included)
- * comes back as sRGB.
- */
-async function chipContrast(chip: Locator): Promise<number> {
-  return chip.evaluate((el) => {
-    const ctx = document.createElement('canvas').getContext('2d')!
-    const paint = (...colors: string[]) => {
-      ctx.clearRect(0, 0, 1, 1)
-      for (const c of colors) {
-        ctx.fillStyle = c
-        ctx.fillRect(0, 0, 1, 1)
-      }
-      return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]
-    }
-    const opaque = (c: string) => {
-      ctx.clearRect(0, 0, 1, 1)
-      ctx.fillStyle = c
-      ctx.fillRect(0, 0, 1, 1)
-      return ctx.getImageData(0, 0, 1, 1).data[3] === 255
-    }
-    let base = 'white'
-    for (let a = el.parentElement; a; a = a.parentElement) {
-      const bg = getComputedStyle(a).backgroundColor
-      if (opaque(bg)) {
-        base = bg
-        break
-      }
-    }
-    const lum = ([r, g, b]: number[]) => {
-      const f = (v: number) => {
-        const c = v / 255
-        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-      }
-      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
-    }
-    const style = getComputedStyle(el)
-    const back = lum(paint(base, style.backgroundColor))
-    const text = lum(paint(base, style.backgroundColor, style.color))
-    return (Math.max(back, text) + 0.05) / (Math.min(back, text) + 0.05)
-  })
-}
 
 test.describe.configure({ mode: 'serial' })
 
@@ -228,9 +183,11 @@ for (const viewport of VIEWPORTS) {
         await expect(r).toHaveAttribute('data-safety-net', '')
         await expect(r.locator('[data-defer-lead]')).toHaveCount(0)
         await expect(r.locator('[data-defer-lead-empty]')).toHaveCount(1)
+        // The chip no longer marks the safety net (amber until 2026-10-28): a
+        // deadline 20 hours out is today's or tomorrow's.
         await expect(r.locator('[data-deadline-chip]')).toHaveAttribute(
           'data-deadline-chip',
-          'close',
+          /^(today|ahead)$/,
         )
         await r.getByRole('button', { name: /as considered/ }).click()
         // Still listed, still waiting, now with the seen ring.

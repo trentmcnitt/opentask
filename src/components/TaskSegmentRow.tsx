@@ -61,6 +61,7 @@ import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import { DeadlineChip } from '@/components/DeadlineChip'
+import { TimeChip, timeChipClasses } from '@/components/TimeChip'
 import { useTimezone } from '@/hooks/useTimezone'
 
 /**
@@ -1246,9 +1247,16 @@ function TaskSegmentMeta({
       {target && (
         <span
           data-target-chip
+          className="inline-flex items-center"
           title={`${queuedOccurrence ? '' : 'Target '}${target.toFormat('ccc LLL d, h:mm a')}`}
         >
-          {target.toFormat('LLL d')}
+          {/* A target is a time chip (`TimeChip`, 2026-10-28); the occurrence
+              a waiting repeat stands for is not a target, so it stays text. */}
+          {queuedOccurrence ? (
+            target.toFormat('LLL d')
+          ) : (
+            <TimeChip tone="target">{target.toFormat('LLL d')}</TimeChip>
+          )}
           {task.rrule && (
             <span className="text-muted-foreground">
               {' · '}
@@ -1346,6 +1354,12 @@ function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
  * from its lead day. Undo on the toast. A repeating row's chip names its schedule ("every Wed", `recurrenceSummary`, the widget's words) and does nothing.
  * `readOnly` (the row's peek bubble): the same words, the chip a plain label.
  */
+/** A target's chip words: `upcomingGap`'s "Target 9:00 AM" without the word (the chip says it). */
+function chipWords(words: string): string {
+  const time = words.replace(/^Target /, '')
+  return time.charAt(0).toUpperCase() + time.slice(1)
+}
+
 function UpcomingMeta({
   row,
   actions,
@@ -1392,9 +1406,14 @@ function UpcomingMeta({
               data-no-row-press
               data-target-chip
               aria-label={`${gap.target}. Options`}
-              className="text-foreground/70 hover:bg-foreground/5 -mx-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5"
+              // A picked target's time chip (`TimeChip`), the menu's chevron
+              // inside it (only a picked one-off has the menu).
+              className={timeChipClasses(
+                'target',
+                'transition-opacity hover:opacity-80 data-[state=open]:opacity-80',
+              )}
             >
-              {gap.target}
+              {chipWords(gap.target)}
               <ChevronDown className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
@@ -1404,8 +1423,14 @@ function UpcomingMeta({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <span data-target-chip className="text-foreground/70">
-            {gap.target}
+          <span data-target-chip className="text-foreground/70 inline-flex items-center">
+            {/* A target is a time chip; a deck's words ("On deck tomorrow")
+                are not a time, and stay text. */}
+            {task.on_deck_day ? (
+              gap.target
+            ) : (
+              <TimeChip tone="target">{chipWords(gap.target)}</TimeChip>
+            )}
             {row.recurring && task.rrule && (
               <span className="text-muted-foreground">
                 {' · '}

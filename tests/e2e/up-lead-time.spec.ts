@@ -90,8 +90,8 @@ test.describe('Upcoming: Tomorrow and Later', () => {
       )
       const row = section(page, 'tomorrow').locator(`[data-segment-task="${soon}"]`)
       await expect(row).toBeVisible()
-      // The day goes without saying: "Target 9:00 AM".
-      await expect(row.locator('[data-target-chip]')).toHaveText(/^Target 9:00 AM/)
+      // The day goes without saying: "9:00 AM" (the time chip, no "Target" word).
+      await expect(row.locator('[data-target-chip]')).toHaveText(/^9:00 AM/)
       await expect(section(page, 'tomorrow').locator('[data-upcoming-section-count]')).toHaveText(
         '0 of 1',
       )
@@ -200,7 +200,7 @@ test.describe('Upcoming: Tomorrow and Later', () => {
       expect(ids).toEqual([soon, far])
       await expect(
         card.locator('[data-upcoming-section="later"]').locator(`[data-segment-task="${far}"]`),
-      ).toContainText(`Target ${fmt(10)}`)
+      ).toContainText(fmt(10))
       // The page's count covers both sections.
       await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Task queue · Upcoming')
     } finally {
