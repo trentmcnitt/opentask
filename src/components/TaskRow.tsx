@@ -547,8 +547,14 @@ export function TaskRow({
         // enrichment finished). A Just added card tap flashes exactly such a
         // row.
         isAiProcessing && !highlighted && 'animate-ai-processing',
-        // Keyboard focus indicator - uses inset shadow since SwipeableRow's overflow:hidden clips outlines
-        isKeyboardFocused && 'shadow-[inset_0_0_0_2px_#3b82f6]',
+        // Keyboard focus indicator (a desktop click sets it too): an inset
+        // shadow, since SwipeableRow's overflow:hidden clips outlines. Drawn
+        // on an overlay ABOVE the row's children (2026-10-28, Trent): on the
+        // row itself the corner tabs (`RowCorner`, z-[1]) painted over it and
+        // broke the ring at the top-right. Same place as before — inside the
+        // border, on its inner rounding — and it never takes a pointer.
+        isKeyboardFocused &&
+          "after:pointer-events-none after:absolute after:inset-0 after:z-[2] after:rounded-[calc(var(--radius-lg)-1px)] after:shadow-[inset_0_0_0_2px_#3b82f6] after:content-['']",
         highlighted && 'animate-row-highlight',
       )}
     >

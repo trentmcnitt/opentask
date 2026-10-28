@@ -275,6 +275,43 @@ test.describe('Row corner · desktop', () => {
       await trash(page, [id])
     }
   })
+
+  // The focus ring (a click focuses a row) is ONE ring (2026-10-28, Trent):
+  // drawn on the row it sat under the corner tabs, which broke it at the
+  // top-right. It is an overlay above them now.
+  test('a focused row’s ring is drawn above the corner, unbroken', async ({
+    authenticatedPage: page,
+  }) => {
+    const id = await create(page, {
+      title: uniqueTitle('RC focus ring'),
+      priority: 3,
+      horizon: 'weeks',
+    })
+    try {
+      await gotoDashboard(page)
+      const row = taskRow(page, id)
+      await expect(row.locator('[data-row-corner] [data-horizon-dot]')).toBeVisible()
+      await cmdClickRow(row)
+      const ring = await row.evaluate((el) => {
+        const after = getComputedStyle(el, '::after')
+        const corner = el.querySelector('[data-row-corner]')!
+        return {
+          shadow: after.boxShadow,
+          ringZ: Number(after.zIndex),
+          cornerZ: Number(getComputedStyle(corner).zIndex),
+          pointer: after.pointerEvents,
+        }
+      })
+      expect(ring.shadow).toContain('inset')
+      expect(ring.ringZ).toBeGreaterThan(ring.cornerZ)
+      expect(ring.pointer).toBe('none')
+      await themes(page, async (theme) => {
+        await row.screenshot({ path: `${SHOTS}/focus-ring-${theme}.png` })
+      })
+    } finally {
+      await trash(page, [id])
+    }
+  })
 })
 
 test.describe('Row corner · target time and segments', () => {
