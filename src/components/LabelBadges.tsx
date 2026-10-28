@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { getLabelClasses } from '@/lib/label-colors'
 import { cn } from '@/lib/utils'
+import { LabelName, ROW_HIDDEN_LABELS } from '@/components/LabelName'
 import type { LabelConfig } from '@/types'
 
 /**
@@ -12,7 +13,10 @@ import type { LabelConfig } from '@/types'
  * showed no labels, so "ai-added" or "house" was only visible on the
  * dashboard). EVERY label, in its registry colour (Trent, 2026-10-28: "I
  * don't want to hide tags" — it showed two, then "+N"); they wrap with the
- * meta line. `ai-to-process` is never shown (the row's shimmer says it). An `ai-failed`
+ * meta line. Not the labels a row never shows (`ROW_HIDDEN_LABELS`:
+ * `ai-to-process`, whose state the row's shimmer says, and the AI provenance
+ * labels only the editor shows); an AI label wears the Bot glyph
+ * (`LabelName`, 2026-10-28). An `ai-failed`
  * chip gets a retry button when the row can reprocess.
  *
  * A chip is NEVER cut (Trent, 2026-10-24). The group sits in a row's
@@ -37,8 +41,9 @@ export function LabelBadges({
   onReprocess?: () => void
   className?: string
 }) {
-  // Filter out ai-to-process (the animation conveys that state)
-  const visibleLabels = labels.filter((l) => l !== 'ai-to-process')
+  const visibleLabels = labels.filter((l) => !ROW_HIDDEN_LABELS.has(l))
+  // Nothing to show (only hidden labels): no empty group in the meta line.
+  if (visibleLabels.length === 0) return null
 
   return (
     <div
@@ -74,7 +79,7 @@ export function LabelBadges({
                   : undefined
               }
             >
-              {label}
+              <LabelName label={label} />
             </Badge>
             {isAiFailed && onReprocess && (
               <button

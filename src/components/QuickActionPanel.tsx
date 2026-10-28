@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { LabelName } from '@/components/LabelName'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   DropdownMenu,
@@ -1853,7 +1854,7 @@ export function QuickActionPanel({
                           isNew && 'animate-pulse ring-2 ring-blue-400',
                         )}
                       >
-                        {label}
+                        <LabelName label={label} />
                         <button
                           type="button"
                           onClick={() => removeLabel(label)}
@@ -1910,7 +1911,7 @@ export function QuickActionPanel({
                                       colorClasses && `${colorClasses} border-0`,
                                     )}
                                   >
-                                    {c.name}
+                                    <LabelName label={c.name} />
                                   </Badge>
                                 </button>
                               )
@@ -1931,7 +1932,7 @@ export function QuickActionPanel({
                         variant={colorClasses ? undefined : 'secondary'}
                         className={cn('text-xs', colorClasses && `${colorClasses} border-0`)}
                       >
-                        {label}
+                        <LabelName label={label} />
                       </Badge>
                     )
                   })}

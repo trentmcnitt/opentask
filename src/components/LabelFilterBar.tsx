@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { AI_LABELS, AiLabelGlyph } from '@/components/LabelName'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { labelChipCounts } from '@/lib/label-filter'
@@ -131,6 +132,7 @@ function LabelChipBadge({
       onPointerMove={handlers.onPointerMove}
       onPointerLeave={handlers.onPointerLeave}
     >
+      {AI_LABELS.has(label) && <AiLabelGlyph />}
       <span className="leading-none">{label}</span>
       <span className="ml-1 text-[10px] leading-none opacity-60">{count}</span>
     </Badge>
