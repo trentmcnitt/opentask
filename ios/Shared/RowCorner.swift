@@ -83,9 +83,11 @@ enum RowCorner {
         case .eventually: return DotStyle(radius: 2.25, opacity: 0.42, ring: false)
         // Unset (read as weeks, never shown as set): a hollow ring the size of
         // the Weeks dot — `HORIZON_DOT_UNSET`, r 2.5 + stroke 1 = 6pt across,
-        // opacity 0.8. Dashed (r 3, "1.6 1.3") until 2026-10-28: on a 1x
-        // monitor the dashes broke up, and the ring was Trent's pick.
-        case nil: return DotStyle(radius: 2.5, opacity: 0.8, ring: true)
+        // opacity 0.36. Dashed (r 3, "1.6 1.3") until 2026-10-28: on a 1x
+        // monitor the dashes broke up, and the ring was Trent's pick. 0.8
+        // until later that day ("a little too strong… It looks intentionally
+        // set"): fainter than every set dot now, so it reads as nothing set.
+        case nil: return DotStyle(radius: 2.5, opacity: 0.36, ring: true)
         }
     }
 
