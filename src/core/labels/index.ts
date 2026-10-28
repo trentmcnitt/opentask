@@ -13,7 +13,7 @@
  * fails loudly instead of minting a tag.
  *
  * TWO SEPARATE AI VOCABULARIES — do not merge them:
- * - `ai-to-process` / `ai-failed` / `ai-locked` are a LIVE processing state
+ * - `ai-to-process` / `ai-failed` are a LIVE processing state
  *   machine owned by enrichment.ts. Leave them alone.
  * - `ai-proposed` / `ai-added` / `ai-monitored` are PROVENANCE, defined here.
  */

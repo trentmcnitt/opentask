@@ -15,8 +15,12 @@
 /** Namespace reserved for labels that carry behavior rather than meaning. */
 export const RESERVED_LABEL_PREFIX = 'ai-'
 
-/** Enrichment processing state machine — owned by enrichment.ts, leave alone. */
-export const PROCESSING_LABELS = ['ai-to-process', 'ai-failed', 'ai-locked'] as const
+/**
+ * Enrichment processing state machine — owned by enrichment.ts, leave alone.
+ * (`ai-locked`, which made enrichment skip a task, was retired 2026-10-28:
+ * `retireAiLockedLabel` in src/core/db.)
+ */
+export const PROCESSING_LABELS = ['ai-to-process', 'ai-failed'] as const
 
 /** Provenance labels (§7.2). */
 export const PROVENANCE_LABELS = {

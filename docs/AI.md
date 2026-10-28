@@ -79,10 +79,6 @@ Every feature resolves its model via `requireFeatureModel()`, which checks per-f
 
 Only filter things that are truly safe to filter (like tasks due far in the future). The more context AI has, the better its insights. For example, the What's Next prompt includes `rrule`, `notes`, and `recurrence_mode` — not just `recurring: yes/no` — because the pattern (daily vs monthly), the context (notes from dictation), and the advancement mode (from_due vs from_completion) all affect how the AI should interpret a task's state.
 
-### AI-locked protection
-
-Tasks with the `ai-locked` label are never processed by AI. This gives users an escape hatch for tasks they want to keep exactly as written. The queue checks for this label and skips the task (removing AI processing labels).
-
 ---
 
 ## Architecture
@@ -407,7 +403,6 @@ The enrichment queue uses round-robin scheduling across users. Tasks from differ
 | Model returns invalid output   | `ai-failed` label applied after 2 attempts                                                                          | Warning icon, raw text preserved  |
 | Model extracts wrong fields    | Changes applied and logged in undo                                                                                  | User can Cmd+Z to revert          |
 | Server restarts mid-enrichment | In-memory processing set resets, tasks retried                                                                      | Re-processed automatically        |
-| Task has `ai-locked` label     | Enrichment skipped, `ai-to-process` removed                                                                         | No AI processing                  |
 | Rapid consecutive failures     | Circuit breaker pauses queue for 5 minutes                                                                          | Pending tasks wait                |
 | Warm slot dies                 | Marked dead; queued enrichments fail as attempts (retried, then `ai-failed`); Quick Take falls back to a cold query | Enrichment retried next cycle     |
 | Semaphore full                 | Request queued FIFO, times out after 30 seconds                                                                     | Loading indicator, eventual error |

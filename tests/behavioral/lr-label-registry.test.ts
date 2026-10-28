@@ -11,7 +11,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { getDb } from '@/core/db'
+import { getDb, retireAiLockedLabel } from '@/core/db'
 import { createTask, getTaskById, updateTask } from '@/core/tasks'
 import {
   listLabels,
@@ -22,6 +22,7 @@ import {
   filterAutoCreatableLabels,
   confirmProvenance,
   PROVENANCE_LABELS,
+  SYSTEM_LABELS,
 } from '@/core/labels'
 import { ValidationError } from '@/core/errors'
 import { setupTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
@@ -224,5 +225,37 @@ describe('Label Registry', () => {
     db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run('["lr-legacy"]', task.id)
     expect(getTaskById(task.id)!.labels).toContain('lr-legacy')
     expect(getLabelByName(TEST_USER_ID, 'lr-legacy')).toBeNull()
+  })
+})
+
+/**
+ * LR-RETIRE: `ai-locked` is retired (2026-10-28): the startup step deletes it
+ * from every user's registry and strips it from any task still carrying it;
+ * a second run changes nothing, and the backfill no longer seeds it.
+ */
+describe('ai-locked retired', () => {
+  beforeEach(() => setupTestDb())
+
+  test('gone from the registry and from tasks; idempotent; not reseeded', () => {
+    const db = getDb()
+    const task = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'lr retire', labels: [] },
+    })
+    // As an old install left it: a registry row and a task carrying it.
+    db.prepare(
+      "INSERT OR IGNORE INTO labels (user_id, name, facet) VALUES (?, 'ai-locked', 'operational')",
+    ).run(TEST_USER_ID)
+    db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(
+      JSON.stringify(['ai-locked', 'ai-added']),
+      task.id,
+    )
+
+    expect(retireAiLockedLabel(db)).toEqual({ registry: 1, tasks: 1 })
+    expect(getLabelByName(TEST_USER_ID, 'ai-locked')).toBeNull()
+    expect(getTaskById(task.id)!.labels).toEqual(['ai-added'])
+    expect(retireAiLockedLabel(db)).toEqual({ registry: 0, tasks: 0 })
+    expect(SYSTEM_LABELS.has('ai-locked')).toBe(false)
   })
 })
