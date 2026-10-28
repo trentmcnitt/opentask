@@ -1,12 +1,13 @@
 /**
- * "AI couldn't process" notification — one quiet push when AI enrichment of a
+ * "AI failed to process" notification — one quiet push when AI enrichment of a
  * task or reminder fails for good (Trent, 2026-10-05). Before this, a failure
  * was silent: the task kept its raw text as its title and a red `ai-failed`
  * label, and the user only found out by opening the app.
  *
  * WHAT IT SAYS.
  *
- *   title: "AI couldn't process a task"   ("… a reminder", "… a quota")
+ *   title: "AI failed to process a task"   ("… a reminder", "… a quota";
+ *          "AI couldn't process …" until 2026-10-28, Trent's wording)
  *   body:  the text the user typed, as the AI was given it
  *          (`original_title`, falling back to `title` — the same text
  *          `enrichTask` enriches), cut at FAILED_BODY_MAX_CHARS with "…".
@@ -117,7 +118,7 @@ export function buildEnrichmentFailedNotificationContent(task: Task): {
   const noun = task.is_reminder ? 'reminder' : isTracked(task) ? 'quota' : 'task'
   const text = (task.original_title || task.title).trim()
   return {
-    title: `AI couldn't process a ${noun}`,
+    title: `AI failed to process a ${noun}`,
     body: truncateText(text, FAILED_BODY_MAX_CHARS),
   }
 }
@@ -148,7 +149,7 @@ export function claimFailureNotification(params: {
 }
 
 /**
- * Send the "AI couldn't process" push for a task that was just marked
+ * Send the "AI failed to process" push for a task that was just marked
  * `ai-failed`. Safe to call more than once; only the first call per failure
  * sends. See the header for the full rules.
  */

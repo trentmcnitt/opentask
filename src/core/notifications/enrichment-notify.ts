@@ -49,7 +49,7 @@
  *   The set is in memory; a restart empties it, which only matters if the same
  *   task is enriched again inside its 15 minutes after the restart.
  * - NOT on failure: the `ai-failed` path never calls this. A failure has its
- *   own push since 2026-10-05 — "AI couldn't process a task", with the text
+ *   own push since 2026-10-05 — "AI failed to process a task", with the text
  *   the user typed — in `enrichment-failed-notify.ts`. It is not governed by
  *   the switch below (only by `notifications_enabled`), is not limited to the
  *   Just added window, and has its own collapse id (`ai-failed-<id>`), so the

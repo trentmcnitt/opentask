@@ -17,7 +17,7 @@
  *       `ai-failed` as below (2026-10-28)
  *     → Failure attempt 1: keep `ai-to-process` (retry on next cycle)
  *     → Failure attempt 2: remove `ai-to-process`, add `ai-failed`, and one
- *       quiet "AI couldn't process" push — however old the task is
+ *       quiet "AI failed to process" push — however old the task is
  *       (`announceEnrichmentFailed`, src/core/notifications/enrichment-failed-notify.ts)
  *   [Task has both `ai-locked` + `ai-to-process`] → skip (ai-locked wins),
  *     remove `ai-to-process`
@@ -393,7 +393,7 @@ function clearFailures(taskId: number): void {
  * which case the trigger label is removed, as before). The caller owns the
  * claim and must `processingTasks.delete(id)` in a `finally`.
  *
- * A claimed task is being enriched again, so an earlier "AI couldn't process"
+ * A claimed task is being enriched again, so an earlier "AI failed to process"
  * alert for it is spent (`releaseEnrichmentFailedNotice`): if this run fails
  * for good as well, that is a new failure and the user hears about it again.
  */
@@ -529,7 +529,7 @@ export async function processEnrichmentQueue(): Promise<void> {
       // The "AI finished" push, outside the try so a push failure can never
       // count as an enrichment failure (and trip the circuit breaker).
       if (succeeded && modelRan) announceEnrichmentFinished(row.id, row.user_id)
-      // The "AI couldn't process" push, for the attempt that just marked the
+      // The "AI failed to process" push, for the attempt that just marked the
       // task ai-failed — same placement and reason as the one above.
       if (markedFailed) announceEnrichmentFailed(row.id, row.user_id)
 
@@ -696,7 +696,7 @@ function announceEnrichmentFinished(taskId: number, userId: number): void {
 }
 
 /**
- * Fire the "AI couldn't process" push (`notifyEnrichmentFailed`) without
+ * Fire the "AI failed to process" push (`notifyEnrichmentFailed`) without
  * awaiting it.
  *
  * Called from BOTH entry points, only for the attempt whose `handleFailure`

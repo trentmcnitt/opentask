@@ -265,7 +265,7 @@ describe('exactly once', () => {
 })
 
 describe('sends nothing', () => {
-  // A failure has its own push ("AI couldn't process a task",
+  // A failure has its own push ("AI failed to process a task",
   // ai-enrichment-failed-notify.test.ts) — but never this one.
   test('when enrichment fails for good (ai-failed)', async () => {
     const id = newTask('something vague')

@@ -114,7 +114,7 @@ Each sender's old `check*` entry point (`checkOverdueTasks`, `checkSlotReminders
 | `src/core/notifications/reminder-nag-rule.ts`        | Which reminders and prompts are pushed by name, not counted in their period (`getsNamedPush`, `promptGetsNamedPush`) |
 | `src/core/notifications/prompt-nags.ts`              | Named pushes for Medium+ quotas' prompts (`pendingPromptNags`, `promptPushEndCheck`, `purgeOldPromptNags`)           |
 | `src/core/notifications/enrichment-notify.ts`        | Quiet "AI finished" push for a just-added task (`notifyEnrichmentFinished`)                                          |
-| `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI couldn't process" push when enrichment fails for good (`notifyEnrichmentFailed`)                           |
+| `src/core/notifications/enrichment-failed-notify.ts` | Quiet "AI failed to process" push when enrichment fails for good (`notifyEnrichmentFailed`)                          |
 | `src/core/notifications/sweep-feedback.ts`           | Quiet bulk defer feedback push (`planSweepFeedback`, `sendSweepFeedback`)                                            |
 | `src/core/notifications/deadline-cap-feedback.ts`    | Quiet "Deferred to deadline 6:00 PM" push when a notification button's defer stopped at the deadline (ruling A3)     |
 | `src/core/notifications/deadline-nags.ts`            | The deadlines-page nag (`pendingDeadlineNags`, `checkDeadlineNags`, `claimNagSend`)                                  |
@@ -296,7 +296,7 @@ Examples: `Added to Work · Tomorrow 9:00 AM · High`, `Added to Inbox · Mon 9:
 
 ### Tapping a task notification
 
-Tapping any task notification — overdue, "AI finished", "AI couldn't process", or the test notification — opens the dashboard at the bare `/?task=<id>`: the iPhone and Mac apps load it through `WebViewManager.navigateToTask` (`DeepLinkRouter.notificationTaskPath`), and Web Push carries it as `data.url`. Since 2026-09-29 the dashboard answers it by bringing the task's row on screen, flashing it and **selecting** it, so the floating action bar is up for it. Nothing opens: no quick panel, no sheet. Before, the same URL opened the quick panel. The steps are in `src/lib/task-link.ts`; in short:
+Tapping any task notification — overdue, "AI finished", "AI failed to process", or the test notification — opens the dashboard at the bare `/?task=<id>`: the iPhone and Mac apps load it through `WebViewManager.navigateToTask` (`DeepLinkRouter.notificationTaskPath`), and Web Push carries it as `data.url`. Since 2026-09-29 the dashboard answers it by bringing the task's row on screen, flashing it and **selecting** it, so the floating action bar is up for it. Nothing opens: no quick panel, no sheet. Before, the same URL opened the quick panel. The steps are in `src/lib/task-link.ts`; in short:
 
 - A folded group is unfolded and a "Show all" cap lifted.
 - A search, filter chip or AI chip that hides the task is cleared, and only then.
@@ -317,13 +317,13 @@ Nothing is sent when the user's enrichment mode is off (no model ran). An enrich
 
 **Setting.** Settings → Notifications → "Notify when AI finishes a new task" (`users.enrichment_notifications_enabled`, default on; `enrichment_notifications_enabled` on `GET`/`PATCH /api/user/preferences`). Shown only when AI is available, greyed out while notifications are off.
 
-## "AI couldn't process" notification (enrichment failures)
+## "AI failed to process" notification (enrichment failures)
 
 Added 2026-10-05. Until then a failed enrichment was silent: the task kept the raw text as its title and a red `ai-failed` label, and the user found out only by opening the app. Now the failure sends one quiet push. Code and rationale: `src/core/notifications/enrichment-failed-notify.ts`.
 
 | Field | Value                                                                                                                                                               |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Title | `AI couldn't process a task` (`… a reminder`, `… a quota`)                                                                                                          |
+| Title | `AI failed to process a task` (`… a reminder`, `… a quota`)                                                                                                         |
 | Body  | The text the user typed, as the AI was given it (`original_title`, else `title`), cut at 200 characters with `…` (titles allow 10,000; APNs caps a payload at 4 KB) |
 
 **When.** `handleFailure` in `src/core/ai/enrichment.ts` is the only code that writes `ai-failed`: on the second failed attempt (`MAX_ATTEMPTS`) it swaps `ai-to-process` → `ai-failed`. Both entry points (the fire-and-forget `enrichSingleTask` on create or retry, and the per-minute `processEnrichmentQueue`) announce that attempt after their own cleanup, outside their error handling. A first failure is retried and sends nothing. Unlike "AI finished", there is no Just added window: a retry of an old task that fails again is announced too. It sends only when:
@@ -628,7 +628,7 @@ Both were verified by building each widget extension target directly (`xcodebuil
 Configured in Settings > Notifications:
 
 - Browser Push toggle (subscribe/unsubscribe per device)
-- Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available). The "AI couldn't process" push for a failed enrichment has no switch of its own: it follows only the master switch
+- Notify when AI finishes a new task (the quiet "AI finished" push; shown when AI is available). The "AI failed to process" push for a failed enrichment has no switch of its own: it follows only the master switch
 - Bulk defer results (the quiet push after a sweep from outside the app left High or Urgent overdue)
 - Nag intervals (tiered by priority). The considering nags — the deadlines page and the slot nag — run at twice these, every priority (§ The deadlines-page nag, § The slot nag)
 - Test notification buttons (individual, high, bulk, critical)

@@ -701,7 +701,7 @@ export async function sendApnsEnrichedNotification(
 }
 
 /**
- * The "AI couldn't process" notification for a task whose enrichment failed
+ * The "AI failed to process" notification for a task whose enrichment failed
  * for good (`enrichment-failed-notify.ts`). The same delivery as the "AI
  * finished" one above, on purpose — a banner without sound
  * (`interruption-level: active`, no `sound`, APNs priority 10, no `badge`),

@@ -108,12 +108,12 @@ describe('the enriched-task APNs payload', () => {
   })
 })
 
-// The "AI couldn't process" push (enrichment-failed-notify.ts): the same
+// The "AI failed to process" push (enrichment-failed-notify.ts): the same
 // delivery, its own ids — so it never replaces, or is replaced by, the "AI
 // finished" push for the same task.
 describe('the enrichment-failed APNs payload', () => {
   const payload = {
-    title: "AI couldn't process a task",
+    title: 'AI failed to process a task',
     body: 'call the dentist tomorrow 9am',
     taskId: 42,
   }
@@ -125,7 +125,7 @@ describe('the enrichment-failed APNs payload', () => {
     expect(n.priority).toBe(Priority.immediate)
     expect(n.buildApnsOptions()).toEqual({
       aps: {
-        alert: { title: "AI couldn't process a task", body: 'call the dentist tomorrow 9am' },
+        alert: { title: 'AI failed to process a task', body: 'call the dentist tomorrow 9am' },
         category: 'TASK_ADDED',
         'thread-id': 'ai-failed-42',
         'interruption-level': 'active',
