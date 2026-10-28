@@ -18,9 +18,10 @@
  * - High "!" / Urgent "!!" right after the title, bound to its last word.
  *   Medium is never shown; Low is a grey word on the meta line.
  * - The horizon mark (`HorizonMark`) leads the meta line on rows it governs.
- * - Deadline chip (with its time), then the target chip — always the blue
- *   target chip (its move / remove menu), never plum; a passed deadline is
- *   red with its flag — then the created date (`createdDateWords`) in plain
+ * - Deadline chip, then the target chip, each saying the moment alone
+ *   (`momentChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago") — the
+ *   target always the blue target chip (its move / remove menu), never
+ *   plum; a passed deadline red with its flag — then the created date (`createdDateWords`) in plain
  *   grey with no dot before it. The dot comes after: Low, the grey project.
  *   Then labels (the AI glyph rule, `LabelBadges`) and the yellow notes mark.
  * - Recurrence on its own line.
@@ -52,7 +53,7 @@ import { useRowPress } from '@/hooks/useRowPress'
 import { useTimezone } from '@/hooks/useTimezone'
 import { createdDateWords } from '@/lib/created-date'
 import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
-import { formatDueTimeParts } from '@/lib/format-date'
+import { momentChipWords } from '@/lib/moment-chip-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { offersTargetToday, priorityTab } from '@/lib/row-corner'
 import { cn } from '@/lib/utils'
@@ -202,13 +203,6 @@ function LeanTitle({
   )
 }
 
-/** "Tomorrow 9:00 AM", "3h ago · 5:00 PM": the card row's target words (`TaskRow`). */
-function targetWords(dueAt: string, timezone: string, dayStart: string): string {
-  const { relative, absolute } = formatDueTimeParts(dueAt, timezone, dayStart)
-  const text = [relative, absolute].filter(Boolean).join(' · ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
 /**
  * The meta line: the horizon mark, then deadline → target → created as one
  * run (no dots between), then "· Low · 📁 Project", labels and notes.
@@ -239,12 +233,18 @@ function LeanMeta({
       className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
     >
       <HorizonMark task={task} onChange={onSetHorizon ? (h) => onSetHorizon(task, h) : undefined} />
-      {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
+      {task.deadline_at && (
+        <DeadlineChip
+          deadlineAt={task.deadline_at}
+          timezone={timezone}
+          label={momentChipWords(task.deadline_at, timezone, dayStart)}
+        />
+      )}
       {task.due_at && (
         <TargetTimeText
           task={task}
           timezone={timezone}
-          text={targetWords(task.due_at, timezone, dayStart)}
+          text={momentChipWords(task.due_at, timezone, dayStart)}
           // Always the blue target chip: a missed target is not a mistake.
           over={false}
           onMove={onMove}

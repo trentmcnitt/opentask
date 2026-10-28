@@ -25,10 +25,17 @@ export function DeadlineChip({
   deadlineAt,
   timezone,
   className,
+  label,
 }: {
   deadlineAt: string
   timezone: string
   className?: string
+  /**
+   * The chip's words, when the host says the deadline otherwise (the lean
+   * row: the moment behind the flag, `momentChipWords`). The tone and the
+   * flag stay the deadline chip's own.
+   */
+  label?: string
 }) {
   const { attemptsRolloverTime } = useTaskQueue()
   const chip = deadlineChip(deadlineAt, timezone, new Date(), attemptsRolloverTime)
@@ -39,7 +46,7 @@ export function DeadlineChip({
       className={className}
       data-deadline-chip={chip.tone}
     >
-      {chip.text}
+      {label ?? chip.text}
     </TimeChip>
   )
 }

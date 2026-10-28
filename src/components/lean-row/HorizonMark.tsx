@@ -21,5 +21,12 @@ export function HorizonMark({
   onChange?: (horizon: HorizonValue | null) => void
 }) {
   if (!showsHorizonDot(task)) return null
-  return <HorizonDotButton task={task} variant="inline" onChange={onChange} />
+  // The inline dot's touch box is 34px wide (44 tall); the negative margins
+  // keep that box but give the meta line only the dot's own width, so the
+  // next item sits beside it instead of a gap away. The box overlaps nothing
+  // it could steal a tap from: a row with the dot has no target chip, and the
+  // created date and deadline chip are not buttons.
+  return (
+    <HorizonDotButton task={task} variant="inline" onChange={onChange} className="-mx-[11px]" />
+  )
 }
