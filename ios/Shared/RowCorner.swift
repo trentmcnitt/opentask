@@ -69,8 +69,13 @@ enum RowCorner {
     /// automatic one (`target_auto`). A picked target makes the task quiet
     /// until its date (spec §1).
     static func showsHorizonDot(_ task: TaskDTO) -> Bool {
-        let plainOneOff = !task.isReminder && (task.rrule ?? "").isEmpty && !task.isTracked
-        return plainOneOff && (task.dueAt == nil || task.targetAuto)
+        isPlainOneOff(task) && (task.dueAt == nil || task.targetAuto)
+    }
+
+    /// A plain one-off: not a quota, a reminder or a repeating task (the
+    /// native lists hold open tasks only) — the web's `isPlainOneOff`.
+    static func isPlainOneOff(_ task: TaskDTO) -> Bool {
+        !task.isReminder && (task.rrule ?? "").isEmpty && !task.isTracked
     }
 
     /// The task's horizon: nil when unset or unknown.

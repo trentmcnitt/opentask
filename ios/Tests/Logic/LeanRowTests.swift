@@ -144,11 +144,11 @@ final class LeanRowTests: XCTestCase {
         XCTAssertEqual(LeanRow.sidePattern(.dots)?.filter { $0 == LeanRow.squareStroke }.count, 2, "two stroke-wide dots a side")
     }
 
-    func testTheHorizonGovernsAPlainOneOffWithNoPickedTargetAndNoDeadline() {
+    func testTheSquareShowsTheHorizonOnEveryOneOff() {
         XCTAssertTrue(LeanRow.horizonGoverns(task()))
         XCTAssertTrue(LeanRow.horizonGoverns(task(horizon: "months")))
-        XCTAssertFalse(LeanRow.horizonGoverns(task(due: "2026-11-05T09:00")), "a picked target")
-        XCTAssertFalse(LeanRow.horizonGoverns(task(deadline: "2026-11-05T09:00")), "a deadline")
+        XCTAssertTrue(LeanRow.horizonGoverns(task(due: "2026-11-05T09:00")), "a picked target too (2026-10-29)")
+        XCTAssertTrue(LeanRow.horizonGoverns(task(deadline: "2026-11-05T09:00")), "a deadline too: the set horizon")
         XCTAssertFalse(LeanRow.horizonGoverns(task(rrule: "FREQ=WEEKLY")), "a repeat")
         XCTAssertFalse(LeanRow.horizonGoverns(task(reminder: true)), "a reminder")
         XCTAssertFalse(LeanRow.horizonGoverns(task(tracked: true)), "a quota")
@@ -158,7 +158,9 @@ final class LeanRowTests: XCTestCase {
     func testARowsSquareIsPlainUnlessTheHorizonGoverns() {
         XCTAssertEqual(LeanRow.squareLook(for: task(horizon: "eventually")), .dots)
         XCTAssertEqual(LeanRow.squareLook(for: task()), .dashes, "unset reads as Weeks")
-        XCTAssertEqual(LeanRow.squareLook(for: task(due: "2026-11-05T09:00", horizon: "eventually")), .solid)
+        XCTAssertEqual(LeanRow.squareLook(for: task(due: "2026-11-05T09:00", horizon: "eventually")), .dots, "targeted too")
+        XCTAssertEqual(LeanRow.squareLook(for: task(deadline: "2026-11-05T09:00", horizon: "eventually")), .dots, "a deadline task: its set horizon")
+        XCTAssertEqual(LeanRow.squareLook(for: task(rrule: "FREQ=WEEKLY", horizon: "eventually")), .solid, "a repeat: plain")
         XCTAssertEqual(LeanRow.squareAccessibilityLabel(.days), "Horizon Days")
         XCTAssertEqual(LeanRow.squareAccessibilityLabel(nil), "Horizon unset")
     }

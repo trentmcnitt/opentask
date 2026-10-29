@@ -28,10 +28,9 @@ import Foundation
 ///   so no countdown (`countdownWords`) and no "Today" to say once
 ///   (`todayOnce`; a native target today is already its time alone,
 ///   `DueLabel.parts`);
-/// - a row the horizon governs (`horizonGoverns`): every native task list
-///   holds DATED tasks only (`TaskLists.eligible`), and a governed row has no
-///   picked target and no deadline, so it has no date. The Tasks widget's
-///   square draws the horizon look all the same (`HorizonSquare`).
+/// (Since 2026-10-29 the horizon square IS drawn: `horizonGoverns` takes every
+/// one-off, so the Tasks widget's square shows the horizon on all but its
+/// repeating rows — `HorizonSquare`.)
 ///
 /// Pure: the clock and the OpenTask day come in. Tested by `LeanRowTests`,
 /// the web's own cases.
@@ -110,11 +109,15 @@ enum LeanRow {
 
     // MARK: - The horizon done square
 
-    /// `horizonGoverns`: a plain one-off (not repeating, not a reminder or a
-    /// quota) with no target the user picked and no deadline. Every other
-    /// row keeps the plain square — its pace is set by its date.
+    /// `horizonGoverns`: the square shows the horizon the user SET on EVERY
+    /// one-off (not repeating, not a reminder or a quota) — targeted or not,
+    /// deadline or not (Trent, 2026-10-29: "the checkbox always reflects the
+    /// horizon, regardless of whether it has a target"; "it should reflect
+    /// the set horizon not the way it's acting"), never the effective one.
+    /// Only repeating tasks keep the plain square. It was "no picked target
+    /// and no deadline" until then.
     static func horizonGoverns(_ task: TaskDTO) -> Bool {
-        RowCorner.showsHorizonDot(task) && task.deadlineAt == nil
+        RowCorner.isPlainOneOff(task)
     }
 
     /// A square's border, `SquareLook` on the web.
