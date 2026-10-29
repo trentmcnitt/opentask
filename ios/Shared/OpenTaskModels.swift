@@ -533,16 +533,14 @@ enum SegmentKind: Hashable {
 
     /// The segment's TITLE word (2026-10-26, the web's `SEGMENT_TITLES` /
     /// `UPCOMING_LABEL` / `DEADLINES_PAGE_TITLE` / `QUEUE_PANEL_TITLES`,
-    /// `src/lib/task-model-words.ts`): "Daily", "Weekly", "Monthly",
-    /// "Quarterly", "Upcoming", "Deadlines", "Today's pulls", "Previous
-    /// pulls". Apart from `label` on purpose: `TaskHorizon.label` is the
-    /// row's "Weeks" word, which keeps its name.
+    /// `src/lib/task-model-words.ts`): "Days", "Weeks", "Months",
+    /// "Eventually" (the horizon's own word since 2026-10-29), "Heads up",
+    /// "Deadlines", "Today's pulls", "Previous pulls".
     var titleWord: String {
         switch self {
-        case .horizon(.days): return "Daily"
-        case .horizon(.weeks): return "Weekly"
-        case .horizon(.months): return "Monthly"
-        case .horizon(.eventually): return "Quarterly"
+        // Named by their horizon since 2026-10-29 (Trent: the title read
+        // "Weekly" while the rows say "Weeks"); "Daily"… from 10-20 to then.
+        case .horizon(let horizon): return horizon.label
         case .upcoming: return "Heads up"
         case .deadlines: return "Deadlines"
         case .queueToday: return "Today's pulls"
@@ -550,7 +548,7 @@ enum SegmentKind: Hashable {
         }
     }
 
-    /// The page's title, "Daily" (`TaskWording.taskQueueTitle`, the web's
+    /// The page's title, "Days" (`TaskWording.taskQueueTitle`, the web's
     /// `segmentTitle`; "Task queue · Daily" until 2026-10-29).
     var title: String { TaskWording.taskQueueTitle(titleWord) }
 

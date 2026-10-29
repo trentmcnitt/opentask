@@ -233,7 +233,7 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(bars.map(\.handled), [3, 2, 0, 2, 1, 1, 0])
         XCTAssertEqual(bars[3].fraction, 2.0 / 3.0, accuracy: 1e-9)
         XCTAssertEqual(bars[6].fraction, 1, "an empty segment's bar is full")
-        XCTAssertEqual(bars[3].label, "Daily")
+        XCTAssertEqual(bars[3].label, "Days")
     }
 
     /// The new kinds' bars (native PR E): the deadlines page FIRST, then the

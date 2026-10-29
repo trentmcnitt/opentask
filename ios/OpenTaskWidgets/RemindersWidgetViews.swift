@@ -1031,8 +1031,8 @@ private struct ReminderSlotStrip: View {
         let shown = bars
         if shown.count >= 2 {
             // THE QUEUE ON ITS OWN ROW, WITH ITS WORDS (2026-10-29, Trent's
-            // option (a) — the web's Q2): the periods' bars first, then the
-            // task queue's, each with its short word above it
+            // option (a) — the web's Q2; W3 the same day: the queue's row
+            // first, then the periods'), each queue bar with its mark above it
             // (`SegmentKind.stripWord`), so the page header can say just
             // "Task queue". Words beside the periods would not fit a card.
             // The strip is laid out for real above the list's
@@ -1040,9 +1040,12 @@ private struct ReminderSlotStrip: View {
             // the list's, never off the card.
             let periods = shown.filter { $0.kind == .period }
             let queue = shown.filter { $0.kind == .taskSegment }
+            // The queue's row ON TOP, the periods' below (Trent's W3,
+            // 2026-10-29): the row the "Task queue" header speaks for sits
+            // right under it.
             VStack(alignment: .leading, spacing: Self.rowGap) {
-                if !periods.isEmpty { barRow(periods) }
                 if !queue.isEmpty { queueRow(queue) }
+                if !periods.isEmpty { barRow(periods) }
             }
             .padding(.bottom, WidgetTheme.reminderSlotStripHeight - maxSegmentHeight)
         }
@@ -1081,8 +1084,8 @@ private struct ReminderSlotStrip: View {
         .frame(height: maxSegmentHeight)
     }
 
-    /// The task queue's bars, each under its word ("Due", "Pulls", "Daily",
-    /// "Next", "Weekly", "Qtrly"…), sharing the row evenly but never
+    /// The task queue's bars, each under its mark ("Due", "Soon", "Pulled", a
+    /// horizon's dot), sharing the row evenly but never
     /// narrower than the word. The page on screen's word in the ink colour,
     /// an empty segment's faded — the web's `StripWord`. The word's size is
     /// fixed (it does not grow with the text size): at the largest sizes the

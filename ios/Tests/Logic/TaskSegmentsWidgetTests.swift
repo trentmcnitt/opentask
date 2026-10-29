@@ -524,12 +524,12 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertNil(TaskSegmentDTO(horizon: "someday", tasks: []).kind)
         XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).pageKey, -15)
 
-        // The titles (the web's `segmentTitle`): the cadence word alone since
-        // 2026-10-29 ("Task queue ·" before) — the row word ("Days") keeps its name.
+        // The titles (the web's `segmentTitle`): the horizon's own word since
+        // 2026-10-29 (the cadence word "Daily"… and "Task queue ·" before).
         XCTAssertEqual(
             ["days", "weeks", "months", "eventually", "upcoming"].map { TaskSegmentDTO(horizon: $0, tasks: []).title },
             [
-                "Daily", "Weekly", "Monthly", "Quarterly",
+                "Days", "Weeks", "Months", "Eventually",
                 "Heads up",
             ]
         )
@@ -543,7 +543,7 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
             ["Due", "Pulled", "Pulled", nil, "Soon", nil, nil, nil]
         )
         // No dot to wrap at any more: the wrapping title is the title.
-        XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Quarterly")
+        XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Eventually")
         // The Smart Stack card's short header: the word alone; a period keeps its name.
         XCTAssertEqual(TaskWording.withoutTaskQueuePrefix("Task queue · Upcoming"), "Upcoming", "an old title still reads")
         XCTAssertNil(TaskWording.withoutTaskQueuePrefix("Early morning"))
@@ -553,7 +553,7 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
             day: .midnight(timeZone: .current)
         )
         XCTAssertEqual(bars.map(\.segment), [.horizon(.days), .upcoming])
-        XCTAssertEqual(bars.map(\.label), ["Daily", "Heads up"])
+        XCTAssertEqual(bars.map(\.label), ["Days", "Heads up"])
     }
 
     /// Every row offers Today, repeating ones included (batch 2, 2026-10-12:

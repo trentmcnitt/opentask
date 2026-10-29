@@ -342,7 +342,7 @@ enum TaskWording {
     static let pulledTodayWord = "Today"
     static let pulledEarlierWord = "Earlier"
 
-    /// A task segment's title: its word alone since 2026-10-29 ("Daily";
+    /// A task segment's title: its word alone since 2026-10-29 ("Days";
     /// Trent: "I think just the title's enough now", the web's
     /// `segmentTitle`). It was "Task queue · Daily".
     static func taskQueueTitle(_ word: String) -> String {
