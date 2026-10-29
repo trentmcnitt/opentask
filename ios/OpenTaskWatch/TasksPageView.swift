@@ -226,7 +226,7 @@ private struct TaskRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // The tint IS the row's platter: `listItemTint` recolours the
-        // system platter (its shape, insets and scroll-edge fade kept), with
+        // system platter (its shape and insets kept), with
         // the tint laid over the platter's own grey (`platterTint`), so a
         // tinted row reads as the web's tint over its row, not a new hue.
         .listItemTint(state.map { ListItemTint.fixed(Self.platterTint($0)) })

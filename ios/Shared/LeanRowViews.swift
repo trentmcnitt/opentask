@@ -177,3 +177,27 @@ struct HorizonSquare: View {
         }
     }
 }
+
+#if DEBUG
+// The horizon square's four looks, drawn alone at 4x: no row the Tasks
+// widget lists is governed by its horizon (they are all dated), so this is
+// the only place they show. Here, not in the widget's files: a widget
+// extension can host widget previews only (render it with the app's scheme).
+#Preview("Horizon squares") {
+    HStack(spacing: 24) {
+        ForEach([TaskHorizon.days, .weeks, .months, .eventually], id: \.self) { horizon in
+            VStack(spacing: 8) {
+                HorizonSquare(
+                    look: LeanRow.squareLook(horizon),
+                    color: Color.secondary.opacity(0.45),
+                    patternColor: Color.secondary.opacity(0.75)
+                )
+                .scaleEffect(4)
+                .frame(width: 64, height: 64)
+                Text(horizon.label).font(.caption)
+            }
+        }
+    }
+    .padding()
+}
+#endif

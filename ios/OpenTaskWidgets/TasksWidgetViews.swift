@@ -1171,8 +1171,9 @@ private struct TaskRow: View {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
                 // 9:00 AM", "Sun 9:00 AM" (2-6 days out), "Oct 1 9:00
                 // AM" (further), "Oct 2" (date-only). Overdue (2026-09-25):
-                // red, with "Yesterday"/"Wed"/"Sep 12" over the time unless
-                // it was due earlier today — see `DueLabel.parts`.
+                // "Yesterday"/"Wed"/"Sep 12" over the time unless it was due
+                // earlier today — see `DueLabel.parts`. All of it the
+                // target's blue (2026-10-28; red, then plum, before).
                 //
                 // `fixedSize` (2026-09-24): exactly the lines it was built
                 // with (one, or two when `dueStacked` — an explicit break,
@@ -1257,6 +1258,12 @@ private struct TaskRow: View {
             titleContent
             trailingControl
         }
+        // The fill takes the row's MEASURED height (`height`, the frame the
+        // list gives it), not the content's: a stacked due label with the
+        // flag can draw a point or two taller than measured on iOS, and a
+        // fill sized to it overlapped the next row's tint (iPhone 18 Pro
+        // preview, 2026-10-28).
+        .frame(height: height, alignment: .top)
         // Selected-row background (select mode only) — or else the row's
         // state tint (`LeanRow.state`) — bled OUTWARD via negative padding on
         // the FILL SHAPE, not on the row's own content, so the row's layout

@@ -627,9 +627,10 @@ enum WidgetTheme {
     // "8:30 PM" (today, unchanged), "Tomorrow 9:00 AM", "Sun 9:00 AM" (2-6
     // days out), "Oct 1 9:00 AM" (7+ days out), "Oct 2" (date-only, no time
     // at all). Overdue (changed 2026-09-25): the same ladder backwards —
-    // the red time alone when due earlier today, else "Yesterday" / a
-    // weekday / a date over the red time, so an old overdue row is never
-    // mistaken for today's. The words themselves live in `DueLabel`
+    // the time alone when due earlier today, else "Yesterday" / a weekday /
+    // a date over the time, so an old overdue row is never mistaken for
+    // today's. One colour since 2026-10-28, the target's blue (it was red,
+    // then plum, once overdue; the row's tint says it now). The words themselves live in `DueLabel`
     // (Foundation-only, logic-tested); this section styles them.
     //
     // Date-only detection is an INVENTED convention, not something the wire

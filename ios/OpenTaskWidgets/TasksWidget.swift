@@ -1104,25 +1104,3 @@ private enum CornerPreviewData {
 
 #endif
 
-#if DEBUG
-// The horizon square's four looks (`HorizonSquare`, `LeanRow.sidePattern`),
-// drawn alone at 4x: no row the Tasks widget lists is governed by its
-// horizon (they are all dated), so this is the only place they show.
-#Preview("Horizon squares") {
-    HStack(spacing: 24) {
-        ForEach([TaskHorizon.days, .weeks, .months, .eventually], id: \.self) { horizon in
-            VStack(spacing: 8) {
-                HorizonSquare(
-                    look: LeanRow.squareLook(horizon),
-                    color: WidgetTheme.priorityColor(0),
-                    patternColor: Color.secondary.opacity(0.75)
-                )
-                .scaleEffect(4)
-                .frame(width: 64, height: 64)
-                Text(horizon.label).font(.caption)
-            }
-        }
-    }
-    .padding()
-}
-#endif
