@@ -12,7 +12,8 @@
  * and the setting itself. The task-queue switch is on for the file (On deck
  * needs it) and off after it.
  */
-import { test, expect, holdUntil, uniqueTitle } from './fixtures'
+import { DateTime } from 'luxon'
+import { test, expect, holdUntil, openTaskDay, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const HOUR = 60 * 60 * 1000
@@ -294,6 +295,43 @@ test.describe('Lean row · changing the horizon from the square', () => {
       await expect(menu).toHaveCount(0)
     } finally {
       await cleanUp(page, [governed, dated])
+    }
+  })
+})
+
+test.describe('Lean row · the deadline countdown', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('a deadline later today counts down in whole hours, lighter, after a single space', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    // Later today whatever the hour: 40 minutes out, but before the OpenTask
+    // day ends (the next day start, the server's own rule).
+    const tz = process.env.E2E_TZ || 'America/Chicago'
+    const { rollover_time } = (await (await page.request.get('/api/user/preferences')).json())
+      .data as { rollover_time: string }
+    const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${rollover_time}`, { zone: tz })
+    const deadline = Math.min(Date.now() + 40 * 60 * 1000, dayEnd.toMillis() - 2 * 60 * 1000)
+    const id = await create(page, {
+      title: uniqueTitle('LR countdown'),
+      deadline_at: new Date(deadline).toISOString(),
+    })
+    try {
+      await gotoDashboard(page)
+      const chip = row(page, id).locator('[data-deadline-chip]')
+      const countdown = chip.locator('[data-countdown]')
+      await expect(countdown).toHaveText(/^in (<1 hr|1 hr|\d+ hrs)$/)
+      // "Today 9:00 PM in 5 hrs": one normal space between the time and the count.
+      await expect(chip).toHaveText(/^(Today|Tonight) \d{1,2}:\d{2} [AP]M in (<1 hr|1 hr|\d+ hrs)$/)
+      // The count is lighter than the time, in the chip's own colour.
+      await expect(countdown).toHaveCSS('font-weight', '400')
+      await expect(chip).toHaveCSS('font-weight', '600')
+      expect(await countdown.evaluate((el) => getComputedStyle(el).color)).toBe(
+        await chip.evaluate((el) => getComputedStyle(el).color),
+      )
+    } finally {
+      await cleanUp(page, [id])
     }
   })
 })

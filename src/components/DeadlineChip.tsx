@@ -35,7 +35,7 @@ export function DeadlineChip({
    * row: the moment behind the flag, `momentChipWords`). The tone and the
    * flag stay the deadline chip's own.
    */
-  label?: string
+  label?: React.ReactNode
 }) {
   const { attemptsRolloverTime } = useTaskQueue()
   const chip = deadlineChip(deadlineAt, timezone, new Date(), attemptsRolloverTime)

@@ -20,7 +20,9 @@
  * - The horizon is the done square's border on rows it governs (`DoneControl`,
  *   `src/lib/horizon-square.ts`); a hold or right-click on it changes it.
  * - Deadline chip, then the target chip, each saying the moment alone
- *   (`momentChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago") — the
+ *   (`leanChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago"; a
+ *   deadline later today counts down, "in 5 hrs", and "Today" is said once
+ *   per row) — the
  *   target always the blue target chip (its move / remove menu), never
  *   plum; a passed deadline red with its flag — then the created date (`createdDateWords`) in plain
  *   grey with no dot before it. The dot comes after: Low, the grey project.
@@ -41,6 +43,7 @@
  * snooze button, the right priority border. The shelved AI
  * features' props (insights, What's Next annotations) are not drawn.
  */
+import { useMemo } from 'react'
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
 import { DeadlineChip } from '@/components/DeadlineChip'
 import { LabelBadges } from '@/components/LabelBadges'
@@ -53,10 +56,11 @@ import type { TaskRowProps } from '@/components/TaskRow'
 import { DeckTomorrowButton } from '@/components/TaskSegmentRow'
 import { useRowHighlight } from '@/hooks/useRowHighlight'
 import { useRowPress } from '@/hooks/useRowPress'
+import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { createdDateWords } from '@/lib/created-date'
 import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
-import { momentChipWords } from '@/lib/moment-chip-words'
+import { leanChipWords } from '@/lib/lean-chip-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { offersTargetToday, priorityTab } from '@/lib/row-corner'
 import { effectiveAttempts, isPastDeadline } from '@/lib/task-segments'
@@ -256,6 +260,15 @@ function LeanMeta({
   const timezone = useTimezone()
   const dayStart = useDayStart()
   const { labelConfig } = useLabelConfig()
+  // The chips' words, re-read at each top of the hour (`useHourTick`: one
+  // timer for every row) — the countdown changes only on the hour.
+  const hour = useHourTick(timezone)
+  const words = useMemo(
+    // The server render and hydration have no tick (0): read the moment
+    // there, as the card row does; after it, the tick is "now".
+    () => leanChipWords(task, timezone, dayStart, hour ? new Date(hour) : new Date()),
+    [task, timezone, dayStart, hour],
+  )
   return (
     <div
       data-lean-meta
@@ -265,14 +278,28 @@ function LeanMeta({
         <DeadlineChip
           deadlineAt={task.deadline_at}
           timezone={timezone}
-          label={momentChipWords(task.deadline_at, timezone, dayStart)}
+          label={
+            // One span, a normal space: the countdown sits right after the
+            // time, in the chip's colour at a lighter weight.
+            <span>
+              {words.deadline}
+              {words.countdown && (
+                <>
+                  {' '}
+                  <span data-countdown className="font-normal">
+                    {words.countdown}
+                  </span>
+                </>
+              )}
+            </span>
+          }
         />
       )}
-      {task.due_at && (
+      {words.target && (
         <TargetTimeText
           task={task}
           timezone={timezone}
-          text={momentChipWords(task.due_at, timezone, dayStart)}
+          text={words.target}
           // Always the blue target chip: a missed target is not a mistake.
           over={false}
           onMove={onMove}
