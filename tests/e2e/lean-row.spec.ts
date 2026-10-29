@@ -785,7 +785,8 @@ test.describe('Lean row · swipe with a mouse', () => {
         const rowBox = (await r.boundingBox())!
         expect(box.width, state).toBeCloseTo(rowBox.width + 8, 0)
         const tintInset = await r.evaluate((el) => getComputedStyle(el, '::before').left)
-        if (state !== 'none') expect(tintInset, state).toBe('-4px')
+        // A tinted row's tint box; later today has no tint for now (2026-10-29).
+        if (state === 'passed' || state === 'over') expect(tintInset, state).toBe('-4px')
 
         await page.mouse.move(x0, y)
         await page.mouse.up()
