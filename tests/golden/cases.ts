@@ -226,10 +226,11 @@ export const caseScenarios: GoldenScenario[] = [
   },
   {
     id: 'case-age-undated',
-    title: 'Undated tasks: weeks shows on Saturdays, ">1 mo" past a month; days daily, ">1 wk"',
+    title:
+      'Undated tasks: weeks shows on Saturdays, ">1 mo" past a month; days daily, ">10 d" past 10 days',
     source: 'spec §7 age badge; rulings Q6',
     from: '2026-09-01',
-    to: '2026-10-10',
+    to: '2026-10-11',
     policy: ['tap'],
     tasks: [
       { name: 'weeks', created: '2026-09-01T10:00', input: { title: 'Synthetic someday task' } },
@@ -251,8 +252,11 @@ export const caseScenarios: GoldenScenario[] = [
         '2026-10-03': 'weeks >1 mo',
         '2026-10-04..2026-10-09': 'quiet >1 mo',
         '2026-10-10': 'weeks >1 mo',
+        '2026-10-11': 'quiet >1 mo',
       },
-      days: { '2026-10-01..2026-10-07': 'days', '2026-10-08..2026-10-10': 'days >1 wk' },
+      // Made Oct 1 at 10:00: strictly past 10 days from Oct 11 10:00 (the
+      // threshold, 2026-10-29; it was 7 days, ">1 wk" from Oct 8).
+      days: { '2026-10-01..2026-10-10': 'days', '2026-10-11': 'days >10 d' },
     },
   },
 ]

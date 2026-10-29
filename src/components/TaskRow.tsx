@@ -1057,7 +1057,7 @@ function buildMetaSegments(
 
   // AGE (spec §7, 2026-10-12; replaced the "Xd old" text every row had): only
   // on a task with neither a target nor a deadline, and only once it is past
-  // its horizon's threshold — ">1 wk" (days), ">1 mo" (weeks or unset),
+  // its horizon's threshold — ">10 d" (days), ">1 mo" (weeks or unset),
   // ">3 mo" (months), ">6 mo" (eventually). A dated task's slipping is told by
   // its attempts tab instead.
   const age = ageLabel(task, new Date(), timezone)

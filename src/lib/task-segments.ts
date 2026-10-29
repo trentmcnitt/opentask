@@ -648,17 +648,18 @@ export function segmentState(
  * (unset reads as weeks). Fixed labels (ruling Q6). The SAME thresholds are
  * Process's growth thresholds (ruling Q7, `growthAsk` in process-rules.ts):
  * one set. They replaced the row's "Xd old" text and Process's 14/60/180-day
- * growth clock.
+ * growth clock. Days is 10 days since 2026-10-29 (Trent: "the days threshold
+ * 10 is settled for old, yes, for now"; it was 7, ">1 wk").
  */
 export const AGE_THRESHOLDS: Record<HorizonValue, { days?: number; months?: number }> = {
-  days: { days: 7 },
+  days: { days: 10 },
   weeks: { months: 1 },
   months: { months: 3 },
   eventually: { months: 6 },
 }
 
 export const AGE_LABELS: Record<HorizonValue, string> = {
-  days: '>1 wk',
+  days: '>10 d',
   weeks: '>1 mo',
   months: '>3 mo',
   eventually: '>6 mo',

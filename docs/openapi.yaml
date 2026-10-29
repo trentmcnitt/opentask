@@ -6098,7 +6098,7 @@ components:
         age_label:
           type: [string, 'null']
           description: >
-            The age badge (spec §7): ">1 wk" (days), ">1 mo" (weeks or unset), ">3 mo" (months),
+            The age badge (spec §7): ">10 d" (days, past 10 days since 2026-10-29; it was ">1 wk" past 7), ">1 mo" (weeks or unset), ">3 mo" (months),
             ">6 mo" (eventually) — only on a one-off with neither a target nor a deadline, once
             `created_at` is past its horizon's threshold. Null otherwise.
         growth_kept_at:

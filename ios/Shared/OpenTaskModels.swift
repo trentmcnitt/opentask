@@ -131,7 +131,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// string (an unknown value must never fail a decode); no native surface
     /// offers it (the offer lives in the app).
     let attemptsOffer: String?
-    /// The age badge, ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo", on a task with
+    /// The age badge, ">10 d" (">1 wk" before 2026-10-29) / ">1 mo" / ">3 mo" / ">6 mo", on a task with
     /// neither a target nor a deadline, past its horizon's threshold; else nil.
     let ageLabel: String?
     /// UTC ISO 8601 — Process's "keep" on a growth ask. Decoded for the

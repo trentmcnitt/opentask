@@ -298,14 +298,14 @@ Only a task with **neither a target nor a deadline** (truly undated), counted fr
 
 | Horizon         | Shown past | Label   |
 | --------------- | ---------- | ------- |
-| `days`          | 7 days     | `>1 wk` |
+| `days`          | 10 days    | `>10 d` |
 | `weeks` / unset | 1 month    | `>1 mo` |
 | `months`        | 1 quarter  | `>3 mo` |
 | `eventually`    | 6 months   | `>6 mo` |
 
-Calendar arithmetic (a month is a calendar month) in the **user's timezone**, strictly past — the server's `age_label` and the web row compute it the same way (`ageLabel(task, now, timezone)`), so a task made late on the evening of Oct 30 turns `>1 mo` at that local evening on Nov 30, not at the UTC instant a few hours earlier. The API sends it as `age_label`; the dashboard row shows it where every row used to show "Xd old", and segment rows end their second line with it.
+Days was 7 days (`>1 wk`) until 2026-10-29 (Trent: "the days threshold 10 is settled for old, yes, for now"). Calendar arithmetic (a month is a calendar month) in the **user's timezone**, strictly past — the server's `age_label` and the web row compute it the same way (`ageLabel(task, now, timezone)`), so a task made late on the evening of Oct 30 turns `>1 mo` at that local evening on Nov 30, not at the UTC instant a few hours earlier. The API sends it as `age_label`; the dashboard row shows it where every row used to show "Xd old", and segment rows end their second line with it.
 
-**The same thresholds are Process's growth asks** (ruling Q7; they replaced 14/60/180 days): a days task is asked "weeks?" past 7 days on its horizon, weeks or unset "months?" past a month, months "eventually?" past a quarter — counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Choosing **keep** (`affirm_horizon`) stamps `growth_kept_at`, so Process asks again only one threshold period after it; the horizon's own clock is untouched and the badge still shows creation age. Growth asks about a deadline-only task too (when its deadline is far enough not to steer the horizon); the badge is for undated tasks only.
+**The same thresholds are Process's growth asks** (ruling Q7; they replaced 14/60/180 days): a days task is asked "weeks?" past 10 days on its horizon, weeks or unset "months?" past a month, months "eventually?" past a quarter — counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Choosing **keep** (`affirm_horizon`) stamps `growth_kept_at`, so Process asks again only one threshold period after it; the horizon's own clock is untouched and the badge still shows creation age. Growth asks about a deadline-only task too (when its deadline is far enough not to steer the horizon); the badge is for undated tasks only.
 
 ## Testing the model: the golden suite and the day simulator
 
