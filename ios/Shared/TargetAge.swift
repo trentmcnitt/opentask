@@ -143,7 +143,7 @@ extension TaskDTO {
     /// the deadline ("deadline Oct 16"); then the two badges, the web's
     /// `BadgeChips` (spec §7, 2026-10-12): the attempts ("3×", the server's
     /// `attempts_label`, LAST when present — `SegmentTaskRow` tints it plum)
-    /// or the age (">1 mo", `age_label`, undated tasks only — never both).
+    /// or the age ("old", `age_label`, undated tasks only — never both).
     /// "Weeks · Nov 1". Nil when there is nothing to say. Spaces inside each
     /// part are non-breaking, so a part ("deadline Oct 16") never splits;
     /// parts are joined by `metaJoiner`, which lets a long meta wrap only

@@ -1307,7 +1307,7 @@ function SegmentLabels({ task }: { task: Task }) {
 /**
  * The two badges (spec §7), as quiet chips at the end of a segment row's
  * second line: the attempts ("2×", a task with a target that has been over
- * it — e.g. moved ahead after missing it) and the age (">1 mo", an undated
+ * it — e.g. moved ahead after missing it) and the age ("old", an undated
  * task past its horizon's threshold). Never both: age is undated only.
  */
 function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {

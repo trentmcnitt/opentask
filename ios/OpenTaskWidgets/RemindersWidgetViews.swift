@@ -1610,7 +1610,7 @@ enum SegmentRowMetrics {
 ///   segmentMeta`): the task's set horizon only when it differs from the
 ///   page's, a future target's day, the deadline ("Fix the gate · Nov 1 ·
 ///   deadline Nov 4"); an unset horizon shows nothing; then the server's
-///   badge, "3×" in plum or an undated task's ">1 mo" (2026-10-12, label
+///   badge, "3×" in plum or an undated task's "old" (2026-10-12, label
 ///   only — no in-widget offer). The title links to the task on the dashboard, where its
 ///   horizon and target can be changed (deep link in place of in-widget
 ///   controls, amendment 16).

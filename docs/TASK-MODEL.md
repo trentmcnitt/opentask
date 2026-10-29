@@ -296,14 +296,16 @@ Spec §7 (2026-10-12; rulings Q5–Q7, Q10 — Trent: separate signals). The rul
 
 Only a task with **neither a target nor a deadline** (truly undated), counted from `created_at`, shown only past one threshold per horizon — unset reads as weeks (`AGE_THRESHOLDS`, `AGE_LABELS`, `ageLabel`):
 
-| Horizon         | Shown past | Label   |
-| --------------- | ---------- | ------- |
-| `days`          | 10 days    | `>10 d` |
-| `weeks` / unset | 1 month    | `>1 mo` |
-| `months`        | 1 quarter  | `>3 mo` |
-| `eventually`    | 6 months   | `>6 mo` |
+| Horizon         | Shown past |
+| --------------- | ---------- |
+| `days`          | 10 days    |
+| `weeks` / unset | 1 month    |
+| `months`        | 1 quarter  |
+| `eventually`    | 6 months   |
 
-Days was 7 days (`>1 wk`) until 2026-10-29 (Trent: "the days threshold 10 is settled for old, yes, for now"). Calendar arithmetic (a month is a calendar month) in the **user's timezone**, strictly past — the server's `age_label` and the web row compute it the same way (`ageLabel(task, now, timezone)`), so a task made late on the evening of Oct 30 turns `>1 mo` at that local evening on Nov 30, not at the UTC instant a few hours earlier. The API sends it as `age_label`; the dashboard row shows it where every row used to show "Xd old", and segment rows end their second line with it.
+The label is one word, **`old`**, for every horizon (`AGE_LABEL`; Trent, 2026-10-29: "it just needs to say 'old' instead of the actual time because I never know what that age thing really means"). It was `>1 wk` / `>1 mo` / `>3 mo` / `>6 mo`.
+
+Days was 7 days (`>1 wk`) until 2026-10-29 (Trent: "the days threshold 10 is settled for old, yes, for now"). Calendar arithmetic (a month is a calendar month) in the **user's timezone**, strictly past — the server's `age_label` and the web row compute it the same way (`ageLabel(task, now, timezone)`), so a task made late on the evening of Oct 30 turns `old` at that local evening on Nov 30, not at the UTC instant a few hours earlier. The API sends it as `age_label`; the dashboard row shows it where every row used to show "Xd old", and segment rows end their second line with it.
 
 **The same thresholds are Process's growth asks** (ruling Q7; they replaced 14/60/180 days): a days task is asked "weeks?" past 10 days on its horizon, weeks or unset "months?" past a month, months "eventually?" past a quarter — counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Choosing **keep** (`affirm_horizon`) stamps `growth_kept_at`, so Process asks again only one threshold period after it; the horizon's own clock is untouched and the badge still shows creation age. Growth asks about a deadline-only task too (when its deadline is far enough not to steer the horizon); the badge is for undated tasks only.
 
@@ -312,7 +314,7 @@ Days was 7 days (`>1 wk`) until 2026-10-29 (Trent: "the days threshold 10 is set
 Spec "Testing and evaluation" (2026-10-12): the date rules grew one at a time, so they are pinned down as a whole.
 
 - **The day simulator** (`src/core/sim/day-simulator.ts`) steps a task list forward day by day (or hour by hour, `hourly`) through the **real core** — it moves the clock, reads the Reminders screen with `getTaskSegments` (segments and Upcoming), over target with `getCurrentlyDueTaskIds`, the badges through `getTaskById` — and a policy acts through the real writers: `never`, `tap` (consider every waiting row the day it shows), `complete-repeating` (done on its day), `complete`. Each day records each task's place (`quiet`, a horizon, `upcoming`, `over`, `done`), its attempts, age and offer, and the day's counts. A day is read at 21:00 by default (`at`), after that day's scripted steps and before the policy acts.
-- **The golden suite** (`tests/golden/*.ts`, one runner: `tests/behavioral/golden.test.ts`): 32 dated timelines — the spec's reference dates, the v7 table's rows (restated with the approved 3/4 lead where v7's wait/6 rule differs), and every case raised on 10-12 (codes-blog on the day and early, a weekly Friday, every 2 weeks, every 10 days over 5 cycles, every 22 days, the monthly 1st across Nov/Dec/Jan, snowmobile, taxes, gutters, made Saturday for Tuesday, made today for tomorrow, a deadline tomorrow at 3 PM made at 1:35 PM, the squeaky door, the Nov 1 pile, the past-deadline case, undated ages, a weekly across the March DST change, and the creation day as day 0 — every 7 days and a bare weekly made Sunday and done Thursday, every 22 days made before and after its time, done late and done early). Each states, for every local day of its window, a line such as `upcoming`, `over 3× →remove`, `quiet 1×`, `weeks >1 mo`; unlisted days are `quiet`. The runner compares every day. America/Chicago.
+- **The golden suite** (`tests/golden/*.ts`, one runner: `tests/behavioral/golden.test.ts`): 32 dated timelines — the spec's reference dates, the v7 table's rows (restated with the approved 3/4 lead where v7's wait/6 rule differs), and every case raised on 10-12 (codes-blog on the day and early, a weekly Friday, every 2 weeks, every 10 days over 5 cycles, every 22 days, the monthly 1st across Nov/Dec/Jan, snowmobile, taxes, gutters, made Saturday for Tuesday, made today for tomorrow, a deadline tomorrow at 3 PM made at 1:35 PM, the squeaky door, the Nov 1 pile, the past-deadline case, undated ages, a weekly across the March DST change, and the creation day as day 0 — every 7 days and a bare weekly made Sunday and done Thursday, every 22 days made before and after its time, done late and done early). Each states, for every local day of its window, a line such as `upcoming`, `over 3× →remove`, `quiet 1×`, `weeks old`; unlisted days are `quiet`. The runner compares every day. America/Chicago.
 - **Invariants** (`tests/behavioral/tm-invariants.test.ts`): seeded random tasks and writes (TM-INV-01–03), and a random list through the simulator (TM-INV-04/05): one segment at most, never Upcoming and over target, a picked target never in a horizon segment and an automatic one never in Upcoming, never told then silent before the target, target ≤ deadline while it is ahead, attempts +1 a local day at most and only while over target, none before a target arrives.
 - **The CLI**, for watching daily load on a real list:
 

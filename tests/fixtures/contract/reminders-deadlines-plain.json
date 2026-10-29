@@ -1361,7 +1361,7 @@
             "deadline_nag_off": false,
             "attempts_label": null,
             "attempts_offer": null,
-            "age_label": ">1 mo",
+            "age_label": "old",
             "segment_state": "waiting",
             "recurring": false
           }

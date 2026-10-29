@@ -884,12 +884,12 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
         XCTAssertEqual(age.title, "Clear out the garage")
         XCTAssertNil(age.dueAt)
-        XCTAssertEqual(age.ageLabel, ">1 mo")
+        XCTAssertEqual(age.ageLabel, "old")
         XCTAssertEqual(age.attempts, 0)
         XCTAssertNil(age.attemptsLabel)
         XCTAssertNil(age.attemptsOffer)
         XCTAssertNil(TargetAge.attemptsBadge(age))
-        XCTAssertEqual(age.segmentMeta(segmentHorizon: "weeks"), ">1\u{00A0}mo", "the age chip ends the row's words")
+        XCTAssertEqual(age.segmentMeta(segmentHorizon: "weeks"), "old", "the age chip ends the row's words")
 
         XCTAssertEqual(attempts.title, "Oil the hinges")
         XCTAssertEqual(attempts.attempts, 3)

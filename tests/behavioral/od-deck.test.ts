@@ -240,7 +240,7 @@ describe('OD-R: the rules', () => {
 
   test('OD-R04: a deck is a plan — no age badge, no growth ask (B7)', () => {
     const old = bare({ created_at: at('2026-01-01T09:00') })
-    expect(ageLabel(old, tue10, tz)).toBe('>1 mo')
+    expect(ageLabel(old, tue10, tz)).toBe('old')
     expect(ageLabel({ ...old, on_deck_day: '2026-10-24' }, tue10, tz)).toBeNull()
     expect(growthAsk(old, tz, tue10, CALENDAR_DAY_START)).not.toBeNull()
     expect(

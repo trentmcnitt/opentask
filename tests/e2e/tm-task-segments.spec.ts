@@ -458,7 +458,7 @@ test.describe('Dashboard over-target marks', () => {
       await expect(lateRow.locator('[data-attempts-offer]')).toHaveCount(0)
       // An undated task past a month: the age label, no tab.
       const undatedRow = page.locator(`#task-row-${undated}`)
-      await expect(undatedRow.locator('[data-age-label]')).toHaveText('>1 mo')
+      await expect(undatedRow.locator('[data-age-label]')).toHaveText('old')
       await expect(undatedRow.locator('[data-attempts]')).toHaveCount(0)
       // At 3×+ the row offers to drop the target — one tap, never automatic.
       const offer = row.locator('[data-attempts-offer="remove"]')

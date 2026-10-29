@@ -225,7 +225,7 @@ function blank(id: number, place: Place): SimTaskDay {
 
 /**
  * The one-line form a golden timeline states: the place, then the badges
- * the row would draw — "over 3× →remove", "tomorrow", "weeks >1 mo",
+ * the row would draw — "over 3× →remove", "tomorrow", "weeks old",
  * "quiet 1×" (a target moved ahead after a miss). A task in the task queue
  * (task-queue PR 2) adds "queued" after the place, and keeps showing its
  * attempts with no target (B7: a strip never resets them): "weeks queued 2×".

@@ -658,12 +658,13 @@ export const AGE_THRESHOLDS: Record<HorizonValue, { days?: number; months?: numb
   eventually: { months: 6 },
 }
 
-export const AGE_LABELS: Record<HorizonValue, string> = {
-  days: '>10 d',
-  weeks: '>1 mo',
-  months: '>3 mo',
-  eventually: '>6 mo',
-}
+/**
+ * The age badge's one word, whatever the horizon (Trent, 2026-10-29: "it just
+ * needs to say 'old' instead of the actual time because I never know what
+ * that age thing really means"). It was ">1 wk" / ">1 mo" / ">3 mo" /
+ * ">6 mo"; the thresholds are unchanged (`AGE_THRESHOLDS`).
+ */
+export const AGE_LABEL = 'old'
 
 /** A stored horizon as a HorizonValue, unset read as weeks. */
 export function setHorizonOrUnset(horizon: string | null): HorizonValue {
@@ -674,7 +675,7 @@ export function setHorizonOrUnset(horizon: string | null): HorizonValue {
 
 /**
  * Whether `since` is past this horizon's threshold at `now` — strictly past:
- * a weeks task is ">1 mo" from one calendar month after `since` (calendar
+ * a weeks task is "old" from one calendar month after `since` (calendar
  * arithmetic in `timezone`, UTC when not given). Shared by the age badge and
  * Process's growth ask.
  */
@@ -716,7 +717,7 @@ function isQuotaOrReminder(task: BadgeTaskFields): boolean {
 }
 
 /**
- * The age badge's label (">1 mo"), or null: not undated, a repeating task, a
+ * The age badge's label ("old", `AGE_LABEL`), or null: not undated, a repeating task, a
  * reminder or quota, done, or not yet past its horizon's threshold.
  */
 export function ageLabel(task: BadgeTaskFields, now: Date, timezone = 'utc'): string | null {
@@ -724,7 +725,7 @@ export function ageLabel(task: BadgeTaskFields, now: Date, timezone = 'utc'): st
   if (task.on_deck_day) return null
   if (isQuotaOrReminder(task) || task.done) return null
   const horizon = setHorizonOrUnset(task.horizon ?? null)
-  return pastAgeThreshold(horizon, task.created_at, now, timezone) ? AGE_LABELS[horizon] : null
+  return pastAgeThreshold(horizon, task.created_at, now, timezone) ? AGE_LABEL : null
 }
 
 /**
