@@ -394,11 +394,17 @@ test.describe('Lean row · phone', () => {
       const title = (await r.locator('[data-lean-title]').boundingBox())!
       const y = title.y + 12
       const x0 = title.x + 8
+      // The drag ends over the defer-overdue FAB: releasing there is not a tap
+      // on it (it once deferred every overdue task, 2026-10-28).
+      const overdue = async () =>
+        (await (await page.request.get('/api/tasks/counts')).json()).data.overdue as number
+      const overdueBefore = await overdue()
       await page.mouse.move(x0, y)
       await page.mouse.down()
       for (let x = x0; x <= x0 + 270; x += 15) await page.mouse.move(x, y)
       await page.mouse.up()
       await expect.poll(async () => (await stateOf(page, id)).done).toBe(true)
+      expect(await overdue()).toBe(overdueBefore)
     } finally {
       await cleanUp(page, [id])
     }
