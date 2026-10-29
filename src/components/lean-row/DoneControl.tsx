@@ -9,11 +9,11 @@
  * THE HORIZON SQUARE (`src/lib/horizon-square.ts`): every one-off
  * (`horizonGoverns` — targeted or not, deadline or not) carries its horizon
  * in the square's hold menu, tooltip and `data-horizon-square`, but the
- * square DRAWS it only where the list asks (`horizonLook`): Scan's Horizon
- * sections, where every row shares one horizon (Trent, 2026-10-29: "my eye
- * doesn't like that the task checkbox is changing shape… it doesn't bother
- * me in the Horizon category"). There the border draws the horizon the user
- * set — Days solid (the plain
+ * square is PLAIN everywhere (Trent, 2026-10-29: "fully consistent
+ * checkboxes everywhere"; the horizon shows as the meta line's dot). The
+ * patterned look below is RETIRED, kept for `horizonLook`, which no list
+ * sets any more (it drew in Scan's Horizon sections for a few hours). It
+ * drew the horizon the user set — Days solid (the plain
  * checkbox itself, 0.25 grey), Weeks long dashes, Months a dash mid-side,
  * Eventually dots (0.42 grey); unset looks like whatever unset means
  * (`UNSET_HORIZON`). Every other row keeps the plain checkbox. The pattern

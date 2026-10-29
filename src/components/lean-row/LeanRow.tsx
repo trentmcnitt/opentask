@@ -17,9 +17,11 @@
  *   checkbox in selection mode. No circle, no card: a hairline between rows.
  * - High "!" / Urgent "!!" right after the title, bound to its last word.
  *   Medium is never shown; Low is a grey word on the meta line.
- * - The horizon: a hold or right-click on the done square changes it, on
- *   every one-off; the square DRAWS it only in Scan's Horizon sections
- *   (`horizonLook`, `DoneControl`, `src/lib/horizon-square.ts`).
+ * - The horizon: the done square is always plain (2026-10-29: "fully
+ *   consistent checkboxes everywhere"); a hold or right-click on it changes
+ *   the horizon, on every one-off. The horizon shows as main's perspective
+ *   dot after the project on the meta line, its own menu; unset draws as
+ *   Weeks (`HorizonDotButton`'s `unsetAsWeeks`).
  * - Deadline chip, then the target chip, each saying the moment alone
  *   (`leanChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago"; a
  *   deadline later today counts down, "in 5 hrs", and "Today" is said once
@@ -38,7 +40,7 @@
  *   the title is a block formatting context (`md:flow-root`), so it keeps a
  *   clear column.
  * - The ROW STATE (`STATE_LOOK`, `leanRowState`): later today a faint blue;
- *   over target a blue tint and a dark slate-blue title; a passed deadline
+ *   over target a blue tint (the title the normal ink); a passed deadline
  *   the red counterpart, which wins — 1.75× stronger when the target has
  *   passed too (`tintClass`). No bar, no plum stripe, no plum "N×"; the one
  *   plum is a passed target's chip.
@@ -52,6 +54,7 @@
 import { useMemo } from 'react'
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
 import { DeadlineChip } from '@/components/DeadlineChip'
+import { HorizonDotButton } from '@/components/HorizonDot'
 import { LabelBadges } from '@/components/LabelBadges'
 import { useDayStart, useLabelConfig, useTaskQueue } from '@/components/PreferencesProvider'
 import { PriorityTabMark } from '@/components/RowCorner'
@@ -64,10 +67,11 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useTitleWeightOverride } from '@/hooks/useTitleWeightOverride'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
+import { horizonGoverns } from '@/lib/horizon-square'
 import { leanRowState, type LeanRowState } from '@/lib/lean-row-state'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { priorityTab } from '@/lib/row-corner'
-import { effectiveAttempts } from '@/lib/task-segments'
+import { effectiveAttempts, type HorizonValue } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import { DoneControl } from './DoneControl'
@@ -81,8 +85,9 @@ import { LeanButtons } from './LeanButtons'
  *   dark the blue at 3.125%; the title unchanged.
  * - Over target: a sky-leaning blue — light rgb(231,245,255) since
  *   2026-10-29 (Trent's E2, "bluer"; it was the target's blue at 10%), dark
- *   the target's blue at 12.5% — and a dark slate-blue title (light #263d4d,
- *   dark #d3dcec): present, not alarming, missing a target is not a mistake.
+ *   the target's blue at 12.5%. The title keeps the normal ink (Trent,
+ *   2026-10-29: "I don't know why that text is faded… just leave it full
+ *   black"; it was a slate #263d4d / #d3dcec) at 600.
  * - A passed deadline: the red counterpart (a warm red, rgb 200 20 10 — the
  *   sheet's crimson read pink on white — at ×1.4 of its first strength:
  *   light 9.8%, dark 14%); the title unchanged. It WINS over the blue: a
@@ -100,7 +105,6 @@ const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
   },
   over: {
     row: `${TINT_BASE} before:bg-[rgb(231,245,255)] dark:before:bg-[rgba(81,162,255,0.125)]`,
-    title: 'text-[#263d4d] dark:text-[#d3dcec]',
   },
   passed: {
     row: `${TINT_BASE} before:bg-[rgba(200,20,10,0.098)] dark:before:bg-[rgba(255,100,103,0.14)]`,
@@ -266,6 +270,7 @@ export function LeanRow({
         <LeanMeta
           task={task}
           isOverdue={isOverdue}
+          onSetHorizon={onSetHorizon ? (h) => onSetHorizon(task, h) : undefined}
           onMove={(until) => onSnooze(task.id, until)}
           onRemoveTarget={onRemoveTarget}
           onLabelClick={onLabelClick}
@@ -328,6 +333,7 @@ function LeanTitle({
 function LeanMeta({
   task,
   isOverdue,
+  onSetHorizon,
   onMove,
   onRemoveTarget,
   onLabelClick,
@@ -337,6 +343,8 @@ function LeanMeta({
   task: Task
   /** The target has passed (the list's `isOverdue`): the chip goes plum. */
   isOverdue: boolean
+  /** Change the horizon (the dot's menu). */
+  onSetHorizon?: (horizon: HorizonValue | null) => void
   onMove: (until: string) => void
   onRemoveTarget?: (task: Task) => void
   onLabelClick?: (label: string) => void
@@ -398,6 +406,19 @@ function LeanMeta({
       )}
       <AttemptsBadge task={task} />
       <MetaTail task={task} projectName={projectName} lead={!!task.deadline_at || !!words.target} />
+      {horizonGoverns(task) && (
+        // The HORIZON DOT, back (Trent, 2026-10-29: "those circles made some
+        // sense… then we can have fully consistent checkboxes everywhere"):
+        // main's perspective dot after the project, on every one-off, its own
+        // menu; unset draws as Weeks ("if it's not set, it is weeks").
+        <HorizonDotButton
+          task={task}
+          variant="meta"
+          unsetAsWeeks
+          onChange={onSetHorizon}
+          className="rounded-sm before:absolute before:-inset-2"
+        />
+      )}
       {task.labels.length > 0 && (
         <LabelBadges
           labels={task.labels}
@@ -425,6 +446,7 @@ function LeanMeta({
 /** Whether anything sits before the created date on the meta line (it takes a dot then). */
 function hasMetaBefore(task: Task, target: string | null, projectName?: string): boolean {
   return (
+    horizonGoverns(task) ||
     !!task.deadline_at ||
     !!target ||
     task.priority === 1 ||
