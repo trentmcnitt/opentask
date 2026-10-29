@@ -535,6 +535,12 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         )
         XCTAssertEqual(TaskSegmentDTO(horizon: "weeks", tasks: []).label, "Weeks")
         XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).title, "Someday")
+        // The strip's words on the Large widget (2026-10-29, the web's Q2).
+        XCTAssertEqual(
+            [SegmentKind.deadlines, .queueToday, .queuePrevious, .horizon(.days), .upcoming,
+             .horizon(.weeks), .horizon(.months), .horizon(.eventually)].map(\.stripWord),
+            ["Due", "Pulls", "Earlier", "Daily", "Next", "Weekly", "Monthly", "Qtrly"]
+        )
         // No dot to wrap at any more: the wrapping title is the title.
         XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Quarterly")
         // The Smart Stack card's short header: the word alone; a period keeps its name.

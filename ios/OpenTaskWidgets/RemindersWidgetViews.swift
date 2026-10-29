@@ -1022,19 +1022,6 @@ private struct ReminderSlotStrip: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// The faint divider between the period bars and the task bars
-    /// (2026-10-11, option 3): 1pt wide, 12pt tall, with 6pt of air each side
-    /// — the `HStack`'s 3pt spacing plus 3pt of its own padding.
-    private static let separatorWidth: CGFloat = 1
-    private static let separatorHeight: CGFloat = 12
-    private static let separatorPadding: CGFloat = 3
-
-    /// Where the divider goes: before the first task bar, only when a period
-    /// bar comes before it (task segments exist today AND periods do).
-    private func separatorBefore(_ position: Int, in shown: [ReminderDayProgress.StripBar]) -> Bool {
-        position > 0 && shown[position].kind == .taskSegment && shown[position - 1].kind == .period
-    }
-
     var body: some View {
         // One bar is not a strip — same rule as the web's ReminderSlotBar
         // ("it would say only 'everything is here', which the header already
@@ -1043,55 +1030,93 @@ private struct ReminderSlotStrip: View {
         // second.
         let shown = bars
         if shown.count >= 2 {
-            GeometryReader { geo in
-                let hasSeparator = shown.indices.contains { separatorBefore($0, in: shown) }
-                // The divider is one more `HStack` child: its width, its own
-                // padding, and one more spacing.
-                let separatorCost = hasSeparator
-                    ? Self.separatorWidth + 2 * Self.separatorPadding + segmentSpacing : 0
-                let gaps = segmentSpacing * CGFloat(shown.count - 1) + separatorCost
-                let widths = SegmentWidths.widths(
-                    weights: shown.map { Double($0.total) },
-                    available: Double(max(geo.size.width - gaps, 0)),
-                    minimum: Self.minimumSegmentWidth
-                )
-                HStack(spacing: segmentSpacing) {
-                    ForEach(Array(shown.enumerated()), id: \.element.key) { position, bar in
-                        if separatorBefore(position, in: shown) {
-                            Rectangle()
-                                .fill(WidgetTheme.stripSeparator(scheme: colorScheme))
-                                .frame(width: Self.separatorWidth, height: Self.separatorHeight)
-                                // Taller than the strip's 8pt row on purpose
-                                // (the mockup's 12px); drawn centred over it,
-                                // inside the card, so nothing clips.
-                                .frame(height: maxSegmentHeight)
-                                .padding(.horizontal, Self.separatorPadding)
-                                .accessibilityHidden(true)
-                        }
-                        // A task segment's bar jumps to its page exactly as a
-                        // period's does: the intent takes any page key.
-                        Button(intent: JumpToReminderSlotIntent(slotKey: bar.key)) {
-                            segmentBar(for: bar)
-                                // Real visual size — nothing painted beyond this
-                                // frame, so nothing for WidgetKit's renderer to
-                                // clip (see `segmentBar`'s doc).
-                                .frame(height: maxSegmentHeight)
-                                // THEN a taller invisible frame purely for the
-                                // tap target — see `segmentBleed`'s doc.
-                                .frame(height: maxSegmentHeight + 2 * segmentBleed)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: CGFloat(widths[position]))
-                        .padding(.vertical, -segmentBleed)
-                        .accessibilityLabel(Text(bar.label))
-                        .accessibilityValue(Text("\(bar.handled) of \(bar.total)"))
-                    }
-                }
+            // THE QUEUE ON ITS OWN ROW, WITH ITS WORDS (2026-10-29, Trent's
+            // option (a) — the web's Q2): the periods' bars first, then the
+            // task queue's, each with its short word above it
+            // (`SegmentKind.stripWord`), so the page header can say just
+            // "Task queue". Words beside the periods would not fit a card.
+            // The strip is laid out for real above the list's
+            // `RenderedTextReader`, so the second row's height comes out of
+            // the list's, never off the card.
+            let periods = shown.filter { $0.kind == .period }
+            let queue = shown.filter { $0.kind == .taskSegment }
+            VStack(alignment: .leading, spacing: Self.rowGap) {
+                if !periods.isEmpty { barRow(periods) }
+                if !queue.isEmpty { queueRow(queue) }
             }
-            .frame(height: maxSegmentHeight)
             .padding(.bottom, WidgetTheme.reminderSlotStripHeight - maxSegmentHeight)
         }
+    }
+
+    /// Between the periods' row and the queue's.
+    private static let rowGap: CGFloat = 6
+
+    /// The periods' bars: proportional, a finger's width at least.
+    private func barRow(_ row: [ReminderDayProgress.StripBar]) -> some View {
+        GeometryReader { geo in
+            let gaps = segmentSpacing * CGFloat(max(row.count - 1, 0))
+            let widths = SegmentWidths.widths(
+                weights: row.map { Double($0.total) },
+                available: Double(max(geo.size.width - gaps, 0)),
+                minimum: Self.minimumSegmentWidth
+            )
+            HStack(spacing: segmentSpacing) {
+                ForEach(Array(row.enumerated()), id: \.element.key) { position, bar in
+                    jumpButton(bar) {
+                        segmentBar(for: bar)
+                            // Real visual size — nothing painted beyond this
+                            // frame, so nothing for WidgetKit's renderer to
+                            // clip (see `segmentBar`'s doc).
+                            .frame(height: maxSegmentHeight)
+                            // THEN a taller invisible frame purely for the
+                            // tap target — see `segmentBleed`'s doc.
+                            .frame(height: maxSegmentHeight + 2 * segmentBleed)
+                            .contentShape(Rectangle())
+                    }
+                    .frame(width: CGFloat(widths[position]))
+                    .padding(.vertical, -segmentBleed)
+                }
+            }
+        }
+        .frame(height: maxSegmentHeight)
+    }
+
+    /// The task queue's bars, each under its word ("Due", "Pulls", "Daily",
+    /// "Next", "Weekly", "Qtrly"…), sharing the row evenly but never
+    /// narrower than the word. The page on screen's word in the ink colour,
+    /// an empty segment's faded — the web's `StripWord`. The word's size is
+    /// fixed (it does not grow with the text size): at the largest sizes the
+    /// eight words still fit a card.
+    private func queueRow(_ row: [ReminderDayProgress.StripBar]) -> some View {
+        HStack(alignment: .bottom, spacing: segmentSpacing) {
+            ForEach(row, id: \.key) { bar in
+                jumpButton(bar) {
+                    VStack(spacing: 2) {
+                        Text(bar.segment?.stripWord ?? bar.label)
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(bar.key == currentKey ? Color.primary : Color.secondary)
+                            .opacity(bar.total == 0 && bar.key != currentKey ? 0.55 : 1)
+                            .lineLimit(1)
+                            .fixedSize()
+                        segmentBar(for: bar)
+                            .frame(height: maxSegmentHeight)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+            }
+        }
+    }
+
+    /// A bar's button: it jumps to its page, a period's or a segment's alike
+    /// (the intent takes any page key), and says what it is to VoiceOver.
+    private func jumpButton<Content: View>(
+        _ bar: ReminderDayProgress.StripBar, @ViewBuilder content: () -> Content
+    ) -> some View {
+        Button(intent: JumpToReminderSlotIntent(slotKey: bar.key)) { content() }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(bar.label))
+            .accessibilityValue(Text("\(bar.handled) of \(bar.total)"))
     }
 
     /// One slot: a faint track, filled PURPLE as far as it has been
@@ -2070,8 +2095,11 @@ private struct TaskSegmentListView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// "Task queue" on the Large widget, whose strip names the segment with
+    /// its words (2026-10-29, Trent's option (a)); the segment's own name on
+    /// Medium, which has no strip.
     private var titleText: Text {
-        Text(segment.wrappingTitle)
+        Text(isLarge ? TaskWording.taskQueuePrefix : segment.wrappingTitle)
             .font(.headline)
             // Its horizon's teal (2026-10-11): the page's accent. Its strip
             // bar no longer matches it — every bar fills purple since

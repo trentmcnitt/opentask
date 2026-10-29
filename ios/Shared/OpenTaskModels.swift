@@ -550,9 +550,25 @@ enum SegmentKind: Hashable {
         }
     }
 
-    /// The page's title, "Task queue · Daily" (`TaskWording.taskQueueTitle`,
-    /// the web's `segmentTitle`).
+    /// The page's title, "Daily" (`TaskWording.taskQueueTitle`, the web's
+    /// `segmentTitle`; "Task queue · Daily" until 2026-10-29).
     var title: String { TaskWording.taskQueueTitle(titleWord) }
+
+    /// The short word over the segment's bar in the Large Reminders widget's
+    /// strip (Trent's Q2, 2026-10-29 — the web's `SEGMENT_STRIP_WORDS`), where
+    /// the page header then says just "Task queue".
+    var stripWord: String {
+        switch self {
+        case .deadlines: return "Due"
+        case .queueToday: return "Pulls"
+        case .queuePrevious: return "Earlier"
+        case .horizon(.days): return "Daily"
+        case .upcoming: return "Next"
+        case .horizon(.weeks): return "Weekly"
+        case .horizon(.months): return "Monthly"
+        case .horizon(.eventually): return "Qtrly"
+        }
+    }
 
     /// The segment's page key in the widget's and the watch's page ring (the
     /// slot-key Int space): -10…-13 the horizons, as before, -14 Upcoming,
