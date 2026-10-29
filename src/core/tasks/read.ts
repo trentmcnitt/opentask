@@ -7,6 +7,7 @@
  * guards its task through `loadTaskForMutation` (`./access`).
  */
 
+import { effectiveTargetDayFirst } from '@/lib/target-day-first'
 import { getDb } from '@/core/db'
 import type { QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import { normalizeDayState } from '@/lib/quota-prompts'
@@ -51,6 +52,7 @@ const TASK_COLUMNS = [
   'repeat_count_used',
   'repeat_until',
   'original_due_at',
+  'target_day_first_at',
   'deadline_at',
   'horizon',
   'horizon_set_at',
@@ -313,6 +315,7 @@ export interface TaskRow {
   repeat_count_used?: number | null
   repeat_until?: string | null
   original_due_at: string | null
+  target_day_first_at: string | null
   deadline_at: string | null
   horizon: string | null
   horizon_set_at: string | null
@@ -398,6 +401,16 @@ export function rowToTask(row: TaskRow): Task {
     )
     task.attempts = attempts
     task.attempts_counted_through = countedThrough
+    // The target's first time on its day (2026-10-29): a stored value on
+    // another OpenTask day than the target is stale and reads as the target
+    // (`effectiveTargetDayFirst`) — a missed write drops the "was", never
+    // shows a wrong one.
+    task.target_day_first_at = effectiveTargetDayFirst(
+      task.target_day_first_at,
+      task.due_at,
+      row.owner_timezone,
+      rolloverTime ?? CALENDAR_DAY_START,
+    )
     // Repeat ends (2026-10-22): judged in the owner's zone, only on a row
     // with an end. A count is arithmetic; a date end asks the engine once
     // (`isLastOccurrence`).
@@ -501,6 +514,7 @@ function baseTask(row: TaskRow): Task {
     anchor_dom: row.anchor_dom,
     ...repeatFields(row),
     original_due_at: row.original_due_at,
+    target_day_first_at: row.target_day_first_at,
     deadline_at: row.deadline_at ?? null,
     horizon: (row.horizon ?? null) as Task['horizon'],
     horizon_set_at: row.horizon_set_at ?? null,

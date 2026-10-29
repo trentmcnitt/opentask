@@ -46,6 +46,9 @@ const VALID_TASK_COLUMNS = new Set([
   'repeat_count_used',
   'repeat_until',
   'original_due_at',
+  // The target's first time on its day (2026-10-29): every target move,
+  // done and skip write it, and their undo puts it back.
+  'target_day_first_at',
   // Task model (2026-10-10). Must be here: this allowlist throws on an unknown
   // field, and a throw inside undoEntry wedges the stack (see is_tracked below).
   'deadline_at',

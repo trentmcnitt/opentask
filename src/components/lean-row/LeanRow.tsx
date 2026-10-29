@@ -59,6 +59,7 @@ import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
+import { wasTargetTime } from '@/lib/target-day-first'
 import { leanRowState, type LeanRowState } from '@/lib/lean-row-state'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { priorityTab } from '@/lib/row-corner'
@@ -293,7 +294,10 @@ function LeanMeta({
   const words = useMemo(
     // The server render and hydration have no tick (0): read the moment
     // there, as the card row does; after it, the tick is "now".
-    () => leanChipWords(task, timezone, dayStart, hour ? new Date(hour) : new Date()),
+    () => ({
+      ...leanChipWords(task, timezone, dayStart, hour ? new Date(hour) : new Date()),
+      was: task.due_at ? wasTargetTime(task, timezone, dayStart) : null,
+    }),
     [task, timezone, dayStart, hour],
   )
   return (
@@ -332,6 +336,13 @@ function LeanMeta({
           onMove={onMove}
           onRemoveTarget={onRemoveTarget}
         />
+      )}
+      {words.was && (
+        // The target's first time on its day, when a defer moved it within
+        // the day (`target_day_first_at`, 2026-10-29): grey, after the chip.
+        <span data-target-was className="text-muted-foreground">
+          was {words.was}
+        </span>
       )}
       <AttemptsBadge task={task} />
       <span data-created className="text-muted-foreground/70" title="Created">

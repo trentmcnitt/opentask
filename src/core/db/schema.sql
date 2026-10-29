@@ -200,6 +200,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 
   -- Snooze tracking (stores the original due_at when task is first snoozed)
   original_due_at  TEXT,
+  -- The target as it was when it first landed on its current OpenTask day
+  -- (2026-10-29, "was 9:00 AM"; src/lib/target-day-first.ts)
+  target_day_first_at TEXT DEFAULT NULL,
 
   -- Soft delete and archive
   deleted_at    TEXT,

@@ -264,7 +264,8 @@ export function writeRecurringSkip(
   const used = repeatEndOf(task).repeat_count_used + skipsAdded
   tx.prepare(
     `UPDATE tasks
-        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, lead_from = ?,
+        SET due_at = ?, occurrence_at = ?, original_due_at = ?, target_day_first_at = ?,
+        deadline_at = ?, lead_from = ?,
             skip_count = ?, repeat_count_used = ?, progress_current = 0, ${TARGET_SET_FIELD} = ?,
             attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}${deckClear},
             updated_at = ?
@@ -273,6 +274,7 @@ export function writeRecurringSkip(
     nextDueAt,
     nextOccurrenceAt,
     nextTarget,
+    nextDueAt, // target_day_first_at: the next occurrence's first time on its day
     nextDeadlineAt,
     nextLeadFrom,
     skipCount,
@@ -288,6 +290,7 @@ export function writeRecurringSkip(
     due_at: nextDueAt,
     occurrence_at: nextOccurrenceAt,
     original_due_at: nextTarget,
+    target_day_first_at: nextDueAt,
     deadline_at: nextDeadlineAt,
     lead_from: nextLeadFrom,
     skip_count: skipCount,
@@ -309,6 +312,7 @@ export function writeRecurringSkip(
     'due_at',
     'occurrence_at',
     'original_due_at',
+    'target_day_first_at',
     'deadline_at',
     'skip_count',
     'repeat_count_used',

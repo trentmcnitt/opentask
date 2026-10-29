@@ -102,7 +102,8 @@ function executeRecurringMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, lead_from = ?,
+    SET due_at = ?, occurrence_at = ?, original_due_at = ?, target_day_first_at = ?,
+        deadline_at = ?, lead_from = ?,
         ${TARGET_SET_FIELD} = ?, completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         repeat_count_used = ?,
         progress_current = 0, attempts = 0, attempts_counted_through = NULL,
@@ -113,6 +114,7 @@ function executeRecurringMarkDone(
     nextDueAt,
     nextOccurrenceAt, // the next scheduled occurrence (§6)
     nextDueAt, // original_due_at: the new occurrence's first target
+    nextDueAt, // target_day_first_at: and its first time on its day
     nextDeadlineAt, // the next occurrence's deadline (occurrenceDates), or null
     nextLeadFrom, // its lead day (the deadlines page), or null
     nowStr, // target_set_at: the next occurrence's wait counts from now
@@ -135,6 +137,7 @@ function executeRecurringMarkDone(
     due_at: nextDueAt,
     occurrence_at: nextOccurrenceAt,
     original_due_at: nextDueAt,
+    target_day_first_at: nextDueAt,
     deadline_at: nextDeadlineAt,
     lead_from: nextLeadFrom,
     target_set_at: nowStr,
@@ -168,6 +171,7 @@ function executeRecurringMarkDone(
       due_at: task.due_at,
       occurrence_at: task.occurrence_at,
       original_due_at: task.original_due_at,
+      target_day_first_at: task.target_day_first_at,
       deadline_at: task.deadline_at,
       lead_from: task.lead_from,
       target_set_at: task.target_set_at,

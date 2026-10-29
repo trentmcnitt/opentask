@@ -5983,6 +5983,17 @@ components:
             repeating task's done or skip sets it to the next occurrence. The
             target-age badge counts whole local days from it (and shipped native
             builds read it as their age clock).
+        target_day_first_at:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            The target as it was when it first landed on its current OpenTask
+            day (2026-10-29): a move within the day keeps it, a new target or a
+            move to another day resets it, a repeating task's done or skip sets
+            it to the next occurrence. Read-only. Never on another OpenTask day
+            than `target_at` (a stale value reads as the target); null with no
+            target. A row shows "was 9:00 AM" when it differs from the target's
+            time. See docs/TASK-MODEL.md § Target.
         target_at:
           type: [string, 'null']
           format: date-time

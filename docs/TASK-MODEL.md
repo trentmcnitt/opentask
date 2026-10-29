@@ -49,6 +49,22 @@ The target is when a task starts nagging: the dashboard's over-target list, the 
 
 A no-target → target change always restarts the clock, even if a stale origin is somehow still stored, so a fresh target never shows an age inherited from an old one (`collectDueAtChanges`, `src/core/tasks/helpers/collect-field-changes.ts`).
 
+**The target's first time on its day** (`target_day_first_at`, 2026-10-29, Trent): the target as it was when it first landed on its current [OpenTask day](#the-opentask-day), so a row can tell "originally targeted at 2:00" from "targeted at 9:00, deferred to 2:00" and say "Today 2:00 PM · was 9:00 AM". `original_due_at` can't: it is the first target ever (Trent's case, Tue 9 → Wed 9 → Wed 1 PM, keeps Tue 9; the day's first is Wed 9).
+
+| Change                                                         | `target_day_first_at`               |
+| -------------------------------------------------------------- | ----------------------------------- |
+| A task with no target gets one                                 | = the new target                    |
+| A move to another OpenTask day (any defer, edit, Target today) | = the new target                    |
+| A move within the same OpenTask day                            | Kept                                |
+| Remove target / the queue strips the target                    | None                                |
+| Back to auto, a rule change                                    | Follows the target the write leaves |
+| A repeating task's done / skip, and its put-back               | = the occurrence's target           |
+| Existing rows (the migration)                                  | = their current target              |
+
+Days are the owner's OpenTask days (`openTaskDayOf` with `dayBoundaryForUser`): with a 3:00 AM start, a move from Tue 9 PM to Wed 2:30 AM stays on Tuesday and keeps the first. The update path writes it once, after every collector (`collectTargetDayFirst`, `src/core/tasks/helpers/collect-field-changes.ts`), so defers, bulk defers, edits and Target today all go through one rule (`nextTargetDayFirst`, `src/lib/target-day-first.ts`); done, skip and the put-back write it beside `original_due_at`. It is in each write's `fields_changed`, so undo restores it with the target.
+
+**Normalised on read** (`rowToTask`, `effectiveTargetDayFirst`): a stored value on another OpenTask day than the target is stale — a path that moved the target across days without writing the column (the rollover's paths, a raw SQL fix) — and reads as the target itself; with no target it reads as null. So a missed write can only drop the "was", never show a wrong one. **The lean row and card v2** show a grey "was 9:00 AM" after the target chip when the target is on that day and its time differs (`wasTargetTime`); nothing otherwise.
+
 **The attempts tab.** A row with a target and at least one attempt carries a corner tab with the count ("3×"): local days on which it was over target (see [The two badges](#the-two-badges-attempts-and-age)). It replaced the target-age "2d" tab on 2026-10-12.
 
 **Remove target** sends a one-off with no deadline back to its horizon's segment (the row's snooze menu, the editor's … menu, Upcoming's target chip). **A deadline task never loses its target** (§8.3): in the same places it offers **Back to auto** instead — only when its target is one the user picked (ruling Q9); an automatic target offers neither. Back to auto is `target_at: null` on a deadline task: the server stores the automatic target again, computed from that moment (nothing records when the deadline was first set). One rule decides what each surface offers: `targetReset` (`src/lib/task-segments.ts`). A repeating task's target is never removed in the editor (PR 4c): its rule goes only with every-time mode's "Stop repeating" (a one-time task keeping its target and deadline).
