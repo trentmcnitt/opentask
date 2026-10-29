@@ -446,15 +446,27 @@ function LeanMeta({
       {/* The created date LAST (Trent, 2026-10-29, round 10): after the
           project, Low and notes, so it never sits against the target's
           words ("Today 3:00 PM was 1:00 PM today 11:53 AM"). */}
-      {hasMetaBefore(task, words.target, projectName) && <MetaDot />}
-      <span data-created className="text-muted-foreground/70" title="Created">
-        {createdDateWords(task.created_at, timezone, dayStart)}
+      <span className={META_JOIN}>
+        {createdTakesDot(task, words.target, projectName) && <MetaDot />}
+        <span data-created className="text-muted-foreground/70" title="Created">
+          {createdDateWords(task.created_at, timezone, dayStart)}
+        </span>
       </span>
     </div>
   )
 }
 
-/** Whether anything sits before the created date on the meta line (it takes a dot then). */
+/**
+ * Whether the created date takes a "·": something sits before it, and that
+ * something is not the horizon dot — "no two dots in a row" (Trent,
+ * 2026-10-29): the horizon dot separates on its own ("Personal ● Oct 19").
+ */
+function createdTakesDot(task: Task, target: string | null, projectName?: string): boolean {
+  const afterHorizonDot = horizonGoverns(task) && task.labels.length === 0 && !task.notes?.trim()
+  return !afterHorizonDot && hasMetaBefore(task, target, projectName)
+}
+
+/** Whether anything sits before the created date on the meta line. */
 function hasMetaBefore(task: Task, target: string | null, projectName?: string): boolean {
   return (
     horizonGoverns(task) ||
@@ -466,6 +478,13 @@ function hasMetaBefore(task: Task, target: string | null, projectName?: string):
     !!task.notes?.trim()
   )
 }
+
+/**
+ * A separator dot and the item after it, as ONE item of the meta line: a
+ * wrap can never leave a "·" at a line's end (Trent, 2026-10-29). The same
+ * 6px gap inside as between items.
+ */
+const META_JOIN = 'inline-flex items-center gap-x-1.5 whitespace-nowrap'
 
 /** The meta line's separator dot. */
 function MetaDot() {
@@ -529,7 +548,7 @@ function MetaTail({
   return (
     <>
       {parts.map((part, i) => (
-        <span key={i} className="contents">
+        <span key={i} className={META_JOIN}>
           {(lead || i > 0) && <MetaDot />}
           {part}
         </span>
