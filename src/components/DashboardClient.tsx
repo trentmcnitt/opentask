@@ -2004,6 +2004,7 @@ function TrackColumn({
   return (
     <div
       ref={stickyRef}
+      data-dashboard-side
       className={cn(
         'min-w-0',
         twoColumn &&
@@ -2765,9 +2766,10 @@ function DashboardView({
           )}
 
           {/* Now's On deck section (D2): under the filter row, at the top. A
-              sectioned mode's sections take this slot, above the reminders
-              and quotas, so the mode is the first thing seen. */}
-          {modes.sectioned ? renderTaskList('all') : renderTaskList('deck')}
+              sectioned mode's sections are the task list and go in its slot
+              below (Trent, 2026-10-29: on a phone "Reminders, task queue,
+              minimized Quotas, then the task list" — main's order). */}
+          {!modes.sectioned && renderTaskList('deck')}
         </div>
 
         <TrackColumn
@@ -2789,7 +2791,7 @@ function DashboardView({
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
-          {!modes.sectioned && renderTaskList('rest')}
+          {modes.sectioned ? renderTaskList('all') : renderTaskList('rest')}
         </div>
       </main>
 

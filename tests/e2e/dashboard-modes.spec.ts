@@ -93,6 +93,27 @@ async function laterToday(page: Page): Promise<Date> {
   return new Date(Math.min(Date.now() + 40 * 60 * 1000, dayEnd.toMillis() - 2 * 60 * 1000))
 }
 
+test.describe('Dashboard modes · where the sections sit', () => {
+  // Trent, 2026-10-29: on a phone "Reminders, task queue, minimized Quotas,
+  // then the task list" — main's order; the sections are the task list.
+  test('phone: the side column (Reminders, task queue, Quotas) first, then the sections', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/?mode=today')
+    // The side column: Reminders and Quotas when there are any today (this
+    // user has neither), and the task queue's Tasks card.
+    const side = page.locator('[data-dashboard-side]')
+    const section = page.locator('section[data-mode-section]').first()
+    await expect(side.getByRole('region', { name: 'Tasks' })).toBeVisible()
+    await expect(section).toBeVisible()
+    const box = async (l: typeof section) => (await l.boundingBox())!
+    expect((await box(side)).y + (await box(side)).height).toBeLessThanOrEqual(
+      (await box(section)).y,
+    )
+  })
+})
+
 test.describe('Dashboard modes · the switch', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
