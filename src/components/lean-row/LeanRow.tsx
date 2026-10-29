@@ -66,7 +66,6 @@ import { useRowPress } from '@/hooks/useRowPress'
 import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useTitleWeightOverride } from '@/hooks/useTitleWeightOverride'
-import { useOverTintRoot } from '@/hooks/useOverTintOverride'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
 import { wasTargetTime } from '@/lib/target-day-first'
@@ -104,13 +103,13 @@ const TINT_BASE =
   "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:top-0 before:-bottom-px before:-z-10 before:content-['']"
 const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
   soon: {
-    row: `${TINT_BASE} before:bg-(--lean-tint-soon)`,
+    row: `${TINT_BASE} lean-tint-soon`,
   },
   over: {
-    row: `${TINT_BASE} before:bg-(--lean-tint-over)`,
+    row: `${TINT_BASE} lean-tint-over`,
   },
   passed: {
-    row: `${TINT_BASE} before:bg-(--lean-tint-late)`,
+    row: `${TINT_BASE} lean-tint-late`,
   },
 }
 
@@ -120,7 +119,7 @@ const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
  * dark 24.5%), in place of the normal red. A passed deadline with its target
  * still ahead ("Return the rental car") keeps the normal red.
  */
-const BOTH_PASSED_ROW = `${TINT_BASE} before:bg-(--lean-tint-late-both)`
+const BOTH_PASSED_ROW = `${TINT_BASE} lean-tint-late-both`
 
 /** The row's state markers, for tests and the row's own selectors. */
 function stateFlags(
@@ -191,8 +190,6 @@ export function LeanRow({
     cancelLongPressRef,
   })
   const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
-  // TEMPORARY: a dev build's `?overTint=` (`useOverTintRoot`).
-  useOverTintRoot()
   const isAiProcessing = task.labels.includes('ai-to-process')
   const timezone = useTimezone()
   const dayStart = useDayStart()
