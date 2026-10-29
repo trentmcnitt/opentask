@@ -91,7 +91,7 @@ enum WidgetTheme {
     /// Trent's ruling the same day: a ring is a progress indicator too):
     /// the reminders' purple
     /// (`DayBarColors.fillingHex`, the web's `--badge-reminders`), resolved
-    /// from the view's `colorScheme` like `overTarget(_:)`. Finished is the
+    /// from the view's `colorScheme`, not a dynamic platform colour. Finished is the
     /// done green (`trackMetTint`), or a segment's own `stripDoneColor`.
     static func dayBarFilling(_ scheme: ColorScheme) -> Color {
         let hex = DayBarColors.fillingHex
@@ -145,29 +145,6 @@ enum WidgetTheme {
     /// tint Trent asked for so the armed mode can't be mistaken for the
     /// resting one. It never colors a count, a bar or a pace mark.
     static let takebackTint = Color.red
-
-    /// Over target (2026-10-11): a calm plum, the web's `--over-target` —
-    /// never red, which is kept for a passed deadline only (Trent). Plum TEXT:
-    /// the page control's Over count and a task segment row's "· 3×". NOT the
-    /// Tasks widget's rows since 2026-10-28 (the web's lean row: the target's
-    /// time is blue, the attempts count grey, and over target is the row's
-    /// blue tint — `LeanRowStyle`). Lifted in dark mode like the web's dark token
-    /// (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on the
-    /// dark card measured 3.0:1 as text; lifted it is 6.0:1. Light mode is
-    /// unchanged (#9E4594, 5.6:1 on white). Resolved from the view's
-    /// `colorScheme` (see `dayBarFilling`), not a dynamic platform color.
-    static func overTarget(_ scheme: ColorScheme) -> Color {
-        rgb(scheme == .dark ? 0xC97CD5 : 0x9E4594)
-    }
-
-    /// A SOLID plum under white text — the Over segment's selected fill
-    /// (`TasksPageControl`), the web's `--over-target-badge`: the plum itself
-    /// in light mode (white on it
-    /// 5.6:1), a darker one in dark mode (oklch(0.52 0.16 322) ≈ #92429E,
-    /// white on it 6.0:1), since white on the lifted text plum would fail.
-    static func overTargetBadge(_ scheme: ColorScheme) -> Color {
-        rgb(scheme == .dark ? 0x92429E : 0x9E4594)
-    }
 
     /// A task page's title color: one deeper teal (#0b7a6f) for every horizon
     /// in light mode, for legibility (Trent, 2026-10-11); the horizon's own

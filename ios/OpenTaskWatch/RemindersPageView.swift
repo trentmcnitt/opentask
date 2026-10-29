@@ -569,12 +569,13 @@ struct SegmentRowView: View {
         return NotesGlyph.accessibilityLabel("\(task.title)\(words)", hasNotes: task.hasNotes)
     }
 
-    /// The small words, the attempts badge ("3×", always last) in plum like
-    /// the phone widget's row; the age label stays secondary.
+    /// The small words, the attempts badge ("3×", always last) semibold and
+    /// grey like the Tasks rows' count (2026-10-28: Trent ruled plum out);
+    /// the age label stays secondary.
     private func metaText(_ words: String) -> Text {
         if let badge = TargetAge.attemptsBadge(task), words.hasSuffix(badge) {
             return Text(String(words.dropLast(badge.count))).font(.caption2).foregroundStyle(.secondary)
-                + Text(badge).font(.caption2.weight(.semibold)).foregroundStyle(WatchTheme.overdue)
+                + Text(badge).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
         }
         return Text(words).font(.caption2).foregroundStyle(.secondary)
     }

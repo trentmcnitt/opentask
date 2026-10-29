@@ -1610,7 +1610,7 @@ enum SegmentRowMetrics {
 ///   segmentMeta`): the task's set horizon only when it differs from the
 ///   page's, a future target's day, the deadline ("Fix the gate · Nov 1 ·
 ///   deadline Nov 4"); an unset horizon shows nothing; then the server's
-///   badge, "3×" in plum or an undated task's ">1 mo" (2026-10-12, label
+///   badge, "3×" (grey) or an undated task's ">1 mo" (2026-10-12, label
 ///   only — no in-widget offer). The title links to the task on the dashboard, where its
 ///   horizon and target can be changed (deep link in place of in-widget
 ///   controls, amendment 16).
@@ -2304,8 +2304,8 @@ private struct SegmentTaskRow: View {
     /// (2026-10-12) the words are the target date, a repeating task's
     /// schedule and the deadline (`TaskDTO.upcomingMeta`, in the measured
     /// `upcomingForm`). The attempts badge ("3×", always LAST in the words)
-    /// is drawn plum, the web's `BadgeChips`; colour only, so the measured
-    /// characters and weight are unchanged. The age label stays secondary.
+    /// is grey like the rest (2026-10-28: Trent ruled plum out; the Tasks
+    /// row's count is grey too), as is the age label.
     private var titleText: Text {
         let title = Text(task.title)
             .fontWeight(considered ? .regular : WidgetTheme.priorityWeight(task.priority))
@@ -2316,13 +2316,7 @@ private struct SegmentTaskRow: View {
             return title + Text(String(consideredLabel.dropFirst(task.title.count))).foregroundStyle(.secondary)
         }
         guard let meta else { return title }
-        let words = metaPlacement.joined(meta: meta)
-        if let badge = TargetAge.attemptsBadge(task), words.hasSuffix(badge) {
-            let rest = String(words.dropLast(badge.count))
-            return title + Text(rest).foregroundStyle(.secondary)
-                + Text(badge).foregroundStyle(WidgetTheme.overTarget(colorScheme))
-        }
-        return title + Text(words).foregroundStyle(.secondary)
+        return title + Text(metaPlacement.joined(meta: meta)).foregroundStyle(.secondary)
     }
 
     /// `ReminderRow`'s two frames: centred on line 1, target the row's full

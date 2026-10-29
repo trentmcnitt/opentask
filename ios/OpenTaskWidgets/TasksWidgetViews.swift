@@ -1286,8 +1286,7 @@ private struct TaskRow: View {
 /// heavier 7× step; it was plum from 2026-10-12). The flag is the passed
 /// deadline's red (`LeanRowStyle.passed`, red-700 / red-400). Label only:
 /// the web's "Remove target?" offer at 3× is not drawn here. Segment rows
-/// (Reminders widget, not a lean row) still end their words with a plum
-/// "· 3×".
+/// (Reminders widget) end their words with the same grey "· 3×".
 ///
 /// It costs the row no height — the label's first line just gets wider —
 /// and `width(for:)` is EXACTLY what `text(for:)` draws (the "one function"

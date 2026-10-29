@@ -116,7 +116,7 @@ struct BulkSnoozeSheetView: View {
         ForEach(Array(result.summaryLines.enumerated()), id: \.offset) { _, line in
             Text(line.text)
                 .font(.caption2)
-                .foregroundStyle(line.isUrgent ? WatchTheme.overdue : .secondary)
+                .foregroundStyle(line.isUrgent ? .primary : .secondary)
         }
 
         Button("Done") {
@@ -130,7 +130,7 @@ struct BulkSnoozeSheetView: View {
     private var failedContent: some View {
         Image(systemName: "wifi.exclamationmark")
             .font(.title2)
-            .foregroundStyle(WatchTheme.overdue)
+            .foregroundStyle(.secondary)
         Text("Couldn't defer")
             .font(.subheadline)
         Text("Check your connection and try again.")

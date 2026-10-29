@@ -9,19 +9,6 @@ import SwiftUI
 /// "Defer 2 of 3: ⏭ 4:30 PM · +1h" (`OverdueSweepWords`, 2026-10-26: it
 /// read "All overdue (2)" under a header of "3 overdue").
 struct MenuBarPanel: View {
-    /// Over target (2026-10-11): the calm plum the widgets and the web use
-    /// (`WidgetTheme.overTarget`, `--over-target`) — never red. Lifted in
-    /// dark mode since 2026-10-12 (the light plum on the dark panel was
-    /// 3.0:1 as text; lifted, 6.0:1). The same values as
-    /// `WidgetTheme.overTarget(_:)`, which this target doesn't compile. The
-    /// header's "N overdue" only since 2026-10-28: the ROWS follow the web's
-    /// lean row (`LeanRowStyle`: a blue time, a grey "3×", the row's tint).
-    private var overTarget: Color {
-        colorScheme == .dark
-            ? Color(red: 0xC9 / 255, green: 0x7C / 255, blue: 0xD5 / 255)
-            : Color(red: 0x9E / 255, green: 0x45 / 255, blue: 0x94 / 255)
-    }
-
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: MenuBarModel
     @FocusState private var addFocused: Bool
@@ -64,7 +51,11 @@ struct MenuBarPanel: View {
                 Text("OpenTask").font(.headline)
                 Text(summary)
                     .font(.caption)
-                    .foregroundStyle(model.overdue.isEmpty ? Color.secondary : overTarget)
+                    // Plain grey, overdue or not (2026-10-28: Trent ruled
+                    // plum out, "I can't be memorizing these colors"; it was
+                    // plum while anything was overdue). The badge in the menu
+                    // bar is what calls for attention.
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             Button {

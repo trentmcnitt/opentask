@@ -66,7 +66,7 @@ struct TasksPageView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.capsule)
-                    .tint(WatchTheme.overdue)
+                    .tint(WatchTheme.accent)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
                 }
