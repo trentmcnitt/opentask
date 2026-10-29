@@ -383,6 +383,42 @@ test.describe('Dashboard modes · phone', () => {
   })
 })
 
+test.describe('Today · Late, then Today', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  // Trent, 2026-10-29 (O3): a passed DEADLINE is Late, above Today, under its
+  // own heading; over target alone stays in Today.
+  test('a passed deadline is Late, above Today; over target alone is Today', async ({
+    authenticatedPage: page,
+  }) => {
+    const now = Date.now()
+    const ids = {
+      late: await create(page, {
+        title: uniqueTitle('MD late'),
+        deadline_at: new Date(now - 3 * HOUR).toISOString(),
+      }),
+      over: await create(page, {
+        title: uniqueTitle('MD over'),
+        due_at: new Date(now - 2 * HOUR).toISOString(),
+      }),
+    }
+    try {
+      await open(page, 'today')
+      const late = section(page, 'late')
+      await expect(late.locator('[data-section-heading]')).toContainText('Late')
+      expect(await idsIn(late)).toEqual([ids.late])
+      expect(await idsIn(section(page, 'today'))).toEqual([ids.over])
+      // Late sits above Today.
+      const order = await page
+        .locator('section[data-mode-section]')
+        .evaluateAll((s) => s.map((e) => e.getAttribute('data-mode-section')))
+      expect(order.indexOf('late')).toBeLessThan(order.indexOf('today'))
+    } finally {
+      await cleanUp(page, Object.values(ids))
+    }
+  })
+})
+
 test.describe('Scan · plain squares, the horizon dot', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -408,6 +444,9 @@ test.describe('Scan · plain squares, the horizon dot', () => {
         const r = rowIn(section(page, id), task)
         await expect(r.locator('[data-lean-done] [data-horizon-border]')).toHaveCount(0)
         await expect(r.locator('[data-lean-meta] [data-horizon-dot]')).toHaveCount(1)
+        // Scan's age step (GS2, 2026-10-29): made today, so the Today step,
+        // the page itself — on the row's swipe foreground.
+        await expect(r.locator('xpath=..')).toHaveAttribute('data-age-step', 'today')
       }
       const r = (id: string, task: number) =>
         rowIn(section(page, id), task).locator('[data-lean-meta] [data-horizon-dot] circle')

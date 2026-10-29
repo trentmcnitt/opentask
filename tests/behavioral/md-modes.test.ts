@@ -140,17 +140,18 @@ describe('Today', () => {
       priority: 4,
       created_at: at('2026-10-01T09:00'),
     })
+    // Both over target and of one rank (no "!"), so Today's own order is time.
     const early = task({ due_at: at('2026-10-28T09:00'), priority: 1 })
-    const lateHigh = task({ due_at: at('2026-10-28T10:00'), priority: 4 })
+    const laterMedium = task({ due_at: at('2026-10-28T10:00'), priority: 2 })
     const sorted = (everywhere: boolean) =>
-      selectSections([lowDeck, highDeck, early, lateHigh], MODES.today.sections!, ctx, {
+      selectSections([lowDeck, highDeck, early, laterMedium], MODES.today.sections!, ctx, {
         id: 'priority',
         everywhere,
       })
     const views = sorted(false)
-    expect(ids(section(views, 'today').tasks)).toEqual([early.id, lateHigh.id])
+    expect(ids(section(views, 'today').tasks)).toEqual([early.id, laterMedium.id])
     expect(ids(section(views, 'on-deck').tasks)).toEqual([highDeck.id, lowDeck.id])
-    expect(ids(section(sorted(true), 'today').tasks)).toEqual([lateHigh.id, early.id])
+    expect(ids(section(sorted(true), 'today').tasks)).toEqual([laterMedium.id, early.id])
   })
 })
 
@@ -324,7 +325,7 @@ describe('the sort pill', () => {
   })
 })
 
-describe("Scan's date breaks (which sections draw them)", () => {
+describe("Scan's age steps (which sections draw them)", () => {
   const pulled = () =>
     task({
       queued_at: at('2026-10-28T03:00'),
@@ -336,22 +337,77 @@ describe("Scan's date breaks (which sections draw them)", () => {
 
   test('Pulled, Newest and the horizon sections, under "Newest" (the default)', () => {
     const views = scan([pulled(), coming(), plain()], { id: 'newest', everywhere: false })
-    expect(section(views, 'pulled').dateBreaks).toBe(true)
-    expect(section(views, 'newest').dateBreaks).toBe(true)
-    expect(section(views, 'horizon-weeks').dateBreaks).toBe(true)
+    expect(section(views, 'pulled').ageSteps).toBe(true)
+    expect(section(views, 'newest').ageSteps).toBe(true)
+    expect(section(views, 'horizon-weeks').ageSteps).toBe(true)
     // Coming up runs by its date, never the created one.
-    expect(section(views, 'coming-up').dateBreaks).toBe(false)
+    expect(section(views, 'coming-up').ageSteps).toBe(false)
   })
 
   test('another sort re-orders the sortable sections: no breaks there; Newest keeps them', () => {
     const views = scan([pulled(), plain()], { id: 'priority', everywhere: false })
-    expect(section(views, 'pulled').dateBreaks).toBe(false)
-    expect(section(views, 'horizon-weeks').dateBreaks).toBe(false)
-    expect(section(views, 'newest').dateBreaks).toBe(true)
+    expect(section(views, 'pulled').ageSteps).toBe(false)
+    expect(section(views, 'horizon-weeks').ageSteps).toBe(false)
+    expect(section(views, 'newest').ageSteps).toBe(true)
   })
 
   test("Today's sections never draw them", () => {
     const views = today([task({ due_at: at('2026-10-28T09:00') })])
-    expect(views.every((v) => !v.dateBreaks)).toBe(true)
+    expect(views.every((v) => !v.ageSteps)).toBe(true)
+  })
+})
+
+describe('Today: Late, then Today in O3 order (2026-10-29)', () => {
+  // ctx: Wed 2026-10-28 12:00 Chicago.
+  test('Late: only a passed DEADLINE; "!!", then "!", then the oldest deadline', () => {
+    const oldLow = task({ deadline_at: at('2026-10-20T17:00'), priority: 1 })
+    const newHigh = task({ deadline_at: at('2026-10-27T17:00'), priority: 3 })
+    const urgent = task({ deadline_at: at('2026-10-28T09:00'), priority: 4 })
+    const newerLow = task({ deadline_at: at('2026-10-25T17:00') })
+    // Deadline passed with its target still ahead (the rental car): Late too.
+    const rental = task({
+      deadline_at: at('2026-10-27T17:00'),
+      due_at: at('2026-10-29T09:00'),
+    })
+    // Over target alone is not late.
+    const overOnly = task({ due_at: at('2026-10-28T08:00'), priority: 4 })
+    const views = today([oldLow, newHigh, urgent, newerLow, rental, overOnly])
+    expect(views.map((v) => v.id)).toEqual(['late', 'today'])
+    expect(ids(section(views, 'late').tasks)).toEqual([
+      urgent.id,
+      newHigh.id,
+      oldLow.id,
+      newerLow.id,
+      rental.id,
+    ])
+    expect(ids(section(views, 'today').tasks)).toEqual([overOnly.id])
+  })
+
+  test('no passed deadline: no Late section (its heading shows only with rows)', () => {
+    const views = today([task({ due_at: at('2026-10-28T08:00') })])
+    expect(views.map((v) => v.id)).toEqual(['today'])
+  })
+
+  test('Today: due rows by mark, then attempts, then time; later today by time; the net by deadline', () => {
+    const due = (h: string, o: Partial<Task> = {}) => task({ due_at: at(`2026-10-28T${h}`), ...o })
+    const plain1x = due('07:00', { attempts: 1 })
+    const plain3x = due('09:00', { attempts: 3 })
+    const high = due('11:00', { priority: 3 })
+    const urgent = due('11:30', { priority: 4 })
+    const later2 = due('18:00')
+    const later1 = due('15:00')
+    const netLate = task({ deadline_at: at('2026-10-29T20:00') })
+    const netEarly = task({ deadline_at: at('2026-10-29T09:00') })
+    const views = today([netLate, later2, plain1x, high, netEarly, plain3x, later1, urgent])
+    expect(ids(section(views, 'today').tasks)).toEqual([
+      urgent.id,
+      high.id,
+      plain3x.id,
+      plain1x.id,
+      later1.id,
+      later2.id,
+      netEarly.id,
+      netLate.id,
+    ])
   })
 })

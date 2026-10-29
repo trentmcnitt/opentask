@@ -1,11 +1,12 @@
 /**
- * Scan's date breaks (`src/lib/created-bucket.ts`): the created-date bucket
- * in OpenTask days — the 3:00 AM boundary, the calendar month and year — and
- * where a list of rows breaks. Chicago, a 3:00 AM day start.
+ * Scan's age steps (`src/lib/created-bucket.ts`): the created-date bucket in
+ * OpenTask days — the 3:00 AM boundary, the calendar month and year — and
+ * each bucket's grey. Chicago, a 3:00 AM day start.
  */
 import { describe, expect, test } from 'vitest'
 import { DateTime } from 'luxon'
-import { bucketBreaks, createdBucket } from '@/lib/created-bucket'
+import { AGE_STEP_GREYS, createdBucket } from '@/lib/created-bucket'
+import { AGE_STEP_CLASS } from '@/components/modes/age-step'
 
 const TZ = 'America/Chicago'
 const DS = '03:00'
@@ -59,24 +60,22 @@ describe('createdBucket', () => {
   })
 })
 
-describe('bucketBreaks', () => {
-  const now = at('2026-10-29T10:07')
-  const breaks = (...created: string[]) => bucketBreaks(created.map(iso), now, TZ, DS)
-
-  test('a break where the bucket changes; none on the first row', () => {
-    expect(
-      breaks('2026-10-29T09:40', '2026-10-28T22:38', '2026-10-28T20:00', '2026-10-26T09:00'),
-    ).toEqual([null, 'yesterday', null, 'week'])
+describe('the age steps (GS2)', () => {
+  test('the greys: light down from white, dark up from the page (+0 / 6 / 11 / 14 / 16 / 17)', () => {
+    expect(Object.values(AGE_STEP_GREYS).map((g) => g.light)).toEqual([
+      255, 249, 244, 241, 239, 238,
+    ])
+    expect(Object.values(AGE_STEP_GREYS).map((g) => g.dark - 10)).toEqual([0, 6, 11, 14, 16, 17])
   })
 
-  test('one bucket: no breaks', () => {
-    expect(breaks('2026-10-29T09:40', '2026-10-29T08:00')).toEqual([null, null])
-  })
-
-  test('more rows extend the breaks: the same rows give the same marks', () => {
-    const five = ['2026-10-29T09:40', '2026-10-28T09:00', '2026-10-20T09:00', '2026-08-14T09:00']
-    const more = [...five, '2025-11-01T09:00']
-    expect(breaks(...more).slice(0, 4)).toEqual(breaks(...five))
-    expect(breaks(...more)[4]).toBe('earlier')
+  test('the row classes are those greys, R = G = B, today the page itself', () => {
+    expect(AGE_STEP_CLASS.today).toBe('bg-background')
+    for (const [bucket, grey] of Object.entries(AGE_STEP_GREYS)) {
+      if (bucket === 'today') continue
+      const cls = AGE_STEP_CLASS[bucket as keyof typeof AGE_STEP_CLASS]
+      expect(cls).toBe(
+        `bg-[rgb(${grey.light},${grey.light},${grey.light})] dark:bg-[rgb(${grey.dark},${grey.dark},${grey.dark})]`,
+      )
+    }
   })
 })

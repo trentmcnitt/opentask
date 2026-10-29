@@ -9,8 +9,8 @@ import { SwipeableRow } from './SwipeableRow'
 import { LeanRow } from './lean-row/LeanRow'
 import { CompactRow } from './lean-row/CompactRow'
 import { nextStepSize } from '@/lib/modes/select'
-import { bucketBreaks } from '@/lib/created-bucket'
-import { DATE_BREAK_CONTAINER, DateBreak } from '@/components/modes/DateBreak'
+import { createdBucket, type CreatedBucket } from '@/lib/created-bucket'
+import { AGE_STEP_CLASS } from '@/components/modes/age-step'
 import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -504,7 +504,7 @@ export function TaskList({
   const surface = lean ? 'flat' : 'card'
   // `compact`: a mode section's compact row (On deck in Today).
   // `group` picks the row: a mode section's compact row, or the list's own.
-  const renderTaskRow = (task: Task, group: SortedTaskGroup) => {
+  const renderTaskRow = (task: Task, group: SortedTaskGroup, step?: CreatedBucket) => {
     const inDeck = !!group.deck
     const Row = rowComponent(isCompact(group), lean)
     const cancelRef = { current: null as (() => void) | null }
@@ -512,6 +512,8 @@ export function TaskList({
       <SwipeableRow
         key={task.id}
         surface={surface}
+        toneClass={step && AGE_STEP_CLASS[step]}
+        ageStep={step}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
         leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
@@ -716,8 +718,8 @@ export function TaskList({
                 </div>
               )}
               {!collapsed && (
-                <div className={rowsClass(lean, group)}>
-                  {withDateBreaks(visibleTasks, group, renderTaskRow, { now, timezone, dayStart })}
+                <div className={lean ? undefined : 'space-y-1'}>
+                  {withAgeSteps(visibleTasks, group, renderTaskRow, { now, timezone, dayStart })}
                   <SectionMoreLess group={group} onMore={onSectionMore} onLess={onSectionLess} />
                   {nowSplit && (
                     <NowFoldRow
@@ -769,37 +771,20 @@ function rowComponent(compact: boolean, lean: boolean): React.ComponentType<Task
   return lean ? LeanRow : TaskRow
 }
 
-/** A group's rows' box: the cards' gap, and the date breaks' hairline rule. */
-function rowsClass(lean: boolean, group: SortedTaskGroup): string | undefined {
-  return (
-    cn(lean ? undefined : 'space-y-1', group.section?.dateBreaks && DATE_BREAK_CONTAINER) ||
-    undefined
-  )
-}
-
 /**
- * A group's rows, with Scan's date breaks between them where its section
- * draws them (`DateBreak`): read off the rows SHOWN, so "Show 5 more" extends
- * the breaks with the rows (`bucketBreaks`).
+ * A group's rows, each on its created-date bucket's grey step where its
+ * section draws Scan's age steps (`AGE_STEP_CLASS`, `createdBucket`).
  */
-function withDateBreaks(
+function withAgeSteps(
   tasks: Task[],
   group: SortedTaskGroup,
-  render: (task: Task, group: SortedTaskGroup) => React.ReactNode,
+  render: (task: Task, group: SortedTaskGroup, step?: CreatedBucket) => React.ReactNode,
   ctx: { now: Date; timezone: string; dayStart: string },
 ): React.ReactNode[] {
-  if (!group.section?.dateBreaks) return tasks.map((task) => render(task, group))
-  const marks = bucketBreaks(
-    tasks.map((t) => t.created_at),
-    ctx.now,
-    ctx.timezone,
-    ctx.dayStart,
+  if (!group.section?.ageSteps) return tasks.map((task) => render(task, group))
+  return tasks.map((task) =>
+    render(task, group, createdBucket(task.created_at, ctx.now, ctx.timezone, ctx.dayStart)),
   )
-  return tasks.flatMap((task, i) => {
-    const mark = marks[i]
-    const row = render(task, group)
-    return mark ? [<DateBreak key={`date-break-${task.id}`} bucket={mark} />, row] : [row]
-  })
 }
 
 /** A group's section marker, for a mode section (tests and the sticky heading find it). */

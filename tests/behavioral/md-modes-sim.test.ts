@@ -231,9 +231,11 @@ describe('the dashboard modes through the days', () => {
     })
   })
 
-  test('a passed deadline with no target: red, and still in Today', () => {
+  test('a passed deadline with no target: red, and in Late (2026-10-29)', () => {
     // Thu 18:00: the deadline (Thu 17:00) has passed.
     expect(tint('thu 18:00', 'net')).toBe('passed')
-    expect(where('thu 18:00', 'today', 'net')).toEqual(['today'])
+    expect(where('thu 18:00', 'today', 'net')).toEqual(['late'])
+    // Before it passed, Today (the safety net).
+    expect(where('thu 10:00', 'today', 'net')).toEqual(['today'])
   })
 })

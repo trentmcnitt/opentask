@@ -1,7 +1,9 @@
 /**
- * SCAN'S DATE BREAKS (Trent, 2026-10-29, "F3 at 30%"): which bucket a task's
- * CREATED date falls in, counted in the user's OpenTask days (their day
- * start, `openTaskDayOf`), for the breaks between Scan's rows (`DateBreak`).
+ * SCAN'S AGE STEPS (Trent, 2026-10-29, GS2: "it really does convey age"):
+ * which bucket a task's CREATED date falls in, counted in the user's OpenTask
+ * days (their day start, `openTaskDayOf`); each bucket is a grey step of the
+ * row's background (`AGE_STEP_GREYS`, drawn by `TaskList`). They replaced
+ * the date breaks between rows the same day.
  *
  *   Today      created on today's OpenTask day
  *   Yesterday  the day before
@@ -13,8 +15,7 @@
  *
  * The first matching rule wins, so a task 4 days old is Week even when it
  * was last month. A created date "after" now (a clock off by a little) is
- * Today. Each bucket has a colour (sky, indigo, amber, emerald, teal, slate);
- * the break mixes it 30% toward the background.
+ * Today.
  *
  * Pure: the clock, the zone and the day start come in.
  */
@@ -22,13 +23,18 @@ import { openTaskDayOf, openTaskDaysBetween } from '@/lib/opentask-day'
 
 export type CreatedBucket = 'today' | 'yesterday' | 'week' | 'month' | 'year' | 'earlier'
 
-export const CREATED_BUCKETS: Readonly<Record<CreatedBucket, { label: string; color: string }>> = {
-  today: { label: 'Today', color: '#0284c7' },
-  yesterday: { label: 'Yesterday', color: '#4f46e5' },
-  week: { label: 'Week', color: '#d97706' },
-  month: { label: 'Month', color: '#059669' },
-  year: { label: 'Year', color: '#0d9488' },
-  earlier: { label: 'Earlier', color: '#64748b' },
+/**
+ * Each bucket's grey step, R = G = B: light from white down, dark counted UP
+ * from the page background (#0a0a0a, `--background`) by Trent's GS2 deltas
+ * (+0 / +6 / +11 / +14 / +16 / +17) — steeper at the young end, flatter old.
+ */
+export const AGE_STEP_GREYS: Readonly<Record<CreatedBucket, { light: number; dark: number }>> = {
+  today: { light: 255, dark: 10 },
+  yesterday: { light: 249, dark: 16 },
+  week: { light: 244, dark: 21 },
+  month: { light: 241, dark: 24 },
+  year: { light: 239, dark: 26 },
+  earlier: { light: 238, dark: 27 },
 }
 
 export function createdBucket(
@@ -48,25 +54,4 @@ export function createdBucket(
   if (day.slice(0, 7) === today.slice(0, 7)) return 'month'
   if (day.slice(0, 4) === today.slice(0, 4)) return 'year'
   return 'earlier'
-}
-
-/**
- * Where a list's rows change bucket: for each row, the bucket it OPENS, or
- * null where it continues the row before (and on the first row — the
- * section's heading opens it). Read off the rows as shown, so "Show 5 more"
- * extends the breaks with the rows.
- */
-export function bucketBreaks(
-  createdAts: readonly string[],
-  now: Date,
-  timezone: string,
-  dayStart: string,
-): (CreatedBucket | null)[] {
-  let previous: CreatedBucket | null = null
-  return createdAts.map((createdAt, i) => {
-    const bucket = createdBucket(createdAt, now, timezone, dayStart)
-    const opens = i > 0 && bucket !== previous ? bucket : null
-    previous = bucket
-    return opens
-  })
 }

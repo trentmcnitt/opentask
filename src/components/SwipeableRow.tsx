@@ -19,6 +19,12 @@ interface SwipeableRowProps {
    * shows through a row that is not being dragged.
    */
   surface?: 'card' | 'flat'
+  /**
+   * A background for the (opaque) foreground in place of the surface's own:
+   * Scan's age steps (`AGE_STEP_CLASS`), with the bucket as `data-age-step`.
+   */
+  toneClass?: string
+  ageStep?: string
 }
 
 /**
@@ -46,6 +52,8 @@ export function SwipeableRow({
   disabled = false,
   leftAction = 'snooze',
   surface = 'card',
+  toneClass,
+  ageStep,
 }: SwipeableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
@@ -159,7 +167,8 @@ export function SwipeableRow({
          action labels never bleed through semi-transparent child backgrounds */}
       <div
         {...(disabled ? {} : bind())}
-        className={SURFACE[surface].foreground}
+        className={cn(SURFACE[surface].foreground, toneClass)}
+        data-age-step={ageStep}
         style={{
           transform: `translateX(${offset}px)`,
           transition: offset === 0 || swiped ? 'transform 0.2s ease-out' : 'none',

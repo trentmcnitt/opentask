@@ -4,7 +4,7 @@
  * `sections: null` is the dashboard's own list (All).
  */
 import type { ModeDef, ModeId } from './types'
-import { COMING_UP, HORIZON_SECTIONS, NEWEST, ON_DECK, PULLED, TODAY } from './sections'
+import { COMING_UP, HORIZON_SECTIONS, LATE, NEWEST, ON_DECK, PULLED, TODAY } from './sections'
 
 /**
  * What the switch SAYS for each mode. The middle mode's name is Trent's
@@ -19,7 +19,7 @@ export const MODE_LABELS: Readonly<Record<ModeId, string>> = {
 }
 
 export const MODES: Readonly<Record<ModeId, ModeDef>> = {
-  today: { id: 'today', sections: [TODAY, ON_DECK] },
+  today: { id: 'today', sections: [LATE, TODAY, ON_DECK] },
   'pick-mode': {
     id: 'pick-mode',
     sections: [PULLED, NEWEST, COMING_UP, ...HORIZON_SECTIONS],

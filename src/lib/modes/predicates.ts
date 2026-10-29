@@ -67,6 +67,31 @@ export function isToday(task: Task, ctx: ModeContext): boolean {
   return isOverTarget(task, ctx) || isTargetedLaterToday(task, ctx) || isInDeadlineNet(task, ctx)
 }
 
+/** LATE (2026-10-29): the deadline has passed — only that; over target alone is not late. */
+export function isLate(task: Task, ctx: ModeContext): boolean {
+  return isPastDeadline(task.deadline_at, ctx.now)
+}
+
+/** "!!" first, then "!", then everything else alike (Medium, Low and None are one rank). */
+export function markRank(task: Task): number {
+  if (task.priority >= 4) return 0
+  return task.priority === 3 ? 1 : 2
+}
+
+/**
+ * Today's three runs, in order: due (the target has passed), later today
+ * (a target still ahead today), the deadline's safety net.
+ */
+export function todayRun(task: Task, ctx: ModeContext): number {
+  if (isOverTarget(task, ctx)) return 0
+  return isTargetedLaterToday(task, ctx) ? 1 : 2
+}
+
+/** A Today row's time within its run: the target, but the deadline in the safety net. */
+export function todayRunTime(task: Task, ctx: ModeContext): string | null {
+  return todayRun(task, ctx) === 2 ? task.deadline_at : task.due_at
+}
+
 /** Today's order key: the target, else the deadline — past times sort first. */
 export function todayTime(task: Task): string | null {
   return task.due_at ?? task.deadline_at
@@ -112,7 +137,7 @@ export function isHorizonGoverned(task: Task): boolean {
 /**
  * Newest created first — ONE function, shared by Newest, the horizon
  * sections and the sort pill's "Newest", so a section can tell its rows run
- * by created date (Scan's date breaks, `SectionView.dateBreaks`).
+ * by created date (Scan's age steps, `SectionView.ageSteps`).
  */
 export const byNewestCreated = (a: Task, b: Task): number => newestFirst(a.created_at, b.created_at)
 

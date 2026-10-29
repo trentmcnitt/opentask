@@ -54,7 +54,7 @@ export function selectSections(
       complete: def.allowOverlap,
       sortedByMode: byMode,
       rows: def.rows,
-      dateBreaks: !!def.dateBreaks && order === byNewestCreated,
+      ageSteps: !!def.ageSteps && order === byNewestCreated,
     })
   }
   return views

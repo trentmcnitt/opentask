@@ -13,12 +13,15 @@ import {
   dateMoment,
   daysAgo,
   isHorizonGoverned,
+  isLate,
   isOnDeckToday,
   isToday,
+  markRank,
   byNewestCreated,
   newestFirst,
   soonestFirst,
-  todayTime,
+  todayRun,
+  todayRunTime,
   wasPulled,
 } from './predicates'
 
@@ -30,16 +33,45 @@ export const HORIZON_DAYS_CAP = 10
 // ── Today ──────────────────────────────────────────────────────────────────
 
 /**
- * TODAY (title temporary): over target, targeted later today and the deadline
- * safety net, in one list by time — the target, else the deadline — so past
- * times sit first and a row never jumps sections when its time comes. Its
- * identity is its order: the sort pill leaves it alone.
+ * LATE, then TODAY (Trent, 2026-10-29, "O3" — "for now": Today gets its real
+ * design later, so these two are kept small and swappable here).
+ *
+ * LATE: every task whose DEADLINE has passed (over target alone is not
+ * late): "!!" first, then "!", then by deadline, oldest first. Before TODAY
+ * in the mode, so it claims them. Its heading shows only with rows (an empty
+ * section is dropped).
+ */
+export const LATE: SectionDef = {
+  id: 'late',
+  title: 'Late',
+  match: isLate,
+  order: (a, b) => markRank(a) - markRank(b) || soonestFirst(a.deadline_at, b.deadline_at),
+  sortable: false,
+  cap: null,
+  allowOverlap: false,
+  rows: 'full',
+}
+
+/**
+ * TODAY: the rest of what Today shows — over target, targeted later today
+ * and the deadline safety net — in three runs (`todayRun`):
+ * - due (the target has passed): "!!", then "!", then the rest
+ *   (`markRank`); then most attempts first ("3×" before "1×"); then the
+ *   target's time;
+ * - later today: by the target's time;
+ * - the safety net: by the deadline.
+ * Rows keep their own dates and times. The sort pill leaves it alone.
  */
 export const TODAY: SectionDef = {
   id: 'today',
   title: 'Today',
   match: isToday,
-  order: (a, b) => soonestFirst(todayTime(a), todayTime(b)),
+  order: (a, b, ctx) =>
+    todayRun(a, ctx) - todayRun(b, ctx) ||
+    (todayRun(a, ctx) === 0
+      ? markRank(a) - markRank(b) || (b.attempts ?? 0) - (a.attempts ?? 0)
+      : 0) ||
+    soonestFirst(todayRunTime(a, ctx), todayRunTime(b, ctx)),
   sortable: false,
   cap: null,
   allowOverlap: false,
@@ -81,7 +113,7 @@ export const PULLED: SectionDef = {
   match: (task, ctx) => wasPulled(task) && daysAgo(task.queued_at!, ctx) <= PULLED_DAYS,
   order: (a, b, ctx) =>
     newestFirst(a.queued_at, b.queued_at) || newestFirst(missedAt(a, ctx), missedAt(b, ctx)),
-  dateBreaks: true,
+  ageSteps: true,
   sortable: true,
   cap: SECTION_CAP,
   allowOverlap: false,
@@ -94,7 +126,7 @@ export const NEWEST: SectionDef = {
   title: 'Newest',
   match: () => true,
   order: byNewestCreated,
-  dateBreaks: true,
+  ageSteps: true,
   sortable: false,
   cap: SECTION_CAP,
   allowOverlap: true,
@@ -131,7 +163,7 @@ function horizonSection(horizon: HorizonValue | null, cap: number = SECTION_CAP)
     id: `horizon-${horizon ?? 'unset'}`,
     title,
     match: (task) => isHorizonGoverned(task) && (task.horizon ?? null) === horizon,
-    dateBreaks: true,
+    ageSteps: true,
     order: byNewestCreated,
     sortable: true,
     cap,
