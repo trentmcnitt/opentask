@@ -1002,8 +1002,18 @@ function GrowButton({
           {/* Where it grows to (Trent, 2026-10-29, A5: "that's a nice touch"):
               "Weeks", "Months", "Eventually" — desktop only; a phone shows
               the sprout alone, so the title keeps its width. */}
-          <span data-grow-word className="hidden text-xs font-medium sm:inline">
-            {HORIZON_LABELS[to]}
+          {/* A FIXED WIDTH, the longest word's ("Eventually"; Trent,
+              2026-10-29: a box that changes width moves the row's other
+              buttons, as the cutoff chip did): the word and an invisible
+              "Eventually" share one grid cell, the word left-aligned. */}
+          <span
+            data-grow-word
+            className="hidden justify-items-start text-xs font-medium sm:inline-grid"
+          >
+            <span className="col-start-1 row-start-1">{HORIZON_LABELS[to]}</span>
+            <span aria-hidden className="invisible col-start-1 row-start-1">
+              {HORIZON_LABELS.eventually}
+            </span>
           </span>
         </span>
       </button>
