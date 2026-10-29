@@ -14,11 +14,22 @@
  * is SVG on whole pixels: a 1px stroke at 1x and a 1.5px stroke at 2x, each
  * drawn only at its density, so every dash lands on the pixel grid.
  *
+ * CHANGING THE HORIZON (Trent, 2026-10-28, option A): on a governed row a
+ * press-and-hold on the square (right-click on desktop) opens the horizon
+ * menu (`HorizonMenuContent`, the editor chip's own); a tap still completes.
+ * An ungoverned row's square is only done: holding it does nothing. The menu
+ * anchors on a non-interactive span inside the square, so Radix's own
+ * open-on-press never competes with the tap.
+ *
  * The square's hit area reaches past its 22px box (the segment rows' done
  * square, `TaskSegmentRow`): a thumb on a phone lands on it, not on the row.
  */
+import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { HorizonMenuContent } from '@/components/HorizonDot'
+import { useSimpleLongPress } from '@/hooks/useLongPress'
 import {
   horizonGoverns,
   horizonSquareLook,
@@ -27,7 +38,7 @@ import {
   SQUARE_SIZE,
   type SquareLook,
 } from '@/lib/horizon-square'
-import { UNSET_HORIZON } from '@/lib/task-segments'
+import { UNSET_HORIZON, type HorizonValue } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -39,12 +50,15 @@ export function DoneControl({
   isSelectionMode,
   isSelected,
   onSelect,
+  onSetHorizon,
 }: {
   task: Task
   onDone: () => void
   isSelectionMode: boolean
   isSelected: boolean
   onSelect?: () => void
+  /** Change the horizon (a governed square's hold / right-click menu). */
+  onSetHorizon?: (horizon: HorizonValue | null) => void
 }) {
   if (isSelectionMode) {
     return (
@@ -58,8 +72,9 @@ export function DoneControl({
     )
   }
   const governed = horizonGoverns(task)
-  const look = governed ? horizonSquareLook(task.horizon) : null
-  const patterned = look !== null && !isPlainLook(look)
+  if (governed && onSetHorizon) {
+    return <HorizonDoneSquare task={task} onDone={onDone} onSetHorizon={onSetHorizon} />
+  }
   return (
     <button
       type="button"
@@ -72,21 +87,89 @@ export function DoneControl({
         e.stopPropagation()
         onDone()
       }}
-      className={cn(
-        'group/done hover:bg-foreground/5 relative mt-px flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] transition-colors',
-        HIT,
-        patterned
-          ? 'text-foreground/[0.42] hover:text-foreground/60'
-          : 'border-foreground/25 hover:border-foreground/60 border-[1.5px]',
-      )}
+      className={squareClasses(governed ? horizonSquareLook(task.horizon) : null)}
     >
-      {patterned && <SquareBorder look={look} />}
+      <SquareFace look={governed ? horizonSquareLook(task.horizon) : null} />
+    </button>
+  )
+}
+
+/** A governed square: a tap completes; a hold or a right-click opens the horizon menu. */
+function HorizonDoneSquare({
+  task,
+  onDone,
+  onSetHorizon,
+}: {
+  task: Task
+  onDone: () => void
+  onSetHorizon: (horizon: HorizonValue | null) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const look = horizonSquareLook(task.horizon)
+  const press = useSimpleLongPress({
+    onLongPress: () => setMenuOpen(true),
+    onShortPress: onDone,
+    tapOn: 'click',
+  })
+  return (
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <button
+        type="button"
+        data-no-row-press
+        data-lean-done
+        data-horizon-square={task.horizon ?? UNSET_HORIZON}
+        aria-label={`Done: "${task.title}" (hold to change the horizon)`}
+        title="Done · hold to change the horizon"
+        onClick={(e) => {
+          e.stopPropagation()
+          press.onClick()
+        }}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerLeave={press.onPointerLeave}
+        onPointerMove={press.onPointerMove}
+        onPointerCancel={press.onPointerCancel}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setMenuOpen(true)
+        }}
+        className={cn(squareClasses(look), 'touch-manipulation [-webkit-touch-callout:none]')}
+      >
+        {/* The menu's anchor: inert, so only the hold or right-click opens it. */}
+        <DropdownMenuTrigger asChild>
+          <span aria-hidden tabIndex={-1} className="pointer-events-none absolute inset-0" />
+        </DropdownMenuTrigger>
+        <SquareFace look={look} />
+      </button>
+      <HorizonMenuContent value={task.horizon} onChange={onSetHorizon} align="start" />
+    </DropdownMenu>
+  )
+}
+
+/** The square's box: the plain checkbox border, or room for the patterned SVG. */
+function squareClasses(look: SquareLook | null): string {
+  const patterned = look !== null && !isPlainLook(look)
+  return cn(
+    'group/done hover:bg-foreground/5 relative mt-px flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] transition-colors',
+    HIT,
+    patterned
+      ? 'text-foreground/[0.42] hover:text-foreground/60'
+      : 'border-foreground/25 hover:border-foreground/60 border-[1.5px]',
+  )
+}
+
+/** Inside the square: the patterned border (if any) and the hover check. */
+function SquareFace({ look }: { look: SquareLook | null }) {
+  return (
+    <>
+      {look !== null && !isPlainLook(look) && <SquareBorder look={look} />}
       <Check
         className="text-foreground relative size-3.5 opacity-0 transition-opacity group-hover/done:opacity-60"
         strokeWidth={3}
         aria-hidden
       />
-    </button>
+    </>
   )
 }
 

@@ -18,7 +18,7 @@
  * - High "!" / Urgent "!!" right after the title, bound to its last word.
  *   Medium is never shown; Low is a grey word on the meta line.
  * - The horizon is the done square's border on rows it governs (`DoneControl`,
- *   `src/lib/horizon-square.ts`); change it in the editor.
+ *   `src/lib/horizon-square.ts`); a hold or right-click on it changes it.
  * - Deadline chip, then the target chip, each saying the moment alone
  *   (`momentChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago") — the
  *   target always the blue target chip (its move / remove menu), never
@@ -99,6 +99,7 @@ export function LeanRow({
   onDone,
   onSnooze,
   onRemoveTarget,
+  onSetHorizon,
   onTargetAt,
   onDeck,
   isOverdue = false,
@@ -170,6 +171,7 @@ export function LeanRow({
         isSelectionMode={isSelectionMode}
         isSelected={isSelected}
         onSelect={onSelect}
+        onSetHorizon={onSetHorizon ? (h) => onSetHorizon(task, h) : undefined}
       />
       <div className="min-w-0 flex-1">
         {/* DOM first: the buttons float right inside the body, so on a phone

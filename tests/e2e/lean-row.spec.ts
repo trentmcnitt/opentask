@@ -12,7 +12,7 @@
  * and the setting itself. The task-queue switch is on for the file (On deck
  * needs it) and off after it.
  */
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, holdUntil, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const HOUR = 60 * 60 * 1000
@@ -255,6 +255,47 @@ test.describe('Lean row · the horizon done square', () => {
       })
     })
   }
+})
+
+test.describe('Lean row · changing the horizon from the square', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('a right-click or a hold on a governed square opens the horizon menu; a dated square has none', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const governed = await create(page, { title: uniqueTitle('LR hz'), horizon: 'weeks' })
+    const dated = await create(page, {
+      title: uniqueTitle('LR hz dated'),
+      due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+    })
+    try {
+      await gotoDashboard(page)
+      const square = row(page, governed).locator('[data-lean-done]')
+      const menu = page.getByRole('menu')
+
+      // Right-click: the menu; pick Months; the square follows; Undo.
+      await square.click({ button: 'right' })
+      await expect(menu).toBeVisible()
+      await page.getByRole('menuitemradio', { name: /^Months/ }).click()
+      await expect.poll(async () => (await stateOf(page, governed)).horizon).toBe('months')
+      await expect(square).toHaveAttribute('data-horizon-square', 'months')
+      await undoFromToast(page, /.+/)
+      await expect.poll(async () => (await stateOf(page, governed)).horizon).toBe('weeks')
+
+      // A hold opens it too, and completes nothing.
+      await holdUntil(square, () => expect(menu).toBeVisible())
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveCount(0)
+      expect((await stateOf(page, governed)).done).toBe(false)
+
+      // A dated row's square: no horizon menu.
+      await row(page, dated).locator('[data-lean-done]').click({ button: 'right' })
+      await expect(menu).toHaveCount(0)
+    } finally {
+      await cleanUp(page, [governed, dated])
+    }
+  })
 })
 
 test.describe('Lean row · actions', () => {
