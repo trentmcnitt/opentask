@@ -4,12 +4,12 @@
 import { HORIZON_WORD } from '@/lib/task-model-words'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown, ChevronDown, ChevronUp, Layers, Plus } from 'lucide-react'
-import { TaskRow, type TaskRowProps } from './TaskRow'
+import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
-import { LeanRow } from './lean-row/LeanRow'
+import { LeanRow, type LeanLook } from './lean-row/LeanRow'
 import { CompactRow } from './lean-row/CompactRow'
 import { nextStepSize } from '@/lib/modes/select'
-import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
+import { useTaskRowStyle, type TaskRowStyle } from '@/hooks/useTaskRowStyle'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -497,19 +497,19 @@ export function TaskList({
    * (the heading says it), and its On deck and Today always shown on touch.
    */
   // The row style (Settings → Theme → Task rows, per device): the lean row
-  // sits flat on the page with hairlines between rows, so no gap and no card.
-  const lean = rowStyle === 'lean'
-  const surface = lean ? 'flat' : 'card'
-  // `compact`: a mode section's compact row (On deck in Today).
-  // `group` picks the row: a mode section's compact row, or the list's own.
+  // sits flat on the page with hairlines between rows, so no gap and no card;
+  // card v2 is the lean row's `card-v2` look, separate cards 6px apart.
+  const look = ROW_LOOK[rowStyle]
+  // `group` picks the row: a mode section's compact row, or the style's own.
   const renderTaskRow = (task: Task, group: SortedTaskGroup) => {
     const inDeck = !!group.deck
-    const Row = rowComponent(isCompact(group), lean)
+    const compact = isCompact(group)
+    const Row = compact ? CompactRow : look.Row
     const cancelRef = { current: null as (() => void) | null }
     return (
       <SwipeableRow
         key={task.id}
-        surface={surface}
+        surface={rowSurface(compact, look)}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
         leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
@@ -518,6 +518,7 @@ export function TaskList({
       >
         <Row
           task={task}
+          look={look.leanLook}
           timeSlots={timeSlots}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
@@ -714,7 +715,7 @@ export function TaskList({
                 </div>
               )}
               {!collapsed && (
-                <div className={lean ? undefined : 'space-y-1'}>
+                <div className={rowGap(isCompact(group), look)}>
                   {visibleTasks.map((task) => renderTaskRow(task, group))}
                   <SectionMoreLess group={group} onMore={onSectionMore} onLess={onSectionLess} />
                   {nowSplit && (
@@ -757,14 +758,32 @@ export function TaskList({
 }
 
 /**
- * Whether a group is capped at the preview count: project groups with Now's
- * folds lifted only — not the flat lists, not Now's own rows, and not Now's
- * On deck section (D2, `withDeckSection`).
+ * Each row style's row, swipe surface and gap between rows. The card row
+ * ignores `look` (it has one look); the lean row draws `lean` or `card-v2`.
  */
-/** The row a list row draws: a mode section's compact row, the lean row, or the card. */
-function rowComponent(compact: boolean, lean: boolean): React.ComponentType<TaskRowProps> {
-  if (compact) return CompactRow
-  return lean ? LeanRow : TaskRow
+interface RowLook {
+  Row: typeof LeanRow
+  leanLook?: LeanLook
+  surface: 'card' | 'flat' | 'card-v2'
+  gap?: string
+}
+const ROW_LOOK: Record<TaskRowStyle, RowLook> = {
+  lean: { Row: LeanRow, leanLook: 'lean', surface: 'flat' },
+  card: { Row: TaskRow, surface: 'card', gap: 'space-y-1' },
+  'card-v2': { Row: LeanRow, leanLook: 'card-v2', surface: 'card-v2', gap: 'space-y-1.5' },
+}
+
+/**
+ * A row's swipe surface: the style's own, but a compact row (On deck in
+ * Today) stays flat beside lean rows and card v2's cards alike.
+ */
+function rowSurface(compact: boolean, look: RowLook): RowLook['surface'] {
+  return compact && look.leanLook ? 'flat' : look.surface
+}
+
+/** The gap between a group's rows: none between compact rows beside lean looks. */
+function rowGap(compact: boolean, look: RowLook): string | undefined {
+  return compact && look.leanLook ? undefined : look.gap
 }
 
 /** A group's section marker, for a mode section (tests and the sticky heading find it). */
@@ -796,6 +815,11 @@ function groupHeadingClass(group: SortedTaskGroup, collapsed: boolean): string {
   )
 }
 
+/**
+ * Whether a group is capped at the preview count: project groups with Now's
+ * folds lifted only — not the flat lists, not Now's own rows, and not Now's
+ * On deck section (D2, `withDeckSection`).
+ */
 function isPreviewed(group: SortedTaskGroup, isFlat: boolean): boolean {
   return !isFlat && !group.now && !group.deck && !group.section
 }

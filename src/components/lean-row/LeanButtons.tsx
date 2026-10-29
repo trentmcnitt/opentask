@@ -71,9 +71,12 @@ export function LeanButtons({
   onSnooze,
   onRemoveTarget,
   timeSlots,
+  className,
 }: {
   task: Task
   isOverdue: boolean
+  /** Extra classes on the buttons' box (card v2 drops it below its corner). */
+  className?: string
   onDeck?: TaskRowProps['onDeck']
   onTargetAt?: TaskRowProps['onTargetAt']
   onSnooze: TaskRowProps['onSnooze']
@@ -88,7 +91,10 @@ export function LeanButtons({
   return (
     <div
       data-lean-buttons
-      className="float-right ml-2 flex items-center gap-0.5 pointer-coarse:-mr-1.5 pointer-coarse:gap-0"
+      className={cn(
+        'float-right ml-2 flex items-center gap-0.5 pointer-coarse:-mr-1.5 pointer-coarse:gap-0',
+        className,
+      )}
     >
       {showDeck && (
         <>

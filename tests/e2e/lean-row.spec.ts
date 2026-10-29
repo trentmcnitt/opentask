@@ -770,3 +770,89 @@ test.describe('Lean row · the setting', () => {
     }
   })
 })
+
+test.describe('Card v2', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  // Trent, 2026-10-29 ("C1 · Separate cards"): the lean row's contents in a
+  // separate card, its state a 3px left edge only.
+  test('Settings → Task rows → Card v2: separate cards, a red or blue edge only, the count in the corner', async ({
+    authenticatedPage: page,
+  }) => {
+    const now = Date.now()
+    const ids = {
+      passed: await create(page, {
+        title: uniqueTitle('CV passed'),
+        deadline_at: new Date(now - 24 * HOUR).toISOString(),
+      }),
+      over: await create(page, {
+        title: uniqueTitle('CV over'),
+        due_at: new Date(now - 2 * HOUR).toISOString(),
+      }),
+      soon: await create(page, {
+        title: uniqueTitle('CV soon'),
+        due_at: (await laterToday(page)).toISOString(),
+      }),
+      // A deadline later today and no target: the safety net, no edge.
+      net: await create(page, {
+        title: uniqueTitle('CV net'),
+        deadline_at: (await laterToday(page)).toISOString(),
+      }),
+    }
+    try {
+      await page.goto('/settings')
+      await page.locator('[data-task-rows-setting]').selectOption('card-v2')
+      await gotoDashboard(page)
+      for (const id of Object.values(ids)) {
+        await expect(row(page, id)).toHaveAttribute('data-row-look', 'card-v2')
+      }
+
+      // The edge: red for a passed deadline, blue for over target, 3px.
+      const edgeOf = (id: number) =>
+        row(page, id).evaluate((el) => {
+          const s = getComputedStyle(el)
+          return { width: s.borderLeftWidth, color: s.borderLeftColor }
+        })
+      await expect(row(page, ids.passed)).toHaveAttribute('data-card-edge', 'passed')
+      expect(await edgeOf(ids.passed)).toEqual({ width: '3px', color: 'rgb(231, 0, 11)' })
+      await expect(row(page, ids.over)).toHaveAttribute('data-card-edge', 'over')
+      expect(await edgeOf(ids.over)).toEqual({ width: '3px', color: 'rgb(21, 93, 252)' })
+      // None later today or in a safety net: the plain 1px border.
+      for (const id of [ids.soon, ids.net]) {
+        await expect(row(page, id)).not.toHaveAttribute('data-card-edge')
+        expect((await edgeOf(id)).width).toBe('1px')
+      }
+
+      // No tint on the body; the title one weight up.
+      for (const id of Object.values(ids)) {
+        const tint = await row(page, id).evaluate((el) => getComputedStyle(el, '::before').content)
+        expect(tint).toBe('none')
+        await expect(row(page, id).locator('[data-lean-title]')).toHaveCSS('font-weight', '500')
+      }
+
+      // The attempts count sits in the corner, not on the meta line.
+      const o = row(page, ids.over)
+      await expect(o.locator('[data-corner-attempts]')).toHaveText('1×')
+      await expect(o.locator('[data-lean-meta] [data-attempts]')).toHaveCount(0)
+
+      // Separate cards, 6px apart: every card but the last in its group
+      // (SwipeableRow's container) keeps 6px below it (Tailwind's space-y).
+      const gaps = await row(page, ids.over).evaluate((el) => {
+        const swipe = el.parentElement!.parentElement!
+        return [...swipe.parentElement!.children]
+          .slice(0, -1)
+          .map((c) => getComputedStyle(c).marginBottom)
+      })
+      expect(gaps.length).toBeGreaterThan(0)
+      expect(new Set(gaps)).toEqual(new Set(['6px']))
+
+      // And back to lean.
+      await page.goto('/settings')
+      await page.locator('[data-task-rows-setting]').selectOption('lean')
+      await gotoDashboard(page)
+      await expect(row(page, ids.over)).toHaveAttribute('data-row-look', 'lean')
+    } finally {
+      await cleanUp(page, Object.values(ids))
+    }
+  })
+})

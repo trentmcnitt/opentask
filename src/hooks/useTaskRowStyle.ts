@@ -4,9 +4,11 @@ import { useCallback, useSyncExternalStore } from 'react'
 
 /**
  * The dashboard task list's row style, per device (Settings → Theme → Task
- * rows): the LEAN row (`LeanRow`: a done square, hairlines, no card) or the
- * CARD row (`TaskRow`). Per device like the theme, so trying one on a phone
- * never changes the desktop.
+ * rows): the LEAN row (`LeanRow`: a done square, hairlines, no card), the
+ * CARD row (`TaskRow`), or CARD V2 (2026-10-29, Trent's "C1 · Separate
+ * cards": the lean row's contents in a separate card with a state edge —
+ * `LeanRow`'s `card-v2` look). Per device like the theme, so trying one on a
+ * phone never changes the desktop.
  *
  * The default is the build's: `NEXT_PUBLIC_DEFAULT_TASK_ROWS=lean` (the dev
  * build, while Trent tries the lean row), otherwise the card — production and
@@ -19,16 +21,18 @@ import { useCallback, useSyncExternalStore } from 'react'
  * hydration. Every storage access is wrapped: private windows and blocked
  * site data throw, and then the choice lives in memory for the visit.
  */
-export type TaskRowStyle = 'lean' | 'card'
+export type TaskRowStyle = 'lean' | 'card' | 'card-v2'
 
 const STORAGE_KEY = 'opentask_task_rows'
-const DEFAULT: TaskRowStyle = process.env.NEXT_PUBLIC_DEFAULT_TASK_ROWS === 'lean' ? 'lean' : 'card'
+const STYLES: readonly TaskRowStyle[] = ['lean', 'card', 'card-v2']
+const BUILD_DEFAULT = process.env.NEXT_PUBLIC_DEFAULT_TASK_ROWS
+const DEFAULT: TaskRowStyle = isStyle(BUILD_DEFAULT) ? BUILD_DEFAULT : 'card'
 
 let current: TaskRowStyle | null = null
 const listeners = new Set<() => void>()
 
 function isStyle(value: unknown): value is TaskRowStyle {
-  return value === 'lean' || value === 'card'
+  return (STYLES as readonly unknown[]).includes(value)
 }
 
 function read(): TaskRowStyle {

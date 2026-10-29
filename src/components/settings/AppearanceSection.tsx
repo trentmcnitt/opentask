@@ -7,7 +7,7 @@ import { savePreference } from '@/lib/save-preference'
 import { cn } from '@/lib/utils'
 import type { PriorityDisplayConfig } from '@/types'
 import { SettingsSection } from './SettingsSection'
-import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
+import { useTaskRowStyle, type TaskRowStyle } from '@/hooks/useTaskRowStyle'
 
 /**
  * Settings → Theme: light, dark or system (next-themes, stored locally), and
@@ -39,7 +39,7 @@ export function AppearanceSection() {
   )
 }
 
-/** Task rows: the lean row or the card, on this device (`useTaskRowStyle`). */
+/** Task rows: the lean row, the card or card v2, on this device (`useTaskRowStyle`). */
 function TaskRowsRow() {
   const { style, setStyle } = useTaskRowStyle()
   return (
@@ -52,13 +52,14 @@ function TaskRowsRow() {
       </div>
       <select
         value={style}
-        onChange={(e) => setStyle(e.target.value === 'lean' ? 'lean' : 'card')}
+        onChange={(e) => setStyle(e.target.value as TaskRowStyle)}
         aria-label="Task rows"
         data-task-rows-setting
         className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
       >
         <option value="lean">Lean</option>
         <option value="card">Cards</option>
+        <option value="card-v2">Card v2</option>
       </select>
     </div>
   )
