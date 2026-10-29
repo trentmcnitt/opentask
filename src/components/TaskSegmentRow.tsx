@@ -20,7 +20,6 @@ import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
-import { useAgedDotAfter } from '@/hooks/useAgedDotAfter'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
@@ -1442,10 +1441,6 @@ function AgedOutMeta({
   onOpenDetails?: () => void
 }) {
   const { projects } = useProjects()
-  // No dot on the rows in the dev variant where the heading carries it.
-  const queueOn = useQueueOn('aged_out')
-  const dotAfter = useAgedDotAfter()
-  const dot = queueOn && !dotAfter
   const projectName = projects.find((p) => p.id === task.project_id)?.name
   const dayStart = useDayStart()
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
@@ -1457,9 +1452,10 @@ function AgedOutMeta({
           {projectName}
         </span>
       )}
-      {dot && showsHorizonDot(task) && (
-        <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
-      )}
+      {/* EVERY row's dot (Trent, 2026-10-29: "with dots on every row"),
+          whatever the task-queue switch says — an Aged out row is always a
+          one-off with no picked target; unset draws as the Weeks dot. */}
+      <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
       <span data-aged-facts>{agedFacts(task, timezone, dayStart).join(' · ')}</span>
       <SegmentLabels task={task} />
       {priority && (
@@ -1501,9 +1497,9 @@ function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
 /**
  * AGED OUT'S GROUP HEADINGS (Trent, 2026-10-29: "add little categories… so
  * that all the days, then all the weeks and months… are just grouped"; his
- * pick, A3 with the dot): a quiet pill — the horizon's dot, so the heading
- * teaches it, then its name — the group's count, and the cutoff faint on the
- * right ("DAYS 3 … >10 days"). The rows come sorted by group
+ * pick, A3 with the dot): a quiet pill — the horizon's name, then its dot,
+ * so the heading teaches the dot the rows wear ("DAYS ●") — the group's
+ * count, and the cutoff faint on the right ("DAYS ● 3 … >10 days"). The rows come sorted by group
  * (`compareAgedOut`); a heading goes before each group's first row, so an
  * empty group has none. Unset rows read as Weeks.
  */
@@ -1529,13 +1525,10 @@ export function AgedGroupHeading({
   panel: boolean
   hiddenWhenNarrow?: boolean
 }) {
-  // TEMPORARY dev variant (`?agedDot=after`): the dot after the word.
-  const dotAfter = useAgedDotAfter()
   return (
     <li
       role="presentation"
       data-aged-group={group}
-      data-aged-dot={dotAfter ? 'after' : 'before'}
       className={cn(
         'flex items-center gap-2 pt-3 pb-1',
         panel ? 'px-1' : 'px-2',
@@ -1543,9 +1536,8 @@ export function AgedGroupHeading({
       )}
     >
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0f3] px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] text-slate-600 uppercase dark:bg-white/[0.08] dark:text-slate-300">
-        {!dotAfter && <HorizonDotMark horizon={group} />}
         {HORIZON_LABELS[group]}
-        {dotAfter && <HorizonDotMark horizon={group} />}
+        <HorizonDotMark horizon={group} />
       </span>
       <span className="text-muted-foreground/70 text-xs tabular-nums">{count}</span>
       <span data-aged-cutoff className="text-muted-foreground/60 ml-auto text-[11.5px]">
