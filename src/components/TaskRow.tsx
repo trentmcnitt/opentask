@@ -96,6 +96,13 @@ export interface TaskRowProps {
   task: Task
   /** The user's periods, so a "Next period" default snooze resolves (see TaskList). */
   timeSlots?: TimeSlot[]
+  /**
+   * The lean row's done square DRAWS its horizon (Trent, 2026-10-29): only in
+   * Scan's Horizon sections, where every row shares one horizon and the
+   * column stays uniform. Elsewhere the square is plain — its hold menu and
+   * tooltip still name the horizon (`DoneControl`). The card row ignores it.
+   */
+  horizonLook?: boolean
   onDone: () => void
   /** Called with (taskId, until) for immediate snooze */
   onSnooze: (taskId: number, until: string) => void
