@@ -68,6 +68,18 @@ async function boxes(page: Page): Promise<{ fabs: Box[]; toasts: Box[] }> {
 }
 
 const fabStack = (page: Page) => page.locator('[data-fab-stack]')
+
+/**
+ * The Tasks card on its Days page. The card opens on the first segment with
+ * something waiting, and since 2026-10-29 Heads up and Pulled come before Days:
+ * rows other specs leave there (the queue user is shared) would keep the
+ * card off Days.
+ */
+async function daysPage(page: Page) {
+  const card = page.locator('section[data-tasks-panel]')
+  await card.locator('[data-slot-segment="tasks:days"]').click()
+  await expect(card).toHaveAttribute('data-tasks-page', 'tasks:days')
+}
 const considerButton = (row: Locator) => row.getByRole('button', { name: /as considered/ })
 
 test.beforeEach(async ({ page }) => {
@@ -91,6 +103,7 @@ for (const width of [320, 375, 390]) {
       madeYesterday([days])
       await page.setViewportSize({ width, height: 844 })
       await page.goto('/')
+      await daysPage(page)
       await expect(fabStack(page).locator('button').last()).toBeVisible()
       const restingBottom = (await fabStack(page).boundingBox())!
 
@@ -136,6 +149,7 @@ test('desktop 1280: a toast does not move the FAB column', async ({ page }) => {
     madeYesterday([days])
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
+    await daysPage(page)
     await expect(fabStack(page).locator('button').last()).toBeVisible()
     const before = (await fabStack(page).boundingBox())!
     await considerButton(page.locator(`[data-segment-task="${days}"]`)).click()
