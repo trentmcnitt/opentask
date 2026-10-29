@@ -7,8 +7,12 @@ import { savePreference } from '@/lib/save-preference'
 import { cn } from '@/lib/utils'
 import type { PriorityDisplayConfig } from '@/types'
 import { SettingsSection } from './SettingsSection'
+import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
 
-/** Settings → Theme: light, dark or system (next-themes, stored locally). */
+/**
+ * Settings → Theme: light, dark or system (next-themes, stored locally), and
+ * the task rows' style (lean or cards, also per device).
+ */
 export function AppearanceSection() {
   const { theme, setTheme } = useTheme()
   return (
@@ -30,7 +34,33 @@ export function AppearanceSection() {
           <option value="dark">Dark</option>
         </select>
       </div>
+      <TaskRowsRow />
     </SettingsSection>
+  )
+}
+
+/** Task rows: the lean row or the card, on this device (`useTaskRowStyle`). */
+function TaskRowsRow() {
+  const { style, setStyle } = useTaskRowStyle()
+  return (
+    <div className="mt-4 flex items-center justify-between">
+      <div>
+        <div className="text-sm">Task rows</div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+          Lean rows or cards in the task list, on this device
+        </div>
+      </div>
+      <select
+        value={style}
+        onChange={(e) => setStyle(e.target.value === 'lean' ? 'lean' : 'card')}
+        aria-label="Task rows"
+        data-task-rows-setting
+        className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <option value="lean">Lean</option>
+        <option value="card">Cards</option>
+      </select>
+    </div>
   )
 }
 

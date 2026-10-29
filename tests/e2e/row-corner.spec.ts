@@ -3,7 +3,7 @@
  *
  * - the priority tab (E2b): Urgent red, High orange; Medium, Low and None
  *   show nothing (2026-10-15), and the old priority word under the title is gone;
- * - the horizon dot (R1): a size per horizon, a hollow ring when unset, a
+ * - the horizon dot (R1): a size per horizon, unset as the Weeks dot, a
  *   tooltip saying when it comes back, hidden on a row with a picked target;
  *   the corner reads dot · attempts · priority;
  * - the target time's menu (Remove target / Move… — a deadline task's too
@@ -184,7 +184,7 @@ test.describe('Row corner · desktop', () => {
     }
   })
 
-  test('horizon dot: a size per horizon, a closed ring when unset, tooltip, hidden on a picked target', async ({
+  test('horizon dot: a size per horizon, unset as the Weeks dot, tooltip, hidden on a picked target', async ({
     authenticatedPage: page,
   }) => {
     const horizons = ['days', 'weeks', 'months', 'eventually', null] as const
@@ -211,16 +211,13 @@ test.describe('Row corner · desktop', () => {
         Number(await dot(h).locator('circle').getAttribute('opacity'))
       expect(await opacity('eventually')).toBeLessThan(await opacity('months'))
       expect(await opacity('eventually')).toBeGreaterThanOrEqual(0.4)
-      // Unset: a CLOSED hollow ring the Weeks dot's size (2026-10-28; it was
-      // dashed, and broke up at 1x) — r 2.5 + a 1px stroke = 6px, no dashes.
+      // Unset: the Weeks dot (2026-10-29, Trent: "There should never be an
+      // empty circle"; it was a hollow ring). Still marked unset.
       await expect(dot('null')).toHaveAttribute('data-horizon-dot', 'unset')
-      const ring = dot('null').locator('circle')
-      await expect(ring).not.toHaveAttribute('stroke-dasharray')
-      await expect(ring).toHaveAttribute('fill', 'none')
-      await expect(ring).toHaveAttribute('stroke-width', '1')
-      expect(await radius('null')).toBe(2.5)
-      // Quieter than any set dot (2026-10-28): it reads as "nothing set".
-      expect(await opacity('null')).toBeLessThan(await opacity('eventually'))
+      const unset = dot('null').locator('circle')
+      await expect(unset).toHaveAttribute('fill', 'currentColor')
+      expect(await radius('null')).toBe(await radius('weeks'))
+      expect(await opacity('null')).toBe(await opacity('weeks'))
       // Tooltips (the test user's check-in day is the default, Saturday).
       await expect(dot('weeks')).toHaveAttribute('title', 'Weeks · comes back Saturdays')
       await expect(dot('days')).toHaveAttribute('title', 'Days · comes back daily')

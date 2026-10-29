@@ -189,6 +189,10 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
   const { onLongPress, onShortPress, delay = 400, tapOn = 'pointerup' } = options
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fired = useRef(false)
+  // Whether a press began HERE. A pointerup with no pointerdown of its own is
+  // a drag released over the button (a row swiped with a mouse ending on the
+  // defer-overdue FAB, 2026-10-28) — never a tap.
+  const pressed = useRef(false)
   const origin = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
@@ -201,6 +205,7 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
     (e?: PressButton) => {
       if (e && e.button !== 0) return
       fired.current = false
+      pressed.current = true
       origin.current =
         e?.clientX !== undefined && e.clientY !== undefined ? { x: e.clientX, y: e.clientY } : null
       timer.current = setTimeout(() => {
@@ -218,7 +223,9 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
         clearTimeout(timer.current)
         timer.current = null
       }
-      if (tapOn === 'pointerup' && !fired.current) {
+      const began = pressed.current
+      pressed.current = false
+      if (tapOn === 'pointerup' && began && !fired.current) {
         fired.current = true
         onShortPress()
       }
@@ -240,6 +247,7 @@ export function useSimpleLongPress(options: UseSimpleLongPressOptions): UseSimpl
       timer.current = null
     }
     origin.current = null
+    pressed.current = false
     fired.current = true
   }, [])
 

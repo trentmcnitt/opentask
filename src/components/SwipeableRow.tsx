@@ -12,7 +12,30 @@ interface SwipeableRowProps {
   threshold?: number // fraction of width, default 0.4
   disabled?: boolean // disable swiping (e.g. during selection mode)
   leftAction?: 'snooze' | 'edit' // controls swipe-left label and color (default: 'snooze')
+  /**
+   * What the row sits on: 'card' (the card rows: rounded, `bg-card`) or
+   * 'flat' (the lean rows: square edges on the page's own background). The
+   * foreground stays opaque either way, so the swipe's action colour never
+   * shows through a row that is not being dragged.
+   */
+  surface?: 'card' | 'flat'
 }
+
+/**
+ * Each surface's container and (always opaque) foreground.
+ *
+ * FLAT is 4px wider than the row on each side (`-mx-1` out, `px-1` back in):
+ * the lean row's state tint is full-bleed, 4px past the row (`LeanRow`'s
+ * `TINT_BASE`), and the container clips while a swipe is under way. Sized to
+ * the row, it cut the tint's bleed off mid-swipe, so the row's colour
+ * narrowed by 4px on each side against its neighbours and the action colour
+ * stopped 4px short of theirs (Trent, 2026-10-29: "some visual glitches").
+ * Now the container, the action colour and the tint are one width.
+ */
+const SURFACE = {
+  card: { outer: 'rounded-lg', foreground: 'bg-card rounded-lg' },
+  flat: { outer: '-mx-1', foreground: 'bg-background px-1' },
+} as const
 
 export function SwipeableRow({
   children,
@@ -22,6 +45,7 @@ export function SwipeableRow({
   threshold = 0.4,
   disabled = false,
   leftAction = 'snooze',
+  surface = 'card',
 }: SwipeableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
@@ -109,7 +133,16 @@ export function SwipeableRow({
   return (
     <div
       ref={containerRef}
-      className={cn('relative rounded-lg', offset !== 0 ? 'overflow-hidden' : 'overflow-visible')}
+      // `data-swiping` while the row is off its place: the container clips
+      // then, and a row hides its focus and selection outline
+      // (`group-data-swiping/swipe:`), which would ride along on the moving
+      // layer.
+      data-swiping={offset !== 0 ? '' : undefined}
+      className={cn(
+        'group/swipe relative',
+        SURFACE[surface].outer,
+        'overflow-visible data-swiping:overflow-hidden',
+      )}
     >
       {/* Background revealed by swipe */}
       {offset !== 0 && (
@@ -126,7 +159,7 @@ export function SwipeableRow({
          action labels never bleed through semi-transparent child backgrounds */}
       <div
         {...(disabled ? {} : bind())}
-        className="bg-card rounded-lg"
+        className={SURFACE[surface].foreground}
         style={{
           transform: `translateX(${offset}px)`,
           transition: offset === 0 || swiped ? 'transform 0.2s ease-out' : 'none',

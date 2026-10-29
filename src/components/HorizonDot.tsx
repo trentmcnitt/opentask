@@ -18,16 +18,21 @@ import {
   HORIZON_WORD,
   horizonHints,
 } from '@/lib/task-model-words'
-import { HORIZON_ORDER, type HorizonValue } from '@/lib/task-segments'
-import { HORIZON_DOT, HORIZON_DOT_UNSET, horizonDotTitle, horizonOf } from '@/lib/row-corner'
+import { HORIZON_ORDER, UNSET_HORIZON, type HorizonValue } from '@/lib/task-segments'
+import { HORIZON_DOT, horizonDotTitle, horizonOf } from '@/lib/row-corner'
 import type { Task } from '@/types'
 
 /**
  * The HORIZON DOT (2026-10-14, Trent's pick "R1 · perspective dot"): one dot
  * that shrinks and fades with distance — Days big and dark, Eventually small
- * and light — and a hollow Weeks-size ring for unset (`HORIZON_DOT_UNSET`). Sizes and opacities
- * are `HORIZON_DOT` in `src/lib/row-corner.ts`. Drawn in the foreground
- * colour at 78%, so it follows the theme.
+ * and light. Sizes and opacities are `HORIZON_DOT` in `src/lib/row-corner.ts`.
+ * Drawn in the foreground colour at 78%, so it follows the theme.
+ *
+ * UNSET DRAWS AS THE WEEKS DOT, everywhere (Trent, 2026-10-29: "There should
+ * never be an empty circle"; "if it's not set, it is weeks, the same way as
+ * tasks that are not set are medium priority"). It was a hollow ring.
+ * "Unset" is said only in words: the task details and the horizon menu's
+ * "Unset (weeks)". `data-horizon-mark` still says `unset`.
  */
 export function HorizonDotMark({
   horizon,
@@ -36,6 +41,7 @@ export function HorizonDotMark({
   horizon: HorizonValue | null
   className?: string
 }) {
+  const drawn = horizon ?? UNSET_HORIZON
   return (
     <svg
       aria-hidden
@@ -44,25 +50,13 @@ export function HorizonDotMark({
       // `size-3` also keeps the menu items' `[&_svg:not([class*='size-'])]:size-4` off it.
       className={cn('text-foreground/80 size-3 shrink-0', className)}
     >
-      {horizon ? (
-        <circle
-          cx="6"
-          cy="6"
-          r={HORIZON_DOT[horizon].r}
-          fill="currentColor"
-          opacity={HORIZON_DOT[horizon].opacity}
-        />
-      ) : (
-        <circle
-          cx="6"
-          cy="6"
-          r={HORIZON_DOT_UNSET.r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1"
-          opacity={HORIZON_DOT_UNSET.opacity}
-        />
-      )}
+      <circle
+        cx="6"
+        cy="6"
+        r={HORIZON_DOT[drawn].r}
+        fill="currentColor"
+        opacity={HORIZON_DOT[drawn].opacity}
+      />
     </svg>
   )
 }

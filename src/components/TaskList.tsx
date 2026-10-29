@@ -6,6 +6,8 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown, ChevronDown, ChevronUp, Layers, Plus } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
+import { LeanRow } from './lean-row/LeanRow'
+import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -291,6 +293,7 @@ export function TaskList({
   const dayStart = useDayStart()
   const dayKnown = useDayStartKnown()
   const isMobile = useIsMobile()
+  const { style: rowStyle } = useTaskRowStyle()
   const { projectPreviewCount } = useProjectPreviewCount()
   // Project groups preview the user's setting; no cap at all while
   // `uncapped` (the Overdue filter), nor on Now's relevant rows (below).
@@ -475,18 +478,24 @@ export function TaskList({
    * `inDeck`: a row of Now's On deck section — no "On deck" just-now pill
    * (the heading says it), and its On deck and Today always shown on touch.
    */
+  // The row style (Settings → Theme → Task rows, per device): the lean row
+  // sits flat on the page with hairlines between rows, so no gap and no card.
+  const lean = rowStyle === 'lean'
+  const Row = lean ? LeanRow : TaskRow
+  const surface = lean ? 'flat' : 'card'
   const renderTaskRow = (task: Task, inDeck = false) => {
     const cancelRef = { current: null as (() => void) | null }
     return (
       <SwipeableRow
         key={task.id}
+        surface={surface}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
         leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
         onDragStart={() => cancelRef.current?.()}
         disabled={selection.isSelectionMode}
       >
-        <TaskRow
+        <Row
           task={task}
           timeSlots={timeSlots}
           onDone={() => onDone(task.id)}
@@ -685,7 +694,7 @@ export function TaskList({
                 </div>
               )}
               {!collapsed && (
-                <div className="space-y-1">
+                <div className={lean ? undefined : 'space-y-1'}>
                   {visibleTasks.map((task) => renderTaskRow(task, !!group.deck))}
                   {nowSplit && (
                     <NowFoldRow
