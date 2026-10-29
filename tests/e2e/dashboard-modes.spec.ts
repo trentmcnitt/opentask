@@ -305,13 +305,17 @@ test.describe('Dashboard modes · the sort pill', () => {
 test.describe('Dashboard modes · project chips and All', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('the chips sit above Filters and narrow every mode; All is the list without folds', async ({
+  test('the chips sit above Filters and narrow every mode; All lists every row, never folded or capped', async ({
     authenticatedPage: page,
   }) => {
     const mine = await create(page, {
       title: uniqueTitle('MD mine'),
       due_at: new Date(Date.now() - HOUR).toISOString(),
     })
+    // More than a project group's preview (6 by default) holds.
+    const more: number[] = []
+    for (let i = 0; i < 9; i++)
+      more.push(await create(page, { title: uniqueTitle(`MD many ${i}`) }))
     try {
       await page.goto('/?mode=today')
       // Above the Filters row, shown without opening it.
@@ -324,13 +328,25 @@ test.describe('Dashboard modes · project chips and All', () => {
       await expect(page.locator('[data-lean-row]')).toHaveCount(1)
       await expect(page.locator(`[data-lean-row="${mine}"]`)).toBeVisible()
 
-      // All: every task, no Now folds, no On deck section.
+      // All: every task — no Now folds, no On deck section, no group capped
+      // ("Show all N"), in both of its views.
       await page.locator('[data-mode="all"]').click()
-      await expect(page.locator(`[data-lean-row="${mine}"]`)).toBeVisible()
-      await expect(page.locator('[data-now-fold]')).toHaveCount(0)
-      await expect(page.locator('[data-deck-section]')).toHaveCount(0)
+      // The view is a SERVER preference (`default_grouping`): end on Now,
+      // and put it back below whatever happens, for the specs after this one.
+      for (const view of ['Newest', 'Now']) {
+        await page
+          .getByRole('group', { name: 'View mode' })
+          .getByRole('button', { name: view })
+          .click()
+        await expect(page.locator('[data-lean-row]')).toHaveCount(10)
+        await expect(page.locator(`[data-lean-row="${mine}"]`)).toBeVisible()
+        await expect(page.getByRole('button', { name: /^Show all \d+/ })).toHaveCount(0)
+        await expect(page.locator('[data-now-fold]')).toHaveCount(0)
+        await expect(page.locator('[data-deck-section]')).toHaveCount(0)
+      }
     } finally {
-      await cleanUp(page, [mine])
+      await page.request.patch('/api/user/preferences', { data: { default_grouping: 'project' } })
+      await cleanUp(page, [mine, ...more])
     }
   })
 })

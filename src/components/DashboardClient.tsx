@@ -18,7 +18,7 @@ import {
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
 import { useDashboardMode } from '@/hooks/useDashboardMode'
-import { MODES } from '@/lib/modes/registry'
+import { listsEveryRow, MODES } from '@/lib/modes/registry'
 import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
 import { useNowFolds } from '@/hooks/useNowFolds'
 import { inDeckSection, isRelevantNow } from '@/lib/now-view'
@@ -2478,7 +2478,8 @@ function DashboardView({
       deckRevealRef={deckRevealRef}
       tasks={tasks}
       timeSlots={timeSlots}
-      uncapped={overdueFilterOn}
+      // All lists every row (`listsEveryRow`): no group is capped there.
+      uncapped={overdueFilterOn || listsEveryRow(modes.mode)}
       sortedGroups={sortedGroups}
       orderedIds={orderedIds}
       projects={projects}

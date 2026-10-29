@@ -7,7 +7,14 @@
 import { describe, expect, test } from 'vitest'
 import { DateTime } from 'luxon'
 import { nextStepSize, selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
-import { DEFAULT_MODE, MODE_LABELS, MODE_ORDER, MODES, isModeId } from '@/lib/modes/registry'
+import {
+  DEFAULT_MODE,
+  MODE_LABELS,
+  MODE_ORDER,
+  MODES,
+  isModeId,
+  listsEveryRow,
+} from '@/lib/modes/registry'
 import { HORIZON_DAYS_CAP, SECTION_CAP } from '@/lib/modes/sections'
 import { DEFAULT_MODE_SORT, type ModeSort } from '@/lib/modes/sorts'
 import type { ModeContext } from '@/lib/modes/types'
@@ -63,6 +70,13 @@ describe('the modes', () => {
     expect(isModeId('pick-mode')).toBe(true)
     expect(isModeId('Scan')).toBe(false)
     expect(MODES.all.sections).toBeNull()
+  })
+
+  test('All lists every row: no group is capped; the other modes and the modes off cap as before', () => {
+    expect(listsEveryRow('all')).toBe(true)
+    expect(listsEveryRow('today')).toBe(false)
+    expect(listsEveryRow('pick-mode')).toBe(false)
+    expect(listsEveryRow(null)).toBe(false)
   })
 })
 

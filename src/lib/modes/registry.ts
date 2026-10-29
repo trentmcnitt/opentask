@@ -33,6 +33,16 @@ export const MODE_ORDER: readonly ModeId[] = ['today', 'pick-mode', 'all']
 /** The mode a device starts in. */
 export const DEFAULT_MODE: ModeId = 'today'
 
+/**
+ * ALL LISTS EVERY ROW (Trent, 2026-10-28): in All no group is capped — no
+ * "Show all N", no fold — whatever its view (Now's project groups or
+ * Newest), which only orders the rows. Off (`null`, the modes off) the
+ * dashboard caps as it always has.
+ */
+export function listsEveryRow(mode: ModeId | null): boolean {
+  return mode === 'all'
+}
+
 export function isModeId(value: unknown): value is ModeId {
   return typeof value === 'string' && (MODE_ORDER as readonly string[]).includes(value)
 }
