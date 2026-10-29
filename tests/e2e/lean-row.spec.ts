@@ -175,7 +175,7 @@ test.describe('Lean row · look', () => {
             })
           const blue = await tint(o)
           // Light: Trent's E2 (2026-10-29), an opaque sky-leaning blue.
-          expectTint(blue.bg, scheme === 'light' ? [231, 245, 255, 1] : [81, 162, 255, 0.125])
+          expectTint(blue.bg, scheme === 'light' ? [214, 238, 255, 1] : [81, 162, 255, 0.125])
           expect(blue.shadow).toBe('none')
           const plainTitle = await row(page, plain)
             .locator('[data-lean-title]')
@@ -198,7 +198,7 @@ test.describe('Lean row · look', () => {
           await expect(u.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
           expectTint(
             (await tint(u)).bg,
-            scheme === 'light' ? [249, 252, 255, 1] : [81, 162, 255, 0.03125],
+            scheme === 'light' ? [245, 251, 255, 1] : [81, 162, 255, 0.03125],
           )
           // The title's weight (Trent, 2026-10-29): 600 on a tinted row (over
           // target, a passed deadline), 500 on a plain or later-today one.

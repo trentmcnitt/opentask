@@ -82,10 +82,12 @@ import { LeanButtons } from './LeanButtons'
  * The row's STATE LOOK (Trent 2026-10-28, today-mode round 6): a full-bleed
  * tint under the row's content, no bar (`leanRowState` picks it).
  * - Later today (a target or deadline, not yet over): a faint blue — light
- *   rgb(249,252,255) since 2026-10-29 (it was the target's blue at 2.5%),
+ *   #f5fbff since 2026-10-29, a quarter of the over tint (it was the
+ *   target's blue at 2.5%),
  *   dark the blue at 3.125%; the title unchanged.
- * - Over target: a sky-leaning blue — light rgb(231,245,255) since
- *   2026-10-29 (Trent's E2, "bluer"; it was the target's blue at 10%), dark
+ * - Over target: a sky-leaning blue — light #d6eeff since 2026-10-29
+ *   (Trent's pick in dev tools; E2 rgb(231,245,255) that morning, the
+ *   target's blue at 10% before), dark
  *   the target's blue at 12.5%. The title keeps the normal ink (Trent,
  *   2026-10-29: "I don't know why that text is faded… just leave it full
  *   black"; it was a slate #263d4d / #d3dcec) at 600.
