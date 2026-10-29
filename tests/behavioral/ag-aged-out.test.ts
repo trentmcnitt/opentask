@@ -130,10 +130,10 @@ describe('AG: the row says how old, and the cutoff', () => {
   })
 
   test('AG-041: the cutoff each horizon passed; unset reads as Weeks', () => {
-    expect(cutoffWords('days')).toBe('> 10 days')
-    expect(cutoffWords('weeks')).toBe('> 1 month')
-    expect(cutoffWords(null)).toBe('> 1 month')
-    expect(cutoffWords('months')).toBe('> 3 months')
+    expect(cutoffWords('days')).toBe('>10 days')
+    expect(cutoffWords('weeks')).toBe('>1 month')
+    expect(cutoffWords(null)).toBe('>1 month')
+    expect(cutoffWords('months')).toBe('>3 months')
   })
 })
 
@@ -186,6 +186,25 @@ describe('AG: membership and cadence', () => {
     for (const id of [eventually, deadline, targeted]) {
       expect(p.get(id) ?? 'nowhere').not.toMatch(/^aged_out/)
     }
+  })
+})
+
+describe('AG: grouped by horizon, oldest first', () => {
+  beforeEach(() => setupTestDb())
+  afterEach(() => vi.useRealTimers())
+  afterAll(() => teardownTestDb())
+
+  test('AG-050: Days, then Weeks (unset there too), then Months; each oldest first, whatever the priority', () => {
+    const weeksNew = make('Weeks newer', 'weeks', at('2026-09-01T09:00'), { priority: 4 })
+    const months = make('Months', 'months', at('2026-05-01T09:00'))
+    const unsetOld = make('Unset older', null, at('2026-08-01T09:00'))
+    const daysNew = make('Days newer', 'days', at('2026-10-10T09:00'), { priority: 3 })
+    const daysOld = make('Days older', 'days', at('2026-10-01T09:00'))
+    vi.setSystemTime(SAT)
+    const aged = getTaskSegments(TEST_USER_ID, tz, SAT, { agedOut: true }).find(
+      (s) => s.horizon === 'aged_out',
+    )!
+    expect(aged.tasks.map((r) => r.task.id)).toEqual([daysOld, daysNew, unsetOld, weeksNew, months])
   })
 })
 

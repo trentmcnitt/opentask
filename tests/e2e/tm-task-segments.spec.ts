@@ -273,9 +273,9 @@ test.describe('Task segments on the dashboard', () => {
         )
       }
       await expect(strip.locator('[data-segment-divider]')).toHaveCount(0)
-      // The header is "Daily", nothing after it (2026-10-20).
+      // The card's header says "Task queue" on every page (2026-10-29).
       const header = tasks.locator('[data-slot-header-toggle]')
-      await expect(header).toHaveText('Daily')
+      await expect(header).toHaveText('Task queue')
 
       // Consider one: "X of Y" climbs and opens it, with its put-back.
       await consider(page, days[0])

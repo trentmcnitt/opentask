@@ -143,10 +143,9 @@ export function ageWords(
 }
 
 /**
- * The cutoff a horizon's tasks age out at, for the chip after an Aged out
- * row's title (Trent, 2026-10-29: "a little chip that says > and then the
- * time period"): "> 10 days", "> 1 month", "> 3 months" — its
- * `AGE_THRESHOLDS` entry, unset read as Weeks.
+ * The cutoff a horizon's tasks age out at, for an Aged out group's heading
+ * ("Days · >10 days"; Trent, 2026-10-29: ">" with no space): ">10 days",
+ * ">1 month", ">3 months" — its `AGE_THRESHOLDS` entry, unset read as Weeks.
  */
 export function cutoffWords(horizon: string | null): string {
   const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
@@ -154,5 +153,42 @@ export function cutoffWords(horizon: string | null): string {
     : UNSET_HORIZON
   const { days, months } = AGE_THRESHOLDS[on]
   const n = days ?? months ?? 0
-  return `> ${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
+  return `>${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
+}
+
+/**
+ * AGED OUT'S GROUPS (Trent, 2026-10-29: "add little categories… so that all
+ * the days, then all the weeks and months… are just grouped"): the horizon a
+ * row is aged on, unset read as Weeks (`UNSET_HORIZON`). Eventually never
+ * ages out, so there are three.
+ */
+export type AgedOutGroup = Exclude<HorizonValue, 'eventually'>
+
+export function agedOutGroup(horizon: string | null): AgedOutGroup {
+  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
+    ? (horizon as HorizonValue)
+    : UNSET_HORIZON
+  return on === 'eventually' ? 'months' : on
+}
+
+/** When the age clock started: `growthAsk`'s — the later of the horizon's own clock (else creation) and the last keep. */
+export function agedClockStart(
+  task: Pick<AgedOutFields, 'created_at' | 'horizon_set_at' | 'growth_kept_at'>,
+): number {
+  const onSince = Date.parse(task.horizon_set_at ?? task.created_at)
+  const kept = task.growth_kept_at ? Date.parse(task.growth_kept_at) : 0
+  return Math.max(onSince, kept)
+}
+
+/**
+ * Aged out's order: by group (Days, Weeks, Months), then the oldest first —
+ * the clock that started longest ago — then id. It was priority, then id,
+ * every horizon segment's order, until the groups (2026-10-29).
+ */
+export function compareAgedOut(
+  a: Pick<AgedOutFields, 'id' | 'horizon' | 'created_at' | 'horizon_set_at' | 'growth_kept_at'>,
+  b: Pick<AgedOutFields, 'id' | 'horizon' | 'created_at' | 'horizon_set_at' | 'growth_kept_at'>,
+): number {
+  const rank = (t: typeof a) => HORIZON_ORDER.indexOf(agedOutGroup(t.horizon))
+  return rank(a) - rank(b) || agedClockStart(a) - agedClockStart(b) || a.id - b.id
 }

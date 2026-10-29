@@ -202,7 +202,7 @@ test.describe('Upcoming: Tomorrow and Later', () => {
         card.locator('[data-upcoming-section="later"]').locator(`[data-segment-task="${far}"]`),
       ).toContainText(fmt(10))
       // The page's count covers both sections.
-      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Upcoming')
+      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Task queue')
     } finally {
       await trash(page, [soon, far])
     }

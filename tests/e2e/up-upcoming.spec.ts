@@ -226,7 +226,7 @@ test.describe('Upcoming', () => {
       await expect(strip.locator('[data-slot-segment="tasks:upcoming"]')).toHaveCount(1)
       await strip.locator('[data-slot-segment="tasks:upcoming"]').click()
       await expect(card).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
-      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Upcoming')
+      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Task queue')
       const r = card.locator(`[data-segment-task="${t.repeating}"]`)
       await expect(r.locator('[data-target-today]')).toHaveCount(1)
       await r.getByRole('button', { name: /as considered/ }).click()

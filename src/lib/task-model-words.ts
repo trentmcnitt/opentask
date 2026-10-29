@@ -116,6 +116,15 @@ export const UPCOMING_SECTION_TITLES: Record<UpcomingSection, string> = {
  * things that were taken off and that potentially will stay off." Display
  * text only: the kind strings the API sends do not change.
  */
+/**
+ * The dashboard's paged task-queue card: its header says "Task queue" on
+ * every page, with no segment word after it (Trent, 2026-10-29: "I'd rather
+ * you just said 'Task Queue' all the time") — the strip's words show which
+ * page is on screen. The Reminders page, where every segment is its own
+ * section, keeps each section's name (`segmentTitle`).
+ */
+export const TASK_QUEUE_TITLE = 'Task queue'
+
 /** The deadlines page's title (2026-10-22). */
 export const DEADLINES_PAGE_TITLE = 'Deadlines'
 

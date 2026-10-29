@@ -94,7 +94,7 @@ import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-
 import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
-import { agedOutState, growStep } from '@/lib/aged-out'
+import { agedOutState, compareAgedOut, growStep } from '@/lib/aged-out'
 
 export interface SegmentTask {
   task: Task
@@ -386,6 +386,8 @@ export function getTaskSegments(
       tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
     } else if (kind === 'deadlines') {
       tasks.sort((a, b) => compareDeadlineRows(a.task, b.task))
+    } else if (kind === 'aged_out') {
+      tasks.sort((a, b) => compareAgedOut(a.task, b.task))
     } else if (kind !== 'upcoming') {
       tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
     }

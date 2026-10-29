@@ -572,8 +572,9 @@ test('row polish: On deck lines up the column, the dot follows the project, ever
         return !!(project.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING)
       })
       expect(dotAfterProject).toBe(true)
-      // Today's icon is the sun with a solid core (Trent, 2026-10-20).
-      await expect(a.locator('[data-target-today] [data-sun-solid]')).toHaveCount(1)
+      // Target today is the lean rows' clock, not the sun (2026-10-29).
+      await expect(a.locator('[data-target-today] [data-sun-solid]')).toHaveCount(0)
+      await expect(a.locator('[data-target-today] svg.lucide-clock-3')).toHaveCount(1)
       // Every control on the row shows the hand.
       for (const sel of [
         '[data-on-deck]',

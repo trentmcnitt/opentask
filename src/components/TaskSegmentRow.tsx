@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, FolderOpen, Forward, Sprout } from 'lucide-react'
+import { Check, ChevronDown, Clock3, FolderOpen, Forward, Sprout } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -56,7 +56,15 @@ import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { AGED_OUT_TITLE, agedClockRestart, ageWords, cutoffWords, growStep } from '@/lib/aged-out'
+import {
+  AGED_OUT_TITLE,
+  agedClockRestart,
+  agedOutGroup,
+  ageWords,
+  cutoffWords,
+  growStep,
+  type AgedOutGroup,
+} from '@/lib/aged-out'
 import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -445,7 +453,6 @@ export function TaskSegmentRow({
             )}
           >
             {task.title}
-            <AgedCutoffChip task={task} segmentHorizon={segmentHorizon} />
           </p>
           {segmentHorizon === 'upcoming' ? (
             <UpcomingMeta row={row} actions={actions} timezone={timezone} />
@@ -812,7 +819,16 @@ function TaskSegmentRowActions({
           onTargetAt={(t, at) => void actions.targetAt(t, at)}
           // Faded on a decked row: a target takes it off deck (plan §5).
           replaces={todayReplaces(task, timezone, dayStart)}
-          showLabel
+          // The lean rows' single plain clock, no word (Trent, 2026-10-29:
+          // "we should probably change it to a clock from today… it's just
+          // not consistent"): a tap targets today, a hold picks the time.
+          face={
+            <Clock3
+              className={panel ? 'size-[18px]' : 'size-[20px]'}
+              strokeWidth={1.75}
+              aria-hidden
+            />
+          }
           // A 34×44 hit target (`CONTROL_HIT`) around a glyph the size of the
           // done square; the negative margin keeps the row's height. The
           // `mr-[16px]` after it: 4px of it is the done square's own hit area
@@ -820,15 +836,11 @@ function TaskSegmentRowActions({
           // areas — Trent's own ruling after he mis-tapped Today for done
           // (2026-10-12; kept through the compact buttons). The grey hover
           // block is the inner box, the row buttons' (`HOVER_BOX`), so it
-          // stays inside the row (2026-10-20). From `sm` up the box has room
-          // for the word "Today" too (icon only on a phone, the word on a
-          // desktop — Trent's ruling).
+          // stays inside the row (2026-10-20). The word "Today" beside the sun
+          // went with the sun (2026-10-29): the clock stands alone.
           className={`${CONTROL_HIT} mr-[16px]`}
-          boxClassName={
-            panel
-              ? `${HOVER_BOX.panel} min-w-[26px] sm:px-1.5`
-              : `${HOVER_BOX.page} min-w-[28px] sm:px-2`
-          }
+          // The clock alone: On deck's square box (`DECK_BOX`).
+          boxClassName={panel ? DECK_BOX.panel : DECK_BOX.page}
           iconClassName={panel ? 'size-[19px]' : 'size-[22px]'}
         />
       )}
@@ -1397,8 +1409,8 @@ function SegmentMetaLine({
  * [the created date] really does matter"), in its own order: the project, the
  * horizon dot, then the facts joined by "·" (`agedFacts`) — when it was
  * created and how old it is — then the labels and the priority LAST. The
- * cutoff it passed is the chip after the title (`AgedCutoffChip`). No
- * badges: every row here is old.
+ * cutoff it passed is its group's heading (`AgedGroupHeading`). No badges:
+ * every row here is old.
  */
 function AgedOutMeta({
   task,
@@ -1439,48 +1451,69 @@ function AgedOutMeta({
 /**
  * The Aged out row's facts (Trent, 2026-10-29: "spelled out all the way"):
  * the created date (`createdDateWords`), then how old — "5 weeks old" from
- * creation; when something restarted the age clock (`agedClockRestart`),
- * that first — "Weeks since Sep 3", "kept 2×, last Sep 12" — and the time
- * since it ("8 weeks"). The ages are `ageWords`.
+ * creation; or, when something restarted the age clock (`agedClockRestart`),
+ * what and when — "horizon set Sep 3, 1 month ago", "kept 2×, last Sep 12,
+ * 6 weeks ago". The ages are `ageWords`.
  */
 function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
   const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
   const restart = agedClockRestart(task, timezone, dayStart)
   const kept = task.growth_kept_count
   const facts = [words(task.created_at)]
-  if (restart?.kind === 'set') {
-    const horizon = task.horizon ? HORIZON_LABELS[task.horizon] : UNSET_HORIZON_WORDS
-    facts.push(`${horizon} since ${words(restart.at)}`)
-  } else if (restart || kept > 0) {
-    const count = kept > 0 ? `kept ${kept}×` : 'kept'
-    facts.push(restart ? `${count}, last ${words(restart.at)}` : count)
-  }
   const age = ageWords(restart?.at ?? task.created_at, timezone, dayStart)
-  if (age) facts.push(restart ? age : `${age} old`)
+  // Said plainly (Trent, 2026-10-29, of "Weeks since Sep 3": what does it
+  // mean?): "horizon set Sep 3, 1 month ago", "kept 2×, last Sep 12, 6 weeks ago".
+  const ago = age ? `, ${age} ago` : ''
+  if (restart?.kind === 'set') {
+    facts.push(`horizon set ${words(restart.at)}${ago}`)
+  } else if (restart) {
+    facts.push(`${kept > 0 ? `kept ${kept}×, last` : 'kept'} ${words(restart.at)}${ago}`)
+  } else {
+    if (kept > 0) facts.push(`kept ${kept}×`)
+    if (age) facts.push(`${age} old`)
+  }
   return facts
 }
 
 /**
- * The cutoff an Aged out row passed, as a small grey chip after its title
- * (Trent, 2026-10-29: "a little chip that says > and then the time period…
- * following the title. That way the created date and then the 5 weeks old…
- * is just extra information"): "> 10 days", "> 1 month", "> 3 months".
+ * AGED OUT'S GROUP HEADINGS (Trent, 2026-10-29: "add little categories… so
+ * that all the days, then all the weeks and months… are just grouped"; the
+ * cutoff chip after each title "keeps changing position"). The rows come
+ * sorted by group (`compareAgedOut`); a heading goes before the first row of
+ * each group, so an empty group has none: "Days · >10 days", "Weeks · >1
+ * month" (unset rows read as Weeks), "Months · >3 months".
  */
-function AgedCutoffChip({ task, segmentHorizon }: { task: Task; segmentHorizon: SegmentKind }) {
+export function agedGroupBefore(
+  segmentHorizon: SegmentKind,
+  rows: readonly SegmentRow[],
+  index: number,
+): AgedOutGroup | null {
   if (segmentHorizon !== 'aged_out') return null
-  // A no-break space before an INLINE chip (no break opportunity on either
-  // side of it): the chip wraps with the title's last word, never alone.
+  const group = agedOutGroup(rows[index].task.horizon)
+  return index > 0 && agedOutGroup(rows[index - 1].task.horizon) === group ? null : group
+}
+
+export function AgedGroupHeading({
+  group,
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  group: AgedOutGroup
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
   return (
-    <>
-      {'\u00A0'}
-      <span
-        data-aged-cutoff
-        title="Past its horizon's cutoff"
-        className="bg-foreground/[0.06] text-muted-foreground ml-0.5 rounded-[4px] px-1.5 py-px align-[1px] text-[11px] leading-4 font-medium whitespace-nowrap"
-      >
-        {cutoffWords(task.horizon)}
-      </span>
-    </>
+    <li
+      role="presentation"
+      data-aged-group={group}
+      className={cn(
+        'text-muted-foreground pt-2 pb-0.5 text-[11px] font-semibold',
+        panel ? 'px-1' : 'px-2',
+        hiddenWhenNarrow && 'hidden xl:block',
+      )}
+    >
+      {HORIZON_LABELS[group]} · {cutoffWords(group)}
+    </li>
   )
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { CheckCheck, Forward } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -11,6 +11,8 @@ import {
   useSlotScroll,
 } from '@/components/reminders/ReminderSlotGroup'
 import {
+  AgedGroupHeading,
+  agedGroupBefore,
   ConsideredSegmentRow,
   EmptySegmentLine,
   SegmentNudge,
@@ -181,16 +183,22 @@ export function TaskSegmentGroup({
           {empty && <EmptySegmentLine className="px-3 pb-1" doneAccent={doneColor} />}
           {waiting.length > 0 && (
             <ul className="space-y-0.5 px-1" aria-label={label}>
-              {waiting.map((row) => (
-                <TaskSegmentRow
-                  key={row.task.id}
-                  row={row}
-                  actions={actions}
-                  timezone={timezone}
-                  panel={false}
-                  segmentHorizon={segment.horizon}
-                />
-              ))}
+              {waiting.map((row, i) => {
+                // Aged out's group headings (2026-10-29).
+                const group = agedGroupBefore(segment.horizon, waiting, i)
+                return (
+                  <Fragment key={row.task.id}>
+                    {group && <AgedGroupHeading group={group} panel={false} />}
+                    <TaskSegmentRow
+                      row={row}
+                      actions={actions}
+                      timezone={timezone}
+                      panel={false}
+                      segmentHorizon={segment.horizon}
+                    />
+                  </Fragment>
+                )
+              })}
             </ul>
           )}
           <SegmentConsideredDisclosure
