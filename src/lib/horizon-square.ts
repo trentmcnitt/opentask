@@ -19,7 +19,7 @@
  * each instead of an arc.
  */
 import { UNSET_HORIZON, type HorizonValue } from '@/lib/task-segments'
-import { showsHorizonDot } from '@/lib/row-corner'
+import { isPlainOneOff } from '@/lib/row-corner'
 import { HORIZON_LABELS, HORIZON_UNSET_LABEL, HORIZON_WORD } from '@/lib/task-model-words'
 import type { Task } from '@/types'
 
@@ -62,9 +62,15 @@ export function isPlainLook(look: SquareLook): boolean {
 }
 
 /**
- * Rows the horizon governs: a plain one-off (not repeating, not a reminder
- * or quota) with no picked target and no deadline. Every other row keeps
- * the plain checkbox — its pace is set by its date.
+ * Rows whose square shows the horizon: EVERY ONE-OFF (not repeating, not a
+ * reminder or quota, not done) — targeted or not, deadline or not, decked or
+ * not (Trent, 2026-10-29: "the checkbox always reflects the horizon,
+ * regardless of whether it has a target"). It shows the horizon the user SET
+ * ("it should reflect the set horizon not the way it's acting… I want to
+ * make sure the logic is simple"): never `effectiveHorizon`, so a near
+ * deadline does not change the square. Unset looks like `UNSET_HORIZON`.
+ * Only repeating tasks keep the plain checkbox. It replaced 10-28's rule
+ * (no picked target and no deadline).
  */
 export function horizonGoverns(
   task: Pick<
@@ -80,7 +86,7 @@ export function horizonGoverns(
     | 'title'
   >,
 ): boolean {
-  return showsHorizonDot(task) && task.deadline_at === null
+  return isPlainOneOff(task)
 }
 
 const SIZE = 22

@@ -142,7 +142,7 @@ function noPickedTarget(task: CornerTask): boolean {
 }
 
 /** A plain one-off: not a quota, a reminder, a repeating task or a done one. */
-function isPlainOneOff(task: CornerTask): boolean {
+export function isPlainOneOff(task: CornerTask): boolean {
   return (
     !task.done &&
     !task.is_reminder &&
