@@ -192,14 +192,12 @@ test.describe('Lean row · look', () => {
           expectTint(red.bg, scheme === 'light' ? [200, 20, 10, 0.098] : [255, 100, 103, 0.14])
           expect(red.shadow).toBe('none')
 
-          // Later today: the faint blue, the title unchanged.
+          // Later today: no tint for now (Trent, 2026-10-29) — the state is
+          // kept, the row draws plain.
           const u = row(page, soon)
           await expect(u).toHaveAttribute('data-row-state', 'soon')
           await expect(u.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
-          expectTint(
-            (await tint(u)).bg,
-            scheme === 'light' ? [245, 251, 255, 1] : [81, 162, 255, 0.03125],
-          )
+          expect((await tint(u)).bg).toBe('rgba(0, 0, 0, 0)')
           // The title's weight (Trent, 2026-10-29): 600 on a tinted row (over
           // target, a passed deadline), 500 on a plain or later-today one.
           const weightOf = (id: number) =>

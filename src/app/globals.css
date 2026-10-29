@@ -536,14 +536,11 @@
    every row in that state changes. `LeanRow`'s `STATE_LOOK` puts the class on
    the row; the `::before` box itself (inset, z-order, running over the row's
    bottom border so two tinted rows show no seam) is its `TINT_BASE`. Over
-   target (#d6eeff, Trent's pick in dev tools, 10-29; E2 before), later today
-   (#f5fbff, a quarter of its strength), passed deadline, both passed (1.75×
-   the red). */
+   target (#d6eeff, Trent's pick in dev tools, 10-29; E2 before), passed
+   deadline, both passed (1.75× the red). Later today has no tint for now
+   (Trent, 10-29); its class went with it. */
 .lean-tint-over::before {
   background-color: #d6eeff;
-}
-.lean-tint-soon::before {
-  background-color: #f5fbff;
 }
 .lean-tint-late::before {
   background-color: rgb(200 20 10 / 0.098);
@@ -553,9 +550,6 @@
 }
 .dark .lean-tint-over::before {
   background-color: rgb(81 162 255 / 0.125);
-}
-.dark .lean-tint-soon::before {
-  background-color: rgb(81 162 255 / 0.03125);
 }
 .dark .lean-tint-late::before {
   background-color: rgb(255 100 103 / 0.14);
