@@ -247,15 +247,27 @@ test.describe('Lean row · look', () => {
               await badge.elementHandle(),
             ),
           ).toBeTruthy()
-          // One gap between every meta item (Trent, 2026-10-29): chip → "2×"
-          // as wide as "2×" → created (no hidden ✕ box after the chip).
-          const created = o.locator('[data-created]')
-          const [c, b, d] = [
-            (await chip.boundingBox())!,
-            (await badge.boundingBox())!,
-            (await created.boundingBox())!,
-          ]
-          expect(b.x - (c.x + c.width)).toBeCloseTo(d.x - (b.x + b.width), 0)
+          // One gap between every meta item (Trent, 2026-10-29): each box on
+          // the meta line sits 6px after the one before (no hidden ✕ box).
+          const gaps = await o.locator('[data-lean-meta]').evaluate((meta) => {
+            const boxes: DOMRect[] = []
+            const walk = (el: Element) => {
+              for (const c of el.children) {
+                if (getComputedStyle(c).display === 'contents') walk(c)
+                else boxes.push(c.getBoundingClientRect())
+              }
+            }
+            walk(meta)
+            return boxes.slice(1).map((b, k) => Math.round(b.left - boxes[k].right))
+          })
+          expect(gaps.length).toBeGreaterThan(2)
+          expect(new Set(gaps)).toEqual(new Set([6]))
+          // The created date is the line's last item (2026-10-29).
+          expect(
+            await o
+              .locator('[data-lean-meta]')
+              .evaluate((m) => m.lastElementChild?.hasAttribute('data-created')),
+          ).toBe(true)
           // The tint covers the row's bottom border: no seam between two
           // tinted rows (Trent, 2026-10-29).
           expect(await o.evaluate((el) => getComputedStyle(el, '::before').bottom)).toBe('-1px')
