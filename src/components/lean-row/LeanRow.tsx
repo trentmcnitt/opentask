@@ -60,6 +60,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
 import { leanRowState, type LeanRowState } from '@/lib/lean-row-state'
+import { cardEdge, type CardEdge } from '@/lib/card-edge'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { priorityTab } from '@/lib/row-corner'
 import { effectiveAttempts } from '@/lib/task-segments'
@@ -100,6 +101,81 @@ const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
 /** One stable empty list, so a row without periods keeps its defer callback's identity. */
 const NO_SLOTS: NonNullable<TaskRowProps['timeSlots']> = []
 
+/**
+ * The row's LOOK (Settings → Theme → Task rows): `lean` (the flat row above)
+ * or `card-v2` — CARD V2 (Trent, 2026-10-29, mockup "C1 · Separate cards"):
+ * the same contents (marks, chips, words, buttons, the horizon square) in a
+ * separate card, 10px round, ~9×10px padding, 6px apart (`TaskList`).
+ * - The STATE is a 3px left edge only (`cardEdge`): red for a passed
+ *   deadline, blue for over target, none otherwise — no tint on the body,
+ *   no slate title, no "later today" mark. The edge is 2px wider than the
+ *   card's 1px border, so the left padding gives those 2px back (10 → 8px)
+ *   and every card's square and title stay in one column. Dark: lean's dark
+ *   tint hues (red-400 #ff6467, blue-400 #51a2ff).
+ * - The title one weight up (medium, Trent: "bold the text a little bit").
+ * - The attempts count ("2×") moves to the top-right corner, neutral grey,
+ *   and the buttons drop below it when it is there. No priority tab.
+ */
+export type LeanLook = 'lean' | 'card-v2'
+
+const CARD_SHELL = 'rounded-[10px] border px-2.5 py-[9px]'
+const CARD_EDGE: Record<CardEdge, string> = {
+  passed: 'border-l-[3px] border-l-[#e7000b] pl-2 dark:border-l-[#ff6467]',
+  over: 'border-l-[3px] border-l-[#155dfc] pl-2 dark:border-l-[#51a2ff]',
+}
+
+/**
+ * What the look changes in the row: card v2's edge, its corner count (the
+ * meta line's "2×" moves there), and the title's colour or weight.
+ */
+function lookParts(o: {
+  look: LeanLook
+  task: Task
+  isOverdue: boolean
+  now: Date
+  state: LeanRowState | null
+  attempts: number
+}): {
+  card: boolean
+  edge: CardEdge | null
+  corner: boolean
+  titleClass: string | undefined
+  metaAttempts: number | null
+} {
+  if (o.look === 'lean') {
+    const titleClass = o.state ? STATE_LOOK[o.state].title : undefined
+    return { card: false, edge: null, corner: false, titleClass, metaAttempts: o.attempts }
+  }
+  return {
+    card: true,
+    edge: cardEdge(o.task, o.isOverdue, o.now),
+    corner: o.attempts >= 1,
+    titleClass: 'font-medium',
+    metaAttempts: null,
+  }
+}
+
+/** The row box's classes for its look, state, selection and focus. */
+function rowShell(o: {
+  card: boolean
+  edge: CardEdge | null
+  state: LeanRowState | null
+  isSelected: boolean
+  isKeyboardFocused: boolean
+}): string {
+  const round = o.card ? undefined : 'rounded-lg'
+  return cn(
+    o.card ? CARD_SHELL : 'border-border/60 border-b px-1 py-2.5',
+    o.edge && CARD_EDGE[o.edge],
+    o.isSelected && cn('bg-accent ring-ring ring-2', round),
+    o.isKeyboardFocused && !o.isSelected && cn('ring-2 ring-blue-500/50 ring-inset', round),
+    // No outline while the row swipes (`SwipeableRow`'s `data-swiping`):
+    // on the moving layer it rode along with the row (Trent, 2026-10-29).
+    'group-data-swiping/swipe:ring-0',
+    !o.card && o.state && STATE_LOOK[o.state].row,
+  )
+}
+
 export function LeanRow({
   task,
   onDone,
@@ -126,7 +202,8 @@ export function LeanRow({
   highlighted,
   onHighlightDone,
   timeSlots = NO_SLOTS,
-}: TaskRowProps) {
+  look = 'lean',
+}: TaskRowProps & { look?: LeanLook }) {
   const { pointer, handleClick } = useRowPress({
     isSelectionMode,
     onSelect,
@@ -143,13 +220,10 @@ export function LeanRow({
   // "Later today" moves with the clock: re-read at each top of the hour (a
   // target's own time passing is `isOverdue`, a deadline's is read now).
   const hour = useHourTick(timezone)
-  const state = leanRowState(
-    task,
-    isOverdue,
-    timezone,
-    dayStart,
-    hour ? new Date(hour) : new Date(),
-  )
+  const now = hour ? new Date(hour) : new Date()
+  const state = leanRowState(task, isOverdue, timezone, dayStart, now)
+  const attempts = useAttempts(task)
+  const parts = lookParts({ look, task, isOverdue, now, state, attempts })
 
   return (
     <div
@@ -161,6 +235,8 @@ export function LeanRow({
       data-lean-row={task.id}
       data-over-target={isOverdue ? '' : undefined}
       data-row-state={state ?? undefined}
+      data-row-look={look}
+      data-card-edge={parts.edge ?? undefined}
       {...highlightProps}
       onClick={handleClick}
       onMouseEnter={onFocus}
@@ -175,17 +251,13 @@ export function LeanRow({
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
       className={cn(
-        'group/lean border-border/60 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
+        'group/lean relative flex items-start gap-3 select-none',
+        rowShell({ ...parts, state, isSelected, isKeyboardFocused }),
         isSelectionMode && 'cursor-pointer',
-        isSelected && 'bg-accent ring-ring rounded-lg ring-2',
-        isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
-        // No outline while the row swipes (`SwipeableRow`'s `data-swiping`):
-        // on the moving layer it rode along with the row (Trent, 2026-10-29).
-        'group-data-swiping/swipe:ring-0',
-        state && STATE_LOOK[state].row,
         isAiProcessing && !highlighted && 'animate-ai-processing',
       )}
     >
+      {parts.corner && <CornerAttempts attempts={attempts} />}
       <DoneControl
         task={task}
         onDone={onDone}
@@ -207,15 +279,14 @@ export function LeanRow({
             onSnooze={onSnooze}
             onRemoveTarget={onRemoveTarget}
             timeSlots={timeSlots}
+            // Card v2: below the corner's count, never over it.
+            className={parts.corner ? 'mt-3.5' : undefined}
           />
         )}
-        <LeanTitle
-          task={task}
-          titleClass={state ? STATE_LOOK[state].title : undefined}
-          justAddedBadge={justAddedBadge}
-        />
+        <LeanTitle task={task} titleClass={parts.titleClass} justAddedBadge={justAddedBadge} />
         <LeanMeta
           task={task}
+          attempts={parts.metaAttempts}
           onMove={(until) => onSnooze(task.id, until)}
           onRemoveTarget={onRemoveTarget}
           onLabelClick={onLabelClick}
@@ -271,6 +342,7 @@ function LeanTitle({
  */
 function LeanMeta({
   task,
+  attempts,
   onMove,
   onRemoveTarget,
   onLabelClick,
@@ -278,6 +350,8 @@ function LeanMeta({
   projectName,
 }: {
   task: Task
+  /** The "2×" count beside the target chip; null where the corner holds it (card v2). */
+  attempts: number | null
   onMove: (until: string) => void
   onRemoveTarget?: (task: Task) => void
   onLabelClick?: (label: string) => void
@@ -333,7 +407,7 @@ function LeanMeta({
           onRemoveTarget={onRemoveTarget}
         />
       )}
-      <AttemptsBadge task={task} />
+      {task.due_at && attempts !== null && attempts >= 1 && <AttemptsBadge attempts={attempts} />}
       <span data-created className="text-muted-foreground/70" title="Created">
         {createdDateWords(task.created_at, timezone, dayStart)}
       </span>
@@ -356,25 +430,50 @@ function LeanMeta({
 }
 
 /**
- * The attempts badge, "2×": OpenTask days the task has been over its target
- * (`effectiveAttempts`, the card row's own count, Trent 2026-10-28), right
- * after the target chip, in neutral grey — no plum. The badge only: the card's
- * 3× "Remove target?" offer stays out (Remove target is in the chip's menu).
+ * The attempts count: OpenTask days the task has been over its target
+ * (`effectiveAttempts`, the card row's own count, Trent 2026-10-28); 0 with
+ * no target. Until the preferences load, the server's stored count stands
+ * (`TaskRow`).
  */
-function AttemptsBadge({ task }: { task: Task }) {
+function useAttempts(task: Task): number {
   const timezone = useTimezone()
   const queue = useTaskQueue()
-  if (!task.due_at) return null
-  // Until the preferences load, the server's stored count stands (`TaskRow`).
-  const attempts = queue.loaded
+  if (!task.due_at) return 0
+  return queue.loaded
     ? effectiveAttempts(task, timezone, new Date(), queue.attemptsRolloverTime).attempts
     : (task.attempts ?? 0)
-  if (attempts < 1) return null
+}
+
+const attemptsTitle = (n: number) => `Overdue on ${n} day${n === 1 ? '' : 's'}`
+
+/**
+ * The attempts badge, "2×", right after the target chip, in neutral grey —
+ * no plum. The badge only: the card's 3× "Remove target?" offer stays out
+ * (Remove target is in the chip's menu).
+ */
+function AttemptsBadge({ attempts }: { attempts: number }) {
   return (
     <span
       data-attempts={attempts}
-      title={`Overdue on ${attempts} day${attempts === 1 ? '' : 's'}`}
+      title={attemptsTitle(attempts)}
       className="text-muted-foreground font-semibold tabular-nums"
+    >
+      {attempts}×
+    </span>
+  )
+}
+
+/**
+ * Card v2's corner: the attempts count alone, a neutral grey tab flush with
+ * the card's top-right corner (its rounding follows the card's).
+ */
+function CornerAttempts({ attempts }: { attempts: number }) {
+  return (
+    <span
+      data-attempts={attempts}
+      data-corner-attempts
+      title={attemptsTitle(attempts)}
+      className="absolute -top-px -right-px flex h-[18px] items-center rounded-tr-[10px] rounded-bl-md bg-[#f0f0f0] px-[7px] text-[11px] leading-none font-semibold text-[#525252] tabular-nums dark:bg-neutral-800 dark:text-neutral-300"
     >
       {attempts}×
     </span>

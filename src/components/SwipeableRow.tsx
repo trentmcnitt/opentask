@@ -13,12 +13,13 @@ interface SwipeableRowProps {
   disabled?: boolean // disable swiping (e.g. during selection mode)
   leftAction?: 'snooze' | 'edit' // controls swipe-left label and color (default: 'snooze')
   /**
-   * What the row sits on: 'card' (the card rows: rounded, `bg-card`) or
-   * 'flat' (the lean rows: square edges on the page's own background). The
+   * What the row sits on: 'card' (the card rows: rounded, `bg-card`),
+   * 'card-v2' (the same, 10px round) or 'flat' (the lean rows: square
+   * edges on the page's own background). The
    * foreground stays opaque either way, so the swipe's action colour never
    * shows through a row that is not being dragged.
    */
-  surface?: 'card' | 'flat'
+  surface?: 'card' | 'flat' | 'card-v2'
 }
 
 /**
@@ -35,6 +36,8 @@ interface SwipeableRowProps {
 const SURFACE = {
   card: { outer: 'rounded-lg', foreground: 'bg-card rounded-lg' },
   flat: { outer: '-mx-1', foreground: 'bg-background px-1' },
+  // Card v2's cards are 10px round (`LeanRow`'s card-v2 look).
+  'card-v2': { outer: 'rounded-[10px]', foreground: 'bg-card rounded-[10px]' },
 } as const
 
 export function SwipeableRow({

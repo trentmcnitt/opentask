@@ -6,8 +6,8 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown, ChevronDown, ChevronUp, Layers, Plus } from 'lucide-react'
 import { TaskRow } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
-import { LeanRow } from './lean-row/LeanRow'
-import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
+import { LeanRow, type LeanLook } from './lean-row/LeanRow'
+import { useTaskRowStyle, type TaskRowStyle } from '@/hooks/useTaskRowStyle'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -479,16 +479,16 @@ export function TaskList({
    * (the heading says it), and its On deck and Today always shown on touch.
    */
   // The row style (Settings → Theme → Task rows, per device): the lean row
-  // sits flat on the page with hairlines between rows, so no gap and no card.
-  const lean = rowStyle === 'lean'
-  const Row = lean ? LeanRow : TaskRow
-  const surface = lean ? 'flat' : 'card'
+  // sits flat on the page with hairlines between rows, so no gap and no card;
+  // card v2 is the lean row's `card-v2` look, separate cards 6px apart.
+  const look = ROW_LOOK[rowStyle]
+  const Row = look.Row
   const renderTaskRow = (task: Task, inDeck = false) => {
     const cancelRef = { current: null as (() => void) | null }
     return (
       <SwipeableRow
         key={task.id}
-        surface={surface}
+        surface={look.surface}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
         leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
@@ -497,6 +497,7 @@ export function TaskList({
       >
         <Row
           task={task}
+          look={look.leanLook}
           timeSlots={timeSlots}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
@@ -694,7 +695,7 @@ export function TaskList({
                 </div>
               )}
               {!collapsed && (
-                <div className={lean ? undefined : 'space-y-1'}>
+                <div className={look.gap}>
                   {visibleTasks.map((task) => renderTaskRow(task, !!group.deck))}
                   {nowSplit && (
                     <NowFoldRow
@@ -733,6 +734,24 @@ export function TaskList({
       <SnoozeGuardDialog {...dialogProps} />
     </div>
   )
+}
+
+/**
+ * Each row style's row, swipe surface and gap between rows. The card row
+ * ignores `look` (it has one look); the lean row draws `lean` or `card-v2`.
+ */
+const ROW_LOOK: Record<
+  TaskRowStyle,
+  {
+    Row: typeof LeanRow
+    leanLook?: LeanLook
+    surface: 'card' | 'flat' | 'card-v2'
+    gap?: string
+  }
+> = {
+  lean: { Row: LeanRow, leanLook: 'lean', surface: 'flat' },
+  card: { Row: TaskRow, surface: 'card', gap: 'space-y-1' },
+  'card-v2': { Row: LeanRow, leanLook: 'card-v2', surface: 'card-v2', gap: 'space-y-1.5' },
 }
 
 /**
