@@ -46,6 +46,23 @@ final class LeanRowTests: XCTestCase {
         XCTAssertEqual(state("2026-10-28T08:00", "2026-10-28T09:00", overdue: true), .bothPassed)
     }
 
+    /// M1 (2026-10-29): every over-target time is plum, whatever its day
+    /// word — a target that passed EARLIER TODAY (a time-only label) too,
+    /// not only one from another day; a target later today stays blue.
+    func testAPassedTargetsTimeIsPlumWhateverItsDay() {
+        let now = at("2026-10-28T10:00")
+        let plum = LeanRow.overTargetHex, blue = LeanRow.targetHex
+        func timeHex(_ due: String) -> UInt32 {
+            let t = task(due: due)
+            return LeanRow.targetTimeHex(isOverdue: t.isOverdue(now: now)).light
+        }
+        XCTAssertEqual(timeHex("2026-10-28T08:00"), plum.light, "earlier today")
+        XCTAssertEqual(timeHex("2026-10-28T09:30"), plum.light, "earlier today")
+        XCTAssertEqual(timeHex("2026-10-25T08:00"), plum.light, "another day")
+        XCTAssertEqual(timeHex("2026-10-28T13:00"), blue.light, "later today")
+        XCTAssertEqual(timeHex("2026-10-29T09:00"), blue.light, "tomorrow")
+    }
+
     func testOverTargetIsBlue() {
         XCTAssertEqual(state("2026-10-28T13:00", nil, overdue: true), .over)
         XCTAssertEqual(state("2026-10-28T13:00", "2026-10-28T21:00", overdue: true), .over, "over outranks a deadline later today")
