@@ -520,6 +520,9 @@ export function TaskList({
       >
         <Row
           task={task}
+          // The done square draws its horizon only in Scan's Horizon
+          // sections, where every row shares one (Trent, 2026-10-29).
+          horizonLook={isHorizonSection(group)}
           timeSlots={timeSlots}
           onDone={() => onDone(task.id)}
           onSnooze={(_taskId, until) => requestSnooze(task, until)}
@@ -810,6 +813,11 @@ function sectionAttrs(group: SortedTaskGroup): { 'data-mode-section'?: string } 
 /** A mode section's heading marker. */
 function headingAttrs(group: SortedTaskGroup): { 'data-section-heading'?: '' } {
   return group.section ? { 'data-section-heading': '' } : {}
+}
+
+/** Scan's Horizon sections (`horizon-days` … `horizon-unset`): where the square draws its horizon. */
+function isHorizonSection(group: SortedTaskGroup): boolean {
+  return group.section?.id.startsWith('horizon-') ?? false
 }
 
 /** Whether a group draws compact rows (On deck in the Today mode). */

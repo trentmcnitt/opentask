@@ -6,9 +6,8 @@
  *
  *   [□]  Title !  ⚑ Fri  ↻  Project                 (deck) (deck tomorrow) (clock)
  *
- * - The lean row's done square: the horizon the user set, with its hold
- *   menu (Trent, 2026-10-29: "the checkbox always reflects the horizon" —
- *   compact rows too, reversing 10-28's plain square).
+ * - The lean row's done square: plain (no Horizon section draws a compact
+ *   row), with the hold menu and tooltip naming the horizon (2026-10-29).
  * - The title, then "!" / "!!" (Medium hidden, Low not said), "⚑ <day>" for a
  *   deadline within a week (`compactDeadline`: the day only, never a time;
  *   red once passed), ↻ when it repeats, and the grey project name.
@@ -106,7 +105,7 @@ export function CompactRow({
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
       className={cn(
-        'group/lean border-border/60 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
+        'group/lean border-border/40 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
         isSelectionMode && 'cursor-pointer',
         isSelected && 'bg-accent ring-ring rounded-lg ring-2',
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
