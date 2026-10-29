@@ -182,8 +182,9 @@ test.describe('Dashboard modes · Today', () => {
       const decks = section(page, 'on-deck')
       const d = rowIn(decks, ids.deck)
       await expect(d).toHaveAttribute('data-compact-row', '')
-      // A plain done square, whatever the horizon; the lit deck icon.
-      await expect(d.locator('[data-lean-done]')).not.toHaveAttribute('data-horizon-square', /.*/)
+      // The done square shows the horizon it set (a deadline task too,
+      // Trent 2026-10-29); the lit deck icon.
+      await expect(d.locator('[data-lean-done]')).toHaveAttribute('data-horizon-square', 'months')
       await expect(d.locator('[data-on-deck-active]')).toBeVisible()
       // "!", the deadline's DAY (no time), the grey project name.
       await expect(d.locator('[data-priority-tab]')).toHaveText('!')

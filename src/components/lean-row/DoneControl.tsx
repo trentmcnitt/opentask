@@ -53,7 +53,6 @@ export function DoneControl({
   isSelected,
   onSelect,
   onSetHorizon,
-  plain = false,
 }: {
   task: Task
   onDone: () => void
@@ -62,8 +61,6 @@ export function DoneControl({
   onSelect?: () => void
   /** Change the horizon (a governed square's hold / right-click menu). */
   onSetHorizon?: (horizon: HorizonValue | null) => void
-  /** Always the plain square, whatever the horizon (the compact row). */
-  plain?: boolean
 }) {
   if (isSelectionMode) {
     return (
@@ -76,7 +73,7 @@ export function DoneControl({
       />
     )
   }
-  const governed = !plain && horizonGoverns(task)
+  const governed = horizonGoverns(task)
   if (governed && onSetHorizon) {
     return <HorizonDoneSquare task={task} onDone={onDone} onSetHorizon={onSetHorizon} />
   }

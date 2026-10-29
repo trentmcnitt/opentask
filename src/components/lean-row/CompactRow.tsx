@@ -6,7 +6,9 @@
  *
  *   [□]  Title !  ⚑ Fri  ↻  Project                 (deck) (deck tomorrow) (clock)
  *
- * - The PLAIN done square (no horizon border, no horizon menu).
+ * - The lean row's done square: the horizon the user set, with its hold
+ *   menu (Trent, 2026-10-29: "the checkbox always reflects the horizon" —
+ *   compact rows too, reversing 10-28's plain square).
  * - The title, then "!" / "!!" (Medium hidden, Low not said), "⚑ <day>" for a
  *   deadline within a week (`compactDeadline`: the day only, never a time;
  *   red once passed), ↻ when it repeats, and the grey project name.
@@ -39,6 +41,7 @@ export function CompactRow({
   onDone,
   onSnooze,
   onRemoveTarget,
+  onSetHorizon,
   onTargetAt,
   onDeck,
   isOverdue = false,
@@ -115,7 +118,7 @@ export function CompactRow({
         isSelectionMode={isSelectionMode}
         isSelected={isSelected}
         onSelect={onSelect}
-        plain
+        onSetHorizon={onSetHorizon ? (h) => onSetHorizon(task, h) : undefined}
       />
       <div className="min-w-0 flex-1">
         {!isSelectionMode && (

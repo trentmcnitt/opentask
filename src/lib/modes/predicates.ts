@@ -1,10 +1,10 @@
 /**
  * The small, pure facts the sections are built from — each one the app's
  * existing rule where one exists (`isOverdue`, `deckIsToday`, `inSafetyNet`,
- * `horizonGoverns`, the OpenTask day), so a section never re-derives a date
+ * `showsHorizonDot`, the OpenTask day), so a section never re-derives a date
  * rule of its own.
  */
-import { horizonGoverns } from '@/lib/horizon-square'
+import { showsHorizonDot } from '@/lib/row-corner'
 import { dayStartMoment, openTaskDayOf, openTaskDaysBetween } from '@/lib/opentask-day'
 import { isOverdue } from '@/lib/task-counts'
 import { deckIsToday, inSafetyNet, isPastDeadline } from '@/lib/task-segments'
@@ -98,11 +98,15 @@ export function comingUpAt(task: Task, ctx: ModeContext): string | null {
 }
 
 /**
- * A task its horizon governs (the lean row's patterned done square,
- * `horizonGoverns`): a plain one-off with no picked target and no deadline.
+ * A task its horizon governs — Scan's horizon sections: a plain one-off with
+ * no picked target and no deadline (`showsHorizonDot`, the horizon segment's
+ * rule). NOT the done square's rule (`horizonGoverns`): since 2026-10-29 the
+ * square shows the set horizon on every one-off, targeted or not, but a
+ * picked target or a deadline still sets a task's pace, so it stays out of
+ * these sections.
  */
 export function isHorizonGoverned(task: Task): boolean {
-  return horizonGoverns(task)
+  return showsHorizonDot(task) && task.deadline_at === null
 }
 
 /** Newest first by an ISO field (nulls last). */
