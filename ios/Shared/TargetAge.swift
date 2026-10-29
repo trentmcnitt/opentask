@@ -335,6 +335,13 @@ enum TaskWording {
     /// kept for `withoutTaskQueuePrefix`, which still reads an old title.
     static let taskQueuePrefix = "Task queue"
 
+    /// The queue's two panels as ONE segment on the Reminders widget
+    /// (2026-10-29, `TaskSegmentDTO.pulledMerged`; the web's `PULLED_TITLE`):
+    /// its title and strip word. Its sections: "Today", "Earlier".
+    static let pulledTitle = "Pulled"
+    static let pulledTodayWord = "Today"
+    static let pulledEarlierWord = "Earlier"
+
     /// A task segment's title: its word alone since 2026-10-29 ("Daily";
     /// Trent: "I think just the title's enough now", the web's
     /// `segmentTitle`). It was "Task queue · Daily".

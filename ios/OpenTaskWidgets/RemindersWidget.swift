@@ -180,7 +180,10 @@ struct RemindersProvider: TimelineProvider {
         now: Date, groups rawGroups: [ReminderGroupDTO], segments rawSegments: [TaskSegmentDTO], staleSince: Date?
     ) -> RemindersEntry {
         let groups = WidgetStore.filterPending(rawGroups, now: now)
-        let segments = TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(rawSegments, now: now))
+        // The queue's two panels as one Pulled page (2026-10-29, `pulledMerged`).
+        let segments = TaskSegmentDTO.pulledMerged(
+            TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(rawSegments, now: now))
+        )
         let page = RemindersTimeline.displayedPage(groups: groups, segments: segments, now: now)
         return RemindersEntry(
             date: now,

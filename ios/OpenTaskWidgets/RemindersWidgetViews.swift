@@ -1088,23 +1088,81 @@ private struct ReminderSlotStrip: View {
     /// fixed (it does not grow with the text size): at the largest sizes the
     /// eight words still fit a card.
     private func queueRow(_ row: [ReminderDayProgress.StripBar]) -> some View {
-        HStack(alignment: .bottom, spacing: segmentSpacing) {
-            ForEach(row, id: \.key) { bar in
-                jumpButton(bar) {
-                    VStack(spacing: 2) {
-                        Text(bar.segment?.stripWord ?? bar.label)
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(bar.key == currentKey ? Color.primary : Color.secondary)
-                            .opacity(bar.total == 0 && bar.key != currentKey ? 0.55 : 1)
-                            .lineLimit(1)
-                            .fixedSize()
-                        segmentBar(for: bar)
-                            .frame(height: maxSegmentHeight)
+        // Its groups (tight N2, 2026-10-29): Dated · Pulled · the horizons,
+        // a hairline between groups.
+        let runs = Self.groupRuns(row)
+        return HStack(alignment: .bottom, spacing: segmentSpacing) {
+            ForEach(Array(runs.enumerated()), id: \.offset) { index, run in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.18))
+                        .frame(width: 1, height: 14)
+                        .padding(.horizontal, 3)
+                        .accessibilityHidden(true)
+                }
+                ForEach(run, id: \.key) { bar in
+                    jumpButton(bar) {
+                        VStack(spacing: 3) {
+                            mark(for: bar)
+                            segmentBar(for: bar)
+                                .frame(height: maxSegmentHeight)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
                 }
             }
+        }
+    }
+
+    /// Consecutive bars of one group (`SegmentKind.stripGroup`), in order.
+    private static func groupRuns(_ bars: [ReminderDayProgress.StripBar]) -> [[ReminderDayProgress.StripBar]] {
+        var runs: [[ReminderDayProgress.StripBar]] = []
+        for bar in bars {
+            let group = bar.segment?.stripGroup ?? 3
+            if let last = runs.last?.first, (last.segment?.stripGroup ?? 3) == group {
+                runs[runs.count - 1].append(bar)
+            } else {
+                runs.append([bar])
+            }
+        }
+        return runs
+    }
+
+    /// A bar's mark: its word — or, for a horizon, its perspective dot (the
+    /// web's: Days big and dark, Eventually small and light). The page on
+    /// screen's in the primary colour, an empty segment's faded.
+    @ViewBuilder
+    private func mark(for bar: ReminderDayProgress.StripBar) -> some View {
+        let isCurrent = bar.key == currentKey
+        let tint = isCurrent ? Color.primary : Color.secondary
+        Group {
+            if case .horizon(let horizon) = bar.segment {
+                let dot = Self.horizonDot(horizon)
+                Circle()
+                    .fill(Color.primary.opacity(0.8 * dot.opacity))
+                    .frame(width: dot.radius * 2, height: dot.radius * 2)
+                    .frame(width: 12, height: 12)
+            } else {
+                Text(bar.segment?.stripWord ?? bar.label)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .frame(height: 12)
+        .opacity(bar.total == 0 && !isCurrent ? 0.55 : 1)
+    }
+
+    /// The web's perspective dot (`HORIZON_DOT`, src/lib/row-corner.ts), in
+    /// a 12pt box.
+    private static func horizonDot(_ horizon: TaskHorizon) -> (radius: CGFloat, opacity: Double) {
+        switch horizon {
+        case .days: return (4, 1)
+        case .weeks: return (3, 0.7)
+        case .months: return (2.5, 0.55)
+        case .eventually: return (2.25, 0.42)
         }
     }
 
@@ -1551,13 +1609,24 @@ private enum SegmentListItem {
     /// An Upcoming section's heading (2026-10-26, the Upcoming split):
     /// "Tomorrow  0 of 2", "Later  1 of 1 ✓".
     case sectionHeader(UpcomingSections.Section)
+    /// The merged Pulled page's sections (2026-10-29): "Today  2", "Earlier  1".
+    case pulledHeader(title: String, count: Int)
     case waiting(SegmentTaskDTO)
     case divider(count: Int)
     case considered(SegmentTaskDTO)
 
+    /// A section heading (Upcoming's or Pulled's): kept with the row after it.
+    var isHeading: Bool {
+        switch self {
+        case .sectionHeader, .pulledHeader: return true
+        default: return false
+        }
+    }
+
     var id: String {
         switch self {
         case .sectionHeader(let s): return "seg-section-\(s.section.rawValue)"
+        case .pulledHeader(let title, _): return "seg-pulled-\(title)"
         case .waiting(let row): return "seg-\(row.id)"
         case .divider: return "seg-divider"
         case .considered(let row): return "seg-considered-\(row.id)"
@@ -1570,7 +1639,7 @@ private enum SegmentListItem {
     /// start on it ("Later" heads page 2), so an anchor can name it.
     var pagedRow: PagedRow {
         switch self {
-        case .sectionHeader: return PagedRow(keys: [id], identities: [], staysWithNext: true)
+        case .sectionHeader, .pulledHeader: return PagedRow(keys: [id], identities: [], staysWithNext: true)
         case .waiting(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
         case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
         case .considered(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
@@ -1675,6 +1744,18 @@ private struct TaskSegmentListView: View {
     /// the CONSIDERED list stay the segment's. Nothing waiting: the finished
     /// seal, as every page.
     private var openItems: [SegmentListItem] {
+        // Pulled (2026-10-29): Today's pulls, then the earlier ones, each
+        // under its heading — none over an empty section (the web's pills).
+        if segment.pulled, segment.hasWaiting {
+            let waiting = segment.waitingTasks
+            let today = waiting.filter { !segment.earlierIds.contains($0.id) }
+            let earlier = waiting.filter { segment.earlierIds.contains($0.id) }
+            return [(TaskWording.pulledTodayWord, today), (TaskWording.pulledEarlierWord, earlier)]
+                .filter { !$0.1.isEmpty }
+                .flatMap { title, rows in
+                    [SegmentListItem.pulledHeader(title: title, count: rows.count)] + rows.map { .waiting($0) }
+                }
+        }
         guard segment.isUpcoming, segment.hasWaiting else {
             return segment.waitingTasks.map { SegmentListItem.waiting($0) }
         }
@@ -1753,7 +1834,7 @@ private struct TaskSegmentListView: View {
         let headingRun = metrics.caption2Height + rowSpacing
         let layouts = items.indices.map { index -> ReminderRowLayout in
             var headings = 0
-            while index - headings - 1 >= 0, case .sectionHeader = items[index - headings - 1] { headings += 1 }
+            while index - headings - 1 >= 0, items[index - headings - 1].isHeading { headings += 1 }
             let rowBudget = max(budget - CGFloat(headings) * headingRun, 0)
             return layout(for: items[index], width: size.width, budget: rowBudget, metrics: metrics)
         }
@@ -1846,9 +1927,9 @@ private struct TaskSegmentListView: View {
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
         switch item {
-        case .divider, .sectionHeader:
-            // One caption2 line each — what `DoneDivider` and
-            // `UpcomingSectionHeading` draw.
+        case .divider, .sectionHeader, .pulledHeader:
+            // One caption2 line each — what `DoneDivider`,
+            // `UpcomingSectionHeading` and `PulledSectionHeading` draw.
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
         case .waiting(let row), .considered(let row):
             let task = row.task
@@ -1904,6 +1985,8 @@ private struct TaskSegmentListView: View {
         switch item {
         case .sectionHeader(let section):
             UpcomingSectionHeading(section: section)
+        case .pulledHeader(let title, let count):
+            PulledSectionHeading(title: title, count: count)
         case .divider(let count):
             DoneDivider(count: count, label: "CONSIDERED")
         case .waiting(let row):
@@ -2147,6 +2230,30 @@ private struct TaskSegmentListView: View {
 /// (done from the start; there is no separate "Nothing today" row on the
 /// widget). The web's `SectionHeading`: the word muted and not uppercased
 /// (the page title above carries the accent), the count the slot header's.
+/// The merged Pulled page's section heading (2026-10-29): "Today  2" /
+/// "Earlier  1" — the web's TODAY / EARLIER pills, in `UpcomingSectionHeading`'s
+/// small type. ONE caption2 line — the height the list measures it at.
+private struct PulledSectionHeading: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("\(count)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 0)
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(title), \(count)"))
+    }
+}
+
 /// ONE caption2 line — the height the list measures it at.
 private struct UpcomingSectionHeading: View {
     @Environment(\.colorScheme) private var colorScheme

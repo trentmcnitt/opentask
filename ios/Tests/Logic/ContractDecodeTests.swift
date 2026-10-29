@@ -688,7 +688,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let upcoming = try XCTUnwrap(payload.taskSegments.last)
         XCTAssertEqual(upcoming.kind, .upcoming)
         XCTAssertNil(upcoming.horizonValue)
-        XCTAssertEqual(upcoming.label, "Upcoming")
+        XCTAssertEqual(upcoming.label, "Heads up")
         XCTAssertEqual(upcoming.pageKey, -14)
         XCTAssertFalse(upcoming.nudge)
         XCTAssertEqual(upcoming.tasks.map(\.id), [Fixtures.passport, Fixtures.plantsRecurring])
