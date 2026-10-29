@@ -254,6 +254,13 @@ today — each with ○ done, ⏭ next period and +1h (per-task, via
 `TaskSnoozePlan`), and an "All overdue (N): ⏭ 4:30 PM · +1h" bar (the server
 sweep, `bulk/snooze-overdue`). A title opens the task in the window.
 
+The rows follow the web's lean row (2026-10-28, `LeanRow` / `LeanRowStyle` in
+`ios/Shared/`, shared with the Tasks widget and the watch): High "!" / Urgent
+"!!" after the title, the target's time in blue (never plum), the attempts
+count grey, and the row's tint — a passed deadline red, over target blue
+with a slate title, later today a faint blue. The check-off square keeps its
+project colour (the panel's only project cue).
+
 - `MenuBar/StatusItemController.swift` — an AppKit `NSStatusItem` + popover,
   not SwiftUI's `MenuBarExtra`, which draws its label as a one-colour template
   (the badge wasn't red).

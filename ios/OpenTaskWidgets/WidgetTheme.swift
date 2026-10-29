@@ -148,8 +148,10 @@ enum WidgetTheme {
 
     /// Over target (2026-10-11): a calm plum, the web's `--over-target` —
     /// never red, which is kept for a passed deadline only (Trent). Plum TEXT:
-    /// the over-target time and the attempts count folded into it ("Thu ·
-    /// 3×", `AttemptsInTime`). Lifted in dark mode like the web's dark token
+    /// the page control's Over count and a task segment row's "· 3×". NOT the
+    /// Tasks widget's rows since 2026-10-28 (the web's lean row: the target's
+    /// time is blue, the attempts count grey, and over target is the row's
+    /// blue tint — `LeanRowStyle`). Lifted in dark mode like the web's dark token
     /// (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on the
     /// dark card measured 3.0:1 as text; lifted it is 6.0:1. Light mode is
     /// unchanged (#9E4594, 5.6:1 on white). Resolved from the view's
@@ -468,14 +470,29 @@ enum WidgetTheme {
     /// a full-height image box could make the measured last line a point or
     /// two taller than SwiftUI's (which sets the symbol inside the line like
     /// any glyph).
+    ///
+    /// `mark` (2026-10-28, the lean row): High "!" / Urgent "!!" after the
+    /// title — `LeanRowStyle.markSuffix`, the no-break space and the mark,
+    /// measured in `markFont` (the title's size at `LeanRowStyle.markWeight`),
+    /// exactly as `LeanRowStyle.titleWithMark` draws it; before the notes
+    /// glyph, as the row draws them.
     static func measuredLineCount(
-        for text: String, notesGlyphSize: CGFloat?, maxWidth: CGFloat, font: PlatformFont
+        for text: String, notesGlyphSize: CGFloat?, maxWidth: CGFloat, font: PlatformFont,
+        mark: (suffix: String, font: PlatformFont)? = nil
     ) -> Int {
-        guard let notesGlyphSize else { return measuredLineCount(for: text, maxWidth: maxWidth, font: font) }
+        guard notesGlyphSize != nil || mark != nil else {
+            return measuredLineCount(for: text, maxWidth: maxWidth, font: font)
+        }
         guard maxWidth > 0 else { return 1 }
-        let string = NSMutableAttributedString(string: text + "\u{00A0}", attributes: [.font: font])
-        string.append(NSAttributedString(attachment: measuringBox(width: notesGlyphWidth(pointSize: notesGlyphSize))))
-        string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+        let string = NSMutableAttributedString(string: text, attributes: [.font: font])
+        if let mark {
+            string.append(NSAttributedString(string: mark.suffix, attributes: [.font: mark.font]))
+        }
+        if let notesGlyphSize {
+            string.append(NSAttributedString(string: "\u{00A0}", attributes: [.font: font]))
+            string.append(NSAttributedString(attachment: measuringBox(width: notesGlyphWidth(pointSize: notesGlyphSize))))
+            string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+        }
         let bounds = string.boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -542,6 +559,7 @@ enum WidgetTheme {
     #if os(iOS)
     fileprivate static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
         switch weight {
+        case .bold: return .bold
         case .semibold: return .semibold
         case .medium: return .medium
         default: return .regular
@@ -550,6 +568,7 @@ enum WidgetTheme {
     #else
     fileprivate static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
         switch weight {
+        case .bold: return .bold
         case .semibold: return .semibold
         case .medium: return .medium
         default: return .regular
@@ -641,16 +660,9 @@ enum WidgetTheme {
         DueLabel.parts(for: due, now: now, isOverdue: isOverdue, day: day)
     }
 
-    /// Subtle indigo for the day word — built on `indigoAccent` (the same
-    /// hue `ReminderSlotStrip`'s "behind, still waiting" fill and
-    /// `CompletedDotToggle`'s ON state use), dimmed to `0.85` since a due
-    /// label sits beside body text far more often than a slot strip segment
-    /// does and doesn't need the fully saturated version.
-    static let dueDayWordTint = indigoAccent.opacity(0.85)
-
     /// The styled `Text` for wherever a task's due time shows (`TaskRow`,
-    /// `TasksSmallView`) — builds on `dueLabelParts` so the day-word tint and
-    /// the overdue-red rule can never drift between call sites. Built via
+    /// `TasksSmallView`, the Up next list) — builds on `dueLabelParts` so the
+    /// words and their one colour can never drift between call sites. Built via
     /// `Text` concatenation (`+`), not a nested `HStack`, so it composes
     /// inline with a `.firstTextBaseline` `HStack` the way a single `Text`
     /// would.
@@ -671,15 +683,17 @@ enum WidgetTheme {
         guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
-        // All one color when overdue (2026-09-25): the day word
-        // ("Yesterday", "Wed", "Sep 12") is part of what's late, so it wears
-        // the same tint as the time, stacked over it exactly like an
-        // upcoming label. Plum, not red, since 2026-10-11
-        // (WidgetTheme.overTarget).
-        let dayTint = overdue ? WidgetTheme.overTarget(scheme) : dueDayWordTint
-        let timeTint = overdue ? WidgetTheme.overTarget(scheme) : Color.secondary
-        let day = parts.dayWord.map { Text($0).foregroundStyle(dayTint) }
-        let time = parts.time.map { Text($0).foregroundStyle(timeTint) }
+        // ONE colour, the target's BLUE, day word and time alike, before the
+        // target and after it (2026-10-28, the web's lean row: "the target
+        // always the blue target chip, never plum" — over target is said by
+        // the row's tint, `LeanRow.state`). It was plum once over target
+        // (2026-10-11), red before that, with an indigo day word over a grey
+        // time while upcoming. Text only: the web's chip box (a 10% tint
+        // behind the words) is not drawn, so the label's measured width is
+        // still its words'.
+        let tint = LeanRowStyle.target(scheme)
+        let day = parts.dayWord.map { Text($0).foregroundStyle(tint) }
+        let time = parts.time.map { Text($0).foregroundStyle(tint) }
         // `firstLineSuffix` (the attempts count, `AttemptsInTime`) ends the
         // FIRST line: after the day word when stacked, else after the label.
         if stacked, let day, let time {
@@ -930,12 +944,20 @@ struct WidgetTextMetrics {
     ///
     /// `hasNotes` measures the title WITH the notes glyph after it — pass
     /// the same flag the row draws with (`notesGlyphSize(hasNotes:)`).
+    ///
+    /// `priority`: a task row's title ends in its High/Urgent mark
+    /// (`LeanRowStyle.titleWithMark`); nil (reminders, prompts) measures none.
     func titleLines(
-        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat, hasNotes: Bool = false
+        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat, hasNotes: Bool = false,
+        priority: Int? = nil
     ) -> (lines: Int, shrinks: Bool) {
+        let mark = priority
+            .flatMap(RowCorner.priorityTab)
+            .flatMap(LeanRowStyle.markSuffix)
+            .map { (suffix: $0, font: titleFont(weight: LeanRowStyle.markWeight)) }
         let real = WidgetTheme.measuredLineCount(
             for: text, notesGlyphSize: notesGlyphSize(hasNotes: hasNotes), maxWidth: width,
-            font: titleFont(weight: weight)
+            font: titleFont(weight: weight), mark: mark
         )
         let fitting = maxHeight.isFinite ? max(1, Int(maxHeight / titleLineHeight)) : real
         return (min(real, fitting), real > fitting)

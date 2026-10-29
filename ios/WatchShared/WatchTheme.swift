@@ -66,6 +66,9 @@ enum WatchTheme {
     /// surface briefly (and wrongly) used for the same meaning.
     /// 2026-10-11: plum, not red — the web's `--over-target`; Trent wants
     /// nothing about an arrived target to signal that anything is wrong.
+    /// Since 2026-10-28 NOT the Tasks page's rows (the web's lean row: a blue
+    /// time, a grey "3×", the row's tint — `LeanRowStyle`); still the sweep
+    /// button, the bulk sheet and the Smart Stack's overdue card.
     static let overdue = Color(red: 0.78, green: 0.45, blue: 0.74)
 
     /// Quotas' Takeback mode (`QuotasPageView`): the armed ⊖ toggle and each
@@ -101,8 +104,8 @@ enum WatchTheme {
     }
 
     /// Mirrors `PRIORITY_OPTIONS` in `src/lib/priority.ts`: the title's weight.
-    /// Since 2026-10-16 a Tasks page row also wears the corner strip's
-    /// "!"/"!!" for High/Urgent (`RowCornerStrip`); Reminders rows stay
+    /// A Tasks page row also wears "!"/"!!" for High/Urgent after its title
+    /// (`LeanRowStyle.titleWithMark`, 2026-10-28); Reminders rows stay
     /// weight-only — "priority is prominence" (§6; it also paces the slot's
     /// one nag, server-side, but never marks a row).
     static func priorityWeight(_ priority: Int) -> Font.Weight {

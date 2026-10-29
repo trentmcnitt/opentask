@@ -13,7 +13,9 @@ struct MenuBarPanel: View {
     /// (`WidgetTheme.overTarget`, `--over-target`) — never red. Lifted in
     /// dark mode since 2026-10-12 (the light plum on the dark panel was
     /// 3.0:1 as text; lifted, 6.0:1). The same values as
-    /// `WidgetTheme.overTarget(_:)`, which this target doesn't compile.
+    /// `WidgetTheme.overTarget(_:)`, which this target doesn't compile. The
+    /// header's "N overdue" only since 2026-10-28: the ROWS follow the web's
+    /// lean row (`LeanRowStyle`: a blue time, a grey "3×", the row's tint).
     private var overTarget: Color {
         colorScheme == .dark
             ? Color(red: 0xC9 / 255, green: 0x7C / 255, blue: 0xD5 / 255)
@@ -134,8 +136,18 @@ struct MenuBarPanel: View {
         }
     }
 
+    /// One task row — the web's LEAN ROW rules (2026-10-28, `LeanRow`):
+    /// High "!" / Urgent "!!" after the title (none for Medium, Low, None);
+    /// the target's time in its blue whether or not it has passed, the
+    /// attempts count grey; the row's tint (`LeanRow.state`: a passed deadline
+    /// red, over target blue with a slate title, later today a faint blue),
+    /// bled outward behind the row so its size never changes. The square
+    /// keeps its PROJECT colour (the panel's only project cue — not a
+    /// priority mark, so the lean row's neutral square isn't copied here).
+    /// The panel draws no deadline, so no flag or countdown.
     private func row(_ task: TaskDTO, isOverdue: Bool) -> some View {
         let busy = model.busyIds.contains(task.id)
+        let state = LeanRow.state(task, isOverdue: isOverdue, now: model.now, day: DayStartStore.current)
         return HStack(alignment: .top, spacing: 8) {
             Button {
                 model.complete(task)
@@ -156,25 +168,25 @@ struct MenuBarPanel: View {
                 openApp(path: "/?task=\(task.id)&highlight=1")
             } label: {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(task.title)
+                    LeanRowStyle.titleWithMark(Text(task.title), priority: task.priority)
                         .font(.callout.weight(task.priority >= 3 ? .semibold : .regular))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(LeanRowStyle.title(state, colorScheme) ?? .primary)
+                        .accessibilityLabel(Text(LeanRowStyle.spokenTitle(task.title, priority: task.priority)))
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if let due = task.dueDate {
                         // The attempts count (spec §7, 2026-10-12): the
                         // server's "3×" folded into the time, "Thu 9:00 AM ·
-                        // 3×" — the Tasks widget's form: plum, semibold,
-                        // heavy from 7×, no pill. Label only (the web's 3×
-                        // offer stays in the app).
+                        // 3×" — the Tasks widget's form: grey, semibold, no
+                        // pill. Label only (the web's 3× offer stays in the app).
                         let time = Text(dueText(due, isOverdue: isOverdue))
-                            .foregroundStyle(isOverdue ? overTarget : Color.secondary)
+                            .foregroundStyle(LeanRowStyle.target(colorScheme))
                         Group {
                             if let badge = TargetAge.attemptsBadge(task) {
-                                time + Text(" · ").foregroundStyle(overTarget)
+                                time + Text(" · ").foregroundStyle(.secondary)
                                     + Text(badge)
-                                    .fontWeight(TargetAge.tone(attempts: task.attempts) == .strong ? .heavy : .semibold)
-                                    .foregroundStyle(overTarget)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.secondary)
                             } else {
                                 time
                             }
@@ -205,6 +217,7 @@ struct MenuBarPanel: View {
                 .help("Defer one hour")
             }
         }
+        .modifier(LeanRowTint(color: LeanRowStyle.tint(state, colorScheme), horizontal: 6, vertical: 3))
         .opacity(busy ? 0.4 : 1)
         .disabled(busy || model.isSweeping)
     }

@@ -1004,14 +1004,15 @@ private enum DayCompletePreviewData {
     DayCompletePreviewData.nothingDue
 }
 
-// MARK: - Row corner (2026-10-16, synthetic sample data)
+// MARK: - Lean row (2026-10-28; the row corner's corpus of 2026-10-16, synthetic)
 //
-// Every corner state on page one (`RowCornerStrip`, the web row corner): "!!"
-// Urgent and "!" High; Medium and Low with NO mark (no tab, neutral checkbox);
-// the horizon dot on deadline tasks still on their automatic target — Days,
-// Weeks, Months, Eventually and the dashed unset — alone and beside a tab;
-// and a High task 3× over target, so the corner and the attempts fold
-// ("Mon · 3×") show together. Invented titles.
+// The web lean row's rules on page one, at the preview clock (8:45 AM):
+// "!!" Urgent and "!" High after the title; Medium and Low with NO mark; the
+// target's time blue everywhere; a High task 3× over target ("Mon · 3×",
+// grey) on the over-target blue tint with a slate title; a passed deadline's
+// red tint and flag; every task later today on the faint "soon" tint. The
+// automatic-target rows have deadlines, so their squares stay plain (the
+// horizon governs no row the widget can list). Invented titles.
 
 private enum CornerPreviewData {
     static var now: Date { TasksPreviewData.now }
@@ -1037,6 +1038,11 @@ private enum CornerPreviewData {
                 id: 24_201, projectId: 6, title: "Send the signed contract back", priority: 3,
                 dueAt: at(days: -3, 8), attempts: 3, attemptsLabel: "3×"
             ),
+            TaskDTO(
+                id: 24_211, projectId: 6, title: "Return the library books", priority: 2,
+                dueAt: at(days: -1, 9), deadlineAt: at(days: -1, 17)
+            ),
+            TaskDTO(id: 24_212, projectId: 4434, title: "Water the garden", priority: 0, dueAt: at(8)),
             TaskDTO(id: 24_202, projectId: 6, title: "Renew the domain before it lapses", priority: 4, dueAt: at(9)),
             TaskDTO(id: 24_203, projectId: 4434, title: "Reply to the plumber's quote", priority: 3, dueAt: at(10)),
             TaskDTO(id: 24_204, projectId: 4434, title: "Order new printer ink", priority: 2, dueAt: at(10, 30)),
@@ -1068,32 +1074,55 @@ private enum CornerPreviewData {
     }
 }
 
-#Preview("Tasks Large — Row corner", as: .systemLarge) {
+#Preview("Tasks Large — Lean row", as: .systemLarge) {
     TasksWidget()
 } timeline: {
     let _ = resetTasksPreviewState(page: 0)
     CornerPreviewData.entry()
 }
 
-#Preview("Tasks Large — Row corner page 2", as: .systemLarge) {
+#Preview("Tasks Large — Lean row page 2", as: .systemLarge) {
     TasksWidget()
 } timeline: {
     let _ = resetTasksPreviewState(page: 1)
     CornerPreviewData.entry()
 }
 
-#Preview("Tasks Medium — Row corner", as: .systemMedium) {
+#Preview("Tasks Medium — Lean row", as: .systemMedium) {
     TasksWidget()
 } timeline: {
     let _ = resetTasksPreviewState(page: 0)
     CornerPreviewData.entry()
 }
 
-#Preview("Tasks Small — Row corner", as: .systemSmall) {
+#Preview("Tasks Small — Lean row", as: .systemSmall) {
     TasksWidget()
 } timeline: {
     let _ = resetTasksPreviewState(page: 0)
     CornerPreviewData.entry()
 }
 
+#endif
+
+#if DEBUG
+// The horizon square's four looks (`HorizonSquare`, `LeanRow.sidePattern`),
+// drawn alone at 4x: no row the Tasks widget lists is governed by its
+// horizon (they are all dated), so this is the only place they show.
+#Preview("Horizon squares") {
+    HStack(spacing: 24) {
+        ForEach([TaskHorizon.days, .weeks, .months, .eventually], id: \.self) { horizon in
+            VStack(spacing: 8) {
+                HorizonSquare(
+                    look: LeanRow.squareLook(horizon),
+                    color: WidgetTheme.priorityColor(0),
+                    patternColor: Color.secondary.opacity(0.75)
+                )
+                .scaleEffect(4)
+                .frame(width: 64, height: 64)
+                Text(horizon.label).font(.caption)
+            }
+        }
+    }
+    .padding()
+}
 #endif

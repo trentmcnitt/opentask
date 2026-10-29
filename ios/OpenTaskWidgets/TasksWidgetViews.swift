@@ -490,9 +490,10 @@ private struct TasksListView: View {
     ///
     /// An open task's title column is the card minus the trailing control
     /// (mode-dependent — see `TaskRow.trailingControlWidth`) and its 10pt
-    /// gap, minus the due label's own width + 8pt, minus the corner strip
-    /// (horizon dot, priority tab — `RowCornerStrip.width(for:)`, exactly
-    /// what it draws) + 8pt where it shows. The due label is `fixedSize` in
+    /// gap, minus the due label's own width + 8pt. The High/Urgent mark is
+    /// INSIDE the title (2026-10-28, the lean row), measured with it
+    /// (`titleLines(priority:)`); the corner strip that took its own column
+    /// is gone. The due label is `fixedSize` in
     /// the row, so it really does take exactly that width — on Trent's phone it used
     /// to WRAP on its own ("Tomorrow / 4:00 pm"), handing its width back to
     /// a title whose line count had been measured without it, and the row
@@ -514,9 +515,7 @@ private struct TasksListView: View {
             // shorter, which is exactly what made neighbouring rows
             // disagree.
             let stackedDueHeight = ceil(2 * metrics.caption2LineHeight)
-            var column = width - TaskRow.trailingControlWidth(for: mode) - 10
-            let corner = RowCornerStrip.width(for: task)
-            if corner > 0 { column -= corner + 8 }
+            let column = width - TaskRow.trailingControlWidth(for: mode) - 10
             // The attempts count (" · 3×", and the past-deadline flag) rides
             // on the due label's FIRST line (`AttemptsInTime`), so it widens
             // only that line — by exactly what it draws.
@@ -586,7 +585,8 @@ private struct TasksListView: View {
     ) -> (lines: Int, height: CGFloat, shrinks: Bool) {
         let weight = WidgetTheme.priorityWeight(task.priority)
         let fit = metrics.titleLines(
-            task.title, width: column, weight: weight, maxHeight: budget, hasNotes: task.hasNotes
+            task.title, width: column, weight: weight, maxHeight: budget, hasNotes: task.hasNotes,
+            priority: task.priority
         )
         // Longer than the whole card: a page of its own, title shrunk to fit.
         if fit.shrinks { return (fit.lines, budget, true) }
@@ -611,8 +611,6 @@ private struct TasksListView: View {
                 notesGlyphSize: metrics.notesGlyphSize(hasNotes: task.hasNotes),
                 dueStacked: layout.dueStacked,
                 markerBleed: mode.isNormal ? markerBleed : 0,
-                // High/Urgent only (2026-10-16): see `TaskRow.markColor`.
-                markColor: WidgetTheme.rowMarkColor(task.priority),
                 mode: modeForRow(task.id, base: mode, selected: picks)
             )
         case .divider(let count):
@@ -1015,14 +1013,16 @@ private struct UpNextList: View {
                 Link(destination: WidgetLink.task(task.id)) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Circle()
-                            // Orange/red for High/Urgent only (`RowCorner`).
-                            .fill(WidgetTheme.rowMarkColor(task.priority).opacity(0.7))
+                            // Neutral (2026-10-28): the "!"/"!!" after the
+                            // title says High/Urgent, as on every task row.
+                            .fill(WidgetTheme.priorityColor(0).opacity(0.7))
                             .frame(width: 6, height: 6)
                             .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 1 }
-                        Text(task.title)
+                        LeanRowStyle.titleWithMark(Text(task.title), priority: task.priority)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .accessibilityLabel(Text(LeanRowStyle.spokenTitle(task.title, priority: task.priority)))
                         Spacer(minLength: 4)
                         WidgetTheme.dueLabelText(for: task, now: entry.date, stacked: false, scheme: colorScheme)
                             .font(.caption2)
@@ -1066,11 +1066,16 @@ private enum TaskRowMode {
 /// trailing PROJECT-colored SQUARE — see `ReminderRow`'s doc for why moving
 /// the control to the trailing edge needs no overlap handling (plain `HStack`
 /// siblings). Priority reads through the title's font weight
-/// (`WidgetTheme.priorityWeight`) and, since 2026-10-16, the corner strip on
-/// the first line (`RowCornerStrip`: "!" High, "!!" Urgent, nothing for
-/// Medium/Low/None, plus the horizon dot where it applies — the web row
-/// corner). The square's outline is orange/red for High/Urgent, else neutral
-/// (`markColor`).
+/// (`WidgetTheme.priorityWeight`) and High "!" / Urgent "!!" right after the
+/// title (2026-10-28, the web's lean row — `LeanRowStyle.titleWithMark`;
+/// Medium, Low and None get no mark). The square is neutral; on a row the
+/// horizon governs its border draws the horizon (`HorizonSquare`).
+///
+/// THE ROW'S STATE (2026-10-28, `LeanRow.state`): a passed deadline tints
+/// the row red; over target blue, with a slate title; a target later today a
+/// faint blue. The tint is the selection fill's shape (bled outward, so the
+/// row's measured size never changes); a selected row shows its selection
+/// instead. No stripe.
 ///
 /// DUMB ABOUT ITS OWN SIZE (2026-09-24) — `lines`/`height` come from
 /// `TasksListView.layout(for:)`, the same numbers the pager added up; see
@@ -1103,22 +1108,18 @@ private struct TaskRow: View {
     /// mode's controls are already finger-sized on their own (a 32pt circle,
     /// a full pill), and select mode's whole row is the target.
     let markerBleed: CGFloat
-    /// The checkbox outline's color: orange High, red Urgent, neutral for
-    /// everything else (`WidgetTheme.rowMarkColor`, 2026-10-16 — Trent's rule
-    /// that Medium and Low get no priority mark). It was the PRIORITY color
-    /// for every priority from 2026-10-11 (yellow Medium included), and the
-    /// project color before that.
-    ///
-    /// THE EDGE STRIPE IS GONE (2026-10-16). `systemLarge`'s unified pages
-    /// drew a 3pt bar in this color left of the title (first the project's
-    /// color, Trent's option B of 2026-09-23; priority colors from 10-11).
-    /// The corner strip (`RowCornerStrip`: the web row corner's "!"/"!!"
-    /// tab and horizon dot) now carries priority on every family and page,
-    /// so a High/Urgent stripe beside it would say the same thing twice, and
-    /// a stripe for Medium/Low is exactly what the rule removes. The 11pt it
-    /// cost goes back to the title.
-    var markColor: Color = WidgetTheme.priorityColor(0)
+    /// The checkbox outline is NEUTRAL for every priority (2026-10-28, the
+    /// web's lean row: the "!"/"!!" after the title says High/Urgent). It was
+    /// orange/red for High/Urgent from 2026-10-16 (`WidgetTheme.rowMarkColor`,
+    /// which the Reminders widget's segment rows still use), every priority's
+    /// colour from 2026-10-11, and the project colour before that. The
+    /// `systemLarge` edge stripe went on 2026-10-16.
     var mode: TaskRowMode = .normal
+
+    /// The row's tint state (`LeanRow.state`), as of the entry's `now`.
+    private var state: LeanRow.State? {
+        LeanRow.state(task, isOverdue: task.isOverdue(now: now), now: now, day: DayStartStore.current)
+    }
 
     /// The trailing column's width per mode (2026-09-23, Phase 2, PR review
     /// fix): snooze mode's ⏭/+1h pair and select mode's smaller selection
@@ -1151,25 +1152,20 @@ private struct TaskRow: View {
         // when the title wraps. The due time sits at the END of this HStack —
         // "just left of the checkbox" (Trent, 2026-09-23).
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            WidgetTheme.titleText(Text(task.title), notesGlyphSize: notesGlyphSize)
+            // The title, then "!"/"!!" (High/Urgent) bound to its last word,
+            // then the notes glyph — one `Text`, measured as one by
+            // `titleLines(priority:hasNotes:)`. Slate while over target.
+            WidgetTheme.titleText(
+                LeanRowStyle.titleWithMark(Text(task.title), priority: task.priority),
+                notesGlyphSize: notesGlyphSize
+            )
                 .font(.subheadline)
                 .fontWeight(WidgetTheme.priorityWeight(task.priority))
-                .foregroundStyle(.primary)
+                .foregroundStyle(LeanRowStyle.title(state, colorScheme) ?? .primary)
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
-                .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(task.title, hasNotes: task.hasNotes)))
-
-            // The CORNER (2026-10-16, the web row's corner): horizon dot ·
-            // "!"/"!!" — High and Urgent only, the dot only where the horizon
-            // decides something (`RowCorner`). On the title's first line, just
-            // before the due label, so the due time still sits by the
-            // checkbox. `layout(for:)` subtracts exactly its width.
-            let corner = RowCornerStrip(task: task)
-            if !corner.isEmpty {
-                corner
-                    // Its middle on the first line's x-height, where the
-                    // title's lowercase letters sit.
-                    .alignmentGuide(.firstTextBaseline) { d in d.height / 2 + firstLineHeight * 0.22 }
-            }
+                .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(
+                    LeanRowStyle.spokenTitle(task.title, priority: task.priority), hasNotes: task.hasNotes
+                )))
 
             if task.dueDate != nil {
                 // Day-naming (2026-09-23): "8:30 PM" today, "Tomorrow
@@ -1224,9 +1220,15 @@ private struct TaskRow: View {
         switch mode {
         case .normal:
             Button(intent: CompleteTaskIntent(taskId: task.id, kind: TasksWidget.kind)) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(markColor, lineWidth: 1.5)
-                    .frame(width: 16, height: 16)
+                // Neutral; the horizon's border on a row it governs (the web's
+                // `DoneControl`). This list holds dated tasks only
+                // (`TaskLists.eligible`), and a governed row has no date, so
+                // in practice every square here is the plain one.
+                HorizonSquare(
+                    look: LeanRow.squareLook(for: task),
+                    color: WidgetTheme.priorityColor(0),
+                    patternColor: Color.secondary.opacity(0.75)
+                )
                     // THREE frames — see `ReminderRow`'s identical trick: the
                     // square is centred within one line's height, and only
                     // THEN pinned to the top of the full target, so it sits
@@ -1255,20 +1257,14 @@ private struct TaskRow: View {
             titleContent
             trailingControl
         }
-        // Selected-row background (select mode only) — bled OUTWARD via
-        // negative padding on the FILL SHAPE, not on the row's own content,
-        // so the row's layout size never changes between selected and
-        // unselected.
-        .background(
-            Group {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(WidgetTheme.indigoAccent.opacity(0.16))
-                        .padding(.horizontal, -6)
-                        .padding(.vertical, -4)
-                }
-            }
-        )
+        // Selected-row background (select mode only) — or else the row's
+        // state tint (`LeanRow.state`) — bled OUTWARD via negative padding on
+        // the FILL SHAPE, not on the row's own content, so the row's layout
+        // size never changes between selected and unselected, tinted and
+        // plain.
+        .modifier(LeanRowTint(
+            color: isSelected ? WidgetTheme.indigoAccent.opacity(0.16) : LeanRowStyle.tint(state, colorScheme)
+        ))
     }
 }
 
@@ -1278,12 +1274,13 @@ private struct TaskRow: View {
 /// deadline has passed. "3×" is the server's `attempts_label` — the local
 /// days the task has been over target (`TargetAge.attemptsBadge`; never
 /// counted on the device). No pill and no solid tab at any count: the
-/// count is plum (`WidgetTheme.overTarget`, the over-target time's colour,
-/// ≥4.5:1 on the card in both appearances), semibold, heavy from 7×
-/// (`TargetAge.tone`'s strong depth). The "·" is plum too, so the line reads
-/// as one over-target phrase. Label only: the web's "Remove target?" /
-/// "Back to auto?" offer at 3× is not drawn here. Segment rows (Reminders
-/// widget) end their words with the same plain plum "· 3×".
+/// count is NEUTRAL grey, semibold (2026-10-28, the web's lean row — its
+/// attempts badge after the target chip lost its plum, and so did its
+/// heavier 7× step; it was plum from 2026-10-12). The flag is the passed
+/// deadline's red (`LeanRowStyle.passed`, red-700 / red-400). Label only:
+/// the web's "Remove target?" offer at 3× is not drawn here. Segment rows
+/// (Reminders widget, not a lean row) still end their words with a plum
+/// "· 3×".
 ///
 /// It costs the row no height — the label's first line just gets wider —
 /// and `width(for:)` is EXACTLY what `text(for:)` draws (the "one function"
@@ -1296,14 +1293,9 @@ enum AttemptsInTime {
     private static let separator = " · "
     private static let flagGap = "\u{00A0}"
 
-    /// The count's weight: semibold, heavy from 7×.
-    private static func countWeight(_ attempts: Int) -> Font.Weight {
-        TargetAge.tone(attempts: attempts) == .strong ? .heavy : .semibold
-    }
-
-    private static func countFontWeight(_ attempts: Int) -> WidgetTheme.PlatformFont.Weight {
-        TargetAge.tone(attempts: attempts) == .strong ? .heavy : .semibold
-    }
+    /// The count's weight: semibold at every count.
+    private static let countWeight: Font.Weight = .semibold
+    private static let countFontWeight: WidgetTheme.PlatformFont.Weight = .semibold
 
     /// What follows the label's first line — nil when the row has neither a
     /// count nor a passed deadline.
@@ -1313,15 +1305,14 @@ enum AttemptsInTime {
         guard label != nil || past else { return nil }
         var run = Text("")
         if let label {
-            let plum = WidgetTheme.overTarget(scheme)
-            run = Text(separator).foregroundStyle(plum)
-                + Text(label).fontWeight(countWeight(task.attempts)).foregroundStyle(plum)
+            run = Text(separator).foregroundStyle(.secondary)
+                + Text(label).fontWeight(countWeight).foregroundStyle(.secondary)
         }
         if past {
             run = run + Text(flagGap)
                 + Text(Image(systemName: flagSymbol))
                 .font(.system(size: flagPointSize, weight: .semibold))
-                .foregroundStyle(.red)
+                .foregroundStyle(LeanRowStyle.passed(scheme))
         }
         return run
     }
@@ -1335,9 +1326,7 @@ enum AttemptsInTime {
         var width: CGFloat = 0
         if let label {
             let digits = WidgetTheme.PlatformFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
-            let count = WidgetTheme.PlatformFont.monospacedDigitSystemFont(
-                ofSize: size, weight: countFontWeight(task.attempts)
-            )
+            let count = WidgetTheme.PlatformFont.monospacedDigitSystemFont(ofSize: size, weight: countFontWeight)
             width += WidgetTheme.measuredWidth(for: separator, font: digits)
                 + WidgetTheme.measuredWidth(for: label, font: count)
         }
