@@ -385,6 +385,23 @@ test.describe('Lean row · the horizon done square', () => {
         })
       expect(afterDot.created).toBe(true)
       expect(afterDot.text).not.toContain('·')
+      // With no chips, the dot leads the line (2026-10-29).
+      expect(
+        await row(page, made.weeks)
+          .locator('[data-lean-meta]')
+          .evaluate((m) => m.firstElementChild?.hasAttribute('data-horizon-dot')),
+      ).toBe(true)
+      // After a chip, right after it, with no "·" (a targeted one-off).
+      expect(
+        await row(page, made.dated)
+          .locator('[data-lean-meta]')
+          .evaluate((m) => {
+            const chip = m.querySelector('[data-time-chip]')!
+            let box: Element | null = chip
+            while (box && box.parentElement !== m) box = box.parentElement
+            return box?.nextElementSibling?.hasAttribute('data-horizon-dot')
+          }),
+      ).toBe(true)
       // Its own menu.
       await dot(made.weeks).click()
       await expect(page.getByRole('menuitemradio', { name: /^Months/ })).toBeVisible()
