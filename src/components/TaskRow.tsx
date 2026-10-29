@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useSimpleLongPress } from '@/hooks/useLongPress'
+import { useDeferPress } from '@/hooks/useDeferPress'
 import { useRowPress } from '@/hooks/useRowPress'
 import { useRowHighlight } from '@/hooks/useRowHighlight'
 import Link from 'next/link'
@@ -53,12 +52,9 @@ import {
   usePriorityDisplay,
   useTaskQueue,
   useDayStart,
-  useDayStartKnown,
-  useSnoozePreferences,
 } from '@/components/PreferencesProvider'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { LabelBadges } from '@/components/LabelBadges'
-import { computeSnoozeTime, snoozeOptionNeedsDay } from '@/lib/snooze'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
@@ -276,48 +272,16 @@ export function TaskRow({
   // The user's day boundary ("Day starts at" PR 2): "Today" / "Tomorrow" on
   // the row, and the defaults' "tomorrow", are OpenTask days.
   const dayStart = useDayStart()
-  const dayKnown = useDayStartKnown()
   const { labelConfig } = useLabelConfig()
   const { priorityDisplay } = usePriorityDisplay()
   const queue = useTaskQueue()
-  const { defaultSnoozeOption, morningTime } = useSnoozePreferences()
-  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
-
-  // The row's snooze button: a tap snoozes an overdue task by the default
-  // option; a tap on a task not yet due opens the menu instead (an instant
-  // snooze would pull a future due date back to now + offset); a hold (400ms)
-  // opens the menu. `useSimpleLongPress` — the snooze-all trigger's hook —
-  // counts only the primary button, so a right-click no longer snoozes (it
-  // did, from its own hand-rolled copy of this timer). Its `onClick` is the
-  // keyboard path (Enter/Space) and swallows the click a pointer press
-  // already handled.
-  //
-  // Every handler stops propagation: the press must not reach the row, whose
-  // own pointer handlers select, open and long-press the task.
-  const openSnoozeMenu = useCallback(() => setSnoozeMenuOpen(true), [])
-  const snoozeNow = useCallback(() => {
-    // Not due yet — or a day-dependent default ("tomorrow") before the
-    // browser knows the user's day start: the menu, not a guess.
-    if (!isOverdue || (!dayKnown && snoozeOptionNeedsDay(defaultSnoozeOption))) {
-      setSnoozeMenuOpen(true)
-      return
-    }
-    onSnooze(
-      task.id,
-      computeSnoozeTime(defaultSnoozeOption, timezone, morningTime, dayStart, timeSlots),
-    )
-  }, [
-    task.id,
-    defaultSnoozeOption,
-    timezone,
-    morningTime,
-    dayStart,
-    dayKnown,
-    timeSlots,
-    onSnooze,
-    isOverdue,
-  ])
-  const snoozePress = useSimpleLongPress({ onLongPress: openSnoozeMenu, onShortPress: snoozeNow })
+  // The snooze button's press: tap defers (overdue) or opens the menu (not
+  // due yet), hold opens the menu (`useDeferPress`, shared with the lean row).
+  const {
+    menuOpen: snoozeMenuOpen,
+    setMenuOpen: setSnoozeMenuOpen,
+    press: snoozePress,
+  } = useDeferPress({ taskId: task.id, isOverdue, onSnooze, timeSlots })
 
   // The widget's `?task=<id>&highlight=1` landing: kept centred while it
   // flashes (`useRowHighlight`, shared with the lean row).

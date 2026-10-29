@@ -1,7 +1,7 @@
 'use client'
 
 import { SunSolid } from '@/components/icons/SunSolid'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
@@ -125,6 +125,7 @@ export function TargetTodayButton({
   boxClassName,
   showLabel = false,
   replaces = null,
+  face,
 }: {
   task: Task
   timezone: string
@@ -148,6 +149,8 @@ export function TargetTodayButton({
   boxClassName?: string
   /** Show the word "Today" from `sm` up (segment rows); icon-only otherwise. */
   showLabel?: boolean
+  /** The button's face instead of the sun (the lean row's clock, 2026-10-28). */
+  face?: ReactNode
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   // What a replacing target waits on the confirm with: today (no `at`) or a time.
@@ -228,10 +231,10 @@ export function TargetTodayButton({
                   boxClassName,
                 )}
               >
-                <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
+                {face ?? <TodayFace iconClassName={iconClassName} showLabel={showLabel} />}
               </span>
             ) : (
-              <TodayFace iconClassName={iconClassName} showLabel={showLabel} />
+              (face ?? <TodayFace iconClassName={iconClassName} showLabel={showLabel} />)
             )}
           </button>
         </TargetMenu>

@@ -952,11 +952,14 @@ export function DeckTomorrowButton({
   onDeck,
   timezone,
   panel,
+  className,
 }: {
   task: Task
   onDeck: (task: Task, day: string | null) => unknown
   timezone: string
   panel: boolean
+  /** The button's hit box instead of the segment rows' (`SLOT_HIT`): the lean row's slots. */
+  className?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const dayStart = useDayStart()
@@ -1020,7 +1023,7 @@ export function DeckTomorrowButton({
         'group/deck-tomorrow relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
         lit ? DECK_LIT : 'text-muted-foreground hover:text-foreground',
         replaces && 'opacity-45 hover:opacity-100',
-        SLOT_HIT,
+        className ?? SLOT_HIT,
       )}
     >
       <span

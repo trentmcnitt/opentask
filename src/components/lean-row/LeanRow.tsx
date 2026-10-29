@@ -9,7 +9,7 @@
  * (`useRowHighlight`) — so the two row styles cannot drift. Swipe is
  * `TaskList`'s `SwipeableRow`, on its flat surface. What changes is the look:
  *
- *   [□]  Title !                                (deck) (deck tomorrow) (☀ Today)
+ *   [□]  Title !                                   (deck) (deck tomorrow) (clock)
  *        ⚑ Fri 5:00 PM  Mon 9:00 AM 2×  today 9:14 AM · Low · 📁 Project  labels  📝
  *        ↻ Weekly on Sunday
  *
@@ -28,75 +28,77 @@
  *   grey with no dot before it. The dot comes after: Low, the grey project.
  *   Then labels (the AI glyph rule, `LabelBadges`) and the yellow notes mark.
  * - Recurrence on its own line.
- * - The buttons: On deck, On deck tomorrow, Today, 14px apart; no snooze
- *   clock (swipe left and the chip's menu move the target). On a phone they
- *   float right and the title wraps under them; from `md` up the title is a
- *   block formatting context (`md:flow-root`), so it keeps a clear column.
- * - The ROW STATE (sheet v13-2, `STATE_LOOK`): over target, a blue tint and a
- *   dark slate-blue title; a passed deadline, the red counterpart, which wins
- *   when both apply. No bar. No plum anywhere in the row (no stripe, no plum
- *   chip, no "N×").
+ * - The buttons (`LeanButtons`): On deck, On deck tomorrow and one clock —
+ *   Today on an untargeted row, Defer on a targeted one. Hidden at rest with
+ *   a mouse (shown on hover or focus; a decked row keeps its lit deck icon),
+ *   always there and thumb-sized on a phone. They float right; from `md` up
+ *   the title is a block formatting context (`md:flow-root`), so it keeps a
+ *   clear column.
+ * - The ROW STATE (`STATE_LOOK`, `leanRowState`): later today a faint blue;
+ *   over target a blue tint and a dark slate-blue title; a passed deadline
+ *   the red counterpart, which wins. No bar. No plum anywhere in the row (no
+ *   stripe, no plum chip, no "N×").
  *
  * The attempts badge ("2×") follows the target chip in neutral grey; the
  * card's 3× "Remove target?" offer is not drawn (Remove target stays in the
- * chip's menu). Dropped from the card on purpose: the corner tabs, the
- * snooze button, the right priority border. The shelved AI
+ * chip's menu and the clock's). Dropped from the card on purpose: the corner
+ * tabs, the right priority border. The shelved AI
  * features' props (insights, What's Next annotations) are not drawn.
  */
 import { useMemo } from 'react'
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
 import { DeadlineChip } from '@/components/DeadlineChip'
 import { LabelBadges } from '@/components/LabelBadges'
-import { OnDeckButton } from '@/components/OnDeckButton'
 import { useDayStart, useLabelConfig, useTaskQueue } from '@/components/PreferencesProvider'
 import { PriorityTabMark } from '@/components/RowCorner'
-import { TargetTodayButton } from '@/components/TargetMenu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import type { TaskRowProps } from '@/components/TaskRow'
-import { DeckTomorrowButton } from '@/components/TaskSegmentRow'
 import { useRowHighlight } from '@/hooks/useRowHighlight'
 import { useRowPress } from '@/hooks/useRowPress'
 import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { createdDateWords } from '@/lib/created-date'
-import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { leanChipWords } from '@/lib/lean-chip-words'
+import { leanRowState, type LeanRowState } from '@/lib/lean-row-state'
 import { formatRRuleCompact } from '@/lib/format-rrule'
-import { offersTargetToday, priorityTab } from '@/lib/row-corner'
-import { effectiveAttempts, isPastDeadline } from '@/lib/task-segments'
+import { priorityTab } from '@/lib/row-corner'
+import { effectiveAttempts } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import { DoneControl } from './DoneControl'
+import { LeanButtons } from './LeanButtons'
 
 /**
- * The row's STATE LOOK (sheet v13-2, Trent 2026-10-28): a full-bleed tint
- * under the row's content and a tinted title, no bar.
- * - Over target: the target's blue (~8%) and a dark slate-blue title —
- *   present, not alarming: missing a target is not a mistake.
- * - A passed deadline: the red counterpart (~7% of a warm red, rgb 200 20 10:
- *   the sheet's crimson read pink on white, its blue above its green) and
- *   a dark red-tinted title. It WINS over the blue: a real miss outranks a
- *   target whose time has come. The red flag chip says which date it is.
+ * The row's STATE LOOK (Trent 2026-10-28, today-mode round 6): a full-bleed
+ * tint under the row's content, no bar (`leanRowState` picks it).
+ * - Later today (a target or deadline, not yet over): a faint blue, 2.5%
+ *   (dark ×1.25); the title unchanged.
+ * - Over target: the target's blue, 10% (dark ×1.25), and a dark
+ *   slate-blue title — present, not alarming: missing a target is not a
+ *   mistake.
+ * - A passed deadline: the red counterpart (a warm red, rgb 200 20 10 — the
+ *   sheet's crimson read pink on white — at ×1.4 of its first strength:
+ *   light 9.8%, dark 14%); the title unchanged. It WINS over the blue: a
+ *   real miss outranks a target whose time has come. The red flag chip says
+ *   which date it is.
  */
-type RowState = 'over' | 'passed'
 const TINT_BASE =
   "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:inset-y-0 before:-z-10 before:content-['']"
-const STATE_LOOK: Record<RowState, { row: string; title: string }> = {
+const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
+  soon: {
+    row: `${TINT_BASE} before:bg-[rgba(21,93,252,0.025)] dark:before:bg-[rgba(81,162,255,0.03125)]`,
+  },
   over: {
-    row: `${TINT_BASE} before:bg-blue-600/[0.08] dark:before:bg-blue-400/[0.10]`,
+    row: `${TINT_BASE} before:bg-[rgba(21,93,252,0.10)] dark:before:bg-[rgba(81,162,255,0.125)]`,
     title: 'text-[#26334d] dark:text-[#d3dcec]',
   },
   passed: {
-    row: `${TINT_BASE} before:bg-[rgba(200,20,10,0.07)] dark:before:bg-[rgba(255,100,103,0.10)]`,
-    title: 'text-[#4d2629] dark:text-[#ecd3d4]',
+    row: `${TINT_BASE} before:bg-[rgba(200,20,10,0.098)] dark:before:bg-[rgba(255,100,103,0.14)]`,
   },
 }
 
-/** Which state look a row wears: a passed deadline first, then over target. */
-function rowState(task: Task, isOverdue: boolean): RowState | null {
-  if (isPastDeadline(task.deadline_at, new Date())) return 'passed'
-  return isOverdue ? 'over' : null
-}
+/** One stable empty list, so a row without periods keeps its defer callback's identity. */
+const NO_SLOTS: NonNullable<TaskRowProps['timeSlots']> = []
 
 export function LeanRow({
   task,
@@ -123,6 +125,7 @@ export function LeanRow({
   justAddedBadge,
   highlighted,
   onHighlightDone,
+  timeSlots = NO_SLOTS,
 }: TaskRowProps) {
   const { pointer, handleClick } = useRowPress({
     isSelectionMode,
@@ -135,7 +138,18 @@ export function LeanRow({
   })
   const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
   const isAiProcessing = task.labels.includes('ai-to-process')
-  const state = rowState(task, isOverdue)
+  const timezone = useTimezone()
+  const dayStart = useDayStart()
+  // "Later today" moves with the clock: re-read at each top of the hour (a
+  // target's own time passing is `isOverdue`, a deadline's is read now).
+  const hour = useHourTick(timezone)
+  const state = leanRowState(
+    task,
+    isOverdue,
+    timezone,
+    dayStart,
+    hour ? new Date(hour) : new Date(),
+  )
 
   return (
     <div
@@ -161,7 +175,7 @@ export function LeanRow({
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
       className={cn(
-        'border-border/60 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
+        'group/lean border-border/60 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
         isSelectionMode && 'cursor-pointer',
         isSelected && 'bg-accent ring-ring rounded-lg ring-2',
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
@@ -181,7 +195,17 @@ export function LeanRow({
         {/* DOM first: the buttons float right inside the body, so on a phone
             the title wraps under them (Trent's preference); from md up the
             title (`md:flow-root`) and the meta line keep a clear column. */}
-        {!isSelectionMode && <LeanButtons task={task} onDeck={onDeck} onTargetAt={onTargetAt} />}
+        {!isSelectionMode && (
+          <LeanButtons
+            task={task}
+            isOverdue={isOverdue}
+            onDeck={onDeck}
+            onTargetAt={onTargetAt}
+            onSnooze={onSnooze}
+            onRemoveTarget={onRemoveTarget}
+            timeSlots={timeSlots}
+          />
+        )}
         <LeanTitle
           task={task}
           titleClass={state ? STATE_LOOK[state].title : undefined}
@@ -380,51 +404,5 @@ function MetaTail({ task, projectName }: { task: Task; projectName?: string }) {
         </span>
       ))}
     </>
-  )
-}
-
-/** On deck, On deck tomorrow and Today, 14px apart; no snooze clock. */
-function LeanButtons({
-  task,
-  onDeck,
-  onTargetAt,
-}: {
-  task: Task
-  onDeck?: TaskRowProps['onDeck']
-  onTargetAt?: TaskRowProps['onTargetAt']
-}) {
-  const timezone = useTimezone()
-  const dayStart = useDayStart()
-  const queue = useTaskQueue()
-  const showDeck = !!onDeck && queue.loaded && queue.enabled && offersDeck(task)
-  const showToday = !!onTargetAt && offersTargetToday(task)
-  if (!showDeck && !showToday) return null
-  const deck = (t: Task, day: string | null | undefined) => onDeck?.(t, day)
-  return (
-    <div data-lean-buttons className="float-right ml-2 flex items-center gap-3.5">
-      {showDeck && (
-        <>
-          <OnDeckButton
-            task={task}
-            timezone={timezone}
-            onDeck={deck}
-            replaces={deckReplaces(task, timezone)}
-            className="flex size-8 pointer-coarse:size-10"
-            iconClassName="size-[18px]"
-          />
-          <DeckTomorrowButton task={task} onDeck={deck} timezone={timezone} panel={false} />
-        </>
-      )}
-      {showToday && (
-        <TargetTodayButton
-          task={task}
-          timezone={timezone}
-          onTargetToday={(t) => onTargetAt?.(t)}
-          onTargetAt={(t, at) => onTargetAt?.(t, at)}
-          replaces={todayReplaces(task, timezone, dayStart)}
-          iconClassName="size-[18px]"
-        />
-      )}
-    </div>
   )
 }

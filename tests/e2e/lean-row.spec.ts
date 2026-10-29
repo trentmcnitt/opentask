@@ -5,11 +5,15 @@
  * file sets the device setting itself before each page load — every other
  * spec keeps seeing the card rows.
  *
- * Covers: the row's look (over target: the blue tint and the slate title in
- * both themes; a passed deadline: the red tint and title, winning over the
- * blue; no bar; the target chip still the blue target chip; the red flag; the created date; no "ago"), its buttons (done,
- * On deck, Today, each with Undo), details on double-click, a swipe to done,
- * and the setting itself. The task-queue switch is on for the file (On deck
+ * Covers: the row's look (later today: a faint blue; over target: the blue
+ * tint and the slate title; a passed deadline: the red tint, the title
+ * unchanged, winning over the blue — in both themes; no bar; the target chip
+ * still the blue target chip; the red flag; the created date; no "ago"), its
+ * buttons (done, On deck, the clock, each with Undo; the clock's defer and
+ * menu on a targeted row; hidden at rest with a mouse and shown on hover or
+ * focus, a decked row's lit icon parked right; always shown and thumb-sized
+ * on a touch screen; still with reduced motion), details on double-click, a
+ * swipe to done, and the setting itself. The task-queue switch is on for the file (On deck
  * needs it) and off after it.
  */
 import { DateTime } from 'luxon'
@@ -79,6 +83,43 @@ async function gotoDashboard(page: Page) {
 
 const row = (page: Page, id: number): Locator => page.locator(`[data-lean-row="${id}"]`)
 
+/** A tint's colour and alpha, to the alpha's second decimal place. */
+function expectTint(bg: string, [r, g, b, a]: [number, number, number, number]) {
+  const m = bg.match(/^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/)
+  expect(m, bg).not.toBeNull()
+  expect(m!.slice(1, 4).map(Number)).toEqual([r, g, b])
+  expect(Number(m![4])).toBeCloseTo(a, 2)
+}
+
+/**
+ * A moment later today whatever the hour: 40 minutes out, but before the
+ * OpenTask day ends (the next day start, the server's own rule).
+ */
+async function laterToday(page: Page): Promise<Date> {
+  const tz = process.env.E2E_TZ || 'America/Chicago'
+  const { rollover_time } = (await (await page.request.get('/api/user/preferences')).json())
+    .data as { rollover_time: string }
+  const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${rollover_time}`, { zone: tz })
+  return new Date(Math.min(Date.now() + 40 * 60 * 1000, dayEnd.toMillis() - 2 * 60 * 1000))
+}
+
+const deferMenu = (page: Page) => page.getByRole('menu', { name: 'Defer options' })
+
+/**
+ * Escape, re-sent until the menu goes: it registers its keydown listener a
+ * tick after opening (snooze.spec.ts), so a first Escape can arrive early.
+ */
+async function dismissMenu(page: Page) {
+  await expect(async () => {
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    await expect(deferMenu(page)).not.toBeVisible({ timeout: 500 })
+  }).toPass({ timeout: 5000 })
+}
+
+const opacity = (l: Locator) => l.evaluate((el) => Number(getComputedStyle(el).opacity))
+
 async function undoFromToast(page: Page, text: string | RegExp) {
   const toast = page.locator('[data-sonner-toast]', { hasText: text }).first()
   await expect(toast).toBeVisible()
@@ -91,11 +132,12 @@ test.describe('Lean row · look', () => {
     test.describe(scheme, () => {
       test.use({ viewport: { width: 1280, height: 800 }, colorScheme: scheme })
 
-      test('over target blue, a passed deadline red (red wins), no bar; the chip stays the blue target chip', async ({
+      test('later today faint blue, over target blue, a passed deadline red (red wins), no bar; the chip stays the blue target chip', async ({
         authenticatedPage: page,
       }) => {
         await page.addInitScript(LEAN)
         const now = Date.now()
+        const soonAt = await laterToday(page)
         const ids = [
           await create(page, {
             title: uniqueTitle('LR over'),
@@ -114,8 +156,10 @@ test.describe('Lean row · look', () => {
             due_at: new Date(now - 30 * HOUR).toISOString(),
             deadline_at: new Date(now - 2 * HOUR).toISOString(),
           }),
+          // A target later today, not yet over: the faint blue.
+          await create(page, { title: uniqueTitle('LR soon'), due_at: soonAt.toISOString() }),
         ]
-        const [over, passed, plain, both] = ids
+        const [over, passed, plain, both, soon] = ids
         try {
           await gotoDashboard(page)
           for (const id of ids) await expect(row(page, id)).toBeVisible()
@@ -134,19 +178,28 @@ test.describe('Lean row · look', () => {
               return { bg: s.backgroundColor, shadow: s.boxShadow }
             })
           const blue = await tint(o)
-          expect(blue.bg).not.toBe('rgba(0, 0, 0, 0)')
+          expectTint(blue.bg, scheme === 'light' ? [21, 93, 252, 0.1] : [81, 162, 255, 0.125])
           expect(blue.shadow).toBe('none')
+          const plainTitle = await row(page, plain)
+            .locator('[data-lean-title]')
+            .evaluate((el) => getComputedStyle(el).color)
 
-          // A passed deadline: the red counterpart, its own title colour, no bar.
+          // A passed deadline: the red counterpart (x1.4), the title unchanged, no bar.
           const p = row(page, passed)
           await expect(p).toHaveAttribute('data-row-state', 'passed')
-          await expect(p.locator('[data-lean-title]')).toHaveCSS(
-            'color',
-            scheme === 'light' ? 'rgb(77, 38, 41)' : 'rgb(236, 211, 212)',
-          )
+          await expect(p.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
           const red = await tint(p)
-          expect(red.bg).not.toBe(blue.bg)
+          expectTint(red.bg, scheme === 'light' ? [200, 20, 10, 0.098] : [255, 100, 103, 0.14])
           expect(red.shadow).toBe('none')
+
+          // Later today: the faint blue, the title unchanged.
+          const u = row(page, soon)
+          await expect(u).toHaveAttribute('data-row-state', 'soon')
+          await expect(u.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
+          expectTint(
+            (await tint(u)).bg,
+            scheme === 'light' ? [21, 93, 252, 0.025] : [81, 162, 255, 0.03125],
+          )
           // Both over target and past its deadline: red, not blue.
           await expect(row(page, both)).toHaveAttribute('data-over-target', '')
           await expect(row(page, both)).toHaveAttribute('data-row-state', 'passed')
@@ -306,16 +359,9 @@ test.describe('Lean row · the deadline countdown', () => {
     authenticatedPage: page,
   }) => {
     await page.addInitScript(LEAN)
-    // Later today whatever the hour: 40 minutes out, but before the OpenTask
-    // day ends (the next day start, the server's own rule).
-    const tz = process.env.E2E_TZ || 'America/Chicago'
-    const { rollover_time } = (await (await page.request.get('/api/user/preferences')).json())
-      .data as { rollover_time: string }
-    const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${rollover_time}`, { zone: tz })
-    const deadline = Math.min(Date.now() + 40 * 60 * 1000, dayEnd.toMillis() - 2 * 60 * 1000)
     const id = await create(page, {
       title: uniqueTitle('LR countdown'),
-      deadline_at: new Date(deadline).toISOString(),
+      deadline_at: (await laterToday(page)).toISOString(),
     })
     try {
       await gotoDashboard(page)
@@ -339,7 +385,7 @@ test.describe('Lean row · the deadline countdown', () => {
 test.describe('Lean row · actions', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('done, On deck and Today, each with Undo; double-click opens details', async ({
+  test('done, On deck and the clock (Today on an untargeted row), each with Undo; double-click opens details', async ({
     authenticatedPage: page,
   }) => {
     await page.addInitScript(LEAN)
@@ -359,7 +405,11 @@ test.describe('Lean row · actions', () => {
       await undoFromToast(page, /.+/)
       await expect.poll(async () => (await stateOf(page, id)).on_deck_day).toBeNull()
 
-      await r.locator('[data-target-today]').click()
+      // The clock, no word, no sun: on an untargeted row a tap targets today.
+      const clock = r.locator('[data-lean-buttons] [data-target-today]')
+      await expect(clock.locator('svg.lucide-clock-3')).toHaveCount(1)
+      await expect(clock).toHaveText('')
+      await clock.click()
       await expect.poll(async () => (await stateOf(page, id)).target_at).not.toBeNull()
       await undoFromToast(page, /Targeted/)
       await expect.poll(async () => (await stateOf(page, id)).target_at).toBeNull()
@@ -367,6 +417,172 @@ test.describe('Lean row · actions', () => {
       await r.locator('[data-lean-title]').dblclick()
       await expect(page.getByRole('dialog')).toBeVisible()
       await page.keyboard.press('Escape')
+    } finally {
+      await cleanUp(page, [id])
+    }
+  })
+})
+
+test.describe('Lean row · the clock on a targeted row', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('a due target: a tap defers it; a target not yet due: a tap opens the time menu', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const now = Date.now()
+    const due = await create(page, {
+      title: uniqueTitle('LR due'),
+      due_at: new Date(now - 2 * HOUR).toISOString(),
+    })
+    const later = await create(page, {
+      title: uniqueTitle('LR later'),
+      due_at: new Date(now + 26 * HOUR).toISOString(),
+    })
+    try {
+      await gotoDashboard(page)
+      // Already due: a tap defers by the default — the target moves ahead.
+      await row(page, due).locator('[data-lean-defer]').click()
+      await expect
+        .poll(async () => Date.parse((await stateOf(page, due)).target_at as string))
+        .toBeGreaterThan(now)
+      await undoFromToast(page, /.+/)
+      await expect
+        .poll(async () => Date.parse((await stateOf(page, due)).target_at as string))
+        .toBeLessThan(now)
+
+      // Not yet due: a tap opens the menu and moves nothing.
+      const before = (await stateOf(page, later)).target_at
+      await row(page, later).locator('[data-lean-defer]').click()
+      await expect(deferMenu(page)).toBeVisible()
+      await dismissMenu(page)
+      expect((await stateOf(page, later)).target_at).toBe(before)
+
+      // A hold opens it too.
+      await row(page, due).hover()
+      await holdUntil(row(page, due).locator('[data-lean-defer]'), () =>
+        expect(deferMenu(page)).toBeVisible(),
+      )
+      await dismissMenu(page)
+    } finally {
+      await cleanUp(page, [due, later])
+    }
+  })
+})
+
+test.describe('Lean row · buttons with a mouse', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('hidden at rest, shown on hover and on focus; a decked row keeps its lit icon, parked right, and slides it home on hover', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const plain = await create(page, { title: uniqueTitle('LR rest'), horizon: 'weeks' })
+    const decked = await create(page, { title: uniqueTitle('LR decked'), horizon: 'weeks' })
+    try {
+      const res = await page.request.patch(`/api/tasks/${decked}`, {
+        data: { on_deck_day: await openTaskDay(page) },
+      })
+      expect(res.ok(), await res.text()).toBeTruthy()
+      await gotoDashboard(page)
+      await page.mouse.move(0, 0)
+      const p = row(page, plain)
+      const clock = p.locator('[data-target-today]')
+      // At rest: nothing.
+      await expect.poll(() => opacity(clock)).toBe(0)
+      await expect.poll(() => opacity(p.locator('[data-on-deck]'))).toBe(0)
+      // Hover: all three.
+      await p.locator('[data-lean-title]').hover()
+      await expect.poll(() => opacity(clock)).toBe(1)
+      await expect.poll(() => opacity(p.locator('[data-deck-tomorrow]'))).toBe(1)
+      await expect.poll(() => opacity(p.locator('[data-on-deck]'))).toBe(1)
+      // Keyboard focus shows them too.
+      await page.mouse.move(0, 0)
+      await expect.poll(() => opacity(clock)).toBe(0)
+      await p.focus()
+      await expect.poll(() => opacity(clock)).toBe(1)
+      await p.evaluate((el) => (el as HTMLElement).blur())
+
+      // A decked row at rest: the lit icon alone, in the clock's slot.
+      const d = row(page, decked)
+      const deck = d.locator('[data-on-deck]')
+      const dClock = d.locator('[data-target-today]')
+      await expect(deck).toHaveAttribute('data-on-deck-active', '')
+      await expect.poll(() => opacity(deck)).toBe(1)
+      await expect.poll(() => opacity(dClock)).toBe(0)
+      const x = async (l: Locator) => (await l.boundingBox())!.x
+      await expect.poll(async () => Math.round((await x(deck)) - (await x(dClock)))).toBe(0)
+      // Hover: it slides home, left of deck-tomorrow and the clock.
+      await d.locator('[data-lean-title]').hover()
+      await expect.poll(() => opacity(dClock)).toBe(1)
+      await expect
+        .poll(async () =>
+          Math.round((await x(d.locator('[data-deck-tomorrow]'))) - (await x(deck))),
+        )
+        .toBe(34)
+      expect(await x(dClock)).toBeGreaterThan(await x(d.locator('[data-deck-tomorrow]')))
+    } finally {
+      await cleanUp(page, [plain, decked])
+    }
+  })
+})
+
+test.describe('Lean row · buttons with reduced motion', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('nothing slides or fades: no transitions', async ({ authenticatedPage: page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.addInitScript(LEAN)
+    const id = await create(page, { title: uniqueTitle('LR still'), horizon: 'weeks' })
+    try {
+      await gotoDashboard(page)
+      for (const sel of ['[data-on-deck]', '[data-deck-tomorrow]', '[data-target-today]']) {
+        await expect(row(page, id).locator(sel)).toHaveCSS('transition-property', 'none')
+      }
+    } finally {
+      await cleanUp(page, [id])
+    }
+  })
+})
+
+test.describe('Lean row · buttons on a touch screen', () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
+
+  test('deck, deck tomorrow and the clock always shown, 44px targets, clear of the title', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const id = await create(page, {
+      title: uniqueTitle('LR thumbs with a title long enough to wrap onto a second line'),
+      horizon: 'weeks',
+    })
+    try {
+      await gotoDashboard(page)
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
+      const r = row(page, id)
+      const buttons = ['[data-on-deck]', '[data-deck-tomorrow]', '[data-target-today]'].map((sel) =>
+        r.locator(sel),
+      )
+      for (const b of buttons) {
+        expect(await opacity(b)).toBe(1)
+        const box = (await b.boundingBox())!
+        expect(box.width).toBeGreaterThanOrEqual(44)
+        expect(box.height).toBeGreaterThanOrEqual(44)
+      }
+      // No line of the title runs under them.
+      const first = (await buttons[0].boundingBox())!
+      const lines = await r.locator('[data-lean-title]').evaluate((el) => {
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        return [...range.getClientRects()].map((q) => ({
+          right: q.right,
+          top: q.top,
+          bottom: q.bottom,
+        }))
+      })
+      const beside = lines.filter((l) => l.bottom > first.y && l.top < first.y + first.height)
+      expect(beside.length).toBeGreaterThan(0)
+      for (const line of beside) expect(line.right).toBeLessThanOrEqual(first.x + 0.5)
     } finally {
       await cleanUp(page, [id])
     }
