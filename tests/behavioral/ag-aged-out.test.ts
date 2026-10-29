@@ -24,7 +24,7 @@ import { createTask, updateTask } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { getTaskSegments, growTasks, keepTasks } from '@/core/tasks/task-segments'
 import { undoLatest } from '@/core/undo/execute-undo'
-import { growStep } from '@/lib/aged-out'
+import { agedClockRestart, growStep } from '@/lib/aged-out'
 import type { HorizonValue } from '@/lib/task-segments'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -61,6 +61,52 @@ describe('AG: growStep', () => {
     expect(growStep(null)).toBe('months')
     expect(growStep('months')).toBe('eventually')
     expect(growStep('eventually')).toBeNull()
+  })
+})
+
+describe('AG: what restarted the age clock (the row says why it is here)', () => {
+  const made = '2026-08-01T15:00:00.000Z'
+  type Clock = Parameters<typeof agedClockRestart>[0]
+  const base: Clock = {
+    created_at: made,
+    horizon: 'weeks',
+    horizon_set_at: made,
+    growth_kept_at: null,
+  }
+  const restart = (t: Partial<Clock>) => agedClockRestart({ ...base, ...t }, tz, '03:00')
+
+  test('AG-030: from creation (a horizon set the day it was made included) → nothing', () => {
+    expect(restart({})).toBeNull()
+    expect(restart({ horizon_set_at: '2026-08-01T20:00:00.000Z' })).toBeNull()
+    expect(restart({ horizon: null, horizon_set_at: null })).toBeNull()
+  })
+
+  test('AG-031: a horizon set later → "set", a later keep → "kept"', () => {
+    expect(restart({ horizon_set_at: '2026-09-03T15:00:00.000Z' })).toEqual({
+      kind: 'set',
+      at: '2026-09-03T15:00:00.000Z',
+    })
+    expect(
+      restart({
+        horizon_set_at: '2026-09-03T15:00:00.000Z',
+        growth_kept_at: '2026-09-20T15:00:00.000Z',
+      }),
+    ).toEqual({ kind: 'kept', at: '2026-09-20T15:00:00.000Z' })
+    // A horizon set after the keep wins (it restarted the clock again).
+    expect(
+      restart({
+        horizon_set_at: '2026-09-25T15:00:00.000Z',
+        growth_kept_at: '2026-09-20T15:00:00.000Z',
+      }),
+    ).toEqual({ kind: 'set', at: '2026-09-25T15:00:00.000Z' })
+    // Unset (no horizon of its own): only a keep can restart it.
+    expect(
+      restart({
+        horizon: null,
+        horizon_set_at: null,
+        growth_kept_at: '2026-09-12T15:00:00.000Z',
+      }),
+    ).toEqual({ kind: 'kept', at: '2026-09-12T15:00:00.000Z' })
   })
 })
 

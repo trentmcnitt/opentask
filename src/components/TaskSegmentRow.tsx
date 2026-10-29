@@ -57,7 +57,8 @@ import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { AGED_OUT_TITLE, growStep } from '@/lib/aged-out'
+import { AGED_OUT_TITLE, agedClockRestart, growStep } from '@/lib/aged-out'
+import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
@@ -1337,20 +1338,43 @@ function TaskSegmentMeta({
       {/* No badges on a queue row (designer, 10-19) — neither attempts nor
           age: the queue is read at a glance. A waiting repeating task keeps a
           target (its next occurrence) and its count, so it would read "226×". */}
-      {!isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />}
-      {segmentHorizon === 'aged_out' && <KeptCount task={task} />}
+      {segmentHorizon === 'aged_out' ? (
+        <AgedOutWords task={task} timezone={timezone} />
+      ) : (
+        !isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />
+      )}
       <SegmentLabels task={task} />
     </div>
   )
 }
 
-/** Aged out (2026-10-29): keeps in a row since the horizon last changed — "kept 2×". */
-function KeptCount({ task }: { task: Task }) {
-  if (task.growth_kept_count <= 0) return null
+/**
+ * AGED OUT's meta words (Trent, 2026-10-29: "this is the one screen where
+ * [the created date] really does matter"), in place of the badges — every
+ * row here is old, so no "old". The created date in the lean row's words
+ * (`createdDateWords`); what restarted the age clock after that, if anything
+ * ("Weeks since Sep 3", "kept Sep 3" — `agedClockRestart`), so the row says
+ * why it is here; and the keeps in a row since the horizon last changed
+ * ("kept 2×"). All grey.
+ */
+function AgedOutWords({ task, timezone }: { task: Task; timezone: string }) {
+  const dayStart = useDayStart()
+  const restart = agedClockRestart(task, timezone, dayStart)
+  const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
   return (
-    <span data-kept-count className="text-muted-foreground">
-      kept {task.growth_kept_count}×
-    </span>
+    <>
+      <span data-created title="Created">
+        {words(task.created_at)}
+      </span>
+      {restart && (
+        <span data-aged-restart>
+          {restart.kind === 'kept'
+            ? `kept ${words(restart.at)}`
+            : `${task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL} since ${words(restart.at)}`}
+        </span>
+      )}
+      {task.growth_kept_count > 0 && <span data-kept-count>kept {task.growth_kept_count}×</span>}
+    </>
   )
 }
 

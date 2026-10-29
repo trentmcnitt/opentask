@@ -556,6 +556,7 @@ Taking a one-off off deck stamps nothing and changes nothing else: it goes back 
 - **`growth_kept_count`:** +1 on every keep (Process's included), 0 on a grow or any change of the horizon (`collectTaskModelFields`); a same-value edit is not a change.
 - **Handled rows stay:** grow and keep both stamp `last_considered_at`, so the row stays today as a considered row and "N of M" holds. It has no put-back (put-back clears only the consider stamp, which would drop the row instead of undoing the keep); the toast's Undo reverses it. Both are one undo entry (`task_segment`).
 - **Defer all** works as on any segment (`segment_deferred_at`): back tomorrow.
+- **The row's meta** (Trent, 10-29: the one screen where the created date matters): no age badge (every row is old); the created date in the lean row's words (`createdDateWords`: "today 9:14 AM", "yesterday 4:30 PM", a weekday for 2–6 days ago, "Oct 21", "Mar 2025"); what restarted the age clock after creation, if anything (`agedClockRestart`: "Weeks since Sep 3" for a horizon set later, "kept Sep 3" for a later keep; nothing for a horizon set the day it was made); and "kept 2×". All grey.
 
 Tests: `tests/behavioral/ag-aged-out.test.ts`.
 

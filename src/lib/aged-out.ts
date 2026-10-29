@@ -90,3 +90,25 @@ export function agedOutState(
   if (!growthAsk(task, timezone, shownStart, dayStart)) return null
   return onToday(task.segment_deferred_at) ? 'deferred' : 'waiting'
 }
+
+/**
+ * What restarted the task's age clock after it was made, if anything — the
+ * Aged out row's "why it's here" (Trent, 2026-10-29: "Weeks since Sep 3",
+ * "kept Sep 3"). The clock is `growthAsk`'s: the latest of `horizon_set_at`
+ * (else `created_at`) and `growth_kept_at`. Null when it runs from creation
+ * (the row's created date says it all) — including a horizon set on the day
+ * the task was made. OpenTask days, so a set and a creation on one day agree.
+ */
+export function agedClockRestart(
+  task: Pick<AgedOutFields, 'created_at' | 'horizon' | 'horizon_set_at' | 'growth_kept_at'>,
+  timezone: string,
+  dayStart: string,
+): { kind: 'kept' | 'set'; at: string } | null {
+  const day = (iso: string) => openTaskDayOf(new Date(iso), timezone, dayStart)
+  const setAt = task.horizon && task.horizon_set_at ? task.horizon_set_at : null
+  const kept = task.growth_kept_at
+  if (kept && (!setAt || Date.parse(kept) > Date.parse(setAt))) {
+    return day(kept) > day(task.created_at) ? { kind: 'kept', at: kept } : null
+  }
+  return setAt && day(setAt) > day(task.created_at) ? { kind: 'set', at: setAt } : null
+}
