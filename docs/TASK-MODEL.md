@@ -544,6 +544,21 @@ Taking a one-off off deck stamps nothing and changes nothing else: it goes back 
 
 **Rollback.** `npx tsx scripts/clear-decks.ts <db> --user <id> [--apply]` (dry run by default; `src/core/tasks/clear-decks.ts`) takes every open task of the user off deck — no target to restore on a one-off, since a deck never carries a picked one; a repeating deck gets its target back on its occurrence — and takes every row the rollover queued FROM a deck (`queued_from_deck_day` set) out of the queue (`queued_at`, `try_tomorrow` cleared; the day kept as history), dry run and apply alike. Never on production without Trent.
 
+## Aged out
+
+**First pass, 2026-10-29 (Trent), dev only.** The tasks that have outlived their horizon are reviewed in the task queue rather than only in Process (whose growth asks stay, as a fallback). `src/lib/aged-out.ts` holds the rules; `getTaskSegments(…, { agedOut })` places the rows. Behind a build flag (`NEXT_PUBLIC_AGED_OUT=1`, the dev build) and a caller flag (`GET /api/reminders?aged=1`, which the web adds to `REMINDERS_URL` on that build only — the native apps' shared question is unchanged, and a native build would list an unknown kind as a page of its own). The segment's name, `AGED_OUT_TITLE`, is a working name.
+
+- **Members:** exactly the one-offs Process's `growthAsk` asks about — no picked target, not on deck, no deadline close enough to steer the horizon, past the horizon's threshold (days 10 days, weeks or unset a month, months a quarter), counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Eventually never grows, so an Eventually task is never here.
+- **Cadence:** weekly, on the check-in day (the Weeks segment's day): a task joins when it was already aged at the start of the latest check-in day, then carries over daily until handled, like every segment. A task that ages mid-week waits for the next check-in day in its horizon segment.
+- **Never two places:** on a day a task is in Aged out it is in no horizon segment. The queue's panels and the deadlines page still come first.
+- **Grow** (`POST /api/task-segments/grow`, `growTasks`): the horizon one step out — Days → Weeks → Months → Eventually; unset counts as Weeks, so it grows to Months. Through `bulkEdit`: `horizon_set_at` restarts, the keep count goes to 0.
+- **Keep** (the row's circle, `POST /api/task-segments/keep`, `keepTasks`): Process's keep (`affirm_horizon`) — `growth_kept_at` stamped, so the task returns one threshold period later — and `growth_kept_count` + 1. The row says "kept 2×".
+- **`growth_kept_count`:** +1 on every keep (Process's included), 0 on a grow or any change of the horizon (`collectTaskModelFields`); a same-value edit is not a change.
+- **Handled rows stay:** grow and keep both stamp `last_considered_at`, so the row stays today as a considered row and "N of M" holds. It has no put-back (put-back clears only the consider stamp, which would drop the row instead of undoing the keep); the toast's Undo reverses it. Both are one undo entry (`task_segment`).
+- **Defer all** works as on any segment (`segment_deferred_at`): back tomorrow.
+
+Tests: `tests/behavioral/ag-aged-out.test.ts`.
+
 ## The deadlines page
 
 **2026-10-22** (plan `plan-deadlines-page-1022.md`, APPROVED 10-22; PR A — the server model; the nag is PR B, the web UI PR C, enrichment PR D, native PR E). **With the task-queue switch on only** (`OPENTASK_TASK_QUEUE`, plan A1): the page, its nag and its migration all ride it. Off, the [automatic target](#deadline) is written as before.

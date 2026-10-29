@@ -67,6 +67,7 @@ import {
   coerceCheckInDay,
   segmentState,
   type CheckInDay,
+  type HorizonValue,
   type SegmentKind,
   type SegmentState,
   type UpcomingSection,
@@ -93,6 +94,7 @@ import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-
 import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
+import { agedOutState, growStep } from '@/lib/aged-out'
 
 export interface SegmentTask {
   task: Task
@@ -218,8 +220,16 @@ export function getTaskSegments(
     handledRows = false,
     deadlineRows = false,
     fill = false,
+    agedOut,
   }: {
     queuePanels?: boolean
+    /**
+     * AGED OUT (2026-10-29, first pass, `src/lib/aged-out.ts`): the caller
+     * draws the `aged_out` segment (`GET /api/reminders?aged=1`, the web on a
+     * build with `NEXT_PUBLIC_AGED_OUT=1`). Its tasks are then in no horizon
+     * segment that day. Without it nothing changes.
+     */
+    agedOut?: boolean
     /**
      * EVERY SEGMENT, EVERY DAY (Trent, 2026-10-24: "always show every queue
      * segment, every day, in fixed positions"; `GET /api/reminders?fill=1`,
@@ -296,6 +306,12 @@ export function getTaskSegments(
     }
     return placeDeadline(task)
   }
+  // Aged out before the horizons: never also in its horizon segment that day.
+  const placeAged = (task: Task): boolean => {
+    const aged = agedOut ? agedOutState(task, timezone, now, dayStart, checkInDay) : null
+    if (aged) add('aged_out', { task, state: aged })
+    return aged !== null
+  }
   for (const task of eligibleTasks(userId)) {
     if (placeFirst(task)) continue
     // ON DECK (B6): quiet like a picked target — in no horizon segment; a
@@ -309,6 +325,7 @@ export function getTaskSegments(
       addUpcoming(task)
       continue
     }
+    if (placeAged(task)) continue
     const placed = segmentState(task, timezone, now, dayStart, checkInDay)
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
@@ -360,6 +377,7 @@ export function getTaskSegments(
     if (!fill) return false
     if (kind === 'deadlines') return queueOn && deadlineRows
     if (isQueueKind(kind)) return queueOn && queuePanels
+    if (kind === 'aged_out') return agedOut === true
     return true
   }
   return SEGMENT_ORDER.filter(shown).map((kind) => {
@@ -786,4 +804,57 @@ export function targetTasksToday(
     includeTaskIds: ids,
   })
   return { until, affected: result.tasksAffected, skipped_recurring: [] }
+}
+
+// ===========================================================================
+// AGED OUT (2026-10-29, first pass) — `src/lib/aged-out.ts`
+// ===========================================================================
+
+/**
+ * GROW (Aged out's row action): each task's horizon one step out
+ * (`growStep`: Days → Weeks → Months → Eventually, unset → Months). Through
+ * `bulkEdit`, so the horizon's clock restarts (`horizon_set_at`), the keep
+ * count goes to 0, and one undo entry takes it all back; the row is also
+ * considered today (`last_considered_at`), so it stays in Aged out as a
+ * handled row. A task already at Eventually is left alone.
+ */
+export function growTasks(userId: number, timezone: string, ids: number[]): number {
+  const tasks = ownOpenTasks(userId, ids)
+  const perTask: Record<string, { horizon: HorizonValue }> = {}
+  for (const task of tasks) {
+    const next = growStep(task.horizon)
+    if (next) perTask[String(task.id)] = { horizon: next }
+  }
+  const growing = Object.keys(perTask).map(Number)
+  if (growing.length === 0) return 0
+  const result = bulkEdit({
+    userId,
+    userTimezone: timezone,
+    taskIds: growing,
+    changes: { last_considered_at: new Date().toISOString() },
+    perTask,
+    includeTaskIds: growing,
+    undo: { action: 'task_segment', description: (n) => `Grew the horizon of ${plural(n)}` },
+  })
+  return result.tasksAffected
+}
+
+/**
+ * KEEP (Aged out's consider): Process's `affirm_horizon` — `growth_kept_at`
+ * stamped, so the task comes back only one threshold period later, and
+ * `growth_kept_count` + 1 ("kept 2×") — and considered today, so it stays in
+ * Aged out as a handled row. One undo entry.
+ */
+export function keepTasks(userId: number, timezone: string, ids: number[]): number {
+  const tasks = ownOpenTasks(userId, ids)
+  if (tasks.length === 0) return 0
+  const result = bulkEdit({
+    userId,
+    userTimezone: timezone,
+    taskIds: tasks.map((t) => t.id),
+    changes: { affirm_horizon: true, last_considered_at: new Date().toISOString() },
+    includeTaskIds: tasks.map((t) => t.id),
+    undo: { action: 'task_segment', description: (n) => `Kept the horizon of ${plural(n)}` },
+  })
+  return result.tasksAffected
 }

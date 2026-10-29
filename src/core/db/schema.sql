@@ -297,6 +297,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Process's last "keep" of this horizon (ruling Q7): the growth ask returns
   -- only one threshold period after it. NULL = never kept.
   growth_kept_at TEXT DEFAULT NULL,
+  -- How many keeps in a row (2026-10-29, Aged out): +1 on each keep, 0 on a
+  -- grow or any change of the horizon. Shown as "kept 2×".
+  growth_kept_count INTEGER NOT NULL DEFAULT 0,
   -- THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
   -- queue_mark: a Snooze-all (a DEFER) that landed at or after the next
   -- rollover moved the target to that rollover moment and marked the task for

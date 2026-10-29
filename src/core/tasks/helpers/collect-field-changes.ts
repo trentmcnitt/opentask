@@ -1275,12 +1275,18 @@ function collectTaskModelFields(
       task.horizon_set_at,
       input.horizon ? now.toISOString() : null,
     )
+    // Any change of the horizon starts the keep count over (Aged out, 2026-10-29).
+    if (task.growth_kept_count !== 0) {
+      trackField(data, 'growth_kept_count', task.growth_kept_count, 0)
+    }
   } else if (input.affirm_horizon) {
     // Process "keep" (ruling Q7, 2026-10-12): the horizon stays as it is
     // (unset stays unset) and `growth_kept_at` is stamped, so Process asks
     // again only one threshold period after it (`growthAsk`). The horizon's
     // own clock is untouched. Undo restores the old stamp like any other field.
     trackField(data, 'growth_kept_at', task.growth_kept_at, now.toISOString())
+    // And the keep count goes up (Aged out's "kept 2×", 2026-10-29).
+    trackField(data, 'growth_kept_count', task.growth_kept_count, task.growth_kept_count + 1)
   }
 }
 

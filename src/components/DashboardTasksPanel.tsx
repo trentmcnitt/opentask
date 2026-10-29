@@ -280,6 +280,7 @@ function TasksDoneLine({
                 key={row.task.id}
                 row={row}
                 panel
+                segmentHorizon={s.horizon}
                 onPutBack={(task) => void actions.restore(task)}
               />
             )),
@@ -358,6 +359,7 @@ function TaskPageBody({
               key={row.task.id}
               row={row}
               panel
+              segmentHorizon={segment.horizon}
               onPutBack={(task) => void actions.restore(task)}
             />
           ))}

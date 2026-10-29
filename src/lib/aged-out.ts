@@ -1,0 +1,92 @@
+/**
+ * AGED OUT (Trent, 2026-10-29, first pass — "let's start building that task
+ * queue"): the tasks that have outlived their horizon are processed in the
+ * task queue, not in Process (Process keeps its growth asks as "a nice
+ * fallback but… rarely used"). docs/TASK-MODEL.md § Aged out.
+ *
+ * - MEMBERS: exactly the tasks Process's `growthAsk` asks about — a one-off
+ *   with no picked target of its own, past its horizon's threshold (days 10
+ *   days, weeks or unset a month, months a quarter), counted from the latest
+ *   of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Eventually
+ *   never grows, so it is never here.
+ * - CADENCE: weekly, on the check-in day (the Weeks segment's day): a task
+ *   joins when it was already aged at the start of the latest check-in day,
+ *   then carries over daily until handled — like every segment.
+ * - NEVER TWO PLACES: on a day it shows here, the task is in no horizon
+ *   segment (`getTaskSegments` places it first).
+ * - HANDLED: Grow (one horizon step, `growStep`) or Keep (Process's
+ *   `affirm_horizon`: `growth_kept_at`, so it returns one threshold later,
+ *   and `growth_kept_count` + 1). Both also stamp `last_considered_at`, so the
+ *   row stays today as considered and "N of M" holds.
+ *
+ * Behind a build flag (`AGED_OUT_ENABLED`, `NEXT_PUBLIC_AGED_OUT=1`: the dev
+ * build) and a caller flag (`?aged=1`, the web only — a native build would
+ * list an unknown segment kind as a page of its own). Pure: the clock, zone
+ * and day start come in.
+ */
+import { growthAsk, type ProcessTaskFields } from '@/lib/process-rules'
+import { openTaskDayOf, openTaskLocalDay, openTaskLocalDayStart } from '@/lib/opentask-day'
+import {
+  HORIZON_ORDER,
+  UNSET_HORIZON,
+  latestSegmentDay,
+  type CheckInDay,
+  type HorizonValue,
+  type SegmentState,
+} from '@/lib/task-segments'
+
+/** The segment's name on screen — a working name, in one place. */
+export const AGED_OUT_TITLE = 'Aged out'
+
+/** The build flag: on in the dev build only (`NEXT_PUBLIC_AGED_OUT=1`). */
+export const AGED_OUT_ENABLED = process.env.NEXT_PUBLIC_AGED_OUT === '1'
+
+/** The query the web adds to `REMINDERS_URL` when the segment is on. */
+export const AGED_OUT_QUERY = '&aged=1'
+
+/**
+ * Grow: one step out — Days → Weeks → Months → Eventually; unset counts as
+ * Weeks, so it grows to Months. Eventually has nowhere to go (null).
+ */
+export function growStep(horizon: string | null): HorizonValue | null {
+  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
+    ? (horizon as HorizonValue)
+    : UNSET_HORIZON
+  return HORIZON_ORDER[HORIZON_ORDER.indexOf(on) + 1] ?? null
+}
+
+/** The fields Aged out reads. */
+export interface AgedOutFields extends ProcessTaskFields {
+  last_considered_at: string | null
+  segment_deferred_at: string | null
+}
+
+/**
+ * Where a task stands in Aged out today, or null when it is not there:
+ * 'considered' when grown or kept today (it stays as a handled row),
+ * 'deferred' when deferred today, else 'waiting'.
+ */
+export function agedOutState(
+  task: AgedOutFields,
+  timezone: string,
+  now: Date,
+  dayStart: string,
+  checkInDay: CheckInDay,
+): SegmentState | null {
+  const today = openTaskDayOf(now, timezone, dayStart)
+  const onToday = (iso: string | null | undefined) =>
+    !!iso && openTaskDayOf(new Date(iso), timezone, dayStart) === today
+  // Handled today — kept, or grown — stays as a considered row.
+  if (
+    onToday(task.last_considered_at) &&
+    (onToday(task.growth_kept_at) || onToday(task.horizon_set_at))
+  ) {
+    return 'considered'
+  }
+  if (!growthAsk(task, timezone, now, dayStart)) return null
+  // Weekly: aged already when the latest check-in day began.
+  const shownDay = latestSegmentDay('weeks', openTaskLocalDay(now, timezone, dayStart), checkInDay)
+  const shownStart = openTaskLocalDayStart(shownDay, timezone, dayStart)
+  if (!growthAsk(task, timezone, shownStart, dayStart)) return null
+  return onToday(task.segment_deferred_at) ? 'deferred' : 'waiting'
+}

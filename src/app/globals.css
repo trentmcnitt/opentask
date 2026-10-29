@@ -57,6 +57,9 @@
      title `--deadlines` (below), and so is its finished state — see
      `segmentDoneColor`. */
   --segment-deadlines: var(--deadlines-fill);
+  /* Aged out (2026-10-29, provisional): a greyed teal — the horizons' family,
+     faded, for tasks that have outlived theirs. */
+  --segment-aged_out: #7f9e9a;
   /* Titles: one darker teal in light mode, so the small uppercase label
      stays readable on the near-white card (the lighter fills read at ~1.3–2.5:1).
      In dark mode each title is its fill. */
@@ -68,6 +71,7 @@
   --segment-title-queue_today: #0a6670;
   --segment-title-queue_previous: #0a6670;
   --segment-title-deadlines: var(--deadlines);
+  --segment-title-aged_out: #4d6b67;
   /* A lit deck button (`DECK_LIT`, 2026-10-28, Trent's "T2"): the queue's
      teal drained toward slate, quieter on the dashboard — its own token, so
      the "Today's pulls" title keeps its teal. 6.8:1 on the card. */
@@ -146,6 +150,7 @@
   --segment-queue_today: #36b8c6;
   --segment-queue_previous: #7fbcc4;
   --segment-deadlines: var(--deadlines-fill);
+  --segment-aged_out: #9dbbb7;
   --segment-title-days: var(--segment-days);
   --segment-title-weeks: var(--segment-weeks);
   --segment-title-months: var(--segment-months);
@@ -154,6 +159,7 @@
   --segment-title-queue_today: var(--segment-queue_today);
   --segment-title-queue_previous: var(--segment-queue_previous);
   --segment-title-deadlines: var(--deadlines);
+  --segment-title-aged_out: var(--segment-aged_out);
   --deck-lit: #85adb2;
   --badge-neutral: oklch(0.803 0 0);
   /* The same deep teal: white on it ≈5.4:1, its frame ≈3.4:1 on the dark card. */

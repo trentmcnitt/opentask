@@ -230,7 +230,13 @@ function SegmentConsideredDisclosure({
       {shown && (
         <ul className="space-y-0.5 px-1" aria-label={`Considered in ${segmentLabel(segment)}`}>
           {rows.map((row) => (
-            <ConsideredSegmentRow key={row.task.id} row={row} panel={false} onPutBack={onPutBack} />
+            <ConsideredSegmentRow
+              key={row.task.id}
+              row={row}
+              panel={false}
+              segmentHorizon={segment.horizon}
+              onPutBack={onPutBack}
+            />
           ))}
         </ul>
       )}

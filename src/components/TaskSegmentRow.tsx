@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, FolderOpen, Forward } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen, Forward, Sprout } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -57,6 +57,7 @@ import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { AGED_OUT_TITLE, growStep } from '@/lib/aged-out'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
@@ -154,6 +155,7 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
 export function segmentTitle(kind: SegmentKind): string {
   if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
   if (kind === 'deadlines') return taskQueueTitle(DEADLINES_PAGE_TITLE)
+  if (kind === 'aged_out') return taskQueueTitle(AGED_OUT_TITLE)
   return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
 }
 
@@ -317,8 +319,11 @@ export function TaskSegmentRow({
   // The deadlines page's safety net (2026-10-22): a row already seen today
   // stays, waiting — another consider would change nothing.
   const seenInNet = !!row.safetyNet && !!row.seen
+  // Aged out (2026-10-29): considering there is Process's keep.
+  const aged = segmentHorizon === 'aged_out'
   const consider = () => {
-    if (!considered && !seenInNet) void actions.consider(task)
+    if (considered || seenInNet) return
+    void (aged ? actions.keep(task) : actions.consider(task))
   }
   const rowProps = useSegmentRowPress({
     onPeek: (viaKeyboard) => actions.openPeek(task, viaKeyboard),
@@ -401,6 +406,7 @@ export function TaskSegmentRow({
           considered={considered}
           seenInNet={seenInNet}
           panel={panel}
+          keeps={aged}
           onConsider={consider}
         />
         <div className="min-w-0 flex-1">
@@ -516,12 +522,15 @@ function SegmentRowCircle({
   considered,
   seenInNet = false,
   panel,
+  keeps = false,
   onConsider,
 }: {
   task: Task
   considered: boolean
   seenInNet?: boolean
   panel: boolean
+  /** Aged out: the circle is Process's keep (the horizon stays). */
+  keeps?: boolean
   onConsider: () => void
 }) {
   if (seenInNet) {
@@ -564,8 +573,10 @@ function SegmentRowCircle({
         e.stopPropagation()
         onConsider()
       }}
-      aria-label={`Mark "${task.title}" as considered`}
-      title="Considered (seen — not done)"
+      aria-label={
+        keeps ? `Keep the horizon of "${task.title}"` : `Mark "${task.title}" as considered`
+      }
+      title={keeps ? 'Keep (the horizon stays; asks again later)' : 'Considered (seen — not done)'}
       className={cn(
         'hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
         panel ? 'border-foreground/25 size-[19px]' : 'border-foreground/20 mt-[3px] size-6',
@@ -764,7 +775,11 @@ function TaskSegmentRowActions({
         panel={panel}
         queueUi={queueUi}
       />
-      {segmentHorizon === 'deadlines' ? (
+      {segmentHorizon === 'aged_out' ? (
+        // Aged out (2026-10-29): Grow in On deck tomorrow's place, whatever
+        // the switch says — the segment's own question.
+        <GrowButton task={task} actions={actions} panel={panel} />
+      ) : segmentHorizon === 'deadlines' ? (
         // The deadlines page (2026-10-22): Defer in On deck tomorrow's place —
         // both are "another day" — hidden in the safety net (the place kept).
         <DeferLeadSlot row={row} actions={actions} timezone={timezone} panel={panel} />
@@ -899,6 +914,53 @@ function SegmentDeckSlot({
  * (`HOVER_BOX`), so the taller hit target never paints outside the row.
  */
 const SLOT_HIT = '-my-[11px] h-[44px] w-[34px] shrink-0'
+
+/**
+ * GROW (Aged out, 2026-10-29, `src/lib/aged-out.ts`): the horizon one step
+ * out — Days → Weeks → Months → Eventually, unset → Months. In On deck
+ * tomorrow's slot, the same hit target and hover box. The tooltip names the
+ * horizon it grows to; the row then stays, considered.
+ */
+function GrowButton({
+  task,
+  actions,
+  panel,
+}: {
+  task: Task
+  actions: TaskSegmentActions
+  panel: boolean
+}) {
+  const to = growStep(task.horizon)
+  if (!to) return <span aria-hidden className={SLOT_HIT} />
+  const words = `Grow to ${HORIZON_LABELS[to]}`
+  return (
+    <button
+      type="button"
+      data-grow
+      data-grow-to={to}
+      data-no-row-press
+      onClick={(e) => {
+        e.stopPropagation()
+        void actions.grow(task)
+      }}
+      aria-label={`${words}: “${task.title}”`}
+      title={words}
+      className={cn(
+        'group/grow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+        SLOT_HIT,
+      )}
+    >
+      <span
+        className={cn(
+          'group-hover/grow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+          panel ? DECK_BOX.panel : DECK_BOX.page,
+        )}
+      >
+        <Sprout className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
+      </span>
+    </button>
+  )
+}
 
 /**
  * ON DECK TOMORROW (2026-10-20), in the pencil's place — second since
@@ -1276,8 +1338,19 @@ function TaskSegmentMeta({
           age: the queue is read at a glance. A waiting repeating task keeps a
           target (its next occurrence) and its count, so it would read "226×". */}
       {!isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />}
+      {segmentHorizon === 'aged_out' && <KeptCount task={task} />}
       <SegmentLabels task={task} />
     </div>
+  )
+}
+
+/** Aged out (2026-10-29): keeps in a row since the horizon last changed — "kept 2×". */
+function KeptCount({ task }: { task: Task }) {
+  if (task.growth_kept_count <= 0) return null
+  return (
+    <span data-kept-count className="text-muted-foreground">
+      kept {task.growth_kept_count}×
+    </span>
   )
 }
 
@@ -1508,13 +1581,21 @@ function leftWords(left: Exclude<SegmentLeft, 'considered'>, task: Task): string
 export function ConsideredSegmentRow({
   row,
   panel,
+  segmentHorizon,
   onPutBack,
 }: {
   row: SegmentRow
   panel: boolean
+  segmentHorizon: SegmentKind
   onPutBack: (task: Task) => void
 }) {
-  const { task, state, left } = row
+  const { task, state } = row
+  // AGED OUT (2026-10-29): a kept or grown row has no put-back either —
+  // put-back clears only the consider stamp, which would drop the row out of
+  // the segment instead of undoing the keep or grow; the toast's Undo does
+  // that. It says which it was. A deferred row puts back as anywhere.
+  const agedHandled = segmentHorizon === 'aged_out' && state === 'considered'
+  const left = row.left ?? (agedHandled ? 'considered' : undefined)
   const timezone = useTimezone()
   const dayStart = useDayStart()
   const circle = cn(
@@ -1565,6 +1646,14 @@ export function ConsideredSegmentRow({
         )}
         {left && left !== 'considered' && (
           <span className="ml-1.5 text-xs">· {leftWords(left, task)}</span>
+        )}
+        {agedHandled && !row.left && (
+          <span data-aged-handled className="ml-1.5 text-xs">
+            ·{' '}
+            {task.growth_kept_count > 0
+              ? 'kept'
+              : `now ${task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL}`}
+          </span>
         )}
       </p>
     </li>

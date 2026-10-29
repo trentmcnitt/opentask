@@ -134,6 +134,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   attempts: INT,
   attempts_counted_through: STR_N,
   growth_kept_at: STR_N,
+  growth_kept_count: INT,
   queue_mark: BOOL,
   try_tomorrow: BOOL,
   queued_at: STR_N,

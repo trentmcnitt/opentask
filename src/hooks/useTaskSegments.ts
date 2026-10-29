@@ -13,6 +13,7 @@ import {
   type UpcomingSection,
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
+import { growStep } from '@/lib/aged-out'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import type { Task } from '@/types'
@@ -229,6 +230,7 @@ export function useTaskSegments({
       ),
     [run, considered],
   )
+  const { keep, grow } = useAgedOutActions(run)
   const done = useCallback(
     (task: Task) =>
       run(
@@ -297,6 +299,8 @@ export function useTaskSegments({
     deferLead,
     consider,
     considerAll,
+    keep,
+    grow,
     done,
     targetToday,
     deferAll,
@@ -443,6 +447,38 @@ function useSetHorizon(onUndo: () => void, refresh: () => Promise<void>, onCompl
 }
 
 /**
+ * AGED OUT (2026-10-29, src/lib/aged-out.ts): the row's consider is Process's
+ * keep (comes back one threshold later, "kept N×"); Grow moves the horizon
+ * one step out. Either way the row stays today, considered.
+ */
+function useAgedOutActions(run: RunSegmentAction) {
+  const keep = useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        'considered',
+        () => post('/api/task-segments/keep', { ids: [task.id] }),
+        `Kept the horizon: “${task.title}”`,
+      ),
+    [run],
+  )
+  const grow = useCallback(
+    (task: Task) => {
+      const to = growStep(task.horizon)
+      if (!to) return
+      return run(
+        [task.id],
+        'considered',
+        () => post('/api/task-segments/grow', { ids: [task.id] }),
+        `Horizon now ${HORIZON_LABELS[to]}: “${task.title}”`,
+      )
+    },
+    [run],
+  )
+  return { keep, grow }
+}
+
+/**
  * Considered all (task queue PR 3, spec rule 9): every row still waiting in
  * the segment, in one consider call — one undo entry, Undo on the toast.
  */
@@ -451,11 +487,14 @@ function useConsiderAll(run: RunSegmentAction, considered: (id: number) => Overl
     (segment: SegmentView) => {
       const ids = toConsider(segment).map((r) => r.task.id)
       if (ids.length === 0) return
+      // Aged out (2026-10-29): considering there is Process's keep.
+      const keep = segment.horizon === 'aged_out'
+      const n = ids.length === 1 ? '1 task' : `${ids.length} tasks`
       return run(
         ids,
         considered,
-        () => post('/api/task-segments/consider', { ids }),
-        ids.length === 1 ? 'Considered 1 task' : `Considered ${ids.length} tasks`,
+        () => post(`/api/task-segments/${keep ? 'keep' : 'consider'}`, { ids }),
+        keep ? `Kept the horizon of ${n}` : `Considered ${n}`,
       )
     },
     [run, considered],

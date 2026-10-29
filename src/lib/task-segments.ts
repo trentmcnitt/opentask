@@ -74,10 +74,12 @@ export type QueueKind = (typeof QUEUE_KINDS)[number]
 /**
  * A task segment's identity: a horizon, Upcoming (2026-10-12, the heads-up
  * segment — `upcomingState`, below), one of the queue's two panels, or the
- * DEADLINES page (2026-10-22, `deadlinePlace` below). In the API,
- * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"`.
+ * DEADLINES page (2026-10-22, `deadlinePlace` below), or AGED OUT (2026-10-29,
+ * `src/lib/aged-out.ts`, only for a caller that asks). In the API,
+ * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"` /
+ * `"aged_out"`.
  */
-export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines'
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out'
 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
@@ -130,6 +132,9 @@ export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'weeks',
   'months',
   'eventually',
+  // Aged out (2026-10-29): last — the tasks that have outlived their horizon,
+  // reviewed after the horizons themselves. Only for a caller that asks.
+  'aged_out',
 ]
 
 /** Unset reads as weeks — but is never reported as set (`task.horizon` stays null). */

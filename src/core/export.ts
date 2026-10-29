@@ -49,7 +49,7 @@ export function exportUserData(userId: number): ExportData {
               due_at, rrule, recurrence_mode, anchor_time, anchor_dow, anchor_dom,
               repeat_anchor, target_days_before, target_time, target_slot_id,
               original_due_at, deadline_at, target_auto, occurrence_at, lead_days, lead_from,
-              attempts, attempts_counted_through, growth_kept_at,
+              attempts, attempts_counted_through, growth_kept_at, growth_kept_count,
               deleted_at, archived_at, labels,
               last_notified_at, last_critical_alert_at, auto_snooze_minutes,
               completion_count, first_completed_at, last_completed_at,

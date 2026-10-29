@@ -65,6 +65,8 @@ const VALID_TASK_COLUMNS = new Set([
   'attempts',
   'attempts_counted_through',
   'growth_kept_at',
+  // Aged out (2026-10-29): keep and grow put the count in their snapshots.
+  'growth_kept_count',
   // The task queue (2026-10-19): a marking sweep's undo clears the mark, and
   // the undo of a pick that cleared it puts it back.
   'queue_mark',
