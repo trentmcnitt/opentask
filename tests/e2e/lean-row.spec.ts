@@ -779,6 +779,9 @@ test.describe('Card v2', () => {
   test('Settings → Task rows → Card v2: separate cards, a red or blue edge only, the count in the corner', async ({
     authenticatedPage: page,
   }) => {
+    // Where the dashboard modes exist (they come with card v2), the All mode,
+    // so the test's project group is on screen.
+    await page.addInitScript(() => window.localStorage.setItem('opentask_dashboard_mode', 'all'))
     const now = Date.now()
     const ids = {
       passed: await create(page, {
