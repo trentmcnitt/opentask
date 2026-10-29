@@ -104,8 +104,11 @@ async function strip(
   }
 }
 
-const panel = (page: Page, kind: 'queue_today' | 'queue_previous') =>
-  page.locator('[data-task-segments]').locator(`[data-task-segment="${kind}"]`)
+// The queue's two panels are ONE "Pulled" segment on the web since 2026-10-29
+// (`mergePulled`), drawn as `queue_today`; its rows say which panel they came
+// from (`data-pulled`). A panel here is that one section.
+const panel = (page: Page, _kind: 'queue_today' | 'queue_previous') =>
+  page.locator('[data-task-segments]').locator('[data-task-segment="queue_today"]')
 const row = (scope: Page | Locator, id: number) => scope.locator(`[data-segment-task="${id}"]`)
 
 /**
@@ -179,25 +182,29 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     const today = panel(page, 'queue_today')
     const earlier = panel(page, 'queue_previous')
     await expect(today).toBeVisible()
-    await expect(earlier).toBeVisible()
-    // "<word>", nothing after it (Trent, 2026-10-20).
-    await expect(today).toHaveAttribute('aria-label', "Today's pulls")
-    await expect(earlier).toHaveAttribute('aria-label', 'Previous pulls')
-    await expect(today.getByText("Today's pulls", { exact: true })).toBeVisible()
-    await expect(earlier.getByText('Previous pulls', { exact: true })).toBeVisible()
+    // ONE "Pulled" segment (2026-10-29): its TODAY and EARLIER sections.
+    await expect(today).toHaveAttribute('aria-label', 'Pulled')
+    await expect(today.getByText('Pulled', { exact: true })).toBeVisible()
+    await expect
+      .poll(() =>
+        today
+          .locator('[data-pulled-section]')
+          .evaluateAll((els) => els.map((e) => e.getAttribute('data-pulled-section'))),
+      )
+      .toEqual(['today', 'earlier'])
     await expect(today.getByText('Stripped today')).toHaveCount(0)
     await expect(earlier.getByText('Previously targeted')).toHaveCount(0)
-    // First among the task segments after the deadlines page, which always
-    // leads — shown every day, empty or not (2026-10-24).
+    // After the deadlines page, which always leads, and Heads up — shown
+    // every day, empty or not (2026-10-24; this order since 2026-10-29).
     const kinds = await page
       .locator('[data-task-segments] > [data-task-segment]')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-task-segment')))
-    expect(kinds.slice(0, 3)).toEqual(['deadlines', 'queue_today', 'queue_previous'])
+    expect(kinds.slice(0, 3)).toEqual(['deadlines', 'upcoming', 'queue_today'])
 
     // Priority first: the Medium strip above the Try Tomorrow row, which
     // carries the left-edge mark and is not lifted to the top.
     const todayIds = await today
-      .locator('[data-segment-task]')
+      .locator('[data-segment-task][data-pulled="today"]')
       .evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-segment-task'))))
     expect(todayIds).toEqual([fresh, tryTomorrow])
     await expect(row(today, tryTomorrow).locator('[data-try-tomorrow]')).toBeVisible()
@@ -441,7 +448,7 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     await expect(earlier.getByRole('button', { name: /^Defer all/ })).toHaveCount(0)
     await earlier
       .getByRole('button', {
-        name: /^Mark all \d+ in Previous pulls as considered$/,
+        name: /^Mark all \d+ in Pulled as considered$/,
       })
       .click()
     await expect(row(page, a)).toHaveCount(0)

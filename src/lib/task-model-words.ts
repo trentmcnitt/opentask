@@ -53,23 +53,52 @@ export const SEGMENT_TITLES: Record<HorizonValue, string> = {
 }
 
 /**
- * The task queue's STRIP WORDS (Trent, 2026-10-29, Q2: "having the words on
- * there, Q2, is pretty good"): a short word above each segment's bar, on the
- * dashboard's Tasks card and the Reminders page's day bar. Short forms where
- * the title is long: Due (Deadlines), Pulls / Earlier (Today's / Previous
- * pulls), Next (Upcoming), Qtrly (Quarterly), Aged (Aged out). A bar is at
- * least as wide as its word (`ReminderSlotBar`, `RemindersHeadline`).
+ * The queue's two panels drawn as ONE segment on the web (2026-10-29,
+ * `mergePulled`): its title and strip word. Its sections are Today and
+ * Earlier (`PULLED_SECTION_WORDS`).
  */
-export const SEGMENT_STRIP_WORDS: Record<SegmentKind, string> = {
-  deadlines: 'Due',
-  queue_today: 'Pulls',
-  queue_previous: 'Earlier',
-  days: 'Daily',
-  upcoming: 'Next',
-  weeks: 'Weekly',
-  months: 'Monthly',
-  eventually: 'Qtrly',
-  aged_out: 'Aged',
+export const PULLED_TITLE = 'Pulled'
+export const PULLED_SECTION_WORDS = { today: 'Today', earlier: 'Earlier' } as const
+
+/**
+ * The task queue's STRIP (Trent's tight N2, 2026-10-29): a word over each
+ * segment's bar, in four groups with their own small word above them. Where
+ * the strip is narrow (a phone's card, the Reminders page's day bar) the long
+ * words take their short form: "Deadlines" → "Due", "Heads up" → "Soon"
+ * ("we'll do deadlines and heads up and then we'll change it to 'due' and
+ * 'soon' for the phone"). The horizons wear their dot, no word.
+ */
+export const SEGMENT_STRIP_WORDS: Record<SegmentKind, { long: string; short: string } | null> = {
+  deadlines: { long: 'Deadlines', short: 'Due' },
+  upcoming: { long: 'Heads up', short: 'Soon' },
+  // The two panels are one bar on the web, "Pulled" (`mergePulled`).
+  queue_today: { long: PULLED_TITLE, short: PULLED_TITLE },
+  queue_previous: { long: PULLED_TITLE, short: PULLED_TITLE },
+  days: null,
+  weeks: null,
+  months: null,
+  eventually: null,
+  aged_out: { long: 'Aged', short: 'Aged' },
+}
+
+/** The strip's groups and their words; Aged out stands alone, wordless (`SEGMENT_ORDER`). */
+export type StripGroup = 'dated' | 'pulled' | 'horizon' | 'aged'
+export const SEGMENT_STRIP_GROUP: Record<SegmentKind, StripGroup> = {
+  deadlines: 'dated',
+  upcoming: 'dated',
+  queue_today: 'pulled',
+  queue_previous: 'pulled',
+  days: 'horizon',
+  weeks: 'horizon',
+  months: 'horizon',
+  eventually: 'horizon',
+  aged_out: 'aged',
+}
+export const STRIP_GROUP_WORDS: Record<StripGroup, string> = {
+  dated: 'Dated',
+  pulled: 'Pulled',
+  horizon: 'Horizon',
+  aged: '',
 }
 
 /**
@@ -93,7 +122,7 @@ export function horizonHints(checkInDay: CheckInDay): Record<HorizonValue, strin
  * targeted tasks on their heads-up days, not a cadence. Its "Heads-up" hint
  * went with the others' (2026-10-20).
  */
-export const UPCOMING_LABEL = 'Upcoming'
+export const UPCOMING_LABEL = 'Heads up'
 
 /**
  * Upcoming's two sections (2026-10-25, the Upcoming split; plan

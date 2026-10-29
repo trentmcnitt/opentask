@@ -424,18 +424,19 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let segments = payload.taskSegments
         XCTAssertEqual(
             segments.map(\.horizon),
-            ["deadlines", "queue_today", "queue_previous", "days", "upcoming", "weeks", "months", "eventually"]
+            // The server's order since 2026-10-29: Dated, Pulled, Horizon.
+            ["deadlines", "upcoming", "queue_today", "queue_previous", "days", "weeks", "months", "eventually"]
         )
         XCTAssertEqual(
             segments.compactMap(\.kind),
-            [.deadlines, .queueToday, .queuePrevious, .horizon(.days), .upcoming, .horizon(.weeks),
+            [.deadlines, .upcoming, .queueToday, .queuePrevious, .horizon(.days), .horizon(.weeks),
              .horizon(.months), .horizon(.eventually)],
             "every kind is known"
         )
-        XCTAssertEqual(segments.map(\.pageKey), [-16, -17, -18, -10, -14, -11, -12, -13])
+        XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -17, -18, -10, -11, -12, -13])
         XCTAssertEqual(TaskSegmentDTO.listed(segments).count, 8, "every segment is a page, empty ones too")
         XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
-        XCTAssertEqual(segments.map(\.title)[0...2], ["Task queue · Deadlines", "Task queue · Today's pulls", "Task queue · Previous pulls"])
+        XCTAssertEqual(segments.map(\.title)[0...2], ["Task queue · Deadlines", "Task queue · Upcoming", "Task queue · Today's pulls"])
 
         // The deadlines page: the seen safety-net row waits, inert; the
         // deferred one LEFT, "· deferred to <its lead day>".
@@ -456,7 +457,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertFalse(deadlines.offersDeferAll)
 
         // "Today's pulls": the done row LEFT ("· done"); the Try Tomorrow row.
-        let today = segments[1]
+        let today = segments[2]
         let done = try XCTUnwrap(today.tasks.first { $0.id == Fixtures.queueNew })
         XCTAssertEqual(done.state, .considered)
         XCTAssertEqual(done.left, .done)
@@ -468,7 +469,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertFalse(today.offersDeferAll)
 
         // Upcoming: the deck rows say "On deck tomorrow" (Tomorrow, 2026-10-27).
-        let upcoming = segments[4]
+        let upcoming = segments[1]
         let deck = try XCTUnwrap(upcoming.tasks.first { $0.id == Fixtures.decked })
         XCTAssertEqual(deck.task.onDeckDay, Fixtures.pinnedDate)
         XCTAssertEqual(deck.section, .tomorrow)
@@ -552,7 +553,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // The other segments are unchanged by the opt-in.
         XCTAssertEqual(
             payload.taskSegments.dropFirst().map(\.horizon),
-            ["queue_today", "queue_previous", "upcoming", "weeks"]
+            ["upcoming", "queue_today", "queue_previous", "weeks"]
         )
     }
 
@@ -640,14 +641,15 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     /// now they decode as `SegmentKind.queueToday` / `.queuePrevious`.
     func testRemindersQueueSegmentsDecodeAsTheirKinds() throws {
         let payload = try Fixtures.decode(RemindersPayload.self, "reminders-queue")
-        let horizons = payload.taskSegments.map(\.horizon)
-        XCTAssertEqual(Array(horizons.prefix(2)), ["queue_today", "queue_previous"])
+        // Together, after Upcoming (the server's order since 2026-10-29).
+        let queue = payload.taskSegments.filter { $0.horizon.hasPrefix("queue_") }
+        XCTAssertEqual(queue.map(\.horizon), ["queue_today", "queue_previous"])
         // Native PR E: kinds this build draws, with their own page keys and
         // titles, and no Defer all.
         let expected: [(SegmentKind, Int, String)] = [
             (.queueToday, -17, "Task queue · Today's pulls"), (.queuePrevious, -18, "Task queue · Previous pulls"),
         ]
-        for (segment, (kind, key, title)) in zip(payload.taskSegments.prefix(2), expected) {
+        for (segment, (kind, key, title)) in zip(queue, expected) {
             XCTAssertEqual(SegmentKind(raw: segment.horizon), kind)
             XCTAssertEqual(segment.kind, kind)
             XCTAssertTrue(segment.kind?.isQueue ?? false)
@@ -658,21 +660,23 @@ final class ContractDecodeTests: WidgetStoreTestCase {
             XCTAssertEqual(segment.tasks.count, 2)
             XCTAssertEqual(segment.tasks.map(\.state), [.waiting, .waiting])
         }
-        let today = payload.taskSegments[0]
+        let today = queue[0]
         XCTAssertEqual(today.tasks.map(\.task.title), ["Call the plumber", "Sort the receipts"])
         XCTAssertEqual(today.tasks.map(\.recurring), [false, false])
-        let previous = payload.taskSegments[1]
+        let previous = queue[1]
         XCTAssertEqual(previous.tasks.map(\.task.title), ["Return the library books", "Water the ferns"])
         XCTAssertEqual(previous.tasks.map(\.recurring), [false, true])
         XCTAssertNil(previous.tasks[0].task.dueAt, "a stripped one-off has no target")
         XCTAssertNotNil(previous.tasks[1].task.dueAt, "a waiting weekly task keeps its next occurrence")
-        // The known kinds after them still read as before.
-        XCTAssertEqual(payload.taskSegments.dropFirst(2).compactMap(\.kind).count, payload.taskSegments.count - 2)
+        // Every kind still reads as before.
+        XCTAssertEqual(payload.taskSegments.compactMap(\.kind).count, payload.taskSegments.count)
 
         // The queue fields the native apps will need later are on every row.
         let raw = try Fixtures.object("reminders-queue")
         let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
-        let rawToday = try XCTUnwrap(rawSegments.first?["tasks"] as? [[String: Any]])
+        let rawToday = try XCTUnwrap(
+            rawSegments.first { $0["horizon"] as? String == "queue_today" }?["tasks"] as? [[String: Any]]
+        )
         XCTAssertEqual(rawToday.map { $0["try_tomorrow"] as? Bool }, [false, true])
         XCTAssertEqual(today.tasks.map(\.tryTomorrow), [false, true])
         XCTAssertEqual(rawToday.map { $0["queued_from_due_at"] as? String }, [Fixtures.pinnedTimestamp, Fixtures.pinnedTimestamp])
@@ -684,8 +688,10 @@ final class ContractDecodeTests: WidgetStoreTestCase {
     /// with a target and deadline, and a repeating task (no Today on its row).
     func testRemindersUpcomingSegment() throws {
         let payload = try Fixtures.decode(RemindersPayload.self, "reminders-upcoming")
-        XCTAssertEqual(payload.taskSegments.map(\.horizon), ["days", "upcoming"], "Upcoming comes after Days")
-        let upcoming = try XCTUnwrap(payload.taskSegments.last)
+        XCTAssertEqual(
+            payload.taskSegments.map(\.horizon), ["upcoming", "days"], "Upcoming before Days since 2026-10-29"
+        )
+        let upcoming = try XCTUnwrap(payload.taskSegments.first)
         XCTAssertEqual(upcoming.kind, .upcoming)
         XCTAssertNil(upcoming.horizonValue)
         XCTAssertEqual(upcoming.label, "Upcoming")
@@ -712,7 +718,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertNil(plants.deadlineAt)
 
         // The Days row carries the new fields too.
-        let days = try XCTUnwrap(payload.taskSegments.first)
+        let days = try XCTUnwrap(payload.taskSegments.last)
         XCTAssertEqual(days.tasks.map(\.id), [Fixtures.squeakyDoor])
         XCTAssertEqual(days.tasks.map(\.recurring), [false])
 
@@ -720,8 +726,8 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // decode silently through the rrule fallback / nil.
         let raw = try Fixtures.object("reminders-upcoming")
         let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
-        XCTAssertEqual(rawSegments.map { $0["horizon"] as? String }, ["days", "upcoming"])
-        let rawUpcoming = try XCTUnwrap(rawSegments.last)
+        XCTAssertEqual(rawSegments.map { $0["horizon"] as? String }, ["upcoming", "days"])
+        let rawUpcoming = try XCTUnwrap(rawSegments.first)
         XCTAssertEqual(rawUpcoming["waiting"] as? Int, upcoming.waitingCount)
         XCTAssertEqual(rawUpcoming["considered"] as? Int, upcoming.consideredTasks.count)
         let rawRows = try XCTUnwrap(rawUpcoming["tasks"] as? [[String: Any]])
@@ -736,7 +742,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // And it survives the cache round trip, `recurring` included.
         let back = try JSONDecoder().decode(RemindersPayload.self, from: JSONEncoder().encode(payload))
         XCTAssertEqual(back.taskSegments, payload.taskSegments)
-        XCTAssertEqual(back.taskSegments.last?.tasks.map(\.recurring), [false, true])
+        XCTAssertEqual(back.taskSegments.first?.tasks.map(\.recurring), [false, true])
     }
 
     /// Upcoming's two sections (2026-10-25 on the server; native 2026-10-26):

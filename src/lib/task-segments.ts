@@ -117,18 +117,20 @@ export function segmentCounts(segment: {
 }
 
 /**
- * The order the screens walk the segments: the DEADLINES page first (Trent,
- * 10-22: "the deadlines page is FIRST in the queue carousel" — it is the only
- * queue page that nags), then the queue's two panels (spec rule 6: "the first
- * and foremost thing to handle"), then Upcoming directly after Days and before
- * Weeks, on a check-in day too (spec §2).
+ * The order the screens walk the segments, in the strip's four GROUPS
+ * (Trent's tight N2, 2026-10-29; `SEGMENT_STRIP_GROUP`): DATED — the
+ * DEADLINES page first (10-22: "the deadlines page is FIRST in the queue
+ * carousel", the only queue page that nags), then Upcoming ("Heads up");
+ * PULLED — the queue's two panels; HORIZON — Days, Weeks, Months,
+ * Eventually; then Aged out. Until 2026-10-29 the panels came second and
+ * Upcoming sat between Days and Weeks (spec §2).
  */
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'deadlines',
+  'upcoming',
   'queue_today',
   'queue_previous',
   'days',
-  'upcoming',
   'weeks',
   'months',
   'eventually',

@@ -212,10 +212,12 @@ test("task-segment rows: the row buttons' hover boxes stay inside the row", asyn
       for (const id of [queued, days, upcoming]) await expectBoxesInside(page, segRow(page, id))
     }
 
-    // The dashboard's right panel (desktop): it opens on the queue.
+    // The dashboard's right panel (desktop), paged to the queue (Heads up,
+    // with rows of its own, comes before it since 2026-10-29).
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
     const panel = page.locator('[data-tasks-panel]')
+    await panel.locator('[data-slot-segment="tasks:queue_today"]').click()
     await expect(panel).toHaveAttribute('data-tasks-page', 'tasks:queue_today')
     await expectBoxesInside(page, segRow(panel, queued))
   } finally {

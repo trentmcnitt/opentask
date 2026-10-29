@@ -41,6 +41,8 @@ import {
   REMOVE_TARGET,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
+  PULLED_SECTION_WORDS,
+  PULLED_TITLE,
   UPCOMING_LABEL,
 } from '@/lib/task-model-words'
 import {
@@ -55,7 +57,12 @@ import {
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
-import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import type {
+  PulledSection,
+  SegmentRow,
+  SegmentView,
+  TaskSegmentActions,
+} from '@/hooks/useTaskSegments'
 import {
   AGED_OUT_TITLE,
   agedClockRestart,
@@ -181,7 +188,8 @@ export function offersDeferAll(kind: SegmentKind): boolean {
 
 /** `segmentTitle` for a segment: its header, section and list names. */
 export function segmentLabel(segment: SegmentView): string {
-  return segmentTitle(segment.horizon)
+  // The merged Pulled view (`mergePulled`) has its own name.
+  return segment.pulled ? PULLED_TITLE : segmentTitle(segment.horizon)
 }
 
 /**
@@ -374,6 +382,7 @@ export function TaskSegmentRow({
       <li
         data-segment-task={task.id}
         data-segment-state={row.state}
+        data-pulled={row.pulled}
         data-safety-net={row.safetyNet ? '' : undefined}
         data-seen={row.seen ? '' : undefined}
         tabIndex={considered ? -1 : 0}
@@ -1526,9 +1535,89 @@ export function AgedGroupHeading({
   hiddenWhenNarrow?: boolean
 }) {
   return (
+    <SectionPill
+      data={{ 'data-aged-group': group }}
+      label={HORIZON_LABELS[group]}
+      dot={group}
+      count={count}
+      right={cutoffWords(group)}
+      panel={panel}
+      hiddenWhenNarrow={hiddenWhenNarrow}
+    />
+  )
+}
+
+/**
+ * PULLED'S SECTIONS (Trent, 2026-10-29: "the first thing is Today and the
+ * other section is Earlier"): the merged Pulled view's rows come Today's
+ * pulls first, then the earlier ones (`mergePulled`); a pill heading goes
+ * before each section's first row — "TODAY", "EARLIER" — so an empty section
+ * has none.
+ */
+export function pulledSectionBefore(
+  segment: SegmentView,
+  rows: readonly SegmentRow[],
+  index: number,
+): { section: PulledSection; count: number } | null {
+  const section = rows[index].pulled
+  if (!segment.pulled || !section) return null
+  if (index > 0 && rows[index - 1].pulled === section) return null
+  return { section, count: rows.filter((r) => r.pulled === section).length }
+}
+
+export function PulledSectionHeading({
+  section,
+  count,
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  section: PulledSection
+  count: number
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <SectionPill
+      data={{ 'data-pulled-section': section }}
+      label={PULLED_SECTION_WORDS[section]}
+      count={count}
+      panel={panel}
+      hiddenWhenNarrow={hiddenWhenNarrow}
+    />
+  )
+}
+
+/** The kind a row acts as: a merged Pulled view's earlier row is a Previous pull. */
+export function rowKind(segment: SegmentView, row: SegmentRow): SegmentKind {
+  return row.pulled === 'earlier' ? 'queue_previous' : segment.horizon
+}
+
+/**
+ * A section's quiet PILL heading inside a segment (Trent's A3, 2026-10-29):
+ * the word in capitals (a horizon's dot after it), its count in grey, and
+ * faint words on the right if any.
+ */
+function SectionPill({
+  data,
+  label,
+  dot,
+  count,
+  right,
+  panel,
+  hiddenWhenNarrow,
+}: {
+  data: Record<string, string>
+  label: string
+  dot?: HorizonValue
+  count: number
+  right?: string
+  panel: boolean
+  hiddenWhenNarrow: boolean
+}) {
+  return (
     <li
       role="presentation"
-      data-aged-group={group}
+      {...data}
       className={cn(
         'flex items-center gap-2 pt-3 pb-1',
         panel ? 'px-1' : 'px-2',
@@ -1536,13 +1625,15 @@ export function AgedGroupHeading({
       )}
     >
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0f3] px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] text-slate-600 uppercase dark:bg-white/[0.08] dark:text-slate-300">
-        {HORIZON_LABELS[group]}
-        <HorizonDotMark horizon={group} />
+        {label}
+        {dot && <HorizonDotMark horizon={dot} />}
       </span>
       <span className="text-muted-foreground/70 text-xs tabular-nums">{count}</span>
-      <span data-aged-cutoff className="text-muted-foreground/60 ml-auto text-[11.5px]">
-        {cutoffWords(group)}
-      </span>
+      {right && (
+        <span data-aged-cutoff className="text-muted-foreground/60 ml-auto text-[11.5px]">
+          {right}
+        </span>
+      )}
     </li>
   )
 }

@@ -129,7 +129,9 @@ for (const viewport of VIEWPORTS) {
         expect(p.tealFill).toBe('rgb(13, 148, 136)')
 
         // The strip: the deadlines bar's finished fill is the teal; Weekly's green.
-        const fill = (key: string) => card.locator(`[data-slot-segment="${key}"] > span > span`)
+        // The bar's fill: inside the track, not the mark's words (2026-10-29).
+        const fill = (key: string) =>
+          card.locator(`[data-slot-segment="${key}"] > span:not([data-strip-word]) > span`)
         await expect(card.locator('[data-slot-segment="tasks:deadlines"]')).toHaveAttribute(
           'data-slot-state',
           'done',
@@ -195,7 +197,9 @@ for (const viewport of VIEWPORTS) {
         const hairline = (kind: string) =>
           section(kind).locator('[role="progressbar"] > div').first()
         const dayFill = (key: string) =>
-          page.locator(`[data-reminders-headline] [data-day-segment="${key}"] > span > span`)
+          page.locator(
+            `[data-reminders-headline] [data-day-segment="${key}"] > span:not([data-strip-word]) > span`,
+          )
 
         // Empty, so done: title and "0 of 0" in the text teal; its ✓, the
         // "Nothing today ✓", the hairline and the day bar in the fill teal.

@@ -92,15 +92,17 @@ test.describe('Upcoming', () => {
       await page.goto('/reminders')
       const section = upcoming(page)
       await expect(section).toBeVisible()
-      // "Upcoming", no "Heads-up" hint (2026-10-20).
-      await expect(section).toHaveAttribute('aria-label', 'Upcoming')
-      await expect(section.getByText('Upcoming', { exact: true })).toBeVisible()
+      // "Heads up" (titled so since 2026-10-29; "Upcoming" before), no hint.
+      await expect(section).toHaveAttribute('aria-label', 'Heads up')
+      await expect(section.getByText('Heads up', { exact: true })).toBeVisible()
       await expect(section.getByText('Heads-up')).toHaveCount(0)
-      // Directly after Days.
+      // Right after the deadlines page (first when it isn't drawn), before
+      // the queue and the horizons — since 2026-10-29 (it followed Days).
       const order = await page
         .locator('[data-task-segments] [data-task-segment]')
         .evaluateAll((els) => els.map((e) => e.getAttribute('data-task-segment')))
-      expect(order.indexOf('upcoming')).toBe(order.indexOf('days') + 1)
+      expect(order.indexOf('upcoming')).toBe(order.indexOf('deadlines') + 1)
+      expect(order.indexOf('upcoming')).toBeLessThan(order.indexOf('days'))
       // Target order: 9:00, 10:00, 11:00.
       const ids = await section
         .locator('[data-segment-task]')

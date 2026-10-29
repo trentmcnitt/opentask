@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ReminderSlotBar } from '@/components/ReminderSlotBar'
+import { ReminderSlotBar, stripMarkFor } from '@/components/ReminderSlotBar'
 import {
   NARROW_CAP,
   PagerSweep,
@@ -13,7 +13,10 @@ import {
 } from '@/components/reminders/PanelPagerParts'
 import {
   AgedGroupHeading,
+  PulledSectionHeading,
   agedGroupBefore,
+  pulledSectionBefore,
+  rowKind,
   ConsideredSegmentRow,
   EmptySegmentLine,
   SegmentNudge,
@@ -31,7 +34,7 @@ import {
 import { usePanelPager } from '@/hooks/usePanelPager'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { SEGMENT_STRIP_WORDS, TASK_QUEUE_TITLE } from '@/lib/task-model-words'
+import { TASK_QUEUE_TITLE } from '@/lib/task-model-words'
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
 import {
@@ -98,7 +101,7 @@ export function DashboardTasksPanel({
       taskSegment: true,
       doneColor: segmentDoneColor(segment.horizon),
       emptyDone: true,
-      word: SEGMENT_STRIP_WORDS[segment.horizon],
+      mark: stripMarkFor(segment.horizon, segment.pulled),
     }
   })
   // No page is a slot: the natural page is the first segment still waiting.
@@ -346,17 +349,21 @@ function TaskPageBody({
         <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>
           {visible.map((row, i) => {
             const narrowHidden = !expanded && i >= NARROW_CAP
-            // Aged out's group headings (2026-10-29).
+            // Aged out's group headings, Pulled's sections (2026-10-29).
             const heading = agedGroupBefore(segment.horizon, visible, i)
+            const pulled = pulledSectionBefore(segment, visible, i)
             return (
               <Fragment key={row.task.id}>
                 {heading && <AgedGroupHeading {...heading} panel hiddenWhenNarrow={narrowHidden} />}
+                {pulled && (
+                  <PulledSectionHeading {...pulled} panel hiddenWhenNarrow={narrowHidden} />
+                )}
                 <TaskSegmentRow
                   row={row}
                   actions={actions}
                   timezone={timezone}
                   panel
-                  segmentHorizon={segment.horizon}
+                  segmentHorizon={rowKind(segment, row)}
                   hiddenWhenNarrow={narrowHidden}
                 />
               </Fragment>

@@ -1,7 +1,16 @@
 'use client'
 
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { HorizonDotMark } from '@/components/HorizonDot'
+import {
+  PULLED_TITLE,
+  SEGMENT_STRIP_GROUP,
+  SEGMENT_STRIP_WORDS,
+  STRIP_GROUP_WORDS,
+  type StripGroup,
+} from '@/lib/task-model-words'
+import { HORIZON_ORDER, type HorizonValue, type SegmentKind } from '@/lib/task-segments'
 
 /**
  * The whole day's slots as one thin bar, under the pager.
@@ -119,39 +128,135 @@ export interface SlotBarItem {
    */
   emptyDone?: boolean
   /**
-   * A short word above the bar (a task segment, Trent 2026-10-29 Q2:
-   * `SEGMENT_STRIP_WORDS`). The bar is then at least as wide as its word.
+   * A task segment's mark above its bar (Trent's tight N2, 2026-10-29): its
+   * word — or, for a horizon, its dot — and the group it stands in. The bar
+   * is then never narrower than its mark, and the strip draws the groups.
    */
-  word?: string
+  mark?: StripMarkSpec
+}
+
+/** What a task segment's bar wears: `SEGMENT_STRIP_WORDS` / `SEGMENT_STRIP_GROUP`. */
+export interface StripMarkSpec {
+  group: StripGroup
+  /** Its words, the short one where the strip is narrow; null for a horizon. */
+  word: { long: string; short: string } | null
+  /** A horizon's dot; null otherwise. */
+  horizon: HorizonValue | null
+}
+
+/** A segment kind's mark (the strip's words and groups); `pulled`: the merged Pulled view. */
+export function stripMarkFor(kind: SegmentKind, pulled?: boolean): StripMarkSpec {
+  if (pulled)
+    return { group: 'pulled', word: { long: PULLED_TITLE, short: PULLED_TITLE }, horizon: null }
+  return {
+    group: SEGMENT_STRIP_GROUP[kind],
+    word: SEGMENT_STRIP_WORDS[kind],
+    horizon: (HORIZON_ORDER as readonly string[]).includes(kind) ? (kind as HorizonValue) : null,
+  }
 }
 
 /**
- * A bar's WORD (2026-10-29, Q2): small, grey, on one line, the page on screen
- * in the ink colour; an empty segment's faded. Never narrower than a thumb,
- * so a short word ("Due") keeps the bar's minimum width.
+ * A bar's MARK (2026-10-29, Q2; tight N2 the same day): its word, small and
+ * grey on one line — the long word where the strip is wide, the short one
+ * where it is narrow (a container query on the strip: "Deadlines" / "Due",
+ * "Heads up" / "Soon") — or a horizon's dot. The page on screen's in the ink
+ * colour; an empty segment's faded. Never narrower than a thumb.
  */
-export function StripWord({
-  word,
+export function StripMark({
+  mark,
   current,
   empty,
 }: {
-  word: string
+  mark: StripMarkSpec
   current: boolean
   empty: boolean
 }) {
+  const { word, horizon } = mark
   return (
     <span
       data-strip-word
       className={cn(
-        'block text-center text-[10px] leading-3 font-semibold tracking-[0.02em] whitespace-nowrap sm:text-[10.5px]',
+        'flex min-h-3 items-center justify-center text-[10px] leading-3 font-semibold tracking-[0.02em] whitespace-nowrap @[26rem]:text-[10.5px]',
         current ? 'text-foreground' : 'text-muted-foreground',
         empty && !current && 'opacity-55',
       )}
-      style={{ minWidth: MIN_SEGMENT_PX }}
+      style={{ minWidth: STRIP_MARK_MIN_PX }}
     >
-      {word}
+      {word && word.long !== word.short ? (
+        <>
+          <span className="@[26rem]:hidden">{word.short}</span>
+          <span className="hidden @[26rem]:inline">{word.long}</span>
+        </>
+      ) : word ? (
+        word.long
+      ) : horizon ? (
+        <HorizonDotMark horizon={horizon} className="size-2.5" />
+      ) : null}
     </span>
   )
+}
+
+/** A mark's least width: a dot's bar stays a thumb's width (the mockup's 26px). */
+const STRIP_MARK_MIN_PX = 26
+
+/**
+ * The groups' small words (DATED · PULLED · HORIZON) above the strip: off
+ * since 2026-10-29 (Trent: "too noisy"; with Pulled one bar they were
+ * redundant) — the hairlines alone mark the groups. One switch, in case he
+ * wants them back.
+ */
+const SHOW_STRIP_GROUP_WORDS = false
+
+/**
+ * A GROUP of the strip (tight N2): its bars, weighted by what it holds,
+ * never narrower than its marks — and its small word above them while
+ * `SHOW_STRIP_GROUP_WORDS` is on (DATED, PULLED, HORIZON; Aged out's blank).
+ */
+export function StripGroupColumn({
+  group,
+  grow,
+  children,
+}: {
+  group: StripGroup
+  grow: number
+  children: ReactNode
+}) {
+  return (
+    <div
+      data-strip-group={group}
+      className="flex min-w-max flex-col"
+      style={{ flexGrow: grow, flexBasis: 0 }}
+    >
+      {SHOW_STRIP_GROUP_WORDS && (
+        <span className="text-muted-foreground/60 mb-px text-center text-[8px] leading-[9px] font-semibold tracking-[0.09em] whitespace-nowrap uppercase">
+          {STRIP_GROUP_WORDS[group] || '\u00A0'}
+        </span>
+      )}
+      <div className="flex items-end gap-1">{children}</div>
+    </div>
+  )
+}
+
+/** The hairline between two groups of the strip. */
+export function StripGroupDivider() {
+  return (
+    <span
+      aria-hidden
+      data-strip-group-divider
+      className="bg-foreground/[0.18] mx-1 my-0.5 w-px shrink-0 self-stretch"
+    />
+  )
+}
+
+/** Consecutive items of one group, in order (the strip's groups). */
+export function stripRuns<T>(items: readonly T[], groupOf: (item: T) => StripGroup): T[][] {
+  const runs: T[][] = []
+  for (const item of items) {
+    const last = runs.at(-1)
+    if (last && groupOf(last[0]) === groupOf(item)) last.push(item)
+    else runs.push([item])
+  }
+  return runs
 }
 
 /**
@@ -233,83 +338,121 @@ export function ReminderSlotBar({
   // the header already says better.
   if (shown.length < 2) return null
 
-  return (
-    <div
-      className={cn(
-        'flex gap-1 px-3 pb-2',
-        shown.some((s) => s.item.word) ? 'items-end' : 'items-center',
-      )}
-      role="group"
-      aria-label={ariaLabel}
-    >
-      {shown.map(({ item, index: i }, n) => {
-        const { considered, total, label, doneColor, word } = item
-        // The divider goes before the first task segment, after a slot.
-        const divider = item.taskSegment && n > 0 && !shown[n - 1].item.taskSegment
-        const state = slotState(item)
-        // An empty task segment is done: a full green fill (`emptyDone`).
-        const fraction = total > 0 ? considered / total : 1
-        // Gated on the numbers, not on `state`: `state` only calls a slot
-        // 'done' once it has STARTED, but a slot can be fully considered
-        // ahead of its own start time (still 'upcoming') and the fill must
-        // not call that "still filling" — see the header comment.
-        const complete = considered >= total
-        const current = i === currentIndex
+  const bar = ({ item, index: i }: { item: SlotBarItem; index: number }) => (
+    <SlotBarButton
+      key={item.key}
+      item={item}
+      current={i === currentIndex}
+      onClick={() => onJump(i)}
+    />
+  )
 
-        return (
-          <Fragment key={item.key}>
-            {divider && <SegmentDivider />}
-            <button
-              type="button"
-              onClick={() => onJump(i)}
-              data-slot-segment={item.key}
-              data-slot-state={state}
-              aria-current={current ? 'true' : undefined}
-              // The name carries what the colour cannot: which slot, and how far
-              // through it is. A bar of five unlabelled segments is meaningless
-              // to a screen reader otherwise.
-              aria-label={`${label}, ${considered} of ${total} considered${
-                state === 'upcoming' ? ', not started yet' : ''
-              }`}
-              title={`${label} — ${considered}/${total}`}
-              className={cn(
-                'group flex py-1',
-                word ? 'flex-col items-stretch gap-1 pt-0.5' : 'items-center',
-              )}
-              style={{
-                // Weight by size, but never below a thumb. `flexBasis: 0` makes
-                // grow the only thing deciding width. Only an empty task
-                // segment (`emptyDone`) weighs zero: it is exactly the minimum.
-                // With a word, never narrower than the word (Q2, 2026-10-29).
-                flexGrow: total,
-                flexBasis: 0,
-                minWidth: word ? 'max-content' : MIN_SEGMENT_PX,
-              }}
+  // THE TASK QUEUE'S STRIP (tight N2, 2026-10-29): its bars in their groups,
+  // each group's small word above it, a hairline between groups. A container,
+  // so a narrow strip (a phone's card) takes the short words.
+  if (shown.some((s) => s.item.mark)) {
+    const runs = stripRuns(shown, (s) => s.item.mark?.group ?? 'aged')
+    return (
+      <div
+        className="@container flex items-end gap-1 px-3 pb-2"
+        role="group"
+        aria-label={ariaLabel}
+      >
+        {runs.map((run, r) => (
+          <Fragment key={run[0].item.key}>
+            {r > 0 && <StripGroupDivider />}
+            <StripGroupColumn
+              group={run[0].item.mark?.group ?? 'aged'}
+              grow={run.reduce((sum, s) => sum + s.item.total, 0) || 0.5}
             >
-              {word && <StripWord word={word} current={current} empty={total === 0} />}
-              <span className={trackClass(state, current, !!word, !!doneColor)}>
-                {fraction > 0 && (
-                  <span
-                    className={cn(
-                      // Purple while there's still something waiting; green the
-                      // moment there isn't. A step change in colour, not an
-                      // increment in length — see the header comment.
-                      'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
-                      complete ? !doneColor && 'bg-green-600' : 'bg-badge-reminders',
-                    )}
-                    style={{
-                      width: `${Math.min(1, fraction) * 100}%`,
-                      // Done in its own `doneColor` (the deadlines page's teal)
-                      // in place of green.
-                      ...(doneColor && complete ? { backgroundColor: doneColor } : {}),
-                    }}
-                  />
-                )}
-              </span>
-            </button>
+              {run.map(bar)}
+            </StripGroupColumn>
           </Fragment>
-        )
-      })}
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1 px-3 pb-2" role="group" aria-label={ariaLabel}>
+      {shown.map((s, n) => (
+        <Fragment key={s.item.key}>
+          {/* The divider goes before the first task segment, after a slot. */}
+          {s.item.taskSegment && n > 0 && !shown[n - 1].item.taskSegment && <SegmentDivider />}
+          {bar(s)}
+        </Fragment>
+      ))}
     </div>
+  )
+}
+
+/** One bar of the strip: a page of the pager, a tap away. */
+function SlotBarButton({
+  item,
+  current,
+  onClick,
+}: {
+  item: SlotBarItem
+  current: boolean
+  onClick: () => void
+}) {
+  const { considered, total, label, doneColor, mark } = item
+  const state = slotState(item)
+  // An empty task segment is done: a full green fill (`emptyDone`).
+  const fraction = total > 0 ? considered / total : 1
+  // Gated on the numbers, not on `state`: `state` only calls a slot 'done'
+  // once it has STARTED, but a slot can be fully considered ahead of its own
+  // start time (still 'upcoming') and the fill must not call that "still
+  // filling" — see the header comment.
+  const complete = considered >= total
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-slot-segment={item.key}
+      data-slot-state={state}
+      aria-current={current ? 'true' : undefined}
+      // The name carries what the colour cannot: which slot, and how far
+      // through it is. A bar of five unlabelled segments is meaningless to a
+      // screen reader otherwise.
+      aria-label={`${label}, ${considered} of ${total} considered${
+        state === 'upcoming' ? ', not started yet' : ''
+      }`}
+      title={`${label} — ${considered}/${total}`}
+      className={cn(
+        'group flex py-1',
+        mark ? 'flex-col items-stretch gap-[3px] pt-0' : 'items-center',
+      )}
+      style={{
+        // Weight by size, but never below a thumb. `flexBasis: 0` makes grow
+        // the only thing deciding width. Only an empty task segment
+        // (`emptyDone`) weighs zero: it is exactly the minimum. With a mark,
+        // never narrower than the mark (Q2, 2026-10-29).
+        flexGrow: total,
+        flexBasis: 0,
+        minWidth: mark ? 'max-content' : MIN_SEGMENT_PX,
+      }}
+    >
+      {mark && <StripMark mark={mark} current={current} empty={total === 0} />}
+      <span className={trackClass(state, current, !!mark, !!doneColor)}>
+        {fraction > 0 && (
+          <span
+            className={cn(
+              // Purple while there's still something waiting; green the moment
+              // there isn't. A step change in colour, not an increment in
+              // length — see the header comment.
+              'block h-full rounded-full transition-[width,background-color] duration-300 ease-out',
+              complete ? !doneColor && 'bg-green-600' : 'bg-badge-reminders',
+            )}
+            style={{
+              width: `${Math.min(1, fraction) * 100}%`,
+              // Done in its own `doneColor` (the deadlines page's teal) in
+              // place of green.
+              ...(doneColor && complete ? { backgroundColor: doneColor } : {}),
+            }}
+          />
+        )}
+      </span>
+    </button>
   )
 }

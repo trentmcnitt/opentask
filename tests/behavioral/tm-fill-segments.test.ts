@@ -73,8 +73,8 @@ describe('TM-FILL: every segment, every day', () => {
   test('TM-FILL02: switch off: the horizons and Upcoming only, in order', () => {
     const segs = segments({ queuePanels: true, deadlineRows: true, fill: true })
     expect(segs.map((s) => s.horizon)).toEqual([
-      'days',
       'upcoming',
+      'days',
       'weeks',
       'months',
       'eventually',
@@ -84,18 +84,18 @@ describe('TM-FILL: every segment, every day', () => {
   test('TM-FILL03: switch on, never a kind the caller does not draw', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
     expect(segments({ queuePanels: true, fill: true }).map((s) => s.horizon)).toEqual([
+      'upcoming',
       'queue_today',
       'queue_previous',
       'days',
-      'upcoming',
       'weeks',
       'months',
       'eventually',
     ])
     expect(segments({ deadlineRows: true, fill: true }).map((s) => s.horizon)).toEqual([
       'deadlines',
-      'days',
       'upcoming',
+      'days',
       'weeks',
       'months',
       'eventually',

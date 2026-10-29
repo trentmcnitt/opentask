@@ -18,8 +18,15 @@ import {
 } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
-import { MIN_SEGMENT_PX, StripWord } from '@/components/ReminderSlotBar'
-import { SEGMENT_STRIP_WORDS } from '@/lib/task-model-words'
+import {
+  MIN_SEGMENT_PX,
+  StripGroupColumn,
+  StripGroupDivider,
+  StripMark,
+  stripMarkFor,
+  stripRuns,
+  type StripMarkSpec,
+} from '@/components/ReminderSlotBar'
 import {
   segmentCounts,
   segmentDoneColor,
@@ -187,25 +194,43 @@ export function RemindersHeadline({
           })}
           {/* The break before the queue's line (`queueLine`). */}
           {queueLine && <span aria-hidden data-day-bar-break className="basis-full" />}
-          {taskSegments.map((segment) => {
-            const { handled, total } = segmentCounts(segment)
-            const key = segmentKey(segment)
-            return (
-              <DayBarButton
-                key={key}
-                id={key}
-                label={segmentLabel(segment)}
-                considered={handled}
-                total={total}
-                started
-                doneColor={segmentDoneColor(segment.horizon)}
-                emptyDone
-                word={SEGMENT_STRIP_WORDS[segment.horizon]}
-                share={share}
-                onClick={() => onGoToSlot(key)}
-              />
-            )
-          })}
+          {taskSegments.length > 0 && (
+            // The queue's bars in their groups, a hairline between groups
+            // (tight N2, 2026-10-29) — the dashboard card's strip.
+            <div data-day-bar-queue className="flex basis-full items-end gap-1">
+              {stripRuns(taskSegments, (s) => stripMarkFor(s.horizon, s.pulled).group).map(
+                (run, r) => (
+                  <Fragment key={segmentKey(run[0])}>
+                    {r > 0 && <StripGroupDivider />}
+                    <StripGroupColumn
+                      group={stripMarkFor(run[0].horizon, run[0].pulled).group}
+                      grow={run.reduce((sum, s) => sum + segmentCounts(s).total, 0) || 0.5}
+                    >
+                      {run.map((segment) => {
+                        const { handled, total } = segmentCounts(segment)
+                        const key = segmentKey(segment)
+                        return (
+                          <DayBarButton
+                            key={key}
+                            id={key}
+                            label={segmentLabel(segment)}
+                            considered={handled}
+                            total={total}
+                            started
+                            doneColor={segmentDoneColor(segment.horizon)}
+                            emptyDone
+                            mark={stripMarkFor(segment.horizon, segment.pulled)}
+                            share={share}
+                            onClick={() => onGoToSlot(key)}
+                          />
+                        )
+                      })}
+                    </StripGroupColumn>
+                  </Fragment>
+                ),
+              )}
+            </div>
+          )}
         </div>
         <span
           className="mt-2 shrink-0 text-xs tabular-nums sm:mt-0 sm:ml-3 sm:whitespace-nowrap"
@@ -384,7 +409,7 @@ function DayBarButton({
   started,
   doneColor,
   emptyDone = false,
-  word,
+  mark,
   share,
   onClick,
 }: {
@@ -397,8 +422,8 @@ function DayBarButton({
   doneColor?: string
   /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
   emptyDone?: boolean
-  /** A task segment's short word above its bar (Q2, `SEGMENT_STRIP_WORDS`): the bar is then never narrower than it. */
-  word?: string
+  /** A task segment's mark above its bar (Q2, tight N2: `stripMarkFor`): the bar is then never narrower than it. */
+  mark?: StripMarkSpec
   /** Its even share of the bar (`fitShare`): the most its minimum may be. */
   share: string
   onClick: () => void
@@ -413,8 +438,8 @@ function DayBarButton({
       aria-label={`Go to ${label}, ${considered} of ${total} considered`}
       title={`${label} · ${considered} of ${total} considered`}
       style={
-        word
-          ? // A word (Q2): at least the word's width, its weight past that.
+        mark
+          ? // A mark (Q2): at least the word's width, its weight past that.
             { flexGrow: total, flexShrink: 0, flexBasis: 0, minWidth: 'max-content' }
           : total === 0 && emptyDone
             ? // An EMPTY task segment (2026-10-24): every one is on the bar every
@@ -433,10 +458,10 @@ function DayBarButton({
       }
       className={cn(
         'group rounded-full py-1.5 focus-visible:outline-none',
-        word && 'flex flex-col items-stretch gap-1 pt-0.5',
+        mark && 'flex flex-col items-stretch gap-[3px] pt-0',
       )}
     >
-      {word && <StripWord word={word} current={false} empty={total === 0} />}
+      {mark && <StripMark mark={mark} current={false} empty={total === 0} />}
       <span
         className={cn(
           'relative block h-2 overflow-hidden rounded-full transition-colors',

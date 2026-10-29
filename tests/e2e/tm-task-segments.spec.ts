@@ -261,7 +261,8 @@ test.describe('Task segments on the dashboard', () => {
       // divider. The empty ones are done.
       const strip = tasks.getByRole('group', { name: "Today's task segments" })
       const bars = strip.getByRole('button')
-      const order = ['days', 'upcoming', 'weeks', 'months', 'eventually']
+      // Heads up before the horizons since 2026-10-29 (the strip's groups).
+      const order = ['upcoming', 'days', 'weeks', 'months', 'eventually']
       await expect(bars).toHaveCount(order.length)
       for (let i = 0; i < order.length; i++) {
         await expect(bars.nth(i)).toHaveAttribute('data-slot-segment', `tasks:${order[i]}`)
@@ -290,17 +291,18 @@ test.describe('Task segments on the dashboard', () => {
 
       // The chevrons page through every segment, an empty one included
       // ("Nothing today ✓", 0 of 0 — on Upcoming, in each of its two sections).
-      await tasks.getByRole('button', { name: 'Next task segment' }).click()
+      // Heads up comes before Days since 2026-10-29.
+      await tasks.getByRole('button', { name: 'Previous task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
       await expect(tasks.locator('[data-upcoming-section] [data-segment-empty]')).toHaveCount(2)
       await tasks.getByRole('button', { name: 'Next task segment' }).click()
+      await tasks.getByRole('button', { name: 'Next task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
-      await tasks.getByRole('button', { name: 'Previous task segment' }).click()
       await tasks.getByRole('button', { name: 'Previous task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
 
       // Defer all, behind the header tap, finishes Days: on to Weeks, the
-      // next with work (past the empty Upcoming).
+      // next with work.
       await tasks.locator('[data-slot-header-toggle]').click()
       await tasks.getByRole('button', { name: /^Defer all/ }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
@@ -380,7 +382,8 @@ test.describe('Task segments on the dashboard', () => {
       // Every task segment, every day, in its fixed place (2026-10-24; the
       // switch off), after the slots; the empty ones done.
       const segs = bar.locator('[data-day-segment^="tasks:"]')
-      const order = ['days', 'upcoming', 'weeks', 'months', 'eventually']
+      // Heads up before the horizons since 2026-10-29 (the strip's groups).
+      const order = ['upcoming', 'days', 'weeks', 'months', 'eventually']
       await expect(segs).toHaveCount(order.length)
       for (let i = 0; i < order.length; i++) {
         await expect(segs.nth(i)).toHaveAttribute('data-day-segment', `tasks:${order[i]}`)

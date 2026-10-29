@@ -478,12 +478,15 @@ describe('contract fixtures: the task queue (PR 3)', () => {
     expect(prefs.rollover_time).toMatch(/^\d{2}:\d{2}$/)
   })
 
-  test('the task queue panels: first, sorted by priority, every row a segment row', () => {
-    // Task queue PR 3: `queue_today` and `queue_previous` come before every
-    // other segment. A native build that predates them drops the unknown
-    // kinds (Swift `SegmentKind(raw:)` returns nil) — the rows are otherwise
-    // ordinary segment rows, with `queued_from_due_at` and `try_tomorrow`.
-    const segs = data('reminders-queue').task_segments as Obj[]
+  test('the task queue panels: together, sorted by priority, every row a segment row', () => {
+    // Task queue PR 3: `queue_today` and `queue_previous`, together — after
+    // Upcoming since 2026-10-29 (the strip's groups). A native build that
+    // predates them drops the unknown kinds (Swift `SegmentKind(raw:)`
+    // returns nil) — the rows are otherwise ordinary segment rows, with
+    // `queued_from_due_at` and `try_tomorrow`.
+    const all = data('reminders-queue').task_segments as Obj[]
+    const at = all.findIndex((s) => s.horizon === 'queue_today')
+    const segs = all.slice(at)
     expect(segs.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
     const [today, previous] = segs as { tasks: Obj[] }[]
     expect(today.tasks.map((r) => r.priority)).toEqual([2, 0])

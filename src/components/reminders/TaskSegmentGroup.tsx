@@ -12,7 +12,10 @@ import {
 } from '@/components/reminders/ReminderSlotGroup'
 import {
   AgedGroupHeading,
+  PulledSectionHeading,
   agedGroupBefore,
+  pulledSectionBefore,
+  rowKind,
   ConsideredSegmentRow,
   EmptySegmentLine,
   SegmentNudge,
@@ -184,17 +187,19 @@ export function TaskSegmentGroup({
           {waiting.length > 0 && (
             <ul className="space-y-0.5 px-1" aria-label={label}>
               {waiting.map((row, i) => {
-                // Aged out's group headings (2026-10-29).
+                // Aged out's group headings, Pulled's sections (2026-10-29).
                 const heading = agedGroupBefore(segment.horizon, waiting, i)
+                const pulled = pulledSectionBefore(segment, waiting, i)
                 return (
                   <Fragment key={row.task.id}>
                     {heading && <AgedGroupHeading {...heading} panel={false} />}
+                    {pulled && <PulledSectionHeading {...pulled} panel={false} />}
                     <TaskSegmentRow
                       row={row}
                       actions={actions}
                       timezone={timezone}
                       panel={false}
-                      segmentHorizon={segment.horizon}
+                      segmentHorizon={rowKind(segment, row)}
                     />
                   </Fragment>
                 )

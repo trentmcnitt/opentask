@@ -2734,8 +2734,9 @@ paths:
             enum: ['1']
           description: >
             `1` (2026-10-24, every segment every day): `task_segments` holds every kind this
-            client draws, in the fixed order (`deadlines`, `queue_today`, `queue_previous`,
-            `days`, `upcoming`, `weeks`, `months`, `eventually`), an empty one with `tasks: []`
+            client draws, in the fixed order (`deadlines`, `upcoming`, `queue_today`,
+            `queue_previous`, `days`, `weeks`, `months`, `eventually`; Upcoming moved after
+            `deadlines` on 2026-10-29), an empty one with `tasks: []`
             and zero counts. `deadlines` comes only with the task queue on and `deadlines=1`, the
             queue's two panels only with it on and `queue=1`; the rest always. Display only:
             which task is in which segment does not change. Omitted: a segment comes only on a
@@ -2787,7 +2788,7 @@ paths:
                           by default; months the first check-in day of the
                           month; eventually the first one of Jan, Apr, Jul,
                           Oct) — plus UPCOMING (2026-10-12, `horizon:
-                          "upcoming"`, after `days`): targeted one-offs,
+                          "upcoming"`, after `deadlines` since 2026-10-29 — after `days` before): targeted one-offs,
                           repeating tasks' next occurrences and (with
                           `?deck=1`) future decks, in two SECTIONS
                           (2026-10-25, each row's `upcoming_section`):

@@ -129,7 +129,15 @@ export interface SegmentRow {
    * sent without one (it always sends it) reads as Later.
    */
   section?: UpcomingSection
+  /**
+   * PULLED (2026-10-29, `mergePulled`): which of the queue's two panels the
+   * row came from — Today's pulls or the earlier ones. Only on the merged
+   * Pulled view's rows; the row acts as its own kind.
+   */
+  pulled?: PulledSection
 }
+
+export type PulledSection = 'today' | 'earlier'
 
 export interface SegmentView {
   horizon: SegmentKind
@@ -138,6 +146,8 @@ export interface SegmentView {
   considered: number
   deferred: number
   nudge: boolean
+  /** The merged Pulled view (`mergePulled`): Today's and earlier pulls as one. */
+  pulled?: true
 }
 
 interface UseTaskSegmentsOptions {
@@ -178,7 +188,7 @@ export function useTaskSegments({
   // Each tap's change, until the payload on screen was requested after its
   // write answered (`src/lib/pending-overlay.ts`).
   const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
-  const view = useMemo(() => segmentViews(segments, overlay), [segments, overlay])
+  const view = useMemo(() => mergePulled(segmentViews(segments, overlay)), [segments, overlay])
   // Which rows are the deadlines page's, and which of those its safety net
   // holds — what a consider or a deck does to a row depends on it. Read
   // through a ref, so the actions keep one identity across refreshes.
@@ -362,6 +372,38 @@ function segmentViews(
       nudge: seg.nudge,
     }
   })
+}
+
+/**
+ * PULLED, ONE SEGMENT (Trent, 2026-10-29: "just have pulls and then the
+ * first thing is Today and the other section is Earlier"): the queue's two
+ * panels — Today's pulls, Previous pulls — drawn as ONE segment in the web
+ * (one strip bar, one page, one "N of M"), each row tagged with the panel it
+ * came from (`pulled`) for its section heading. Only the view merges: the
+ * server's two kinds, their order and the native apps are unchanged, and each
+ * row still acts as its own kind (Try Tomorrow's mark is a Today's pull's).
+ * The merged view takes Today's pulls' place and kind (`queue_today`).
+ */
+export function mergePulled(views: SegmentView[]): SegmentView[] {
+  const today = views.find((v) => v.horizon === 'queue_today')
+  const earlier = views.find((v) => v.horizon === 'queue_previous')
+  if (!today && !earlier) return views
+  const parts: [SegmentView | undefined, PulledSection][] = [
+    [today, 'today'],
+    [earlier, 'earlier'],
+  ]
+  const merged: SegmentView = {
+    horizon: 'queue_today',
+    pulled: true,
+    rows: parts.flatMap(([v, pulled]) => (v ? v.rows.map((r) => ({ ...r, pulled })) : [])),
+    waiting: (today?.waiting ?? 0) + (earlier?.waiting ?? 0),
+    considered: (today?.considered ?? 0) + (earlier?.considered ?? 0),
+    deferred: (today?.deferred ?? 0) + (earlier?.deferred ?? 0),
+    nudge: !!today?.nudge || !!earlier?.nudge,
+  }
+  const at = views.findIndex((v) => v === today || v === earlier)
+  const rest = views.filter((v) => v !== today && v !== earlier)
+  return [...rest.slice(0, at), merged, ...rest.slice(at)]
 }
 
 /**
