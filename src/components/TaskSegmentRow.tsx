@@ -1468,14 +1468,19 @@ function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
  */
 function AgedCutoffChip({ task, segmentHorizon }: { task: Task; segmentHorizon: SegmentKind }) {
   if (segmentHorizon !== 'aged_out') return null
+  // A no-break space before an INLINE chip (no break opportunity on either
+  // side of it): the chip wraps with the title's last word, never alone.
   return (
-    <span
-      data-aged-cutoff
-      title="Past its horizon's cutoff"
-      className="bg-foreground/[0.06] text-muted-foreground ml-1.5 inline-block rounded-[4px] px-1.5 align-[1px] text-[11px] leading-4 font-medium whitespace-nowrap"
-    >
-      {cutoffWords(task.horizon)}
-    </span>
+    <>
+      {'\u00A0'}
+      <span
+        data-aged-cutoff
+        title="Past its horizon's cutoff"
+        className="bg-foreground/[0.06] text-muted-foreground ml-0.5 rounded-[4px] px-1.5 py-px align-[1px] text-[11px] leading-4 font-medium whitespace-nowrap"
+      >
+        {cutoffWords(task.horizon)}
+      </span>
+    </>
   )
 }
 
