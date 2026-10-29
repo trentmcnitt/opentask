@@ -38,7 +38,7 @@ import { DeckTomorrowButton } from '@/components/TaskSegmentRow'
 import { useDeferPress } from '@/hooks/useDeferPress'
 import { useTimezone } from '@/hooks/useTimezone'
 import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
-import { offersTargetToday } from '@/lib/row-corner'
+import { clockTap } from '@/lib/lean-clock'
 import { targetReset } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
@@ -139,7 +139,9 @@ function LeanTimeButton({
 }) {
   const timezone = useTimezone()
   const dayStart = useDayStart()
-  if (onTargetAt && offersTargetToday(task)) {
+  // `clockTap` is the rule: Today on an untargeted row; else the Defer
+  // button, whose press defers a due target and opens the menu otherwise.
+  if (onTargetAt && clockTap(task, isOverdue) === 'target-today') {
     return (
       <TargetTodayButton
         task={task}
