@@ -106,10 +106,10 @@ final class UpcomingSectionsTests: WidgetStoreTestCase {
 
     func testSmartStackCardLabels() {
         let upcoming = TaskSegmentDTO(horizon: "upcoming", tasks: [row(1, .waiting, .tomorrow), row(2, .waiting, .later)])
-        XCTAssertEqual(upcoming.cardLabel(for: upcoming.tasks[0]), "Upcoming · Tomorrow")
-        XCTAssertEqual(upcoming.cardLabel(for: upcoming.tasks[1]), "Upcoming · Later")
+        XCTAssertEqual(upcoming.cardLabel(for: upcoming.tasks[0]), "Heads up · Tomorrow")
+        XCTAssertEqual(upcoming.cardLabel(for: upcoming.tasks[1]), "Heads up · Later")
         let days = TaskSegmentDTO(horizon: "days", tasks: [row(3, .waiting, nil)])
-        XCTAssertEqual(days.cardLabel(for: days.tasks[0]), "Task queue · Daily")
+        XCTAssertEqual(days.cardLabel(for: days.tasks[0]), "Days")
     }
 
     // MARK: Headings and the paging

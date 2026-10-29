@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronDown, FolderOpen, Forward } from 'lucide-react'
+import { Check, ChevronDown, Clock3, FolderOpen, Forward, Sprout } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -21,7 +21,7 @@ import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
-import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
+import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
 import { useLabelConfig } from '@/components/PreferencesProvider'
@@ -34,14 +34,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   HORIZON_LABELS,
-  HORIZON_UNSET_LABEL,
+  UNSET_HORIZON_WORDS,
   HORIZON_WORD,
   QUEUE_PANEL_TITLES,
   DEADLINES_PAGE_TITLE,
   REMOVE_TARGET,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
-  taskQueueTitle,
+  PULLED_SECTION_WORDS,
+  PULLED_TITLE,
   UPCOMING_LABEL,
 } from '@/lib/task-model-words'
 import {
@@ -56,7 +57,22 @@ import {
 import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
-import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
+import type {
+  PulledSection,
+  SegmentRow,
+  SegmentView,
+  TaskSegmentActions,
+} from '@/hooks/useTaskSegments'
+import {
+  AGED_OUT_TITLE,
+  agedClockRestart,
+  agedOutGroup,
+  ageWords,
+  cutoffWords,
+  growStep,
+  type AgedOutGroup,
+} from '@/lib/aged-out'
+import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
@@ -146,15 +162,18 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
 }
 
 /**
- * A segment kind's panel title (Trent, 2026-10-20): "Task queue · Today's
- * pulls", "… · Previous pulls" (2026-10-21), "… · Upcoming", "… · Daily", "Weekly", "Monthly",
- * "Quarterly" (`taskQueueTitle`) — one format, the whole header on both
- * surfaces (uppercased there), no hint after it.
+ * A segment kind's panel title: just its own words — "Today's pulls",
+ * "Previous pulls", "Deadlines", "Days", "Heads up", "Weeks", "Months",
+ * "Eventually", "Aged out" — the whole header on both surfaces (uppercased
+ * there), no hint after it. Since 2026-10-29 no "Task queue ·" before it
+ * (Trent: "I think just the title's enough now. You can see which one's
+ * selected" — the strip's words say where you are).
  */
 export function segmentTitle(kind: SegmentKind): string {
-  if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
-  if (kind === 'deadlines') return taskQueueTitle(DEADLINES_PAGE_TITLE)
-  return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
+  if (isQueueKind(kind)) return QUEUE_PANEL_TITLES[kind]
+  if (kind === 'deadlines') return DEADLINES_PAGE_TITLE
+  if (kind === 'aged_out') return AGED_OUT_TITLE
+  return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
 }
 
 /**
@@ -169,7 +188,8 @@ export function offersDeferAll(kind: SegmentKind): boolean {
 
 /** `segmentTitle` for a segment: its header, section and list names. */
 export function segmentLabel(segment: SegmentView): string {
-  return segmentTitle(segment.horizon)
+  // The merged Pulled view (`mergePulled`) has its own name.
+  return segment.pulled ? PULLED_TITLE : segmentTitle(segment.horizon)
 }
 
 /**
@@ -317,8 +337,11 @@ export function TaskSegmentRow({
   // The deadlines page's safety net (2026-10-22): a row already seen today
   // stays, waiting — another consider would change nothing.
   const seenInNet = !!row.safetyNet && !!row.seen
+  // Aged out (2026-10-29): considering there is Process's keep.
+  const aged = segmentHorizon === 'aged_out'
   const consider = () => {
-    if (!considered && !seenInNet) void actions.consider(task)
+    if (considered || seenInNet) return
+    void (aged ? actions.keep(task) : actions.consider(task))
   }
   const rowProps = useSegmentRowPress({
     onPeek: (viaKeyboard) => actions.openPeek(task, viaKeyboard),
@@ -359,6 +382,7 @@ export function TaskSegmentRow({
       <li
         data-segment-task={task.id}
         data-segment-state={row.state}
+        data-pulled={row.pulled}
         data-safety-net={row.safetyNet ? '' : undefined}
         data-seen={row.seen ? '' : undefined}
         tabIndex={considered ? -1 : 0}
@@ -401,6 +425,7 @@ export function TaskSegmentRow({
           considered={considered}
           seenInNet={seenInNet}
           panel={panel}
+          keeps={aged}
           onConsider={consider}
         />
         <div className="min-w-0 flex-1">
@@ -516,12 +541,15 @@ function SegmentRowCircle({
   considered,
   seenInNet = false,
   panel,
+  keeps = false,
   onConsider,
 }: {
   task: Task
   considered: boolean
   seenInNet?: boolean
   panel: boolean
+  /** Aged out: the circle is Process's keep (the horizon stays). */
+  keeps?: boolean
   onConsider: () => void
 }) {
   if (seenInNet) {
@@ -564,8 +592,10 @@ function SegmentRowCircle({
         e.stopPropagation()
         onConsider()
       }}
-      aria-label={`Mark "${task.title}" as considered`}
-      title="Considered (seen — not done)"
+      aria-label={
+        keeps ? `Keep the horizon of "${task.title}"` : `Mark "${task.title}" as considered`
+      }
+      title={keeps ? 'Keep (the horizon stays; asks again later)' : 'Considered (seen — not done)'}
       className={cn(
         'hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
         panel ? 'border-foreground/25 size-[19px]' : 'border-foreground/20 mt-[3px] size-6',
@@ -764,7 +794,11 @@ function TaskSegmentRowActions({
         panel={panel}
         queueUi={queueUi}
       />
-      {segmentHorizon === 'deadlines' ? (
+      {segmentHorizon === 'aged_out' ? (
+        // Aged out (2026-10-29): Grow in On deck tomorrow's place, whatever
+        // the switch says — the segment's own question.
+        <GrowButton task={task} actions={actions} panel={panel} />
+      ) : segmentHorizon === 'deadlines' ? (
         // The deadlines page (2026-10-22): Defer in On deck tomorrow's place —
         // both are "another day" — hidden in the safety net (the place kept).
         <DeferLeadSlot row={row} actions={actions} timezone={timezone} panel={panel} />
@@ -794,7 +828,16 @@ function TaskSegmentRowActions({
           onTargetAt={(t, at) => void actions.targetAt(t, at)}
           // Faded on a decked row: a target takes it off deck (plan §5).
           replaces={todayReplaces(task, timezone, dayStart)}
-          showLabel
+          // The lean rows' single plain clock, no word (Trent, 2026-10-29:
+          // "we should probably change it to a clock from today… it's just
+          // not consistent"): a tap targets today, a hold picks the time.
+          face={
+            <Clock3
+              className={panel ? 'size-[18px]' : 'size-[20px]'}
+              strokeWidth={1.75}
+              aria-hidden
+            />
+          }
           // A 34×44 hit target (`CONTROL_HIT`) around a glyph the size of the
           // done square; the negative margin keeps the row's height. The
           // `mr-[16px]` after it: 4px of it is the done square's own hit area
@@ -802,15 +845,11 @@ function TaskSegmentRowActions({
           // areas — Trent's own ruling after he mis-tapped Today for done
           // (2026-10-12; kept through the compact buttons). The grey hover
           // block is the inner box, the row buttons' (`HOVER_BOX`), so it
-          // stays inside the row (2026-10-20). From `sm` up the box has room
-          // for the word "Today" too (icon only on a phone, the word on a
-          // desktop — Trent's ruling).
+          // stays inside the row (2026-10-20). The word "Today" beside the sun
+          // went with the sun (2026-10-29): the clock stands alone.
           className={`${CONTROL_HIT} mr-[16px]`}
-          boxClassName={
-            panel
-              ? `${HOVER_BOX.panel} min-w-[26px] sm:px-1.5`
-              : `${HOVER_BOX.page} min-w-[28px] sm:px-2`
-          }
+          // The clock alone: On deck's square box (`DECK_BOX`).
+          boxClassName={panel ? DECK_BOX.panel : DECK_BOX.page}
           iconClassName={panel ? 'size-[19px]' : 'size-[22px]'}
         />
       )}
@@ -899,6 +938,104 @@ function SegmentDeckSlot({
  * (`HOVER_BOX`), so the taller hit target never paints outside the row.
  */
 const SLOT_HIT = '-my-[11px] h-[44px] w-[34px] shrink-0'
+
+/**
+ * GROW (Aged out, 2026-10-29, `src/lib/aged-out.ts`): the horizon one step
+ * out — Days → Weeks → Months → Eventually, unset → Months. In On deck
+ * tomorrow's slot, the same hit target and hover box. The tooltip names the
+ * horizon it grows to; the row then stays, considered.
+ */
+function GrowButton({
+  task,
+  actions,
+  panel,
+}: {
+  task: Task
+  actions: TaskSegmentActions
+  panel: boolean
+}) {
+  // A hold or right-click opens the horizon menu (Trent, 2026-10-29: "press
+  // and hold on the grow icon to … select what horizon I want"); a tap grows
+  // one step. A pick is a grow to that horizon: the row stays, handled.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const to = growStep(task.horizon)
+  const press = useSimpleLongPress({
+    onLongPress: () => setMenuOpen(true),
+    onShortPress: () => void actions.grow(task),
+    tapOn: 'click',
+  })
+  if (!to) return <span aria-hidden className={SLOT_HIT} />
+  const words = `Grow to ${HORIZON_LABELS[to]}`
+  return (
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <button
+        type="button"
+        data-grow
+        data-grow-to={to}
+        data-no-row-press
+        onClick={(e) => {
+          e.stopPropagation()
+          press.onClick()
+        }}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerLeave={press.onPointerLeave}
+        onPointerMove={press.onPointerMove}
+        onPointerCancel={press.onPointerCancel}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setMenuOpen(true)
+        }}
+        aria-label={`${words}: “${task.title}” (hold to pick a horizon)`}
+        title={`${words} · hold to pick`}
+        className={cn(
+          'group/grow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+          SLOT_HIT,
+          // From `sm` up it says where it grows to (A5): wider than the slot.
+          'sm:w-auto',
+        )}
+      >
+        {/* The menu's anchor: inert, so only the hold or right-click opens it. */}
+        <DropdownMenuTrigger asChild>
+          <span aria-hidden tabIndex={-1} className="pointer-events-none absolute inset-0" />
+        </DropdownMenuTrigger>
+        <span
+          className={cn(
+            'group-hover/grow:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
+            panel ? DECK_BOX.panel : DECK_BOX.page,
+            'sm:w-auto sm:px-1.5',
+          )}
+        >
+          <Sprout className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
+          {/* Where it grows to (Trent, 2026-10-29, A5: "that's a nice touch"):
+              "Weeks", "Months", "Eventually" — desktop only; a phone shows
+              the sprout alone, so the title keeps its width. */}
+          {/* A FIXED WIDTH, the longest word's ("Eventually"; Trent,
+              2026-10-29: a box that changes width moves the row's other
+              buttons, as the cutoff chip did): the word and an invisible
+              "Eventually" share one grid cell, the word left-aligned. */}
+          <span
+            data-grow-word
+            className="hidden justify-items-start text-xs font-medium sm:inline-grid"
+          >
+            <span className="col-start-1 row-start-1">{HORIZON_LABELS[to]}</span>
+            <span aria-hidden className="invisible col-start-1 row-start-1">
+              {HORIZON_LABELS.eventually}
+            </span>
+          </span>
+        </span>
+      </button>
+      <HorizonMenuContent
+        value={task.horizon}
+        unset={false}
+        onChange={(h) => {
+          if (h) void actions.grow(task, h)
+        }}
+      />
+    </DropdownMenu>
+  )
+}
 
 /**
  * ON DECK TOMORROW (2026-10-20), in the pencil's place — second since
@@ -1201,7 +1338,21 @@ function DeckSlotSpacer({ panel, empty = false }: { panel: boolean; empty?: bool
  * `readOnly` (the row's peek bubble, 2026-10-20): the same line, nothing to
  * press — the dot is just its mark.
  */
-function TaskSegmentMeta({
+type TaskSegmentMetaProps = Parameters<typeof SegmentMetaLine>[0]
+
+/** A segment row's meta line: Aged out's own (`AgedOutMeta`), else the usual. */
+function TaskSegmentMeta(props: TaskSegmentMetaProps) {
+  if (props.segmentHorizon !== 'aged_out') return <SegmentMetaLine {...props} />
+  return (
+    <AgedOutMeta
+      task={props.task}
+      timezone={props.timezone}
+      onOpenDetails={props.readOnly ? undefined : props.onOpenDetails}
+    />
+  )
+}
+
+function SegmentMetaLine({
   task,
   timezone,
   segmentHorizon,
@@ -1291,6 +1442,212 @@ function TaskSegmentMeta({
   )
 }
 
+/**
+ * AGED OUT's meta line (Trent, 2026-10-29: "this is the one screen where
+ * [the created date] really does matter"), in its own order: the project, the
+ * horizon dot, then the facts joined by "·" (`agedFacts`) — when it was
+ * created and how old it is — then the labels and the priority LAST. The
+ * cutoff it passed is its group's heading (`AgedGroupHeading`). No badges:
+ * every row here is old.
+ */
+function AgedOutMeta({
+  task,
+  timezone,
+  onOpenDetails,
+}: {
+  task: Task
+  timezone: string
+  onOpenDetails?: () => void
+}) {
+  const { projects } = useProjects()
+  const projectName = projects.find((p) => p.id === task.project_id)?.name
+  const dayStart = useDayStart()
+  const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
+  return (
+    <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {projectName && (
+        <span data-segment-project className="inline-flex items-center gap-1">
+          <FolderOpen className="size-3" aria-hidden />
+          {projectName}
+        </span>
+      )}
+      {/* EVERY row's dot (Trent, 2026-10-29: "with dots on every row"),
+          whatever the task-queue switch says — an Aged out row is always a
+          one-off with no picked target; unset draws as the Weeks dot. */}
+      <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
+      <span data-aged-facts>{agedFacts(task, timezone, dayStart).join(' · ')}</span>
+      <SegmentLabels task={task} />
+      {priority && (
+        <span data-segment-priority className={priority.color}>
+          {priority.label}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The Aged out row's facts (Trent, 2026-10-29: "spelled out all the way"):
+ * the created date (`createdDateWords`), then how old — "5 weeks old" from
+ * creation; or, when something restarted the age clock (`agedClockRestart`),
+ * what and when — "horizon set Sep 3, 1 month ago", "kept 2×, last Sep 12,
+ * 6 weeks ago". The ages are `ageWords`.
+ */
+function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
+  const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
+  const restart = agedClockRestart(task, timezone, dayStart)
+  const kept = task.growth_kept_count
+  const facts = [words(task.created_at)]
+  const age = ageWords(restart?.at ?? task.created_at, timezone, dayStart)
+  // Said plainly (Trent, 2026-10-29, of "Weeks since Sep 3": what does it
+  // mean?): "horizon set Sep 3, 1 month ago", "kept 2×, last Sep 12, 6 weeks ago".
+  const ago = age ? `, ${age} ago` : ''
+  if (restart?.kind === 'set') {
+    facts.push(`horizon set ${words(restart.at)}${ago}`)
+  } else if (restart) {
+    facts.push(`${kept > 0 ? `kept ${kept}×, last` : 'kept'} ${words(restart.at)}${ago}`)
+  } else {
+    if (kept > 0) facts.push(`kept ${kept}×`)
+    if (age) facts.push(`${age} old`)
+  }
+  return facts
+}
+
+/**
+ * AGED OUT'S GROUP HEADINGS (Trent, 2026-10-29: "add little categories… so
+ * that all the days, then all the weeks and months… are just grouped"; his
+ * pick, A3 with the dot): a quiet pill — the horizon's name, then its dot,
+ * so the heading teaches the dot the rows wear ("DAYS ●") — the group's
+ * count, and the cutoff faint on the right ("DAYS ● 3 … >10 days"). The rows come sorted by group
+ * (`compareAgedOut`); a heading goes before each group's first row, so an
+ * empty group has none. Unset rows read as Weeks.
+ */
+export function agedGroupBefore(
+  segmentHorizon: SegmentKind,
+  rows: readonly SegmentRow[],
+  index: number,
+): { group: AgedOutGroup; count: number } | null {
+  if (segmentHorizon !== 'aged_out') return null
+  const group = agedOutGroup(rows[index].task.horizon)
+  if (index > 0 && agedOutGroup(rows[index - 1].task.horizon) === group) return null
+  return { group, count: rows.filter((r) => agedOutGroup(r.task.horizon) === group).length }
+}
+
+export function AgedGroupHeading({
+  group,
+  count,
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  group: AgedOutGroup
+  count: number
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <SectionPill
+      data={{ 'data-aged-group': group }}
+      label={HORIZON_LABELS[group]}
+      dot={group}
+      count={count}
+      right={cutoffWords(group)}
+      panel={panel}
+      hiddenWhenNarrow={hiddenWhenNarrow}
+    />
+  )
+}
+
+/**
+ * PULLED'S SECTIONS (Trent, 2026-10-29: "the first thing is Today and the
+ * other section is Earlier"): the merged Pulled view's rows come Today's
+ * pulls first, then the earlier ones (`mergePulled`); a pill heading goes
+ * before each section's first row — "TODAY", "EARLIER" — so an empty section
+ * has none.
+ */
+export function pulledSectionBefore(
+  segment: SegmentView,
+  rows: readonly SegmentRow[],
+  index: number,
+): { section: PulledSection; count: number } | null {
+  const section = rows[index].pulled
+  if (!segment.pulled || !section) return null
+  if (index > 0 && rows[index - 1].pulled === section) return null
+  return { section, count: rows.filter((r) => r.pulled === section).length }
+}
+
+export function PulledSectionHeading({
+  section,
+  count,
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  section: PulledSection
+  count: number
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <SectionPill
+      data={{ 'data-pulled-section': section }}
+      label={PULLED_SECTION_WORDS[section]}
+      count={count}
+      panel={panel}
+      hiddenWhenNarrow={hiddenWhenNarrow}
+    />
+  )
+}
+
+/** The kind a row acts as: a merged Pulled view's earlier row is a Previous pull. */
+export function rowKind(segment: SegmentView, row: SegmentRow): SegmentKind {
+  return row.pulled === 'earlier' ? 'queue_previous' : segment.horizon
+}
+
+/**
+ * A section's quiet PILL heading inside a segment (Trent's A3, 2026-10-29):
+ * the word in capitals (a horizon's dot after it), its count in grey, and
+ * faint words on the right if any.
+ */
+function SectionPill({
+  data,
+  label,
+  dot,
+  count,
+  right,
+  panel,
+  hiddenWhenNarrow,
+}: {
+  data: Record<string, string>
+  label: string
+  dot?: HorizonValue
+  count: number
+  right?: string
+  panel: boolean
+  hiddenWhenNarrow: boolean
+}) {
+  return (
+    <li
+      role="presentation"
+      {...data}
+      className={cn(
+        'flex items-center gap-2 pt-3 pb-1',
+        panel ? 'px-1' : 'px-2',
+        hiddenWhenNarrow && 'hidden xl:flex',
+      )}
+    >
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0f3] px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] text-slate-600 uppercase dark:bg-white/[0.08] dark:text-slate-300">
+        {label}
+        {dot && <HorizonDotMark horizon={dot} />}
+      </span>
+      <span className="text-muted-foreground/70 text-xs tabular-nums">{count}</span>
+      {right && (
+        <span data-aged-cutoff className="text-muted-foreground/60 ml-auto text-[11.5px]">
+          {right}
+        </span>
+      )}
+    </li>
+  )
+}
+
 /** "On deck Sat" / "On deck today" for a deck day (yyyy-MM-dd). */
 function deckChipWords(day: string, timezone: string, dayStart: string): string {
   return todayReplaces({ on_deck_day: day }, timezone, dayStart) ?? 'On deck'
@@ -1317,7 +1674,7 @@ function SegmentLabels({ task }: { task: Task }) {
 /**
  * The two badges (spec §7), as quiet chips at the end of a segment row's
  * second line: the attempts ("2×", a task with a target that has been over
- * it — e.g. moved ahead after missing it) and the age (">1 mo", an undated
+ * it — e.g. moved ahead after missing it) and the age ("old", an undated
  * task past its horizon's threshold). Never both: age is undated only.
  */
 function BadgeChips({ task, timezone }: { task: Task; timezone: string }) {
@@ -1469,7 +1826,7 @@ export function HorizonChip({
   task: Pick<Task, 'horizon' | 'title'>
   onChange: (horizon: HorizonValue | null) => void
 }) {
-  const label = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
+  const label = task.horizon ? HORIZON_LABELS[task.horizon] : UNSET_HORIZON_WORDS
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -1518,13 +1875,21 @@ function leftWords(left: Exclude<SegmentLeft, 'considered'>, task: Task): string
 export function ConsideredSegmentRow({
   row,
   panel,
+  segmentHorizon,
   onPutBack,
 }: {
   row: SegmentRow
   panel: boolean
+  segmentHorizon: SegmentKind
   onPutBack: (task: Task) => void
 }) {
-  const { task, state, left } = row
+  const { task, state } = row
+  // AGED OUT (2026-10-29): a kept or grown row has no put-back either —
+  // put-back clears only the consider stamp, which would drop the row out of
+  // the segment instead of undoing the keep or grow; the toast's Undo does
+  // that. It says which it was. A deferred row puts back as anywhere.
+  const agedHandled = segmentHorizon === 'aged_out' && state === 'considered'
+  const left = row.left ?? (agedHandled ? 'considered' : undefined)
   const timezone = useTimezone()
   const dayStart = useDayStart()
   const circle = cn(
@@ -1575,6 +1940,14 @@ export function ConsideredSegmentRow({
         )}
         {left && left !== 'considered' && (
           <span className="ml-1.5 text-xs">· {leftWords(left, task)}</span>
+        )}
+        {agedHandled && (!row.left || row.left === 'considered') && (
+          <span data-aged-handled className="ml-1.5 text-xs">
+            ·{' '}
+            {task.growth_kept_count > 0
+              ? 'kept'
+              : `now ${task.horizon ? HORIZON_LABELS[task.horizon] : UNSET_HORIZON_WORDS}`}
+          </span>
         )}
       </p>
     </li>

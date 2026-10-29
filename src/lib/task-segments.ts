@@ -74,10 +74,12 @@ export type QueueKind = (typeof QUEUE_KINDS)[number]
 /**
  * A task segment's identity: a horizon, Upcoming (2026-10-12, the heads-up
  * segment — `upcomingState`, below), one of the queue's two panels, or the
- * DEADLINES page (2026-10-22, `deadlinePlace` below). In the API,
- * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"`.
+ * DEADLINES page (2026-10-22, `deadlinePlace` below), or AGED OUT (2026-10-29,
+ * `src/lib/aged-out.ts`, only for a caller that asks). In the API,
+ * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"` /
+ * `"aged_out"`.
  */
-export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines'
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out'
 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
@@ -115,21 +117,26 @@ export function segmentCounts(segment: {
 }
 
 /**
- * The order the screens walk the segments: the DEADLINES page first (Trent,
- * 10-22: "the deadlines page is FIRST in the queue carousel" — it is the only
- * queue page that nags), then the queue's two panels (spec rule 6: "the first
- * and foremost thing to handle"), then Upcoming directly after Days and before
- * Weeks, on a check-in day too (spec §2).
+ * The order the screens walk the segments, in the strip's four GROUPS
+ * (Trent's tight N2, 2026-10-29; `SEGMENT_STRIP_GROUP`): DATED — the
+ * DEADLINES page first (10-22: "the deadlines page is FIRST in the queue
+ * carousel", the only queue page that nags), then Upcoming ("Heads up");
+ * PULLED — the queue's two panels; HORIZON — Days, Weeks, Months,
+ * Eventually; then Aged out. Until 2026-10-29 the panels came second and
+ * Upcoming sat between Days and Weeks (spec §2).
  */
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'deadlines',
+  'upcoming',
   'queue_today',
   'queue_previous',
   'days',
-  'upcoming',
   'weeks',
   'months',
   'eventually',
+  // Aged out (2026-10-29): last — the tasks that have outlived their horizon,
+  // reviewed after the horizons themselves. Only for a caller that asks.
+  'aged_out',
 ]
 
 /** Unset reads as weeks — but is never reported as set (`task.horizon` stays null). */
@@ -648,21 +655,23 @@ export function segmentState(
  * (unset reads as weeks). Fixed labels (ruling Q6). The SAME thresholds are
  * Process's growth thresholds (ruling Q7, `growthAsk` in process-rules.ts):
  * one set. They replaced the row's "Xd old" text and Process's 14/60/180-day
- * growth clock.
+ * growth clock. Days is 10 days since 2026-10-29 (Trent: "the days threshold
+ * 10 is settled for old, yes, for now"; it was 7, ">1 wk").
  */
 export const AGE_THRESHOLDS: Record<HorizonValue, { days?: number; months?: number }> = {
-  days: { days: 7 },
+  days: { days: 10 },
   weeks: { months: 1 },
   months: { months: 3 },
   eventually: { months: 6 },
 }
 
-export const AGE_LABELS: Record<HorizonValue, string> = {
-  days: '>1 wk',
-  weeks: '>1 mo',
-  months: '>3 mo',
-  eventually: '>6 mo',
-}
+/**
+ * The age badge's one word, whatever the horizon (Trent, 2026-10-29: "it just
+ * needs to say 'old' instead of the actual time because I never know what
+ * that age thing really means"). It was ">1 wk" / ">1 mo" / ">3 mo" /
+ * ">6 mo"; the thresholds are unchanged (`AGE_THRESHOLDS`).
+ */
+export const AGE_LABEL = 'old'
 
 /** A stored horizon as a HorizonValue, unset read as weeks. */
 export function setHorizonOrUnset(horizon: string | null): HorizonValue {
@@ -673,7 +682,7 @@ export function setHorizonOrUnset(horizon: string | null): HorizonValue {
 
 /**
  * Whether `since` is past this horizon's threshold at `now` — strictly past:
- * a weeks task is ">1 mo" from one calendar month after `since` (calendar
+ * a weeks task is "old" from one calendar month after `since` (calendar
  * arithmetic in `timezone`, UTC when not given). Shared by the age badge and
  * Process's growth ask.
  */
@@ -715,7 +724,7 @@ function isQuotaOrReminder(task: BadgeTaskFields): boolean {
 }
 
 /**
- * The age badge's label (">1 mo"), or null: not undated, a repeating task, a
+ * The age badge's label ("old", `AGE_LABEL`), or null: not undated, a repeating task, a
  * reminder or quota, done, or not yet past its horizon's threshold.
  */
 export function ageLabel(task: BadgeTaskFields, now: Date, timezone = 'utc'): string | null {
@@ -723,7 +732,7 @@ export function ageLabel(task: BadgeTaskFields, now: Date, timezone = 'utc'): st
   if (task.on_deck_day) return null
   if (isQuotaOrReminder(task) || task.done) return null
   const horizon = setHorizonOrUnset(task.horizon ?? null)
-  return pastAgeThreshold(horizon, task.created_at, now, timezone) ? AGE_LABELS[horizon] : null
+  return pastAgeThreshold(horizon, task.created_at, now, timezone) ? AGE_LABEL : null
 }
 
 /**

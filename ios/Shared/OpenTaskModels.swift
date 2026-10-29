@@ -131,7 +131,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// string (an unknown value must never fail a decode); no native surface
     /// offers it (the offer lives in the app).
     let attemptsOffer: String?
-    /// The age badge, ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo", on a task with
+    /// The age badge, "old" (one word since 2026-10-29; it was ">1 wk" / ">1 mo" / …), on a task with
     /// neither a target nor a deadline, past its horizon's threshold; else nil.
     let ageLabel: String?
     /// UTC ISO 8601 — Process's "keep" on a growth ask. Decoded for the
@@ -526,33 +526,54 @@ enum SegmentKind: Hashable {
     var label: String {
         switch self {
         case .horizon(let horizon): return horizon.label
-        case .upcoming: return "Upcoming"
+        case .upcoming: return "Heads up"
         case .deadlines, .queueToday, .queuePrevious: return titleWord
         }
     }
 
     /// The segment's TITLE word (2026-10-26, the web's `SEGMENT_TITLES` /
     /// `UPCOMING_LABEL` / `DEADLINES_PAGE_TITLE` / `QUEUE_PANEL_TITLES`,
-    /// `src/lib/task-model-words.ts`): "Daily", "Weekly", "Monthly",
-    /// "Quarterly", "Upcoming", "Deadlines", "Today's pulls", "Previous
-    /// pulls". Apart from `label` on purpose: `TaskHorizon.label` is the
-    /// row's "Weeks" word, which keeps its name.
+    /// `src/lib/task-model-words.ts`): "Days", "Weeks", "Months",
+    /// "Eventually" (the horizon's own word since 2026-10-29), "Heads up",
+    /// "Deadlines", "Today's pulls", "Previous pulls".
     var titleWord: String {
         switch self {
-        case .horizon(.days): return "Daily"
-        case .horizon(.weeks): return "Weekly"
-        case .horizon(.months): return "Monthly"
-        case .horizon(.eventually): return "Quarterly"
-        case .upcoming: return "Upcoming"
+        // Named by their horizon since 2026-10-29 (Trent: the title read
+        // "Weekly" while the rows say "Weeks"); "Daily"… from 10-20 to then.
+        case .horizon(let horizon): return horizon.label
+        case .upcoming: return "Heads up"
         case .deadlines: return "Deadlines"
         case .queueToday: return "Today's pulls"
         case .queuePrevious: return "Previous pulls"
         }
     }
 
-    /// The page's title, "Task queue · Daily" (`TaskWording.taskQueueTitle`,
-    /// the web's `segmentTitle`).
+    /// The page's title, "Days" (`TaskWording.taskQueueTitle`, the web's
+    /// `segmentTitle`; "Task queue · Daily" until 2026-10-29).
     var title: String { TaskWording.taskQueueTitle(titleWord) }
+
+    /// The short word over the segment's bar in the Large Reminders widget's
+    /// strip (Trent's tight N2, 2026-10-29 — the web's `SEGMENT_STRIP_WORDS`,
+    /// in its phone forms: "Due", "Soon", "Pulled"), where the page header
+    /// then says just "Task queue". Nil for a horizon: its bar wears its dot.
+    var stripWord: String? {
+        switch self {
+        case .deadlines: return "Due"
+        case .upcoming: return "Soon"
+        case .queueToday, .queuePrevious: return TaskWording.pulledTitle
+        case .horizon: return nil
+        }
+    }
+
+    /// The strip's group (tight N2): Dated (deadlines, Heads up), Pulled, the
+    /// horizons — a hairline between groups.
+    var stripGroup: Int {
+        switch self {
+        case .deadlines, .upcoming: return 0
+        case .queueToday, .queuePrevious: return 1
+        case .horizon: return 2
+        }
+    }
 
     /// The segment's page key in the widget's and the watch's page ring (the
     /// slot-key Int space): -10…-13 the horizons, as before, -14 Upcoming,
@@ -638,7 +659,7 @@ enum SegmentKind: Hashable {
         return false
     }
 
-    /// Whether a row wears the two badges ("3×", ">1 mo"). No badges on a
+    /// Whether a row wears the two badges ("3×", "old"). No badges on a
     /// queue row (designer, 10-19): the queue is read at a glance, and a
     /// waiting repeating task there would read "226×".
     var showsBadges: Bool { !isQueue }
@@ -1148,6 +1169,13 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     let tasks: [SegmentTaskDTO]
     /// Over ~50 items the screen suggests Process or AI help instead.
     let nudge: Bool
+    /// The Reminders widget's merged PULLED page (2026-10-29, `pulledMerged`):
+    /// the queue's two panels as one. Never coded — the cache keeps the
+    /// server's two segments.
+    var pulled = false
+    /// On the merged Pulled page: the rows from the earlier panel (Previous
+    /// pulls), which read under "Earlier".
+    var earlierIds: Set<Int> = []
 
     var id: String { horizon }
 
@@ -1185,14 +1213,42 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
 
     /// "Days", "Weeks", "Upcoming", … — the segment's word (its spoken
     /// "Defer all Days tasks"); the page's TITLE is `title`.
-    var label: String { kind?.label ?? horizon.capitalized }
+    var label: String { pulled ? TaskWording.pulledTitle : (kind?.label ?? horizon.capitalized) }
 
     /// The segment's title everywhere it is named — the widget page's header,
     /// the strip bar's spoken label, the watch section and the Smart Stack
     /// card: "Task queue · Daily" (2026-10-26, the web's `segmentTitle`; with
     /// the task-queue switch off too, as on the web). A kind this build
     /// doesn't know keeps its raw word ("Task queue · Someday").
-    var title: String { kind?.title ?? TaskWording.taskQueueTitle(horizon.capitalized) }
+    var title: String {
+        if pulled { return TaskWording.taskQueueTitle(TaskWording.pulledTitle) }
+        return kind?.title ?? TaskWording.taskQueueTitle(horizon.capitalized)
+    }
+
+    /// PULLED, ONE PAGE (Trent, 2026-10-29 — the web's `mergePulled`): the
+    /// queue's two panels, Today's pulls and Previous pulls, drawn as ONE
+    /// segment on the Reminders widget — one strip bar, one page, one "N of
+    /// M" — with "Today" and "Earlier" sections. It takes Today's pulls' place,
+    /// kind and page key; the rows keep the server's order, Today's first.
+    /// Only the widget's view merges: the cache, the server's two kinds and
+    /// every action stay as they are.
+    static func pulledMerged(_ segments: [TaskSegmentDTO]) -> [TaskSegmentDTO] {
+        let today = segments.first { $0.kind == .queueToday }
+        let earlier = segments.first { $0.kind == .queuePrevious }
+        guard today != nil || earlier != nil,
+              let at = segments.firstIndex(where: { $0.kind == .queueToday || $0.kind == .queuePrevious })
+        else { return segments }
+        var merged = TaskSegmentDTO(
+            horizon: SegmentKind.queueToday.raw,
+            tasks: (today?.tasks ?? []) + (earlier?.tasks ?? []),
+            nudge: (today?.nudge ?? false) || (earlier?.nudge ?? false)
+        )
+        merged.pulled = true
+        merged.earlierIds = Set((earlier?.tasks ?? []).map(\.id))
+        var rest = segments.filter { $0.kind != .queueToday && $0.kind != .queuePrevious }
+        rest.insert(merged, at: at)
+        return rest
+    }
 
     /// `title` for a header that may wrap (the widget page's two-line
     /// fallback, the watch section): the space before the dot is

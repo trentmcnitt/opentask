@@ -299,7 +299,7 @@ private struct UrgentLine: View {
     var body: some View {
         Text("\(count) urgent \(TaskWording.overdueLower)")
             .font(.caption2)
-            .foregroundStyle(WatchTheme.overdue)
+            .foregroundStyle(.primary)
             .lineLimit(1)
     }
 }
@@ -355,7 +355,7 @@ private struct OverdueCardView: View {
                     .font(.headline)
             } icon: {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(WatchTheme.overdue)
+                    .foregroundStyle(WatchTheme.accent)
                     .widgetAccentable()
             }
             // Context line: which Urgent ones won't move (the honest caveat
@@ -363,7 +363,7 @@ private struct OverdueCardView: View {
             Group {
                 if card.urgent > 0 {
                     Text("\(card.urgent) urgent won't move")
-                        .foregroundStyle(WatchTheme.overdue)
+                        .foregroundStyle(.primary)
                 } else if let title = card.firstTitle {
                     Text(title)
                         .foregroundStyle(.secondary)
@@ -440,7 +440,7 @@ private struct SnoozedCardView: View {
             ForEach(Array(result.summaryLines.enumerated()), id: \.offset) { _, line in
                 Text(line.text)
                     .font(.caption2)
-                    .foregroundStyle(line.isUrgent ? WatchTheme.overdue : .secondary)
+                    .foregroundStyle(line.isUrgent ? .primary : .secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -470,16 +470,18 @@ enum ReminderStackMetrics {
 
 /// Count-left-with-a-ring, shared by `.accessoryCircular` and
 /// `.accessoryCorner`. Overdue (snoozable) wins the ring when present, in
-/// plum, matching the card's own precedence; otherwise the active slot's
+/// the indigo accent, matching the card's own precedence; otherwise the active slot's
 /// reminders left, filling as they're considered.
 ///
 /// Colour (Trent, 2026-10-26): a progress indicator like every bar, so the
 /// same rule — the reminders' purple while it fills
 /// (`WatchTheme.dayBarFilling`), the done green once full (`ringSummary`'s
 /// "Complete": fraction 1 only when no started period has anything
-/// waiting). It was indigo (`WatchTheme.accent`) until then. Overdue keeps
-/// its plum and wins first. On a tinted or monochrome face the system's
-/// tint replaces all of these; the colours show in full-colour contexts.
+/// waiting). It was indigo (`WatchTheme.accent`) until then. Overdue wins
+/// first, in the indigo accent (it was plum until 2026-10-28, when Trent
+/// ruled plum out: "I can't be memorizing these colors"). On a tinted or
+/// monochrome face the system's tint replaces all of these; the colours
+/// show in full-colour contexts.
 ///
 /// Glanceable only — a tap
 /// opens the app on the matching page (`deepLink`); a button inside a
@@ -499,7 +501,7 @@ private struct RingContent: View {
     }
 
     private var tint: Color {
-        if ring.isOverdue { return WatchTheme.overdue }
+        if ring.isOverdue { return WatchTheme.accent }
         return ring.fraction >= 1 ? WatchTheme.done : WatchTheme.dayBarFilling
     }
 }

@@ -180,7 +180,10 @@ struct RemindersProvider: TimelineProvider {
         now: Date, groups rawGroups: [ReminderGroupDTO], segments rawSegments: [TaskSegmentDTO], staleSince: Date?
     ) -> RemindersEntry {
         let groups = WidgetStore.filterPending(rawGroups, now: now)
-        let segments = TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(rawSegments, now: now))
+        // The queue's two panels as one Pulled page (2026-10-29, `pulledMerged`).
+        let segments = TaskSegmentDTO.pulledMerged(
+            TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(rawSegments, now: now))
+        )
         let page = RemindersTimeline.displayedPage(groups: groups, segments: segments, now: now)
         return RemindersEntry(
             date: now,
@@ -603,7 +606,7 @@ private enum ReminderPreviewData {
             TaskSegmentDTO(horizon: "weeks", tasks: [
                 // Undated and past its horizon's threshold: the age label (the
                 // server's `age_label`).
-                SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks", ageLabel: ">1 mo"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9201, title: "Clear out the garage shelves", horizon: "weeks", ageLabel: "old"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9202, title: "Research a new laptop bag", dueAt: iso(daysFromNow: 12), horizon: "months"), state: .waiting),
             ]),
             // The longest title word ("Task queue · Quarterly", 2026-10-26),

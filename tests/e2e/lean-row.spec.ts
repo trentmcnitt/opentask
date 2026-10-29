@@ -21,7 +21,12 @@ import { test, expect, holdUntil, openTaskDay, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const HOUR = 60 * 60 * 1000
-const LEAN = () => window.localStorage.setItem('opentask_task_rows', 'lean')
+// Lean rows bring the dashboard modes (`useDashboardMode`); these tests read
+// the rows in All, the project-grouped list.
+const LEAN = () => {
+  window.localStorage.setItem('opentask_task_rows', 'lean')
+  window.localStorage.setItem('opentask_dashboard_mode', 'all')
+}
 
 test.describe.configure({ mode: 'serial' })
 
@@ -406,6 +411,50 @@ test.describe('Lean row · the horizon done square', () => {
       await page.keyboard.press('Escape')
     } finally {
       await cleanUp(page, Object.values(made))
+    }
+  })
+})
+
+test.describe('Lean row · was', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  // Trent, 2026-10-29: "Today 2:00 PM · was 9:00 AM" — a target moved within
+  // its day says where it started; one targeted there from the start says
+  // nothing (`target_day_first_at`).
+  test('a target moved within its day shows "was" its first time; an untouched one does not', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const first = await laterToday(page)
+    // Earlier the same OpenTask day (laterToday is at most 40 minutes out).
+    const moved = new Date(first.getTime() - 20 * 60 * 1000)
+    const ids = {
+      moved: await create(page, { title: uniqueTitle('LR was'), due_at: first.toISOString() }),
+      still: await create(page, { title: uniqueTitle('LR kept'), due_at: first.toISOString() }),
+    }
+    try {
+      const res = await page.request.patch(`/api/tasks/${ids.moved}`, {
+        data: { due_at: moved.toISOString() },
+      })
+      expect(res.ok(), await res.text()).toBeTruthy()
+      const served = (await stateOf(page, ids.moved)) as { target_day_first_at: string }
+      expect(new Date(served.target_day_first_at).getTime()).toBe(first.getTime())
+
+      await gotoDashboard(page)
+      const was = row(page, ids.moved).locator('[data-target-was]')
+      await expect(was).toHaveText(/^was \d{1,2}:\d{2} [AP]M$/)
+      // Right after the target chip.
+      expect(
+        await row(page, ids.moved)
+          .locator('[data-time-chip="target"]')
+          .evaluate(
+            (c, w) => c.compareDocumentPosition(w!) & Node.DOCUMENT_POSITION_FOLLOWING,
+            await was.elementHandle(),
+          ),
+      ).toBeTruthy()
+      await expect(row(page, ids.still).locator('[data-target-was]')).toHaveCount(0)
+    } finally {
+      await cleanUp(page, Object.values(ids))
     }
   })
 })
@@ -817,6 +866,8 @@ test.describe('Lean row · phone', () => {
 
       // Swipe on the title, as a thumb would: the meta line's horizon dot is
       // its own control (its press opens the horizon menu, never a swipe).
+      // On screen first: a drag only reaches what the window shows.
+      await r.scrollIntoViewIfNeeded()
       const title = (await r.locator('[data-lean-title]').boundingBox())!
       const y = title.y + 12
       const x0 = title.x + 8
@@ -850,8 +901,13 @@ test.describe('Lean row · the setting', () => {
       await expect(page.locator(`#task-row-${id}`)).toBeVisible()
       await expect(row(page, id)).toHaveCount(0)
 
+      await expect(page.locator('[data-mode-switch]')).toHaveCount(0)
+
+      // Lean rows bring the dashboard modes; the row is in All.
       await page.goto('/settings')
       await page.locator('[data-task-rows-setting]').selectOption('lean')
+      await page.goto('/?mode=all')
+      await expect(page.locator('[data-mode-switch]')).toBeVisible()
       await gotoDashboard(page)
       await expect(row(page, id)).toBeVisible()
 
@@ -860,6 +916,7 @@ test.describe('Lean row · the setting', () => {
       await gotoDashboard(page)
       await expect(row(page, id)).toHaveCount(0)
       await expect(page.locator(`#task-row-${id}`)).toBeVisible()
+      await expect(page.locator('[data-mode-switch]')).toHaveCount(0)
     } finally {
       await cleanUp(page, [id])
     }

@@ -47,7 +47,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /*
  * WHEN GROWTH ASKS (spec §7, rulings Q6/Q7, 2026-10-12): past the SAME
  * per-horizon threshold as the age badge (`AGE_THRESHOLDS` in
- * task-segments.ts — one set): days > 7 days ("weeks?"), weeks or unset > 1
+ * task-segments.ts — one set): days > 10 days ("weeks?"; 7 until 2026-10-29), weeks or unset > 1
  * month ("months?"), months > 1 quarter ("eventually?"). Measured from the
  * latest of the horizon's own clock (`horizon_set_at`, else creation) and the
  * last "keep" (`growth_kept_at`): keeping a horizon asks again only after

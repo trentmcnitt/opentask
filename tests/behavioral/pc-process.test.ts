@@ -55,11 +55,12 @@ function useProcessClock() {
 
 describe('Process: horizon growth asks', () => {
   useProcessClock()
-  // The age badge's thresholds (spec §7, ruling Q7: one set): days > 7 days,
+  // The age badge's thresholds (spec §7, ruling Q7: one set): days > 10 days
+  // (7 until 2026-10-29),
   // weeks > 1 month (Sep 10 → Oct 10 is 30 days), months > 1 quarter (Jul 10
   // → Oct 10 is 92 days). Exactly at the threshold is not past it.
   test.each([
-    ['days', 7, 'weeks'],
+    ['days', 10, 'weeks'],
     ['weeks', 30, 'months'],
     ['months', 92, 'eventually'],
   ] as const)('PC-001: %s asks the day after %i days, not at it', (horizon, days, to) => {
@@ -151,10 +152,15 @@ describe('Process: horizon growth asks', () => {
     }
     expect(growthAsk(base, 'Pacific/Auckland', NOW, CALENDAR_DAY_START)?.to).toBe('weeks')
     expect(
-      growthAsk({ ...base, horizon_set_at: daysAgo(7.1) }, 'UTC', NOW, CALENDAR_DAY_START)?.to,
+      growthAsk({ ...base, horizon_set_at: daysAgo(10.1) }, 'UTC', NOW, CALENDAR_DAY_START)?.to,
     ).toBe('weeks')
+    // Exactly 10 days: not past it (strictly past, 2026-10-29's threshold).
     expect(
-      growthAsk({ ...base, horizon_set_at: daysAgo(7) }, 'UTC', NOW, CALENDAR_DAY_START),
+      growthAsk({ ...base, horizon_set_at: daysAgo(10) }, 'UTC', NOW, CALENDAR_DAY_START),
+    ).toBeNull()
+    // 7 days, past the old threshold: no longer asks.
+    expect(
+      growthAsk({ ...base, horizon_set_at: daysAgo(8) }, 'UTC', NOW, CALENDAR_DAY_START),
     ).toBeNull()
   })
 })
@@ -201,7 +207,7 @@ describe('Process: affirm_horizon ("keep")', () => {
     expect(growthOf(t.id)).toBeNull()
     vi.setSystemTime(new Date('2026-11-11T16:00:00Z'))
     expect(growthOf(t.id)).toMatchObject({ from: 'weeks', to: 'months' })
-    expect(formatTaskResponse(getTaskById(t.id)!, tz).age_label).toBe('>1 mo')
+    expect(formatTaskResponse(getTaskById(t.id)!, tz).age_label).toBe('old')
   })
 
   test('PC-011b: single PATCH too — what "Raise" sends with the new priority', () => {

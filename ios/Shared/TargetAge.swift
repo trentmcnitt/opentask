@@ -27,9 +27,10 @@ enum TargetAge {
     static let mediumAttempts = 3
     static let strongAttempts = 7
 
-    /// Three depths of ONE calm plum (the web's `--over-target`), never red or
-    /// amber: an arrived target signals nothing wrong (Trent, 2026-10-11). Red
-    /// is kept for a passed deadline only.
+    /// The web's `attemptsTone` depths (once three depths of a calm plum).
+    /// No native surface draws them since 2026-10-28 — the count is grey and
+    /// semibold everywhere (Trent ruled plum out) — but the server's contract
+    /// carries the count they are read from (`ContractDecodeTests`).
     enum Tone: Equatable {
         case light, medium, strong
     }
@@ -142,8 +143,8 @@ extension TaskDTO {
     /// (shown as nothing, never as "Weeks"); a future target's day ("Nov 1");
     /// the deadline ("deadline Oct 16"); then the two badges, the web's
     /// `BadgeChips` (spec §7, 2026-10-12): the attempts ("3×", the server's
-    /// `attempts_label`, LAST when present — `SegmentTaskRow` tints it plum)
-    /// or the age (">1 mo", `age_label`, undated tasks only — never both).
+    /// `attempts_label`, LAST when present — grey like the rest of the words)
+    /// or the age ("old", `age_label`, undated tasks only — never both).
     /// "Weeks · Nov 1". Nil when there is nothing to say. Spaces inside each
     /// part are non-breaking, so a part ("deadline Oct 16") never splits;
     /// parts are joined by `metaJoiner`, which lets a long meta wrap only
@@ -330,14 +331,22 @@ enum TaskWording {
     /// The past-deadline marker's word.
     static let pastDeadline = "Past deadline"
 
-    /// Every task segment's title starts with it (Trent, 2026-10-20: one
-    /// format everywhere) — the web's `TASK_QUEUE_PREFIX`.
+    /// Every task segment's title started with it from 2026-10-20 to 10-29;
+    /// kept for `withoutTaskQueuePrefix`, which still reads an old title.
     static let taskQueuePrefix = "Task queue"
 
-    /// "Task queue · Daily" — the web's `taskQueueTitle`. A middle dot, never
-    /// an em dash.
+    /// The queue's two panels as ONE segment on the Reminders widget
+    /// (2026-10-29, `TaskSegmentDTO.pulledMerged`; the web's `PULLED_TITLE`):
+    /// its title and strip word. Its sections: "Today", "Earlier".
+    static let pulledTitle = "Pulled"
+    static let pulledTodayWord = "Today"
+    static let pulledEarlierWord = "Earlier"
+
+    /// A task segment's title: its word alone since 2026-10-29 ("Days";
+    /// Trent: "I think just the title's enough now", the web's
+    /// `segmentTitle`). It was "Task queue · Daily".
     static func taskQueueTitle(_ word: String) -> String {
-        "\(taskQueuePrefix) · \(word)"
+        word
     }
 
     /// A title's word without the prefix ("Task queue · Upcoming" →

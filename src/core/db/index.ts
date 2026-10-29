@@ -423,6 +423,10 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // Aged out (2026-10-29): keeps in a row since the last horizon change.
+  if (!hasColumn(database, 'tasks', 'growth_kept_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN growth_kept_count INTEGER NOT NULL DEFAULT 0')
+  }
   // The task queue (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
   for (const col of ['queue_mark', 'try_tomorrow']) {
     if (!hasColumn(database, 'tasks', col)) {
@@ -504,6 +508,14 @@ function runMigrations(database: Database.Database): void {
   }
   if (!hasColumn(database, 'tasks', 'repeat_until')) {
     database.exec('ALTER TABLE tasks ADD COLUMN repeat_until TEXT DEFAULT NULL')
+  }
+  // The target's first time on its OpenTask day (2026-10-29, "was 9:00 AM";
+  // src/lib/target-day-first.ts). No backfill: NULL already reads as the
+  // target itself (`effectiveTargetDayFirst`), which is what a row that has
+  // not moved within its day would hold — so the column is added and no task
+  // row is written.
+  if (!hasColumn(database, 'tasks', 'target_day_first_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_day_first_at TEXT DEFAULT NULL')
   }
   if (!hasColumn(database, 'completions', 'occurrence_at_next')) {
     database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_next TEXT DEFAULT NULL')

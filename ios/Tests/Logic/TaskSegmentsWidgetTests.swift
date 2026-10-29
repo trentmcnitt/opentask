@@ -488,8 +488,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         cal.timeZone = TimeZone(identifier: "America/Chicago")!
         let nb = "\u{00A0}"
         let dot = "\(nb)· "
-        let undated = TaskDTO(id: 1, title: "Garage", horizon: "weeks", ageLabel: ">1 mo")
-        XCTAssertEqual(undated.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), ">1\(nb)mo")
+        let undated = TaskDTO(id: 1, title: "Garage", horizon: "weeks", ageLabel: "old")
+        XCTAssertEqual(undated.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), "old")
         let moved = TaskDTO(
             id: 2, title: "Hinges", dueAt: "2026-10-14T14:00:00.000Z", deadlineAt: "2026-10-17T22:00:00.000Z",
             attempts: 3, attemptsLabel: "3×"
@@ -510,7 +510,7 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(upcoming.kind, .upcoming)
         XCTAssertTrue(upcoming.isUpcoming)
         XCTAssertNil(upcoming.horizonValue, "Upcoming is not a task horizon")
-        XCTAssertEqual(upcoming.label, "Upcoming")
+        XCTAssertEqual(upcoming.label, "Heads up")
         XCTAssertEqual(upcoming.pageKey, -14)
         XCTAssertEqual(SegmentKind.upcoming.colorHex.light, 0x1A8FB0)
         XCTAssertEqual(SegmentKind.upcoming.colorHex.dark, 0x4CB8D9)
@@ -524,21 +524,28 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertNil(TaskSegmentDTO(horizon: "someday", tasks: []).kind)
         XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).pageKey, -15)
 
-        // The titles (2026-10-26, the web's `segmentTitle`): "Task queue ·"
-        // and the cadence word — the row word ("Days") keeps its name.
+        // The titles (the web's `segmentTitle`): the horizon's own word since
+        // 2026-10-29 (the cadence word "Daily"… and "Task queue ·" before).
         XCTAssertEqual(
             ["days", "weeks", "months", "eventually", "upcoming"].map { TaskSegmentDTO(horizon: $0, tasks: []).title },
             [
-                "Task queue · Daily", "Task queue · Weekly", "Task queue · Monthly", "Task queue · Quarterly",
-                "Task queue · Upcoming",
+                "Days", "Weeks", "Months", "Eventually",
+                "Heads up",
             ]
         )
         XCTAssertEqual(TaskSegmentDTO(horizon: "weeks", tasks: []).label, "Weeks")
-        XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).title, "Task queue · Someday")
-        // A wrapping header breaks after the dot, never before it.
-        XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Task queue\u{00A0}· Quarterly")
+        XCTAssertEqual(TaskSegmentDTO(horizon: "someday", tasks: []).title, "Someday")
+        // The strip's words on the Large widget (2026-10-29, the web's Q2).
+        XCTAssertEqual(
+            [SegmentKind.deadlines, .queueToday, .queuePrevious, .horizon(.days), .upcoming,
+             .horizon(.weeks), .horizon(.months), .horizon(.eventually)].map(\.stripWord),
+            // Tight N2 (2026-10-29): the phone words; a horizon wears its dot.
+            ["Due", "Pulled", "Pulled", nil, "Soon", nil, nil, nil]
+        )
+        // No dot to wrap at any more: the wrapping title is the title.
+        XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Eventually")
         // The Smart Stack card's short header: the word alone; a period keeps its name.
-        XCTAssertEqual(TaskWording.withoutTaskQueuePrefix("Task queue · Upcoming"), "Upcoming")
+        XCTAssertEqual(TaskWording.withoutTaskQueuePrefix("Task queue · Upcoming"), "Upcoming", "an old title still reads")
         XCTAssertNil(TaskWording.withoutTaskQueuePrefix("Early morning"))
 
         let bars = ReminderDayProgress.stripBars(
@@ -546,7 +553,7 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
             day: .midnight(timeZone: .current)
         )
         XCTAssertEqual(bars.map(\.segment), [.horizon(.days), .upcoming])
-        XCTAssertEqual(bars.map(\.label), ["Task queue · Daily", "Task queue · Upcoming"])
+        XCTAssertEqual(bars.map(\.label), ["Days", "Heads up"])
     }
 
     /// Every row offers Today, repeating ones included (batch 2, 2026-10-12:
@@ -580,4 +587,31 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
         XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.map(\.id), [3, 4], "still in the cache")
     }
+
+    /// PULLED, ONE PAGE (2026-10-29, the web's `mergePulled`): the Reminders
+    /// widget draws the queue's two panels as one segment in Today's pulls'
+    /// place, the earlier rows marked for their "Earlier" heading.
+    func testPulledMergesTheTwoQueuePanels() {
+        let segments = [
+            TaskSegmentDTO(horizon: "deadlines", tasks: []),
+            TaskSegmentDTO(horizon: "upcoming", tasks: [row(1)]),
+            TaskSegmentDTO(horizon: "queue_today", tasks: [row(2), row(3)]),
+            TaskSegmentDTO(horizon: "queue_previous", tasks: [row(4)]),
+            TaskSegmentDTO(horizon: "days", tasks: [row(5)]),
+        ]
+        let merged = TaskSegmentDTO.pulledMerged(segments)
+        XCTAssertEqual(merged.map(\.horizon), ["deadlines", "upcoming", "queue_today", "days"])
+        let pulled = merged[2]
+        XCTAssertTrue(pulled.pulled)
+        XCTAssertEqual(pulled.tasks.map(\.id), [2, 3, 4], "Today's pulls first")
+        XCTAssertEqual(pulled.earlierIds, [4])
+        XCTAssertEqual(pulled.title, "Pulled")
+        XCTAssertEqual(pulled.pageKey, SegmentKind.queueToday.pageKey)
+        // With neither panel, nothing changes; with only the earlier one, it is Pulled.
+        XCTAssertEqual(TaskSegmentDTO.pulledMerged([segments[4]]).map(\.horizon), ["days"])
+        let onlyEarlier = TaskSegmentDTO.pulledMerged([segments[3]])
+        XCTAssertEqual(onlyEarlier.map(\.pulled), [true])
+        XCTAssertEqual(onlyEarlier[0].earlierIds, [4])
+    }
+
 }

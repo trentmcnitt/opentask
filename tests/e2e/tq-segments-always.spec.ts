@@ -21,17 +21,12 @@ import type { Locator, Page } from '@playwright/test'
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 test.use({ timezoneId: TZ })
 
-/** SEGMENT_ORDER (src/lib/task-segments.ts), as the screens key them. */
-const ORDER = [
-  'deadlines',
-  'queue_today',
-  'queue_previous',
-  'days',
-  'upcoming',
-  'weeks',
-  'months',
-  'eventually',
-]
+/**
+ * SEGMENT_ORDER (src/lib/task-segments.ts), as the web's screens key them:
+ * the queue's two panels are ONE "Pulled" segment there since 2026-10-29
+ * (`mergePulled`), drawn as `queue_today`.
+ */
+const ORDER = ['deadlines', 'upcoming', 'queue_today', 'days', 'weeks', 'months', 'eventually']
 const KEYS = ORDER.map((k) => `tasks:${k}`)
 
 async function signIn(page: Page) {

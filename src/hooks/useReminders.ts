@@ -16,6 +16,7 @@ import {
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 import { REMINDERS_URL } from '@/lib/reminders-query'
+import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -182,6 +183,13 @@ export interface UseRemindersReturn {
  * the same (`APIClient.remindersPath`, guarded by `reminders-query.json`).
  */
 export { REMINDERS_URL }
+
+/**
+ * What THIS client fetches: `REMINDERS_URL`, plus Aged out's `&aged=1` on a
+ * build with that segment (prod and dev — `src/lib/aged-out.ts`).
+ * Kept out of `REMINDERS_URL` itself, which the native apps mirror exactly.
+ */
+const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '')
 
 export interface ReminderCreateInput {
   title: string
@@ -479,7 +487,7 @@ export function useReminders({
     }
     const seq = requestGuard.begin()
     try {
-      const res = await fetch(REMINDERS_URL)
+      const res = await fetch(WEB_REMINDERS_URL)
       if (!res.ok) throw new Error('Failed to load reminders')
       const json = await res.json()
       // A newer refresh was sent while this one was out: its answer is the
@@ -1112,7 +1120,7 @@ function loadRemindersCache(): Promise<void> {
   if (cacheLoad) return cacheLoad
   cacheLoad = (async () => {
     try {
-      const res = await fetch(REMINDERS_URL)
+      const res = await fetch(WEB_REMINDERS_URL)
       if (!res.ok) return
       const json = await res.json()
       setRemindersCache(parseRemindersPayload(json))

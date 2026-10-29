@@ -541,14 +541,12 @@ test('segment rows: the On deck hover box stays inside the row; the 375px row fi
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       )
       expect(pageOverflow).toBeLessThanOrEqual(0)
-      // Today is its sun alone at phone width (2026-10-21), the word kept
-      // for screen readers; from `sm` up the word shows.
+      // Target today is the clock alone at every width (2026-10-29: the
+      // lean rows' clock in place of the sun and its word), named for
+      // screen readers.
       const today = r.locator('[data-target-today]')
       await expect(today).toHaveAccessibleName(/today/i)
-      const word = today.getByText('Today', { exact: true })
-      const wordWidth = (await word.boundingBox())?.width ?? 0
-      if (size.width < 640) expect(wordWidth).toBeLessThanOrEqual(1)
-      else expect(wordWidth).toBeGreaterThan(20)
+      await expect(today.getByText('Today', { exact: true })).toHaveCount(0)
       await page.screenshot({ path: `.tmp/od-segment-row-${size.width}.png` })
     }
   } finally {

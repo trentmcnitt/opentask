@@ -151,6 +151,14 @@ export interface Task {
   // there is no snooze state: no snoozed flag, no snooze count.
   original_due_at: string | null
   /**
+   * The target as it was when it first landed on its current OpenTask day
+   * (2026-10-29): a move within the day keeps it, a move to another day or a
+   * new target resets it, so a row can say "was 9:00 AM". Normalised on read
+   * — never on another day than `due_at`, null without a target
+   * (`src/lib/target-day-first.ts`).
+   */
+  target_day_first_at: string | null
+  /**
    * A repeating task's SCHEDULED occurrence (§6, 2026-10-12). `due_at` is its
    * target; a move (any snooze) changes only `due_at`. Done and skip advance
    * from this and set its dates (`occurrenceDates`). On a deadline-anchored
@@ -208,6 +216,11 @@ export interface Task {
   attempts_counted_through: string | null
   /** Process's last "keep" of the horizon (ruling Q7); null = never kept. */
   growth_kept_at: string | null
+  /**
+   * Keeps in a row (Aged out, 2026-10-29): +1 on each keep, 0 on a grow or any
+   * change of the horizon. The segment row says "kept 2×".
+   */
+  growth_kept_count: number
   /**
    * THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
    * `queue_mark`: a defer (Snooze-all, Try Tomorrow) landing at or after the

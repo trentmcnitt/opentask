@@ -12,7 +12,7 @@
  *   quiet | days | weeks | months | eventually | tomorrow | later | over | done
  *   (Upcoming's line is its SECTION since 2026-10-25 — `counts` still say
  *   `upcoming`, both sections)
- *   + "N×" (attempts, while the task has a target) + age (">1 mo")
+ *   + "N×" (attempts, while the task has a target) + age ("old")
  *   + "→remove" (the 3× offer; "→auto" until 2026-10-22).
  * Unlisted days are "quiet". Keys are a date ("2026-10-17") or an inclusive
  * range ("2026-10-28..2026-10-31").

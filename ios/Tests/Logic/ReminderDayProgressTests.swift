@@ -233,7 +233,7 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(bars.map(\.handled), [3, 2, 0, 2, 1, 1, 0])
         XCTAssertEqual(bars[3].fraction, 2.0 / 3.0, accuracy: 1e-9)
         XCTAssertEqual(bars[6].fraction, 1, "an empty segment's bar is full")
-        XCTAssertEqual(bars[3].label, "Task queue · Daily")
+        XCTAssertEqual(bars[3].label, "Days")
     }
 
     /// The new kinds' bars (native PR E): the deadlines page FIRST, then the
@@ -248,7 +248,7 @@ final class ReminderDayProgressTests: XCTestCase {
         let bars = ReminderDayProgress.stripBars(groups: [], segments: segments, now: noon, day: day)
         XCTAssertEqual(bars.map(\.key), [-16, -17, -18])
         XCTAssertEqual(bars.map(\.state), [.done, .behind, .done])
-        XCTAssertEqual(bars.map(\.label), ["Task queue · Deadlines", "Task queue · Today's pulls", "Task queue · Previous pulls"])
+        XCTAssertEqual(bars.map(\.label), ["Deadlines", "Today's pulls", "Previous pulls"])
         XCTAssertEqual(bars[0].segment?.doneColorHex?.light, 0x0D9488)
         XCTAssertEqual(bars[0].segment?.doneColorHex?.dark, 0x2DD4BF)
         XCTAssertNil(bars[2].segment?.doneColorHex, "the queue's panels finish green")

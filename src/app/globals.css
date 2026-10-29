@@ -57,6 +57,9 @@
      title `--deadlines` (below), and so is its finished state — see
      `segmentDoneColor`. */
   --segment-deadlines: var(--deadlines-fill);
+  /* Aged out (2026-10-29, provisional): a greyed teal — the horizons' family,
+     faded, for tasks that have outlived theirs. */
+  --segment-aged_out: #7f9e9a;
   /* Titles: one darker teal in light mode, so the small uppercase label
      stays readable on the near-white card (the lighter fills read at ~1.3–2.5:1).
      In dark mode each title is its fill. */
@@ -68,6 +71,7 @@
   --segment-title-queue_today: #0a6670;
   --segment-title-queue_previous: #0a6670;
   --segment-title-deadlines: var(--deadlines);
+  --segment-title-aged_out: #4d6b67;
   /* A lit deck button (`DECK_LIT`, 2026-10-28, Trent's "T2"): the queue's
      teal drained toward slate, quieter on the dashboard — its own token, so
      the "Today's pulls" title keeps its teal. 6.8:1 on the card. */
@@ -146,6 +150,7 @@
   --segment-queue_today: #36b8c6;
   --segment-queue_previous: #7fbcc4;
   --segment-deadlines: var(--deadlines-fill);
+  --segment-aged_out: #9dbbb7;
   --segment-title-days: var(--segment-days);
   --segment-title-weeks: var(--segment-weeks);
   --segment-title-months: var(--segment-months);
@@ -154,6 +159,7 @@
   --segment-title-queue_today: var(--segment-queue_today);
   --segment-title-queue_previous: var(--segment-queue_previous);
   --segment-title-deadlines: var(--deadlines);
+  --segment-title-aged_out: var(--segment-aged_out);
   --deck-lit: #85adb2;
   --badge-neutral: oklch(0.803 0 0);
   /* The same deep teal: white on it ≈5.4:1, its frame ≈3.4:1 on the dark card. */
@@ -556,4 +562,44 @@
 }
 .dark .lean-tint-late-both::before {
   background-color: rgb(255 100 103 / 0.245);
+}
+
+/* SCAN'S AGE STEPS (2026-10-29, GS2; lightened at the young end the same
+   day — Trent: "really starting out strong for something that is two days
+   old"). Plain classes with literal values, like the row tints, so they can be
+   tuned live in dev tools: select a row's swipe foreground, find
+   `.age-step-week` (or another) in Styles, edit the value. `AGE_STEP_CLASS`
+   (src/components/modes/age-step.ts) puts them on the rows; `AGE_STEP_GREYS`
+   (src/lib/created-bucket.ts) is the same table, and a test keeps the two
+   equal. Light steps down from white, dark up from the page (+2 / +4 / +9 /
+   +12 / +14). */
+.age-step-yesterday {
+  background-color: rgb(253 253 253);
+}
+.age-step-week {
+  background-color: rgb(251 251 251);
+}
+.age-step-month {
+  background-color: rgb(246 246 246);
+}
+.age-step-year {
+  background-color: rgb(243 243 243);
+}
+.age-step-earlier {
+  background-color: rgb(241 241 241);
+}
+.dark .age-step-yesterday {
+  background-color: rgb(12 12 12);
+}
+.dark .age-step-week {
+  background-color: rgb(14 14 14);
+}
+.dark .age-step-month {
+  background-color: rgb(19 19 19);
+}
+.dark .age-step-year {
+  background-color: rgb(22 22 22);
+}
+.dark .age-step-earlier {
+  background-color: rgb(24 24 24);
 }

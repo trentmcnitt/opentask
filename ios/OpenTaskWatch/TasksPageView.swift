@@ -66,7 +66,7 @@ struct TasksPageView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.capsule)
-                    .tint(WatchTheme.overdue)
+                    .tint(WatchTheme.accent)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
                 }
@@ -132,41 +132,67 @@ struct TasksPageView: View {
     }
 }
 
-/// One "Up next" row: a project-colored leading edge (plum while over target) (the same visual as the
-/// phone Tasks widget's row marker, §-doc "outlines in the task's PROJECT
-/// color"), an un-truncated title up to 3 lines (Trent's "never truncate a
-/// reminder" rule extends here to 3 lines rather than unlimited — a task
-/// title genuinely can run long, and the watch has no room to show every
-/// line of a paragraph), and a day-aware due line.
+/// One "Up next" row: a project-coloured leading edge (the phone Tasks
+/// widget's old marker, §-doc "outlines in the task's PROJECT color"), an
+/// un-truncated title up to 3 lines (Trent's "never truncate a reminder"
+/// rule extends here to 3 lines rather than unlimited — a task title
+/// genuinely can run long, and the watch has no room to show every line of a
+/// paragraph), and a day-aware due line.
 ///
-/// THE CORNER (2026-10-16, the web row's corner and the phone Tasks widget's
-/// strip): at the row's trailing top, the horizon dot where the horizon
-/// decides something and "!"/"!!" for High/Urgent only — Medium, Low and None
-/// get nothing (`RowCorner`, `RowCornerStrip`). It takes its own column, so a
-/// long title wraps a little sooner on those rows only.
+/// THE LEAN ROW (2026-10-28, the web's PR #410, `LeanRow` / `LeanRowStyle`):
+/// - High "!" / Urgent "!!" right after the title, bound to its last word
+///   (Medium, Low and None get none); the corner strip at the row's trailing
+///   top, and its horizon dot, are gone.
+/// - The due line is the target's BLUE (the dark value — the watch is always
+///   dark), over target too; the attempts count "· 3×" is grey; a red flag
+///   once the deadline has passed.
+/// - The row's STATE is its tint over the list platter (`LeanRow.state`): a
+///   passed deadline red, over target blue (the normal title ink), a
+///   target later today a faint blue. The edge's plum while over target
+///   (2026-10-11) went with it: the edge is the project's colour only.
 private struct TaskRow: View {
     let task: TaskDTO
     let project: ProjectDTO?
 
+    /// The watch is always dark.
+    private let scheme: ColorScheme = .dark
+
+    private var state: LeanRow.State? {
+        LeanRow.state(task, isOverdue: task.isOverdue(), now: Date(), day: DayStartStore.current)
+    }
+
     /// The due line, then the attempts count folded into it (spec §7,
     /// 2026-10-12, the Tasks widget's "Thu · 3×"): the server's "3×"
     /// (`attempts_label`) — the days the task was over target, never counted
-    /// here — plum, semibold, heavy from 7×, no pill. Then a red flag once
-    /// the deadline has passed (red is for that only).
+    /// here — grey, semibold, no pill. Then a red flag once the deadline has
+    /// passed.
     private func dueLine(_ due: Date) -> Text {
-        let overdue = task.isOverdue()
         var line = Text(WatchFormatting.dueLine(for: due))
-            .foregroundStyle(overdue ? WatchTheme.overdue : .secondary)
+            .foregroundStyle(LeanRowStyle.target(scheme, isOverdue: task.isOverdue()))
         if let label = TargetAge.attemptsBadge(task) {
-            let weight: Font.Weight = TargetAge.tone(attempts: task.attempts) == .strong ? .heavy : .semibold
-            line = line + Text(" · ").foregroundStyle(WatchTheme.overdue)
-                + Text(label).fontWeight(weight).monospacedDigit().foregroundStyle(WatchTheme.overdue)
+            line = line + Text(" · ").foregroundStyle(.secondary)
+                + Text(label).fontWeight(.semibold).monospacedDigit().foregroundStyle(.secondary)
         }
         if TargetAge.isPastDeadline(task) {
             line = line + Text("\u{00A0}")
-                + Text(Image(systemName: "flag.fill")).font(.system(size: 9, weight: .semibold)).foregroundStyle(.red)
+                + Text(Image(systemName: "flag.fill")).font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(LeanRowStyle.passed(scheme))
         }
         return line
+    }
+
+    /// The list platter's grey on watchOS 26 (#222223, read off a render)
+    /// with the state's dark tint (`LeanRow.tint`) composited over it —
+    /// opaque, since a platter tint replaces the platter's colour. Nil for a
+    /// state with no tint (later today, since 2026-10-29): the plain platter.
+    static func platterTint(_ state: LeanRow.State) -> Color? {
+        let platter: (r: Double, g: Double, b: Double) = (34, 34, 35)
+        guard let tone = LeanRow.tint(state)?.dark else { return nil }
+        let a = tone.alpha
+        func mix(_ base: Double, _ shift: UInt32) -> Double {
+            (base * (1 - a) + Double((tone.hex >> shift) & 0xFF) * a) / 255
+        }
+        return Color(red: mix(platter.r, 16), green: mix(platter.g, 8), blue: mix(platter.b, 0))
     }
 
     private func spokenDueLine(_ due: Date) -> String {
@@ -179,18 +205,19 @@ private struct TaskRow: View {
     }
 
     var body: some View {
+        let state = state
         HStack(alignment: .top, spacing: 6) {
-            // The project's color — or plum once the task is over target, the
-            // web row's stripe (2026-10-11), so the edge and the time agree.
             RoundedRectangle(cornerRadius: 2)
-                .fill(task.isOverdue() ? WatchTheme.overdue : WatchTheme.projectColor(project?.color))
+                .fill(WatchTheme.projectColor(project?.color))
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
+                LeanRowStyle.titleWithMark(Text(task.title), priority: task.priority)
                     .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
+                    .foregroundStyle(.primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
+                    .accessibilityLabel(Text(LeanRowStyle.spokenTitle(task.title, priority: task.priority)))
 
                 if let due = task.dueDate {
                     dueLine(due)
@@ -199,22 +226,30 @@ private struct TaskRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            let corner = RowCornerStrip(task: task)
-            if !corner.isEmpty {
-                // Centred on the `.body` title's first line.
-                corner.padding(.top, 4)
-            }
         }
+        // The tint IS the row's platter: `listItemTint` recolours the
+        // system platter (its shape and insets kept), with
+        // the tint laid over the platter's own grey (`platterTint`), so a
+        // tinted row reads as the web's tint over its row, not a new hue.
+        .listItemTint(state.flatMap(Self.platterTint).map { ListItemTint.fixed($0) })
     }
 }
 
 #if DEBUG
-// The row corner (2026-10-16): every state on the first screens — see
+// The lean row (2026-10-28): every mark and tint on the first screens — see
 // `WatchPreviewData.cornerTasks`.
-#Preview("Tasks — row corner") {
+#Preview("Tasks — lean row") {
     NavigationStack {
         TasksPageView(model: .previewTasks())
+    }
+}
+
+// The same corpus past its two overdue rows (so no sweep button): a target
+// later today (the faint tint), "!!" and "!" after titles, Medium and Low
+// with no mark.
+#Preview("Tasks — lean row, upcoming rows") {
+    NavigationStack {
+        TasksPageView(model: .previewTasks(Array(WatchPreviewData.cornerTasks.dropFirst(2))))
     }
 }
 
@@ -227,7 +262,7 @@ private struct TaskRow: View {
     }
 }
 
-#Preview("Tasks — row corner, XXX Large") {
+#Preview("Tasks — lean row, XXX Large") {
     NavigationStack {
         TasksPageView(model: .previewTasks())
     }

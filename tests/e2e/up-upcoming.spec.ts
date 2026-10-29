@@ -92,15 +92,17 @@ test.describe('Upcoming', () => {
       await page.goto('/reminders')
       const section = upcoming(page)
       await expect(section).toBeVisible()
-      // "Task queue · Upcoming", no "Heads-up" hint (2026-10-20).
-      await expect(section).toHaveAttribute('aria-label', 'Task queue · Upcoming')
-      await expect(section.getByText('Task queue · Upcoming', { exact: true })).toBeVisible()
+      // "Heads up" (titled so since 2026-10-29; "Upcoming" before), no hint.
+      await expect(section).toHaveAttribute('aria-label', 'Heads up')
+      await expect(section.getByText('Heads up', { exact: true })).toBeVisible()
       await expect(section.getByText('Heads-up')).toHaveCount(0)
-      // Directly after Days.
+      // Right after the deadlines page (first when it isn't drawn), before
+      // the queue and the horizons — since 2026-10-29 (it followed Days).
       const order = await page
         .locator('[data-task-segments] [data-task-segment]')
         .evaluateAll((els) => els.map((e) => e.getAttribute('data-task-segment')))
-      expect(order.indexOf('upcoming')).toBe(order.indexOf('days') + 1)
+      expect(order.indexOf('upcoming')).toBe(order.indexOf('deadlines') + 1)
+      expect(order.indexOf('upcoming')).toBeLessThan(order.indexOf('days'))
       // Target order: 9:00, 10:00, 11:00.
       const ids = await section
         .locator('[data-segment-task]')
@@ -226,7 +228,7 @@ test.describe('Upcoming', () => {
       await expect(strip.locator('[data-slot-segment="tasks:upcoming"]')).toHaveCount(1)
       await strip.locator('[data-slot-segment="tasks:upcoming"]').click()
       await expect(card).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
-      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Task queue · Upcoming')
+      await expect(card.locator('[data-slot-header-toggle]')).toHaveText('Task queue')
       const r = card.locator(`[data-segment-task="${t.repeating}"]`)
       await expect(r.locator('[data-target-today]')).toHaveCount(1)
       await r.getByRole('button', { name: /as considered/ }).click()
@@ -264,9 +266,9 @@ test.describe('Check-in day', () => {
       await page.goto('/reminders')
       const section = page.locator('[data-task-segment="weeks"]')
       await expect(section.locator(`[data-segment-task="${weeks}"]`)).toBeVisible()
-      // The header is "Task queue · Weekly" alone: the weekday hint went
+      // The header is "Weeks" alone (the horizon's word since 2026-10-29): the weekday hint went
       // with the panel titles (2026-10-20).
-      await expect(section).toHaveAttribute('aria-label', 'Task queue · Weekly')
+      await expect(section).toHaveAttribute('aria-label', 'Weeks')
       await expect(section.getByText(`${today.toFormat('cccc')}s`)).toHaveCount(0)
 
       const tomorrow = today.plus({ days: 1 }).weekday

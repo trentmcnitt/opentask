@@ -8,9 +8,9 @@ import { useCallback, useSyncExternalStore } from 'react'
  * CARD row (`TaskRow`). Per device like the theme, so trying one on a phone
  * never changes the desktop.
  *
- * The default is the build's: `NEXT_PUBLIC_DEFAULT_TASK_ROWS=lean` (the dev
- * build, while Trent tries the lean row), otherwise the card — production and
- * CI build without it, so every existing row test sees the card. A choice
+ * The default is the build's: `NEXT_PUBLIC_DEFAULT_TASK_ROWS=lean` (the prod
+ * and dev builds since 2026-10-29, set by the deploy), otherwise the card —
+ * CI builds without it, so every existing row test sees the card. A choice
  * made in Settings overrides the default on that device.
  *
  * Kept in `localStorage` behind a small external store, read through

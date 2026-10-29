@@ -266,14 +266,15 @@ describe('Upcoming', () => {
       const golden: Record<string, string[]> = {
         '2026-10-12': ['upcoming: A made Sat for Tue Oct 13'],
         '2026-10-17': [
-          'days: D deadline Fri Oct 23',
+          // Upcoming before the horizons since 2026-10-29 (the strip's groups).
           'upcoming: B target Tue Oct 20',
+          'days: D deadline Fri Oct 23',
           'weeks: W weeks, no target',
         ],
         '2026-10-18': ['days: D deadline Fri Oct 23'],
         // D's automatic target (§8.1): an 11-day wait, lead 3 → Tue Oct 20,
         // 9:00 — so it still waits in Days on the 19th, over target from the 20th.
-        '2026-10-19': ['days: D deadline Fri Oct 23', 'upcoming: B target Tue Oct 20'],
+        '2026-10-19': ['upcoming: B target Tue Oct 20', 'days: D deadline Fri Oct 23'],
         '2026-10-23': ['upcoming: F every 2 weeks'],
         '2026-10-24': ['weeks: W weeks, no target'],
         '2026-10-25': ['upcoming: F every 2 weeks'],
@@ -378,15 +379,17 @@ describe('Upcoming', () => {
       for (const t of [rem, q]) expect(placesOf(t.id)).toEqual([])
     })
 
-    test('UP-036: Upcoming sits directly after Days, before Weeks (on a check-in day too)', () => {
+    test('UP-036: Upcoming ("Heads up") comes before the horizons (on a check-in day too)', () => {
       setClock('2026-10-01T09:00')
       make({ horizon: 'days' })
       make({ horizon: 'weeks' })
       make({ due_at: at('2026-10-20T09:00') })
       setClock('2026-10-17T12:00') // a Saturday
+      // The strip's groups since 2026-10-29: Dated (deadlines, Heads up),
+      // the queue, then the horizons. Upcoming sat between Days and Weeks.
       expect(getTaskSegments(TEST_USER_ID, tz).map((s) => s.horizon)).toEqual([
-        'days',
         'upcoming',
+        'days',
         'weeks',
       ])
     })

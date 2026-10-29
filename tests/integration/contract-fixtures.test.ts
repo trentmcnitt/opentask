@@ -893,7 +893,7 @@ describe('contract fixtures (native clients)', () => {
 
     // 12. The two badges (spec §7, 2026-10-12), as GET /api/tasks/{id} returns
     //     them (the content extension reads it): an undated task written down
-    //     40 days ago (`age_label` ">1 mo"); a task over target since two days
+    //     40 days ago (`age_label` "old"); a task over target since two days
     //     ago (`attempts` 3, `attempts_label` "3×", `attempts_offer`
     //     "remove"); the same with a deadline ahead (`attempts_offer` "auto").
     //     Created and targeted five days ago, backdated in the DB, so every
@@ -1178,12 +1178,13 @@ describe('contract fixtures (native clients)', () => {
     }
     type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
     const segs = (captured['reminders-native'] as unknown as Segs).data.task_segments
+    // The server's order since 2026-10-29: Dated, Pulled, Horizon.
     expect(segs.map((s) => s.horizon)).toEqual([
       'deadlines',
+      'upcoming',
       'queue_today',
       'queue_previous',
       'days',
-      'upcoming',
       'weeks',
       'months',
       'eventually',
@@ -1349,11 +1350,15 @@ describe('contract fixtures (native clients)', () => {
     expect(plain.map((s) => s.horizon)).not.toContain('queue_today')
     expect(plain.map((s) => s.horizon)).not.toContain('queue_previous')
     for (const seg of plain) for (const t of seg.tasks) expect(queued.has(t.id)).toBe(false)
-    // The opt-in form has them, first.
+    // The opt-in form has them, together (after Upcoming since 2026-10-29).
     const withQueue = (captured['reminders-queue'] as unknown as Segs).data.task_segments
-    expect(withQueue.slice(0, 2).map((s) => s.horizon)).toEqual(['queue_today', 'queue_previous'])
+    const at = withQueue.findIndex((s) => s.horizon === 'queue_today')
+    expect(withQueue.slice(at, at + 2).map((s) => s.horizon)).toEqual([
+      'queue_today',
+      'queue_previous',
+    ])
     // Everything else is the same list in both forms.
-    expect(plain).toEqual(withQueue.slice(2))
+    expect(plain).toEqual(withQueue.filter((s) => !s.horizon.startsWith('queue_')))
   })
 
   const names = [

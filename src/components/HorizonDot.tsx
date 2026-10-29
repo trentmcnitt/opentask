@@ -14,7 +14,7 @@ import {
 import { useCheckInDay } from '@/components/PreferencesProvider'
 import {
   HORIZON_LABELS,
-  HORIZON_UNSET_LABEL,
+  UNSET_HORIZON_WORDS,
   HORIZON_WORD,
   horizonHints,
 } from '@/lib/task-model-words'
@@ -71,10 +71,13 @@ export function HorizonMenuContent({
   value,
   onChange,
   align = 'end',
+  unset = true,
 }: {
   value: HorizonValue | null
   onChange: (horizon: HorizonValue | null) => void
   align?: 'start' | 'end'
+  /** False: no "Unset" choice (Aged out's Grow menu: unsetting is not a grow). */
+  unset?: boolean
 }) {
   const { checkInDay } = useCheckInDay()
   const hints = horizonHints(checkInDay)
@@ -100,11 +103,15 @@ export function HorizonMenuContent({
             <span className="text-muted-foreground ml-auto pl-4 text-xs">{hints[h]}</span>
           </DropdownMenuRadioItem>
         ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuRadioItem value="unset" data-horizon-option="unset">
-          <HorizonDotMark horizon={null} />
-          {HORIZON_UNSET_LABEL} (weeks)
-        </DropdownMenuRadioItem>
+        {unset && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioItem value="unset" data-horizon-option="unset">
+              <HorizonDotMark horizon={null} />
+              {UNSET_HORIZON_WORDS}
+            </DropdownMenuRadioItem>
+          </>
+        )}
       </DropdownMenuRadioGroup>
     </DropdownMenuContent>
   )
@@ -244,7 +251,7 @@ export function HorizonPicker({
   dirty: boolean
   onChange: (horizon: HorizonValue | null) => void
 }) {
-  const label = value ? HORIZON_LABELS[value] : HORIZON_UNSET_LABEL
+  const label = value ? HORIZON_LABELS[value] : UNSET_HORIZON_WORDS
   return (
     <DropdownMenu>
       <DropdownMenuTrigger

@@ -7,6 +7,7 @@
  * target) and move detection. Used by both single and bulk edit operations.
  */
 
+import { nextTargetDayFirst } from '@/lib/target-day-first'
 import { getDb } from '@/core/db'
 import type { Task, TaskUpdateInput } from '@/types'
 import { deriveAnchorFields, computeFirstOccurrence, fillRuleTime } from '@/core/recurrence'
@@ -335,6 +336,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   collectQuotaDateClear(data, task, willBeTracked)
   // A row becoming a quota, or a quota whose period changes, is anchored now.
   collectQuotaAnchor(data, task, input, wasTracked, willBeTracked, now)
+  // Whatever moved the target above: its first time on its day (2026-10-29).
+  collectTargetDayFirst(data, task, ctx.timezone)
 
   // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
   // enforced here because a bare `{ due_at }` on a dated reminder is a move
@@ -1275,12 +1278,18 @@ function collectTaskModelFields(
       task.horizon_set_at,
       input.horizon ? now.toISOString() : null,
     )
+    // Any change of the horizon starts the keep count over (Aged out, 2026-10-29).
+    if (task.growth_kept_count !== 0) {
+      trackField(data, 'growth_kept_count', task.growth_kept_count, 0)
+    }
   } else if (input.affirm_horizon) {
     // Process "keep" (ruling Q7, 2026-10-12): the horizon stays as it is
     // (unset stays unset) and `growth_kept_at` is stamped, so Process asks
     // again only one threshold period after it (`growthAsk`). The horizon's
     // own clock is untouched. Undo restores the old stamp like any other field.
     trackField(data, 'growth_kept_at', task.growth_kept_at, now.toISOString())
+    // And the keep count goes up (Aged out's "kept 2×", 2026-10-29).
+    trackField(data, 'growth_kept_count', task.growth_kept_count, task.growth_kept_count + 1)
   }
 }
 
@@ -1753,6 +1762,29 @@ function keepPersonalOccurrence(
  * Note: The caller is responsible for calling incrementDailyStat() when
  * isSnoozeScenario is true. This allows bulk operations to batch the stats.
  */
+/**
+ * The target's FIRST TIME ON ITS DAY (`target_day_first_at`, 2026-10-29): for
+ * any write above that moved `due_at` — a move, a new target, Remove target,
+ * Back to auto, a rule change, a quota's date clear — kept on a move within
+ * the owner's OpenTask day, else the new target (`nextTargetDayFirst`). Last,
+ * so it sees the target every collector left. In `fieldsChanged`, so an undo
+ * puts it back with the target.
+ */
+function collectTargetDayFirst(data: FieldChangeData, task: Task, timezone: string): void {
+  if (!data.fieldsChanged.includes('due_at')) return
+  const newDue = (data.afterState.due_at ?? null) as string | null
+  const next = nextTargetDayFirst(
+    task.due_at,
+    task.target_day_first_at,
+    newDue,
+    timezone,
+    dayBoundaryForUser(task.user_id),
+  )
+  // Written even when it reads the same: the stored value may be NULL (a row
+  // made before any move, read as its target) and must hold the kept first.
+  trackField(data, 'target_day_first_at', task.target_day_first_at, next)
+}
+
 function collectDueAtChanges(
   data: FieldChangeData,
   task: Task,
