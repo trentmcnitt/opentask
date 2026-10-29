@@ -73,11 +73,13 @@ import { LeanButtons } from './LeanButtons'
 /**
  * The row's STATE LOOK (Trent 2026-10-28, today-mode round 6): a full-bleed
  * tint under the row's content, no bar (`leanRowState` picks it).
- * - Later today (a target or deadline, not yet over): a faint blue, 2.5%
- *   (dark ×1.25); the title unchanged.
- * - Over target: the target's blue, 10% (dark ×1.25), and a dark
- *   slate-blue title — present, not alarming: missing a target is not a
- *   mistake.
+ * - Later today (a target or deadline, not yet over): a faint blue — light
+ *   rgb(249,252,255) since 2026-10-29 (it was the target's blue at 2.5%),
+ *   dark the blue at 3.125%; the title unchanged.
+ * - Over target: a sky-leaning blue — light rgb(231,245,255) since
+ *   2026-10-29 (Trent's E2, "bluer"; it was the target's blue at 10%), dark
+ *   the target's blue at 12.5% — and a dark slate-blue title (light #263d4d,
+ *   dark #d3dcec): present, not alarming, missing a target is not a mistake.
  * - A passed deadline: the red counterpart (a warm red, rgb 200 20 10 — the
  *   sheet's crimson read pink on white — at ×1.4 of its first strength:
  *   light 9.8%, dark 14%); the title unchanged. It WINS over the blue: a
@@ -91,15 +93,26 @@ const TINT_BASE =
   "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:top-0 before:-bottom-px before:-z-10 before:content-['']"
 const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
   soon: {
-    row: `${TINT_BASE} before:bg-[rgba(21,93,252,0.025)] dark:before:bg-[rgba(81,162,255,0.03125)]`,
+    row: `${TINT_BASE} before:bg-[rgb(249,252,255)] dark:before:bg-[rgba(81,162,255,0.03125)]`,
   },
   over: {
-    row: `${TINT_BASE} before:bg-[rgba(21,93,252,0.10)] dark:before:bg-[rgba(81,162,255,0.125)]`,
-    title: 'text-[#26334d] dark:text-[#d3dcec]',
+    row: `${TINT_BASE} before:bg-[rgb(231,245,255)] dark:before:bg-[rgba(81,162,255,0.125)]`,
+    title: 'text-[#263d4d] dark:text-[#d3dcec]',
   },
   passed: {
     row: `${TINT_BASE} before:bg-[rgba(200,20,10,0.098)] dark:before:bg-[rgba(255,100,103,0.14)]`,
   },
+}
+
+/**
+ * The title's WEIGHT (Trent, 2026-10-29, after trying weights on dev: "500
+ * feels pretty good… Maybe we do a 500/600 split"): medium on a plain row,
+ * semibold on a tinted one — over target or a passed deadline. The faint
+ * later-today row keeps medium (its tint is still in question). A dev build's
+ * `?titleWeight=` override replaces both (`useTitleWeightOverride`).
+ */
+function titleWeight(state: LeanRowState | null): string {
+  return state === 'over' || state === 'passed' ? 'font-semibold' : 'font-medium'
 }
 
 /** One stable empty list, so a row without periods keeps its defer callback's identity. */
@@ -216,7 +229,7 @@ export function LeanRow({
         )}
         <LeanTitle
           task={task}
-          titleClass={state ? STATE_LOOK[state].title : undefined}
+          titleClass={cn(titleWeight(state), state && STATE_LOOK[state].title)}
           justAddedBadge={justAddedBadge}
         />
         <LeanMeta

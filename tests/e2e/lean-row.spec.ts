@@ -83,12 +83,12 @@ async function gotoDashboard(page: Page) {
 
 const row = (page: Page, id: number): Locator => page.locator(`[data-lean-row="${id}"]`)
 
-/** A tint's colour and alpha, to the alpha's second decimal place. */
+/** A tint's colour and alpha (an opaque `rgb()` reads as alpha 1), to two decimals. */
 function expectTint(bg: string, [r, g, b, a]: [number, number, number, number]) {
-  const m = bg.match(/^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/)
+  const m = bg.match(/^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/)
   expect(m, bg).not.toBeNull()
   expect(m!.slice(1, 4).map(Number)).toEqual([r, g, b])
-  expect(Number(m![4])).toBeCloseTo(a, 2)
+  expect(Number(m![4] ?? 1)).toBeCloseTo(a, 2)
 }
 
 /**
@@ -170,7 +170,7 @@ test.describe('Lean row · look', () => {
           await expect(o).toHaveAttribute('data-row-state', 'over')
           await expect(o.locator('[data-lean-title]')).toHaveCSS(
             'color',
-            scheme === 'light' ? 'rgb(38, 51, 77)' : 'rgb(211, 220, 236)',
+            scheme === 'light' ? 'rgb(38, 61, 77)' : 'rgb(211, 220, 236)',
           )
           const tint = (r: Locator) =>
             r.evaluate((el) => {
@@ -178,7 +178,8 @@ test.describe('Lean row · look', () => {
               return { bg: s.backgroundColor, shadow: s.boxShadow }
             })
           const blue = await tint(o)
-          expectTint(blue.bg, scheme === 'light' ? [21, 93, 252, 0.1] : [81, 162, 255, 0.125])
+          // Light: Trent's E2 (2026-10-29), an opaque sky-leaning blue.
+          expectTint(blue.bg, scheme === 'light' ? [231, 245, 255, 1] : [81, 162, 255, 0.125])
           expect(blue.shadow).toBe('none')
           const plainTitle = await row(page, plain)
             .locator('[data-lean-title]')
@@ -198,8 +199,18 @@ test.describe('Lean row · look', () => {
           await expect(u.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
           expectTint(
             (await tint(u)).bg,
-            scheme === 'light' ? [21, 93, 252, 0.025] : [81, 162, 255, 0.03125],
+            scheme === 'light' ? [249, 252, 255, 1] : [81, 162, 255, 0.03125],
           )
+          // The title's weight (Trent, 2026-10-29): 600 on a tinted row (over
+          // target, a passed deadline), 500 on a plain or later-today one.
+          const weightOf = (id: number) =>
+            row(page, id)
+              .locator('[data-lean-title]')
+              .evaluate((el) => getComputedStyle(el).fontWeight)
+          expect(await weightOf(over)).toBe('600')
+          expect(await weightOf(passed)).toBe('600')
+          expect(await weightOf(soon)).toBe('500')
+          expect(await weightOf(plain)).toBe('500')
           // Both over target and past its deadline: red, not blue.
           await expect(row(page, both)).toHaveAttribute('data-over-target', '')
           await expect(row(page, both)).toHaveAttribute('data-row-state', 'passed')
@@ -272,7 +283,7 @@ test.describe('Lean row · the horizon done square', () => {
         deviceScaleFactor: scale,
       })
 
-      test('Days plain, Weeks / Months / Eventually patterned, unset as UNSET_HORIZON; a dated row plain', async ({
+      test('Days plain, Weeks / Months / Eventually patterned, unset as UNSET_HORIZON; targeted and deadline rows too', async ({
         authenticatedPage: page,
       }) => {
         await page.addInitScript(LEAN)
@@ -286,6 +297,11 @@ test.describe('Lean row · the horizon done square', () => {
             title: uniqueTitle('LR dated'),
             horizon: 'months',
             due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+          }),
+          deadline: await create(page, {
+            title: uniqueTitle('LR deadline'),
+            horizon: 'months',
+            deadline_at: new Date(Date.now() + 48 * HOUR).toISOString(),
           }),
         }
         try {
@@ -317,9 +333,13 @@ test.describe('Lean row · the horizon done square', () => {
           await expect(square(made.unset)).toHaveAccessibleName(
             /^Done: ".+" · Horizon: unset \(Weeks\)\. Hold to change\.$/,
           )
-          // A picked target: the horizon doesn't govern, so the plain checkbox.
-          await expect(square(made.dated)).not.toHaveAttribute('data-horizon-square', /.+/)
-          await expect(border(made.dated)).toHaveCount(0)
+          // A picked target: the square still shows the horizon (Trent,
+          // 2026-10-29: "regardless of whether it has a target").
+          await expect(square(made.dated)).toHaveAttribute('data-horizon-square', 'months')
+          await expect(border(made.dated)).toHaveCount(1)
+          // A deadline task: its SET horizon (never the effective one).
+          await expect(square(made.deadline)).toHaveAttribute('data-horizon-square', 'months')
+          await expect(border(made.deadline)).toHaveCount(1)
 
           // Each density draws its own stroke: 1px at 1x, 1.5px at 2x.
           const shown = await border(made.weeks).evaluate((svg) =>
@@ -383,13 +403,22 @@ test.describe('Lean row · was', () => {
 test.describe('Lean row · changing the horizon from the square', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('a right-click or a hold on a governed square opens the horizon menu; a dated square has none', async ({
+  test('a right-click or a hold on a horizon square opens the horizon menu, targeted and deadline rows too; a repeating square has none', async ({
     authenticatedPage: page,
   }) => {
     await page.addInitScript(LEAN)
     const governed = await create(page, { title: uniqueTitle('LR hz'), horizon: 'weeks' })
     const dated = await create(page, {
       title: uniqueTitle('LR hz dated'),
+      due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+    })
+    const deadline = await create(page, {
+      title: uniqueTitle('LR hz deadline'),
+      deadline_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+    })
+    const repeating = await create(page, {
+      title: uniqueTitle('LR hz repeat'),
+      rrule: 'FREQ=DAILY',
       due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
     })
     try {
@@ -412,11 +441,23 @@ test.describe('Lean row · changing the horizon from the square', () => {
       await expect(menu).toHaveCount(0)
       expect((await stateOf(page, governed)).done).toBe(false)
 
-      // A dated row's square: no horizon menu.
+      // A targeted row's square has the menu too.
       await row(page, dated).locator('[data-lean-done]').click({ button: 'right' })
+      await expect(menu).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveCount(0)
+
+      // A deadline row's square has it too.
+      await row(page, deadline).locator('[data-lean-done]').click({ button: 'right' })
+      await expect(menu).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveCount(0)
+
+      // A repeating row's square: no horizon menu.
+      await row(page, repeating).locator('[data-lean-done]').click({ button: 'right' })
       await expect(menu).toHaveCount(0)
     } finally {
-      await cleanUp(page, [governed, dated])
+      await cleanUp(page, [governed, dated, deadline, repeating])
     }
   })
 })

@@ -6,8 +6,9 @@
  * (the card row's rule, `TaskRow`). No consider circle: the lean row has no
  * consider.
  *
- * THE HORIZON SQUARE (`src/lib/horizon-square.ts`): on a row the horizon
- * governs, the square's border draws the horizon — Days solid (the plain
+ * THE HORIZON SQUARE (`src/lib/horizon-square.ts`): on every one-off
+ * (`horizonGoverns` — targeted or not, deadline or not, since 2026-10-29),
+ * the square's border draws the horizon the user set — Days solid (the plain
  * checkbox itself, 0.25 grey), Weeks long dashes, Months a dash mid-side,
  * Eventually dots (0.42 grey); unset looks like whatever unset means
  * (`UNSET_HORIZON`). Every other row keeps the plain checkbox. The pattern

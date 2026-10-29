@@ -7,8 +7,9 @@ import { useSyncExternalStore } from 'react'
  * title weight, overridable on a DEV build so he can try weights without a
  * deploy. `?titleWeight=500` (any 100–900 in steps of 100) sets it and
  * remembers it on the device (localStorage `opentask_title_weight`);
- * `?titleWeight=off` clears it. With no override the title keeps its
- * stylesheet weight (normal, 400). Only on the dev build
+ * `?titleWeight=off` clears it. It replaces both of the title's weights
+ * (`titleWeight` in `LeanRow`: 500 plain, 600 tinted) for comparison. Only
+ * on the dev build
  * (`NEXT_PUBLIC_DEFAULT_TASK_ROWS` set — production and CI build without
  * it); remove once the weight is decided.
  */
