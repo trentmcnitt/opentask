@@ -120,7 +120,7 @@ export function horizonOf(value: string | null | undefined): HorizonValue | null
   return (HORIZON_ORDER as readonly string[]).includes(value ?? '') ? (value as HorizonValue) : null
 }
 
-interface CornerTask {
+export interface CornerTask {
   due_at: string | null
   deadline_at: string | null
   target_auto?: boolean
