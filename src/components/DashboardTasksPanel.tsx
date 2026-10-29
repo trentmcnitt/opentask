@@ -51,7 +51,7 @@ import {
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
  * across the segments (with the switch on the deadlines page first, then the
- * task queue's two panels; then Daily, Upcoming, Weekly, Monthly, Quarterly —
+ * task queue's two panels; then Days, Heads up, Weeks, Months, Eventually —
  * `SEGMENT_ORDER`), its own strip of
  * bars (the current one taller, as a slot's is; purple while filling, green
  * when finished, the deadlines page teal — `ReminderSlotBar`), the

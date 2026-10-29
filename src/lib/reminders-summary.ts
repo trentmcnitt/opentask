@@ -104,8 +104,8 @@ export function summarizeReminders<G extends SummaryGroup>(
  * reminders · 84 tasks considered'", and counts everything the day bar under
  * it shows, so its sum matches the bar: every period (its reminders and quota
  * prompts — `summarizeReminders`) and every task segment the bar draws (the
- * deadlines page, the queue's two panels, Daily, Upcoming, Weekly, Monthly,
- * Quarterly), each segment through `segmentCounts` (src/lib/task-segments.ts)
+ * deadlines page, Heads up, the queue's two panels, Days, Weeks, Months,
+ * Eventually), each segment through `segmentCounts` (src/lib/task-segments.ts)
  * — the very numbers its own header shows, so the headline and the headers
  * can never disagree.
  *

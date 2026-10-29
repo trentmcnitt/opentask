@@ -74,7 +74,7 @@ import {
  *   nothing changed: the row comes back and the toast says why
  *   (`src/lib/deck-request.ts`)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
- *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
+ *   toast then says "Moved to <panel title>", e.g. "Moved to Months")
  *
  * THE DEADLINES PAGE (2026-10-22, docs/TASK-MODEL.md § The deadlines page):
  * - circle → consider, as anywhere — except in the SAFETY NET (from the day
@@ -787,7 +787,7 @@ export function targetWhen(
 
 /**
  * The horizon chip's toast. When the change moves the row to another segment,
- * it says where it went, by the panel's title ("Moved to Monthly", 2026-10-11;
+ * it says where it went, by the panel's title ("Moved to Months", 2026-10-11;
  * the title since 2026-10-20) — the row is about to leave the list, and
  * "Horizon: Months" didn't say that. Compared on the EFFECTIVE horizon (a
  * deadline can pull a task in, so a new set horizon may leave it where it

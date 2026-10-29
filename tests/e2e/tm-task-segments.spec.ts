@@ -142,9 +142,9 @@ test.describe('Task segments', () => {
       await expect.poll(async () => (await stateOf(page, ids[0])).last_considered_at).toBeNull()
 
       // The header folds the section like a slot's, and opens it again.
-      await days.getByRole('button', { name: /^Daily\b/, expanded: true }).click()
+      await days.getByRole('button', { name: /^Days\b/, expanded: true }).click()
       await expect(segmentRow(page, ids[1])).toHaveCount(0)
-      await days.getByRole('button', { name: /^Daily\b/, expanded: false }).click()
+      await days.getByRole('button', { name: /^Days\b/, expanded: false }).click()
       await expect(segmentRow(page, ids[1])).toBeVisible()
     } finally {
       await trash(page, ids)
@@ -162,7 +162,7 @@ test.describe('Task segments', () => {
       // It left the days segment, and the toast says where it went (2026-10-11),
       // by the panel's title (2026-10-20).
       await expect(
-        page.locator('[data-sonner-toast]', { hasText: 'Moved to Monthly' }),
+        page.locator('[data-sonner-toast]', { hasText: 'Moved to Months' }),
       ).toBeVisible()
     } finally {
       await trash(page, [id])

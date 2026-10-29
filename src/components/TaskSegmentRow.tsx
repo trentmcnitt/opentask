@@ -163,8 +163,8 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
 
 /**
  * A segment kind's panel title: just its own words — "Today's pulls",
- * "Previous pulls", "Deadlines", "Daily", "Upcoming", "Weekly", "Monthly",
- * "Quarterly", "Aged out" — the whole header on both surfaces (uppercased
+ * "Previous pulls", "Deadlines", "Days", "Heads up", "Weeks", "Months",
+ * "Eventually", "Aged out" — the whole header on both surfaces (uppercased
  * there), no hint after it. Since 2026-10-29 no "Task queue ·" before it
  * (Trent: "I think just the title's enough now. You can see which one's
  * selected" — the strip's words say where you are).

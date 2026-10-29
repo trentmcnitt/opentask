@@ -39,18 +39,15 @@ export const HORIZON_LABELS: Record<HorizonValue, string> = {
 }
 
 /**
- * The horizon segments' WORDS (Trent, 2026-10-20): one each. A panel header
- * is the word alone (`segmentTitle` in TaskSegmentRow; "Task queue ·" went
- * on 2026-10-29); the
- * horizon-move toast says the bare word ("Moved to Weekly"). Display text
- * only: the segment kinds the API sends (`days` … `eventually`) do not change.
+ * The horizon segments' titles: the horizon's own word (Trent, 2026-10-29 —
+ * the title read "Weekly" while its rows say "Weeks"; the cadence words
+ * "Daily / Weekly / Monthly / Quarterly" from 2026-10-20 to then). A panel
+ * header is the word alone (`segmentTitle` in TaskSegmentRow); the horizon-move
+ * toast says it bare ("Moved to Weeks"). When each one comes round stays a
+ * hint (`horizonHints`). Display text only: the segment kinds the API sends
+ * (`days` … `eventually`) do not change.
  */
-export const SEGMENT_TITLES: Record<HorizonValue, string> = {
-  days: 'Daily',
-  weeks: 'Weekly',
-  months: 'Monthly',
-  eventually: 'Quarterly',
-}
+export const SEGMENT_TITLES: Record<HorizonValue, string> = HORIZON_LABELS
 
 /**
  * The queue's two panels drawn as ONE segment on the web (2026-10-29,

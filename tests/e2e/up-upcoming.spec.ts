@@ -266,9 +266,9 @@ test.describe('Check-in day', () => {
       await page.goto('/reminders')
       const section = page.locator('[data-task-segment="weeks"]')
       await expect(section.locator(`[data-segment-task="${weeks}"]`)).toBeVisible()
-      // The header is "Weekly" alone: the weekday hint went
+      // The header is "Weeks" alone (the horizon's word since 2026-10-29): the weekday hint went
       // with the panel titles (2026-10-20).
-      await expect(section).toHaveAttribute('aria-label', 'Weekly')
+      await expect(section).toHaveAttribute('aria-label', 'Weeks')
       await expect(section.getByText(`${today.toFormat('cccc')}s`)).toHaveCount(0)
 
       const tomorrow = today.plus({ days: 1 }).weekday
