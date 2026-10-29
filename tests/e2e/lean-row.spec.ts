@@ -88,12 +88,12 @@ async function gotoDashboard(page: Page) {
 
 const row = (page: Page, id: number): Locator => page.locator(`[data-lean-row="${id}"]`)
 
-/** A tint's colour and alpha, to the alpha's second decimal place. */
+/** A tint's colour and alpha (an opaque `rgb()` reads as alpha 1), to two decimals. */
 function expectTint(bg: string, [r, g, b, a]: [number, number, number, number]) {
-  const m = bg.match(/^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/)
+  const m = bg.match(/^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/)
   expect(m, bg).not.toBeNull()
   expect(m!.slice(1, 4).map(Number)).toEqual([r, g, b])
-  expect(Number(m![4])).toBeCloseTo(a, 2)
+  expect(Number(m![4] ?? 1)).toBeCloseTo(a, 2)
 }
 
 /**
@@ -175,7 +175,7 @@ test.describe('Lean row · look', () => {
           await expect(o).toHaveAttribute('data-row-state', 'over')
           await expect(o.locator('[data-lean-title]')).toHaveCSS(
             'color',
-            scheme === 'light' ? 'rgb(38, 51, 77)' : 'rgb(211, 220, 236)',
+            scheme === 'light' ? 'rgb(38, 61, 77)' : 'rgb(211, 220, 236)',
           )
           const tint = (r: Locator) =>
             r.evaluate((el) => {
@@ -183,7 +183,8 @@ test.describe('Lean row · look', () => {
               return { bg: s.backgroundColor, shadow: s.boxShadow }
             })
           const blue = await tint(o)
-          expectTint(blue.bg, scheme === 'light' ? [21, 93, 252, 0.1] : [81, 162, 255, 0.125])
+          // Light: Trent's E2 (2026-10-29), an opaque sky-leaning blue.
+          expectTint(blue.bg, scheme === 'light' ? [231, 245, 255, 1] : [81, 162, 255, 0.125])
           expect(blue.shadow).toBe('none')
           const plainTitle = await row(page, plain)
             .locator('[data-lean-title]')
@@ -203,7 +204,7 @@ test.describe('Lean row · look', () => {
           await expect(u.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
           expectTint(
             (await tint(u)).bg,
-            scheme === 'light' ? [21, 93, 252, 0.025] : [81, 162, 255, 0.03125],
+            scheme === 'light' ? [249, 252, 255, 1] : [81, 162, 255, 0.03125],
           )
           // The title's weight (Trent, 2026-10-29): 600 on a tinted row (over
           // target, a passed deadline), 500 on a plain or later-today one.
