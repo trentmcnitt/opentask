@@ -456,7 +456,8 @@ function useAgedOutActions(run: RunSegmentAction) {
     (task: Task) =>
       run(
         [task.id],
-        'considered',
+        // Considered, and drawn with the new count until the payload has it.
+        { left: 'considered', patch: { growth_kept_count: task.growth_kept_count + 1 } },
         () => post('/api/task-segments/keep', { ids: [task.id] }),
         `Kept the horizon: “${task.title}”`,
       ),
@@ -468,7 +469,7 @@ function useAgedOutActions(run: RunSegmentAction) {
       if (!to) return
       return run(
         [task.id],
-        'considered',
+        { left: 'considered', patch: { horizon: to, growth_kept_count: 0 } },
         () => post('/api/task-segments/grow', { ids: [task.id] }),
         `Horizon now ${HORIZON_LABELS[to]}: “${task.title}”`,
       )

@@ -1647,7 +1647,7 @@ export function ConsideredSegmentRow({
         {left && left !== 'considered' && (
           <span className="ml-1.5 text-xs">· {leftWords(left, task)}</span>
         )}
-        {agedHandled && !row.left && (
+        {agedHandled && (!row.left || row.left === 'considered') && (
           <span data-aged-handled className="ml-1.5 text-xs">
             ·{' '}
             {task.growth_kept_count > 0
