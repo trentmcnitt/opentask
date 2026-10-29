@@ -381,3 +381,37 @@ test.describe('Dashboard modes · phone', () => {
     }
   })
 })
+
+test.describe('Card v2', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  // Trent, 2026-10-29 ("C1 · Separate cards"): card v2 keeps the modes (it
+  // is the lean row in a card); Today's one heading is the cards' pill, in
+  // neutral grey; All's headings are unchanged.
+  test('the modes stay on; TODAY is a grey pill in Today, and only there', async ({
+    authenticatedPage: page,
+  }) => {
+    // After the file's own init script (lean), so card v2 wins.
+    await page.addInitScript(() => window.localStorage.setItem('opentask_task_rows', 'card-v2'))
+    const id = await create(page, {
+      title: uniqueTitle('MD card'),
+      due_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+    })
+    try {
+      await open(page, 'today')
+      await expect(page.locator('[data-mode-switch]')).toBeVisible()
+      const today = section(page, 'today')
+      await expect(rowIn(today, id)).toHaveAttribute('data-row-look', 'card-v2')
+      const pill = today.locator('[data-section-heading] [data-section-pill]')
+      await expect(pill).toHaveText('Today')
+      await expect(pill).toHaveCSS('text-transform', 'uppercase')
+      // A filled pill (the label colour `gray`), not bare text.
+      await expect(pill).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+
+      await open(page, 'all')
+      await expect(page.locator('[data-section-pill]')).toHaveCount(0)
+    } finally {
+      await cleanUp(page, [id])
+    }
+  })
+})

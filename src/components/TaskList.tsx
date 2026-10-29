@@ -708,7 +708,7 @@ export function TaskList({
                       }}
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
-                      <GroupHeadingText group={group} />
+                      <GroupHeadingText group={group} rowStyle={rowStyle} />
                       <GroupCount group={group} nowSplit={nowSplit} />
                     </button>
                   </div>
@@ -883,20 +883,29 @@ function groupTitle(group: SortedTaskGroup): string {
  * dark. A project with no color keeps the plain heading, and so does Now's
  * On deck section (D2, spec rule 9 — a section, not a project).
  */
-function GroupHeadingText({ group }: { group: SortedTaskGroup }) {
-  if (!group.color) return <>{groupTitle(group)}</>
+function GroupHeadingText({ group, rowStyle }: { group: SortedTaskGroup; rowStyle: TaskRowStyle }) {
+  const color = group.color ?? todayPill(group, rowStyle)
+  if (!color) return <>{groupTitle(group)}</>
   return (
     <span
-      data-project-heading-tag
-      className={cn(
-        'rounded-md px-2 py-0.5',
-        LABEL_COLORS[group.color].bg,
-        LABEL_COLORS[group.color].text,
-      )}
+      data-project-heading-tag={group.color ? '' : undefined}
+      data-section-pill={group.color ? undefined : ''}
+      className={cn('rounded-md px-2 py-0.5', LABEL_COLORS[color].bg, LABEL_COLORS[color].text)}
     >
-      {group.label}
+      {groupTitle(group)}
     </span>
   )
+}
+
+/**
+ * Card v2's TODAY heading (Trent, 2026-10-29, "C1 · Separate cards"): the
+ * cards' all-caps pill, once, as "TODAY" in the Today mode, in neutral grey
+ * (a section is not a project). Project groups keep their coloured pills;
+ * the other modes' sections stay plain text (their headings are going back
+ * to design).
+ */
+function todayPill(group: SortedTaskGroup, rowStyle: TaskRowStyle): 'gray' | null {
+  return rowStyle === 'card-v2' && group.section?.id === 'today' ? 'gray' : null
 }
 
 /**

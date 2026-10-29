@@ -12,8 +12,9 @@ import type { ModeId } from '@/lib/modes/types'
  * Scan or All — and the sort pill's choice, both remembered per device.
  *
  * ON with the lean row: the modes are built on it, so they come with the
- * device's "Task rows: Lean" (Settings → Theme), whose default is the
- * build's (`NEXT_PUBLIC_DEFAULT_TASK_ROWS=lean` on the dev build).
+ * device's "Task rows: Lean" or "Card v2" (Settings → Theme; card v2 is the
+ * lean row in a card), whose default is the build's
+ * (`NEXT_PUBLIC_DEFAULT_TASK_ROWS=lean` on the dev build).
  * Production and CI build without it, so their dashboard is unchanged.
  *
  * `?mode=<id>` (the STABLE id — `today`, `pick-mode`, `all` — never the
@@ -46,13 +47,15 @@ const sortStore = deviceStore<ModeSort>(
 
 export function useDashboardMode() {
   const { style } = useTaskRowStyle()
-  const enabled = style === 'lean'
+  // The modes ride the lean row's contents: lean rows and card v2 (the lean
+  // row in a card) have them; the old cards keep the dashboard as it was.
+  const enabled = style !== 'card'
   const stored = useSyncExternalStore(modeStore.subscribe, modeStore.read, modeStore.serverSnapshot)
   const sort = useSyncExternalStore(sortStore.subscribe, sortStore.read, sortStore.serverSnapshot)
   const setMode = useCallback((next: ModeId) => modeStore.write(next), [])
   const setSort = useCallback((next: ModeSort) => sortStore.write(next), [])
   return {
-    /** The modes are on (the lean row is). */
+    /** The modes are on (lean rows or card v2). */
     enabled,
     /** The mode shown: the stored one with the modes on; else the dashboard as it was. */
     mode: enabled ? stored : null,

@@ -30,7 +30,7 @@ import type { ModeId, SectionView } from '@/lib/modes/types'
 
 /** The dashboard modes as `DashboardView` draws them (`useDashboardMode`). */
 interface DashboardModes {
-  /** The modes are on (the lean row is). */
+  /** The modes are on (lean rows or card v2). */
   enabled: boolean
   /** The mode shown, or null with the modes off. */
   mode: ModeId | null
