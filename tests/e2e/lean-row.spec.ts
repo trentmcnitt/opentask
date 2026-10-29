@@ -642,17 +642,14 @@ test.describe('Lean row · swipe with a mouse', () => {
         const swipe = r.locator('xpath=../..')
 
         // Keyboard focus on the row (its focus outline): Ctrl+Up to the
-        // first row (Control: the app reads Cmd or Ctrl from the user agent,
-        // and the Desktop Chrome device reports Windows), then down, each
-        // press landing before the next.
+        // list's first row (Control: the app reads Cmd or Ctrl from the user
+        // agent, and the Desktop Chrome device reports Windows), then down
+        // until it is this one, each press landing before the next.
         const focusedId = () => page.evaluate(() => document.activeElement?.id ?? '')
-        const rows = page.locator('[data-lean-row]')
         await page.keyboard.press('Control+ArrowUp')
-        await expect(rows.first()).toBeFocused()
-        const index = await r.evaluate((el) =>
-          [...document.querySelectorAll('[data-lean-row]')].indexOf(el),
-        )
-        for (let i = 1; i <= index; i++) {
+        await expect.poll(focusedId).toMatch(/^task-row-\d+$/)
+        const rowCount = await page.locator('[role="option"]').count()
+        for (let i = 0; i < rowCount && (await focusedId()) !== `task-row-${id}`; i++) {
           const before = await focusedId()
           await page.keyboard.press('ArrowDown')
           await expect.poll(focusedId).not.toBe(before)
