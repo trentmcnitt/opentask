@@ -45,14 +45,14 @@ export function horizonSquareLook(horizon: HorizonValue | null | undefined): Squ
 /**
  * A governed square's hint (Trent, 2026-10-29): it names the horizon it
  * draws — "Horizon: Weeks. Hold to change." Unset names what it reads as,
- * `UNSET_HORIZON` (the look it wears): "Horizon: unset (Weeks). Hold to
- * change." The tooltip is "Done · " and this; a phone has no hover, so the
+ * `UNSET_HORIZON` (the look it wears), the horizon first (Trent, 2026-10-29):
+ * "Horizon: Weeks (unset). Hold to change." The tooltip is "Done · " and this; a phone has no hover, so the
  * accessible name carries the same words after the task's title.
  */
 export function horizonSquareHint(horizon: HorizonValue | null | undefined): string {
   const name = horizon
     ? HORIZON_LABELS[horizon]
-    : `${HORIZON_UNSET_LABEL.toLowerCase()} (${HORIZON_LABELS[UNSET_HORIZON]})`
+    : `${HORIZON_LABELS[UNSET_HORIZON]} (${HORIZON_UNSET_LABEL.toLowerCase()})`
   return `${HORIZON_WORD}: ${name}. Hold to change.`
 }
 
