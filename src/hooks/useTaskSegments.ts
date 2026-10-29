@@ -463,14 +463,16 @@ function useAgedOutActions(run: RunSegmentAction) {
       ),
     [run],
   )
+  // `pick`: the hold menu's horizon; omitted, one step out.
   const grow = useCallback(
-    (task: Task) => {
-      const to = growStep(task.horizon)
-      if (!to) return
+    (task: Task, pick?: HorizonValue) => {
+      const to = pick ?? growStep(task.horizon)
+      if (!to || to === task.horizon) return
       return run(
         [task.id],
         { left: 'considered', patch: { horizon: to, growth_kept_count: 0 } },
-        () => post('/api/task-segments/grow', { ids: [task.id] }),
+        () =>
+          post('/api/task-segments/grow', { ids: [task.id], ...(pick ? { horizon: pick } : {}) }),
         `Horizon now ${HORIZON_LABELS[to]}: “${task.title}”`,
       )
     },

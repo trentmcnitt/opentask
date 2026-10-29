@@ -57,7 +57,7 @@ import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { AGED_OUT_TITLE, agedClockRestart, growStep } from '@/lib/aged-out'
+import { AGED_OUT_TITLE, agedClockRestart, ageWords, growStep } from '@/lib/aged-out'
 import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -931,35 +931,67 @@ function GrowButton({
   actions: TaskSegmentActions
   panel: boolean
 }) {
+  // A hold or right-click opens the horizon menu (Trent, 2026-10-29: "press
+  // and hold on the grow icon to … select what horizon I want"); a tap grows
+  // one step. A pick is a grow to that horizon: the row stays, handled.
+  const [menuOpen, setMenuOpen] = useState(false)
   const to = growStep(task.horizon)
+  const press = useSimpleLongPress({
+    onLongPress: () => setMenuOpen(true),
+    onShortPress: () => void actions.grow(task),
+    tapOn: 'click',
+  })
   if (!to) return <span aria-hidden className={SLOT_HIT} />
   const words = `Grow to ${HORIZON_LABELS[to]}`
   return (
-    <button
-      type="button"
-      data-grow
-      data-grow-to={to}
-      data-no-row-press
-      onClick={(e) => {
-        e.stopPropagation()
-        void actions.grow(task)
-      }}
-      aria-label={`${words}: “${task.title}”`}
-      title={words}
-      className={cn(
-        'group/grow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
-        SLOT_HIT,
-      )}
-    >
-      <span
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <button
+        type="button"
+        data-grow
+        data-grow-to={to}
+        data-no-row-press
+        onClick={(e) => {
+          e.stopPropagation()
+          press.onClick()
+        }}
+        onPointerDown={press.onPointerDown}
+        onPointerUp={press.onPointerUp}
+        onPointerLeave={press.onPointerLeave}
+        onPointerMove={press.onPointerMove}
+        onPointerCancel={press.onPointerCancel}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setMenuOpen(true)
+        }}
+        aria-label={`${words}: “${task.title}” (hold to pick a horizon)`}
+        title={`${words} · hold to pick`}
         className={cn(
-          'group-hover/grow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
-          panel ? DECK_BOX.panel : DECK_BOX.page,
+          'group/grow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
+          SLOT_HIT,
         )}
       >
-        <Sprout className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
-      </span>
-    </button>
+        {/* The menu's anchor: inert, so only the hold or right-click opens it. */}
+        <DropdownMenuTrigger asChild>
+          <span aria-hidden tabIndex={-1} className="pointer-events-none absolute inset-0" />
+        </DropdownMenuTrigger>
+        <span
+          className={cn(
+            'group-hover/grow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+            panel ? DECK_BOX.panel : DECK_BOX.page,
+          )}
+        >
+          <Sprout className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
+        </span>
+      </button>
+      <HorizonMenuContent
+        value={task.horizon}
+        unset={false}
+        onChange={(h) => {
+          if (h) void actions.grow(task, h)
+        }}
+      />
+    </DropdownMenu>
   )
 }
 
@@ -1254,7 +1286,21 @@ function DeckSlotSpacer({ panel, empty = false }: { panel: boolean; empty?: bool
  * `readOnly` (the row's peek bubble, 2026-10-20): the same line, nothing to
  * press — the dot is just its mark.
  */
-function TaskSegmentMeta({
+type TaskSegmentMetaProps = Parameters<typeof SegmentMetaLine>[0]
+
+/** A segment row's meta line: Aged out's own (`AgedOutMeta`), else the usual. */
+function TaskSegmentMeta(props: TaskSegmentMetaProps) {
+  if (props.segmentHorizon !== 'aged_out') return <SegmentMetaLine {...props} />
+  return (
+    <AgedOutMeta
+      task={props.task}
+      timezone={props.timezone}
+      onOpenDetails={props.readOnly ? undefined : props.onOpenDetails}
+    />
+  )
+}
+
+function SegmentMetaLine({
   task,
   timezone,
   segmentHorizon,
@@ -1338,44 +1384,85 @@ function TaskSegmentMeta({
       {/* No badges on a queue row (designer, 10-19) — neither attempts nor
           age: the queue is read at a glance. A waiting repeating task keeps a
           target (its next occurrence) and its count, so it would read "226×". */}
-      {segmentHorizon === 'aged_out' ? (
-        <AgedOutWords task={task} timezone={timezone} />
-      ) : (
-        !isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />
-      )}
+      {!isQueueKind(segmentHorizon) && <BadgeChips task={task} timezone={timezone} />}
       <SegmentLabels task={task} />
     </div>
   )
 }
 
 /**
- * AGED OUT's meta words (Trent, 2026-10-29: "this is the one screen where
- * [the created date] really does matter"), in place of the badges — every
- * row here is old, so no "old". The created date in the lean row's words
- * (`createdDateWords`); what restarted the age clock after that, if anything
- * ("Weeks since Sep 3", "kept Sep 3" — `agedClockRestart`), so the row says
- * why it is here; and the keeps in a row since the horizon last changed
- * ("kept 2×"). All grey.
+ * AGED OUT's meta line (Trent, 2026-10-29: "this is the one screen where
+ * [the created date] really does matter"; "Saying September 20th, I have to
+ * do mental math… we need both"), in its own order: the project, the horizon
+ * dot, the created date with its age ("Sep 20 (6 wks)"; today and yesterday
+ * say it with their time — `createdDateWords`, `ageWords`), what restarted
+ * the age clock if anything ("Weeks since Sep 3", or the keeps: "kept 2× ·
+ * last Sep 12" — `agedClockRestart`), the labels, and the priority LAST. No
+ * badges: every row here is old. All grey but the priority's colour.
  */
-function AgedOutWords({ task, timezone }: { task: Task; timezone: string }) {
+function AgedOutMeta({
+  task,
+  timezone,
+  onOpenDetails,
+}: {
+  task: Task
+  timezone: string
+  onOpenDetails?: () => void
+}) {
+  const { projects } = useProjects()
+  const dot = useQueueOn('aged_out')
+  const projectName = projects.find((p) => p.id === task.project_id)?.name
   const dayStart = useDayStart()
-  const restart = agedClockRestart(task, timezone, dayStart)
+  const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
   const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
+  const age = ageWords(task.created_at, timezone, dayStart)
   return (
-    <>
-      <span data-created title="Created">
-        {words(task.created_at)}
-      </span>
-      {restart && (
-        <span data-aged-restart>
-          {restart.kind === 'kept'
-            ? `kept ${words(restart.at)}`
-            : `${task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL} since ${words(restart.at)}`}
+    <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {projectName && (
+        <span data-segment-project className="inline-flex items-center gap-1">
+          <FolderOpen className="size-3" aria-hidden />
+          {projectName}
         </span>
       )}
-      {task.growth_kept_count > 0 && <span data-kept-count>kept {task.growth_kept_count}×</span>}
-    </>
+      {dot && showsHorizonDot(task) && (
+        <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
+      )}
+      <span data-created title="Created">
+        {words(task.created_at)}
+        {age && ` (${age})`}
+      </span>
+      <AgedRestartWords task={task} words={words} dayStart={dayStart} timezone={timezone} />
+      <SegmentLabels task={task} />
+      {priority && (
+        <span data-segment-priority className={priority.color}>
+          {priority.label}
+        </span>
+      )}
+    </div>
   )
+}
+
+/** Why the row is here, after its created date: "Weeks since Sep 3", "kept 2× · last Sep 12". */
+function AgedRestartWords({
+  task,
+  words,
+  timezone,
+  dayStart,
+}: {
+  task: Task
+  words: (iso: string) => string
+  timezone: string
+  dayStart: string
+}) {
+  const restart = agedClockRestart(task, timezone, dayStart)
+  const kept = task.growth_kept_count
+  if (restart?.kind === 'set') {
+    const horizon = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
+    return <span data-aged-restart>{`${horizon} since ${words(restart.at)}`}</span>
+  }
+  if (kept <= 0 && !restart) return null
+  const last = restart ? ` · last ${words(restart.at)}` : ''
+  return <span data-aged-restart>{kept > 0 ? `kept ${kept}×${last}` : `kept${last.slice(2)}`}</span>
 }
 
 /** "On deck Sat" / "On deck today" for a deck day (yyyy-MM-dd). */

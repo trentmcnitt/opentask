@@ -24,7 +24,7 @@ import { createTask, updateTask } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { getTaskSegments, growTasks, keepTasks } from '@/core/tasks/task-segments'
 import { undoLatest } from '@/core/undo/execute-undo'
-import { agedClockRestart, growStep } from '@/lib/aged-out'
+import { agedClockRestart, ageWords, growStep } from '@/lib/aged-out'
 import type { HorizonValue } from '@/lib/task-segments'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -107,6 +107,25 @@ describe('AG: what restarted the age clock (the row says why it is here)', () =>
         growth_kept_at: '2026-09-12T15:00:00.000Z',
       }),
     ).toEqual({ kind: 'kept', at: '2026-09-12T15:00:00.000Z' })
+  })
+})
+
+describe('AG: the created date says its age', () => {
+  const NOW_ = at('2026-10-29T12:00')
+  const age = (iso: string) => ageWords(at(iso).toISOString(), tz, '03:00', NOW_)
+
+  test('AG-040: none today or yesterday; days, weeks, months, years', () => {
+    expect(age('2026-10-29T09:00')).toBeNull()
+    expect(age('2026-10-28T09:00')).toBeNull()
+    expect(age('2026-10-27T09:00')).toBe('2 days')
+    expect(age('2026-10-16T09:00')).toBe('13 days')
+    expect(age('2026-10-15T09:00')).toBe('2 wks')
+    expect(age('2026-09-20T09:00')).toBe('5 wks')
+    expect(age('2026-09-03T09:00')).toBe('1 mo')
+    expect(age('2026-07-15T09:00')).toBe('3 mo')
+    expect(age('2025-11-01T09:00')).toBe('11 mo')
+    expect(age('2025-10-20T09:00')).toBe('1 yr')
+    expect(age('2023-03-01T09:00')).toBe('3 yr')
   })
 })
 
@@ -217,6 +236,17 @@ describe('AG: keep and grow', () => {
     task = getTaskById(id)!
     expect(task.horizon).toBeNull()
     expect(task.growth_kept_count).toBe(2)
+  })
+
+  test('AG-025: grow to a picked horizon (the hold menu) — in or out; the same one is left alone', () => {
+    const id = make('Picked', 'weeks', at('2026-08-01T09:00'))
+    vi.setSystemTime(WED)
+    expect(growTasks(TEST_USER_ID, tz, [id], 'eventually')).toBe(1)
+    expect(getTaskById(id)!.horizon).toBe('eventually')
+    expect(placeOf(WED).get(id)).toBe('aged_out:considered')
+    expect(growTasks(TEST_USER_ID, tz, [id], 'eventually')).toBe(0)
+    expect(growTasks(TEST_USER_ID, tz, [id], 'days')).toBe(1)
+    expect(getTaskById(id)!.horizon).toBe('days')
   })
 
   test('AG-023: grow leaves an Eventually task alone', () => {

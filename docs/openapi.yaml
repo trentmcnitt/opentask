@@ -2273,6 +2273,12 @@ paths:
                 ids:
                   type: array
                   items: { type: integer }
+                horizon:
+                  type: string
+                  enum: [days, weeks, months, eventually]
+                  description: >
+                    The button's hold menu: move each task to this horizon instead of one
+                    step out (in or out). A task already there is left alone.
       responses:
         '200':
           description: Done

@@ -816,14 +816,22 @@ export function targetTasksToday(
  * `bulkEdit`, so the horizon's clock restarts (`horizon_set_at`), the keep
  * count goes to 0, and one undo entry takes it all back; the row is also
  * considered today (`last_considered_at`), so it stays in Aged out as a
- * handled row. A task already at Eventually is left alone.
+ * handled row. A task already at Eventually is left alone. With `to` (the
+ * Grow button's hold menu, Trent 2026-10-29: "select what horizon I want to
+ * change it to") each task goes to that horizon instead — in or out; one
+ * already there is left alone.
  */
-export function growTasks(userId: number, timezone: string, ids: number[]): number {
+export function growTasks(
+  userId: number,
+  timezone: string,
+  ids: number[],
+  to?: HorizonValue,
+): number {
   const tasks = ownOpenTasks(userId, ids)
   const perTask: Record<string, { horizon: HorizonValue }> = {}
   for (const task of tasks) {
-    const next = growStep(task.horizon)
-    if (next) perTask[String(task.id)] = { horizon: next }
+    const next = to ?? growStep(task.horizon)
+    if (next && next !== task.horizon) perTask[String(task.id)] = { horizon: next }
   }
   const growing = Object.keys(perTask).map(Number)
   if (growing.length === 0) return 0
