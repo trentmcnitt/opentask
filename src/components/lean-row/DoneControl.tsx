@@ -32,6 +32,7 @@ import { HorizonMenuContent } from '@/components/HorizonDot'
 import { useSimpleLongPress } from '@/hooks/useLongPress'
 import {
   horizonGoverns,
+  horizonSquareHint,
   horizonSquareLook,
   isPlainLook,
   squarePaths,
@@ -109,6 +110,7 @@ function HorizonDoneSquare({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const look = horizonSquareLook(task.horizon)
+  const hint = horizonSquareHint(task.horizon)
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
     onShortPress: onDone,
@@ -121,8 +123,8 @@ function HorizonDoneSquare({
         data-no-row-press
         data-lean-done
         data-horizon-square={task.horizon ?? UNSET_HORIZON}
-        aria-label={`Done: "${task.title}" (hold to change the horizon)`}
-        title="Done · hold to change the horizon"
+        aria-label={`Done: "${task.title}" · ${hint}`}
+        title={`Done · ${hint}`}
         onClick={(e) => {
           e.stopPropagation()
           press.onClick()

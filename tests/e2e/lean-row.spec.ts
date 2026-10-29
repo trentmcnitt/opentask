@@ -297,6 +297,19 @@ test.describe('Lean row · the horizon done square', () => {
           // Unset looks like UNSET_HORIZON (weeks today): the same pattern.
           await expect(square(made.unset)).toHaveAttribute('data-horizon-square', 'weeks')
           expect(await border(made.unset).innerHTML()).toBe(await border(made.weeks).innerHTML())
+          // The square names its horizon, in the tooltip and (a phone has no
+          // hover) the accessible name; unset says what it reads as.
+          await expect(square(made.months)).toHaveAttribute(
+            'title',
+            'Done · Horizon: Months. Hold to change.',
+          )
+          await expect(square(made.unset)).toHaveAttribute(
+            'title',
+            'Done · Horizon: unset (Weeks). Hold to change.',
+          )
+          await expect(square(made.unset)).toHaveAccessibleName(
+            /^Done: ".+" · Horizon: unset \(Weeks\)\. Hold to change\.$/,
+          )
           // A picked target: the horizon doesn't govern, so the plain checkbox.
           await expect(square(made.dated)).not.toHaveAttribute('data-horizon-square', /.+/)
           await expect(border(made.dated)).toHaveCount(0)
@@ -590,6 +603,93 @@ test.describe('Lean row · buttons on a touch screen', () => {
       for (const line of beside) expect(line.right).toBeLessThanOrEqual(first.x + 0.5)
     } finally {
       await cleanUp(page, [id])
+    }
+  })
+})
+
+test.describe('Lean row · swipe with a mouse', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  // Trent, 2026-10-29 ("some visual glitches"): mid-swipe the focus outline
+  // rode along on the moving row, and the tint lost its 4px bleed on each
+  // side (the swipe container, sized to the row, clipped it).
+  test('mid-swipe every tint keeps its full width and no outline rides along', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const now = Date.now()
+    const ids = {
+      passed: await create(page, {
+        title: uniqueTitle('LR sw passed'),
+        deadline_at: new Date(now - 24 * HOUR).toISOString(),
+      }),
+      over: await create(page, {
+        title: uniqueTitle('LR sw over'),
+        due_at: new Date(now - 2 * HOUR).toISOString(),
+      }),
+      soon: await create(page, {
+        title: uniqueTitle('LR sw soon'),
+        due_at: (await laterToday(page)).toISOString(),
+      }),
+      none: await create(page, { title: uniqueTitle('LR sw plain'), horizon: 'weeks' }),
+    }
+    const ring = (r: Locator) => r.evaluate((el) => getComputedStyle(el).boxShadow)
+    // Any box-shadow with a non-zero spread draws an outline.
+    const drawsOutline = (shadow: string) => /\s[1-9][\d.]*px(\s+inset)?(,|$)/.test(shadow)
+    try {
+      await gotoDashboard(page)
+      for (const [state, id] of Object.entries(ids)) {
+        const r = row(page, id)
+        await expect(r).toBeVisible()
+        if (state === 'none') await expect(r).not.toHaveAttribute('data-row-state')
+        else await expect(r).toHaveAttribute('data-row-state', state)
+        // SwipeableRow: its container, then the moving layer, then the row.
+        const swipe = r.locator('xpath=../..')
+
+        // Keyboard focus on the row (its focus outline): Ctrl+Up to the
+        // first row (Control: the app reads Cmd or Ctrl from the user agent,
+        // and the Desktop Chrome device reports Windows), then down, each
+        // press landing before the next.
+        const focusedId = () => page.evaluate(() => document.activeElement?.id ?? '')
+        const rows = page.locator('[data-lean-row]')
+        await page.keyboard.press('Control+ArrowUp')
+        await expect(rows.first()).toBeFocused()
+        const index = await r.evaluate((el) =>
+          [...document.querySelectorAll('[data-lean-row]')].indexOf(el),
+        )
+        for (let i = 1; i <= index; i++) {
+          const before = await focusedId()
+          await page.keyboard.press('ArrowDown')
+          await expect.poll(focusedId).not.toBe(before)
+        }
+        await expect(r).toBeFocused()
+        await expect(r).toHaveAttribute('aria-selected', 'false')
+        await expect.poll(async () => drawsOutline(await ring(r)), `${state} at rest`).toBe(true)
+        const title = (await r.locator('[data-lean-title]').boundingBox())!
+
+        // Hold a swipe left, short of the threshold.
+        const y = title.y + 8
+        const x0 = title.x + 300
+        const restX = (await r.boundingBox())!.x
+        await page.mouse.move(x0, y)
+        await page.mouse.down()
+        for (let x = x0; x >= x0 - 120; x -= 15) await page.mouse.move(x, y)
+        await expect.poll(async () => (await r.boundingBox())!.x).toBeLessThan(restX - 60)
+        expect(drawsOutline(await ring(r)), `${state} mid-swipe`).toBe(false)
+        // The clipping container is the tint's width: 4px past the row each side.
+        const box = (await swipe.boundingBox())!
+        const rowBox = (await r.boundingBox())!
+        expect(box.width, state).toBeCloseTo(rowBox.width + 8, 0)
+        const tintInset = await r.evaluate((el) => getComputedStyle(el, '::before').left)
+        if (state !== 'none') expect(tintInset, state).toBe('-4px')
+
+        await page.mouse.move(x0, y)
+        await page.mouse.up()
+        await expect.poll(async () => drawsOutline(await ring(r)), `${state} back`).toBe(true)
+        await page.mouse.move(0, 0)
+      }
+    } finally {
+      await cleanUp(page, Object.values(ids))
     }
   })
 })

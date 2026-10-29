@@ -21,10 +21,20 @@ interface SwipeableRowProps {
   surface?: 'card' | 'flat'
 }
 
-/** Each surface's container and (always opaque) foreground. */
+/**
+ * Each surface's container and (always opaque) foreground.
+ *
+ * FLAT is 4px wider than the row on each side (`-mx-1` out, `px-1` back in):
+ * the lean row's state tint is full-bleed, 4px past the row (`LeanRow`'s
+ * `TINT_BASE`), and the container clips while a swipe is under way. Sized to
+ * the row, it cut the tint's bleed off mid-swipe, so the row's colour
+ * narrowed by 4px on each side against its neighbours and the action colour
+ * stopped 4px short of theirs (Trent, 2026-10-29: "some visual glitches").
+ * Now the container, the action colour and the tint are one width.
+ */
 const SURFACE = {
   card: { outer: 'rounded-lg', foreground: 'bg-card rounded-lg' },
-  flat: { outer: '', foreground: 'bg-background' },
+  flat: { outer: '-mx-1', foreground: 'bg-background px-1' },
 } as const
 
 export function SwipeableRow({
@@ -123,10 +133,15 @@ export function SwipeableRow({
   return (
     <div
       ref={containerRef}
+      // `data-swiping` while the row is off its place: the container clips
+      // then, and a row hides its focus and selection outline
+      // (`group-data-swiping/swipe:`), which would ride along on the moving
+      // layer.
+      data-swiping={offset !== 0 ? '' : undefined}
       className={cn(
-        'relative',
+        'group/swipe relative',
         SURFACE[surface].outer,
-        offset !== 0 ? 'overflow-hidden' : 'overflow-visible',
+        'overflow-visible data-swiping:overflow-hidden',
       )}
     >
       {/* Background revealed by swipe */}

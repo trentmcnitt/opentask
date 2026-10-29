@@ -179,6 +179,9 @@ export function LeanRow({
         isSelectionMode && 'cursor-pointer',
         isSelected && 'bg-accent ring-ring rounded-lg ring-2',
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
+        // No outline while the row swipes (`SwipeableRow`'s `data-swiping`):
+        // on the moving layer it rode along with the row (Trent, 2026-10-29).
+        'group-data-swiping/swipe:ring-0',
         state && STATE_LOOK[state].row,
         isAiProcessing && !highlighted && 'animate-ai-processing',
       )}
