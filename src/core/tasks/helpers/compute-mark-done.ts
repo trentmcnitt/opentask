@@ -157,6 +157,8 @@ export function computeMarkDone(
         'due_at',
         'occurrence_at',
         'original_due_at',
+        // The next occurrence's first time on its day (2026-10-29).
+        'target_day_first_at',
         'deadline_at',
         // §5: the period boundary resets tracked progress, so it must be in
         // fieldsChanged or undo would restore due_at without restoring the

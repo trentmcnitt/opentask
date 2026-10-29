@@ -505,6 +505,13 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'repeat_until')) {
     database.exec('ALTER TABLE tasks ADD COLUMN repeat_until TEXT DEFAULT NULL')
   }
+  // The target's first time on its OpenTask day (2026-10-29, "was 9:00 AM";
+  // src/lib/target-day-first.ts). Existing rows start equal to their target:
+  // nothing has moved within the day yet. In the same block, so it runs once.
+  if (!hasColumn(database, 'tasks', 'target_day_first_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN target_day_first_at TEXT DEFAULT NULL')
+    database.exec('UPDATE tasks SET target_day_first_at = due_at WHERE due_at IS NOT NULL')
+  }
   if (!hasColumn(database, 'completions', 'occurrence_at_next')) {
     database.exec('ALTER TABLE completions ADD COLUMN occurrence_at_next TEXT DEFAULT NULL')
   }

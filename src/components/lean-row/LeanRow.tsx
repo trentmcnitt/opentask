@@ -68,6 +68,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useTitleWeightOverride } from '@/hooks/useTitleWeightOverride'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
+import { wasTargetTime } from '@/lib/target-day-first'
 import { horizonGoverns } from '@/lib/horizon-square'
 import { leanRowState, type LeanRowState } from '@/lib/lean-row-state'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -364,7 +365,10 @@ function LeanMeta({
   const words = useMemo(
     // The server render and hydration have no tick (0): read the moment
     // there, as the card row does; after it, the tick is "now".
-    () => leanChipWords(task, timezone, dayStart, hour ? new Date(hour) : new Date()),
+    () => ({
+      ...leanChipWords(task, timezone, dayStart, hour ? new Date(hour) : new Date()),
+      was: task.due_at ? wasTargetTime(task, timezone, dayStart) : null,
+    }),
     [task, timezone, dayStart, hour],
   )
   const attempts = useAttempts(task)
@@ -413,6 +417,13 @@ function LeanMeta({
           // hidden box widened the gap before "2×" (Trent, 2026-10-29).
           removeX={false}
         />
+      )}
+      {words.was && (
+        // The target's first time on its day, when a defer moved it within
+        // the day (`target_day_first_at`, 2026-10-29): grey, after the chip.
+        <span data-target-was className="text-muted-foreground">
+          was {words.was}
+        </span>
       )}
       {horizonGoverns(task) && (
         // The HORIZON DOT, back (Trent, 2026-10-29: "those circles made some

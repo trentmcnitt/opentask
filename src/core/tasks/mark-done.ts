@@ -459,7 +459,8 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
   const updatedTask = withTransaction((tx) => {
     tx.prepare(
       `UPDATE tasks
-        SET due_at = ?, occurrence_at = ?, original_due_at = ?, deadline_at = ?, lead_from = ?,
+        SET due_at = ?, occurrence_at = ?, original_due_at = ?, target_day_first_at = ?,
+        deadline_at = ?, lead_from = ?,
             ${TARGET_SET_FIELD} = ?, attempts = ?, attempts_counted_through = ?,
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
             repeat_count_used = ?, ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
@@ -468,6 +469,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
       restoredTarget,
       restoredOccurrence,
       restoredTarget,
+      restoredTarget, // target_day_first_at: the restored occurrence's target
       restoredDeadline,
       restoredLead,
       nowStr,
@@ -493,6 +495,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         due_at: task.due_at,
         occurrence_at: task.occurrence_at,
         original_due_at: task.original_due_at,
+        target_day_first_at: task.target_day_first_at,
         deadline_at: task.deadline_at,
         lead_from: task.lead_from,
         target_set_at: task.target_set_at,
@@ -511,6 +514,7 @@ function putBackLatestOccurrence(task: Task, userId: number, userTimezone: strin
         due_at: restoredTarget,
         occurrence_at: restoredOccurrence,
         original_due_at: restoredTarget,
+        target_day_first_at: restoredTarget,
         on_deck_day: null,
         deadline_at: restoredDeadline,
         lead_from: restoredLead,
@@ -557,6 +561,7 @@ function putBackFields(task: Task, queueFields: string[]): string[] {
     'due_at',
     'occurrence_at',
     'original_due_at',
+    'target_day_first_at',
     'deadline_at',
     'completion_count',
     'first_completed_at',

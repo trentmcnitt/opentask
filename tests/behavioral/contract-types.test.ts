@@ -121,6 +121,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   repeat_last: BOOL,
   repeat_remaining: INT_N,
   original_due_at: STR_N,
+  target_day_first_at: STR_N,
   deadline_at: STR_N,
   horizon: STR_N,
   horizon_set_at: STR_N,

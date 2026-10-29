@@ -23,6 +23,7 @@
     "repeat_count_used": 0,
     "repeat_until": null,
     "original_due_at": "2026-01-15T16:00:00.000Z",
+    "target_day_first_at": "2026-01-15T16:00:00.000Z",
     "deadline_at": "2026-01-15T16:00:00.000Z",
     "horizon": null,
     "horizon_set_at": null,
@@ -81,6 +82,7 @@
       "target_days_before",
       "target_time",
       "target_slot_id",
+      "target_day_first_at",
       "target_set_at"
     ],
     "description": "Deferred to <when> — \"File the quarterl...\"",

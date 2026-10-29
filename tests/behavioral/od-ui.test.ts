@@ -81,6 +81,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     original_title: null,
     short_title: null,
     original_due_at: null,
+    target_day_first_at: null,
     deadline_at: null,
     horizon: null,
     horizon_set_at: null,
