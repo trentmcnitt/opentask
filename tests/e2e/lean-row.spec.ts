@@ -173,10 +173,6 @@ test.describe('Lean row · look', () => {
           const o = row(page, over)
           await expect(o).toHaveAttribute('data-over-target', '')
           await expect(o).toHaveAttribute('data-row-state', 'over')
-          await expect(o.locator('[data-lean-title]')).toHaveCSS(
-            'color',
-            scheme === 'light' ? 'rgb(38, 61, 77)' : 'rgb(211, 220, 236)',
-          )
           const tint = (r: Locator) =>
             r.evaluate((el) => {
               const s = getComputedStyle(el, '::before')
@@ -189,6 +185,9 @@ test.describe('Lean row · look', () => {
           const plainTitle = await row(page, plain)
             .locator('[data-lean-title]')
             .evaluate((el) => getComputedStyle(el).color)
+          // The over-target title keeps the normal ink (Trent, 2026-10-29:
+          // "just leave it full black"; it was a slate).
+          await expect(o.locator('[data-lean-title]')).toHaveCSS('color', plainTitle)
 
           // A passed deadline: the red counterpart (x1.4), the title unchanged, no bar.
           const p = row(page, passed)
@@ -306,7 +305,7 @@ test.describe('Lean row · the horizon done square', () => {
   // changing shape" — outside Scan's Horizon sections (where the modes draw
   // it, `horizonLook`) every square is plain, yet each one-off still names
   // its horizon: the attribute, the tooltip, the accessible name.
-  test('every square on the dashboard is plain, and each one-off names its horizon', async ({
+  test('every square on the dashboard is plain, each one-off names its horizon, and the dot shows it', async ({
     authenticatedPage: page,
   }) => {
     await page.addInitScript(LEAN)
@@ -323,6 +322,11 @@ test.describe('Lean row · the horizon done square', () => {
         title: uniqueTitle('LR deadline'),
         horizon: 'months',
         deadline_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+      }),
+      repeating: await create(page, {
+        title: uniqueTitle('LR repeat'),
+        rrule: 'FREQ=DAILY',
+        due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
       }),
     }
     try {
@@ -347,6 +351,25 @@ test.describe('Lean row · the horizon done square', () => {
       await expect(square(made.unset)).toHaveAccessibleName(
         /^Done: ".+" · Horizon: unset \(Weeks\)\. Hold to change\.$/,
       )
+
+      // The horizon DOT on the meta line (2026-10-29), main's perspective
+      // dot: every one-off; unset draws as the Weeks dot, no hollow ring.
+      const dot = (id: number) => row(page, id).locator('[data-lean-meta] [data-horizon-dot]')
+      const circle = (id: number) =>
+        dot(id)
+          .locator('circle')
+          .evaluate((c) => [c.getAttribute('r'), c.getAttribute('opacity'), c.getAttribute('fill')])
+      expect(await circle(made.weeks)).toEqual(['3', '0.7', 'currentColor'])
+      expect(await circle(made.unset)).toEqual(await circle(made.weeks))
+      expect(await circle(made.months)).toEqual(['2.5', '0.55', 'currentColor'])
+      expect(await circle(made.dated)).toEqual(['2.25', '0.42', 'currentColor'])
+      await expect(dot(made.deadline)).toHaveCount(1)
+      // A repeating task: no dot.
+      await expect(dot(made.repeating)).toHaveCount(0)
+      // Its own menu.
+      await dot(made.weeks).click()
+      await expect(page.getByRole('menuitemradio', { name: /^Months/ })).toBeVisible()
+      await page.keyboard.press('Escape')
     } finally {
       await cleanUp(page, Object.values(made))
     }
