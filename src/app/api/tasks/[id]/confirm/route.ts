@@ -2,7 +2,7 @@
  * Task provenance confirmation (REDESIGN-V03 §7.2)
  *
  * POST /api/tasks/:id/confirm - Bless a task the assistant created on its own
- * initiative: removes `ai-proposed`, adds `ai-added`. The logic lives in
+ * initiative: removes `ai-auto` (once `ai-proposed`), adds `ai-added`. The logic lives in
  * `confirmTaskProvenance` (`src/core/tasks/confirm.ts`).
  */
 

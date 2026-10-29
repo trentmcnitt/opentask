@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { ValidationError } from '@/core/errors'
 import { isValidRRule, isPeriodRRule, normalizeRRule } from '@/core/recurrence/rrule-builder'
+import { canonicalLabels } from '@/lib/label-vocabulary'
 import { MAX_REPEAT_COUNT, REPEAT_END_MESSAGES } from '@/core/tasks/repeat-schedule'
 
 /**
@@ -42,11 +43,13 @@ const recurrenceMode = z.enum(['from_due', 'from_completion'])
 
 /**
  * Labels array — bounded to prevent resource exhaustion.
- * Max 50 labels, each 1-100 characters.
+ * Max 50 labels, each 1-100 characters. An old label name (`ai-proposed`)
+ * comes out under its current one (`canonicalLabels`).
  */
 const labels = z
   .array(z.string().min(1, 'Label cannot be empty').max(100, 'Label too long'))
   .max(50, 'Too many labels (max 50)')
+  .transform(canonicalLabels)
 
 /**
  * Opt-in to registering labels this write doesn't recognize (§7.2).
@@ -372,6 +375,8 @@ export const taskCreateSchema = z
     notes: z.string().max(10000, 'Notes too long').nullable().optional(),
     auto_snooze_minutes: autoSnoozeMinutes.optional(),
     create_label: createLabelFlag,
+    ai_auto: provenanceFlag,
+    // The flag's old name (2026-10-28), still accepted: `ai-auto` either way.
     ai_proposed: provenanceFlag,
     ai_added: provenanceFlag,
     progress_target: progressTarget.optional(),

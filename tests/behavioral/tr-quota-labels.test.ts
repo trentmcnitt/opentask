@@ -76,14 +76,14 @@ describe('grouping quotas by label', () => {
 
   /**
    * Second review, finding 2. `ai-*` labels are machinery — `createTask`
-   * appends `ai-to-process`/`ai-proposed`/`ai-added`, enrichment writes
+   * appends `ai-to-process`/`ai-auto`/`ai-added`, enrichment writes
    * `ai-failed` — and a quota carrying one is not filed under it. Taking
    * `labels[0]` blindly gave a group header reading "AI-FAILED".
    */
   test('an operational label is never the label a quota is filed under', () => {
     expect(quotaLabelOf(quota('Eggs', ['ai-added', 'kids']))).toBe('kids')
     expect(quotaLabelOf(quota('Eggs', ['ai-failed']))).toBeNull()
-    expect(quotaLabelOf(quota('Eggs', ['ai-to-process', 'ai-proposed']))).toBeNull()
+    expect(quotaLabelOf(quota('Eggs', ['ai-to-process', 'ai-auto']))).toBeNull()
 
     const groups = groupByLabel([
       quota('Freshly created', ['ai-to-process']),

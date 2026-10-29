@@ -766,9 +766,10 @@ paths:
       operationId: confirmTaskProvenance
       tags: [Tasks]
       description: |
-        Swaps the `ai-proposed` provenance label for `ai-added` (REDESIGN-V03
-        §7.2). Task-scoped and narrow: confirming is a statement about where a
-        task came from, so nothing else is modified. Idempotent.
+        Swaps the `ai-auto` provenance label (named `ai-proposed` until
+        2026-10-28) for `ai-added` (REDESIGN-V03 §7.2). Task-scoped and
+        narrow: confirming is a statement about where a task came from, so
+        nothing else is modified. Idempotent.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       responses:
@@ -6533,11 +6534,19 @@ components:
             Register any labels in this write that aren't already in the
             registry (§7.2). Without it, an unknown label is a 400 - creating a
             label is a discrete act, so a typo fails loudly.
-        ai_proposed:
+        ai_auto:
           type: boolean
           description: >
-            Apply the `ai-proposed` provenance label. Exists so automated
-            callers never type a behavior-bearing label as free text.
+            Apply the `ai-auto` provenance label: a task the assistant made on
+            its own initiative, not yet confirmed. Exists so automated callers
+            never type a behavior-bearing label as free text.
+        ai_proposed:
+          type: boolean
+          deprecated: true
+          description: >
+            The old name of `ai_auto` (renamed 2026-10-28), still accepted: it
+            applies `ai-auto`. Likewise the label `ai-proposed`, sent in
+            `labels` or the `label` filter, is read as `ai-auto`.
         ai_added:
           type: boolean
           description: Apply the `ai-added` provenance label.

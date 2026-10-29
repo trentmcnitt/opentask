@@ -4,7 +4,7 @@
  * Labels were bare free-text: any string a caller sent became a label, so a
  * typo silently forked the taxonomy and nothing ever noticed. That was tolerable
  * while labels were decoration. It stops being tolerable once labels carry
- * behavior — `ai-proposed` / `ai-added` / `ai-monitored` are provenance that the
+ * behavior — `ai-auto` / `ai-added` / `ai-monitored` are provenance that the
  * assistant and the desk act on, and an AI caller that typos one produces a task
  * nobody is watching while appearing to have flagged it.
  *
@@ -15,7 +15,7 @@
  * TWO SEPARATE AI VOCABULARIES — do not merge them:
  * - `ai-to-process` / `ai-failed` are a LIVE processing state
  *   machine owned by enrichment.ts. Leave them alone.
- * - `ai-proposed` / `ai-added` / `ai-monitored` are PROVENANCE, defined here.
+ * - `ai-auto` / `ai-added` / `ai-monitored` are PROVENANCE, defined here.
  */
 
 import { getDb } from '@/core/db'
@@ -160,14 +160,15 @@ export function validateLabelsExist(
 }
 
 /**
- * Swap `ai-proposed` for `ai-added` on one task (§7.2's `confirm` verb).
+ * Swap `ai-auto` for `ai-added` on one task (§7.2's `confirm` verb).
  *
- * Deliberately task-scoped and narrow: it removes `ai-proposed`, adds
+ * Deliberately task-scoped and narrow: it removes `ai-auto`, adds
  * `ai-added`, and touches nothing else. Confirming a task the assistant
- * proposed is a statement about provenance, not an invitation to re-edit it.
+ * made on its own is a statement about provenance, not an invitation to
+ * re-edit it.
  */
 export function confirmProvenance(labels: string[]): string[] {
-  const next = labels.filter((l) => l !== PROVENANCE_LABELS.proposed)
+  const next = labels.filter((l) => l !== PROVENANCE_LABELS.auto)
   if (!next.includes(PROVENANCE_LABELS.added)) next.push(PROVENANCE_LABELS.added)
   return next
 }

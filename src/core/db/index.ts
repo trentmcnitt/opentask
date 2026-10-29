@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
-import { SYSTEM_LABELS } from '@/lib/label-vocabulary'
+import { PROVENANCE_LABELS, SYSTEM_LABELS } from '@/lib/label-vocabulary'
 import { log } from '@/lib/logger'
 import { openTaskDayOf } from '@/lib/opentask-day'
 import { dayStartTimeOf } from '@/lib/anchor-times'
@@ -549,6 +549,16 @@ function runMigrations(database: Database.Database): void {
         `stripped from ${retired.tasks} task(s)`,
     )
   }
+  // Before the backfill too: a task's leftover old name must not be
+  // re-registered as a domain label.
+  const renamed = renameAiProposedLabel(database)
+  if (renamed.registry > 0 || renamed.tasks > 0 || renamed.undo > 0) {
+    log.info(
+      'db',
+      `ai-proposed renamed ai-auto (2026-10-28): ${renamed.registry} registry row(s), ` +
+        `${renamed.tasks} task(s), ${renamed.undo} undo snapshot(s)`,
+    )
+  }
   backfillLabelRegistry(database)
   backfillTimeSlots(database)
   // After the periods are backfilled: the rollover time is the first period.
@@ -877,6 +887,56 @@ export function retireAiLockedLabel(database: Database.Database): {
     }
     const registry = database.prepare("DELETE FROM labels WHERE name = 'ai-locked'").run().changes
     return { registry, tasks: rows.length }
+  })
+  return run()
+}
+
+/**
+ * `ai-proposed` RENAMED `ai-auto` (2026-10-28, Trent approved every account).
+ * Each user's registry row is renamed in place (its id, facet and colour
+ * kept; dropped instead where an `ai-auto` row already exists), each task's
+ * label is renamed where it stands in the list (once, if both were there),
+ * and the undo log's snapshots are rewritten, so an undo never puts the old
+ * name back. Input still accepts the old name (`LABEL_ALIASES`). Runs BEFORE
+ * the backfill, which would otherwise re-register a leftover copy.
+ * Idempotent: a second run finds nothing.
+ */
+export function renameAiProposedLabel(database: Database.Database): {
+  registry: number
+  tasks: number
+  undo: number
+} {
+  const OLD = 'ai-proposed'
+  const NEW = PROVENANCE_LABELS.auto
+  const run = database.transaction(() => {
+    const dropped = database
+      .prepare(
+        `DELETE FROM labels WHERE name = ? AND user_id IN
+           (SELECT user_id FROM labels WHERE name = ?)`,
+      )
+      .run(OLD, NEW).changes
+    const renamedRows = database
+      .prepare('UPDATE labels SET name = ? WHERE name = ?')
+      .run(NEW, OLD).changes
+    const rows = database
+      .prepare(
+        `SELECT id, labels FROM tasks
+         WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = ?)`,
+      )
+      .all(OLD) as { id: number; labels: string }[]
+    const update = database.prepare('UPDATE tasks SET labels = ? WHERE id = ?')
+    for (const row of rows) {
+      const labels = (JSON.parse(row.labels) as string[]).map((l) => (l === OLD ? NEW : l))
+      update.run(JSON.stringify([...new Set(labels)]), row.id)
+    }
+    // Snapshots are JSON: the old name only ever appears as a quoted string.
+    const undo = database
+      .prepare(
+        `UPDATE undo_log SET snapshot = REPLACE(snapshot, '"${OLD}"', '"${NEW}"')
+         WHERE snapshot LIKE '%"${OLD}"%'`,
+      )
+      .run().changes
+    return { registry: dropped + renamedRows, tasks: rows.length, undo }
   })
   return run()
 }

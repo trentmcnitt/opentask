@@ -546,8 +546,9 @@ export function createTask(options: CreateTaskOptions): Task {
 
   // Provenance flags spare automated callers from typing behavior-bearing
   // labels as free text (§7.2).
-  if (input.ai_proposed && !taskLabels.includes(PROVENANCE_LABELS.proposed)) {
-    taskLabels.push(PROVENANCE_LABELS.proposed)
+  // `ai_proposed` is `ai_auto`'s old name (2026-10-28), still accepted.
+  if ((input.ai_auto || input.ai_proposed) && !taskLabels.includes(PROVENANCE_LABELS.auto)) {
+    taskLabels.push(PROVENANCE_LABELS.auto)
   }
   if (input.ai_added && !taskLabels.includes(PROVENANCE_LABELS.added)) {
     taskLabels.push(PROVENANCE_LABELS.added)
