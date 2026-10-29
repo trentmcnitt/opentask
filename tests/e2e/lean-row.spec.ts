@@ -153,6 +153,19 @@ test.describe('Lean row · look', () => {
           const chip = o.locator('[data-time-chip]')
           await expect(chip).toHaveAttribute('data-time-chip', 'target')
           await expect(chip).not.toContainText('ago')
+          // The attempts badge right after it, in neutral grey (no plum).
+          const badge = o.locator('[data-attempts]')
+          await expect(badge).toHaveText(/^\d+×$/)
+          const badgeColor = await badge.evaluate((el) => getComputedStyle(el).color)
+          expect(['rgb(142, 56, 155)', 'rgb(201, 124, 213)', 'rgb(161, 75, 174)']).not.toContain(
+            badgeColor,
+          )
+          expect(
+            await chip.evaluate(
+              (c, b) => c.compareDocumentPosition(b!) & Node.DOCUMENT_POSITION_FOLLOWING,
+              await badge.elementHandle(),
+            ),
+          ).toBeTruthy()
           // "!" after the title, the notes mark, the created date.
           await expect(o.locator('[data-priority-tab]')).toHaveText('!')
           await expect(o.locator('[data-lean-notes]')).toBeVisible()
@@ -167,6 +180,7 @@ test.describe('Lean row · look', () => {
           await expect(row(page, plain)).not.toHaveAttribute('data-over-target', '')
           await expect(row(page, plain)).not.toHaveAttribute('data-row-state', /.+/)
           await expect(row(page, plain).locator('[data-lean-low]')).toHaveText('Low')
+          await expect(row(page, plain).locator('[data-attempts]')).toHaveCount(0)
           await expect(row(page, plain).locator('[data-horizon-dot]')).toBeVisible()
         } finally {
           await cleanUp(page, ids)
@@ -229,11 +243,14 @@ test.describe('Lean row · phone', () => {
       // they sit inside the row's body.
       await expect(r.locator('[data-lean-buttons]')).toBeVisible()
 
-      const box = (await r.boundingBox())!
-      const y = box.y + box.height / 2
-      await page.mouse.move(box.x + 30, y)
+      // Swipe on the title, as a thumb would: the meta line's horizon dot is
+      // its own control (its press opens the horizon menu, never a swipe).
+      const title = (await r.locator('[data-lean-title]').boundingBox())!
+      const y = title.y + 12
+      const x0 = title.x + 8
+      await page.mouse.move(x0, y)
       await page.mouse.down()
-      for (let x = box.x + 30; x <= box.x + 300; x += 15) await page.mouse.move(x, y)
+      for (let x = x0; x <= x0 + 270; x += 15) await page.mouse.move(x, y)
       await page.mouse.up()
       await expect.poll(async () => (await stateOf(page, id)).done).toBe(true)
     } finally {

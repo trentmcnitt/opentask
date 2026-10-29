@@ -34,9 +34,10 @@
  *   when both apply. No bar. No plum anywhere in the row (no stripe, no plum
  *   chip, no "N×").
  *
- * Dropped from the card on purpose: the attempts "N×" tab (and with it the
- * 3× "Remove target?" offer — Remove target stays in the chip's menu), the
- * corner tabs, the snooze button, the right priority border. The shelved AI
+ * The attempts badge ("2×") follows the target chip in neutral grey; the
+ * card's 3× "Remove target?" offer is not drawn (Remove target stays in the
+ * chip's menu). Dropped from the card on purpose: the corner tabs, the
+ * snooze button, the right priority border. The shelved AI
  * features' props (insights, What's Next annotations) are not drawn.
  */
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
@@ -57,7 +58,7 @@ import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { momentChipWords } from '@/lib/moment-chip-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { offersTargetToday, priorityTab } from '@/lib/row-corner'
-import { isPastDeadline } from '@/lib/task-segments'
+import { effectiveAttempts, isPastDeadline } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import { DoneControl } from './DoneControl'
@@ -281,6 +282,7 @@ function LeanMeta({
           onRemoveTarget={onRemoveTarget}
         />
       )}
+      <AttemptsBadge task={task} />
       <span data-created className="text-muted-foreground/70" title="Created">
         {createdDateWords(task.created_at, timezone, dayStart)}
       </span>
@@ -299,6 +301,32 @@ function LeanMeta({
         </span>
       )}
     </div>
+  )
+}
+
+/**
+ * The attempts badge, "2×": OpenTask days the task has been over its target
+ * (`effectiveAttempts`, the card row's own count, Trent 2026-10-28), right
+ * after the target chip, in neutral grey — no plum. The badge only: the card's
+ * 3× "Remove target?" offer stays out (Remove target is in the chip's menu).
+ */
+function AttemptsBadge({ task }: { task: Task }) {
+  const timezone = useTimezone()
+  const queue = useTaskQueue()
+  if (!task.due_at) return null
+  // Until the preferences load, the server's stored count stands (`TaskRow`).
+  const attempts = queue.loaded
+    ? effectiveAttempts(task, timezone, new Date(), queue.attemptsRolloverTime).attempts
+    : (task.attempts ?? 0)
+  if (attempts < 1) return null
+  return (
+    <span
+      data-attempts={attempts}
+      title={`Overdue on ${attempts} day${attempts === 1 ? '' : 's'}`}
+      className="text-muted-foreground font-semibold tabular-nums"
+    >
+      {attempts}×
+    </span>
   )
 }
 
