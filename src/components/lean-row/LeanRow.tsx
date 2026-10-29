@@ -57,6 +57,7 @@ import { useRowHighlight } from '@/hooks/useRowHighlight'
 import { useRowPress } from '@/hooks/useRowPress'
 import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
+import { useTitleWeightOverride } from '@/hooks/useTitleWeightOverride'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
 import { wasTargetTime } from '@/lib/target-day-first'
@@ -83,8 +84,11 @@ import { LeanButtons } from './LeanButtons'
  *   real miss outranks a target whose time has come. The red flag chip says
  *   which date it is.
  */
+// The tint runs over the row's own (transparent) bottom border too
+// (`-bottom-px`): stopped at the padding box, the 1px border showed the page
+// through, a white seam between two tinted rows (Trent, 2026-10-29).
 const TINT_BASE =
-  "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:inset-y-0 before:-z-10 before:content-['']"
+  "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:top-0 before:-bottom-px before:-z-10 before:content-['']"
 const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
   soon: {
     row: `${TINT_BASE} before:bg-[rgba(21,93,252,0.025)] dark:before:bg-[rgba(81,162,255,0.03125)]`,
@@ -247,8 +251,14 @@ function LeanTitle({
 }) {
   const tab = task.priority >= 3 ? priorityTab(task.priority, 'icons') : null
   const cut = task.title.lastIndexOf(' ')
+  // TEMPORARY: a dev build's `?titleWeight=` override (`useTitleWeightOverride`).
+  const weight = useTitleWeightOverride()
   return (
-    <p data-lean-title className={cn('text-[16px] leading-6 text-pretty md:flow-root', titleClass)}>
+    <p
+      data-lean-title
+      className={cn('text-[16px] leading-6 text-pretty md:flow-root', titleClass)}
+      style={weight ? { fontWeight: weight } : undefined}
+    >
       {task.title.slice(0, cut + 1)}
       <span className="whitespace-nowrap">
         {task.title.slice(cut + 1)}
@@ -335,6 +345,9 @@ function LeanMeta({
           over={false}
           onMove={onMove}
           onRemoveTarget={onRemoveTarget}
+          // No hover ✕: Remove target is in the chip's menu, and the ✕'s
+          // hidden box widened the gap before "2×" (Trent, 2026-10-29).
+          removeX={false}
         />
       )}
       {words.was && (
