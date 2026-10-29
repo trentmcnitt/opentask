@@ -18,7 +18,8 @@ import {
 } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
-import { MIN_SEGMENT_PX, SegmentDivider } from '@/components/ReminderSlotBar'
+import { MIN_SEGMENT_PX, SegmentDivider, StripWord } from '@/components/ReminderSlotBar'
+import { SEGMENT_STRIP_WORDS } from '@/lib/task-model-words'
 import {
   segmentCounts,
   segmentDoneColor,
@@ -151,7 +152,12 @@ export function RemindersHeadline({
             negative margin) so a thumb can land on it; hover only darkens the
             track a shade, since the fill is the thing to read. */}
         <div
-          className="-my-1.5 flex min-w-0 gap-[3px] sm:flex-1"
+          className={cn(
+            '-my-1.5 flex min-w-0 gap-[3px] sm:flex-1',
+            // The task segments' words (Q2) stand above their bars: the bars
+            // line up along the bottom.
+            taskSegments.length > 0 && 'items-end',
+          )}
           style={{ containerType: 'inline-size' }}
           role="group"
           aria-label="Go to a period"
@@ -191,6 +197,7 @@ export function RemindersHeadline({
                 started
                 doneColor={segmentDoneColor(segment.horizon)}
                 emptyDone
+                word={SEGMENT_STRIP_WORDS[segment.horizon]}
                 share={share}
                 onClick={() => onGoToSlot(key)}
               />
@@ -376,6 +383,7 @@ function DayBarButton({
   started,
   doneColor,
   emptyDone = false,
+  word,
   share,
   onClick,
 }: {
@@ -388,6 +396,8 @@ function DayBarButton({
   doneColor?: string
   /** An empty task segment is done (2026-10-24): a full green bar from the start of the day. */
   emptyDone?: boolean
+  /** A task segment's short word above its bar (Q2, `SEGMENT_STRIP_WORDS`): the bar is then never narrower than it. */
+  word?: string
   /** Its even share of the bar (`fitShare`): the most its minimum may be. */
   share: string
   onClick: () => void
@@ -402,23 +412,30 @@ function DayBarButton({
       aria-label={`Go to ${label}, ${considered} of ${total} considered`}
       title={`${label} · ${considered} of ${total} considered`}
       style={
-        total === 0 && emptyDone
-          ? // An EMPTY task segment (2026-10-24): every one is on the bar every
-            // day, so on a phone with several periods eight thumb-wide bars
-            // would push the bar past the screen. An empty one asks for the
-            // same width as any other, but alone may give way (to
-            // EMPTY_SEGMENT_MIN_PX) when the row runs out of room — it holds
-            // nothing to tap through to.
-            {
-              flexGrow: 0,
-              flexShrink: 1,
-              flexBasis: MIN_SEGMENT_PX,
-              minWidth: `min(${EMPTY_SEGMENT_MIN_PX}px, ${share})`,
-            }
-          : { flexGrow: total, flexBasis: 0, minWidth: `min(${MIN_SEGMENT_PX}px, ${share})` }
+        word
+          ? // A word (Q2): at least the word's width, its weight past that.
+            { flexGrow: total, flexShrink: 0, flexBasis: 0, minWidth: 'max-content' }
+          : total === 0 && emptyDone
+            ? // An EMPTY task segment (2026-10-24): every one is on the bar every
+              // day, so on a phone with several periods eight thumb-wide bars
+              // would push the bar past the screen. An empty one asks for the
+              // same width as any other, but alone may give way (to
+              // EMPTY_SEGMENT_MIN_PX) when the row runs out of room — it holds
+              // nothing to tap through to.
+              {
+                flexGrow: 0,
+                flexShrink: 1,
+                flexBasis: MIN_SEGMENT_PX,
+                minWidth: `min(${EMPTY_SEGMENT_MIN_PX}px, ${share})`,
+              }
+            : { flexGrow: total, flexBasis: 0, minWidth: `min(${MIN_SEGMENT_PX}px, ${share})` }
       }
-      className="group rounded-full py-1.5 focus-visible:outline-none"
+      className={cn(
+        'group rounded-full py-1.5 focus-visible:outline-none',
+        word && 'flex flex-col items-stretch gap-1 pt-0.5',
+      )}
     >
+      {word && <StripWord word={word} current={false} empty={total === 0} />}
       <span
         className={cn(
           'relative block h-2 overflow-hidden rounded-full transition-colors',

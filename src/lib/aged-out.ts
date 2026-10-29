@@ -32,6 +32,7 @@ import {
   openTaskLocalDayStart,
 } from '@/lib/opentask-day'
 import {
+  AGE_THRESHOLDS,
   HORIZON_ORDER,
   UNSET_HORIZON,
   latestSegmentDay,
@@ -119,27 +120,38 @@ export function agedClockRestart(
 }
 
 /**
- * How old a task is, for the Aged out row's created date (Trent, 2026-10-29:
- * "Saying September 20th, I have to do mental math… we need both"): "Sep 20
- * (6 wks)". Under 14 days "N days", under 8 weeks "N wks", under 12 months
- * "N mo", else "N yr" (singular at 1). Null today and yesterday, whose words
- * already say it ("today 9:14 AM"). OpenTask days, so it agrees with the date.
+ * How long, spelled out (Trent, 2026-10-29: "3 WKS, I just don't like how that
+ * works… it's going to have to be spelled out all the way"): under 14 days
+ * "N days", under 8 weeks "N weeks", under 12 months "N months", else
+ * "N years" — singular at 1 ("1 week"). Counted in OpenTask days from `from`
+ * (the creation, or what restarted the clock) to `now`. Null on the same day.
  */
 export function ageWords(
-  createdAt: string,
+  from: string,
   timezone: string,
   dayStart: string,
   now: Date = new Date(),
 ): string | null {
-  const days = openTaskDaysBetween(new Date(createdAt), now, timezone, dayStart)
-  if (days < 2) return null
-  if (days < 14) return `${days} days`
-  if (days < 56) {
-    const weeks = Math.floor(days / 7)
-    return `${weeks} ${weeks === 1 ? 'wk' : 'wks'}`
-  }
+  const days = openTaskDaysBetween(new Date(from), now, timezone, dayStart)
+  if (days < 1) return null
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  if (days < 14) return unit(days, 'day')
+  if (days < 56) return unit(Math.floor(days / 7), 'week')
   const months = Math.floor(days / (365.25 / 12))
-  if (months < 12) return `${months} mo`
-  const years = Math.floor(days / 365.25)
-  return `${years} yr`
+  if (months < 12) return unit(months, 'month')
+  return unit(Math.floor(days / 365.25), 'year')
+}
+
+/**
+ * The cutoff a horizon's tasks age out at, for the row ("over 10 days",
+ * "over 1 month", "over 3 months"): its `AGE_THRESHOLDS` entry, unset read as
+ * Weeks.
+ */
+export function cutoffWords(horizon: string | null): string {
+  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
+    ? (horizon as HorizonValue)
+    : UNSET_HORIZON
+  const { days, months } = AGE_THRESHOLDS[on]
+  const n = days ?? months ?? 0
+  return `over ${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
 }

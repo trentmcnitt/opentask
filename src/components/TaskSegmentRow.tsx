@@ -57,7 +57,7 @@ import { ageLabel, effectiveAttempts, upcomingGap, upcomingRowActions } from '@/
 import { showsHorizonDot } from '@/lib/row-corner'
 import { useDayStart, useDayStartKnown, useTaskQueue } from '@/components/PreferencesProvider'
 import type { SegmentRow, SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
-import { AGED_OUT_TITLE, agedClockRestart, ageWords, growStep } from '@/lib/aged-out'
+import { AGED_OUT_TITLE, agedClockRestart, ageWords, cutoffWords, growStep } from '@/lib/aged-out'
 import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -1392,13 +1392,10 @@ function SegmentMetaLine({
 
 /**
  * AGED OUT's meta line (Trent, 2026-10-29: "this is the one screen where
- * [the created date] really does matter"; "Saying September 20th, I have to
- * do mental math… we need both"), in its own order: the project, the horizon
- * dot, the created date with its age ("Sep 20 (6 wks)"; today and yesterday
- * say it with their time — `createdDateWords`, `ageWords`), what restarted
- * the age clock if anything ("Weeks since Sep 3", or the keeps: "kept 2× ·
- * last Sep 12" — `agedClockRestart`), the labels, and the priority LAST. No
- * badges: every row here is old. All grey but the priority's colour.
+ * [the created date] really does matter"), in its own order: the project, the
+ * horizon dot, then THREE FACTS joined by "·" (`agedFacts`) — when it was
+ * created, how old it is, and the cutoff it passed — then the labels and the
+ * priority LAST. No badges: every row here is old.
  */
 function AgedOutMeta({
   task,
@@ -1414,8 +1411,6 @@ function AgedOutMeta({
   const projectName = projects.find((p) => p.id === task.project_id)?.name
   const dayStart = useDayStart()
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
-  const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
-  const age = ageWords(task.created_at, timezone, dayStart)
   return (
     <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
       {projectName && (
@@ -1427,11 +1422,7 @@ function AgedOutMeta({
       {dot && showsHorizonDot(task) && (
         <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
       )}
-      <span data-created title="Created">
-        {words(task.created_at)}
-        {age && ` (${age})`}
-      </span>
-      <AgedRestartWords task={task} words={words} dayStart={dayStart} timezone={timezone} />
+      <span data-aged-facts>{agedFacts(task, timezone, dayStart).join(' · ')}</span>
       <SegmentLabels task={task} />
       {priority && (
         <span data-segment-priority className={priority.color}>
@@ -1442,27 +1433,30 @@ function AgedOutMeta({
   )
 }
 
-/** Why the row is here, after its created date: "Weeks since Sep 3", "kept 2× · last Sep 12". */
-function AgedRestartWords({
-  task,
-  words,
-  timezone,
-  dayStart,
-}: {
-  task: Task
-  words: (iso: string) => string
-  timezone: string
-  dayStart: string
-}) {
+/**
+ * The Aged out row's facts (Trent, 2026-10-29: "spelled out all the way"):
+ * the created date (`createdDateWords`), then how old — "5 weeks old" from
+ * creation; when something restarted the age clock (`agedClockRestart`),
+ * that first — "Weeks since Sep 3", "kept 2×, last Sep 12" — and the time
+ * since it ("8 weeks") — then the cutoff it passed ("over 1 month",
+ * `cutoffWords`). The ages are `ageWords`.
+ */
+function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
+  const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
   const restart = agedClockRestart(task, timezone, dayStart)
   const kept = task.growth_kept_count
+  const facts = [words(task.created_at)]
   if (restart?.kind === 'set') {
     const horizon = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
-    return <span data-aged-restart>{`${horizon} since ${words(restart.at)}`}</span>
+    facts.push(`${horizon} since ${words(restart.at)}`)
+  } else if (restart || kept > 0) {
+    const count = kept > 0 ? `kept ${kept}×` : 'kept'
+    facts.push(restart ? `${count}, last ${words(restart.at)}` : count)
   }
-  if (kept <= 0 && !restart) return null
-  const last = restart ? ` · last ${words(restart.at)}` : ''
-  return <span data-aged-restart>{kept > 0 ? `kept ${kept}×${last}` : `kept${last.slice(2)}`}</span>
+  const age = ageWords(restart?.at ?? task.created_at, timezone, dayStart)
+  if (age) facts.push(restart ? age : `${age} old`)
+  facts.push(cutoffWords(task.horizon))
+  return facts
 }
 
 /** "On deck Sat" / "On deck today" for a deck day (yyyy-MM-dd). */

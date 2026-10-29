@@ -6,7 +6,7 @@
  * follows. The native apps keep their own copy (see ios/AGENTS.md). API field
  * names (`due_at`/`target_at`, `horizon`) are not words and do not change.
  */
-import type { CheckInDay, HorizonValue, UpcomingSection } from '@/lib/task-segments'
+import type { CheckInDay, HorizonValue, SegmentKind, UpcomingSection } from '@/lib/task-segments'
 
 /** A task whose target has arrived (ruled 2026-10-21; "Over target" from 2026-10-10). */
 export const OVERDUE_WORD = 'Overdue'
@@ -48,6 +48,26 @@ export const SEGMENT_TITLES: Record<HorizonValue, string> = {
   weeks: 'Weekly',
   months: 'Monthly',
   eventually: 'Quarterly',
+}
+
+/**
+ * The task queue's STRIP WORDS (Trent, 2026-10-29, Q2: "having the words on
+ * there, Q2, is pretty good"): a short word above each segment's bar, on the
+ * dashboard's Tasks card and the Reminders page's day bar. Short forms where
+ * the title is long: Due (Deadlines), Pulls / Earlier (Today's / Previous
+ * pulls), Next (Upcoming), Qtrly (Quarterly), Aged (Aged out). A bar is at
+ * least as wide as its word (`ReminderSlotBar`, `RemindersHeadline`).
+ */
+export const SEGMENT_STRIP_WORDS: Record<SegmentKind, string> = {
+  deadlines: 'Due',
+  queue_today: 'Pulls',
+  queue_previous: 'Earlier',
+  days: 'Daily',
+  upcoming: 'Next',
+  weeks: 'Weekly',
+  months: 'Monthly',
+  eventually: 'Qtrly',
+  aged_out: 'Aged',
 }
 
 /**

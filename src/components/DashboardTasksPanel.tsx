@@ -29,6 +29,7 @@ import {
 import { usePanelPager } from '@/hooks/usePanelPager'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { SEGMENT_STRIP_WORDS } from '@/lib/task-model-words'
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
 import {
@@ -95,6 +96,7 @@ export function DashboardTasksPanel({
       taskSegment: true,
       doneColor: segmentDoneColor(segment.horizon),
       emptyDone: true,
+      word: SEGMENT_STRIP_WORDS[segment.horizon],
     }
   })
   // No page is a slot: the natural page is the first segment still waiting.

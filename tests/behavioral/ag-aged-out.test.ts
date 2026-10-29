@@ -24,7 +24,7 @@ import { createTask, updateTask } from '@/core/tasks'
 import { getTaskById } from '@/core/tasks/read'
 import { getTaskSegments, growTasks, keepTasks } from '@/core/tasks/task-segments'
 import { undoLatest } from '@/core/undo/execute-undo'
-import { agedClockRestart, ageWords, growStep } from '@/lib/aged-out'
+import { agedClockRestart, ageWords, cutoffWords, growStep } from '@/lib/aged-out'
 import type { HorizonValue } from '@/lib/task-segments'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -110,22 +110,30 @@ describe('AG: what restarted the age clock (the row says why it is here)', () =>
   })
 })
 
-describe('AG: the created date says its age', () => {
+describe('AG: the row says how old, and the cutoff', () => {
   const NOW_ = at('2026-10-29T12:00')
   const age = (iso: string) => ageWords(at(iso).toISOString(), tz, '03:00', NOW_)
 
-  test('AG-040: none today or yesterday; days, weeks, months, years', () => {
+  test('AG-040: spelled out, singular at 1; nothing on the same day', () => {
     expect(age('2026-10-29T09:00')).toBeNull()
-    expect(age('2026-10-28T09:00')).toBeNull()
-    expect(age('2026-10-27T09:00')).toBe('2 days')
+    expect(age('2026-10-28T09:00')).toBe('1 day')
+    expect(age('2026-10-23T09:00')).toBe('6 days')
     expect(age('2026-10-16T09:00')).toBe('13 days')
-    expect(age('2026-10-15T09:00')).toBe('2 wks')
-    expect(age('2026-09-20T09:00')).toBe('5 wks')
-    expect(age('2026-09-03T09:00')).toBe('1 mo')
-    expect(age('2026-07-15T09:00')).toBe('3 mo')
-    expect(age('2025-11-01T09:00')).toBe('11 mo')
-    expect(age('2025-10-20T09:00')).toBe('1 yr')
-    expect(age('2023-03-01T09:00')).toBe('3 yr')
+    expect(age('2026-10-22T09:00')).toBe('7 days')
+    expect(age('2026-10-15T09:00')).toBe('2 weeks')
+    expect(age('2026-09-20T09:00')).toBe('5 weeks')
+    expect(age('2026-09-03T09:00')).toBe('1 month')
+    expect(age('2026-07-15T09:00')).toBe('3 months')
+    expect(age('2025-11-01T09:00')).toBe('11 months')
+    expect(age('2025-10-20T09:00')).toBe('1 year')
+    expect(age('2023-03-01T09:00')).toBe('3 years')
+  })
+
+  test('AG-041: the cutoff each horizon passed; unset reads as Weeks', () => {
+    expect(cutoffWords('days')).toBe('over 10 days')
+    expect(cutoffWords('weeks')).toBe('over 1 month')
+    expect(cutoffWords(null)).toBe('over 1 month')
+    expect(cutoffWords('months')).toBe('over 3 months')
   })
 })
 

@@ -118,6 +118,40 @@ export interface SlotBarItem {
    * segment, the 09-21 rule below.
    */
   emptyDone?: boolean
+  /**
+   * A short word above the bar (a task segment, Trent 2026-10-29 Q2:
+   * `SEGMENT_STRIP_WORDS`). The bar is then at least as wide as its word.
+   */
+  word?: string
+}
+
+/**
+ * A bar's WORD (2026-10-29, Q2): small, grey, on one line, the page on screen
+ * in the ink colour; an empty segment's faded. Never narrower than a thumb,
+ * so a short word ("Due") keeps the bar's minimum width.
+ */
+export function StripWord({
+  word,
+  current,
+  empty,
+}: {
+  word: string
+  current: boolean
+  empty: boolean
+}) {
+  return (
+    <span
+      data-strip-word
+      className={cn(
+        'block text-center text-[10px] leading-3 font-semibold tracking-[0.02em] whitespace-nowrap sm:text-[10.5px]',
+        current ? 'text-foreground' : 'text-muted-foreground',
+        empty && !current && 'opacity-55',
+      )}
+      style={{ minWidth: MIN_SEGMENT_PX }}
+    >
+      {word}
+    </span>
+  )
 }
 
 /**
@@ -174,9 +208,16 @@ export function ReminderSlotBar({
   if (shown.length < 2) return null
 
   return (
-    <div className="flex items-center gap-1 px-3 pb-2" role="group" aria-label={ariaLabel}>
+    <div
+      className={cn(
+        'flex gap-1 px-3 pb-2',
+        shown.some((s) => s.item.word) ? 'items-end' : 'items-center',
+      )}
+      role="group"
+      aria-label={ariaLabel}
+    >
       {shown.map(({ item, index: i }, n) => {
-        const { considered, total, label, doneColor } = item
+        const { considered, total, label, doneColor, word } = item
         // The divider goes before the first task segment, after a slot.
         const divider = item.taskSegment && n > 0 && !shown[n - 1].item.taskSegment
         const state = slotState(item)
@@ -205,16 +246,21 @@ export function ReminderSlotBar({
                 state === 'upcoming' ? ', not started yet' : ''
               }`}
               title={`${label} — ${considered}/${total}`}
-              className="group flex items-center py-1"
+              className={cn(
+                'group flex py-1',
+                word ? 'flex-col items-stretch gap-1 pt-0.5' : 'items-center',
+              )}
               style={{
                 // Weight by size, but never below a thumb. `flexBasis: 0` makes
                 // grow the only thing deciding width. Only an empty task
                 // segment (`emptyDone`) weighs zero: it is exactly the minimum.
+                // With a word, never narrower than the word (Q2, 2026-10-29).
                 flexGrow: total,
                 flexBasis: 0,
-                minWidth: MIN_SEGMENT_PX,
+                minWidth: word ? 'max-content' : MIN_SEGMENT_PX,
               }}
             >
+              {word && <StripWord word={word} current={current} empty={total === 0} />}
               <span
                 className={cn(
                   'w-full overflow-hidden rounded-full transition-all',
