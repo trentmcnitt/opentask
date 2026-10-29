@@ -26,14 +26,6 @@
   /* Over target (2026-10-11): a calm plum, deliberately not red — an arrived
      target is not a failure (Trent). Distinct from the reminders' violet. */
   --over-target: oklch(0.56 0.17 322);
-  /* THE LEAN ROW'S TINTS (2026-10-29): one place each, so they can be tuned
-     live in dev tools (select <html>, edit the value). `LeanRow`'s
-     `STATE_LOOK` reads them. Over target (E2), later today, passed deadline,
-     and both passed (1.75× the passed red). */
-  --lean-tint-over: rgb(231, 245, 255);
-  --lean-tint-soon: rgb(249, 252, 255);
-  --lean-tint-late: rgba(200, 20, 10, 0.098);
-  --lean-tint-late-both: rgba(200, 20, 10, 0.1715);
   /* A SOLID plum fill under white text (the age tab's 7d+ step, the count
      pills). Light mode: the plum itself, white on it ≈5.1:1. Dark mode needs
      its own: dark --over-target is lifted for plum-on-black text and strokes,
@@ -144,10 +136,6 @@
   --destructive-foreground: oklch(0.985 0 0);
   --badge-destructive: oklch(0.55 0.22 27.325);
   --over-target: oklch(0.7 0.15 322);
-  --lean-tint-over: rgba(81, 162, 255, 0.125);
-  --lean-tint-soon: rgba(81, 162, 255, 0.03125);
-  --lean-tint-late: rgba(255, 100, 103, 0.14);
-  --lean-tint-late-both: rgba(255, 100, 103, 0.245);
   /* White on it ≈6.0:1; against the dark card ≈3.3:1, so the tab's edge holds. */
   --over-target-badge: oklch(0.52 0.16 322);
   --segment-days: #2bb5a6;
@@ -540,4 +528,36 @@
    margin back as its landing line. */
 .scroll-below-header {
   scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+}
+
+/* THE LEAN ROW'S TINTS (2026-10-29). Plain classes with literal values, on
+   purpose: Trent tunes them live in dev tools. Select a tinted row, find
+   `.lean-tint-over::before` (or the others) in Styles, edit the value, and
+   every row in that state changes. `LeanRow`'s `STATE_LOOK` puts the class on
+   the row; the `::before` box itself (inset, z-order, running over the row's
+   bottom border so two tinted rows show no seam) is its `TINT_BASE`. Over
+   target (E2), later today, passed deadline, both passed (1.75× the red). */
+.lean-tint-over::before {
+  background-color: rgb(231 245 255);
+}
+.lean-tint-soon::before {
+  background-color: rgb(249 252 255);
+}
+.lean-tint-late::before {
+  background-color: rgb(200 20 10 / 0.098);
+}
+.lean-tint-late-both::before {
+  background-color: rgb(200 20 10 / 0.1715);
+}
+.dark .lean-tint-over::before {
+  background-color: rgb(81 162 255 / 0.125);
+}
+.dark .lean-tint-soon::before {
+  background-color: rgb(81 162 255 / 0.03125);
+}
+.dark .lean-tint-late::before {
+  background-color: rgb(255 100 103 / 0.14);
+}
+.dark .lean-tint-late-both::before {
+  background-color: rgb(255 100 103 / 0.245);
 }
