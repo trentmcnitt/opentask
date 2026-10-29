@@ -212,15 +212,17 @@ enum LeanRow {
     }
 
     /// An over-target row's title: dark slate-blue / pale slate (`STATE_LOOK`).
-    static let overTitleHex: (light: UInt32, dark: UInt32) = (0x26334D, 0xD3DCEC)
+    static let overTitleHex: (light: UInt32, dark: UInt32) = (0x263D4D, 0xD3DCEC)
 
-    /// The row's tint (`STATE_LOOK`): the target's blue at 10% (dark ×1.25)
-    /// over target, at 2.5% (dark ×1.25) later today; a warm red (rgb 200
-    /// 20 10) at 9.8% light, red-400 at 14% dark, once the deadline passed.
+    /// The row's tint (`STATE_LOOK`): over target an opaque sky-leaning blue
+    /// in light (rgb 231 245 255, Trent's E2 of 2026-10-29), the target's
+    /// blue at 12.5% in dark; later today rgb 249 252 255 in light, the blue
+    /// at 3.125% in dark; a warm red (rgb 200 20 10) at 9.8% light, red-400 at
+    /// 14% dark, once the deadline passed.
     static func tint(_ state: State) -> (light: Tone, dark: Tone) {
         switch state {
-        case .over: return (Tone(hex: 0x155DFC, alpha: 0.10), Tone(hex: 0x51A2FF, alpha: 0.125))
-        case .soon: return (Tone(hex: 0x155DFC, alpha: 0.025), Tone(hex: 0x51A2FF, alpha: 0.03125))
+        case .over: return (Tone(hex: 0xE7F5FF, alpha: 1), Tone(hex: 0x51A2FF, alpha: 0.125))
+        case .soon: return (Tone(hex: 0xF9FCFF, alpha: 1), Tone(hex: 0x51A2FF, alpha: 0.03125))
         case .passed: return (Tone(hex: 0xC8140A, alpha: 0.098), Tone(hex: 0xFF6467, alpha: 0.14))
         }
     }
