@@ -353,10 +353,10 @@ test.describe('Lean row · the horizon done square', () => {
       )
       await expect(square(made.unset)).toHaveAttribute(
         'title',
-        'Done · Horizon: unset (Weeks). Hold to change.',
+        'Done · Horizon: Weeks (unset). Hold to change.',
       )
       await expect(square(made.unset)).toHaveAccessibleName(
-        /^Done: ".+" · Horizon: unset \(Weeks\)\. Hold to change\.$/,
+        /^Done: ".+" · Horizon: Weeks \(unset\)\. Hold to change\.$/,
       )
 
       // The horizon DOT on the meta line (2026-10-29), main's perspective
