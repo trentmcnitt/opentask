@@ -37,7 +37,7 @@ describe('the square names its horizon', () => {
   })
   test('unset names what it reads as, UNSET_HORIZON', () => {
     const reads = HORIZON_LABELS[UNSET_HORIZON]
-    expect(horizonSquareHint(null)).toBe(`Horizon: unset (${reads}). Hold to change.`)
+    expect(horizonSquareHint(null)).toBe(`Horizon: ${reads} (unset). Hold to change.`)
     expect(horizonSquareHint(undefined)).toBe(horizonSquareHint(null))
   })
 })
