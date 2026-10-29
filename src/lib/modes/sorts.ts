@@ -10,7 +10,7 @@
  */
 import { HORIZON_ORDER, UNSET_HORIZON } from '@/lib/task-segments'
 import type { Task } from '@/types'
-import { hasPickedTarget, newestFirst, soonestFirst } from './predicates'
+import { byNewestCreated, hasPickedTarget, newestFirst, soonestFirst } from './predicates'
 import type { ModeContext } from './types'
 
 export type SortId =
@@ -49,7 +49,7 @@ export const SORTS: Readonly<Record<SortId, SortDef>> = {
   newest: {
     id: 'newest',
     label: 'Newest',
-    order: (a, b) => newestFirst(a.created_at, b.created_at),
+    order: byNewestCreated,
   },
   oldest: {
     id: 'oldest',

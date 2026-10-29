@@ -14,7 +14,7 @@
  */
 import type { Task } from '@/types'
 import type { ModeContext, SectionDef, SectionView } from './types'
-import { isListable } from './predicates'
+import { byNewestCreated, isListable } from './predicates'
 import { SORTS, type ModeSort } from './sorts'
 
 /** How many more rows one "Show 5 more" reveals. */
@@ -54,6 +54,7 @@ export function selectSections(
       complete: def.allowOverlap,
       sortedByMode: byMode,
       rows: def.rows,
+      dateBreaks: !!def.dateBreaks && order === byNewestCreated,
     })
   }
   return views

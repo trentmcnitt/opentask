@@ -323,3 +323,35 @@ describe('the sort pill', () => {
     expect(DEFAULT_MODE_SORT).toEqual({ id: 'newest', everywhere: false })
   })
 })
+
+describe("Scan's date breaks (which sections draw them)", () => {
+  const pulled = () =>
+    task({
+      queued_at: at('2026-10-28T03:00'),
+      queued_from_due_at: at('2026-10-27T09:00'),
+      horizon: 'weeks',
+    })
+  const coming = () => task({ deadline_at: at('2026-10-29T17:00') })
+  const plain = () => task({ horizon: 'weeks' })
+
+  test('Pulled, Newest and the horizon sections, under "Newest" (the default)', () => {
+    const views = scan([pulled(), coming(), plain()], { id: 'newest', everywhere: false })
+    expect(section(views, 'pulled').dateBreaks).toBe(true)
+    expect(section(views, 'newest').dateBreaks).toBe(true)
+    expect(section(views, 'horizon-weeks').dateBreaks).toBe(true)
+    // Coming up runs by its date, never the created one.
+    expect(section(views, 'coming-up').dateBreaks).toBe(false)
+  })
+
+  test('another sort re-orders the sortable sections: no breaks there; Newest keeps them', () => {
+    const views = scan([pulled(), plain()], { id: 'priority', everywhere: false })
+    expect(section(views, 'pulled').dateBreaks).toBe(false)
+    expect(section(views, 'horizon-weeks').dateBreaks).toBe(false)
+    expect(section(views, 'newest').dateBreaks).toBe(true)
+  })
+
+  test("Today's sections never draw them", () => {
+    const views = today([task({ due_at: at('2026-10-28T09:00') })])
+    expect(views.every((v) => !v.dateBreaks)).toBe(true)
+  })
+})

@@ -49,6 +49,12 @@ export interface SectionDef {
    */
   allowOverlap: boolean
   rows: RowForm
+  /**
+   * Scan's DATE BREAKS (2026-10-29): mark where the created-date bucket
+   * changes between rows (`created-bucket.ts`) — drawn only while the rows
+   * run newest-created first (`SectionView.dateBreaks`).
+   */
+  dateBreaks?: boolean
 }
 
 /** A mode: its sections, or `null` for the dashboard's own list (All). */
@@ -74,4 +80,11 @@ export interface SectionView {
   /** The mode's sort applies here (else the section's own order). */
   sortedByMode: boolean
   rows: RowForm
+  /**
+   * Draw date breaks: the section asks for them (`SectionDef.dateBreaks`)
+   * and the order in effect is newest-created (`byNewestCreated`, the
+   * section's own or the sort pill's "Newest") — under any other sort the
+   * buckets would interleave, so none are drawn.
+   */
+  dateBreaks: boolean
 }

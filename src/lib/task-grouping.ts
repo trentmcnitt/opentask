@@ -186,6 +186,8 @@ export interface ModeSectionMeta {
   hidden: number
   canShowLess: boolean
   rows: 'full' | 'compact'
+  /** Scan's date breaks between its rows (`SectionView.dateBreaks`). */
+  dateBreaks: boolean
 }
 
 /** A mode section's group label: its collapse key, never a project's name. */
@@ -206,6 +208,7 @@ export function modeSectionGroups(views: readonly SectionView[]): SortedTaskGrou
       hidden: view.hidden,
       canShowLess: view.cap !== null && view.visible.length > view.cap,
       rows: view.rows,
+      dateBreaks: view.dateBreaks,
     },
   }))
 }

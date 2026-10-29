@@ -109,6 +109,13 @@ export function isHorizonGoverned(task: Task): boolean {
   return showsHorizonDot(task) && task.deadline_at === null
 }
 
+/**
+ * Newest created first — ONE function, shared by Newest, the horizon
+ * sections and the sort pill's "Newest", so a section can tell its rows run
+ * by created date (Scan's date breaks, `SectionView.dateBreaks`).
+ */
+export const byNewestCreated = (a: Task, b: Task): number => newestFirst(a.created_at, b.created_at)
+
 /** Newest first by an ISO field (nulls last). */
 export function newestFirst(a: string | null, b: string | null): number {
   if (a === b) return 0

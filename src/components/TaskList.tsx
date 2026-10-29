@@ -9,6 +9,8 @@ import { SwipeableRow } from './SwipeableRow'
 import { LeanRow } from './lean-row/LeanRow'
 import { CompactRow } from './lean-row/CompactRow'
 import { nextStepSize } from '@/lib/modes/select'
+import { bucketBreaks } from '@/lib/created-bucket'
+import { DATE_BREAK_CONTAINER, DateBreak } from '@/components/modes/DateBreak'
 import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -714,8 +716,8 @@ export function TaskList({
                 </div>
               )}
               {!collapsed && (
-                <div className={lean ? undefined : 'space-y-1'}>
-                  {visibleTasks.map((task) => renderTaskRow(task, group))}
+                <div className={rowsClass(lean, group)}>
+                  {withDateBreaks(visibleTasks, group, renderTaskRow, { now, timezone, dayStart })}
                   <SectionMoreLess group={group} onMore={onSectionMore} onLess={onSectionLess} />
                   {nowSplit && (
                     <NowFoldRow
@@ -765,6 +767,39 @@ export function TaskList({
 function rowComponent(compact: boolean, lean: boolean): React.ComponentType<TaskRowProps> {
   if (compact) return CompactRow
   return lean ? LeanRow : TaskRow
+}
+
+/** A group's rows' box: the cards' gap, and the date breaks' hairline rule. */
+function rowsClass(lean: boolean, group: SortedTaskGroup): string | undefined {
+  return (
+    cn(lean ? undefined : 'space-y-1', group.section?.dateBreaks && DATE_BREAK_CONTAINER) ||
+    undefined
+  )
+}
+
+/**
+ * A group's rows, with Scan's date breaks between them where its section
+ * draws them (`DateBreak`): read off the rows SHOWN, so "Show 5 more" extends
+ * the breaks with the rows (`bucketBreaks`).
+ */
+function withDateBreaks(
+  tasks: Task[],
+  group: SortedTaskGroup,
+  render: (task: Task, group: SortedTaskGroup) => React.ReactNode,
+  ctx: { now: Date; timezone: string; dayStart: string },
+): React.ReactNode[] {
+  if (!group.section?.dateBreaks) return tasks.map((task) => render(task, group))
+  const marks = bucketBreaks(
+    tasks.map((t) => t.created_at),
+    ctx.now,
+    ctx.timezone,
+    ctx.dayStart,
+  )
+  return tasks.flatMap((task, i) => {
+    const mark = marks[i]
+    const row = render(task, group)
+    return mark ? [<DateBreak key={`date-break-${task.id}`} bucket={mark} />, row] : [row]
+  })
 }
 
 /** A group's section marker, for a mode section (tests and the sticky heading find it). */
