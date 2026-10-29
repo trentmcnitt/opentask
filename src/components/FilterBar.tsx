@@ -109,6 +109,7 @@ export function FilterBar({
   onToggleAttribute,
   onExclusiveAttribute,
   // Project filters
+  projectsOutside = false,
   projects,
   selectedProjects = [],
   onToggleProject,
@@ -175,6 +176,13 @@ export function FilterBar({
   onToggleAttribute?: (key: string) => void
   onExclusiveAttribute?: (key: string) => void
   // Project filters
+  /**
+   * Draw the project chips in a row of their own above the Filters row,
+   * always shown, instead of inside the dropdown (the dashboard modes,
+   * 2026-10-28). Same chips, same behaviour: click combines, double-click
+   * excludes, Cmd/Ctrl-click or a long-press picks one only.
+   */
+  projectsOutside?: boolean
   projects?: Project[]
   selectedProjects?: number[]
   onToggleProject?: (projectId: number) => void
@@ -296,9 +304,26 @@ export function FilterBar({
   const hasAttributes =
     tasks.some((t) => t.rrule != null || t.auto_snooze_minutes != null) || hasActiveAttributes
 
+  const projectRow = projects && onToggleProject && (
+    <div className="flex flex-wrap items-center gap-1.5" data-project-row>
+      <ProjectFilterBar
+        projects={projects}
+        tasks={facetTasks.projects}
+        selectedProjects={selectedProjects}
+        excludedProjects={excludedProjects}
+        onToggleProject={onToggleProject}
+        onExclusiveProject={onExclusiveProject}
+        onExcludeProject={onExcludeProject}
+        timezone={timezone}
+        now={now}
+      />
+    </div>
+  )
+
   return (
     <div className="relative mb-4">
       <div className="flex flex-col gap-2">
+        {projectsOutside && projectRow}
         {/* Control row: Filters toggle + AI chips — always visible, scrollable */}
         <div
           className={cn(
@@ -360,21 +385,7 @@ export function FilterBar({
         {expanded && (
           <div id="dashboard-filter-chips" className="flex flex-col gap-2">
             {/* Project row: colored dot chips — wrapping */}
-            {projects && onToggleProject && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <ProjectFilterBar
-                  projects={projects}
-                  tasks={facetTasks.projects}
-                  selectedProjects={selectedProjects}
-                  excludedProjects={excludedProjects}
-                  onToggleProject={onToggleProject}
-                  onExclusiveProject={onExclusiveProject}
-                  onExcludeProject={onExcludeProject}
-                  timezone={timezone}
-                  now={now}
-                />
-              </div>
-            )}
+            {!projectsOutside && projectRow}
 
             {/* Row 1: date filter chips — horizontal scroll */}
             {dateFilterVisible && (

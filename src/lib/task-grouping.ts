@@ -12,6 +12,7 @@
  * The grouping modes themselves are defined in `src/lib/grouping.ts`; Now's
  * "relevant now" rule and its folds in `src/lib/now-view.ts`.
  */
+import type { SectionView } from '@/lib/modes/types'
 import { effectiveHorizon, HORIZON_ORDER } from '@/lib/task-segments'
 import { isOverdue } from '@/lib/task-counts'
 import type { LabelColor, Project, Task } from '@/types'
@@ -167,6 +168,46 @@ export interface TaskGroup {
   projectId?: number
   /** Now's On deck section (`withDeckSection`), not a project. */
   deck?: boolean
+  /** A dashboard mode's section (`src/lib/modes/`), not a project. */
+  section?: ModeSectionMeta
+}
+
+/**
+ * A mode section drawn as a group (`modeSectionGroups`): its title, its
+ * heading's count (null on a complete list), how many rows "Show 5 more"
+ * can still reveal, whether "Show less" is offered, and its row form. Its
+ * `sortedTasks` are the rows SHOWN, so the keyboard and shift-click ranges
+ * (`orderedTaskIds`) walk exactly what is on screen.
+ */
+export interface ModeSectionMeta {
+  id: string
+  title: string
+  count: number | null
+  hidden: number
+  canShowLess: boolean
+  rows: 'full' | 'compact'
+}
+
+/** A mode section's group label: its collapse key, never a project's name. */
+export function modeSectionLabel(id: string): string {
+  return `_mode_${id}`
+}
+
+/** A mode's selected sections as the list's groups (one per section, in order). */
+export function modeSectionGroups(views: readonly SectionView[]): SortedTaskGroup[] {
+  return views.map((view) => ({
+    label: modeSectionLabel(view.id),
+    tasks: view.tasks,
+    sortedTasks: view.visible,
+    section: {
+      id: view.id,
+      title: view.title,
+      count: view.complete ? null : view.tasks.length,
+      hidden: view.hidden,
+      canShowLess: view.cap !== null && view.visible.length > view.cap,
+      rows: view.rows,
+    },
+  }))
 }
 
 /** The On deck section's group label — its collapse key, never a project's name. */

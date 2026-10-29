@@ -12,13 +12,34 @@ import {
   nowFoldKey,
   orderedTaskIds,
   sortTaskGroups,
+  modeSectionGroups,
   withDeckSection,
   type SortOption,
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
+import { useDashboardMode } from '@/hooks/useDashboardMode'
+import { MODES } from '@/lib/modes/registry'
+import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
 import { useNowFolds } from '@/hooks/useNowFolds'
 import { inDeckSection, isRelevantNow } from '@/lib/now-view'
 import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
+import { ModeSwitch } from '@/components/modes/ModeSwitch'
+import { SortPill } from '@/components/modes/SortPill'
+import type { ModeSort } from '@/lib/modes/sorts'
+import type { ModeId, SectionView } from '@/lib/modes/types'
+
+/** The dashboard modes as `DashboardView` draws them (`useDashboardMode`). */
+interface DashboardModes {
+  /** The modes are on (the lean row is). */
+  enabled: boolean
+  /** The mode shown, or null with the modes off. */
+  mode: ModeId | null
+  /** Today or Scan: the list is the mode's sections. */
+  sectioned: boolean
+  setMode: (mode: ModeId) => void
+  sort: ModeSort
+  setSort: (sort: ModeSort) => void
+}
 import type { GroupingMode } from '@/lib/grouping'
 import { resolveTaskLink, missingTaskMessage } from '@/lib/task-link'
 import { useTimeSlots } from '@/hooks/useTimeSlots'
@@ -405,6 +426,19 @@ async function toastForUnshownTask(taskId: number): Promise<void> {
     // Network failure: the generic wording below.
   }
   showToast({ message: missingTaskMessage(task) })
+}
+
+/**
+ * Whether a sectioned mode leaves out a task the list holds: Today shows
+ * today's tasks only, so a notification for next week's has nowhere to land.
+ */
+function modeHidesTask(
+  views: readonly SectionView[] | null,
+  listed: readonly Task[],
+  taskId: number,
+): boolean {
+  if (!views || !listed.some((t) => t.id === taskId)) return false
+  return !views.some((v) => v.tasks.some((t) => t.id === taskId))
 }
 
 function HomeContent({
@@ -1098,7 +1132,12 @@ function HomeContent({
     !!searchQuery ||
     activeFilterCount > 0 ||
     (aiMode !== 'off' && (aiFilterActive || selectedSignals.length > 0))
-  const nowAvailable = grouping === 'project' && !listNarrowed
+  // THE DASHBOARD MODES (2026-10-28, with the lean row; `useDashboardMode`):
+  // Today and Scan draw sections (`src/lib/modes/`); All is this list with
+  // no Now folds and no On deck section. Off, the dashboard is as it was.
+  const dashMode = useDashboardMode()
+  const setDashMode = dashMode.setMode
+  const nowAvailable = grouping === 'project' && !listNarrowed && !dashMode.enabled
   // The task queue switch: with it on, a queued undated High folds (A8).
   const queueOn = taskQueue.enabled
   // Now's options: the switch, and the user's day boundary ("Day starts at"
@@ -1133,12 +1172,33 @@ function HomeContent({
   // rows show, and Now's split (relevant rows, then the fold). Collapsed
   // groups and shut folds drop out of `orderedIds` so navigation skips them.
   const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+  // A sectioned mode's sections, each with its rows SHOWN ("Show 5 more"
+  // adds to a section's `sectionExtra`): they ARE the visual order then, so
+  // the keyboard, shift-click ranges and Cmd+C follow them as drawn. The
+  // project chips, search and filters narrow `tasks_` first, in every mode.
+  const modeSections = dashMode.mode ? MODES[dashMode.mode].sections : null
+  const [sectionExtra, setSectionExtra] = useState<Record<string, number>>({})
+  const modeViews = useMemo(
+    () =>
+      modeSections
+        ? selectSections(
+            tasks_,
+            modeSections,
+            { now, timezone, dayStart },
+            dashMode.sort,
+            sectionExtra,
+          )
+        : null,
+    [modeSections, tasks_, now, timezone, dayStart, dashMode.sort, sectionExtra],
+  )
   const sortedGroups = useMemo(() => {
+    if (modeViews) return modeSectionGroups(modeViews)
     const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
     if (!nowFolds) return sorted
     const withDecks = deckSection ? withDeckSection(sorted, timezone, now, nowOpts) : sorted
     return applyNowFolds(withDecks, timezone, now, nowOpts)
   }, [
+    modeViews,
     taskGroups,
     listSort,
     listReversed,
@@ -1202,7 +1262,15 @@ function HomeContent({
     (taskId: number, groupLabel: string) => {
       if (isCollapsed(groupLabel)) expand(groupLabel)
       const group = sortedGroups.find((g) => g.label === groupLabel)
-      if (group && !group.deck) openFold(nowFoldKey(group))
+      if (group?.section) {
+        // A mode section: reveal down to the row if "Show 5 more" hides it.
+        const { id } = group.section
+        const index = group.tasks.findIndex((t) => t.id === taskId)
+        const shown = group.sortedTasks.length
+        if (index >= shown) {
+          setSectionExtra((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + index + 1 - shown }))
+        }
+      } else if (group && !group.deck) openFold(nowFoldKey(group))
       setHighlightTaskId(taskId)
     },
     [isCollapsed, expand, sortedGroups, openFold],
@@ -1223,6 +1291,12 @@ function HomeContent({
     }
     if (isNaN(taskId)) return consume()
     if (tasks.length === 0) return
+    // A sectioned mode that doesn't list the task (Today, for a task due next
+    // week): All lists every open task, so the link goes there.
+    if (modeHidesTask(modeViews, tasks_, taskId)) {
+      setDashMode('all')
+      return
+    }
     const step = resolveTaskLink({
       taskId,
       tasks,
@@ -1274,6 +1348,8 @@ function HomeContent({
     }
     consume()
   }, [
+    modeViews,
+    setDashMode,
     searchParams,
     loading,
     tasks,
@@ -1587,6 +1663,11 @@ function HomeContent({
     <>
       <DemoTour />
       <DashboardView
+        modes={{ ...dashMode, sectioned: modeViews !== null }}
+        onSectionMore={(id) =>
+          setSectionExtra((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + SHOW_MORE_STEP }))
+        }
+        onSectionLess={(id) => setSectionExtra((prev) => ({ ...prev, [id]: 0 }))}
         tasks={tasks_}
         sortedGroups={sortedGroups}
         orderedIds={orderedIds}
@@ -1981,6 +2062,9 @@ function useNavFilterRequests(
   }, [activePillFilter, onExclusiveDateFilter, requestJump])
 }
 function DashboardView({
+  modes,
+  onSectionMore,
+  onSectionLess,
   tasks,
   sortedGroups,
   orderedIds,
@@ -2128,6 +2212,10 @@ function DashboardView({
   onGroupingChange: (grouping: GroupingMode) => void
   /** Now's "N of M now · Show all" strip; null outside Now or while the list is narrowed. */
   nowSummary: NowSummaryState | null
+  /** The dashboard modes (`useDashboardMode`); `sectioned` while Today or Scan shows. */
+  modes: DashboardModes
+  onSectionMore: (sectionId: string) => void
+  onSectionLess: (sectionId: string) => void
   /** Whether a project's Now fold is open (`useNowFolds`, keyed by `nowFoldKey`). */
   isFoldOpen: (key: string) => boolean
   onToggleFold: (key: string) => void
@@ -2379,9 +2467,14 @@ function DashboardView({
   // above the task-segment panel and the project groups; the rest in its
   // usual place (`TaskList`'s `part`). One set of props for both.
   const deckRevealRef = useRef<((task: Task) => void) | null>(null)
-  const renderTaskList = (part: 'deck' | 'rest') => (
+  // A sectioned mode draws one list of section groups, with no header row
+  // (the sort pill orders it) and the group headings as section headings.
+  const renderTaskList = (part: 'deck' | 'rest' | 'all') => (
     <TaskList
       part={part}
+      chrome={!modes.sectioned}
+      onSectionMore={onSectionMore}
+      onSectionLess={onSectionLess}
       deckRevealRef={deckRevealRef}
       tasks={tasks}
       timeSlots={timeSlots}
@@ -2389,7 +2482,7 @@ function DashboardView({
       sortedGroups={sortedGroups}
       orderedIds={orderedIds}
       projects={projects}
-      grouping={grouping}
+      grouping={modes.sectioned ? 'project' : grouping}
       now={now}
       highlightTaskId={highlightTaskId}
       onHighlightDone={onHighlightDone}
@@ -2575,11 +2668,22 @@ function DashboardView({
               ios/OpenTask/WebView.swift) the toggle and "20 of 134 now · Show
               all 134" are wider than a phone, and the row ran 12px off it. */}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+            {modes.mode ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <ModeSwitch mode={modes.mode} onMode={modes.setMode} />
+                {/* All is the list as it was: its own Now / Newest view. */}
+                {modes.mode === 'all' && (
+                  <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+                )}
+              </div>
+            ) : (
+              <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+            )}
             {nowSummary && <NowSummary {...nowSummary} />}
           </div>
 
           <FilterBar
+            projectsOutside={modes.enabled}
             tasks={allTasks}
             expanded={filtersExpanded}
             onToggleExpanded={onToggleFilters}
@@ -2659,8 +2763,10 @@ function DashboardView({
             </div>
           )}
 
-          {/* Now's On deck section (D2): under the filter row, at the top. */}
-          {renderTaskList('deck')}
+          {/* Now's On deck section (D2): under the filter row, at the top. A
+              sectioned mode's sections take this slot, above the reminders
+              and quotas, so the mode is the first thing seen. */}
+          {modes.sectioned ? renderTaskList('all') : renderTaskList('deck')}
         </div>
 
         <TrackColumn
@@ -2682,9 +2788,14 @@ function DashboardView({
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
-          {renderTaskList('rest')}
+          {!modes.sectioned && renderTaskList('rest')}
         </div>
       </main>
+
+      {/* The sort pill: Today and Scan, out of the action bar's way. */}
+      {modes.sectioned && selection.selectedIds.size === 0 && (
+        <SortPill sort={modes.sort} onSort={modes.setSort} />
+      )}
 
       <SelectionActionSheet
         selectedCount={selection.selectedIds.size}
