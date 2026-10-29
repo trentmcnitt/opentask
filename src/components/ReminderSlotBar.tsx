@@ -177,6 +177,32 @@ function slotState(item: SlotBarItem): SlotState {
   return 'upcoming'
 }
 
+/** A bar's track: its height, and the state's tint under the fill. */
+function trackClass(state: SlotState, current: boolean, word: boolean, ownDone: boolean): string {
+  return cn(
+    'w-full overflow-hidden rounded-full transition-all',
+    // The slot on screen is the taller one — position without a
+    // second colour, which the three states already spend.
+    current ? 'h-2' : 'h-1',
+    // Under a word every bar takes the tall bar's 8px, centred,
+    // so the words stand on one line (Q2).
+    word && !current && 'my-0.5',
+    // A task segment's page grows like a slot's and is NOT ringed
+    // (Trent, 2026-10-11: "The reminder segments don't have an
+    // outline and neither should this. It should just grow").
+    // Its time has come: a track with real presence, so the
+    // unfilled part reads as "still to do".
+    state === 'behind' && 'bg-foreground/20',
+    // (Under a finished fill in its own colour, a plain grey
+    // track rather than green's tint: `doneColor`.)
+    state === 'done' && (ownDone ? 'bg-foreground/20' : 'bg-green-600/20'),
+    // Nothing has happened here yet, and that is not a problem —
+    // barely there, so it never competes for attention.
+    state === 'upcoming' && 'bg-foreground/[0.06]',
+    'group-hover:brightness-125',
+  )
+}
+
 export function ReminderSlotBar({
   items,
   currentIndex,
@@ -261,27 +287,7 @@ export function ReminderSlotBar({
               }}
             >
               {word && <StripWord word={word} current={current} empty={total === 0} />}
-              <span
-                className={cn(
-                  'w-full overflow-hidden rounded-full transition-all',
-                  // The slot on screen is the taller one — position without a
-                  // second colour, which the three states already spend.
-                  current ? 'h-2' : 'h-1',
-                  // A task segment's page grows like a slot's and is NOT ringed
-                  // (Trent, 2026-10-11: "The reminder segments don't have an
-                  // outline and neither should this. It should just grow").
-                  // Its time has come: a track with real presence, so the
-                  // unfilled part reads as "still to do".
-                  state === 'behind' && 'bg-foreground/20',
-                  // (Under a finished fill in its own colour, a plain grey
-                  // track rather than green's tint: `doneColor`.)
-                  state === 'done' && (doneColor ? 'bg-foreground/20' : 'bg-green-600/20'),
-                  // Nothing has happened here yet, and that is not a problem —
-                  // barely there, so it never competes for attention.
-                  state === 'upcoming' && 'bg-foreground/[0.06]',
-                  'group-hover:brightness-125',
-                )}
-              >
+              <span className={trackClass(state, current, !!word, !!doneColor)}>
                 {fraction > 0 && (
                   <span
                     className={cn(

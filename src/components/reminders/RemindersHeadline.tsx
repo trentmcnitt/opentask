@@ -18,7 +18,7 @@ import {
 } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
-import { MIN_SEGMENT_PX, SegmentDivider, StripWord } from '@/components/ReminderSlotBar'
+import { MIN_SEGMENT_PX, StripWord } from '@/components/ReminderSlotBar'
 import { SEGMENT_STRIP_WORDS } from '@/lib/task-model-words'
 import {
   segmentCounts,
@@ -40,7 +40,8 @@ import type { SegmentView } from '@/hooks/useTaskSegments'
  * as "not done". A segment turns green when its slot is finished — a small
  * win each time — and the number goes green when the day is.
  *
- * The task segments follow the slots (2026-10-11), after a faint divider, in
+ * The task segments follow the slots (2026-10-11), on a line of their own
+ * under them since 2026-10-29 (their words, Q2 — a faint divider before), in
  * the same purple as a slot while filling and green when done (the deadlines
  * page: its teal) — every one, every day (2026-10-24; an empty one done) —
  * the dashboard strip's bars, so a segment reads the same on
@@ -110,8 +111,13 @@ export function RemindersHeadline({
   // width OR its even share of the bar, whichever is smaller (`fitShare`):
   // with room, nothing changes; without, every segment gives way evenly and
   // the minimums never add up to more than the bar.
-  const showDivider = taskSegments.length > 0 && segments.length > 0
-  const share = fitShare(segments.length + taskSegments.length, showDivider)
+  // THE TASK QUEUE ON ITS OWN LINE (2026-10-29): with their words (Q2) the
+  // queue's bars need their words' width — about 300px for all nine — so
+  // beside the periods they ran past the bar on a phone and on the desktop
+  // row alike. They wrap under the periods instead, where the divider was;
+  // the periods share the first line between them alone.
+  const queueLine = taskSegments.length > 0 && segments.length > 0
+  const share = fitShare(segments.length > 0 ? segments.length : taskSegments.length)
   const dayDone = counts.done
 
   return (
@@ -153,7 +159,7 @@ export function RemindersHeadline({
             track a shade, since the fill is the thing to read. */}
         <div
           className={cn(
-            '-my-1.5 flex min-w-0 gap-[3px] sm:flex-1',
+            '-my-1.5 flex min-w-0 flex-wrap gap-x-[3px] gap-y-1 sm:flex-1',
             // The task segments' words (Q2) stand above their bars: the bars
             // line up along the bottom.
             taskSegments.length > 0 && 'items-end',
@@ -179,11 +185,8 @@ export function RemindersHeadline({
               />
             )
           })}
-          {showDivider && (
-            <span className="flex items-center self-center">
-              <SegmentDivider />
-            </span>
-          )}
+          {/* The break before the queue's line (`queueLine`). */}
+          {queueLine && <span aria-hidden data-day-bar-break className="basis-full" />}
           {taskSegments.map((segment) => {
             const { handled, total } = segmentCounts(segment)
             const key = segmentKey(segment)
@@ -352,19 +355,17 @@ function CountRuns({ runs }: { runs: CountPart[][] }) {
 /** How narrow an empty task segment's bar may get when the day bar runs out of room. */
 const EMPTY_SEGMENT_MIN_PX = 12
 
-/** The bar's `gap-[3px]`, and the divider's width with its `mx-1` (`SegmentDivider`). */
+/** The bar's `gap-x-[3px]`. */
 const BAR_GAP_PX = 3
-const DIVIDER_PX = 9
 
 /**
  * One segment's even share of the day bar (a CSS length, in the bar's own
- * `cqw` — it is a size container): the bar's width less its gaps and the
- * divider, over the number of segments. A segment's minimum is never more
- * than this, so the minimums always add up to no more than the bar.
+ * `cqw` — it is a size container): the bar's width less its gaps, over the
+ * number of segments on its line. A segment's minimum is never more than
+ * this, so the minimums always add up to no more than the line.
  */
-function fitShare(count: number, divider: boolean): string {
-  const children = count + (divider ? 1 : 0)
-  const fixed = Math.max(0, children - 1) * BAR_GAP_PX + (divider ? DIVIDER_PX : 0)
+function fitShare(count: number): string {
+  const fixed = Math.max(0, count - 1) * BAR_GAP_PX
   return `calc((100cqw - ${fixed}px) / ${Math.max(1, count)})`
 }
 

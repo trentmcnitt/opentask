@@ -392,7 +392,8 @@ test.describe('Task segments on the dashboard', () => {
         'data-day-segment-done',
         '',
       )
-      await expect(bar.locator('[data-segment-divider]')).toHaveCount(1)
+      // The queue's bars on their own line under the periods (2026-10-29, their words).
+      await expect(bar.locator('[data-day-bar-break]')).toHaveCount(1)
       // The task row is not in the day's count: one reminder, nothing else.
       await expect(headline.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '1')
       // A tap goes to the segment's section.
