@@ -211,12 +211,23 @@ test.describe('Lean row · look', () => {
           expect(await weightOf(passed)).toBe('600')
           expect(await weightOf(soon)).toBe('500')
           expect(await weightOf(plain)).toBe('500')
-          // Both over target and past its deadline: red, not blue.
+          // Both over target and past its deadline: red, not blue — 1.75× the
+          // passed-deadline red (Trent, 2026-10-29).
           await expect(row(page, both)).toHaveAttribute('data-over-target', '')
           await expect(row(page, both)).toHaveAttribute('data-row-state', 'passed')
-          // The target chip: the blue target tone, the moment alone (no "ago").
+          await expect(row(page, both)).toHaveAttribute('data-both-passed', '')
+          expectTint(
+            (await tint(row(page, both))).bg,
+            scheme === 'light' ? [200, 20, 10, 0.1715] : [255, 100, 103, 0.245],
+          )
+          // A passed deadline with no target passed: the normal red.
+          await expect(row(page, passed)).not.toHaveAttribute('data-both-passed', '')
+          // The future target chip stays blue.
+          await expect(u.locator('[data-time-chip="target"]')).toBeVisible()
+          // The target chip: pale plum once the target has passed (M1,
+          // 2026-10-29), the moment alone (no "ago").
           const chip = o.locator('[data-time-chip]')
-          await expect(chip).toHaveAttribute('data-time-chip', 'target')
+          await expect(chip).toHaveAttribute('data-time-chip', 'over')
           await expect(chip).not.toContainText('ago')
           // The attempts badge right after it, in neutral grey (no plum).
           const badge = o.locator('[data-attempts]')
@@ -272,88 +283,57 @@ test.describe('Lean row · look', () => {
 })
 
 test.describe('Lean row · the horizon done square', () => {
-  for (const [scheme, scale] of [
-    ['light', 1],
-    ['dark', 2],
-  ] as const) {
-    test.describe(`${scheme} at ${scale}x`, () => {
-      test.use({
-        viewport: { width: 1280, height: 800 },
-        colorScheme: scheme,
-        deviceScaleFactor: scale,
-      })
+  test.use({ viewport: { width: 1280, height: 800 } })
 
-      test('Days plain, Weeks / Months / Eventually patterned, unset as UNSET_HORIZON; targeted and deadline rows too', async ({
-        authenticatedPage: page,
-      }) => {
-        await page.addInitScript(LEAN)
-        const made = {
-          days: await create(page, { title: uniqueTitle('LR days'), horizon: 'days' }),
-          weeks: await create(page, { title: uniqueTitle('LR weeks'), horizon: 'weeks' }),
-          months: await create(page, { title: uniqueTitle('LR months'), horizon: 'months' }),
-          eventually: await create(page, { title: uniqueTitle('LR ev'), horizon: 'eventually' }),
-          unset: await create(page, { title: uniqueTitle('LR unset') }),
-          dated: await create(page, {
-            title: uniqueTitle('LR dated'),
-            horizon: 'months',
-            due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
-          }),
-          deadline: await create(page, {
-            title: uniqueTitle('LR deadline'),
-            horizon: 'months',
-            deadline_at: new Date(Date.now() + 48 * HOUR).toISOString(),
-          }),
-        }
-        try {
-          await gotoDashboard(page)
-          const square = (id: number) => row(page, id).locator('[data-lean-done]')
-          const border = (id: number) => square(id).locator('[data-horizon-border]')
-
-          // Days: governed, drawn as the plain checkbox itself.
-          await expect(square(made.days)).toHaveAttribute('data-horizon-square', 'days')
-          await expect(border(made.days)).toHaveCount(0)
-          // The patterned steps draw their border.
-          for (const h of ['weeks', 'months', 'eventually'] as const) {
-            await expect(square(made[h])).toHaveAttribute('data-horizon-square', h)
-            await expect(border(made[h])).toHaveCount(1)
-          }
-          // Unset looks like UNSET_HORIZON (weeks today): the same pattern.
-          await expect(square(made.unset)).toHaveAttribute('data-horizon-square', 'weeks')
-          expect(await border(made.unset).innerHTML()).toBe(await border(made.weeks).innerHTML())
-          // The square names its horizon, in the tooltip and (a phone has no
-          // hover) the accessible name; unset says what it reads as.
-          await expect(square(made.months)).toHaveAttribute(
-            'title',
-            'Done · Horizon: Months. Hold to change.',
-          )
-          await expect(square(made.unset)).toHaveAttribute(
-            'title',
-            'Done · Horizon: unset (Weeks). Hold to change.',
-          )
-          await expect(square(made.unset)).toHaveAccessibleName(
-            /^Done: ".+" · Horizon: unset \(Weeks\)\. Hold to change\.$/,
-          )
-          // A picked target: the square still shows the horizon (Trent,
-          // 2026-10-29: "regardless of whether it has a target").
-          await expect(square(made.dated)).toHaveAttribute('data-horizon-square', 'months')
-          await expect(border(made.dated)).toHaveCount(1)
-          // A deadline task: its SET horizon (never the effective one).
-          await expect(square(made.deadline)).toHaveAttribute('data-horizon-square', 'months')
-          await expect(border(made.deadline)).toHaveCount(1)
-
-          // Each density draws its own stroke: 1px at 1x, 1.5px at 2x.
-          const shown = await border(made.weeks).evaluate((svg) =>
-            [...svg.querySelectorAll('g')]
-              .filter((g) => getComputedStyle(g).display !== 'none')
-              .map((g) => g.getAttribute('stroke-width')),
-          )
-          expect(shown).toEqual([scale === 1 ? '1' : '1.5'])
-        } finally {
-          await cleanUp(page, Object.values(made))
-        }
-      })
-    })
-  }
+  // Trent, 2026-10-29: "my eye doesn't like that the task checkbox is
+  // changing shape" — outside Scan's Horizon sections (where the modes draw
+  // it, `horizonLook`) every square is plain, yet each one-off still names
+  // its horizon: the attribute, the tooltip, the accessible name.
+  test('every square on the dashboard is plain, and each one-off names its horizon', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const made = {
+      weeks: await create(page, { title: uniqueTitle('LR weeks'), horizon: 'weeks' }),
+      months: await create(page, { title: uniqueTitle('LR months'), horizon: 'months' }),
+      unset: await create(page, { title: uniqueTitle('LR unset') }),
+      dated: await create(page, {
+        title: uniqueTitle('LR dated'),
+        horizon: 'eventually',
+        due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+      }),
+      deadline: await create(page, {
+        title: uniqueTitle('LR deadline'),
+        horizon: 'months',
+        deadline_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+      }),
+    }
+    try {
+      await gotoDashboard(page)
+      const square = (id: number) => row(page, id).locator('[data-lean-done]')
+      for (const id of Object.values(made)) {
+        await expect(square(id).locator('[data-horizon-border]')).toHaveCount(0)
+      }
+      // The SET horizon, targeted and deadline rows too; unset as UNSET_HORIZON.
+      await expect(square(made.weeks)).toHaveAttribute('data-horizon-square', 'weeks')
+      await expect(square(made.unset)).toHaveAttribute('data-horizon-square', 'weeks')
+      await expect(square(made.dated)).toHaveAttribute('data-horizon-square', 'eventually')
+      await expect(square(made.deadline)).toHaveAttribute('data-horizon-square', 'months')
+      await expect(square(made.months)).toHaveAttribute(
+        'title',
+        'Done · Horizon: Months. Hold to change.',
+      )
+      await expect(square(made.unset)).toHaveAttribute(
+        'title',
+        'Done · Horizon: unset (Weeks). Hold to change.',
+      )
+      await expect(square(made.unset)).toHaveAccessibleName(
+        /^Done: ".+" · Horizon: unset \(Weeks\)\. Hold to change\.$/,
+      )
+    } finally {
+      await cleanUp(page, Object.values(made))
+    }
+  })
 })
 
 test.describe('Lean row · changing the horizon from the square', () => {

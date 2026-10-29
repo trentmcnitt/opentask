@@ -17,14 +17,16 @@
  *   checkbox in selection mode. No circle, no card: a hairline between rows.
  * - High "!" / Urgent "!!" right after the title, bound to its last word.
  *   Medium is never shown; Low is a grey word on the meta line.
- * - The horizon is the done square's border on rows it governs (`DoneControl`,
- *   `src/lib/horizon-square.ts`); a hold or right-click on it changes it.
+ * - The horizon: a hold or right-click on the done square changes it, on
+ *   every one-off; the square DRAWS it only in Scan's Horizon sections
+ *   (`horizonLook`, `DoneControl`, `src/lib/horizon-square.ts`).
  * - Deadline chip, then the target chip, each saying the moment alone
  *   (`leanChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago"; a
  *   deadline later today counts down, "in 5 hrs", and "Today" is said once
  *   per row) — the
- *   target always the blue target chip (its move / remove menu), never
- *   plum; a passed deadline red with its flag — then the created date (`createdDateWords`) in plain
+ *   target chip (its move / remove menu) blue while ahead, pale plum once
+ *   passed (M1, 2026-10-29); a passed deadline red with its flag — then the
+ *   created date (`createdDateWords`) in plain
  *   grey with no dot before it. The dot comes after: Low, the grey project.
  *   Then labels (the AI glyph rule, `LabelBadges`) and the yellow notes mark.
  * - Recurrence on its own line.
@@ -36,8 +38,9 @@
  *   clear column.
  * - The ROW STATE (`STATE_LOOK`, `leanRowState`): later today a faint blue;
  *   over target a blue tint and a dark slate-blue title; a passed deadline
- *   the red counterpart, which wins. No bar. No plum anywhere in the row (no
- *   stripe, no plum chip, no "N×").
+ *   the red counterpart, which wins — 1.75× stronger when the target has
+ *   passed too (`tintClass`). No bar, no plum stripe, no plum "N×"; the one
+ *   plum is a passed target's chip.
  *
  * The attempts badge ("2×") follows the target chip in neutral grey; the
  * card's 3× "Remove target?" offer is not drawn (Remove target stays in the
@@ -104,6 +107,31 @@ const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
 }
 
 /**
+ * BOTH PASSED (Trent, 2026-10-29, r7 "1.75×"): the deadline AND the target
+ * have passed — the red at 1.75× the passed-deadline tint (light 17.15%,
+ * dark 24.5%), in place of the normal red. A passed deadline with its target
+ * still ahead ("Return the rental car") keeps the normal red.
+ */
+const BOTH_PASSED_ROW = `${TINT_BASE} before:bg-[rgba(200,20,10,0.1715)] dark:before:bg-[rgba(255,100,103,0.245)]`
+
+/** The row's state markers, for tests and the row's own selectors. */
+function stateFlags(
+  state: LeanRowState | null,
+  isOverdue: boolean,
+): { 'data-over-target'?: ''; 'data-both-passed'?: '' } {
+  return {
+    ...(isOverdue ? { 'data-over-target': '' as const } : {}),
+    ...(state === 'passed' && isOverdue ? { 'data-both-passed': '' as const } : {}),
+  }
+}
+
+/** The row's tint classes: the state's, or both-passed's stronger red. */
+function tintClass(state: LeanRowState | null, isOverdue: boolean): string | undefined {
+  if (state === 'passed' && isOverdue) return BOTH_PASSED_ROW
+  return state ? STATE_LOOK[state].row : undefined
+}
+
+/**
  * The title's WEIGHT (Trent, 2026-10-29, after trying weights on dev: "500
  * feels pretty good… Maybe we do a 500/600 split"): medium on a plain row,
  * semibold on a tinted one — over target or a passed deadline. The faint
@@ -143,6 +171,7 @@ export function LeanRow({
   highlighted,
   onHighlightDone,
   timeSlots = NO_SLOTS,
+  horizonLook = false,
 }: TaskRowProps) {
   const { pointer, handleClick } = useRowPress({
     isSelectionMode,
@@ -176,8 +205,8 @@ export function LeanRow({
       aria-selected={isSelected}
       tabIndex={-1}
       data-lean-row={task.id}
-      data-over-target={isOverdue ? '' : undefined}
       data-row-state={state ?? undefined}
+      {...stateFlags(state, isOverdue)}
       {...highlightProps}
       onClick={handleClick}
       onMouseEnter={onFocus}
@@ -192,14 +221,15 @@ export function LeanRow({
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
       className={cn(
-        'group/lean border-border/60 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
+        // The hairline: the border at 40% (Trent, 2026-10-29; it was 60%).
+        'group/lean border-border/40 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
         isSelectionMode && 'cursor-pointer',
         isSelected && 'bg-accent ring-ring rounded-lg ring-2',
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
         // No outline while the row swipes (`SwipeableRow`'s `data-swiping`):
         // on the moving layer it rode along with the row (Trent, 2026-10-29).
         'group-data-swiping/swipe:ring-0',
-        state && STATE_LOOK[state].row,
+        tintClass(state, isOverdue),
         isAiProcessing && !highlighted && 'animate-ai-processing',
       )}
     >
@@ -210,6 +240,7 @@ export function LeanRow({
         isSelected={isSelected}
         onSelect={onSelect}
         onSetHorizon={onSetHorizon ? (h) => onSetHorizon(task, h) : undefined}
+        horizonLook={horizonLook}
       />
       <div className="min-w-0 flex-1">
         {/* DOM first: the buttons float right inside the body, so on a phone
@@ -233,6 +264,7 @@ export function LeanRow({
         />
         <LeanMeta
           task={task}
+          isOverdue={isOverdue}
           onMove={(until) => onSnooze(task.id, until)}
           onRemoveTarget={onRemoveTarget}
           onLabelClick={onLabelClick}
@@ -294,6 +326,7 @@ function LeanTitle({
  */
 function LeanMeta({
   task,
+  isOverdue,
   onMove,
   onRemoveTarget,
   onLabelClick,
@@ -301,6 +334,8 @@ function LeanMeta({
   projectName,
 }: {
   task: Task
+  /** The target has passed (the list's `isOverdue`): the chip goes plum. */
+  isOverdue: boolean
   onMove: (until: string) => void
   onRemoveTarget?: (task: Task) => void
   onLabelClick?: (label: string) => void
@@ -350,8 +385,9 @@ function LeanMeta({
           task={task}
           timezone={timezone}
           text={words.target}
-          // Always the blue target chip: a missed target is not a mistake.
-          over={false}
+          // M1 (Trent, 2026-10-29): a passed target's chip is the pale plum
+          // 'over' tone; a target still ahead stays blue.
+          over={isOverdue}
           onMove={onMove}
           onRemoveTarget={onRemoveTarget}
           // No hover ✕: Remove target is in the chip's menu, and the ✕'s
