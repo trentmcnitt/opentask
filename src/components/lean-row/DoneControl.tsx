@@ -6,9 +6,14 @@
  * (the card row's rule, `TaskRow`). No consider circle: the lean row has no
  * consider.
  *
- * THE HORIZON SQUARE (`src/lib/horizon-square.ts`): on every one-off
- * (`horizonGoverns` — targeted or not, deadline or not, since 2026-10-29),
- * the square's border draws the horizon the user set — Days solid (the plain
+ * THE HORIZON SQUARE (`src/lib/horizon-square.ts`): every one-off
+ * (`horizonGoverns` — targeted or not, deadline or not) carries its horizon
+ * in the square's hold menu, tooltip and `data-horizon-square`, but the
+ * square DRAWS it only where the list asks (`horizonLook`): Scan's Horizon
+ * sections, where every row shares one horizon (Trent, 2026-10-29: "my eye
+ * doesn't like that the task checkbox is changing shape… it doesn't bother
+ * me in the Horizon category"). There the border draws the horizon the user
+ * set — Days solid (the plain
  * checkbox itself, 0.25 grey), Weeks long dashes, Months a dash mid-side,
  * Eventually dots (0.42 grey); unset looks like whatever unset means
  * (`UNSET_HORIZON`). Every other row keeps the plain checkbox. The pattern
@@ -53,6 +58,7 @@ export function DoneControl({
   isSelected,
   onSelect,
   onSetHorizon,
+  horizonLook = false,
 }: {
   task: Task
   onDone: () => void
@@ -61,6 +67,8 @@ export function DoneControl({
   onSelect?: () => void
   /** Change the horizon (a governed square's hold / right-click menu). */
   onSetHorizon?: (horizon: HorizonValue | null) => void
+  /** Draw the horizon's look (Scan's Horizon sections only); else the plain square. */
+  horizonLook?: boolean
 }) {
   if (isSelectionMode) {
     return (
@@ -74,8 +82,11 @@ export function DoneControl({
     )
   }
   const governed = horizonGoverns(task)
+  // The look narrows (`horizonLook`); the rule — the menu, the tooltip, the
+  // data attribute naming the horizon — stays on every one-off.
+  const look = governed && horizonLook ? horizonSquareLook(task.horizon) : null
   if (governed && onSetHorizon) {
-    return <HorizonDoneSquare task={task} onDone={onDone} onSetHorizon={onSetHorizon} />
+    return <HorizonDoneSquare task={task} look={look} onDone={onDone} onSetHorizon={onSetHorizon} />
   }
   return (
     <button
@@ -89,9 +100,9 @@ export function DoneControl({
         e.stopPropagation()
         onDone()
       }}
-      className={squareClasses(governed ? horizonSquareLook(task.horizon) : null)}
+      className={squareClasses(look)}
     >
-      <SquareFace look={governed ? horizonSquareLook(task.horizon) : null} />
+      <SquareFace look={look} />
     </button>
   )
 }
@@ -99,15 +110,17 @@ export function DoneControl({
 /** A governed square: a tap completes; a hold or a right-click opens the horizon menu. */
 function HorizonDoneSquare({
   task,
+  look,
   onDone,
   onSetHorizon,
 }: {
   task: Task
+  /** The horizon's look, or null for the plain square (outside Scan's Horizon sections). */
+  look: SquareLook | null
   onDone: () => void
   onSetHorizon: (horizon: HorizonValue | null) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const look = horizonSquareLook(task.horizon)
   const hint = horizonSquareHint(task.horizon)
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
