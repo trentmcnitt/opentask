@@ -27,14 +27,14 @@ export type CreatedBucket = 'today' | 'yesterday' | 'week' | 'month' | 'year' | 
  * Each bucket's grey step, R = G = B: light from white down, dark counted UP
  * from the page background (#0a0a0a, `--background`). Trent's GS2, lightened
  * at the young end on 2026-10-29 ("really starting out strong for something
- * that is two days old"): light 255 / 252 / 250 / 246 / 243 / 241, dark
- * +0 / +3 / +5 / +9 / +12 / +14. Drawn by the `.age-step-*` classes in
+ * that is two days old"; tuned again the same day): light 255 / 253 / 251 /
+ * 246 / 243 / 241, dark +0 / +2 / +4 / +9 / +12 / +14. Drawn by the `.age-step-*` classes in
  * globals.css (literal values, tunable in dev tools); a test keeps them equal.
  */
 export const AGE_STEP_GREYS: Readonly<Record<CreatedBucket, { light: number; dark: number }>> = {
   today: { light: 255, dark: 10 },
-  yesterday: { light: 252, dark: 13 },
-  week: { light: 250, dark: 15 },
+  yesterday: { light: 253, dark: 12 },
+  week: { light: 251, dark: 14 },
   month: { light: 246, dark: 19 },
   year: { light: 243, dark: 22 },
   earlier: { light: 241, dark: 24 },

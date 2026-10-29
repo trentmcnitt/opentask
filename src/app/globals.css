@@ -565,13 +565,13 @@
    `.age-step-week` (or another) in Styles, edit the value. `AGE_STEP_CLASS`
    (src/components/modes/age-step.ts) puts them on the rows; `AGE_STEP_GREYS`
    (src/lib/created-bucket.ts) is the same table, and a test keeps the two
-   equal. Light steps down from white, dark up from the page (+3 / +5 / +9 /
+   equal. Light steps down from white, dark up from the page (+2 / +4 / +9 /
    +12 / +14). */
 .age-step-yesterday {
-  background-color: rgb(252 252 252);
+  background-color: rgb(253 253 253);
 }
 .age-step-week {
-  background-color: rgb(250 250 250);
+  background-color: rgb(251 251 251);
 }
 .age-step-month {
   background-color: rgb(246 246 246);
@@ -583,10 +583,10 @@
   background-color: rgb(241 241 241);
 }
 .dark .age-step-yesterday {
-  background-color: rgb(13 13 13);
+  background-color: rgb(12 12 12);
 }
 .dark .age-step-week {
-  background-color: rgb(15 15 15);
+  background-color: rgb(14 14 14);
 }
 .dark .age-step-month {
   background-color: rgb(19 19 19);

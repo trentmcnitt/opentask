@@ -63,11 +63,11 @@ describe('createdBucket', () => {
 })
 
 describe('the age steps (GS2)', () => {
-  test('the greys: light down from white, dark up from the page (+0 / 3 / 5 / 9 / 12 / 14)', () => {
+  test('the greys: light down from white, dark up from the page (+0 / 2 / 4 / 9 / 12 / 14)', () => {
     expect(Object.values(AGE_STEP_GREYS).map((g) => g.light)).toEqual([
-      255, 252, 250, 246, 243, 241,
+      255, 253, 251, 246, 243, 241,
     ])
-    expect(Object.values(AGE_STEP_GREYS).map((g) => g.dark - 10)).toEqual([0, 3, 5, 9, 12, 14])
+    expect(Object.values(AGE_STEP_GREYS).map((g) => g.dark - 10)).toEqual([0, 2, 4, 9, 12, 14])
   })
 
   test('the row classes are plain .age-step-* classes in globals.css with those greys', () => {
