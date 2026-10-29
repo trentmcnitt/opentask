@@ -3,7 +3,8 @@ import Foundation
 /// THE LEAN ROW'S RULES on the native task rows (2026-10-28, Trent's rulings
 /// for the web's lean row, PR #410) — the Foundation-only mirror of
 /// `src/lib/lean-row-state.ts` (which tint), `src/lib/lean-chip-words.ts`
-/// (the deadline countdown, "Today" once per row) and
+/// (the deadline countdown, "Today" once per row — "Tonight" counts as
+/// Today) and
 /// `src/lib/horizon-square.ts` (the done square's border), plus the colours
 /// those rows draw in, as 0xRRGGBB light/dark pairs (`WidgetTheme`,
 /// `WatchTheme` and the Mac panel each make the `Color`: the watch and the
@@ -86,16 +87,25 @@ enum LeanRow {
 
     // MARK: - "Today" once per row
 
-    static let todayWord = "Today "
+    /// The day words that name today's OpenTask day. "Tonight" counts as
+    /// Today (Trent, 2026-10-29): a deadline "Tonight 12:30 AM" is the row's
+    /// one day word, so a target "Today 5:00 PM" beside it reads "5:00 PM".
+    static let todayWords = ["Today ", "Tonight "]
 
-    /// `leanChipWords`' last step: when the deadline's words say "Today", a
-    /// target today shows just its time ("Today 5:00 PM" → "5:00 PM"). Other
-    /// days are unchanged.
+    /// The today word `words` start with, or nil.
+    static func todayWord(_ words: String?) -> String? {
+        guard let words else { return nil }
+        return todayWords.first { words.hasPrefix($0) }
+    }
+
+    /// `leanChipWords`' last step: when the deadline's words say "Today" or
+    /// "Tonight", a target today or tonight shows just its time ("Today
+    /// 5:00 PM" → "5:00 PM"). Other days are unchanged.
     static func todayOnce(deadline: String?, target: String?) -> String? {
-        guard let target, let deadline, target.hasPrefix(todayWord), deadline.hasPrefix(todayWord) else {
+        guard let target, let word = todayWord(target), todayWord(deadline) != nil else {
             return target
         }
-        return String(target.dropFirst(todayWord.count))
+        return String(target.dropFirst(word.count))
     }
 
     // MARK: - The horizon done square

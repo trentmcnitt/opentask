@@ -104,6 +104,14 @@ final class LeanRowTests: XCTestCase {
         XCTAssertNil(LeanRow.todayOnce(deadline: "Today 9:00 PM", target: nil))
     }
 
+    func testTonightCountsAsToday() {
+        XCTAssertEqual(LeanRow.todayOnce(deadline: "Tonight 12:30 AM", target: "Today 5:00 PM"), "5:00 PM")
+        XCTAssertEqual(LeanRow.todayOnce(deadline: "Tonight 2:00 AM", target: "Tonight 1:00 AM"), "1:00 AM")
+        XCTAssertEqual(LeanRow.todayOnce(deadline: "Today 9:00 PM", target: "Tonight 1:00 AM"), "1:00 AM")
+        XCTAssertEqual(LeanRow.todayOnce(deadline: "Fri 5:00 PM", target: "Tonight 1:00 AM"), "Tonight 1:00 AM")
+        XCTAssertEqual(LeanRow.todayOnce(deadline: nil, target: "Tonight 1:00 AM"), "Tonight 1:00 AM")
+    }
+
     // MARK: - The horizon square (horizon-square.test.ts)
 
     func testUnsetLooksLikeWhateverUnsetMeans() {
