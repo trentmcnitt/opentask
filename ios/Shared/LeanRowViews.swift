@@ -31,8 +31,7 @@ enum LeanRowStyle {
 
     /// The row's tint, nil for none.
     static func tint(_ state: LeanRow.State?, _ scheme: ColorScheme) -> Color? {
-        guard let state else { return nil }
-        let pair = LeanRow.tint(state)
+        guard let state, let pair = LeanRow.tint(state) else { return nil }
         let tone = scheme == .dark ? pair.dark : pair.light
         return color(tone.hex, alpha: tone.alpha)
     }

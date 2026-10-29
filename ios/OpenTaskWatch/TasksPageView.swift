@@ -183,10 +183,11 @@ private struct TaskRow: View {
 
     /// The list platter's grey on watchOS 26 (#222223, read off a render)
     /// with the state's dark tint (`LeanRow.tint`) composited over it —
-    /// opaque, since a platter tint replaces the platter's colour.
-    static func platterTint(_ state: LeanRow.State) -> Color {
+    /// opaque, since a platter tint replaces the platter's colour. Nil for a
+    /// state with no tint (later today, since 2026-10-29): the plain platter.
+    static func platterTint(_ state: LeanRow.State) -> Color? {
         let platter: (r: Double, g: Double, b: Double) = (34, 34, 35)
-        let tone = LeanRow.tint(state).dark
+        guard let tone = LeanRow.tint(state)?.dark else { return nil }
         let a = tone.alpha
         func mix(_ base: Double, _ shift: UInt32) -> Double {
             (base * (1 - a) + Double((tone.hex >> shift) & 0xFF) * a) / 255
@@ -230,7 +231,7 @@ private struct TaskRow: View {
         // system platter (its shape and insets kept), with
         // the tint laid over the platter's own grey (`platterTint`), so a
         // tinted row reads as the web's tint over its row, not a new hue.
-        .listItemTint(state.map { ListItemTint.fixed(Self.platterTint($0)) })
+        .listItemTint(state.flatMap(Self.platterTint).map { ListItemTint.fixed($0) })
     }
 }
 

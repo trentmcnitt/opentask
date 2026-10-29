@@ -232,14 +232,15 @@ enum LeanRow {
     /// The row's tint (`STATE_LOOK`): over target an opaque sky-leaning blue
     /// in light (#d6eeff, Trent's pick of 2026-10-29 in dev tools — E2 rgb
     /// 231 245 255 before), the target's blue at 12.5% in dark; later today
-    /// #f5fbff in light (a quarter of the over tint's strength), the blue
-    /// at 3.125% in dark; a warm red (rgb 200 20 10) at 9.8% light, red-400 at
+    /// NO tint since 2026-10-29 (Trent: "drop the later-today tint for now" —
+    /// maybe back on the web's Scan or All only; the `.soon` state is kept);
+    /// a warm red (rgb 200 20 10) at 9.8% light, red-400 at
     /// 14% dark, once the deadline passed; that red at 1.75× (17.15% / 24.5%)
-    /// once the target has passed too.
-    static func tint(_ state: State) -> (light: Tone, dark: Tone) {
+    /// once the target has passed too. Nil: the row draws plain.
+    static func tint(_ state: State) -> (light: Tone, dark: Tone)? {
         switch state {
         case .over: return (Tone(hex: 0xD6EEFF, alpha: 1), Tone(hex: 0x51A2FF, alpha: 0.125))
-        case .soon: return (Tone(hex: 0xF5FBFF, alpha: 1), Tone(hex: 0x51A2FF, alpha: 0.03125))
+        case .soon: return nil
         case .passed: return (Tone(hex: 0xC8140A, alpha: 0.098), Tone(hex: 0xFF6467, alpha: 0.14))
         case .bothPassed: return (Tone(hex: 0xC8140A, alpha: 0.1715), Tone(hex: 0xFF6467, alpha: 0.245))
         }
