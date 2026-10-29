@@ -82,11 +82,15 @@ import { LeanButtons } from './LeanButtons'
 /**
  * The row's STATE LOOK (Trent 2026-10-28, today-mode round 6): a full-bleed
  * tint under the row's content, no bar (`leanRowState` picks it).
- * - Later today (a target or deadline, not yet over): a faint blue — light
- *   rgb(249,252,255) since 2026-10-29 (it was the target's blue at 2.5%),
+ * - Later today (a target or deadline, not yet over): NO TINT since
+ *   2026-10-29 (Trent: "drop the later-today tint for now"; he may want it
+ *   back on Scan or All only). The state stays (`data-row-state="soon"`) and
+ *   the row draws plain. It was a faint blue (#f5fbff that day; the target's
+ *   blue at 2.5% before),
  *   dark the blue at 3.125%; the title unchanged.
- * - Over target: a sky-leaning blue — light rgb(231,245,255) since
- *   2026-10-29 (Trent's E2, "bluer"; it was the target's blue at 10%), dark
+ * - Over target: a sky-leaning blue — light #d6eeff since 2026-10-29
+ *   (Trent's pick in dev tools; E2 rgb(231,245,255) that morning, the
+ *   target's blue at 10% before), dark
  *   the target's blue at 12.5%. The title keeps the normal ink (Trent,
  *   2026-10-29: "I don't know why that text is faded… just leave it full
  *   black"; it was a slate #263d4d / #d3dcec) at 600.
@@ -102,9 +106,8 @@ import { LeanButtons } from './LeanButtons'
 const TINT_BASE =
   "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:top-0 before:-bottom-px before:-z-10 before:content-['']"
 const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
-  soon: {
-    row: `${TINT_BASE} lean-tint-soon`,
-  },
+  // Later today: no tint for now (Trent, 2026-10-29) — the state is kept.
+  soon: { row: '' },
   over: {
     row: `${TINT_BASE} lean-tint-over`,
   },
@@ -135,7 +138,7 @@ function stateFlags(
 /** The row's tint classes: the state's, or both-passed's stronger red. */
 function tintClass(state: LeanRowState | null, isOverdue: boolean): string | undefined {
   if (state === 'passed' && isOverdue) return BOTH_PASSED_ROW
-  return state ? STATE_LOOK[state].row : undefined
+  return state ? STATE_LOOK[state].row || undefined : undefined
 }
 
 /**
