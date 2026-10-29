@@ -336,6 +336,50 @@ test.describe('Lean row · the horizon done square', () => {
   }
 })
 
+test.describe('Lean row · was', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  // Trent, 2026-10-29: "Today 2:00 PM · was 9:00 AM" — a target moved within
+  // its day says where it started; one targeted there from the start says
+  // nothing (`target_day_first_at`).
+  test('a target moved within its day shows "was" its first time; an untouched one does not', async ({
+    authenticatedPage: page,
+  }) => {
+    await page.addInitScript(LEAN)
+    const first = await laterToday(page)
+    // Earlier the same OpenTask day (laterToday is at most 40 minutes out).
+    const moved = new Date(first.getTime() - 20 * 60 * 1000)
+    const ids = {
+      moved: await create(page, { title: uniqueTitle('LR was'), due_at: first.toISOString() }),
+      still: await create(page, { title: uniqueTitle('LR kept'), due_at: first.toISOString() }),
+    }
+    try {
+      const res = await page.request.patch(`/api/tasks/${ids.moved}`, {
+        data: { due_at: moved.toISOString() },
+      })
+      expect(res.ok(), await res.text()).toBeTruthy()
+      const served = (await stateOf(page, ids.moved)) as { target_day_first_at: string }
+      expect(new Date(served.target_day_first_at).getTime()).toBe(first.getTime())
+
+      await gotoDashboard(page)
+      const was = row(page, ids.moved).locator('[data-target-was]')
+      await expect(was).toHaveText(/^was \d{1,2}:\d{2} [AP]M$/)
+      // Right after the target chip.
+      expect(
+        await row(page, ids.moved)
+          .locator('[data-time-chip="target"]')
+          .evaluate(
+            (c, w) => c.compareDocumentPosition(w!) & Node.DOCUMENT_POSITION_FOLLOWING,
+            await was.elementHandle(),
+          ),
+      ).toBeTruthy()
+      await expect(row(page, ids.still).locator('[data-target-was]')).toHaveCount(0)
+    } finally {
+      await cleanUp(page, Object.values(ids))
+    }
+  })
+})
+
 test.describe('Lean row · changing the horizon from the square', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
