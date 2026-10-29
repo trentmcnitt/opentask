@@ -131,7 +131,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// string (an unknown value must never fail a decode); no native surface
     /// offers it (the offer lives in the app).
     let attemptsOffer: String?
-    /// The age badge, ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo", on a task with
+    /// The age badge, "old" (one word since 2026-10-29; it was ">1 wk" / ">1 mo" / …), on a task with
     /// neither a target nor a deadline, past its horizon's threshold; else nil.
     let ageLabel: String?
     /// UTC ISO 8601 — Process's "keep" on a growth ask. Decoded for the
@@ -638,7 +638,7 @@ enum SegmentKind: Hashable {
         return false
     }
 
-    /// Whether a row wears the two badges ("3×", ">1 mo"). No badges on a
+    /// Whether a row wears the two badges ("3×", "old"). No badges on a
     /// queue row (designer, 10-19): the queue is read at a glance, and a
     /// waiting repeating task there would read "226×".
     var showsBadges: Bool { !isQueue }

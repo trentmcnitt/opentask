@@ -893,7 +893,7 @@ describe('contract fixtures (native clients)', () => {
 
     // 12. The two badges (spec §7, 2026-10-12), as GET /api/tasks/{id} returns
     //     them (the content extension reads it): an undated task written down
-    //     40 days ago (`age_label` ">1 mo"); a task over target since two days
+    //     40 days ago (`age_label` "old"); a task over target since two days
     //     ago (`attempts` 3, `attempts_label` "3×", `attempts_offer`
     //     "remove"); the same with a deadline ahead (`attempts_offer` "auto").
     //     Created and targeted five days ago, backdated in the DB, so every

@@ -488,8 +488,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         cal.timeZone = TimeZone(identifier: "America/Chicago")!
         let nb = "\u{00A0}"
         let dot = "\(nb)· "
-        let undated = TaskDTO(id: 1, title: "Garage", horizon: "weeks", ageLabel: ">1 mo")
-        XCTAssertEqual(undated.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), ">1\(nb)mo")
+        let undated = TaskDTO(id: 1, title: "Garage", horizon: "weeks", ageLabel: "old")
+        XCTAssertEqual(undated.segmentMeta(segmentHorizon: "weeks", now: now, calendar: cal), "old")
         let moved = TaskDTO(
             id: 2, title: "Hinges", dueAt: "2026-10-14T14:00:00.000Z", deadlineAt: "2026-10-17T22:00:00.000Z",
             attempts: 3, attemptsLabel: "3×"

@@ -6110,9 +6110,10 @@ components:
         age_label:
           type: [string, 'null']
           description: >
-            The age badge (spec §7): ">1 wk" (days), ">1 mo" (weeks or unset), ">3 mo" (months),
-            ">6 mo" (eventually) — only on a one-off with neither a target nor a deadline, once
-            `created_at` is past its horizon's threshold. Null otherwise.
+            The age badge (spec §7): "old" — one word for every horizon since 2026-10-29 (it was
+            ">1 wk" / ">1 mo" / ">3 mo" / ">6 mo") — only on a one-off with neither a target nor a
+            deadline, once `created_at` is past its horizon's threshold (days 10 days, weeks or
+            unset 1 month, months a quarter, eventually 6 months). Null otherwise.
         growth_kept_at:
           type: [string, 'null']
           format: date-time

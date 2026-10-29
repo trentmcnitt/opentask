@@ -169,7 +169,7 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     expect(tt.ok()).toBeTruthy()
     await strip(page, { today: [fresh, tryTomorrow] })
     // Made 40 days ago: an undated task past the weeks threshold has an age
-    // badge (">1 mo") everywhere but the queue.
+    // badge ("old") everywhere but the queue.
     sql(
       `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-40 days') WHERE id = ?`,
       old,

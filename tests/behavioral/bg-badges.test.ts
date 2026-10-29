@@ -262,11 +262,12 @@ describe('BG: age', () => {
   afterEach(() => vi.useRealTimers())
 
   test.each([
-    ['days', '2026-10-05T09:00', '2026-10-05T08:59', '>1 wk'],
-    ['weeks', '2026-09-12T09:00', '2026-09-12T08:59', '>1 mo'],
-    [null, '2026-09-12T09:00', '2026-09-12T08:59', '>1 mo'],
-    ['months', '2026-07-12T09:00', '2026-07-12T08:59', '>3 mo'],
-    ['eventually', '2026-04-12T09:00', '2026-04-12T08:59', '>6 mo'],
+    // Days: 10 days (2026-10-29; it was 7, ">1 wk").
+    ['days', '2026-10-02T09:00', '2026-10-02T08:59', 'old'],
+    ['weeks', '2026-09-12T09:00', '2026-09-12T08:59', 'old'],
+    [null, '2026-09-12T09:00', '2026-09-12T08:59', 'old'],
+    ['months', '2026-07-12T09:00', '2026-07-12T08:59', 'old'],
+    ['eventually', '2026-04-12T09:00', '2026-04-12T08:59', 'old'],
   ] as const)(
     'BG-020: %s — exactly at the threshold no; a minute past, %s',
     (horizon, edge, past, label) => {
@@ -280,7 +281,7 @@ describe('BG: age', () => {
     const created = at('2026-01-01T09:00')
     const t = make({})
     getDb().prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(created, t.id)
-    expect(formatTaskResponse(getTaskById(t.id)!, tz).age_label).toBe('>1 mo')
+    expect(formatTaskResponse(getTaskById(t.id)!, tz).age_label).toBe('old')
     const base = { created_at: created, due_at: null, deadline_at: null, horizon: null }
     expect(ageLabel({ ...base, due_at: at('2026-10-20T09:00') }, new Date())).toBeNull()
     expect(ageLabel({ ...base, deadline_at: at('2026-12-20T09:00') }, new Date())).toBeNull()
@@ -301,13 +302,13 @@ describe('BG: age', () => {
     // Nov 30 at 6 AM Chicago (12:00 UTC): past the UTC month, not the local one.
     clock('2026-11-30T06:00')
     const task = getTaskById(t.id)!
-    expect(ageLabel(task, new Date(), 'utc')).toBe('>1 mo') // what the server used to send
+    expect(ageLabel(task, new Date(), 'utc')).toBe('old') // what the server used to send
     expect(label()).toBeNull()
     expect(label()).toBe(ageLabel(task, new Date(), tz)) // the web row (TaskRow)
-    // Exactly at the local threshold: not yet; a minute past: >1 mo.
+    // Exactly at the local threshold: not yet; a minute past: old.
     clock('2026-11-30T22:00')
     expect(label()).toBeNull()
     clock('2026-11-30T22:01')
-    expect(label()).toBe('>1 mo')
+    expect(label()).toBe('old')
   })
 })
