@@ -347,10 +347,10 @@ function TaskPageBody({
           {visible.map((row, i) => {
             const narrowHidden = !expanded && i >= NARROW_CAP
             // Aged out's group headings (2026-10-29).
-            const group = agedGroupBefore(segment.horizon, visible, i)
+            const heading = agedGroupBefore(segment.horizon, visible, i)
             return (
               <Fragment key={row.task.id}>
-                {group && <AgedGroupHeading group={group} panel hiddenWhenNarrow={narrowHidden} />}
+                {heading && <AgedGroupHeading {...heading} panel hiddenWhenNarrow={narrowHidden} />}
                 <TaskSegmentRow
                   row={row}
                   actions={actions}

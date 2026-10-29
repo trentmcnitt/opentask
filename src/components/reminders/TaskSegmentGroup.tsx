@@ -185,10 +185,10 @@ export function TaskSegmentGroup({
             <ul className="space-y-0.5 px-1" aria-label={label}>
               {waiting.map((row, i) => {
                 // Aged out's group headings (2026-10-29).
-                const group = agedGroupBefore(segment.horizon, waiting, i)
+                const heading = agedGroupBefore(segment.horizon, waiting, i)
                 return (
                   <Fragment key={row.task.id}>
-                    {group && <AgedGroupHeading group={group} panel={false} />}
+                    {heading && <AgedGroupHeading {...heading} panel={false} />}
                     <TaskSegmentRow
                       row={row}
                       actions={actions}

@@ -21,7 +21,7 @@ import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
-import { HorizonDotButton, HorizonMenuContent } from '@/components/HorizonDot'
+import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
 import { useLabelConfig } from '@/components/PreferencesProvider'
@@ -983,6 +983,8 @@ function GrowButton({
         className={cn(
           'group/grow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
           SLOT_HIT,
+          // From `sm` up it says where it grows to (A5): wider than the slot.
+          'sm:w-auto',
         )}
       >
         {/* The menu's anchor: inert, so only the hold or right-click opens it. */}
@@ -991,11 +993,18 @@ function GrowButton({
         </DropdownMenuTrigger>
         <span
           className={cn(
-            'group-hover/grow:bg-foreground/5 flex items-center justify-center rounded-md transition-colors',
+            'group-hover/grow:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
             panel ? DECK_BOX.panel : DECK_BOX.page,
+            'sm:w-auto sm:px-1.5',
           )}
         >
           <Sprout className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
+          {/* Where it grows to (Trent, 2026-10-29, A5: "that's a nice touch"):
+              "Weeks", "Months", "Eventually" — desktop only; a phone shows
+              the sprout alone, so the title keeps its width. */}
+          <span data-grow-word className="hidden text-xs font-medium sm:inline">
+            {HORIZON_LABELS[to]}
+          </span>
         </span>
       </button>
       <HorizonMenuContent
@@ -1477,28 +1486,32 @@ function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
 
 /**
  * AGED OUT'S GROUP HEADINGS (Trent, 2026-10-29: "add little categories… so
- * that all the days, then all the weeks and months… are just grouped"; the
- * cutoff chip after each title "keeps changing position"). The rows come
- * sorted by group (`compareAgedOut`); a heading goes before the first row of
- * each group, so an empty group has none: "Days · >10 days", "Weeks · >1
- * month" (unset rows read as Weeks), "Months · >3 months".
+ * that all the days, then all the weeks and months… are just grouped"; his
+ * pick, A3 with the dot): a quiet pill — the horizon's dot, so the heading
+ * teaches it, then its name — the group's count, and the cutoff faint on the
+ * right ("DAYS 3 … >10 days"). The rows come sorted by group
+ * (`compareAgedOut`); a heading goes before each group's first row, so an
+ * empty group has none. Unset rows read as Weeks.
  */
 export function agedGroupBefore(
   segmentHorizon: SegmentKind,
   rows: readonly SegmentRow[],
   index: number,
-): AgedOutGroup | null {
+): { group: AgedOutGroup; count: number } | null {
   if (segmentHorizon !== 'aged_out') return null
   const group = agedOutGroup(rows[index].task.horizon)
-  return index > 0 && agedOutGroup(rows[index - 1].task.horizon) === group ? null : group
+  if (index > 0 && agedOutGroup(rows[index - 1].task.horizon) === group) return null
+  return { group, count: rows.filter((r) => agedOutGroup(r.task.horizon) === group).length }
 }
 
 export function AgedGroupHeading({
   group,
+  count,
   panel,
   hiddenWhenNarrow = false,
 }: {
   group: AgedOutGroup
+  count: number
   panel: boolean
   hiddenWhenNarrow?: boolean
 }) {
@@ -1507,12 +1520,19 @@ export function AgedGroupHeading({
       role="presentation"
       data-aged-group={group}
       className={cn(
-        'text-muted-foreground pt-2 pb-0.5 text-[11px] font-semibold',
+        'flex items-center gap-2 pt-3 pb-1',
         panel ? 'px-1' : 'px-2',
-        hiddenWhenNarrow && 'hidden xl:block',
+        hiddenWhenNarrow && 'hidden xl:flex',
       )}
     >
-      {HORIZON_LABELS[group]} · {cutoffWords(group)}
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0f3] px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] text-slate-600 uppercase dark:bg-white/[0.08] dark:text-slate-300">
+        <HorizonDotMark horizon={group} />
+        {HORIZON_LABELS[group]}
+      </span>
+      <span className="text-muted-foreground/70 text-xs tabular-nums">{count}</span>
+      <span data-aged-cutoff className="text-muted-foreground/60 ml-auto text-[11.5px]">
+        {cutoffWords(group)}
+      </span>
     </li>
   )
 }
