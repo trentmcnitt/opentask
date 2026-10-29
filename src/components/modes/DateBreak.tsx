@@ -11,6 +11,7 @@ import { CREATED_BUCKETS, type CreatedBucket } from '@/lib/created-bucket'
  * drawn on the boundary (`-top-[7px]`, the line straddling it), and the list
  * hides the hairline it replaces (`DATE_BREAK_CONTAINER`).
  *
+ * The whole break is at 50% opacity (2026-10-29, Trent tried it on dev).
  * Line and label are the bucket colour mixed 30% toward the page background
  * (`color-mix`, not opacity — nothing shows through the label), in either
  * theme: `--background` is the page's own, light or dark. The line is two
@@ -25,7 +26,9 @@ export function DateBreak({ bucket }: { bucket: CreatedBucket }) {
       data-date-break={bucket}
       role="separator"
       aria-label={label}
-      className="relative z-[3] h-0"
+      // Half strength (Trent, 2026-10-29, after trying opacity .5 on dev):
+      // the 30% line and label, at 50% on the whole break.
+      className="relative z-[3] h-0 opacity-50"
       style={{ '--bc': color } as CSSProperties}
     >
       <div className="absolute inset-x-0 -top-[7px] flex h-[14px] items-center gap-1.5">

@@ -383,63 +383,40 @@ test.describe('Dashboard modes · phone', () => {
   })
 })
 
-test.describe("Scan · the horizon square's look", () => {
-  for (const [scheme, scale] of [
-    ['light', 1],
-    ['dark', 2],
-  ] as const) {
-    test.describe(`${scheme} at ${scale}x`, () => {
-      test.use({
-        viewport: { width: 1280, height: 800 },
-        colorScheme: scheme,
-        deviceScaleFactor: scale,
-      })
+test.describe('Scan · plain squares, the horizon dot', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
 
-      // Trent, 2026-10-29: the square draws its horizon only in the Horizon
-      // sections ("it doesn't bother me in the Horizon category"); the same
-      // task in Newest has the plain square.
-      test('patterned in the Horizon sections only: Days plain, Weeks / Months / Eventually drawn, unset as UNSET_HORIZON', async ({
-        authenticatedPage: page,
-      }) => {
-        const made = {
-          days: await create(page, { title: uniqueTitle('MD hz days'), horizon: 'days' }),
-          weeks: await create(page, { title: uniqueTitle('MD hz weeks'), horizon: 'weeks' }),
-          months: await create(page, { title: uniqueTitle('MD hz months'), horizon: 'months' }),
-          eventually: await create(page, { title: uniqueTitle('MD hz ev'), horizon: 'eventually' }),
-          unset: await create(page, { title: uniqueTitle('MD hz unset') }),
-        }
-        try {
-          await open(page, 'pick-mode')
-          const inSection = (id: string, task: number) =>
-            rowIn(section(page, id), task).locator('[data-lean-done]')
-          const border = (l: Locator) => l.locator('[data-horizon-border]')
-
-          // Days: the plain checkbox itself, even here.
-          await expect(border(inSection('horizon-days', made.days))).toHaveCount(0)
-          for (const h of ['weeks', 'months', 'eventually'] as const) {
-            await expect(border(inSection(`horizon-${h}`, made[h]))).toHaveCount(1)
-          }
-          // Unset looks like UNSET_HORIZON (weeks today): the same pattern.
-          const unset = border(inSection('horizon-unset', made.unset))
-          expect(await unset.innerHTML()).toBe(
-            await border(inSection('horizon-weeks', made.weeks)).innerHTML(),
-          )
-          // The same task in Newest: the plain square, still naming its horizon.
-          const plain = inSection('newest', made.months)
-          await expect(plain).toHaveAttribute('data-horizon-square', 'months')
-          await expect(border(plain)).toHaveCount(0)
-
-          // Each density draws its own stroke: 1px at 1x, 1.5px at 2x.
-          const shown = await border(inSection('horizon-weeks', made.weeks)).evaluate((svg) =>
-            [...svg.querySelectorAll('g')]
-              .filter((g) => getComputedStyle(g).display !== 'none')
-              .map((g) => g.getAttribute('stroke-width')),
-          )
-          expect(shown).toEqual([scale === 1 ? '1' : '1.5'])
-        } finally {
-          await cleanUp(page, Object.values(made))
-        }
-      })
-    })
-  }
+  // Trent, 2026-10-29: "fully consistent checkboxes everywhere" — the square
+  // is plain in the Horizon sections too; the horizon is the meta line's dot,
+  // unset drawn as the Weeks dot.
+  test('every square in Scan is plain, the Horizon sections included; each one-off wears its dot', async ({
+    authenticatedPage: page,
+  }) => {
+    const made = {
+      weeks: await create(page, { title: uniqueTitle('MD hz weeks'), horizon: 'weeks' }),
+      months: await create(page, { title: uniqueTitle('MD hz months'), horizon: 'months' }),
+      unset: await create(page, { title: uniqueTitle('MD hz unset') }),
+    }
+    try {
+      await open(page, 'pick-mode')
+      for (const [id, task] of [
+        ['horizon-weeks', made.weeks],
+        ['horizon-months', made.months],
+        ['horizon-unset', made.unset],
+        ['newest', made.months],
+      ] as const) {
+        const r = rowIn(section(page, id), task)
+        await expect(r.locator('[data-lean-done] [data-horizon-border]')).toHaveCount(0)
+        await expect(r.locator('[data-lean-meta] [data-horizon-dot]')).toHaveCount(1)
+      }
+      const r = (id: string, task: number) =>
+        rowIn(section(page, id), task).locator('[data-lean-meta] [data-horizon-dot] circle')
+      expect(await r('horizon-unset', made.unset).getAttribute('r')).toBe(
+        await r('horizon-weeks', made.weeks).getAttribute('r'),
+      )
+      expect(await r('horizon-unset', made.unset).getAttribute('fill')).toBe('currentColor')
+    } finally {
+      await cleanUp(page, Object.values(made))
+    }
+  })
 })
