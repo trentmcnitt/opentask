@@ -650,9 +650,14 @@ test.describe('Lean row · swipe with a mouse', () => {
         // list's first row (Control: the app reads Cmd or Ctrl from the user
         // agent, and the Desktop Chrome device reports Windows), then down
         // until it is this one, each press landing before the next.
+        // A first arrow switches the keyboard on (it may land on the row under
+        // the mouse); Ctrl+Up then takes the list's first row.
         const focusedId = () => page.evaluate(() => document.activeElement?.id ?? '')
-        await page.keyboard.press('Control+ArrowUp')
+        await page.keyboard.press('ArrowDown')
         await expect.poll(focusedId).toMatch(/^task-row-\d+$/)
+        const firstId = await page.locator('[role="option"]').first().getAttribute('id')
+        await page.keyboard.press('Control+ArrowUp')
+        await expect.poll(focusedId).toBe(firstId)
         const rowCount = await page.locator('[role="option"]').count()
         for (let i = 0; i < rowCount && (await focusedId()) !== `task-row-${id}`; i++) {
           const before = await focusedId()
