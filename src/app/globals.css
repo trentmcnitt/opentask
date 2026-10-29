@@ -557,3 +557,43 @@
 .dark .lean-tint-late-both::before {
   background-color: rgb(255 100 103 / 0.245);
 }
+
+/* SCAN'S AGE STEPS (2026-10-29, GS2; lightened at the young end the same
+   day — Trent: "really starting out strong for something that is two days
+   old"). Plain classes with literal values, like the row tints, so they can be
+   tuned live in dev tools: select a row's swipe foreground, find
+   `.age-step-week` (or another) in Styles, edit the value. `AGE_STEP_CLASS`
+   (src/components/modes/age-step.ts) puts them on the rows; `AGE_STEP_GREYS`
+   (src/lib/created-bucket.ts) is the same table, and a test keeps the two
+   equal. Light steps down from white, dark up from the page (+3 / +5 / +9 /
+   +12 / +14). */
+.age-step-yesterday {
+  background-color: rgb(252 252 252);
+}
+.age-step-week {
+  background-color: rgb(250 250 250);
+}
+.age-step-month {
+  background-color: rgb(246 246 246);
+}
+.age-step-year {
+  background-color: rgb(243 243 243);
+}
+.age-step-earlier {
+  background-color: rgb(241 241 241);
+}
+.dark .age-step-yesterday {
+  background-color: rgb(13 13 13);
+}
+.dark .age-step-week {
+  background-color: rgb(15 15 15);
+}
+.dark .age-step-month {
+  background-color: rgb(19 19 19);
+}
+.dark .age-step-year {
+  background-color: rgb(22 22 22);
+}
+.dark .age-step-earlier {
+  background-color: rgb(24 24 24);
+}

@@ -5,6 +5,8 @@
  */
 import { describe, expect, test } from 'vitest'
 import { DateTime } from 'luxon'
+import fs from 'node:fs'
+import path from 'node:path'
 import { AGE_STEP_GREYS, createdBucket } from '@/lib/created-bucket'
 import { AGE_STEP_CLASS } from '@/components/modes/age-step'
 
@@ -61,21 +63,30 @@ describe('createdBucket', () => {
 })
 
 describe('the age steps (GS2)', () => {
-  test('the greys: light down from white, dark up from the page (+0 / 6 / 11 / 14 / 16 / 17)', () => {
+  test('the greys: light down from white, dark up from the page (+0 / 3 / 5 / 9 / 12 / 14)', () => {
     expect(Object.values(AGE_STEP_GREYS).map((g) => g.light)).toEqual([
-      255, 249, 244, 241, 239, 238,
+      255, 252, 250, 246, 243, 241,
     ])
-    expect(Object.values(AGE_STEP_GREYS).map((g) => g.dark - 10)).toEqual([0, 6, 11, 14, 16, 17])
+    expect(Object.values(AGE_STEP_GREYS).map((g) => g.dark - 10)).toEqual([0, 3, 5, 9, 12, 14])
   })
 
-  test('the row classes are those greys, R = G = B, today the page itself', () => {
+  test('the row classes are plain .age-step-* classes in globals.css with those greys', () => {
+    const css = fs.readFileSync(path.join(process.cwd(), 'src/app/globals.css'), 'utf8')
     expect(AGE_STEP_CLASS.today).toBe('bg-background')
     for (const [bucket, grey] of Object.entries(AGE_STEP_GREYS)) {
       if (bucket === 'today') continue
       const cls = AGE_STEP_CLASS[bucket as keyof typeof AGE_STEP_CLASS]
-      expect(cls).toBe(
-        `bg-[rgb(${grey.light},${grey.light},${grey.light})] dark:bg-[rgb(${grey.dark},${grey.dark},${grey.dark})]`,
-      )
+      expect(cls).toBe(`age-step-${bucket}`)
+      // `.age-step-week {` / `.dark .age-step-week {`, then its rgb(r g b).
+      const rule = (selector: string) => {
+        const at = css.indexOf(`\n${selector} {\n`)
+        const m = /background-color: rgb\((\d+) (\d+) (\d+)\);/.exec(css.slice(at))
+        return at < 0 || !m ? null : m.slice(1, 4).map(Number)
+      }
+      const light = rule(`.${cls}`)
+      const dark = rule(`.dark .${cls}`)
+      expect(light).toEqual([grey.light, grey.light, grey.light])
+      expect(dark).toEqual([grey.dark, grey.dark, grey.dark])
     }
   })
 })
