@@ -155,12 +155,15 @@ final class LeanRowTests: XCTestCase {
         XCTAssertTrue(LeanRow.horizonGoverns(task(due: "2026-11-05T09:00", targetAuto: true)), "an automatic target is not a pick")
     }
 
-    func testARowsSquareIsPlainUnlessTheHorizonGoverns() {
-        XCTAssertEqual(LeanRow.squareLook(for: task(horizon: "eventually")), .dots)
-        XCTAssertEqual(LeanRow.squareLook(for: task()), .dashes, "unset reads as Weeks")
-        XCTAssertEqual(LeanRow.squareLook(for: task(due: "2026-11-05T09:00", horizon: "eventually")), .dots, "targeted too")
-        XCTAssertEqual(LeanRow.squareLook(for: task(deadline: "2026-11-05T09:00", horizon: "eventually")), .dots, "a deadline task: its set horizon")
-        XCTAssertEqual(LeanRow.squareLook(for: task(rrule: "FREQ=WEEKLY", horizon: "eventually")), .solid, "a repeat: plain")
+    func testARowsSquareIsPlainOutsideAHorizonSection() {
+        // Every native list: the plain square, whatever the horizon (2026-10-29).
+        XCTAssertEqual(LeanRow.squareLook(for: task(horizon: "eventually")), .solid)
+        XCTAssertEqual(LeanRow.squareLook(for: task(due: "2026-11-05T09:00", horizon: "months")), .solid)
+        // A Horizon section (the web's Scan) draws the set horizon; unset reads as Weeks.
+        XCTAssertEqual(LeanRow.squareLook(for: task(horizon: "eventually"), inHorizonSection: true), .dots)
+        XCTAssertEqual(LeanRow.squareLook(for: task(), inHorizonSection: true), .dashes, "unset reads as Weeks")
+        XCTAssertEqual(LeanRow.squareLook(for: task(deadline: "2026-11-05T09:00", horizon: "eventually"), inHorizonSection: true), .dots)
+        XCTAssertEqual(LeanRow.squareLook(for: task(rrule: "FREQ=WEEKLY", horizon: "eventually"), inHorizonSection: true), .solid, "a repeat: plain")
         XCTAssertEqual(LeanRow.squareAccessibilityLabel(.days), "Horizon Days")
         XCTAssertEqual(LeanRow.squareAccessibilityLabel(nil), "Horizon unset")
     }

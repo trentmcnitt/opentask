@@ -28,9 +28,10 @@ import Foundation
 ///   so no countdown (`countdownWords`) and no "Today" to say once
 ///   (`todayOnce`; a native target today is already its time alone,
 ///   `DueLabel.parts`);
-/// (Since 2026-10-29 the horizon square IS drawn: `horizonGoverns` takes every
-/// one-off, so the Tasks widget's square shows the horizon on all but its
-/// repeating rows — `HorizonSquare`.)
+/// - the horizon's look on the square (`squareLook(for:)`): the web draws it
+///   only in Scan's Horizon sections (2026-10-29), and no native list is
+///   one, so every native square is plain; `horizonGoverns` (every one-off)
+///   and the looks stay pinned by tests.
 ///
 /// Pure: the clock and the OpenTask day come in. Tested by `LeanRowTests`,
 /// the web's own cases.
@@ -144,10 +145,13 @@ enum LeanRow {
         }
     }
 
-    /// The square a row draws: the horizon's look where the horizon governs,
-    /// else the plain square.
-    static func squareLook(for task: TaskDTO) -> SquareLook {
-        horizonGoverns(task) ? squareLook(RowCorner.horizon(of: task)) : .solid
+    /// The square a row draws: the horizon's look only in a Horizon section
+    /// (the web's Scan, where every row shares one horizon — Trent,
+    /// 2026-10-29: "my eye doesn't like that the task checkbox is changing
+    /// shape"), else the plain square. No native list is a Horizon section,
+    /// so every native square is plain.
+    static func squareLook(for task: TaskDTO, inHorizonSection: Bool = false) -> SquareLook {
+        inHorizonSection && horizonGoverns(task) ? squareLook(RowCorner.horizon(of: task)) : .solid
     }
 
     /// The native square's geometry (the Tasks widget's check-off): 16pt, a
