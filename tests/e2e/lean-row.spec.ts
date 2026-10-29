@@ -225,6 +225,18 @@ test.describe('Lean row · look', () => {
               await badge.elementHandle(),
             ),
           ).toBeTruthy()
+          // One gap between every meta item (Trent, 2026-10-29): chip → "2×"
+          // as wide as "2×" → created (no hidden ✕ box after the chip).
+          const created = o.locator('[data-created]')
+          const [c, b, d] = [
+            (await chip.boundingBox())!,
+            (await badge.boundingBox())!,
+            (await created.boundingBox())!,
+          ]
+          expect(b.x - (c.x + c.width)).toBeCloseTo(d.x - (b.x + b.width), 0)
+          // The tint covers the row's bottom border: no seam between two
+          // tinted rows (Trent, 2026-10-29).
+          expect(await o.evaluate((el) => getComputedStyle(el, '::before').bottom)).toBe('-1px')
           // "!" after the title, the notes mark, the created date.
           await expect(o.locator('[data-priority-tab]')).toHaveText('!')
           await expect(o.locator('[data-lean-notes]')).toBeVisible()

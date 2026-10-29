@@ -43,6 +43,7 @@ export function TargetTimeText({
   over,
   onMove,
   onRemoveTarget,
+  removeX = true,
 }: {
   task: Task
   timezone: string
@@ -52,6 +53,12 @@ export function TargetTimeText({
   over: boolean
   onMove: (at: string) => void
   onRemoveTarget?: (task: Task) => void
+  /**
+   * The desktop hover ✕ beside the chip (Remove target). The lean row has
+   * none: its Remove target is in the chip's menu, and the ✕'s box, kept
+   * while invisible, read as a wide gap on the meta line.
+   */
+  removeX?: boolean
 }) {
   const [moveOpen, setMoveOpen] = useState(false)
   const { reset } = targetTimeMenu(task)
@@ -102,7 +109,7 @@ export function TargetTimeText({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {resetWord && (
+          {resetWord && removeX && (
             <button
               type="button"
               data-remove-target-x
