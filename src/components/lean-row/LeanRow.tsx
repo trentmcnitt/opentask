@@ -21,8 +21,8 @@
  *   consistent checkboxes everywhere"); a hold or right-click on it changes
  *   the horizon, on every one-off. The horizon shows as main's perspective
  *   dot right after the chips on the meta line (leading it on a row with no
- *   chips), its own menu; unset draws as Weeks (`HorizonDotButton`'s
- *   `unsetAsWeeks`).
+ *   chips), its own menu; unset draws as Weeks (`HorizonDotMark`, every
+ *   surface since 2026-10-29).
  * - Deadline chip, then the target chip, each saying the moment alone
  *   (`leanChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago"; a
  *   deadline later today counts down, "in 5 hrs", and "Today" is said once
@@ -425,7 +425,6 @@ function LeanMeta({
         <HorizonDotButton
           task={task}
           variant="meta"
-          unsetAsWeeks
           onChange={onSetHorizon}
           className="rounded-sm before:absolute before:-inset-2"
         />
