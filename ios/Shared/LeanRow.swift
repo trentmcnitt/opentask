@@ -14,10 +14,11 @@ import Foundation
 /// the watch Tasks page (`TasksPageView`) and the Mac menu bar panel
 /// (`MenuBarPanel`):
 ///
-/// - the target's time is BLUE, never plum — being over target is said by
-///   the ROW (its tint), not the time; the attempts count ("2×") is neutral;
+/// - the target's time is BLUE while ahead and the plum "over" tone once
+///   passed (M1, 2026-10-29); the attempts count ("2×") is neutral;
 /// - the row's tint (`state`): a passed deadline red, over target blue with a
-///   slate title, a target or deadline later today a faint blue — no stripe;
+///   normal title ink (no slate since 2026-10-29), a target or deadline
+///   later today a faint blue — no stripe;
 /// - High "!" / Urgent "!!" after the title (`RowCorner.priorityTab`, drawn
 ///   inside the title's own text), never in a corner strip; the horizon dot
 ///   is gone.
@@ -46,7 +47,7 @@ enum LeanRow {
         /// The deadline AND the target have passed — the red at 1.75×
         /// (2026-10-29; the web keeps `passed` and marks `data-both-passed`).
         case bothPassed
-        /// Over target — blue, with the slate title.
+        /// Over target — blue (the title in its normal ink since 2026-10-29).
         case over
         /// A target or deadline LATER TODAY (the OpenTask day), not yet over
         /// — a faint blue, the title unchanged.
@@ -227,9 +228,6 @@ enum LeanRow {
         case .urgent: return 0xEF4444
         }
     }
-
-    /// An over-target row's title: dark slate-blue / pale slate (`STATE_LOOK`).
-    static let overTitleHex: (light: UInt32, dark: UInt32) = (0x263D4D, 0xD3DCEC)
 
     /// The row's tint (`STATE_LOOK`): over target an opaque sky-leaning blue
     /// in light (rgb 231 245 255, Trent's E2 of 2026-10-29), the target's

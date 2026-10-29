@@ -131,7 +131,7 @@ struct MenuBarPanel: View {
     /// High "!" / Urgent "!!" after the title (none for Medium, Low, None);
     /// the target's time in its blue whether or not it has passed, the
     /// attempts count grey; the row's tint (`LeanRow.state`: a passed deadline
-    /// red, over target blue with a slate title, later today a faint blue),
+    /// red, over target blue (normal title ink), later today a faint blue),
     /// bled outward behind the row so its size never changes. The square
     /// keeps its PROJECT colour (the panel's only project cue — not a
     /// priority mark, so the lean row's neutral square isn't copied here).
@@ -161,7 +161,7 @@ struct MenuBarPanel: View {
                 VStack(alignment: .leading, spacing: 1) {
                     LeanRowStyle.titleWithMark(Text(task.title), priority: task.priority)
                         .font(.callout.weight(task.priority >= 3 ? .semibold : .regular))
-                        .foregroundStyle(LeanRowStyle.title(state, colorScheme) ?? .primary)
+                        .foregroundStyle(.primary)
                         .accessibilityLabel(Text(LeanRowStyle.spokenTitle(task.title, priority: task.priority)))
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)

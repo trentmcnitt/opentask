@@ -1072,7 +1072,7 @@ private enum TaskRowMode {
 /// horizon governs its border draws the horizon (`HorizonSquare`).
 ///
 /// THE ROW'S STATE (2026-10-28, `LeanRow.state`): a passed deadline tints
-/// the row red; over target blue, with a slate title; a target later today a
+/// the row red; over target blue (normal title ink); a target later today a
 /// faint blue. The tint is the selection fill's shape (bled outward, so the
 /// row's measured size never changes); a selected row shows its selection
 /// instead. No stripe.
@@ -1161,7 +1161,7 @@ private struct TaskRow: View {
             )
                 .font(.subheadline)
                 .fontWeight(WidgetTheme.priorityWeight(task.priority))
-                .foregroundStyle(LeanRowStyle.title(state, colorScheme) ?? .primary)
+                .foregroundStyle(.primary)
                 .modifier(RowTitleFit(lines: lines, height: height, shrinks: shrinks))
                 .accessibilityLabel(Text(NotesGlyph.accessibilityLabel(
                     LeanRowStyle.spokenTitle(task.title, priority: task.priority), hasNotes: task.hasNotes

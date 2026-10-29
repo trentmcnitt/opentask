@@ -29,12 +29,6 @@ enum LeanRowStyle {
     /// A passed deadline's flag.
     static func passed(_ scheme: ColorScheme) -> Color { pick(LeanRow.passedHex, scheme) }
 
-    /// An over-target row's title (slate); nil — the surface's own colour —
-    /// in every other state.
-    static func title(_ state: LeanRow.State?, _ scheme: ColorScheme) -> Color? {
-        state == .over ? pick(LeanRow.overTitleHex, scheme) : nil
-    }
-
     /// The row's tint, nil for none.
     static func tint(_ state: LeanRow.State?, _ scheme: ColorScheme) -> Color? {
         guard let state else { return nil }

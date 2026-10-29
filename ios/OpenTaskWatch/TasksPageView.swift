@@ -147,7 +147,7 @@ struct TasksPageView: View {
 ///   dark), over target too; the attempts count "· 3×" is grey; a red flag
 ///   once the deadline has passed.
 /// - The row's STATE is its tint over the list platter (`LeanRow.state`): a
-///   passed deadline red, over target blue with a pale slate title, a
+///   passed deadline red, over target blue (the normal title ink), a
 ///   target later today a faint blue. The edge's plum while over target
 ///   (2026-10-11) went with it: the edge is the project's colour only.
 private struct TaskRow: View {
@@ -213,7 +213,7 @@ private struct TaskRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 LeanRowStyle.titleWithMark(Text(task.title), priority: task.priority)
                     .font(.body.weight(WatchTheme.priorityWeight(task.priority)))
-                    .foregroundStyle(LeanRowStyle.title(state, scheme) ?? .primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
                     .accessibilityLabel(Text(LeanRowStyle.spokenTitle(task.title, priority: task.priority)))

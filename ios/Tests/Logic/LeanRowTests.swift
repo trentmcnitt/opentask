@@ -207,8 +207,6 @@ final class LeanRowTests: XCTestCase {
         XCTAssertEqual(LeanRow.targetTimeHex(isOverdue: true).light, 0x8E389B)
         XCTAssertEqual(LeanRow.targetTimeHex(isOverdue: true).dark, 0xC97CD5)
         XCTAssertEqual(LeanRow.targetTimeHex(isOverdue: false).light, 0x155DFC)
-        XCTAssertEqual(LeanRow.overTitleHex.light, 0x263D4D)
-        XCTAssertEqual(LeanRow.overTitleHex.dark, 0xD3DCEC)
         XCTAssertEqual(LeanRow.priorityHex(.high), 0xF97316)
         XCTAssertEqual(LeanRow.priorityHex(.urgent), 0xEF4444)
     }
