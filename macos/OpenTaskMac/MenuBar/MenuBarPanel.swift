@@ -171,7 +171,7 @@ struct MenuBarPanel: View {
                         // 3×" — the Tasks widget's form: grey, semibold, no
                         // pill. Label only (the web's 3× offer stays in the app).
                         let time = Text(dueText(due, isOverdue: isOverdue))
-                            .foregroundStyle(LeanRowStyle.target(colorScheme))
+                            .foregroundStyle(LeanRowStyle.target(colorScheme, isOverdue: isOverdue))
                         Group {
                             if let badge = TargetAge.attemptsBadge(task) {
                                 time + Text(" · ").foregroundStyle(.secondary)

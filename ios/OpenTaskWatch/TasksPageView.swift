@@ -167,7 +167,8 @@ private struct TaskRow: View {
     /// here — grey, semibold, no pill. Then a red flag once the deadline has
     /// passed.
     private func dueLine(_ due: Date) -> Text {
-        var line = Text(WatchFormatting.dueLine(for: due)).foregroundStyle(LeanRowStyle.target(scheme))
+        var line = Text(WatchFormatting.dueLine(for: due))
+            .foregroundStyle(LeanRowStyle.target(scheme, isOverdue: task.isOverdue()))
         if let label = TargetAge.attemptsBadge(task) {
             line = line + Text(" · ").foregroundStyle(.secondary)
                 + Text(label).fontWeight(.semibold).monospacedDigit().foregroundStyle(.secondary)

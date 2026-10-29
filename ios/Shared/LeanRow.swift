@@ -43,6 +43,9 @@ enum LeanRow {
     enum State: Equatable {
         /// The deadline has passed — red; it wins over everything.
         case passed
+        /// The deadline AND the target have passed — the red at 1.75×
+        /// (2026-10-29; the web keeps `passed` and marks `data-both-passed`).
+        case bothPassed
         /// Over target — blue, with the slate title.
         case over
         /// A target or deadline LATER TODAY (the OpenTask day), not yet over
@@ -53,7 +56,7 @@ enum LeanRow {
     /// `leanRowState`: which tint a row wears, or nil for none. `isOverdue`
     /// is the list's own answer for over target (`TaskDTO.isOverdue(now:)`).
     static func state(_ task: TaskDTO, isOverdue: Bool, now: Date, day: OpenTaskDay) -> State? {
-        if TargetAge.isPastDeadline(task, now: now) { return .passed }
+        if TargetAge.isPastDeadline(task, now: now) { return isOverdue ? .bothPassed : .passed }
         if isOverdue { return .over }
         let today = day.openTaskDay(of: now)
         func laterToday(_ at: Date?) -> Bool {
@@ -201,8 +204,18 @@ enum LeanRow {
     }
 
     /// The target's time: blue-600 (light) / blue-400 (dark) — the web's
-    /// target chip, `TimeChip`'s `target` tone. Never plum.
+    /// target chip, `TimeChip`'s `target` tone — while the target is ahead.
     static let targetHex: (light: UInt32, dark: UInt32) = (0x155DFC, 0x51A2FF)
+
+    /// A PASSED target's time (M1, 2026-10-29, the web's #410): the app's
+    /// plum "over" tone — `TimeChip`'s `over` text, #8e389b light and the
+    /// `--over-target` token (#c97cd5) dark.
+    static let overTargetHex: (light: UInt32, dark: UInt32) = (0x8E389B, 0xC97CD5)
+
+    /// The target time's colour: plum once it has passed, blue before.
+    static func targetTimeHex(isOverdue: Bool) -> (light: UInt32, dark: UInt32) {
+        isOverdue ? overTargetHex : targetHex
+    }
 
     /// A passed deadline's flag: red-700 / red-400 (`TimeChip`'s `passed`).
     static let passedHex: (light: UInt32, dark: UInt32) = (0xC10007, 0xFF6467)
@@ -222,12 +235,14 @@ enum LeanRow {
     /// in light (rgb 231 245 255, Trent's E2 of 2026-10-29), the target's
     /// blue at 12.5% in dark; later today rgb 249 252 255 in light, the blue
     /// at 3.125% in dark; a warm red (rgb 200 20 10) at 9.8% light, red-400 at
-    /// 14% dark, once the deadline passed.
+    /// 14% dark, once the deadline passed; that red at 1.75× (17.15% / 24.5%)
+    /// once the target has passed too.
     static func tint(_ state: State) -> (light: Tone, dark: Tone) {
         switch state {
         case .over: return (Tone(hex: 0xE7F5FF, alpha: 1), Tone(hex: 0x51A2FF, alpha: 0.125))
         case .soon: return (Tone(hex: 0xF9FCFF, alpha: 1), Tone(hex: 0x51A2FF, alpha: 0.03125))
         case .passed: return (Tone(hex: 0xC8140A, alpha: 0.098), Tone(hex: 0xFF6467, alpha: 0.14))
+        case .bothPassed: return (Tone(hex: 0xC8140A, alpha: 0.1715), Tone(hex: 0xFF6467, alpha: 0.245))
         }
     }
 }

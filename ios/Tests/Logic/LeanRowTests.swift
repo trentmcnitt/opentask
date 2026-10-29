@@ -40,7 +40,10 @@ final class LeanRowTests: XCTestCase {
 
     func testAPassedDeadlineIsRedAndWinsOverOverTarget() {
         XCTAssertEqual(state(nil, "2026-10-28T09:00"), .passed)
-        XCTAssertEqual(state("2026-10-28T08:00", "2026-10-28T09:00", overdue: true), .passed)
+        // The target still ahead (the rental car): the normal red.
+        XCTAssertEqual(state("2026-10-29T08:00", "2026-10-28T09:00"), .passed)
+        // Both passed: the stronger red (2026-10-29), never the blue.
+        XCTAssertEqual(state("2026-10-28T08:00", "2026-10-28T09:00", overdue: true), .bothPassed)
     }
 
     func testOverTargetIsBlue() {
@@ -181,6 +184,12 @@ final class LeanRowTests: XCTestCase {
         XCTAssertEqual(LeanRow.tint(.soon).dark.alpha, 0.03125)
         XCTAssertEqual(LeanRow.tint(.passed).light, .init(hex: 0xC8140A, alpha: 0.098))
         XCTAssertEqual(LeanRow.tint(.passed).dark, .init(hex: 0xFF6467, alpha: 0.14))
+        XCTAssertEqual(LeanRow.tint(.bothPassed).light, .init(hex: 0xC8140A, alpha: 0.1715), "1.75× the red")
+        XCTAssertEqual(LeanRow.tint(.bothPassed).dark, .init(hex: 0xFF6467, alpha: 0.245))
+        // M1: a passed target's time is the plum "over" tone; ahead, blue.
+        XCTAssertEqual(LeanRow.targetTimeHex(isOverdue: true).light, 0x8E389B)
+        XCTAssertEqual(LeanRow.targetTimeHex(isOverdue: true).dark, 0xC97CD5)
+        XCTAssertEqual(LeanRow.targetTimeHex(isOverdue: false).light, 0x155DFC)
         XCTAssertEqual(LeanRow.overTitleHex.light, 0x263D4D)
         XCTAssertEqual(LeanRow.overTitleHex.dark, 0xD3DCEC)
         XCTAssertEqual(LeanRow.priorityHex(.high), 0xF97316)

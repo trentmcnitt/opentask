@@ -20,9 +20,11 @@ enum LeanRowStyle {
         color(scheme == .dark ? pair.dark : pair.light)
     }
 
-    /// The target's time — every target, before and after it passes (the
-    /// web's blue target chip; the row's tint says it is over, not the time).
-    static func target(_ scheme: ColorScheme) -> Color { pick(LeanRow.targetHex, scheme) }
+    /// The target's time: blue while ahead, the plum "over" tone once passed
+    /// (M1, 2026-10-29 — the web's target chip).
+    static func target(_ scheme: ColorScheme, isOverdue: Bool) -> Color {
+        pick(LeanRow.targetTimeHex(isOverdue: isOverdue), scheme)
+    }
 
     /// A passed deadline's flag.
     static func passed(_ scheme: ColorScheme) -> Color { pick(LeanRow.passedHex, scheme) }

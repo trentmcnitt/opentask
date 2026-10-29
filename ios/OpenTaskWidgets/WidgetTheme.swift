@@ -661,15 +661,12 @@ enum WidgetTheme {
         guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
-        // ONE colour, the target's BLUE, day word and time alike, before the
-        // target and after it (2026-10-28, the web's lean row: "the target
-        // always the blue target chip, never plum" — over target is said by
-        // the row's tint, `LeanRow.state`). It was plum once over target
-        // (2026-10-11), red before that, with an indigo day word over a grey
-        // time while upcoming. Text only: the web's chip box (a 10% tint
-        // behind the words) is not drawn, so the label's measured width is
-        // still its words'.
-        let tint = LeanRowStyle.target(scheme)
+        // ONE colour, day word and time alike: the target's BLUE while it is
+        // ahead, the plum "over" tone once it has passed (M1, 2026-10-29, the
+        // web's lean row chip; blue-only from 10-28). Text only: the web's
+        // chip box (a 10% tint behind the words) is not drawn, so the label's
+        // measured width is still its words'.
+        let tint = LeanRowStyle.target(scheme, isOverdue: overdue)
         let day = parts.dayWord.map { Text($0).foregroundStyle(tint) }
         let time = parts.time.map { Text($0).foregroundStyle(tint) }
         // `firstLineSuffix` (the attempts count, `AttemptsInTime`) ends the
