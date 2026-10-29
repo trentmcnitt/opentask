@@ -76,9 +76,15 @@ function entryOrder(page: Page): Promise<Array<string | null>> {
     .evaluateAll((els) => els.map((el) => el.getAttribute('data-just-added-entry')))
 }
 
-/** The middle of an on-screen element, in CSS pixels. */
+/**
+ * The middle of an on-screen element, in CSS pixels. Scrolled to the middle
+ * of the viewport first: `scrollIntoViewIfNeeded` counts a row under the
+ * phone's fixed bottom nav as visible, and a touch there lands on the nav
+ * (since 2026-10-29 Heads up and Pulled come before Days on /reminders, so a
+ * Days row can sit at the fold).
+ */
 async function centre(target: Locator): Promise<{ x: number; y: number }> {
-  await target.scrollIntoViewIfNeeded()
+  await target.evaluate((el) => el.scrollIntoView({ block: 'center' }))
   const box = await target.boundingBox()
   if (!box) throw new Error('not on screen')
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
@@ -175,7 +181,7 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
     // 34 wide and 44 tall, in px at any text size; the 12px stays.
     const id = await segmentTask(page, 'RT hit areas')
     try {
-      const check = async (scope: Locator) => {
+      const check = async (scope: Locator, glyphPx: number) => {
         const today = scope.getByRole('button', { name: /^Target .* today \(hold for a time\)$/ })
         const done = scope.getByRole('button', { name: /^Done: / })
         const t = (await today.boundingBox())!
@@ -184,16 +190,17 @@ test.describe('Recently targeted: the Today picker on a phone', () => {
         expect(t.height).toBeGreaterThanOrEqual(44)
         // Today sits left of done; the gap between the two hit areas is dead space.
         expect(d.x - (t.x + t.width)).toBeGreaterThanOrEqual(12)
-        // The glyph matches the done square's size.
+        // The glyph is the clock (2026-10-29, in place of the sun), sized like
+        // the row's other action icons: 20px on the page, 18px in the card.
         const glyph = (await today.locator('svg').boundingBox())!
-        expect(Math.abs(glyph.width - d.width)).toBeLessThanOrEqual(1)
+        expect(Math.abs(glyph.width - glyphPx)).toBeLessThanOrEqual(1)
       }
       await page.goto('/reminders')
-      await check(segmentRow(page, id))
+      await check(segmentRow(page, id), 20)
       await page.goto('/')
       const card = page.locator(`[data-segment-task="${id}"]`).first()
       await expect(card).toBeVisible()
-      await check(card)
+      await check(card, 18)
     } finally {
       await trash(page, [id])
     }
