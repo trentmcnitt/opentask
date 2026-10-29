@@ -530,7 +530,7 @@ export function quotaShortfall(summary: { count: number; met: number }): QuotaSh
  * The one label a quota is filed under: the first MEANING it carries, or none.
  *
  * Reserved `ai-*` labels are skipped. They are machinery, not filing — created
- * by `createTask` (`ai-to-process`, `ai-proposed`, `ai-added`) and by
+ * by `createTask` (`ai-to-process`, `ai-auto`, `ai-added`) and by
  * enrichment (`ai-failed`), often without the user ever typing one. Taking
  * `labels[0]` blindly gave a quota whose only label was operational a group
  * header reading "AI-FAILED", and showed that as its pressed chip in the

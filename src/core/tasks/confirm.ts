@@ -2,7 +2,7 @@
  * Task provenance confirmation (REDESIGN-V03 §7.2)
  *
  * Bless a task the assistant created on its own initiative: removes
- * `ai-proposed`, adds `ai-added`.
+ * `ai-auto` (named `ai-proposed` until 2026-10-28), adds `ai-added`.
  *
  * Deliberately narrow. Confirming is a statement about where a task came from,
  * not an invitation to re-edit it, so this touches no other field. It routes
@@ -32,12 +32,12 @@ export function confirmTaskProvenance(
   taskId: number,
 ): ConfirmTaskProvenanceResult {
   // 'allow': a trashed task that is already confirmed stays a no-op; one still
-  // proposed is refused by updateTask ("Cannot edit trashed task").
+  // unconfirmed is refused by updateTask ("Cannot edit trashed task").
   const task = loadTaskForMutation(userId, taskId, { trashed: 'allow' })
 
   // Idempotent: confirming an already-confirmed task is a no-op rather than
   // an error, so a retried call can't fail spuriously.
-  if (!task.labels.includes(PROVENANCE_LABELS.proposed)) {
+  if (!task.labels.includes(PROVENANCE_LABELS.auto)) {
     return { task, confirmed: task.labels.includes(PROVENANCE_LABELS.added) }
   }
 

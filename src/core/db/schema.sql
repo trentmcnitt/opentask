@@ -596,7 +596,7 @@ CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveri
 --
 -- Labels used to be bare free-text inside tasks.labels, with no registry: a typo
 -- silently forked the taxonomy into a new tag. Once labels can carry behavior
--- (ai-proposed / ai-added / ai-monitored are provenance, not decoration),
+-- (ai-auto / ai-added / ai-monitored are provenance, not decoration),
 -- minting one by accident stops being cosmetic. Creation is therefore a discrete
 -- act — see validateLabelsExist() in src/core/labels.
 --

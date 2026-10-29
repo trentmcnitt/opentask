@@ -5,6 +5,7 @@
  * POST /api/tasks - Create a task
  */
 
+import { canonicalLabel } from '@/lib/label-vocabulary'
 import { NextRequest } from 'next/server'
 import { getAuthUser, AuthError } from '@/core/auth'
 import { success, unauthorized, badRequest, handleError, handleZodError } from '@/lib/api-response'
@@ -124,7 +125,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
       recurring: boolParam(searchParams, 'recurring'),
       oneOff: boolParam(searchParams, 'one_off'),
       search: searchParams.get('search') || undefined,
-      label: searchParams.get('label') || undefined,
+      // An old label name filters by its new one (`ai-proposed` → `ai-auto`).
+      label: searchParams.has('label')
+        ? canonicalLabel(searchParams.get('label') ?? '') || undefined
+        : undefined,
       trashed: boolParam(searchParams, 'trashed'),
       archived: boolParam(searchParams, 'archived'),
       limit,

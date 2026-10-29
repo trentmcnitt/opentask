@@ -88,21 +88,21 @@ describe('Label registry', () => {
     expect((await patch.json()).data.title).toBe('Orphan holder renamed')
   })
 
-  test('ai_proposed flag applies provenance, and confirm swaps it to ai-added', async () => {
+  test('ai_auto flag applies provenance, and confirm swaps it to ai-added', async () => {
     const create = await apiFetch('/api/tasks', {
       method: 'POST',
-      body: { title: 'Assistant suggestion', ai_proposed: true },
+      body: { title: 'Assistant suggestion', ai_auto: true },
     })
     expect(create.status).toBe(201)
     const task = (await create.json()).data
-    expect(task.labels).toContain('ai-proposed')
+    expect(task.labels).toContain('ai-auto')
 
     const confirm = await apiFetch(`/api/tasks/${task.id}/confirm`, { method: 'POST' })
     expect(confirm.status).toBe(200)
     const confirmed = (await confirm.json()).data
 
     expect(confirmed.labels).toContain('ai-added')
-    expect(confirmed.labels).not.toContain('ai-proposed')
+    expect(confirmed.labels).not.toContain('ai-auto')
     // Confirming is a statement about provenance only.
     expect(confirmed.title).toBe('Assistant suggestion')
   })
@@ -110,7 +110,7 @@ describe('Label registry', () => {
   test('confirm is idempotent', async () => {
     const create = await apiFetch('/api/tasks', {
       method: 'POST',
-      body: { title: 'Confirm twice', ai_proposed: true },
+      body: { title: 'Confirm twice', ai_auto: true },
     })
     const task = (await create.json()).data
 
@@ -179,5 +179,55 @@ describe('Label registry', () => {
       await saveLabelConfig(current)
       expect(await registeredNames()).toContain('ai-added')
     })
+  })
+})
+
+// The label's old name (renamed 2026-10-28) still works for older clients
+// and the hub's desks: the flag, the label itself and the filter.
+describe('Label registry: the old name ai-proposed', () => {
+  beforeAll(async () => {
+    await resetTestData()
+  })
+
+  test('the old name ai-proposed is accepted everywhere and stored as ai-auto', async () => {
+    const byFlag = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Old flag', ai_proposed: true },
+        })
+      ).json()
+    ).data
+    expect(byFlag.labels).toEqual(['ai-auto'])
+
+    const byLabel = await apiFetch('/api/tasks', {
+      method: 'POST',
+      body: { title: 'Old label', labels: ['ai-proposed'] },
+    })
+    expect(byLabel.status).toBe(201)
+    const labelled = (await byLabel.json()).data
+    expect(labelled.labels).toEqual(['ai-auto'])
+
+    // Both names at once: stored once.
+    const both = (
+      await (
+        await apiFetch('/api/tasks', {
+          method: 'POST',
+          body: { title: 'Both names', labels: ['ai-proposed', 'ai-auto'], ai_proposed: true },
+        })
+      ).json()
+    ).data
+    expect(both.labels).toEqual(['ai-auto'])
+
+    // The filter by the old name finds them.
+    const filtered = (await (await apiFetch('/api/tasks?label=ai-proposed')).json()).data.tasks
+    const ids = filtered.map((t: { id: number }) => t.id)
+    expect(ids).toEqual(expect.arrayContaining([byFlag.id, labelled.id, both.id]))
+
+    // Confirm takes the new name off.
+    const confirmed = (
+      await (await apiFetch(`/api/tasks/${labelled.id}/confirm`, { method: 'POST' })).json()
+    ).data
+    expect(confirmed.labels).toEqual(['ai-added'])
   })
 })

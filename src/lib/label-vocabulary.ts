@@ -26,11 +26,37 @@ export const PROCESSING_LABELS = ['ai-to-process', 'ai-failed'] as const
 export const PROVENANCE_LABELS = {
   /** Created by the assistant. */
   added: 'ai-added',
-  /** Created on assistant initiative, not yet blessed by the user. */
-  proposed: 'ai-proposed',
+  /**
+   * Created automatically, on the assistant's own initiative, not yet
+   * blessed by the user. Named `ai-proposed` until 2026-10-28 (see
+   * `LABEL_ALIASES`).
+   */
+  auto: 'ai-auto',
   /** The assistant/desk watches this task. */
   monitored: 'ai-monitored',
 } as const
+
+/**
+ * OLD NAMES, STILL ACCEPTED (2026-10-28, Trent: `ai-proposed` → `ai-auto`).
+ * A label sent under its old name — by an older client, a script, the hub's
+ * desks — is stored, filtered and confirmed under its new one
+ * (`canonicalLabels`, applied by the `labels` validator and the label
+ * filter). Nothing stores an old name: `renameAiProposedLabel` in
+ * src/core/db renamed every registry row, task and undo snapshot.
+ */
+export const LABEL_ALIASES: Readonly<Record<string, string>> = {
+  'ai-proposed': PROVENANCE_LABELS.auto,
+}
+
+/** A label's current name: its alias target if it is an old name. */
+export function canonicalLabel(name: string): string {
+  return LABEL_ALIASES[name] ?? name
+}
+
+/** Labels under their current names, in order, each once. */
+export function canonicalLabels(names: readonly string[]): string[] {
+  return [...new Set(names.map(canonicalLabel))]
+}
 
 /**
  * Everything the system owns. Always valid, never user-created.

@@ -11,7 +11,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { getDb, retireAiLockedLabel } from '@/core/db'
+import { getDb, renameAiProposedLabel, retireAiLockedLabel } from '@/core/db'
+import { validateTaskCreate } from '@/core/validation'
+import { canonicalLabels } from '@/lib/label-vocabulary'
 import { createTask, getTaskById, updateTask } from '@/core/tasks'
 import {
   listLabels,
@@ -44,7 +46,7 @@ describe('Label Registry', () => {
     const names = listLabels(TEST_USER_ID).map((l) => l.name)
     expect(names).toContain('ai-to-process')
     expect(names).toContain(PROVENANCE_LABELS.added)
-    expect(names).toContain(PROVENANCE_LABELS.proposed)
+    expect(names).toContain(PROVENANCE_LABELS.auto)
     expect(names).toContain(PROVENANCE_LABELS.monitored)
   })
 
@@ -191,13 +193,13 @@ describe('Label Registry', () => {
   })
 
   /**
-   * LR-013: confirm swaps proposed for added and touches nothing else.
+   * LR-013: confirm swaps auto for added and touches nothing else.
    */
-  test('LR-013: confirmProvenance swaps proposed for added', () => {
-    const result = confirmProvenance(['lr-keep', PROVENANCE_LABELS.proposed])
+  test('LR-013: confirmProvenance swaps auto for added', () => {
+    const result = confirmProvenance(['lr-keep', PROVENANCE_LABELS.auto])
     expect(result).toContain('lr-keep')
     expect(result).toContain(PROVENANCE_LABELS.added)
-    expect(result).not.toContain(PROVENANCE_LABELS.proposed)
+    expect(result).not.toContain(PROVENANCE_LABELS.auto)
   })
 
   /**
@@ -205,7 +207,7 @@ describe('Label Registry', () => {
    * retried call is safe.
    */
   test('LR-014: confirming an already-confirmed set is idempotent', () => {
-    const once = confirmProvenance([PROVENANCE_LABELS.proposed])
+    const once = confirmProvenance([PROVENANCE_LABELS.auto])
     const twice = confirmProvenance(once)
     expect(twice.filter((l) => l === PROVENANCE_LABELS.added)).toHaveLength(1)
   })
@@ -257,5 +259,89 @@ describe('ai-locked retired', () => {
     expect(getTaskById(task.id)!.labels).toEqual(['ai-added'])
     expect(retireAiLockedLabel(db)).toEqual({ registry: 0, tasks: 0 })
     expect(SYSTEM_LABELS.has('ai-locked')).toBe(false)
+  })
+})
+
+/**
+ * LR-RENAME: `ai-proposed` is renamed `ai-auto` (2026-10-28): the startup
+ * step renames each registry row in place (id and colour kept), or drops it
+ * where an `ai-auto` row already exists; renames the label on tasks where it
+ * stands (once, if both were there); rewrites the undo snapshots; and a
+ * second run changes nothing. Input still takes the old name.
+ */
+describe('ai-proposed renamed ai-auto', () => {
+  beforeEach(() => setupTestDb())
+
+  test('registry renamed in place, tasks and undo snapshots rewritten; idempotent', () => {
+    const db = getDb()
+    // As an old install left it: the old registry row (with a colour), and
+    // no new one yet.
+    db.prepare("DELETE FROM labels WHERE user_id = ? AND name = 'ai-auto'").run(TEST_USER_ID)
+    const old = db
+      .prepare(
+        "INSERT INTO labels (user_id, name, facet, color) VALUES (?, 'ai-proposed', 'operational', 'teal')",
+      )
+      .run(TEST_USER_ID).lastInsertRowid
+    const one = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'lr rename one', labels: [] },
+    })
+    const both = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: { title: 'lr rename both', labels: [] },
+    })
+    const setLabels = (id: number, labels: string[]) =>
+      db.prepare('UPDATE tasks SET labels = ? WHERE id = ?').run(JSON.stringify(labels), id)
+    setLabels(one.id, ['ai-added', 'ai-proposed', 'chores'])
+    setLabels(both.id, ['ai-proposed', 'ai-auto'])
+    db.prepare(
+      "INSERT INTO undo_log (user_id, action, fields_changed, snapshot) VALUES (?, 'edit', '[]', ?)",
+    ).run(
+      TEST_USER_ID,
+      JSON.stringify([{ task_id: one.id, before: { labels: ['ai-proposed'] }, after: {} }]),
+    )
+
+    expect(renameAiProposedLabel(db)).toEqual({ registry: 1, tasks: 2, undo: 1 })
+    // Renamed in place: the same row, its colour kept.
+    const renamed = getLabelByName(TEST_USER_ID, 'ai-auto')!
+    expect(renamed.id).toBe(Number(old))
+    expect(renamed.color).toBe('teal')
+    expect(getLabelByName(TEST_USER_ID, 'ai-proposed')).toBeNull()
+    // Where it stood in the list; once when both names were there.
+    expect(getTaskById(one.id)!.labels).toEqual(['ai-added', 'ai-auto', 'chores'])
+    expect(getTaskById(both.id)!.labels).toEqual(['ai-auto'])
+    const snapshot = (
+      db.prepare('SELECT snapshot FROM undo_log ORDER BY id DESC LIMIT 1').get() as {
+        snapshot: string
+      }
+    ).snapshot
+    expect(JSON.parse(snapshot)[0].before.labels).toEqual(['ai-auto'])
+
+    // Idempotent.
+    expect(renameAiProposedLabel(db)).toEqual({ registry: 0, tasks: 0, undo: 0 })
+    // An old row beside the new one is dropped, not renamed into a clash.
+    db.prepare(
+      "INSERT INTO labels (user_id, name, facet) VALUES (?, 'ai-proposed', 'operational')",
+    ).run(TEST_USER_ID)
+    expect(renameAiProposedLabel(db)).toEqual({ registry: 1, tasks: 0, undo: 0 })
+    expect(getLabelByName(TEST_USER_ID, 'ai-auto')!.id).toBe(Number(old))
+  })
+
+  test('the old name on input: the label, the flag', () => {
+    const byLabel = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: validateTaskCreate({ title: 'lr old label', labels: ['ai-proposed'] }),
+    })
+    expect(byLabel.labels).toEqual(['ai-auto'])
+    const byFlag = createTask({
+      userId: TEST_USER_ID,
+      userTimezone: TEST_TIMEZONE,
+      input: validateTaskCreate({ title: 'lr old flag', ai_proposed: true }),
+    })
+    expect(byFlag.labels).toEqual(['ai-auto'])
+    expect(canonicalLabels(['ai-proposed', 'x', 'ai-auto'])).toEqual(['ai-auto', 'x'])
   })
 })
