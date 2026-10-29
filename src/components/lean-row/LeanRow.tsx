@@ -29,9 +29,10 @@
  *   clock (swipe left and the chip's menu move the target). On a phone they
  *   float right and the title wraps under them; from `md` up the title is a
  *   block formatting context (`md:flow-root`), so it keeps a clear column.
- * - OVER TARGET (sheet v12-4): the row's full width tinted ~8% in the target
- *   blue, a 3px bar down its left edge, the title in a dark slate-blue. No
- *   plum anywhere in the row (no stripe, no plum chip, no "N×").
+ * - The ROW STATE (sheet v13-2, `STATE_LOOK`): over target, a blue tint and a
+ *   dark slate-blue title; a passed deadline, the red counterpart, which wins
+ *   when both apply. No bar. No plum anywhere in the row (no stripe, no plum
+ *   chip, no "N×").
  *
  * Dropped from the card on purpose: the attempts "N×" tab (and with it the
  * 3× "Remove target?" offer — Remove target stays in the chip's menu), the
@@ -56,16 +57,40 @@ import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { momentChipWords } from '@/lib/moment-chip-words'
 import { formatRRuleCompact } from '@/lib/format-rrule'
 import { offersTargetToday, priorityTab } from '@/lib/row-corner'
+import { isPastDeadline } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import { DoneControl } from './DoneControl'
 import { HorizonMark } from './HorizonMark'
 
-/** The over-target look (sheet v12-4): a full-bleed blue tint and bar, under the row's content. */
-const OVER_ROW =
-  "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:inset-y-0 before:-z-10 before:bg-blue-600/[0.08] before:shadow-[inset_3px_0_0_var(--color-blue-600)] before:content-[''] dark:before:bg-blue-400/[0.10] dark:before:shadow-[inset_3px_0_0_var(--color-blue-400)]"
-/** …and its title, a dark slate-blue: present, not alarming. */
-const OVER_TITLE = 'text-[#26334d] dark:text-[#d3dcec]'
+/**
+ * The row's STATE LOOK (sheet v13-2, Trent 2026-10-28): a full-bleed tint
+ * under the row's content and a tinted title, no bar.
+ * - Over target: the target's blue (~8%) and a dark slate-blue title —
+ *   present, not alarming: missing a target is not a mistake.
+ * - A passed deadline: the red counterpart (the passed chip's red, ~6.5%) and
+ *   a dark red-tinted title. It WINS over the blue: a real miss outranks a
+ *   target whose time has come. The red flag chip says which date it is.
+ */
+type RowState = 'over' | 'passed'
+const TINT_BASE =
+  "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:inset-y-0 before:-z-10 before:content-['']"
+const STATE_LOOK: Record<RowState, { row: string; title: string }> = {
+  over: {
+    row: `${TINT_BASE} before:bg-blue-600/[0.08] dark:before:bg-blue-400/[0.10]`,
+    title: 'text-[#26334d] dark:text-[#d3dcec]',
+  },
+  passed: {
+    row: `${TINT_BASE} before:bg-[rgba(228,0,20,0.065)] dark:before:bg-[rgba(255,100,103,0.10)]`,
+    title: 'text-[#4d2629] dark:text-[#ecd3d4]',
+  },
+}
+
+/** Which state look a row wears: a passed deadline first, then over target. */
+function rowState(task: Task, isOverdue: boolean): RowState | null {
+  if (isPastDeadline(task.deadline_at, new Date())) return 'passed'
+  return isOverdue ? 'over' : null
+}
 
 export function LeanRow({
   task,
@@ -104,6 +129,7 @@ export function LeanRow({
   })
   const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
   const isAiProcessing = task.labels.includes('ai-to-process')
+  const state = rowState(task, isOverdue)
 
   return (
     <div
@@ -114,6 +140,7 @@ export function LeanRow({
       tabIndex={-1}
       data-lean-row={task.id}
       data-over-target={isOverdue ? '' : undefined}
+      data-row-state={state ?? undefined}
       {...highlightProps}
       onClick={handleClick}
       onMouseEnter={onFocus}
@@ -132,7 +159,7 @@ export function LeanRow({
         isSelectionMode && 'cursor-pointer',
         isSelected && 'bg-accent ring-ring rounded-lg ring-2',
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
-        isOverdue && OVER_ROW,
+        state && STATE_LOOK[state].row,
         isAiProcessing && !highlighted && 'animate-ai-processing',
       )}
     >
@@ -148,7 +175,11 @@ export function LeanRow({
             the title wraps under them (Trent's preference); from md up the
             title (`md:flow-root`) and the meta line keep a clear column. */}
         {!isSelectionMode && <LeanButtons task={task} onDeck={onDeck} onTargetAt={onTargetAt} />}
-        <LeanTitle task={task} over={isOverdue} justAddedBadge={justAddedBadge} />
+        <LeanTitle
+          task={task}
+          titleClass={state ? STATE_LOOK[state].title : undefined}
+          justAddedBadge={justAddedBadge}
+        />
         <LeanMeta
           task={task}
           onMove={(until) => onSnooze(task.id, until)}
@@ -172,20 +203,18 @@ export function LeanRow({
 /** The title, with High "!" / Urgent "!!" and the just-now tag bound to its last word. */
 function LeanTitle({
   task,
-  over,
+  titleClass,
   justAddedBadge,
 }: {
   task: Task
-  over: boolean
+  /** The row state's title colour (`STATE_LOOK`), if any. */
+  titleClass?: string
   justAddedBadge?: string
 }) {
   const tab = task.priority >= 3 ? priorityTab(task.priority, 'icons') : null
   const cut = task.title.lastIndexOf(' ')
   return (
-    <p
-      data-lean-title
-      className={cn('text-[16px] leading-6 text-pretty md:flow-root', over && OVER_TITLE)}
-    >
+    <p data-lean-title className={cn('text-[16px] leading-6 text-pretty md:flow-root', titleClass)}>
       {task.title.slice(0, cut + 1)}
       <span className="whitespace-nowrap">
         {task.title.slice(cut + 1)}

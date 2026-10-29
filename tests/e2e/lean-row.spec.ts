@@ -5,9 +5,9 @@
  * file sets the device setting itself before each page load — every other
  * spec keeps seeing the card rows.
  *
- * Covers: the row's look (over target: the blue tint, its bar and the slate
- * title in both themes, the target chip still the blue target chip; a passed
- * deadline red with its flag; the created date; no "ago"), its buttons (done,
+ * Covers: the row's look (over target: the blue tint and the slate title in
+ * both themes; a passed deadline: the red tint and title, winning over the
+ * blue; no bar; the target chip still the blue target chip; the red flag; the created date; no "ago"), its buttons (done,
  * On deck, Today, each with Undo), details on double-click, a swipe to done,
  * and the setting itself. The task-queue switch is on for the file (On deck
  * needs it) and off after it.
@@ -90,7 +90,7 @@ test.describe('Lean row · look', () => {
     test.describe(scheme, () => {
       test.use({ viewport: { width: 1280, height: 800 }, colorScheme: scheme })
 
-      test('over target: the tint, its bar and the slate title; the chip stays the blue target chip', async ({
+      test('over target blue, a passed deadline red (red wins), no bar; the chip stays the blue target chip', async ({
         authenticatedPage: page,
       }) => {
         await page.addInitScript(LEAN)
@@ -107,25 +107,48 @@ test.describe('Lean row · look', () => {
             deadline_at: new Date(now - 24 * HOUR).toISOString(),
           }),
           await create(page, { title: uniqueTitle('LR plain'), horizon: 'weeks', priority: 1 }),
+          // Both over target and past its deadline: the red wins.
+          await create(page, {
+            title: uniqueTitle('LR both'),
+            due_at: new Date(now - 30 * HOUR).toISOString(),
+            deadline_at: new Date(now - 2 * HOUR).toISOString(),
+          }),
         ]
-        const [over, passed, plain] = ids
+        const [over, passed, plain, both] = ids
         try {
           await gotoDashboard(page)
           for (const id of ids) await expect(row(page, id)).toBeVisible()
 
-          // Over target: the row marked, the slate title, the tint and the bar.
+          // Over target: the row marked, the blue tint, the slate title, no bar.
           const o = row(page, over)
           await expect(o).toHaveAttribute('data-over-target', '')
+          await expect(o).toHaveAttribute('data-row-state', 'over')
           await expect(o.locator('[data-lean-title]')).toHaveCSS(
             'color',
             scheme === 'light' ? 'rgb(38, 51, 77)' : 'rgb(211, 220, 236)',
           )
-          const before = await o.evaluate((el) => {
-            const s = getComputedStyle(el, '::before')
-            return { bg: s.backgroundColor, shadow: s.boxShadow }
-          })
-          expect(before.bg).not.toBe('rgba(0, 0, 0, 0)')
-          expect(before.shadow).toContain('inset')
+          const tint = (r: Locator) =>
+            r.evaluate((el) => {
+              const s = getComputedStyle(el, '::before')
+              return { bg: s.backgroundColor, shadow: s.boxShadow }
+            })
+          const blue = await tint(o)
+          expect(blue.bg).not.toBe('rgba(0, 0, 0, 0)')
+          expect(blue.shadow).toBe('none')
+
+          // A passed deadline: the red counterpart, its own title colour, no bar.
+          const p = row(page, passed)
+          await expect(p).toHaveAttribute('data-row-state', 'passed')
+          await expect(p.locator('[data-lean-title]')).toHaveCSS(
+            'color',
+            scheme === 'light' ? 'rgb(77, 38, 41)' : 'rgb(236, 211, 212)',
+          )
+          const red = await tint(p)
+          expect(red.bg).not.toBe(blue.bg)
+          expect(red.shadow).toBe('none')
+          // Both over target and past its deadline: red, not blue.
+          await expect(row(page, both)).toHaveAttribute('data-over-target', '')
+          await expect(row(page, both)).toHaveAttribute('data-row-state', 'passed')
           // The target chip: the blue target tone, the moment alone (no "ago").
           const chip = o.locator('[data-time-chip]')
           await expect(chip).toHaveAttribute('data-time-chip', 'target')
@@ -140,8 +163,9 @@ test.describe('Lean row · look', () => {
             'data-deadline-chip',
             'passed',
           )
-          // A plain row: not over target, "Low" as a word, the horizon mark.
+          // A plain row: no state look, "Low" as a word, the horizon mark.
           await expect(row(page, plain)).not.toHaveAttribute('data-over-target', '')
+          await expect(row(page, plain)).not.toHaveAttribute('data-row-state', /.+/)
           await expect(row(page, plain).locator('[data-lean-low]')).toHaveText('Low')
           await expect(row(page, plain).locator('[data-horizon-dot]')).toBeVisible()
         } finally {
