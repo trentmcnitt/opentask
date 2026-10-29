@@ -181,9 +181,76 @@ test.describe('Lean row · look', () => {
           await expect(row(page, plain)).not.toHaveAttribute('data-row-state', /.+/)
           await expect(row(page, plain).locator('[data-lean-low]')).toHaveText('Low')
           await expect(row(page, plain).locator('[data-attempts]')).toHaveCount(0)
-          await expect(row(page, plain).locator('[data-horizon-dot]')).toBeVisible()
+          // Its horizon is the done square's border (Weeks: long dashes).
+          await expect(row(page, plain).locator('[data-lean-done]')).toHaveAttribute(
+            'data-horizon-square',
+            'weeks',
+          )
         } finally {
           await cleanUp(page, ids)
+        }
+      })
+    })
+  }
+})
+
+test.describe('Lean row · the horizon done square', () => {
+  for (const [scheme, scale] of [
+    ['light', 1],
+    ['dark', 2],
+  ] as const) {
+    test.describe(`${scheme} at ${scale}x`, () => {
+      test.use({
+        viewport: { width: 1280, height: 800 },
+        colorScheme: scheme,
+        deviceScaleFactor: scale,
+      })
+
+      test('Days plain, Weeks / Months / Eventually patterned, unset as UNSET_HORIZON; a dated row plain', async ({
+        authenticatedPage: page,
+      }) => {
+        await page.addInitScript(LEAN)
+        const made = {
+          days: await create(page, { title: uniqueTitle('LR days'), horizon: 'days' }),
+          weeks: await create(page, { title: uniqueTitle('LR weeks'), horizon: 'weeks' }),
+          months: await create(page, { title: uniqueTitle('LR months'), horizon: 'months' }),
+          eventually: await create(page, { title: uniqueTitle('LR ev'), horizon: 'eventually' }),
+          unset: await create(page, { title: uniqueTitle('LR unset') }),
+          dated: await create(page, {
+            title: uniqueTitle('LR dated'),
+            horizon: 'months',
+            due_at: new Date(Date.now() + 48 * HOUR).toISOString(),
+          }),
+        }
+        try {
+          await gotoDashboard(page)
+          const square = (id: number) => row(page, id).locator('[data-lean-done]')
+          const border = (id: number) => square(id).locator('[data-horizon-border]')
+
+          // Days: governed, drawn as the plain checkbox itself.
+          await expect(square(made.days)).toHaveAttribute('data-horizon-square', 'days')
+          await expect(border(made.days)).toHaveCount(0)
+          // The patterned steps draw their border.
+          for (const h of ['weeks', 'months', 'eventually'] as const) {
+            await expect(square(made[h])).toHaveAttribute('data-horizon-square', h)
+            await expect(border(made[h])).toHaveCount(1)
+          }
+          // Unset looks like UNSET_HORIZON (weeks today): the same pattern.
+          await expect(square(made.unset)).toHaveAttribute('data-horizon-square', 'weeks')
+          expect(await border(made.unset).innerHTML()).toBe(await border(made.weeks).innerHTML())
+          // A picked target: the horizon doesn't govern, so the plain checkbox.
+          await expect(square(made.dated)).not.toHaveAttribute('data-horizon-square', /.+/)
+          await expect(border(made.dated)).toHaveCount(0)
+
+          // Each density draws its own stroke: 1px at 1x, 1.5px at 2x.
+          const shown = await border(made.weeks).evaluate((svg) =>
+            [...svg.querySelectorAll('g')]
+              .filter((g) => getComputedStyle(g).display !== 'none')
+              .map((g) => g.getAttribute('stroke-width')),
+          )
+          expect(shown).toEqual([scale === 1 ? '1' : '1.5'])
+        } finally {
+          await cleanUp(page, Object.values(made))
         }
       })
     })

@@ -10,14 +10,15 @@
  * `TaskList`'s `SwipeableRow`, on its flat surface. What changes is the look:
  *
  *   [□]  Title !                                (deck) (deck tomorrow) (☀ Today)
- *        ● ⚑ Fri 5:00 PM  Mon 9:00 AM  today 9:14 AM · Low · 📁 Project  labels  📝
+ *        ⚑ Fri 5:00 PM  Mon 9:00 AM 2×  today 9:14 AM · Low · 📁 Project  labels  📝
  *        ↻ Weekly on Sunday
  *
  * - The left control (`DoneControl`): the done square, or the selection
  *   checkbox in selection mode. No circle, no card: a hairline between rows.
  * - High "!" / Urgent "!!" right after the title, bound to its last word.
  *   Medium is never shown; Low is a grey word on the meta line.
- * - The horizon mark (`HorizonMark`) leads the meta line on rows it governs.
+ * - The horizon is the done square's border on rows it governs (`DoneControl`,
+ *   `src/lib/horizon-square.ts`); change it in the editor.
  * - Deadline chip, then the target chip, each saying the moment alone
  *   (`momentChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago") — the
  *   target always the blue target chip (its move / remove menu), never
@@ -62,7 +63,6 @@ import { effectiveAttempts, isPastDeadline } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 import { DoneControl } from './DoneControl'
-import { HorizonMark } from './HorizonMark'
 
 /**
  * The row's STATE LOOK (sheet v13-2, Trent 2026-10-28): a full-bleed tint
@@ -99,7 +99,6 @@ export function LeanRow({
   onDone,
   onSnooze,
   onRemoveTarget,
-  onSetHorizon,
   onTargetAt,
   onDeck,
   isOverdue = false,
@@ -166,7 +165,7 @@ export function LeanRow({
       )}
     >
       <DoneControl
-        title={task.title}
+        task={task}
         onDone={onDone}
         isSelectionMode={isSelectionMode}
         isSelected={isSelected}
@@ -186,7 +185,6 @@ export function LeanRow({
           task={task}
           onMove={(until) => onSnooze(task.id, until)}
           onRemoveTarget={onRemoveTarget}
-          onSetHorizon={isSelectionMode ? undefined : onSetHorizon}
           onLabelClick={onLabelClick}
           onReprocess={onReprocess}
           projectName={projectName}
@@ -235,14 +233,13 @@ function LeanTitle({
 }
 
 /**
- * The meta line: the horizon mark, then deadline → target → created as one
+ * The meta line: deadline → target → created as one
  * run (no dots between), then "· Low · 📁 Project", labels and notes.
  */
 function LeanMeta({
   task,
   onMove,
   onRemoveTarget,
-  onSetHorizon,
   onLabelClick,
   onReprocess,
   projectName,
@@ -250,7 +247,6 @@ function LeanMeta({
   task: Task
   onMove: (until: string) => void
   onRemoveTarget?: (task: Task) => void
-  onSetHorizon?: TaskRowProps['onSetHorizon']
   onLabelClick?: (label: string) => void
   onReprocess?: () => void
   projectName?: string
@@ -263,7 +259,6 @@ function LeanMeta({
       data-lean-meta
       className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
     >
-      <HorizonMark task={task} onChange={onSetHorizon ? (h) => onSetHorizon(task, h) : undefined} />
       {task.deadline_at && (
         <DeadlineChip
           deadlineAt={task.deadline_at}
