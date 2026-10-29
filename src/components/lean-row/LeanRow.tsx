@@ -20,18 +20,19 @@
  * - The horizon: the done square is always plain (2026-10-29: "fully
  *   consistent checkboxes everywhere"); a hold or right-click on it changes
  *   the horizon, on every one-off. The horizon shows as main's perspective
- *   dot after the project on the meta line, its own menu; unset draws as
- *   Weeks (`HorizonDotButton`'s `unsetAsWeeks`).
+ *   dot right after the chips on the meta line (leading it on a row with no
+ *   chips), its own menu; unset draws as Weeks (`HorizonDotButton`'s
+ *   `unsetAsWeeks`).
  * - Deadline chip, then the target chip, each saying the moment alone
  *   (`leanChipWords`: "Today 6:00 PM", "Mon 9:00 AM", no "3h ago"; a
  *   deadline later today counts down, "in 5 hrs", and "Today" is said once
  *   per row) — the
  *   target chip (its move / remove menu) blue while ahead, pale plum once
- *   passed (M1, 2026-10-29); a passed deadline red with its flag — then,
- *   dot-separated, Low and the grey project; labels (the AI glyph rule,
- *   `LabelBadges`) and the yellow notes mark; and LAST the created date
- *   (`createdDateWords`, plain grey; moved to the end 2026-10-29 so it never
- *   sits against the target's words). One 6px gap between every item.
+ *   passed (M1, 2026-10-29); a passed deadline red with its flag — then the
+ *   horizon dot, "2×", and, dot-separated, Low and the grey project; labels
+ *   (the AI glyph rule, `LabelBadges`) and the yellow notes mark; and LAST
+ *   the created date (`createdDateWords`, plain grey). One 6px gap between
+ *   every item; no "·" right after the horizon dot (`metaDots`).
  * - Recurrence on its own line.
  * - The buttons (`LeanButtons`): On deck, On deck tomorrow and one clock —
  *   Today on an untargeted row, Defer on a targeted one. Hidden at rest with
@@ -65,6 +66,7 @@ import { useRowPress } from '@/hooks/useRowPress'
 import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useTitleWeightOverride } from '@/hooks/useTitleWeightOverride'
+import { useOverTintStyle } from '@/hooks/useOverTintOverride'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
 import { horizonGoverns } from '@/lib/horizon-square'
@@ -101,10 +103,10 @@ const TINT_BASE =
   "isolate border-b-transparent before:absolute before:inset-x-[-4px] before:top-0 before:-bottom-px before:-z-10 before:content-['']"
 const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
   soon: {
-    row: `${TINT_BASE} before:bg-[rgb(249,252,255)] dark:before:bg-[rgba(81,162,255,0.03125)]`,
+    row: `${TINT_BASE} before:bg-[var(--lean-soon,rgb(249,252,255))] dark:before:bg-[rgba(81,162,255,0.03125)]`,
   },
   over: {
-    row: `${TINT_BASE} before:bg-[rgb(231,245,255)] dark:before:bg-[rgba(81,162,255,0.125)]`,
+    row: `${TINT_BASE} before:bg-[var(--lean-over,rgb(231,245,255))] dark:before:bg-[rgba(81,162,255,0.125)]`,
   },
   passed: {
     row: `${TINT_BASE} before:bg-[rgba(200,20,10,0.098)] dark:before:bg-[rgba(255,100,103,0.14)]`,
@@ -188,6 +190,8 @@ export function LeanRow({
     cancelLongPressRef,
   })
   const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
+  // TEMPORARY: a dev build's `?overTint=` (`useOverTintStyle`).
+  const overTint = useOverTintStyle()
   const isAiProcessing = task.labels.includes('ai-to-process')
   const timezone = useTimezone()
   const dayStart = useDayStart()
@@ -212,6 +216,7 @@ export function LeanRow({
       data-lean-row={task.id}
       data-row-state={state ?? undefined}
       {...stateFlags(state, isOverdue)}
+      style={overTint}
       {...highlightProps}
       onClick={handleClick}
       onMouseEnter={onFocus}
@@ -363,6 +368,12 @@ function LeanMeta({
     () => leanChipWords(task, timezone, dayStart, hour ? new Date(hour) : new Date()),
     [task, timezone, dayStart, hour],
   )
+  const attempts = useAttempts(task)
+  const line = metaDots(task, {
+    chips: !!task.deadline_at || !!words.target,
+    attempts,
+    projectName,
+  })
   return (
     <div
       data-lean-meta
@@ -404,13 +415,14 @@ function LeanMeta({
           removeX={false}
         />
       )}
-      <AttemptsBadge task={task} />
-      <MetaTail task={task} projectName={projectName} lead={!!task.deadline_at || !!words.target} />
       {horizonGoverns(task) && (
         // The HORIZON DOT, back (Trent, 2026-10-29: "those circles made some
         // sense… then we can have fully consistent checkboxes everywhere"):
-        // main's perspective dot after the project, on every one-off, its own
-        // menu; unset draws as Weeks ("if it's not set, it is weeks").
+        // main's perspective dot right after the chips (Trent: "the first
+        // thing after the deadlines, target, and the was time"; it sat after
+        // the project for a day), on every one-off, its own menu; unset
+        // draws as Weeks ("if it's not set, it is weeks"). It separates on
+        // its own: no "·" right after it.
         <HorizonDotButton
           task={task}
           variant="meta"
@@ -419,6 +431,8 @@ function LeanMeta({
           className="rounded-sm before:absolute before:-inset-2"
         />
       )}
+      {attempts >= 1 && <AttemptsBadge attempts={attempts} />}
+      <MetaTail task={task} projectName={projectName} lead={line.tailLead} />
       {task.labels.length > 0 && (
         <LabelBadges
           labels={task.labels}
@@ -436,7 +450,7 @@ function LeanMeta({
           project, Low and notes, so it never sits against the target's
           words ("Today 3:00 PM was 1:00 PM today 11:53 AM"). */}
       <span className={META_JOIN}>
-        {createdTakesDot(task, words.target, projectName) && <MetaDot />}
+        {line.createdDot && <MetaDot />}
         <span data-created className="text-muted-foreground/70" title="Created">
           {createdDateWords(task.created_at, timezone, dayStart)}
         </span>
@@ -446,26 +460,23 @@ function LeanMeta({
 }
 
 /**
- * Whether the created date takes a "·": something sits before it, and that
- * something is not the horizon dot — "no two dots in a row" (Trent,
- * 2026-10-29): the horizon dot separates on its own ("Personal ● Oct 19").
+ * Where the meta line's "·" go (2026-10-29): before the tail (Low, project)
+ * and before the created date — each only when something sits before it,
+ * and never right after the horizon dot ("no two dots in a row"; the dot
+ * separates on its own). The line: chips, the horizon dot, "2×", Low,
+ * project, labels, notes, created.
  */
-function createdTakesDot(task: Task, target: string | null, projectName?: string): boolean {
-  const afterHorizonDot = horizonGoverns(task) && task.labels.length === 0 && !task.notes?.trim()
-  return !afterHorizonDot && hasMetaBefore(task, target, projectName)
-}
-
-/** Whether anything sits before the created date on the meta line. */
-function hasMetaBefore(task: Task, target: string | null, projectName?: string): boolean {
-  return (
-    horizonGoverns(task) ||
-    !!task.deadline_at ||
-    !!target ||
-    task.priority === 1 ||
-    !!projectName ||
-    task.labels.length > 0 ||
-    !!task.notes?.trim()
-  )
+function metaDots(
+  task: Task,
+  o: { chips: boolean; attempts: number; projectName?: string },
+): { tailLead: boolean; createdDot: boolean } {
+  const dot = horizonGoverns(task)
+  // What sits right before the tail: "2×", else the dot, else a chip.
+  const tailLead = o.attempts >= 1 || (!dot && o.chips)
+  const tail = task.priority === 1 || !!o.projectName
+  const afterTail = tail || task.labels.length > 0 || !!task.notes?.trim()
+  const createdDot = afterTail || o.attempts >= 1 || (!dot && o.chips)
+  return { tailLead, createdDot }
 }
 
 /**
@@ -490,15 +501,7 @@ function MetaDot() {
  * after the target chip, in neutral grey — no plum. The badge only: the card's
  * 3× "Remove target?" offer stays out (Remove target is in the chip's menu).
  */
-function AttemptsBadge({ task }: { task: Task }) {
-  const timezone = useTimezone()
-  const queue = useTaskQueue()
-  if (!task.due_at) return null
-  // Until the preferences load, the server's stored count stands (`TaskRow`).
-  const attempts = queue.loaded
-    ? effectiveAttempts(task, timezone, new Date(), queue.attemptsRolloverTime).attempts
-    : (task.attempts ?? 0)
-  if (attempts < 1) return null
+function AttemptsBadge({ attempts }: { attempts: number }) {
   return (
     <span
       data-attempts={attempts}
@@ -508,6 +511,16 @@ function AttemptsBadge({ task }: { task: Task }) {
       {attempts}×
     </span>
   )
+}
+
+/** The attempts count (0 with no target); until the preferences load, the server's (`TaskRow`). */
+function useAttempts(task: Task): number {
+  const timezone = useTimezone()
+  const queue = useTaskQueue()
+  if (!task.due_at) return 0
+  return queue.loaded
+    ? effectiveAttempts(task, timezone, new Date(), queue.attemptsRolloverTime).attempts
+    : (task.attempts ?? 0)
 }
 
 /** After the dates, dot-separated: Low (never Medium), then the grey project. */
