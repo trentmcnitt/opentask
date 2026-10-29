@@ -2308,10 +2308,12 @@ private struct SegmentTaskRow: View {
     }
 
     /// "Target today": an icon-only 28pt column (`SegmentRowMetrics.
-    /// targetTodayWidth`), left of the done checkbox.
+    /// targetTodayWidth`), left of the done checkbox. The plain clock since
+    /// 2026-10-29 — the web queue rows' (lucide `Clock3`; Trent: "change it
+    /// to a clock… it's just not consistent"); `calendar.badge.clock` before.
     private var targetTodayButton: some View {
         Button(intent: TargetSegmentTodayIntent(taskId: task.id)) {
-            Image(systemName: "calendar.badge.clock")
+            Image(systemName: "clock")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(.secondary)
                 .frame(width: SegmentRowMetrics.targetTodayWidth, height: firstLineHeight)
