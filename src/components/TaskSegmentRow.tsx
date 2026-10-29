@@ -20,6 +20,7 @@ import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
+import { useAgedDotAfter } from '@/hooks/useAgedDotAfter'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
@@ -1441,7 +1442,10 @@ function AgedOutMeta({
   onOpenDetails?: () => void
 }) {
   const { projects } = useProjects()
-  const dot = useQueueOn('aged_out')
+  // No dot on the rows in the dev variant where the heading carries it.
+  const queueOn = useQueueOn('aged_out')
+  const dotAfter = useAgedDotAfter()
+  const dot = queueOn && !dotAfter
   const projectName = projects.find((p) => p.id === task.project_id)?.name
   const dayStart = useDayStart()
   const priority = task.priority > 0 ? getPriorityOption(task.priority) : null
@@ -1525,10 +1529,13 @@ export function AgedGroupHeading({
   panel: boolean
   hiddenWhenNarrow?: boolean
 }) {
+  // TEMPORARY dev variant (`?agedDot=after`): the dot after the word.
+  const dotAfter = useAgedDotAfter()
   return (
     <li
       role="presentation"
       data-aged-group={group}
+      data-aged-dot={dotAfter ? 'after' : 'before'}
       className={cn(
         'flex items-center gap-2 pt-3 pb-1',
         panel ? 'px-1' : 'px-2',
@@ -1536,8 +1543,9 @@ export function AgedGroupHeading({
       )}
     >
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0f3] px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] text-slate-600 uppercase dark:bg-white/[0.08] dark:text-slate-300">
-        <HorizonDotMark horizon={group} />
+        {!dotAfter && <HorizonDotMark horizon={group} />}
         {HORIZON_LABELS[group]}
+        {dotAfter && <HorizonDotMark horizon={group} />}
       </span>
       <span className="text-muted-foreground/70 text-xs tabular-nums">{count}</span>
       <span data-aged-cutoff className="text-muted-foreground/60 ml-auto text-[11.5px]">
