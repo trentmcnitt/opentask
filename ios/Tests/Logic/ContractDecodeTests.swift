@@ -436,7 +436,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -17, -18, -10, -11, -12, -13])
         XCTAssertEqual(TaskSegmentDTO.listed(segments).count, 8, "every segment is a page, empty ones too")
         XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
-        XCTAssertEqual(segments.map(\.title)[0...2], ["Task queue · Deadlines", "Task queue · Upcoming", "Task queue · Today's pulls"])
+        XCTAssertEqual(segments.map(\.title)[0...2], ["Deadlines", "Heads up", "Today's pulls"])
 
         // The deadlines page: the seen safety-net row waits, inert; the
         // deferred one LEFT, "· deferred to <its lead day>".
@@ -526,7 +526,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // title, no Defer all, finishing in its teal.
         XCTAssertEqual(page.kind, .deadlines)
         XCTAssertEqual(page.pageKey, -16)
-        XCTAssertEqual(page.title, "Task queue · Deadlines")
+        XCTAssertEqual(page.title, "Deadlines")
         XCTAssertFalse(page.offersDeferAll)
         XCTAssertNotNil(page.kind?.doneColorHex)
         XCTAssertEqual(page.tasks.map(\.safetyNet), [true, false, false])
@@ -647,7 +647,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         // Native PR E: kinds this build draws, with their own page keys and
         // titles, and no Defer all.
         let expected: [(SegmentKind, Int, String)] = [
-            (.queueToday, -17, "Task queue · Today's pulls"), (.queuePrevious, -18, "Task queue · Previous pulls"),
+            (.queueToday, -17, "Today's pulls"), (.queuePrevious, -18, "Previous pulls"),
         ]
         for (segment, (kind, key, title)) in zip(queue, expected) {
             XCTAssertEqual(SegmentKind(raw: segment.horizon), kind)
@@ -694,7 +694,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let upcoming = try XCTUnwrap(payload.taskSegments.first)
         XCTAssertEqual(upcoming.kind, .upcoming)
         XCTAssertNil(upcoming.horizonValue)
-        XCTAssertEqual(upcoming.label, "Upcoming")
+        XCTAssertEqual(upcoming.label, "Heads up")
         XCTAssertEqual(upcoming.pageKey, -14)
         XCTAssertFalse(upcoming.nudge)
         XCTAssertEqual(upcoming.tasks.map(\.id), [Fixtures.passport, Fixtures.plantsRecurring])

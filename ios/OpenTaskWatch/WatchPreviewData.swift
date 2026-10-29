@@ -156,10 +156,12 @@ enum WatchPreviewData {
         ])
     }
 
-    /// The Tasks page's row corner (2026-10-16) — invented titles: "!!" and
-    /// "!", Medium/Low with no mark, the horizon dot on deadline tasks on
-    /// their automatic target (Days beside "!", Months beside "!!",
-    /// Eventually, unset), and a High task 3× over target.
+    /// The Tasks page's lean row (2026-10-28; the row corner's corpus of
+    /// 2026-10-16) — invented titles: "!!" and "!" after the title,
+    /// Medium/Low with no mark, a High task 3× over target (blue tint, slate
+    /// title, grey "· 3×"), a passed deadline (red tint, flag), a target
+    /// later today (the faint tint), and deadline tasks on their automatic
+    /// target.
     static var cornerTasks: [TaskDTO] {
         let calendar = Calendar.current
         func at(days: Int = 0, _ hour: Int) -> String {
@@ -174,6 +176,8 @@ enum WatchPreviewData {
         }
         return [
             TaskDTO(id: 9501, projectId: 1, title: "Send the signed contract back", priority: 3, dueAt: at(days: -3, 8), attempts: 3, attemptsLabel: "3×"),
+            TaskDTO(id: 9509, projectId: 2, title: "Return the library books", priority: 2, dueAt: at(days: -1, 9), deadlineAt: at(days: -1, 17)),
+            TaskDTO(id: 9510, projectId: 2, title: "Call the vet back", priority: 0, dueAt: DateHelpers.formatISO(Date().addingTimeInterval(3600))),
             TaskDTO(id: 9502, projectId: 1, title: "Renew the domain", priority: 4, dueAt: at(days: 1, 9)),
             TaskDTO(id: 9503, projectId: 2, title: "Order new printer ink", priority: 2, dueAt: at(days: 1, 10)),
             TaskDTO(id: 9504, projectId: 2, title: "Look up the library hours", priority: 1, dueAt: at(days: 1, 11)),

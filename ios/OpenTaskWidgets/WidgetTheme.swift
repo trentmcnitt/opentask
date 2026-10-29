@@ -91,7 +91,7 @@ enum WidgetTheme {
     /// Trent's ruling the same day: a ring is a progress indicator too):
     /// the reminders' purple
     /// (`DayBarColors.fillingHex`, the web's `--badge-reminders`), resolved
-    /// from the view's `colorScheme` like `overTarget(_:)`. Finished is the
+    /// from the view's `colorScheme`, not a dynamic platform colour. Finished is the
     /// done green (`trackMetTint`), or a segment's own `stripDoneColor`.
     static func dayBarFilling(_ scheme: ColorScheme) -> Color {
         let hex = DayBarColors.fillingHex
@@ -145,27 +145,6 @@ enum WidgetTheme {
     /// tint Trent asked for so the armed mode can't be mistaken for the
     /// resting one. It never colors a count, a bar or a pace mark.
     static let takebackTint = Color.red
-
-    /// Over target (2026-10-11): a calm plum, the web's `--over-target` —
-    /// never red, which is kept for a passed deadline only (Trent). Plum TEXT:
-    /// the over-target time and the attempts count folded into it ("Thu ·
-    /// 3×", `AttemptsInTime`). Lifted in dark mode like the web's dark token
-    /// (oklch(0.7 0.15 322) ≈ #C97CD5, 2026-10-12): the light plum on the
-    /// dark card measured 3.0:1 as text; lifted it is 6.0:1. Light mode is
-    /// unchanged (#9E4594, 5.6:1 on white). Resolved from the view's
-    /// `colorScheme` (see `dayBarFilling`), not a dynamic platform color.
-    static func overTarget(_ scheme: ColorScheme) -> Color {
-        rgb(scheme == .dark ? 0xC97CD5 : 0x9E4594)
-    }
-
-    /// A SOLID plum under white text — the Over segment's selected fill
-    /// (`TasksPageControl`), the web's `--over-target-badge`: the plum itself
-    /// in light mode (white on it
-    /// 5.6:1), a darker one in dark mode (oklch(0.52 0.16 322) ≈ #92429E,
-    /// white on it 6.0:1), since white on the lifted text plum would fail.
-    static func overTargetBadge(_ scheme: ColorScheme) -> Color {
-        rgb(scheme == .dark ? 0x92429E : 0x9E4594)
-    }
 
     /// A task page's title color: one deeper teal (#0b7a6f) for every horizon
     /// in light mode, for legibility (Trent, 2026-10-11); the horizon's own
@@ -468,14 +447,29 @@ enum WidgetTheme {
     /// a full-height image box could make the measured last line a point or
     /// two taller than SwiftUI's (which sets the symbol inside the line like
     /// any glyph).
+    ///
+    /// `mark` (2026-10-28, the lean row): High "!" / Urgent "!!" after the
+    /// title — `LeanRowStyle.markSuffix`, the no-break space and the mark,
+    /// measured in `markFont` (the title's size at `LeanRowStyle.markWeight`),
+    /// exactly as `LeanRowStyle.titleWithMark` draws it; before the notes
+    /// glyph, as the row draws them.
     static func measuredLineCount(
-        for text: String, notesGlyphSize: CGFloat?, maxWidth: CGFloat, font: PlatformFont
+        for text: String, notesGlyphSize: CGFloat?, maxWidth: CGFloat, font: PlatformFont,
+        mark: (suffix: String, font: PlatformFont)? = nil
     ) -> Int {
-        guard let notesGlyphSize else { return measuredLineCount(for: text, maxWidth: maxWidth, font: font) }
+        guard notesGlyphSize != nil || mark != nil else {
+            return measuredLineCount(for: text, maxWidth: maxWidth, font: font)
+        }
         guard maxWidth > 0 else { return 1 }
-        let string = NSMutableAttributedString(string: text + "\u{00A0}", attributes: [.font: font])
-        string.append(NSAttributedString(attachment: measuringBox(width: notesGlyphWidth(pointSize: notesGlyphSize))))
-        string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+        let string = NSMutableAttributedString(string: text, attributes: [.font: font])
+        if let mark {
+            string.append(NSAttributedString(string: mark.suffix, attributes: [.font: mark.font]))
+        }
+        if let notesGlyphSize {
+            string.append(NSAttributedString(string: "\u{00A0}", attributes: [.font: font]))
+            string.append(NSAttributedString(attachment: measuringBox(width: notesGlyphWidth(pointSize: notesGlyphSize))))
+            string.addAttribute(.font, value: font, range: NSRange(location: string.length - 1, length: 1))
+        }
         let bounds = string.boundingRect(
             with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -542,6 +536,7 @@ enum WidgetTheme {
     #if os(iOS)
     fileprivate static func uiWeight(_ weight: Font.Weight) -> UIFont.Weight {
         switch weight {
+        case .bold: return .bold
         case .semibold: return .semibold
         case .medium: return .medium
         default: return .regular
@@ -550,6 +545,7 @@ enum WidgetTheme {
     #else
     fileprivate static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
         switch weight {
+        case .bold: return .bold
         case .semibold: return .semibold
         case .medium: return .medium
         default: return .regular
@@ -608,9 +604,10 @@ enum WidgetTheme {
     // "8:30 PM" (today, unchanged), "Tomorrow 9:00 AM", "Sun 9:00 AM" (2-6
     // days out), "Oct 1 9:00 AM" (7+ days out), "Oct 2" (date-only, no time
     // at all). Overdue (changed 2026-09-25): the same ladder backwards —
-    // the red time alone when due earlier today, else "Yesterday" / a
-    // weekday / a date over the red time, so an old overdue row is never
-    // mistaken for today's. The words themselves live in `DueLabel`
+    // the time alone when due earlier today, else "Yesterday" / a weekday /
+    // a date over the time, so an old overdue row is never mistaken for
+    // today's. One colour since 2026-10-28, the target's blue (it was red,
+    // then plum, once overdue; the row's tint says it now). The words themselves live in `DueLabel`
     // (Foundation-only, logic-tested); this section styles them.
     //
     // Date-only detection is an INVENTED convention, not something the wire
@@ -641,16 +638,9 @@ enum WidgetTheme {
         DueLabel.parts(for: due, now: now, isOverdue: isOverdue, day: day)
     }
 
-    /// Subtle indigo for the day word — built on `indigoAccent` (the same
-    /// hue `ReminderSlotStrip`'s "behind, still waiting" fill and
-    /// `CompletedDotToggle`'s ON state use), dimmed to `0.85` since a due
-    /// label sits beside body text far more often than a slot strip segment
-    /// does and doesn't need the fully saturated version.
-    static let dueDayWordTint = indigoAccent.opacity(0.85)
-
     /// The styled `Text` for wherever a task's due time shows (`TaskRow`,
-    /// `TasksSmallView`) — builds on `dueLabelParts` so the day-word tint and
-    /// the overdue-red rule can never drift between call sites. Built via
+    /// `TasksSmallView`, the Up next list) — builds on `dueLabelParts` so the
+    /// words and their one colour can never drift between call sites. Built via
     /// `Text` concatenation (`+`), not a nested `HStack`, so it composes
     /// inline with a `.firstTextBaseline` `HStack` the way a single `Text`
     /// would.
@@ -671,15 +661,14 @@ enum WidgetTheme {
         guard let due = task.dueDate else { return Text("") }
         let overdue = task.isOverdue(now: now)
         let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
-        // All one color when overdue (2026-09-25): the day word
-        // ("Yesterday", "Wed", "Sep 12") is part of what's late, so it wears
-        // the same tint as the time, stacked over it exactly like an
-        // upcoming label. Plum, not red, since 2026-10-11
-        // (WidgetTheme.overTarget).
-        let dayTint = overdue ? WidgetTheme.overTarget(scheme) : dueDayWordTint
-        let timeTint = overdue ? WidgetTheme.overTarget(scheme) : Color.secondary
-        let day = parts.dayWord.map { Text($0).foregroundStyle(dayTint) }
-        let time = parts.time.map { Text($0).foregroundStyle(timeTint) }
+        // ONE colour, day word and time alike: the target's BLUE while it is
+        // ahead, the plum "over" tone once it has passed (M1, 2026-10-29, the
+        // web's lean row chip; blue-only from 10-28). Text only: the web's
+        // chip box (a 10% tint behind the words) is not drawn, so the label's
+        // measured width is still its words'.
+        let tint = LeanRowStyle.target(scheme, isOverdue: overdue)
+        let day = parts.dayWord.map { Text($0).foregroundStyle(tint) }
+        let time = parts.time.map { Text($0).foregroundStyle(tint) }
         // `firstLineSuffix` (the attempts count, `AttemptsInTime`) ends the
         // FIRST line: after the day word when stacked, else after the label.
         if stacked, let day, let time {
@@ -930,12 +919,20 @@ struct WidgetTextMetrics {
     ///
     /// `hasNotes` measures the title WITH the notes glyph after it — pass
     /// the same flag the row draws with (`notesGlyphSize(hasNotes:)`).
+    ///
+    /// `priority`: a task row's title ends in its High/Urgent mark
+    /// (`LeanRowStyle.titleWithMark`); nil (reminders, prompts) measures none.
     func titleLines(
-        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat, hasNotes: Bool = false
+        _ text: String, width: CGFloat, weight: Font.Weight, maxHeight: CGFloat, hasNotes: Bool = false,
+        priority: Int? = nil
     ) -> (lines: Int, shrinks: Bool) {
+        let mark = priority
+            .flatMap(RowCorner.priorityTab)
+            .flatMap(LeanRowStyle.markSuffix)
+            .map { (suffix: $0, font: titleFont(weight: LeanRowStyle.markWeight)) }
         let real = WidgetTheme.measuredLineCount(
             for: text, notesGlyphSize: notesGlyphSize(hasNotes: hasNotes), maxWidth: width,
-            font: titleFont(weight: weight)
+            font: titleFont(weight: weight), mark: mark
         )
         let fitting = maxHeight.isFinite ? max(1, Int(maxHeight / titleLineHeight)) : real
         return (min(real, fitting), real > fitting)

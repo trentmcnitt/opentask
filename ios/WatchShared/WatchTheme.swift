@@ -13,8 +13,12 @@ import SwiftUI
 /// the same palette rules for the watch's much smaller canvas.
 enum WatchTheme {
     /// The one accent hue. Used for any primary action control, toggles
-    /// and the in-progress counts. NOT the strip's fill or the Smart Stack
-    /// gauge's since 2026-10-26 (`dayBarFilling`, the reminders' purple).
+    /// and the in-progress counts — and, since 2026-10-28, everything that
+    /// was the overdue plum (`overdue`, removed: Trent ruled plum out, "I
+    /// can't be memorizing these colors"): the Tasks page's sweep button and
+    /// the Smart Stack's overdue icon and ring. Overdue TEXT is plain. NOT
+    /// the strip's fill or the Smart Stack gauge's progress fill since
+    /// 2026-10-26 (`dayBarFilling`, the reminders' purple).
     static let accent = Color.indigo
 
     /// "Considered"/complete state — the only other color allowed to carry
@@ -59,15 +63,6 @@ enum WatchTheme {
         )
     }
 
-    /// Overdue. Matches the web app's `text-destructive` (red) used for every
-    /// overdue indicator there — `TaskRow`'s left border, `Header`'s overdue
-    /// pill, project/due-date chip badges (`src/components/TaskRow.tsx`,
-    /// `Header.tsx`, `chip-due-badges.ts`) — never orange/amber, which this
-    /// surface briefly (and wrongly) used for the same meaning.
-    /// 2026-10-11: plum, not red — the web's `--over-target`; Trent wants
-    /// nothing about an arrived target to signal that anything is wrong.
-    static let overdue = Color(red: 0.78, green: 0.45, blue: 0.74)
-
     /// Quotas' Takeback mode (`QuotasPageView`): the armed ⊖ toggle and each
     /// row's "−1". Same value as the phone widget's `WidgetTheme.
     /// takebackTint` — an ACTION color (this tap removes one), not a state
@@ -101,8 +96,8 @@ enum WatchTheme {
     }
 
     /// Mirrors `PRIORITY_OPTIONS` in `src/lib/priority.ts`: the title's weight.
-    /// Since 2026-10-16 a Tasks page row also wears the corner strip's
-    /// "!"/"!!" for High/Urgent (`RowCornerStrip`); Reminders rows stay
+    /// A Tasks page row also wears "!"/"!!" for High/Urgent after its title
+    /// (`LeanRowStyle.titleWithMark`, 2026-10-28); Reminders rows stay
     /// weight-only — "priority is prominence" (§6; it also paces the slot's
     /// one nag, server-side, but never marks a row).
     static func priorityWeight(_ priority: Int) -> Font.Weight {

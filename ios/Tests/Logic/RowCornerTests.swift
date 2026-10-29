@@ -2,7 +2,8 @@ import XCTest
 
 /// The native row corner (2026-10-16, `ios/Shared/RowCorner.swift`): the web
 /// row corner's rules (`src/lib/row-corner.ts`, tests/behavioral/
-/// tm-row-corner.test.ts) on the Tasks widget and the watch Tasks page.
+/// tm-row-corner.test.ts). The dot and the corner strip went on 2026-10-28
+/// (`LeanRowTests` has the lean row's rules).
 final class RowCornerTests: XCTestCase {
 
     private let target = "2026-10-16T14:00:00.000Z"
@@ -41,28 +42,10 @@ final class RowCornerTests: XCTestCase {
         XCTAssertEqual((0...4).map(RowCorner.markIsColored), [false, false, false, true, true])
     }
 
-    // MARK: Horizon dot
-
-    /// `HORIZON_DOT` / `HORIZON_DOT_UNSET`, exact values shared with the web.
-    func testDotSizesAndOpacitiesMatchTheWeb() {
-        typealias S = RowCorner.DotStyle
-        XCTAssertEqual(RowCorner.dotStyle(.days), S(radius: 4, opacity: 1, ring: false))
-        XCTAssertEqual(RowCorner.dotStyle(.weeks), S(radius: 3, opacity: 0.7, ring: false))
-        XCTAssertEqual(RowCorner.dotStyle(.months), S(radius: 2.5, opacity: 0.55, ring: false))
-        XCTAssertEqual(RowCorner.dotStyle(.eventually), S(radius: 2.25, opacity: 0.42, ring: false))
-        // Unset: a closed hollow ring, the Weeks dot's 6pt across (r 2.5 + a
-        // 1pt stroke) — no dashes since 2026-10-28.
-        XCTAssertEqual(RowCorner.dotStyle(nil), S(radius: 2.5, opacity: 0.36, ring: true), "unset: a ring, Weeks size")
-        XCTAssertLessThan(RowCorner.dotStyle(nil).opacity, RowCorner.dotStyle(.eventually).opacity, "unset is quieter than any set dot")
-        XCTAssertEqual(RowCorner.dotStyle(nil).radius * 2 + RowCorner.unsetStroke, RowCorner.dotStyle(.weeks).radius * 2)
-        // Each step smaller and fainter than the one before.
-        let filled = TaskHorizon.allCases.map(RowCorner.dotStyle)
-        XCTAssertEqual(filled.map(\.radius), filled.map(\.radius).sorted(by: >))
-        XCTAssertEqual(filled.map(\.opacity), filled.map(\.opacity).sorted(by: >))
-    }
+    // MARK: Where the horizon decides something
 
     /// `showsHorizonDot`: a plain one-off with no target the user picked.
-    func testDotShowsOnlyWhereTheHorizonDecides() {
+    func testShowsHorizonDotOnlyWhereTheHorizonDecides() {
         XCTAssertTrue(RowCorner.showsHorizonDot(task()), "undated one-off")
         XCTAssertTrue(RowCorner.showsHorizonDot(task(due: target, targetAuto: true)), "a deadline's automatic target")
         XCTAssertFalse(RowCorner.showsHorizonDot(task(due: target)), "a picked target makes it quiet")
@@ -73,11 +56,9 @@ final class RowCornerTests: XCTestCase {
         XCTAssertTrue(RowCorner.showsHorizonDot(task(rrule: "")), "an empty rrule is not a schedule")
     }
 
-    func testDotReadsTheTasksHorizonAndUnset() {
+    func testReadsTheTasksHorizonAndUnset() {
         XCTAssertEqual(RowCorner.horizon(of: task(horizon: "months")), .months)
         XCTAssertNil(RowCorner.horizon(of: task()), "unset")
         XCTAssertNil(RowCorner.horizon(of: task(horizon: "someday")), "unknown reads as unset")
-        XCTAssertEqual(RowCorner.dotAccessibilityLabel(.days), "Horizon Days")
-        XCTAssertEqual(RowCorner.dotAccessibilityLabel(nil), "Horizon unset")
     }
 }

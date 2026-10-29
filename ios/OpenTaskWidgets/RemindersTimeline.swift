@@ -168,7 +168,9 @@ enum RemindersTimeline {
         let cached = WidgetStore.loadReminders()?.value
         return (
             WidgetStore.filterPending(cached?.groups ?? [], now: now),
-            TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(cached?.taskSegments ?? [], now: now))
+            TaskSegmentDTO.pulledMerged(
+                TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(cached?.taskSegments ?? [], now: now))
+            )
         )
     }
 
@@ -247,7 +249,9 @@ enum RemindersTimeline {
     static func autoAdvanceSlot(in groups: [ReminderGroupDTO], segments: [TaskSegmentDTO], now: Date = Date()) {
         guard WidgetStore.slotOverride() != nil else { return }
         let filtered = WidgetStore.filterPending(groups, now: now)
-        let listed = TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(segments, now: now))
+        let listed = TaskSegmentDTO.pulledMerged(
+            TaskSegmentDTO.listed(WidgetStore.filterPendingSegments(segments, now: now))
+        )
         guard !filtered.isEmpty else { return }
 
         let shown = displayedPage(groups: filtered, segments: listed, now: now)

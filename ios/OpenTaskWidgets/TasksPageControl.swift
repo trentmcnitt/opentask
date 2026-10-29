@@ -11,8 +11,10 @@ import WidgetKit
 ///   never reorder, so a segment is always where the thumb left it. Over
 ///   target stays at 0, dimmed (still tappable — it lands on "Nothing over
 ///   target"); its count is the "something went over" signal now that the
-///   widget no longer jumps there on its own. Over's count is tinted the
-///   over-target hue while it is not the page on screen.
+///   widget no longer jumps there on its own. Every segment looks the same:
+///   an indigo fill when selected, a plain count otherwise (2026-10-28 —
+///   Trent ruled plum out, "I can't be memorizing these colors"; Over had a
+///   plum fill and a plum count until then).
 /// - ONE project chip at the trailing edge: "Projects ›" off a project page,
 ///   the project's own name ("● Work ›") on one. Each tap steps to the next
 ///   project with something on its page, wrapping (`StepTasksProjectIntent`).
@@ -33,7 +35,6 @@ struct TasksPageControl: View {
     /// systemMedium: shares its line with Undo/Redo, so it gives up counts
     /// and the chip's words first when the line is short.
     var compact = false
-    @Environment(\.colorScheme) private var colorScheme
 
     /// The tap target's height — see the type's doc.
     static let hitHeight: CGFloat = 40
@@ -88,26 +89,18 @@ struct TasksPageControl: View {
             segment(
                 page: WidgetStore.overdueScope, word: "Over",
                 count: counts == .none ? nil : entry.overdueTotalCount,
-                countTint: WidgetTheme.overTarget(colorScheme),
-                // White text on it, so the solid plum (`overTargetBadge`), not
-                // the lifted dark-mode text plum.
-                selectedFill: WidgetTheme.overTargetBadge(colorScheme),
                 dimmed: entry.overdueTotalCount == 0,
                 label: "\(TaskWording.overdue), \(entry.overdueTotalCount)"
             )
             segment(
                 page: WidgetStore.allProjects, word: "Today",
                 count: counts == .all ? entry.todayTotalCount : nil,
-                countTint: nil,
-                selectedFill: WidgetTheme.indigoAccent,
                 dimmed: false,
                 label: "Today, \(entry.todayTotalCount)"
             )
             segment(
                 page: WidgetStore.upNextScope, word: "Next",
                 count: nil,
-                countTint: nil,
-                selectedFill: WidgetTheme.indigoAccent,
                 dimmed: false,
                 label: "Up next"
             )
@@ -120,15 +113,14 @@ struct TasksPageControl: View {
     }
 
     private func segment(
-        page: Int, word: String, count: Int?, countTint: Color?, selectedFill: Color, dimmed: Bool, label: String
+        page: Int, word: String, count: Int?, dimmed: Bool, label: String
     ) -> some View {
         let selected = entry.scope == page
         // A 0 count says nothing the dimming doesn't; leave it off.
         let shownCount = count.flatMap { $0 > 0 ? $0 : nil }
         var text = Text(word).fontWeight(selected ? .semibold : .regular)
         if let shownCount {
-            let number = Text(" \(shownCount)").fontWeight(.semibold)
-            text = text + (selected || countTint == nil ? number : number.foregroundColor(countTint))
+            text = text + Text(" \(shownCount)").fontWeight(.semibold)
         }
         return Button(intent: JumpToTasksPageIntent(page: page)) {
             text
@@ -138,7 +130,7 @@ struct TasksPageControl: View {
                 .padding(.horizontal, 10)
                 .frame(minWidth: Self.minHitWidth)
                 .frame(height: Self.capsuleHeight)
-                .background(Capsule().fill(selected ? selectedFill : Color.clear))
+                .background(Capsule().fill(selected ? WidgetTheme.indigoAccent : Color.clear))
                 .opacity(dimmed && !selected ? 0.4 : 1)
                 .frame(height: Self.hitHeight)
                 .contentShape(Rectangle())
