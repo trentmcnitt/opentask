@@ -25,10 +25,11 @@
  *   deadline later today counts down, "in 5 hrs", and "Today" is said once
  *   per row) — the
  *   target chip (its move / remove menu) blue while ahead, pale plum once
- *   passed (M1, 2026-10-29); a passed deadline red with its flag — then the
- *   created date (`createdDateWords`) in plain
- *   grey with no dot before it. The dot comes after: Low, the grey project.
- *   Then labels (the AI glyph rule, `LabelBadges`) and the yellow notes mark.
+ *   passed (M1, 2026-10-29); a passed deadline red with its flag — then,
+ *   dot-separated, Low and the grey project; labels (the AI glyph rule,
+ *   `LabelBadges`) and the yellow notes mark; and LAST the created date
+ *   (`createdDateWords`, plain grey; moved to the end 2026-10-29 so it never
+ *   sits against the target's words). One 6px gap between every item.
  * - Recurrence on its own line.
  * - The buttons (`LeanButtons`): On deck, On deck tomorrow and one clock —
  *   Today on an untargeted row, Defer on a targeted one. Hidden at rest with
@@ -407,10 +408,7 @@ function LeanMeta({
         </span>
       )}
       <AttemptsBadge task={task} />
-      <span data-created className="text-muted-foreground/70" title="Created">
-        {createdDateWords(task.created_at, timezone, dayStart)}
-      </span>
-      <MetaTail task={task} projectName={projectName} />
+      <MetaTail task={task} projectName={projectName} lead={!!task.deadline_at || !!words.target} />
       {task.labels.length > 0 && (
         <LabelBadges
           labels={task.labels}
@@ -424,7 +422,35 @@ function LeanMeta({
           <StickyNote className="size-3" />
         </span>
       )}
+      {/* The created date LAST (Trent, 2026-10-29, round 10): after the
+          project, Low and notes, so it never sits against the target's
+          words ("Today 3:00 PM was 1:00 PM today 11:53 AM"). */}
+      {hasMetaBefore(task, words.target, projectName) && <MetaDot />}
+      <span data-created className="text-muted-foreground/70" title="Created">
+        {createdDateWords(task.created_at, timezone, dayStart)}
+      </span>
     </div>
+  )
+}
+
+/** Whether anything sits before the created date on the meta line (it takes a dot then). */
+function hasMetaBefore(task: Task, target: string | null, projectName?: string): boolean {
+  return (
+    !!task.deadline_at ||
+    !!target ||
+    task.priority === 1 ||
+    !!projectName ||
+    task.labels.length > 0 ||
+    !!task.notes?.trim()
+  )
+}
+
+/** The meta line's separator dot. */
+function MetaDot() {
+  return (
+    <span className="text-muted-foreground/50" aria-hidden>
+      ·
+    </span>
   )
 }
 
@@ -455,7 +481,16 @@ function AttemptsBadge({ task }: { task: Task }) {
 }
 
 /** After the dates, dot-separated: Low (never Medium), then the grey project. */
-function MetaTail({ task, projectName }: { task: Task; projectName?: string }) {
+function MetaTail({
+  task,
+  projectName,
+  lead,
+}: {
+  task: Task
+  projectName?: string
+  /** Something precedes the tail (a chip): its first part takes a dot too. */
+  lead: boolean
+}) {
   const parts = [
     task.priority === 1 ? (
       <span key="low" data-lean-low>
@@ -473,9 +508,7 @@ function MetaTail({ task, projectName }: { task: Task; projectName?: string }) {
     <>
       {parts.map((part, i) => (
         <span key={i} className="contents">
-          <span className="text-muted-foreground/50" aria-hidden>
-            ·
-          </span>
+          {(lead || i > 0) && <MetaDot />}
           {part}
         </span>
       ))}
