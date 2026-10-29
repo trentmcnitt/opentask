@@ -331,14 +331,15 @@ enum TaskWording {
     /// The past-deadline marker's word.
     static let pastDeadline = "Past deadline"
 
-    /// Every task segment's title starts with it (Trent, 2026-10-20: one
-    /// format everywhere) — the web's `TASK_QUEUE_PREFIX`.
+    /// Every task segment's title started with it from 2026-10-20 to 10-29;
+    /// kept for `withoutTaskQueuePrefix`, which still reads an old title.
     static let taskQueuePrefix = "Task queue"
 
-    /// "Task queue · Daily" — the web's `taskQueueTitle`. A middle dot, never
-    /// an em dash.
+    /// A task segment's title: its word alone since 2026-10-29 ("Daily";
+    /// Trent: "I think just the title's enough now", the web's
+    /// `segmentTitle`). It was "Task queue · Daily".
     static func taskQueueTitle(_ word: String) -> String {
-        "\(taskQueuePrefix) · \(word)"
+        word
     }
 
     /// A title's word without the prefix ("Task queue · Upcoming" →

@@ -109,7 +109,7 @@ final class UpcomingSectionsTests: WidgetStoreTestCase {
         XCTAssertEqual(upcoming.cardLabel(for: upcoming.tasks[0]), "Upcoming · Tomorrow")
         XCTAssertEqual(upcoming.cardLabel(for: upcoming.tasks[1]), "Upcoming · Later")
         let days = TaskSegmentDTO(horizon: "days", tasks: [row(3, .waiting, nil)])
-        XCTAssertEqual(days.cardLabel(for: days.tasks[0]), "Task queue · Daily")
+        XCTAssertEqual(days.cardLabel(for: days.tasks[0]), "Daily")
     }
 
     // MARK: Headings and the paging
