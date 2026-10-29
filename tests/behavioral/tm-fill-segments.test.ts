@@ -54,8 +54,10 @@ describe('TM-FILL: every segment, every day', () => {
 
   test('TM-FILL01: switch on, a caller that draws everything: all of SEGMENT_ORDER, deadlines first', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
-    const segs = segments({ queuePanels: true, deadlineRows: true, fill: true })
+    // Aged out (2026-10-29) only for a caller that asks (the dev web): every kind.
+    const segs = segments({ queuePanels: true, deadlineRows: true, fill: true, agedOut: true })
     expect(segs.map((s) => s.horizon)).toEqual([...SEGMENT_ORDER])
+    expect(segs.at(-1)?.horizon).toBe('aged_out')
     expect(segs[0].horizon).toBe('deadlines')
     for (const seg of segs) {
       if (seg.horizon === 'days') {
@@ -71,8 +73,8 @@ describe('TM-FILL: every segment, every day', () => {
   test('TM-FILL02: switch off: the horizons and Upcoming only, in order', () => {
     const segs = segments({ queuePanels: true, deadlineRows: true, fill: true })
     expect(segs.map((s) => s.horizon)).toEqual([
-      'days',
       'upcoming',
+      'days',
       'weeks',
       'months',
       'eventually',
@@ -82,18 +84,18 @@ describe('TM-FILL: every segment, every day', () => {
   test('TM-FILL03: switch on, never a kind the caller does not draw', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
     expect(segments({ queuePanels: true, fill: true }).map((s) => s.horizon)).toEqual([
+      'upcoming',
       'queue_today',
       'queue_previous',
       'days',
-      'upcoming',
       'weeks',
       'months',
       'eventually',
     ])
     expect(segments({ deadlineRows: true, fill: true }).map((s) => s.horizon)).toEqual([
       'deadlines',
-      'days',
       'upcoming',
+      'days',
       'weeks',
       'months',
       'eventually',

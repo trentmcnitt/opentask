@@ -2211,6 +2211,89 @@ paths:
 
   # --- Reminders (§6) ---
 
+  /api/task-segments/keep:
+    post:
+      summary: Keep the horizon of Aged out rows
+      operationId: taskSegmentKeep
+      tags: [Reminders]
+      description: >
+        Aged out's consider (2026-10-29, first pass): Process's keep (`affirm_horizon`) —
+        `growth_kept_at` = now, so the task comes back only one threshold period later — plus
+        `growth_kept_count` + 1 and `last_considered_at` = now, so the row stays today as
+        considered. The caller's own open tasks only. One undo entry. 404 unless the build has
+        Aged out (`NEXT_PUBLIC_AGED_OUT=1`).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      undo_id:
+                        $ref: '#/components/schemas/UndoId'
+                      kept: { type: integer }
+  /api/task-segments/grow:
+    post:
+      summary: Grow the horizon of Aged out rows
+      operationId: taskSegmentGrow
+      tags: [Reminders]
+      description: >
+        Aged out's Grow (2026-10-29, first pass): each task's horizon one step out — days →
+        weeks → months → eventually; unset counts as weeks, so it grows to months; an
+        eventually task is left alone. `horizon_set_at` restarts, `growth_kept_count` goes to 0,
+        and `last_considered_at` = now, so the row stays today as considered. The caller's own
+        open tasks only. One undo entry. 404 unless the build has Aged out
+        (`NEXT_PUBLIC_AGED_OUT=1`).
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+                horizon:
+                  type: string
+                  enum: [days, weeks, months, eventually]
+                  description: >
+                    The button's hold menu: move each task to this horizon instead of one
+                    step out (in or out). A task already there is left alone.
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      undo_id:
+                        $ref: '#/components/schemas/UndoId'
+                      grown: { type: integer }
   /api/task-segments/consider:
     post:
       summary: Mark task-segment rows considered
@@ -2652,12 +2735,24 @@ paths:
             enum: ['1']
           description: >
             `1` (2026-10-24, every segment every day): `task_segments` holds every kind this
-            client draws, in the fixed order (`deadlines`, `queue_today`, `queue_previous`,
-            `days`, `upcoming`, `weeks`, `months`, `eventually`), an empty one with `tasks: []`
+            client draws, in the fixed order (`deadlines`, `upcoming`, `queue_today`,
+            `queue_previous`, `days`, `weeks`, `months`, `eventually`; Upcoming moved after
+            `deadlines` on 2026-10-29), an empty one with `tasks: []`
             and zero counts. `deadlines` comes only with the task queue on and `deadlines=1`, the
             queue's two panels only with it on and `queue=1`; the rest always. Display only:
             which task is in which segment does not change. Omitted: a segment comes only on a
             day it has rows. The web sends it.
+        - name: aged
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1` (2026-10-29, first pass): this client draws the `aged_out` segment (see
+            `task_segments`). Honoured only on a build with `NEXT_PUBLIC_AGED_OUT=1` (dev); the
+            web there sends it, beside `REMINDERS_URL`, which the native apps share. Omitted:
+            nothing changes.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -2694,7 +2789,7 @@ paths:
                           by default; months the first check-in day of the
                           month; eventually the first one of Jan, Apr, Jul,
                           Oct) — plus UPCOMING (2026-10-12, `horizon:
-                          "upcoming"`, after `days`): targeted one-offs,
+                          "upcoming"`, after `deadlines` since 2026-10-29 — after `days` before): targeted one-offs,
                           repeating tasks' next occurrences and (with
                           `?deck=1`) future decks, in two SECTIONS
                           (2026-10-25, each row's `upcoming_section`):
@@ -2709,6 +2804,19 @@ paths:
                           Later day) came round shows daily until it is.
                           TOP-LEVEL, never inside `groups`; never counted in
                           `total`, the nav badge or the slot notifications.
+
+                          AGED OUT (2026-10-29, first pass; only on a build
+                          with `NEXT_PUBLIC_AGED_OUT=1` AND `?aged=1` on the
+                          request): `horizon: "aged_out"`, LAST — the one-offs
+                          Process's growth ask would ask about (past their
+                          horizon's threshold, counted from the latest of
+                          `horizon_set_at`, else `created_at`, and
+                          `growth_kept_at`; never Eventually), weekly: a task
+                          joins when it was aged at the start of the latest
+                          check-in day, then carries over daily until handled
+                          (`/api/task-segments/keep` or `/grow`; a kept or
+                          grown row stays today as `considered`). A task in
+                          it is in no horizon segment that day.
 
                           THE TASK QUEUE (2026-10-19, only with the server's
                           `OPENTASK_TASK_QUEUE` on — `task_queue` in GET
@@ -6120,6 +6228,12 @@ components:
           description: >
             The last Process "keep" of the horizon (`affirm_horizon`); Process asks to grow it
             again only one threshold period after it. Server-set.
+        growth_kept_count:
+          type: integer
+          description: >
+            Keeps in a row (2026-10-29, Aged out): +1 on each keep (`affirm_horizon`,
+            `/api/task-segments/keep`), back to 0 on a grow or any change of `horizon`. The Aged
+            out row shows it as "kept 2×". Server-set.
         queue_mark:
           type: boolean
           description: >

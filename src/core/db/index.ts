@@ -423,6 +423,10 @@ function runMigrations(database: Database.Database): void {
       database.exec(`ALTER TABLE tasks ADD COLUMN ${col} TEXT DEFAULT NULL`)
     }
   }
+  // Aged out (2026-10-29): keeps in a row since the last horizon change.
+  if (!hasColumn(database, 'tasks', 'growth_kept_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN growth_kept_count INTEGER NOT NULL DEFAULT 0')
+  }
   // The task queue (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
   for (const col of ['queue_mark', 'try_tomorrow']) {
     if (!hasColumn(database, 'tasks', col)) {

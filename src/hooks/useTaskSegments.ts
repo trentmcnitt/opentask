@@ -13,6 +13,7 @@ import {
   type UpcomingSection,
 } from '@/lib/task-segments'
 import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
+import { growStep } from '@/lib/aged-out'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
 import type { Task } from '@/types'
@@ -73,7 +74,7 @@ import {
  *   nothing changed: the row comes back and the toast says why
  *   (`src/lib/deck-request.ts`)
  * - horizon chip → a new horizon (the row may change segment on refresh; the
- *   toast then says "Moved to <panel title>", e.g. "Moved to Monthly")
+ *   toast then says "Moved to <panel title>", e.g. "Moved to Months")
  *
  * THE DEADLINES PAGE (2026-10-22, docs/TASK-MODEL.md § The deadlines page):
  * - circle → consider, as anywhere — except in the SAFETY NET (from the day
@@ -128,7 +129,15 @@ export interface SegmentRow {
    * sent without one (it always sends it) reads as Later.
    */
   section?: UpcomingSection
+  /**
+   * PULLED (2026-10-29, `mergePulled`): which of the queue's two panels the
+   * row came from — Today's pulls or the earlier ones. Only on the merged
+   * Pulled view's rows; the row acts as its own kind.
+   */
+  pulled?: PulledSection
 }
+
+export type PulledSection = 'today' | 'earlier'
 
 export interface SegmentView {
   horizon: SegmentKind
@@ -137,6 +146,8 @@ export interface SegmentView {
   considered: number
   deferred: number
   nudge: boolean
+  /** The merged Pulled view (`mergePulled`): Today's and earlier pulls as one. */
+  pulled?: true
 }
 
 interface UseTaskSegmentsOptions {
@@ -177,7 +188,7 @@ export function useTaskSegments({
   // Each tap's change, until the payload on screen was requested after its
   // write answered (`src/lib/pending-overlay.ts`).
   const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
-  const view = useMemo(() => segmentViews(segments, overlay), [segments, overlay])
+  const view = useMemo(() => mergePulled(segmentViews(segments, overlay)), [segments, overlay])
   // Which rows are the deadlines page's, and which of those its safety net
   // holds — what a consider or a deck does to a row depends on it. Read
   // through a ref, so the actions keep one identity across refreshes.
@@ -229,6 +240,7 @@ export function useTaskSegments({
       ),
     [run, considered],
   )
+  const { keep, grow } = useAgedOutActions(run)
   const done = useCallback(
     (task: Task) =>
       run(
@@ -297,6 +309,8 @@ export function useTaskSegments({
     deferLead,
     consider,
     considerAll,
+    keep,
+    grow,
     done,
     targetToday,
     deferAll,
@@ -358,6 +372,38 @@ function segmentViews(
       nudge: seg.nudge,
     }
   })
+}
+
+/**
+ * PULLED, ONE SEGMENT (Trent, 2026-10-29: "just have pulls and then the
+ * first thing is Today and the other section is Earlier"): the queue's two
+ * panels — Today's pulls, Previous pulls — drawn as ONE segment in the web
+ * (one strip bar, one page, one "N of M"), each row tagged with the panel it
+ * came from (`pulled`) for its section heading. Only the view merges: the
+ * server's two kinds, their order and the native apps are unchanged, and each
+ * row still acts as its own kind (Try Tomorrow's mark is a Today's pull's).
+ * The merged view takes Today's pulls' place and kind (`queue_today`).
+ */
+export function mergePulled(views: SegmentView[]): SegmentView[] {
+  const today = views.find((v) => v.horizon === 'queue_today')
+  const earlier = views.find((v) => v.horizon === 'queue_previous')
+  if (!today && !earlier) return views
+  const parts: [SegmentView | undefined, PulledSection][] = [
+    [today, 'today'],
+    [earlier, 'earlier'],
+  ]
+  const merged: SegmentView = {
+    horizon: 'queue_today',
+    pulled: true,
+    rows: parts.flatMap(([v, pulled]) => (v ? v.rows.map((r) => ({ ...r, pulled })) : [])),
+    waiting: (today?.waiting ?? 0) + (earlier?.waiting ?? 0),
+    considered: (today?.considered ?? 0) + (earlier?.considered ?? 0),
+    deferred: (today?.deferred ?? 0) + (earlier?.deferred ?? 0),
+    nudge: !!today?.nudge || !!earlier?.nudge,
+  }
+  const at = views.findIndex((v) => v === today || v === earlier)
+  const rest = views.filter((v) => v !== today && v !== earlier)
+  return [...rest.slice(0, at), merged, ...rest.slice(at)]
 }
 
 /**
@@ -443,6 +489,41 @@ function useSetHorizon(onUndo: () => void, refresh: () => Promise<void>, onCompl
 }
 
 /**
+ * AGED OUT (2026-10-29, src/lib/aged-out.ts): the row's consider is Process's
+ * keep (comes back one threshold later, "kept N×"); Grow moves the horizon
+ * one step out. Either way the row stays today, considered.
+ */
+function useAgedOutActions(run: RunSegmentAction) {
+  const keep = useCallback(
+    (task: Task) =>
+      run(
+        [task.id],
+        // Considered, and drawn with the new count until the payload has it.
+        { left: 'considered', patch: { growth_kept_count: task.growth_kept_count + 1 } },
+        () => post('/api/task-segments/keep', { ids: [task.id] }),
+        `Kept the horizon: “${task.title}”`,
+      ),
+    [run],
+  )
+  // `pick`: the hold menu's horizon; omitted, one step out.
+  const grow = useCallback(
+    (task: Task, pick?: HorizonValue) => {
+      const to = pick ?? growStep(task.horizon)
+      if (!to || to === task.horizon) return
+      return run(
+        [task.id],
+        { left: 'considered', patch: { horizon: to, growth_kept_count: 0 } },
+        () =>
+          post('/api/task-segments/grow', { ids: [task.id], ...(pick ? { horizon: pick } : {}) }),
+        `Horizon now ${HORIZON_LABELS[to]}: “${task.title}”`,
+      )
+    },
+    [run],
+  )
+  return { keep, grow }
+}
+
+/**
  * Considered all (task queue PR 3, spec rule 9): every row still waiting in
  * the segment, in one consider call — one undo entry, Undo on the toast.
  */
@@ -451,11 +532,14 @@ function useConsiderAll(run: RunSegmentAction, considered: (id: number) => Overl
     (segment: SegmentView) => {
       const ids = toConsider(segment).map((r) => r.task.id)
       if (ids.length === 0) return
+      // Aged out (2026-10-29): considering there is Process's keep.
+      const keep = segment.horizon === 'aged_out'
+      const n = ids.length === 1 ? '1 task' : `${ids.length} tasks`
       return run(
         ids,
         considered,
-        () => post('/api/task-segments/consider', { ids }),
-        ids.length === 1 ? 'Considered 1 task' : `Considered ${ids.length} tasks`,
+        () => post(`/api/task-segments/${keep ? 'keep' : 'consider'}`, { ids }),
+        keep ? `Kept the horizon of ${n}` : `Considered ${n}`,
       )
     },
     [run, considered],
@@ -703,7 +787,7 @@ export function targetWhen(
 
 /**
  * The horizon chip's toast. When the change moves the row to another segment,
- * it says where it went, by the panel's title ("Moved to Monthly", 2026-10-11;
+ * it says where it went, by the panel's title ("Moved to Months", 2026-10-11;
  * the title since 2026-10-20) — the row is about to leave the list, and
  * "Horizon: Months" didn't say that. Compared on the EFFECTIVE horizon (a
  * deadline can pull a task in, so a new set horizon may leave it where it

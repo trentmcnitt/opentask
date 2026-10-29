@@ -17,6 +17,7 @@ import { getTaskSegments } from '@/core/tasks/task-segments'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
+import { AGED_OUT_ENABLED } from '@/lib/aged-out'
 
 export const GET = withLogging(async function GET(request: NextRequest) {
   try {
@@ -48,6 +49,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // sends it; without it (a native build) a segment comes only on a day it
     // has rows, as before.
     const fill = request.nextUrl.searchParams.get('fill') === '1'
+    // `?aged=1` (Aged out, 2026-10-29, first pass — src/lib/aged-out.ts): this
+    // client draws the `aged_out` segment. Only the web sends it, and only on
+    // a build with the segment (`NEXT_PUBLIC_AGED_OUT=1`, dev): it is not in
+    // `REMINDERS_URL`, the question the native apps share.
+    const agedOut = AGED_OUT_ENABLED && request.nextUrl.searchParams.get('aged') === '1'
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)
     const promptsBySlot = getQuotaPromptsBySlot(user.id, user.timezone, now)
@@ -104,6 +110,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         handledRows,
         deadlineRows,
         fill,
+        agedOut,
       }).map((seg) => ({
         horizon: seg.horizon,
         tasks: seg.tasks.map(({ task, state, left, safetyNet, seen, section }) => ({

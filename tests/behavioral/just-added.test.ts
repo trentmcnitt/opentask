@@ -75,6 +75,7 @@ function makeTask(overrides: Partial<Task> & { id: number; created_at: string })
     attempts: 0,
     attempts_counted_through: null,
     growth_kept_at: null,
+    growth_kept_count: 0,
     queue_mark: false,
     try_tomorrow: false,
     queued_at: null,

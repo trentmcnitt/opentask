@@ -1,6 +1,6 @@
 /**
  * THE DEADLINES PAGE on the web (2026-10-22, docs/TASK-MODEL.md § The
- * deadlines page; plan §9): "Task queue · Deadlines", FIRST among the task
+ * deadlines page; plan §9): "Deadlines", FIRST among the task
  * segments, with the task-queue switch on (`POST /api/test/task-queue`).
  *
  * A deadline task with no target goes on the page from its lead day
@@ -117,7 +117,7 @@ for (const viewport of VIEWPORTS) {
         await page.goto('/reminders')
         const first = page.locator('[data-task-segments] [data-task-segment]').first()
         await expect(first).toHaveAttribute('data-task-segment', 'deadlines')
-        await expect(first).toContainText(/Task queue · Deadlines/i)
+        await expect(first).toContainText(/Deadlines/i)
         await expect(row(first, ids[0])).toBeVisible()
         // No Defer all on the page (its Defer is per row).
         await expect(first.getByRole('button', { name: /Defer all/ })).toHaveCount(0)

@@ -74,10 +74,12 @@ export type QueueKind = (typeof QUEUE_KINDS)[number]
 /**
  * A task segment's identity: a horizon, Upcoming (2026-10-12, the heads-up
  * segment — `upcomingState`, below), one of the queue's two panels, or the
- * DEADLINES page (2026-10-22, `deadlinePlace` below). In the API,
- * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"`.
+ * DEADLINES page (2026-10-22, `deadlinePlace` below), or AGED OUT (2026-10-29,
+ * `src/lib/aged-out.ts`, only for a caller that asks). In the API,
+ * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"` /
+ * `"aged_out"`.
  */
-export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines'
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out'
 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
@@ -115,21 +117,26 @@ export function segmentCounts(segment: {
 }
 
 /**
- * The order the screens walk the segments: the DEADLINES page first (Trent,
- * 10-22: "the deadlines page is FIRST in the queue carousel" — it is the only
- * queue page that nags), then the queue's two panels (spec rule 6: "the first
- * and foremost thing to handle"), then Upcoming directly after Days and before
- * Weeks, on a check-in day too (spec §2).
+ * The order the screens walk the segments, in the strip's four GROUPS
+ * (Trent's tight N2, 2026-10-29; `SEGMENT_STRIP_GROUP`): DATED — the
+ * DEADLINES page first (10-22: "the deadlines page is FIRST in the queue
+ * carousel", the only queue page that nags), then Upcoming ("Heads up");
+ * PULLED — the queue's two panels; HORIZON — Days, Weeks, Months,
+ * Eventually; then Aged out. Until 2026-10-29 the panels came second and
+ * Upcoming sat between Days and Weeks (spec §2).
  */
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'deadlines',
+  'upcoming',
   'queue_today',
   'queue_previous',
   'days',
-  'upcoming',
   'weeks',
   'months',
   'eventually',
+  // Aged out (2026-10-29): last — the tasks that have outlived their horizon,
+  // reviewed after the horizons themselves. Only for a caller that asks.
+  'aged_out',
 ]
 
 /** Unset reads as weeks — but is never reported as set (`task.horizon` stays null). */

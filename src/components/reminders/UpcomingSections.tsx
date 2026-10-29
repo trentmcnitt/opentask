@@ -155,7 +155,13 @@ function UpcomingSectionBlock({
           aria-label={`Considered in ${title}`}
         >
           {section.handled.map((row) => (
-            <ConsideredSegmentRow key={row.task.id} row={row} panel={panel} onPutBack={putBack} />
+            <ConsideredSegmentRow
+              key={row.task.id}
+              row={row}
+              panel={panel}
+              segmentHorizon="upcoming"
+              onPutBack={putBack}
+            />
           ))}
         </ul>
       )}

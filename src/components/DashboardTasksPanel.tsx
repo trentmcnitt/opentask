@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ReminderSlotBar } from '@/components/ReminderSlotBar'
+import { ReminderSlotBar, stripMarkFor } from '@/components/ReminderSlotBar'
 import {
   NARROW_CAP,
   PagerSweep,
@@ -12,6 +12,11 @@ import {
   WIDE_CAP,
 } from '@/components/reminders/PanelPagerParts'
 import {
+  AgedGroupHeading,
+  PulledSectionHeading,
+  agedGroupBefore,
+  pulledSectionBefore,
+  rowKind,
   ConsideredSegmentRow,
   EmptySegmentLine,
   SegmentNudge,
@@ -29,6 +34,7 @@ import {
 import { usePanelPager } from '@/hooks/usePanelPager'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
+import { TASK_QUEUE_TITLE } from '@/lib/task-model-words'
 import { useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
 import {
@@ -45,7 +51,7 @@ import {
  * on top of tasks like it was before." So the task segments got a card of
  * their own again — but one shaped like the Reminders card: its own pager
  * across the segments (with the switch on the deadlines page first, then the
- * task queue's two panels; then Daily, Upcoming, Weekly, Monthly, Quarterly —
+ * task queue's two panels; then Days, Heads up, Weeks, Months, Eventually —
  * `SEGMENT_ORDER`), its own strip of
  * bars (the current one taller, as a slot's is; purple while filling, green
  * when finished, the deadlines page teal — `ReminderSlotBar`), the
@@ -95,6 +101,7 @@ export function DashboardTasksPanel({
       taskSegment: true,
       doneColor: segmentDoneColor(segment.horizon),
       emptyDone: true,
+      mark: stripMarkFor(segment.horizon, segment.pulled),
     }
   })
   // No page is a slot: the natural page is the first segment still waiting.
@@ -160,7 +167,8 @@ export function DashboardTasksPanel({
       className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
     >
       <SlotPagerHeader
-        label={page.label}
+        // "Task queue" on every page (2026-10-29); the strip's words say which.
+        label={TASK_QUEUE_TITLE}
         accent={segmentTitleColor(segment.horizon)}
         doneAccent={segmentDoneColor(segment.horizon)}
         time={null}
@@ -280,6 +288,7 @@ function TasksDoneLine({
                 key={row.task.id}
                 row={row}
                 panel
+                segmentHorizon={s.horizon}
                 onPutBack={(task) => void actions.restore(task)}
               />
             )),
@@ -338,17 +347,28 @@ function TaskPageBody({
         <p className="text-muted-foreground px-3 pb-3 text-sm">Nothing left here</p>
       ) : (
         <ul className="space-y-0.5 px-2 pb-1" aria-label={label}>
-          {visible.map((row, i) => (
-            <TaskSegmentRow
-              key={row.task.id}
-              row={row}
-              actions={actions}
-              timezone={timezone}
-              panel
-              segmentHorizon={segment.horizon}
-              hiddenWhenNarrow={!expanded && i >= NARROW_CAP}
-            />
-          ))}
+          {visible.map((row, i) => {
+            const narrowHidden = !expanded && i >= NARROW_CAP
+            // Aged out's group headings, Pulled's sections (2026-10-29).
+            const heading = agedGroupBefore(segment.horizon, visible, i)
+            const pulled = pulledSectionBefore(segment, visible, i)
+            return (
+              <Fragment key={row.task.id}>
+                {heading && <AgedGroupHeading {...heading} panel hiddenWhenNarrow={narrowHidden} />}
+                {pulled && (
+                  <PulledSectionHeading {...pulled} panel hiddenWhenNarrow={narrowHidden} />
+                )}
+                <TaskSegmentRow
+                  row={row}
+                  actions={actions}
+                  timezone={timezone}
+                  panel
+                  segmentHorizon={rowKind(segment, row)}
+                  hiddenWhenNarrow={narrowHidden}
+                />
+              </Fragment>
+            )
+          })}
         </ul>
       )}
       {!upcoming && showConsidered && handled.length > 0 && (
@@ -358,6 +378,7 @@ function TaskPageBody({
               key={row.task.id}
               row={row}
               panel
+              segmentHorizon={segment.horizon}
               onPutBack={(task) => void actions.restore(task)}
             />
           ))}

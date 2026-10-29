@@ -217,6 +217,11 @@ export interface Task {
   /** Process's last "keep" of the horizon (ruling Q7); null = never kept. */
   growth_kept_at: string | null
   /**
+   * Keeps in a row (Aged out, 2026-10-29): +1 on each keep, 0 on a grow or any
+   * change of the horizon. The segment row says "kept 2×".
+   */
+  growth_kept_count: number
+  /**
    * THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
    * `queue_mark`: a defer (Snooze-all, Try Tomorrow) landing at or after the
    * next rollover moved the target to that rollover and marked the task; the

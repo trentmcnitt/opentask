@@ -353,6 +353,16 @@ export function openTaskLocalDay(instant: Date, timezone: string, dayStart: stri
   return memo(localDayMemo, `${date}|${timezone}`, () => DateTime.fromISO(date, { zone: timezone }))
 }
 
+/**
+ * The instant an OpenTask day starts, for a day in `openTaskLocalDay`'s shape
+ * (a date at local midnight, e.g. a segment's latest shown day after calendar
+ * maths on it) — `dayStartMoment` of its date. Aged out (2026-10-29) asks
+ * whether a task was already aged when the latest check-in day began.
+ */
+export function openTaskLocalDayStart(day: DateTime, timezone: string, dayStart: string): Date {
+  return dayStartMoment(day.toISODate()!, timezone, dayStart)
+}
+
 /** The instants the days around `now` start at: yesterday, today, tomorrow, the day after, a week on. */
 export interface DayBoundaries {
   yesterdayStart: Date

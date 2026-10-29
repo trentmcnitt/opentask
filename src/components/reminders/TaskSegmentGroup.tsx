@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { CheckCheck, Forward } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -11,6 +11,11 @@ import {
   useSlotScroll,
 } from '@/components/reminders/ReminderSlotGroup'
 import {
+  AgedGroupHeading,
+  PulledSectionHeading,
+  agedGroupBefore,
+  pulledSectionBefore,
+  rowKind,
   ConsideredSegmentRow,
   EmptySegmentLine,
   SegmentNudge,
@@ -181,16 +186,24 @@ export function TaskSegmentGroup({
           {empty && <EmptySegmentLine className="px-3 pb-1" doneAccent={doneColor} />}
           {waiting.length > 0 && (
             <ul className="space-y-0.5 px-1" aria-label={label}>
-              {waiting.map((row) => (
-                <TaskSegmentRow
-                  key={row.task.id}
-                  row={row}
-                  actions={actions}
-                  timezone={timezone}
-                  panel={false}
-                  segmentHorizon={segment.horizon}
-                />
-              ))}
+              {waiting.map((row, i) => {
+                // Aged out's group headings, Pulled's sections (2026-10-29).
+                const heading = agedGroupBefore(segment.horizon, waiting, i)
+                const pulled = pulledSectionBefore(segment, waiting, i)
+                return (
+                  <Fragment key={row.task.id}>
+                    {heading && <AgedGroupHeading {...heading} panel={false} />}
+                    {pulled && <PulledSectionHeading {...pulled} panel={false} />}
+                    <TaskSegmentRow
+                      row={row}
+                      actions={actions}
+                      timezone={timezone}
+                      panel={false}
+                      segmentHorizon={rowKind(segment, row)}
+                    />
+                  </Fragment>
+                )
+              })}
             </ul>
           )}
           <SegmentConsideredDisclosure
@@ -230,7 +243,13 @@ function SegmentConsideredDisclosure({
       {shown && (
         <ul className="space-y-0.5 px-1" aria-label={`Considered in ${segmentLabel(segment)}`}>
           {rows.map((row) => (
-            <ConsideredSegmentRow key={row.task.id} row={row} panel={false} onPutBack={onPutBack} />
+            <ConsideredSegmentRow
+              key={row.task.id}
+              row={row}
+              panel={false}
+              segmentHorizon={segment.horizon}
+              onPutBack={onPutBack}
+            />
           ))}
         </ul>
       )}

@@ -65,6 +65,7 @@ const TASK_COLUMNS = [
   'attempts',
   'attempts_counted_through',
   'growth_kept_at',
+  'growth_kept_count',
   'queue_mark',
   'try_tomorrow',
   'queued_at',
@@ -328,6 +329,7 @@ export interface TaskRow {
   attempts: number
   attempts_counted_through: string | null
   growth_kept_at: string | null
+  growth_kept_count: number | null
   queue_mark?: number
   try_tomorrow?: number
   queued_at?: string | null
@@ -527,6 +529,7 @@ function baseTask(row: TaskRow): Task {
     attempts: row.attempts ?? 0,
     attempts_counted_through: row.attempts_counted_through ?? null,
     growth_kept_at: row.growth_kept_at ?? null,
+    growth_kept_count: row.growth_kept_count ?? 0,
     ...queueFields(row),
     last_notified_at: row.last_notified_at,
     last_critical_alert_at: row.last_critical_alert_at,
