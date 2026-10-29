@@ -65,7 +65,6 @@ import { useRowHighlight } from '@/hooks/useRowHighlight'
 import { useRowPress } from '@/hooks/useRowPress'
 import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
-import { useTitleWeightOverride } from '@/hooks/useTitleWeightOverride'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
 import { wasTargetTime } from '@/lib/target-day-first'
@@ -145,8 +144,7 @@ function tintClass(state: LeanRowState | null, isOverdue: boolean): string | und
  * The title's WEIGHT (Trent, 2026-10-29, after trying weights on dev: "500
  * feels pretty good… Maybe we do a 500/600 split"): medium on a plain row,
  * semibold on a tinted one — over target or a passed deadline. The faint
- * later-today row keeps medium (its tint is still in question). A dev build's
- * `?titleWeight=` override replaces both (`useTitleWeightOverride`).
+ * later-today row keeps medium (its tint is still in question).
  */
 function titleWeight(state: LeanRowState | null): string {
   return state === 'over' || state === 'passed' ? 'font-semibold' : 'font-medium'
@@ -306,14 +304,8 @@ function LeanTitle({
 }) {
   const tab = task.priority >= 3 ? priorityTab(task.priority, 'icons') : null
   const cut = task.title.lastIndexOf(' ')
-  // TEMPORARY: a dev build's `?titleWeight=` override (`useTitleWeightOverride`).
-  const weight = useTitleWeightOverride()
   return (
-    <p
-      data-lean-title
-      className={cn('text-[16px] leading-6 text-pretty md:flow-root', titleClass)}
-      style={weight ? { fontWeight: weight } : undefined}
-    >
+    <p data-lean-title className={cn('text-[16px] leading-6 text-pretty md:flow-root', titleClass)}>
       {task.title.slice(0, cut + 1)}
       <span className="whitespace-nowrap">
         {task.title.slice(cut + 1)}

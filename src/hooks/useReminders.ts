@@ -186,7 +186,7 @@ export { REMINDERS_URL }
 
 /**
  * What THIS client fetches: `REMINDERS_URL`, plus Aged out's `&aged=1` on a
- * build with that segment (2026-10-29, dev only — `src/lib/aged-out.ts`).
+ * build with that segment (prod and dev — `src/lib/aged-out.ts`).
  * Kept out of `REMINDERS_URL` itself, which the native apps mirror exactly.
  */
 const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '')

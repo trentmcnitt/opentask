@@ -19,8 +19,8 @@
  *   and `growth_kept_count` + 1). Both also stamp `last_considered_at`, so the
  *   row stays today as considered and "N of M" holds.
  *
- * Behind a build flag (`AGED_OUT_ENABLED`, `NEXT_PUBLIC_AGED_OUT=1`: the dev
- * build) and a caller flag (`?aged=1`, the web only — a native build would
+ * Behind a build flag (`AGED_OUT_ENABLED`, `NEXT_PUBLIC_AGED_OUT=1`: the prod
+ * and dev builds since 2026-10-29, set by the deploy; CI builds without it) and a caller flag (`?aged=1`, the web only — a native build would
  * list an unknown segment kind as a page of its own). Pure: the clock, zone
  * and day start come in.
  */
@@ -44,7 +44,7 @@ import {
 /** The segment's name on screen — a working name, in one place. */
 export const AGED_OUT_TITLE = 'Aged out'
 
-/** The build flag: on in the dev build only (`NEXT_PUBLIC_AGED_OUT=1`). */
+/** The build flag (`NEXT_PUBLIC_AGED_OUT=1`): on in the prod and dev builds, off in CI's. */
 export const AGED_OUT_ENABLED = process.env.NEXT_PUBLIC_AGED_OUT === '1'
 
 /** The query the web adds to `REMINDERS_URL` when the segment is on. */

@@ -59,11 +59,11 @@ A no-target → target change always restarts the clock, even if a stale origin 
 | Remove target / the queue strips the target                    | None                                |
 | Back to auto, a rule change                                    | Follows the target the write leaves |
 | A repeating task's done / skip, and its put-back               | = the occurrence's target           |
-| Existing rows (the migration)                                  | = their current target              |
+| Existing rows (the migration)                                  | NULL, read as their current target  |
 
 Days are the owner's OpenTask days (`openTaskDayOf` with `dayBoundaryForUser`): with a 3:00 AM start, a move from Tue 9 PM to Wed 2:30 AM stays on Tuesday and keeps the first. The update path writes it once, after every collector (`collectTargetDayFirst`, `src/core/tasks/helpers/collect-field-changes.ts`), so defers, bulk defers, edits and Target today all go through one rule (`nextTargetDayFirst`, `src/lib/target-day-first.ts`); done, skip and the put-back write it beside `original_due_at`. It is in each write's `fields_changed`, so undo restores it with the target.
 
-**Normalised on read** (`rowToTask`, `effectiveTargetDayFirst`): a stored value on another OpenTask day than the target is stale — a path that moved the target across days without writing the column (the rollover's paths, a raw SQL fix) — and reads as the target itself; with no target it reads as null. So a missed write can only drop the "was", never show a wrong one. **The lean row and card v2** show a grey "was 9:00 AM" after the target chip when the target is on that day and its time differs (`wasTargetTime`); nothing otherwise.
+**Normalised on read** (`rowToTask`, `effectiveTargetDayFirst`): a stored value on another OpenTask day than the target is stale — a path that moved the target across days without writing the column (the rollover's paths, a raw SQL fix) — and reads as the target itself, as does NULL (a row the migration added the column to: no backfill); with no target it reads as null. So a missed write can only drop the "was", never show a wrong one. **The lean row** shows a grey "was 9:00 AM" after the target chip when the target is on that day and its time differs (`wasTargetTime`); nothing otherwise.
 
 **The attempts tab.** A row with a target and at least one attempt carries a corner tab with the count ("3×"): local days on which it was over target (see [The two badges](#the-two-badges-attempts-and-age)). It replaced the target-age "2d" tab on 2026-10-12.
 
