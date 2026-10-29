@@ -80,20 +80,27 @@ describe('horizon square looks', () => {
   })
 })
 
-describe('horizonGoverns', () => {
-  test('a plain one-off with no picked target or deadline', () => {
+describe('horizonGoverns: the square shows the horizon', () => {
+  // Trent, 2026-10-29: "the checkbox always reflects the horizon, regardless
+  // of whether it has a target" — every plain one-off with no deadline.
+  test('every one-off: targeted or not, deadline or not, decked or not', () => {
     expect(horizonGoverns(task())).toBe(true)
     expect(horizonGoverns(task({ horizon: 'months' }))).toBe(true)
+    expect(horizonGoverns(task({ due_at: '2026-11-05T15:00:00Z' }))).toBe(true)
+    expect(horizonGoverns(task({ due_at: '2026-11-05T15:00:00Z', target_auto: true }))).toBe(true)
+    expect(horizonGoverns(task({ on_deck_day: '2026-11-05' }))).toBe(true)
+    expect(horizonGoverns(task({ deadline_at: '2026-11-05T15:00:00Z' }))).toBe(true)
   })
 
-  test('not a picked target, a deadline, a repeat or a reminder', () => {
-    expect(horizonGoverns(task({ due_at: '2026-11-05T15:00:00Z' }))).toBe(false)
-    expect(horizonGoverns(task({ deadline_at: '2026-11-05T15:00:00Z' }))).toBe(false)
+  test('the SET horizon, never the effective one: a near deadline does not change the look', () => {
+    const near = task({ horizon: 'months', deadline_at: '2026-11-01T15:00:00Z' })
+    expect(horizonSquareLook(near.horizon)).toBe(HORIZON_SQUARE_LOOKS.months)
+  })
+
+  test('not a repeat, a reminder, a quota or a done task', () => {
     expect(horizonGoverns(task({ rrule: 'FREQ=WEEKLY' }))).toBe(false)
     expect(horizonGoverns(task({ is_reminder: true }))).toBe(false)
-  })
-
-  test('an automatic target is not a pick', () => {
-    expect(horizonGoverns(task({ due_at: '2026-11-05T15:00:00Z', target_auto: true }))).toBe(true)
+    expect(horizonGoverns(task({ is_tracked: true, progress_target: 3 }))).toBe(false)
+    expect(horizonGoverns(task({ done: true }))).toBe(false)
   })
 })

@@ -101,6 +101,17 @@ const STATE_LOOK: Record<LeanRowState, { row: string; title?: string }> = {
   },
 }
 
+/**
+ * The title's WEIGHT (Trent, 2026-10-29, after trying weights on dev: "500
+ * feels pretty good… Maybe we do a 500/600 split"): medium on a plain row,
+ * semibold on a tinted one — over target or a passed deadline. The faint
+ * later-today row keeps medium (its tint is still in question). A dev build's
+ * `?titleWeight=` override replaces both (`useTitleWeightOverride`).
+ */
+function titleWeight(state: LeanRowState | null): string {
+  return state === 'over' || state === 'passed' ? 'font-semibold' : 'font-medium'
+}
+
 /** One stable empty list, so a row without periods keeps its defer callback's identity. */
 const NO_SLOTS: NonNullable<TaskRowProps['timeSlots']> = []
 
@@ -215,7 +226,7 @@ export function LeanRow({
         )}
         <LeanTitle
           task={task}
-          titleClass={state ? STATE_LOOK[state].title : undefined}
+          titleClass={cn(titleWeight(state), state && STATE_LOOK[state].title)}
           justAddedBadge={justAddedBadge}
         />
         <LeanMeta
