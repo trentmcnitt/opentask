@@ -68,7 +68,8 @@ import { HorizonMark } from './HorizonMark'
  * under the row's content and a tinted title, no bar.
  * - Over target: the target's blue (~8%) and a dark slate-blue title —
  *   present, not alarming: missing a target is not a mistake.
- * - A passed deadline: the red counterpart (the passed chip's red, ~6.5%) and
+ * - A passed deadline: the red counterpart (~7% of a warm red, rgb 200 20 10:
+ *   the sheet's crimson read pink on white, its blue above its green) and
  *   a dark red-tinted title. It WINS over the blue: a real miss outranks a
  *   target whose time has come. The red flag chip says which date it is.
  */
@@ -81,7 +82,7 @@ const STATE_LOOK: Record<RowState, { row: string; title: string }> = {
     title: 'text-[#26334d] dark:text-[#d3dcec]',
   },
   passed: {
-    row: `${TINT_BASE} before:bg-[rgba(228,0,20,0.065)] dark:before:bg-[rgba(255,100,103,0.10)]`,
+    row: `${TINT_BASE} before:bg-[rgba(200,20,10,0.07)] dark:before:bg-[rgba(255,100,103,0.10)]`,
     title: 'text-[#4d2629] dark:text-[#ecd3d4]',
   },
 }
