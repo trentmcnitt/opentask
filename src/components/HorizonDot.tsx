@@ -14,7 +14,7 @@ import {
 import { useCheckInDay } from '@/components/PreferencesProvider'
 import {
   HORIZON_LABELS,
-  HORIZON_UNSET_LABEL,
+  UNSET_HORIZON_WORDS,
   HORIZON_WORD,
   horizonHints,
 } from '@/lib/task-model-words'
@@ -114,7 +114,7 @@ export function HorizonMenuContent({
             <DropdownMenuSeparator />
             <DropdownMenuRadioItem value="unset" data-horizon-option="unset">
               <HorizonDotMark horizon={null} />
-              {HORIZON_UNSET_LABEL} (weeks)
+              {UNSET_HORIZON_WORDS}
             </DropdownMenuRadioItem>
           </>
         )}
@@ -257,7 +257,7 @@ export function HorizonPicker({
   dirty: boolean
   onChange: (horizon: HorizonValue | null) => void
 }) {
-  const label = value ? HORIZON_LABELS[value] : HORIZON_UNSET_LABEL
+  const label = value ? HORIZON_LABELS[value] : UNSET_HORIZON_WORDS
   return (
     <DropdownMenu>
       <DropdownMenuTrigger

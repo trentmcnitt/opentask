@@ -225,10 +225,7 @@ test.describe('Row corner · desktop', () => {
       await expect(dot('weeks')).toHaveAttribute('title', 'Weeks · comes back Saturdays')
       await expect(dot('days')).toHaveAttribute('title', 'Days · comes back daily')
       await expect(dot('eventually')).toHaveAttribute('title', 'Eventually · comes back quarterly')
-      await expect(dot('null')).toHaveAttribute(
-        'title',
-        'Unset (counts as Weeks) · comes back Saturdays',
-      )
+      await expect(dot('null')).toHaveAttribute('title', 'Weeks (unset) · comes back Saturdays')
       // A picked target: the horizon decides nothing until it is removed.
       await expect(taskRow(page, targeted)).toBeVisible()
       await expect(taskRow(page, targeted).locator('[data-horizon-dot]')).toHaveCount(0)
@@ -611,7 +608,8 @@ test.describe('Row corner · phone', () => {
       await dot.evaluate((el) => el.scrollIntoView({ block: 'center' }))
       const box = (await dot.boundingBox())!
       await page.touchscreen.tap(box.x - 16, box.y + box.height + 20)
-      await expect(page.getByRole('menuitemradio', { name: /^Weeks/ })).toBeVisible()
+      // Weeks itself, not "Weeks (unset)" below it.
+      await expect(page.getByRole('menuitemradio', { name: /^Weeks(?! \(unset\))/ })).toBeVisible()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await page.screenshot({ path: `${SHOTS}/phone-dot-menu.png`, animations: 'disabled' })
       await page.keyboard.press('Escape')

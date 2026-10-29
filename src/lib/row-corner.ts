@@ -20,7 +20,7 @@ import {
   type CheckInDay,
   type HorizonValue,
 } from '@/lib/task-segments'
-import { HORIZON_LABELS, HORIZON_UNSET_LABEL, horizonHints } from '@/lib/task-model-words'
+import { HORIZON_LABELS, UNSET_HORIZON_WORDS, horizonHints } from '@/lib/task-model-words'
 import { isTracked } from '@/lib/track'
 
 // ---------------------------------------------------------------------------
@@ -178,15 +178,13 @@ export function offersTargetToday(task: CornerTask): boolean {
 /**
  * The dot's tooltip: "Weeks · comes back Saturdays" — when its horizon
  * segment comes round, in the horizon picker's own words (`horizonHints`,
- * lower-cased where they are not a day name). Unset says so: "Unset (counts as
- * Weeks) · comes back Saturdays". When a near deadline pulls the task into a
+ * lower-cased where they are not a day name). Unset says so: "Weeks (unset)
+ * · comes back Saturdays" (`UNSET_HORIZON_WORDS`, 2026-10-29). When a near deadline pulls the task into a
  * sooner segment, the tooltip names the segment it is actually in.
  */
 export function horizonDotTitle(task: CornerTask, checkInDay: CheckInDay, now: Date): string {
   const set = horizonOf(task.horizon)
-  const name = set
-    ? HORIZON_LABELS[set]
-    : `${HORIZON_UNSET_LABEL} (counts as ${HORIZON_LABELS[UNSET_HORIZON]})`
+  const name = set ? HORIZON_LABELS[set] : UNSET_HORIZON_WORDS
   const effective = effectiveHorizon({ horizon: set, deadline_at: task.deadline_at ?? null }, now)
   const when = comesBack(effective, checkInDay)
   if (effective !== (set ?? UNSET_HORIZON)) {

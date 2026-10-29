@@ -130,10 +130,10 @@ describe('AG: the row says how old, and the cutoff', () => {
   })
 
   test('AG-041: the cutoff each horizon passed; unset reads as Weeks', () => {
-    expect(cutoffWords('days')).toBe('over 10 days')
-    expect(cutoffWords('weeks')).toBe('over 1 month')
-    expect(cutoffWords(null)).toBe('over 1 month')
-    expect(cutoffWords('months')).toBe('over 3 months')
+    expect(cutoffWords('days')).toBe('> 10 days')
+    expect(cutoffWords('weeks')).toBe('> 1 month')
+    expect(cutoffWords(null)).toBe('> 1 month')
+    expect(cutoffWords('months')).toBe('> 3 months')
   })
 })
 

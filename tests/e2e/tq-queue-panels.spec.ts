@@ -180,11 +180,11 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     const earlier = panel(page, 'queue_previous')
     await expect(today).toBeVisible()
     await expect(earlier).toBeVisible()
-    // "Task queue · <word>", nothing after it (Trent, 2026-10-20).
-    await expect(today).toHaveAttribute('aria-label', "Task queue · Today's pulls")
-    await expect(earlier).toHaveAttribute('aria-label', 'Task queue · Previous pulls')
-    await expect(today.getByText("Task queue · Today's pulls", { exact: true })).toBeVisible()
-    await expect(earlier.getByText('Task queue · Previous pulls', { exact: true })).toBeVisible()
+    // "<word>", nothing after it (Trent, 2026-10-20).
+    await expect(today).toHaveAttribute('aria-label', "Today's pulls")
+    await expect(earlier).toHaveAttribute('aria-label', 'Previous pulls')
+    await expect(today.getByText("Today's pulls", { exact: true })).toBeVisible()
+    await expect(earlier.getByText('Previous pulls', { exact: true })).toBeVisible()
     await expect(today.getByText('Stripped today')).toHaveCount(0)
     await expect(earlier.getByText('Previously targeted')).toHaveCount(0)
     // First among the task segments after the deadlines page, which always
@@ -441,7 +441,7 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     await expect(earlier.getByRole('button', { name: /^Defer all/ })).toHaveCount(0)
     await earlier
       .getByRole('button', {
-        name: /^Mark all \d+ in Task queue · Previous pulls as considered$/,
+        name: /^Mark all \d+ in Previous pulls as considered$/,
       })
       .click()
     await expect(row(page, a)).toHaveCount(0)

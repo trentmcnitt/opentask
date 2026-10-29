@@ -6,6 +6,7 @@
  * follows. The native apps keep their own copy (see ios/AGENTS.md). API field
  * names (`due_at`/`target_at`, `horizon`) are not words and do not change.
  */
+import { UNSET_HORIZON } from '@/lib/task-segments'
 import type { CheckInDay, HorizonValue, SegmentKind, UpcomingSection } from '@/lib/task-segments'
 
 /** A task whose target has arrived (ruled 2026-10-21; "Over target" from 2026-10-10). */
@@ -39,7 +40,8 @@ export const HORIZON_LABELS: Record<HorizonValue, string> = {
 
 /**
  * The horizon segments' WORDS (Trent, 2026-10-20): one each. A panel header
- * is `TASK_QUEUE_PREFIX` · the word (`segmentTitle` in TaskSegmentRow); the
+ * is the word alone (`segmentTitle` in TaskSegmentRow; "Task queue ·" went
+ * on 2026-10-29); the
  * horizon-move toast says the bare word ("Moved to Weekly"). Display text
  * only: the segment kinds the API sends (`days` … `eventually`) do not change.
  */
@@ -114,7 +116,7 @@ export const UPCOMING_SECTION_TITLES: Record<UpcomingSection, string> = {
  * things that were taken off and that potentially will stay off." Display
  * text only: the kind strings the API sends do not change.
  */
-/** The deadlines page's title word (2026-10-22): "Task queue · Deadlines". */
+/** The deadlines page's title (2026-10-22). */
 export const DEADLINES_PAGE_TITLE = 'Deadlines'
 
 export const QUEUE_PANEL_TITLES = {
@@ -122,16 +124,6 @@ export const QUEUE_PANEL_TITLES = {
   queue_previous: 'Previous pulls',
 } as const
 
-/**
- * Every task-segment panel's title is "Task queue · <word>" (Trent,
- * 2026-10-20: one format everywhere) — "TASK QUEUE · TODAY'S PULLS", "TASK QUEUE ·
- * DAILY", "TASK QUEUE · UPCOMING" on screen, where the header's `uppercase`
- * does the capitals. A middle dot, never an em dash.
- */
-export const TASK_QUEUE_PREFIX = 'Task queue'
-export function taskQueueTitle(word: string): string {
-  return `${TASK_QUEUE_PREFIX} · ${word}`
-}
 /** Try Tomorrow's mark on a "Today's pulls" row (its tooltip and accessible name). */
 export const TRY_TOMORROW_MARK = 'Try tomorrow'
 
@@ -148,6 +140,13 @@ export const CHECK_IN_DAY_NAMES: Record<CheckInDay, string> = {
 
 /** An unset horizon is treated as weeks, but never shown as if it were set. */
 export const HORIZON_UNSET_LABEL = 'Unset'
+
+/**
+ * An unset horizon in words (Trent, 2026-10-29): the horizon it reads as
+ * first, "(unset)" after — "Weeks (unset)" — in the horizon menu, the dot's
+ * tooltip and the editor's chip. From `UNSET_HORIZON`, never hardcoded.
+ */
+export const UNSET_HORIZON_WORDS = `${HORIZON_LABELS[UNSET_HORIZON]} (unset)`
 
 export const TARGET_WORD = 'Target'
 export const DEADLINE_WORD = 'Deadline'

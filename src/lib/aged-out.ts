@@ -143,9 +143,10 @@ export function ageWords(
 }
 
 /**
- * The cutoff a horizon's tasks age out at, for the row ("over 10 days",
- * "over 1 month", "over 3 months"): its `AGE_THRESHOLDS` entry, unset read as
- * Weeks.
+ * The cutoff a horizon's tasks age out at, for the chip after an Aged out
+ * row's title (Trent, 2026-10-29: "a little chip that says > and then the
+ * time period"): "> 10 days", "> 1 month", "> 3 months" — its
+ * `AGE_THRESHOLDS` entry, unset read as Weeks.
  */
 export function cutoffWords(horizon: string | null): string {
   const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
@@ -153,5 +154,5 @@ export function cutoffWords(horizon: string | null): string {
     : UNSET_HORIZON
   const { days, months } = AGE_THRESHOLDS[on]
   const n = days ?? months ?? 0
-  return `over ${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
+  return `> ${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
 }

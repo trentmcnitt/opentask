@@ -34,14 +34,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   HORIZON_LABELS,
-  HORIZON_UNSET_LABEL,
+  UNSET_HORIZON_WORDS,
   HORIZON_WORD,
   QUEUE_PANEL_TITLES,
   DEADLINES_PAGE_TITLE,
   REMOVE_TARGET,
   SEGMENT_TITLES,
   TRY_TOMORROW_MARK,
-  taskQueueTitle,
   UPCOMING_LABEL,
 } from '@/lib/task-model-words'
 import {
@@ -148,16 +147,18 @@ export function useQueueUi(kind: SegmentKind): 'on' | 'off' | 'pending' {
 }
 
 /**
- * A segment kind's panel title (Trent, 2026-10-20): "Task queue · Today's
- * pulls", "… · Previous pulls" (2026-10-21), "… · Upcoming", "… · Daily", "Weekly", "Monthly",
- * "Quarterly" (`taskQueueTitle`) — one format, the whole header on both
- * surfaces (uppercased there), no hint after it.
+ * A segment kind's panel title: just its own words — "Today's pulls",
+ * "Previous pulls", "Deadlines", "Daily", "Upcoming", "Weekly", "Monthly",
+ * "Quarterly", "Aged out" — the whole header on both surfaces (uppercased
+ * there), no hint after it. Since 2026-10-29 no "Task queue ·" before it
+ * (Trent: "I think just the title's enough now. You can see which one's
+ * selected" — the strip's words say where you are).
  */
 export function segmentTitle(kind: SegmentKind): string {
-  if (isQueueKind(kind)) return taskQueueTitle(QUEUE_PANEL_TITLES[kind])
-  if (kind === 'deadlines') return taskQueueTitle(DEADLINES_PAGE_TITLE)
-  if (kind === 'aged_out') return taskQueueTitle(AGED_OUT_TITLE)
-  return taskQueueTitle(kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind])
+  if (isQueueKind(kind)) return QUEUE_PANEL_TITLES[kind]
+  if (kind === 'deadlines') return DEADLINES_PAGE_TITLE
+  if (kind === 'aged_out') return AGED_OUT_TITLE
+  return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
 }
 
 /**
@@ -444,6 +445,7 @@ export function TaskSegmentRow({
             )}
           >
             {task.title}
+            <AgedCutoffChip task={task} segmentHorizon={segmentHorizon} />
           </p>
           {segmentHorizon === 'upcoming' ? (
             <UpcomingMeta row={row} actions={actions} timezone={timezone} />
@@ -1393,9 +1395,10 @@ function SegmentMetaLine({
 /**
  * AGED OUT's meta line (Trent, 2026-10-29: "this is the one screen where
  * [the created date] really does matter"), in its own order: the project, the
- * horizon dot, then THREE FACTS joined by "·" (`agedFacts`) — when it was
- * created, how old it is, and the cutoff it passed — then the labels and the
- * priority LAST. No badges: every row here is old.
+ * horizon dot, then the facts joined by "·" (`agedFacts`) — when it was
+ * created and how old it is — then the labels and the priority LAST. The
+ * cutoff it passed is the chip after the title (`AgedCutoffChip`). No
+ * badges: every row here is old.
  */
 function AgedOutMeta({
   task,
@@ -1438,8 +1441,7 @@ function AgedOutMeta({
  * the created date (`createdDateWords`), then how old — "5 weeks old" from
  * creation; when something restarted the age clock (`agedClockRestart`),
  * that first — "Weeks since Sep 3", "kept 2×, last Sep 12" — and the time
- * since it ("8 weeks") — then the cutoff it passed ("over 1 month",
- * `cutoffWords`). The ages are `ageWords`.
+ * since it ("8 weeks"). The ages are `ageWords`.
  */
 function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
   const words = (iso: string) => createdDateWords(iso, timezone, dayStart)
@@ -1447,7 +1449,7 @@ function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
   const kept = task.growth_kept_count
   const facts = [words(task.created_at)]
   if (restart?.kind === 'set') {
-    const horizon = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
+    const horizon = task.horizon ? HORIZON_LABELS[task.horizon] : UNSET_HORIZON_WORDS
     facts.push(`${horizon} since ${words(restart.at)}`)
   } else if (restart || kept > 0) {
     const count = kept > 0 ? `kept ${kept}×` : 'kept'
@@ -1455,8 +1457,26 @@ function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
   }
   const age = ageWords(restart?.at ?? task.created_at, timezone, dayStart)
   if (age) facts.push(restart ? age : `${age} old`)
-  facts.push(cutoffWords(task.horizon))
   return facts
+}
+
+/**
+ * The cutoff an Aged out row passed, as a small grey chip after its title
+ * (Trent, 2026-10-29: "a little chip that says > and then the time period…
+ * following the title. That way the created date and then the 5 weeks old…
+ * is just extra information"): "> 10 days", "> 1 month", "> 3 months".
+ */
+function AgedCutoffChip({ task, segmentHorizon }: { task: Task; segmentHorizon: SegmentKind }) {
+  if (segmentHorizon !== 'aged_out') return null
+  return (
+    <span
+      data-aged-cutoff
+      title="Past its horizon's cutoff"
+      className="bg-foreground/[0.06] text-muted-foreground ml-1.5 inline-block rounded-[4px] px-1.5 align-[1px] text-[11px] leading-4 font-medium whitespace-nowrap"
+    >
+      {cutoffWords(task.horizon)}
+    </span>
+  )
 }
 
 /** "On deck Sat" / "On deck today" for a deck day (yyyy-MM-dd). */
@@ -1637,7 +1657,7 @@ export function HorizonChip({
   task: Pick<Task, 'horizon' | 'title'>
   onChange: (horizon: HorizonValue | null) => void
 }) {
-  const label = task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL
+  const label = task.horizon ? HORIZON_LABELS[task.horizon] : UNSET_HORIZON_WORDS
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -1757,7 +1777,7 @@ export function ConsideredSegmentRow({
             ·{' '}
             {task.growth_kept_count > 0
               ? 'kept'
-              : `now ${task.horizon ? HORIZON_LABELS[task.horizon] : HORIZON_UNSET_LABEL}`}
+              : `now ${task.horizon ? HORIZON_LABELS[task.horizon] : UNSET_HORIZON_WORDS}`}
           </span>
         )}
       </p>

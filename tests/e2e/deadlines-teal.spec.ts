@@ -143,7 +143,7 @@ for (const viewport of VIEWPORTS) {
         // The header: the title in the text teal; the ✓ glyphs (the header's
         // and "Nothing today ✓") in the fill teal.
         const title = card.locator('[data-slot-header-toggle] span.uppercase')
-        await expect(title).toHaveText(/Task queue · Deadlines/i)
+        await expect(title).toHaveText(/Deadlines/i)
         expect(await colorOf(title)).toBe(p.teal)
         expect(await colorOf(card.locator('[data-done-check]').first())).toBe(p.tealGlyph)
         expect(await colorOf(card.locator('[data-segment-empty] [data-done-check]'))).toBe(

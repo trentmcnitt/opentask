@@ -142,9 +142,9 @@ test.describe('Task segments', () => {
       await expect.poll(async () => (await stateOf(page, ids[0])).last_considered_at).toBeNull()
 
       // The header folds the section like a slot's, and opens it again.
-      await days.getByRole('button', { name: /^Task queue · Daily\b/, expanded: true }).click()
+      await days.getByRole('button', { name: /^Daily\b/, expanded: true }).click()
       await expect(segmentRow(page, ids[1])).toHaveCount(0)
-      await days.getByRole('button', { name: /^Task queue · Daily\b/, expanded: false }).click()
+      await days.getByRole('button', { name: /^Daily\b/, expanded: false }).click()
       await expect(segmentRow(page, ids[1])).toBeVisible()
     } finally {
       await trash(page, ids)
@@ -273,9 +273,9 @@ test.describe('Task segments on the dashboard', () => {
         )
       }
       await expect(strip.locator('[data-segment-divider]')).toHaveCount(0)
-      // The header is "Task queue · Daily", nothing after it (2026-10-20).
+      // The header is "Daily", nothing after it (2026-10-20).
       const header = tasks.locator('[data-slot-header-toggle]')
-      await expect(header).toHaveText('Task queue · Daily')
+      await expect(header).toHaveText('Daily')
 
       // Consider one: "X of Y" climbs and opens it, with its put-back.
       await consider(page, days[0])

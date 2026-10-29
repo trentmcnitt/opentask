@@ -122,7 +122,7 @@ describe('TM-RC: horizon dot', () => {
     expect(horizonDotTitle(row({ horizon: 'eventually' }), 6, NOW)).toBe(
       'Eventually · comes back quarterly',
     )
-    expect(horizonDotTitle(row(), 6, NOW)).toBe('Unset (counts as Weeks) · comes back Saturdays')
+    expect(horizonDotTitle(row(), 6, NOW)).toBe('Weeks (unset) · comes back Saturdays')
   })
 
   test('TM-RC-014: a near deadline pulls it in, and the tooltip says when it really comes back', () => {
