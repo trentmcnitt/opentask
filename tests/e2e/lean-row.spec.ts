@@ -260,7 +260,21 @@ test.describe('Lean row · look', () => {
           expect(
             await o
               .locator('[data-lean-meta]')
-              .evaluate((m) => m.lastElementChild?.hasAttribute('data-created')),
+              .evaluate((m) => !!m.lastElementChild?.querySelector('[data-created]')),
+          ).toBe(true)
+          // Every "·" shares one box with the item after it, so a wrap never
+          // leaves a dot at a line's end (2026-10-29).
+          expect(
+            await o.locator('[data-lean-meta]').evaluate((m) =>
+              [...m.querySelectorAll('span[aria-hidden]')]
+                .filter((d) => d.textContent?.trim() === '·')
+                .every((d) => {
+                  const box = d.parentElement!
+                  return (
+                    getComputedStyle(box).whiteSpace === 'nowrap' && d.nextElementSibling !== null
+                  )
+                }),
+            ),
           ).toBe(true)
           // The tint covers the row's bottom border: no seam between two
           // tinted rows (Trent, 2026-10-29).
@@ -361,6 +375,16 @@ test.describe('Lean row · the horizon done square', () => {
       await expect(dot(made.deadline)).toHaveCount(1)
       // A repeating task: no dot.
       await expect(dot(made.repeating)).toHaveCount(0)
+      // No two dots in a row (Trent, 2026-10-29): with nothing between, the
+      // created date follows the horizon dot with no "·".
+      const afterDot = await row(page, made.weeks)
+        .locator('[data-lean-meta]')
+        .evaluate((m) => {
+          const next = m.querySelector('[data-horizon-dot]')?.nextElementSibling
+          return { created: !!next?.querySelector('[data-created]'), text: next?.textContent }
+        })
+      expect(afterDot.created).toBe(true)
+      expect(afterDot.text).not.toContain('·')
       // Its own menu.
       await dot(made.weeks).click()
       await expect(page.getByRole('menuitemradio', { name: /^Months/ })).toBeVisible()
