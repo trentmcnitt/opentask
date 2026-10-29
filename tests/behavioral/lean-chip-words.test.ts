@@ -66,4 +66,19 @@ describe('leanChipWords', () => {
     // Other days unchanged.
     expect(words('2026-10-28T21:00', '2026-10-29T09:00').target).toBe('Tomorrow 9:00 AM')
   })
+
+  test('"Tonight" counts as Today: either one is the row\'s one day word', () => {
+    // Deadline Thu 00:30 (Wed's night) beside a target Wed 5 PM, read Wed noon.
+    expect(words('2026-10-29T00:30', '2026-10-28T17:00')).toEqual({
+      deadline: 'Tonight 12:30 AM',
+      countdown: 'in 11 hrs',
+      target: '5:00 PM',
+    })
+    // A target tonight beside a deadline today or tonight: the bare time.
+    expect(words('2026-10-29T02:00', '2026-10-29T01:00').target).toBe('1:00 AM')
+    expect(words('2026-10-28T21:00', '2026-10-29T01:00').target).toBe('1:00 AM')
+    // Tonight with no today deadline keeps its word.
+    expect(words('2026-10-30T17:00', '2026-10-29T01:00').target).toBe('Tonight 1:00 AM')
+    expect(words(null, '2026-10-29T01:00').target).toBe('Tonight 1:00 AM')
+  })
 })

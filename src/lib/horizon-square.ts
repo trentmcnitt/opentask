@@ -20,6 +20,7 @@
  */
 import { UNSET_HORIZON, type HorizonValue } from '@/lib/task-segments'
 import { showsHorizonDot } from '@/lib/row-corner'
+import { HORIZON_LABELS, HORIZON_UNSET_LABEL, HORIZON_WORD } from '@/lib/task-model-words'
 import type { Task } from '@/types'
 
 export interface SquareLook {
@@ -39,6 +40,20 @@ export const HORIZON_SQUARE_LOOKS: Readonly<Record<HorizonValue, SquareLook>> = 
 /** The look for a task's horizon: unset reads as `UNSET_HORIZON` (never a literal). */
 export function horizonSquareLook(horizon: HorizonValue | null | undefined): SquareLook {
   return HORIZON_SQUARE_LOOKS[horizon ?? UNSET_HORIZON]
+}
+
+/**
+ * A governed square's hint (Trent, 2026-10-29): it names the horizon it
+ * draws — "Horizon: Weeks. Hold to change." Unset names what it reads as,
+ * `UNSET_HORIZON` (the look it wears): "Horizon: unset (Weeks). Hold to
+ * change." The tooltip is "Done · " and this; a phone has no hover, so the
+ * accessible name carries the same words after the task's title.
+ */
+export function horizonSquareHint(horizon: HorizonValue | null | undefined): string {
+  const name = horizon
+    ? HORIZON_LABELS[horizon]
+    : `${HORIZON_UNSET_LABEL.toLowerCase()} (${HORIZON_LABELS[UNSET_HORIZON]})`
+  return `${HORIZON_WORD}: ${name}. Hold to change.`
 }
 
 /** Whether a solid look is the plain checkbox (drawn as the checkbox itself). */

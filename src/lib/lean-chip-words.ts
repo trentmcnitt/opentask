@@ -15,6 +15,10 @@
  *   hour left"). Local hours, so half-hour time zones count right.
  * - "Today" appears once per row: if the deadline chip says it, a target
  *   today shows its bare time. Other days are unchanged.
+ * - "Tonight" counts as Today (Trent, 2026-10-29): it names the same OpenTask
+ *   day, so a deadline "Tonight 12:30 AM" is the row's one day word and a
+ *   target "Today 5:00 PM" beside it reads "5:00 PM" (and the other way
+ *   round).
  */
 import { DateTime } from 'luxon'
 import { momentChipWords } from '@/lib/moment-chip-words'
@@ -27,7 +31,13 @@ export interface LeanChipWords {
   target: string | null
 }
 
-const TODAY = 'Today '
+/** The day words that name today's OpenTask day (`nightDayWords`, capitalised). */
+const TODAY_WORDS = ['Today ', 'Tonight '] as const
+
+/** The today word `words` start with, or null. */
+function todayWord(words: string | null): string | null {
+  return TODAY_WORDS.find((w) => words?.startsWith(w)) ?? null
+}
 
 /** Whole hours from the next top of the hour to `deadline`; "in <1 hr" under one. */
 export function countdownWords(deadline: Date, timezone: string, now: Date): string {
@@ -54,9 +64,8 @@ export function leanChipWords(
     if (laterToday) countdown = countdownWords(at, timezone, now)
   }
   let target = task.due_at ? momentChipWords(task.due_at, timezone, dayStart, now) : null
-  if (target?.startsWith(TODAY) && deadline?.startsWith(TODAY)) {
-    target = target.slice(TODAY.length)
-  }
+  const word = todayWord(target)
+  if (word && todayWord(deadline)) target = target!.slice(word.length)
   return { deadline, countdown, target }
 }
 

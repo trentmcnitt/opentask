@@ -7,11 +7,13 @@ import { describe, expect, test } from 'vitest'
 import {
   HORIZON_SQUARE_LOOKS,
   horizonGoverns,
+  horizonSquareHint,
   horizonSquareLook,
   isPlainLook,
   squarePaths,
 } from '@/lib/horizon-square'
 import { UNSET_HORIZON } from '@/lib/task-segments'
+import { HORIZON_LABELS } from '@/lib/task-model-words'
 import type { Task } from '@/types'
 
 const task = (overrides: Partial<Task> = {}) =>
@@ -27,6 +29,18 @@ const task = (overrides: Partial<Task> = {}) =>
     horizon: null,
     ...overrides,
   }) as Task
+
+describe('the square names its horizon', () => {
+  test('a set horizon: "Horizon: Weeks. Hold to change."', () => {
+    expect(horizonSquareHint('weeks')).toBe('Horizon: Weeks. Hold to change.')
+    expect(horizonSquareHint('eventually')).toBe('Horizon: Eventually. Hold to change.')
+  })
+  test('unset names what it reads as, UNSET_HORIZON', () => {
+    const reads = HORIZON_LABELS[UNSET_HORIZON]
+    expect(horizonSquareHint(null)).toBe(`Horizon: unset (${reads}). Hold to change.`)
+    expect(horizonSquareHint(undefined)).toBe(horizonSquareHint(null))
+  })
+})
 
 describe('horizon square looks', () => {
   test('unset looks like whatever unset means: LOOKS[UNSET_HORIZON]', () => {
