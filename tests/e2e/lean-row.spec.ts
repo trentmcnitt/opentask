@@ -21,7 +21,12 @@ import { test, expect, holdUntil, openTaskDay, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const HOUR = 60 * 60 * 1000
-const LEAN = () => window.localStorage.setItem('opentask_task_rows', 'lean')
+// Lean rows bring the dashboard modes (`useDashboardMode`); these tests read
+// the rows in All, the project-grouped list.
+const LEAN = () => {
+  window.localStorage.setItem('opentask_task_rows', 'lean')
+  window.localStorage.setItem('opentask_dashboard_mode', 'all')
+}
 
 test.describe.configure({ mode: 'serial' })
 
@@ -817,6 +822,8 @@ test.describe('Lean row · phone', () => {
 
       // Swipe on the title, as a thumb would: the meta line's horizon dot is
       // its own control (its press opens the horizon menu, never a swipe).
+      // On screen first: a drag only reaches what the window shows.
+      await r.scrollIntoViewIfNeeded()
       const title = (await r.locator('[data-lean-title]').boundingBox())!
       const y = title.y + 12
       const x0 = title.x + 8
@@ -850,8 +857,13 @@ test.describe('Lean row · the setting', () => {
       await expect(page.locator(`#task-row-${id}`)).toBeVisible()
       await expect(row(page, id)).toHaveCount(0)
 
+      await expect(page.locator('[data-mode-switch]')).toHaveCount(0)
+
+      // Lean rows bring the dashboard modes; the row is in All.
       await page.goto('/settings')
       await page.locator('[data-task-rows-setting]').selectOption('lean')
+      await page.goto('/?mode=all')
+      await expect(page.locator('[data-mode-switch]')).toBeVisible()
       await gotoDashboard(page)
       await expect(row(page, id)).toBeVisible()
 
@@ -860,6 +872,7 @@ test.describe('Lean row · the setting', () => {
       await gotoDashboard(page)
       await expect(row(page, id)).toHaveCount(0)
       await expect(page.locator(`#task-row-${id}`)).toBeVisible()
+      await expect(page.locator('[data-mode-switch]')).toHaveCount(0)
     } finally {
       await cleanUp(page, [id])
     }

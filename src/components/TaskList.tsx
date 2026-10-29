@@ -4,9 +4,13 @@
 import { HORIZON_WORD } from '@/lib/task-model-words'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { ArrowUpDown, ChevronDown, ChevronUp, Layers, Plus } from 'lucide-react'
-import { TaskRow } from './TaskRow'
+import { TaskRow, type TaskRowProps } from './TaskRow'
 import { SwipeableRow } from './SwipeableRow'
 import { LeanRow } from './lean-row/LeanRow'
+import { CompactRow } from './lean-row/CompactRow'
+import { nextStepSize } from '@/lib/modes/select'
+import { createdBucket, type CreatedBucket } from '@/lib/created-bucket'
+import { AGE_STEP_CLASS } from '@/components/modes/age-step'
 import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -26,6 +30,7 @@ import {
   nowFoldKey,
   shownGroupTasks,
   type SortOption,
+  type ModeSectionMeta,
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
 import { isOverdue } from '@/lib/task-counts'
@@ -198,6 +203,14 @@ interface TaskListProps {
    */
   part?: 'all' | 'deck' | 'rest'
   /**
+   * The list's header row (Unified, the sort). Default on; off in a
+   * dashboard mode's sections, where the sort pill orders them.
+   */
+  chrome?: boolean
+  /** A mode section's "Show 5 more" / "Show less" (`ModeSectionMeta`). */
+  onSectionMore?: (sectionId: string) => void
+  onSectionLess?: (sectionId: string) => void
+  /**
    * The two parts' Just now reveal: the deck part fills it in; the rest part
    * (which holds `revealRef`) hands a task in the section over to it.
    */
@@ -282,6 +295,9 @@ export function TaskList({
   revealRef,
   part = 'all',
   deckRevealRef,
+  chrome = true,
+  onSectionMore,
+  onSectionLess,
 }: TaskListProps) {
   // Sort and collapse state are lifted into the dashboard (it owns the sort
   // dropdown's preference and the collapsed-group set), and so is the order
@@ -467,9 +483,13 @@ export function TaskList({
   const isFlat = isFlatGrouping(grouping)
   const isNew = grouping === 'new'
 
-  // Build project lookups for the flat views (project badge + color on each task row)
-  const projectNameMap = isFlat ? new Map(projects.map((p) => [p.id, p.name])) : undefined
-  const projectColorMap = isFlat ? new Map(projects.map((p) => [p.id, p.color])) : undefined
+  // Build project lookups for the flat views and a mode's sections (project
+  // badge + color on each task row): neither is grouped by project.
+  const sectioned = sortedGroups.some((g) => g.section)
+  const projectNameMap =
+    isFlat || sectioned ? new Map(projects.map((p) => [p.id, p.name])) : undefined
+  const projectColorMap =
+    isFlat || sectioned ? new Map(projects.map((p) => [p.id, p.color])) : undefined
 
   const newBadge = (task: Task) =>
     justAddedSource ? justAddedTag(task, justAddedNow, timezone, dayStart) : undefined
@@ -481,14 +501,19 @@ export function TaskList({
   // The row style (Settings → Theme → Task rows, per device): the lean row
   // sits flat on the page with hairlines between rows, so no gap and no card.
   const lean = rowStyle === 'lean'
-  const Row = lean ? LeanRow : TaskRow
   const surface = lean ? 'flat' : 'card'
-  const renderTaskRow = (task: Task, inDeck = false) => {
+  // `compact`: a mode section's compact row (On deck in Today).
+  // `group` picks the row: a mode section's compact row, or the list's own.
+  const renderTaskRow = (task: Task, group: SortedTaskGroup, step?: CreatedBucket) => {
+    const inDeck = !!group.deck
+    const Row = rowComponent(isCompact(group), lean)
     const cancelRef = { current: null as (() => void) | null }
     return (
       <SwipeableRow
         key={task.id}
         surface={surface}
+        toneClass={step && AGE_STEP_CLASS[step]}
+        ageStep={step}
         onSwipeRight={() => onDone(task.id)}
         onSwipeLeft={() => handleSwipeLeft(task)}
         leftAction={isOverdue(task, now) ? 'snooze' : 'edit'}
@@ -554,7 +579,7 @@ export function TaskList({
       onBlur={onListBlur}
       className={cn('outline-none', part === 'deck' && 'mb-6')}
     >
-      {part !== 'deck' && (
+      {part !== 'deck' && chrome && (
         <div className="mb-4 flex items-center justify-between px-1">
           {headerLeft ?? <div />}
           <div className="flex items-center gap-1">
@@ -638,13 +663,12 @@ export function TaskList({
               key={group.label}
               data-task-group
               data-deck-section={group.deck ? '' : undefined}
+              {...sectionAttrs(group)}
               className="scroll-below-header"
             >
               {/* Skip group header in unified mode — all tasks render in a single flat list */}
               {!isFlat && (
-                <div
-                  className={`flex min-h-7 items-center justify-between px-1 ${!collapsed ? 'mb-2' : ''}`}
-                >
+                <div {...headingAttrs(group)} className={groupHeadingClass(group, collapsed)}>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -688,14 +712,15 @@ export function TaskList({
                       className="text-muted-foreground hover:text-foreground text-xs font-semibold tracking-wider uppercase transition-colors"
                     >
                       <GroupHeadingText group={group} />
-                      <GroupCount total={group.tasks.length} nowSplit={nowSplit} />
+                      <GroupCount group={group} nowSplit={nowSplit} />
                     </button>
                   </div>
                 </div>
               )}
               {!collapsed && (
                 <div className={lean ? undefined : 'space-y-1'}>
-                  {visibleTasks.map((task) => renderTaskRow(task, !!group.deck))}
+                  {withAgeSteps(visibleTasks, group, renderTaskRow, { now, timezone, dayStart })}
+                  <SectionMoreLess group={group} onMore={onSectionMore} onLess={onSectionLess} />
                   {nowSplit && (
                     <NowFoldRow
                       projectLabel={group.label}
@@ -740,8 +765,100 @@ export function TaskList({
  * folds lifted only — not the flat lists, not Now's own rows, and not Now's
  * On deck section (D2, `withDeckSection`).
  */
+/** The row a list row draws: a mode section's compact row, the lean row, or the card. */
+function rowComponent(compact: boolean, lean: boolean): React.ComponentType<TaskRowProps> {
+  if (compact) return CompactRow
+  return lean ? LeanRow : TaskRow
+}
+
+/**
+ * A group's rows, each on its created-date bucket's grey step where its
+ * section draws Scan's age steps (`AGE_STEP_CLASS`, `createdBucket`).
+ */
+function withAgeSteps(
+  tasks: Task[],
+  group: SortedTaskGroup,
+  render: (task: Task, group: SortedTaskGroup, step?: CreatedBucket) => React.ReactNode,
+  ctx: { now: Date; timezone: string; dayStart: string },
+): React.ReactNode[] {
+  if (!group.section?.ageSteps) return tasks.map((task) => render(task, group))
+  return tasks.map((task) =>
+    render(task, group, createdBucket(task.created_at, ctx.now, ctx.timezone, ctx.dayStart)),
+  )
+}
+
+/** A group's section marker, for a mode section (tests and the sticky heading find it). */
+function sectionAttrs(group: SortedTaskGroup): { 'data-mode-section'?: string } {
+  return group.section ? { 'data-mode-section': group.section.id } : {}
+}
+
+/** A mode section's heading marker. */
+function headingAttrs(group: SortedTaskGroup): { 'data-section-heading'?: '' } {
+  return group.section ? { 'data-section-heading': '' } : {}
+}
+
+/** Whether a group draws compact rows (On deck in the Today mode). */
+function isCompact(group: SortedTaskGroup): boolean {
+  return group.section?.rows === 'compact'
+}
+
+/**
+ * A group heading's box. A mode section's heading stays under the top bar
+ * while its rows scroll (Trent, 10-28: sticky headings), on the page's own
+ * background so rows pass under it cleanly.
+ */
+function groupHeadingClass(group: SortedTaskGroup, collapsed: boolean): string {
+  return cn(
+    'flex min-h-7 items-center justify-between px-1',
+    !collapsed && 'mb-2',
+    group.section &&
+      'bg-background sticky top-[calc(env(safe-area-inset-top,0px)+61px)] z-[5] -mx-1 px-2 py-1',
+  )
+}
+
 function isPreviewed(group: SortedTaskGroup, isFlat: boolean): boolean {
-  return !isFlat && !group.now && !group.deck
+  return !isFlat && !group.now && !group.deck && !group.section
+}
+
+/**
+ * A mode section's "Show 5 more" (five at a time, or what is left) and
+ * "Show less" (back to its cap): plain small grey text, no carets (Trent,
+ * 10-28). The rows shown live in the dashboard, which owns the order the
+ * keyboard follows.
+ */
+function SectionMoreLess({
+  group,
+  onMore,
+  onLess,
+}: {
+  group: SortedTaskGroup
+  onMore?: (id: string) => void
+  onLess?: (id: string) => void
+}) {
+  const section: ModeSectionMeta | undefined = group.section
+  if (!section || (section.hidden === 0 && !section.canShowLess)) return null
+  return (
+    <div data-section-more className="flex gap-4 px-1 pt-2 pb-1">
+      {section.hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => onMore?.(section.id)}
+          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+        >
+          Show {nextStepSize(section.hidden)} more
+        </button>
+      )}
+      {section.canShowLess && (
+        <button
+          type="button"
+          onClick={() => onLess?.(section.id)}
+          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+        >
+          Show less
+        </button>
+      )}
+    </div>
+  )
 }
 
 /** Whether one of these groups holds the task. */
@@ -751,6 +868,7 @@ function hasRow(groups: SortedTaskGroup[], id: number): boolean {
 
 /** A group's name on screen: the project's, or "On deck" for Now's deck section. */
 function groupTitle(group: SortedTaskGroup): string {
+  if (group.section) return group.section.title
   return group.deck ? DECK_GROUP_TITLE : group.label
 }
 
@@ -779,9 +897,19 @@ function GroupHeadingText({ group }: { group: SortedTaskGroup }) {
 
 /**
  * A group heading's count: the group's size, or in Now "1 of 5" — the
- * project's rows relevant now, of its open tasks (mockup E1).
+ * project's rows relevant now, of its open tasks (mockup E1). A mode
+ * section counts only the rows it claims; a complete list has no count.
  */
-function GroupCount({ total, nowSplit }: { total: number; nowSplit?: NowSplit }) {
+function GroupCount({ group, nowSplit }: { group: SortedTaskGroup; nowSplit?: NowSplit }) {
+  const total = group.tasks.length
+  if (group.section) {
+    if (group.section.count === null) return null
+    return (
+      <span data-section-count className="text-muted-foreground/60 ml-2">
+        {group.section.count}
+      </span>
+    )
+  }
   if (!nowSplit) return <span className="text-muted-foreground/60 ml-2">{total}</span>
   return (
     <span
