@@ -176,15 +176,8 @@ export function segmentTitle(kind: SegmentKind): string {
   return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
 }
 
-/**
- * Whether a segment has "Defer all" (off today's list, back tomorrow —
- * `segment_deferred_at`). Not the queue's two panels (spec rule 8: consider,
- * Today and done), and not the DEADLINES page (2026-10-22): its Defer moves a
- * row's lead day (`/api/task-segments/defer-lead`), one row at a time.
- */
-export function offersDeferAll(kind: SegmentKind): boolean {
-  return !isQueueKind(kind) && kind !== 'deadlines'
-}
+/** `offersDeferAll` moved to src/lib/task-segments.ts (2026-10-30); re-exported for its importers. */
+export { offersDeferAll } from '@/lib/task-segments'
 
 /** `segmentTitle` for a segment: its header, section and list names. */
 export function segmentLabel(segment: SegmentView): string {

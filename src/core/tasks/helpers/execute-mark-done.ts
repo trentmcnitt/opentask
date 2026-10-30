@@ -8,7 +8,12 @@
 import type { Database } from 'better-sqlite3'
 import type { Task, UndoSnapshot } from '@/types'
 import type { MarkDoneComputation } from './compute-mark-done'
-import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from '../target-set'
+import {
+  ATTEMPTS_RESET_SQL,
+  QUEUE_CLEAR_SQL,
+  TARGET_SET_FIELD,
+  queueStateToClear,
+} from '../target-set'
 import { DECK_CLEAR_SQL } from '../deck-clear'
 
 export interface ExecuteMarkDoneResult {
@@ -106,7 +111,7 @@ function executeRecurringMarkDone(
         deadline_at = ?, lead_from = ?,
         ${TARGET_SET_FIELD} = ?, completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         repeat_count_used = ?,
-        progress_current = 0, attempts = 0, attempts_counted_through = NULL,
+        progress_current = 0, ${ATTEMPTS_RESET_SQL},
         ${QUEUE_CLEAR_SQL}, ${DECK_CLEAR_SQL}, updated_at = ?
     WHERE id = ?
   `,
@@ -218,7 +223,7 @@ function executeSeriesEndMarkDone(
   )
   tx.prepare(
     `UPDATE tasks
-        SET done = 1, done_at = ?, archived_at = ?, attempts = 0, attempts_counted_through = NULL,
+        SET done = 1, done_at = ?, archived_at = ?, ${ATTEMPTS_RESET_SQL},
             completion_count = ?, first_completed_at = ?, last_completed_at = ?,
             repeat_count_used = ?, queue_mark = 0, try_tomorrow = 0, updated_at = ?
       WHERE id = ?`,
@@ -301,7 +306,7 @@ function executeOneOffMarkDone(
   tx.prepare(
     `
     UPDATE tasks
-    SET done = 1, done_at = ?, archived_at = ?, attempts = 0, attempts_counted_through = NULL,
+    SET done = 1, done_at = ?, archived_at = ?, ${ATTEMPTS_RESET_SQL},
         completion_count = ?, first_completed_at = ?, last_completed_at = ?,
         queue_mark = 0, try_tomorrow = 0, updated_at = ?
     WHERE id = ?
