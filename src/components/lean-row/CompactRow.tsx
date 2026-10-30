@@ -39,7 +39,6 @@ export function CompactRow({
   task,
   onDone,
   onSnooze,
-  onRemoveTarget,
   onSetHorizon,
   onTargetAt,
   onDeck,
@@ -127,7 +126,6 @@ export function CompactRow({
             onDeck={onDeck}
             onTargetAt={onTargetAt}
             onSnooze={onSnooze}
-            onRemoveTarget={onRemoveTarget}
             timeSlots={timeSlots}
           />
         )}

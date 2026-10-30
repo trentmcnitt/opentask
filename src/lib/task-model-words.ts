@@ -71,10 +71,13 @@ export const SEGMENT_STRIP_WORDS: Record<SegmentKind, { long: string; short: str
   // The two panels are one bar on the web, "Pulled" (`mergePulled`).
   queue_today: { long: PULLED_TITLE, short: PULLED_TITLE },
   queue_previous: { long: PULLED_TITLE, short: PULLED_TITLE },
-  days: null,
-  weeks: null,
-  months: null,
-  eventually: null,
+  // The horizons by name (Trent, 2026-10-30: "dot makes no sense without the
+  // other dots around it"); the strip falls back to the dots only when the
+  // words don't fit (`useStripWords`).
+  days: { long: 'Days', short: 'Days' },
+  weeks: { long: 'Weeks', short: 'Weeks' },
+  months: { long: 'Months', short: 'Months' },
+  eventually: { long: 'Eventually', short: 'Eventually' },
   aged_out: { long: 'Aged', short: 'Aged' },
 }
 

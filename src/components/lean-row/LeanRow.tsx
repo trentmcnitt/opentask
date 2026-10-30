@@ -261,7 +261,6 @@ export function LeanRow({
             onDeck={onDeck}
             onTargetAt={onTargetAt}
             onSnooze={onSnooze}
-            onRemoveTarget={onRemoveTarget}
             timeSlots={timeSlots}
           />
         )}

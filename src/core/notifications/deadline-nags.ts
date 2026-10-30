@@ -122,10 +122,15 @@ export interface DeadlineNagContent {
 
 type NetWord = 'passed' | 'today' | 'tomorrow'
 
-/** How close a safety-net deadline is, on the OpenTask day (L9). */
-function netWord(day: string, today: string): NetWord {
+/**
+ * How close a safety-net deadline is, on the OpenTask day (L9) — and, today,
+ * by the clock: a deadline earlier today that has gone by is "passed", not
+ * "today" (Trent, 2026-10-30: an 11:30 deadline read "Deadline today" at 11:50).
+ */
+function netWord(day: string, today: string, deadlineAt: string, now: Date): NetWord {
   if (day < today) return 'passed'
-  return day === today ? 'today' : 'tomorrow'
+  if (day === today) return Date.parse(deadlineAt) <= now.getTime() ? 'passed' : 'today'
+  return 'tomorrow'
 }
 
 const NET_RANK: Record<NetWord, number> = { passed: 0, today: 1, tomorrow: 2 }
@@ -150,7 +155,9 @@ export function deadlineNagContent(
 ): DeadlineNagContent {
   const today = openTaskToday(timezone, now, rolloverTime)
   const days = rows.map((r) => deadlineDay(r.task.deadline_at!, timezone, rolloverTime))
-  const net = rows.flatMap((r, i) => (r.safetyNet ? [netWord(days[i], today)] : []))
+  const net = rows.flatMap((r, i) =>
+    r.safetyNet ? [netWord(days[i], today, r.task.deadline_at!, now)] : [],
+  )
   if (net.length > 0) {
     const word = net.reduce((a, b) => (NET_RANK[b] < NET_RANK[a] ? b : a))
     const n = net.filter((w) => w === word).length

@@ -39,7 +39,6 @@ import { useDeferPress } from '@/hooks/useDeferPress'
 import { useTimezone } from '@/hooks/useTimezone'
 import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
 import { clockTap } from '@/lib/lean-clock'
-import { targetReset } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
@@ -69,7 +68,6 @@ export function LeanButtons({
   onDeck,
   onTargetAt,
   onSnooze,
-  onRemoveTarget,
   timeSlots,
 }: {
   task: Task
@@ -77,7 +75,6 @@ export function LeanButtons({
   onDeck?: TaskRowProps['onDeck']
   onTargetAt?: TaskRowProps['onTargetAt']
   onSnooze: TaskRowProps['onSnooze']
-  onRemoveTarget?: TaskRowProps['onRemoveTarget']
   timeSlots: NonNullable<TaskRowProps['timeSlots']>
 }) {
   const timezone = useTimezone()
@@ -114,7 +111,6 @@ export function LeanButtons({
         isOverdue={isOverdue}
         onTargetAt={onTargetAt}
         onSnooze={onSnooze}
-        onRemoveTarget={onRemoveTarget}
         timeSlots={timeSlots}
       />
     </div>
@@ -127,14 +123,12 @@ function LeanTimeButton({
   isOverdue,
   onTargetAt,
   onSnooze,
-  onRemoveTarget,
   timeSlots,
 }: {
   task: Task
   isOverdue: boolean
   onTargetAt?: TaskRowProps['onTargetAt']
   onSnooze: TaskRowProps['onSnooze']
-  onRemoveTarget?: TaskRowProps['onRemoveTarget']
   timeSlots: NonNullable<TaskRowProps['timeSlots']>
 }) {
   const timezone = useTimezone()
@@ -155,13 +149,7 @@ function LeanTimeButton({
     )
   }
   return (
-    <LeanDeferButton
-      task={task}
-      isOverdue={isOverdue}
-      onSnooze={onSnooze}
-      onRemoveTarget={onRemoveTarget}
-      timeSlots={timeSlots}
-    />
+    <LeanDeferButton task={task} isOverdue={isOverdue} onSnooze={onSnooze} timeSlots={timeSlots} />
   )
 }
 
@@ -170,13 +158,11 @@ function LeanDeferButton({
   task,
   isOverdue,
   onSnooze,
-  onRemoveTarget,
   timeSlots,
 }: {
   task: Task
   isOverdue: boolean
   onSnooze: TaskRowProps['onSnooze']
-  onRemoveTarget?: TaskRowProps['onRemoveTarget']
   timeSlots: NonNullable<TaskRowProps['timeSlots']>
 }) {
   const { menuOpen, setMenuOpen, press } = useDeferPress({
@@ -190,8 +176,6 @@ function LeanDeferButton({
       open={menuOpen}
       onOpenChange={setMenuOpen}
       onSnooze={(until) => onSnooze(task.id, until)}
-      targetReset={onRemoveTarget ? targetReset(task) : null}
-      onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
       deadlineAt={task.deadline_at}
     >
       <button

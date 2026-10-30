@@ -15,6 +15,8 @@
  * deadlines page (and, for /reminders' day bar, reminders). Unique titles;
  * everything trashed in `finally`; the switch off again after the file.
  */
+import path from 'path'
+import Database from 'better-sqlite3'
 import { test, expect, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
@@ -549,3 +551,57 @@ async function dayBarFits(page: Page, widths: number[]) {
     if (addedSlot !== null) await page.request.delete(`/api/time-slots/${addedSlot}`)
   }
 }
+
+/**
+ * THE HORIZONS BY NAME (Trent, 2026-10-30: "dot makes no sense without the
+ * other dots around it"): the strip writes "Days", "Weeks" … like its other
+ * words, and falls back to the dots only when the words don't fit
+ * (`useStripWords`) — here, the card squeezed to 100px (the three words need ~124).
+ */
+test('the strip writes the horizons, and shows their dots only when the words do not fit', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  const ids: number[] = []
+  try {
+    ids.push(await create(page, { title: uniqueTitle('SA words daily'), horizon: 'days' }))
+    const weekly = await create(page, { title: uniqueTitle('SA words weekly'), horizon: 'weeks' })
+    ids.push(weekly)
+    // Made a month ago: in Weeks today, whatever the check-in day.
+    const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+    try {
+      db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(
+        new Date(Date.now() - 30 * DAY).toISOString(),
+        weekly,
+      )
+    } finally {
+      db.close()
+    }
+    ids.push(await create(page, deadlineTask()))
+    await page.goto('/')
+    const card = page.locator('[data-tasks-panel]')
+    const strip = card.getByRole('group', { name: "Today's task segments" })
+    const word = (key: string) => strip.locator(`[data-slot-segment="${key}"] [data-strip-word]`)
+    await expect(word('tasks:days')).toHaveText('Days', { useInnerText: true })
+    await expect(word('tasks:weeks')).toHaveText('Weeks', { useInnerText: true })
+    await expect(word('tasks:deadlines')).toHaveText(/^(Deadlines|Due)$/, { useInnerText: true })
+    await expect(strip).not.toHaveAttribute('data-strip-dots')
+
+    // Squeezed: the horizons' words give way to their dots; the others stay.
+    await page.addStyleTag({ content: '[data-tasks-panel] { width: 100px !important; }' })
+    await expect(strip).toHaveAttribute('data-strip-dots', '')
+    await expect(word('tasks:days')).toHaveText('', { useInnerText: true })
+    await expect(word('tasks:days').locator('*').first()).toBeVisible()
+    await expect(word('tasks:deadlines')).toHaveText('Due', { useInnerText: true })
+    // Room again: the words come back.
+    await page.evaluate(() =>
+      document.querySelectorAll('style').forEach((s) => {
+        if (s.textContent?.includes('[data-tasks-panel] { width: 100px')) s.remove()
+      }),
+    )
+    await expect(strip).not.toHaveAttribute('data-strip-dots')
+    await expect(word('tasks:weeks')).toHaveText('Weeks', { useInnerText: true })
+  } finally {
+    await trash(page, ids)
+  }
+})
