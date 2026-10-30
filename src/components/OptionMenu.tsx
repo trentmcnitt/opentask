@@ -224,7 +224,10 @@ export function OptionMenu({
           role="menu"
           aria-label={`${title} options`}
           align="end"
-          className="max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-y-auto p-1"
+          className={cn(
+            'max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-y-auto p-1',
+            options.some((o) => o.chipGroup) && 'w-[20rem]',
+          )}
           // Focus stays where it was: the trigger's own keys still work.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
@@ -339,7 +342,12 @@ function OptionDropdown({
       data-no-row-press
       role="menu"
       aria-label={label}
-      className="bg-popover text-popover-foreground fixed z-50 max-w-[22rem] min-w-[200px] overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md"
+      className={cn(
+        'bg-popover text-popover-foreground fixed z-50 max-w-[22rem] min-w-[200px] overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md',
+        // A chip group wraps across the menu's width: give it one, or the
+        // rows' width leaves one chip per line (T1's periods, 2026-10-30).
+        options.some((o) => o.chipGroup) && 'w-[20rem]',
+      )}
       style={{ transform: 'translateX(-100%)' }}
     >
       <MenuItems options={options} isChoice={isChoice} onSelect={onSelect} />
