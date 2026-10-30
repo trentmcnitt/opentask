@@ -1329,9 +1329,9 @@ enum UpcomingSection: String, CaseIterable, Codable {
 }
 
 /// The Upcoming segment split into its sections — the web's
-/// `upcomingSections` (`src/lib/upcoming-sections.ts`). BOTH sections are
-/// always returned, Tomorrow first, an empty one too (the web draws both
-/// headings always). The segment's own "X of Y", strip bar and "Defer all"
+/// `upcomingSections` (`src/lib/upcoming-sections.ts`): Tomorrow first, and
+/// only a section with rows today, waiting or considered (Trent, 2026-10-30:
+/// "hide an empty section" — both were always returned before). The segment's own "X of Y", strip bar and "Defer all"
 /// stay the segment's; each section has its own "n of m".
 enum UpcomingSections {
     struct Section: Equatable {
@@ -1344,18 +1344,16 @@ enum UpcomingSections {
         /// "n of m": n handled, m everything the section held today.
         var handledCount: Int { handled.count }
         var total: Int { waiting.count + handled.count }
-        /// Nothing waits — the count goes green with a check ("0 of 0 ✓"
-        /// for an empty section, done from the start).
+        /// Nothing waits — the count goes green with a check ("1 of 1 ✓").
         var finished: Bool { waiting.isEmpty }
-        /// No rows at all today: the watch's "Nothing today ✓".
-        var isEmpty: Bool { total == 0 }
         /// "1 of 3".
         var countText: String { "\(handledCount) of \(total)" }
     }
 
     static func split(_ rows: [SegmentTaskDTO]) -> [Section] {
-        UpcomingSection.allCases.map { section in
+        UpcomingSection.allCases.compactMap { section in
             let mine = rows.filter { $0.section == section }
+            guard !mine.isEmpty else { return nil }
             return Section(
                 section: section,
                 waiting: mine.filter { $0.state == .waiting },

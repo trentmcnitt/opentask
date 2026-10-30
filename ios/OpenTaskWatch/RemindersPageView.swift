@@ -463,13 +463,10 @@ struct TaskSegmentSection: View {
                 NothingTodayLine(tint: WatchTheme.dayBarDone(segment.kind))
             } else if segment.isUpcoming {
                 // Upcoming in two sections (2026-10-26, ruling 1), drawn like
-                // the web: each section's heading and its own "n of m", its
-                // rows, and "Nothing today ✓" when it holds none.
+                // the web: each section's heading and its own "n of m", then
+                // its rows. An empty section isn't drawn (2026-10-30).
                 ForEach(UpcomingSections.split(segment.tasks), id: \.section) { section in
                     UpcomingSectionHeader(section: section)
-                    if section.isEmpty {
-                        NothingTodayLine()
-                    }
                     rows(section.waiting)
                 }
             } else {
