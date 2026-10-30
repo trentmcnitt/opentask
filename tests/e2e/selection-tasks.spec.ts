@@ -424,8 +424,8 @@ test.describe('Dashboard multi-select — the panel date line and "…" menu', (
           await page.getByRole('button', { name: /next month/i }).click()
         }
         await day.click()
-        await page.getByRole('spinbutton', { name: 'Hour' }).fill('10')
-        await page.getByRole('spinbutton', { name: 'Minute' }).fill('30')
+        await page.getByRole('textbox', { name: 'Hour' }).fill('10')
+        await page.getByRole('textbox', { name: 'Minute' }).fill('30')
         const period = page.getByRole('button', { name: /^Toggle AM\/PM/ })
         if ((await period.textContent())?.trim() !== 'AM') await period.click()
         await expect(period).toHaveText('AM')
