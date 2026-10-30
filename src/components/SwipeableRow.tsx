@@ -43,6 +43,11 @@ const SURFACE = {
   flat: { outer: '-mx-1', foreground: 'bg-background px-1' },
 } as const
 
+/** Below this much revealed, the action's word would be cut by the row: it fades in after. */
+const LABEL_ROOM_PX = 56
+/** The word's box: wider than "Defer" / "Done" / "Edit" at text-sm. */
+const LABEL_BOX_PX = 56
+
 export function SwipeableRow({
   children,
   onSwipeRight,
@@ -98,8 +103,10 @@ export function SwipeableRow({
           dragStarted.current = true
           onDragStart?.()
         }
-        // Clamp movement to reasonable bounds
-        const clamped = Math.max(-width * 0.5, Math.min(width * 0.5, mx))
+        // Clamp movement to reasonable bounds, in WHOLE pixels: a fractional
+        // offset re-rasters the row at a subpixel position every frame —
+        // the vertical stripes and banding Trent saw mid-swipe (2026-10-30).
+        const clamped = Math.round(Math.max(-width * 0.5, Math.min(width * 0.5, mx)))
         setOffset(clamped)
       } else {
         dragStarted.current = false
@@ -133,11 +140,6 @@ export function SwipeableRow({
     },
   )
 
-  const leftColor = leftAction === 'edit' ? 'bg-amber-500' : 'bg-blue-500'
-  const leftLabel = leftAction === 'edit' ? 'Edit' : 'Defer'
-  const bgColor = offset > 0 ? 'bg-green-500' : offset < 0 ? leftColor : ''
-  const label = offset > 0 ? 'Done' : offset < 0 ? leftLabel : ''
-
   return (
     <div
       ref={containerRef}
@@ -152,16 +154,7 @@ export function SwipeableRow({
         'overflow-visible data-swiping:overflow-hidden',
       )}
     >
-      {/* Background revealed by swipe */}
-      {offset !== 0 && (
-        <div
-          className={`absolute inset-0 ${bgColor} flex items-center ${
-            offset > 0 ? 'justify-start pl-4' : 'justify-end pr-4'
-          }`}
-        >
-          <span className="text-sm font-medium text-white">{label}</span>
-        </div>
-      )}
+      {offset !== 0 && <SwipeReveal offset={offset} leftAction={leftAction} />}
 
       {/* Foreground content — bg-card ensures an opaque base so swipe
          action labels never bleed through semi-transparent child backgrounds */}
@@ -170,12 +163,58 @@ export function SwipeableRow({
         className={cn(SURFACE[surface].foreground, toneClass)}
         data-age-step={ageStep}
         style={{
-          transform: `translateX(${offset}px)`,
+          // Its own compositor layer while it moves (`translate3d`,
+          // `will-change`): the slide is then a move of a layer painted once,
+          // not a repaint of the row every frame (the lag, 2026-10-30).
+          transform: offset === 0 ? 'translateX(0)' : `translate3d(${offset}px, 0, 0)`,
+          willChange: offset === 0 ? undefined : 'transform',
           transition: offset === 0 || swiped ? 'transform 0.2s ease-out' : 'none',
           touchAction: disabled ? undefined : 'pan-y',
         }}
       >
         {children}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The background a swipe reveals: green Done to the right, blue Defer (amber
+ * Edit) to the left. The word is centred in the strip the row has uncovered
+ * and shows only once it fits — pinned to the far edge, the row slid over it
+ * ("Def" cut off, Trent, 2026-10-30). Nothing here changes size as the row
+ * moves: the panel is the whole row, and the word's fixed-width box follows
+ * the strip's centre by a compositor transform, so a frame of the swipe
+ * paints nothing (the lag and the stripes).
+ */
+function SwipeReveal({ offset, leftAction }: { offset: number; leftAction: 'snooze' | 'edit' }) {
+  const right = offset > 0
+  const edit = leftAction === 'edit'
+  // The box's centre at the uncovered strip's centre: |offset| / 2 in from the edge.
+  const shift = Math.abs(offset) / 2 - LABEL_BOX_PX / 2
+  return (
+    <div
+      className={cn(
+        'absolute inset-0 rounded-[inherit]',
+        right ? 'bg-green-500' : edit ? 'bg-amber-500' : 'bg-blue-500',
+      )}
+    >
+      <div
+        data-swipe-label
+        className={cn(
+          'absolute inset-y-0 flex items-center justify-center transition-opacity duration-100',
+          right ? 'left-0' : 'right-0',
+          Math.abs(offset) < LABEL_ROOM_PX && 'opacity-0',
+        )}
+        style={{
+          width: LABEL_BOX_PX,
+          transform: `translate3d(${right ? shift : -shift}px, 0, 0)`,
+          willChange: 'transform',
+        }}
+      >
+        <span className="text-sm font-medium whitespace-nowrap text-white">
+          {right ? 'Done' : edit ? 'Edit' : 'Defer'}
+        </span>
       </div>
     </div>
   )
