@@ -484,6 +484,14 @@ function segmentViews(
 }
 
 /**
+ * RULE SEG-PULLED-MERGE: The web merges queue_today and queue_previous into one view in
+ *   queue_today's place. Rows are tagged today or earlier and the counts are summed. The server's
+ *   two kinds and the native caches are unchanged.
+ * Why: One strip bar, one page and one "N of M" for the pulls; the server's kinds and the native
+ *   apps are unchanged.
+ * Ruling: Trent 2026-10-29 ('just have pulls … Today … Earlier', src/hooks/useTaskSegments.ts:487).
+ */
+/**
  * PULLED, ONE SEGMENT (Trent, 2026-10-29: "just have pulls and then the
  * first thing is Today and the other section is Earlier"): the queue's two
  * panels — Today's pulls, Previous pulls — drawn as ONE segment in the web

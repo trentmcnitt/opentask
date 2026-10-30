@@ -78,6 +78,15 @@ export interface FormattedTask extends Task {
 }
 
 /**
+ * RULE DL-NATIVE-NAGOFF: deadline_nag_off is not stored; each response computes it. It is true for
+ *   a one-off with a deadline and no target (L5), and for a one-off whose deadline is at or before
+ *   now and whose target is after it. Otherwise it is false, every repeat included.
+ * Why: Builds installed 10-10..10-12 imply a target 4 days before the deadline when due_at is nil
+ *   and the nag is not off; this turns their rule off.
+ * Ruling: Passed-deadline branch: Trent 2026-10-12. L5: deadlines-page plan 2026-10-22.
+ * Restated at: ios/Shared/TargetAge.swift (impliedTarget).
+ */
+/**
  * What shipped native builds must read as `deadline_nag_off` so that their
  * implied-target rule (`TargetAge.impliedTarget`) returns nothing and they
  * read `due_at` as the target — the server's own answer:
@@ -118,6 +127,7 @@ export function formatTaskResponse(task: Task, timezone: string): FormattedTask 
   const now = new Date()
   return {
     ...task,
+    // (restates RULE TGT-FIELD, home: src/core/validation/task.ts)
     target_at: task.due_at,
     is_recurring: task.rrule !== null,
     // 2026-10-21: null on a one-off — it has no rule for the anchor to describe.

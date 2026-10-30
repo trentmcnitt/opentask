@@ -31,6 +31,14 @@ CREATE TABLE IF NOT EXISTS users (
   quotas_details INTEGER NOT NULL DEFAULT 0,
   label_config  TEXT NOT NULL DEFAULT '[]',
   priority_display TEXT NOT NULL DEFAULT '{"trailingDot":true,"badgeStyle":"words","colorTitle":false,"rightBorder":false,"colorCheckbox":true}',
+  -- RULE NAG-TIER-DEFAULTS: The defaults are Unset 30, Low 240, Medium 60, High 15 and Urgent 5
+  --   minutes. Unset keeps its own column. PATCH accepts 1-360 for Unset, High and Urgent, and
+  --   1-1440 for Low and Medium.
+  -- Why: Unset means nobody stated a priority, not "lowest", so it is tunable apart, and nothing
+  --   goes fully silent by default (L2).
+  -- Ruling: §4.1 cadence ladder (no person or date recorded); the 1440 ceiling is explained at
+  --   src/app/api/user/preferences/route.ts:288.
+  -- Restated at: src/core/notifications/overdue-checker.ts (getEffectiveInterval).
   auto_snooze_minutes INTEGER NOT NULL DEFAULT 30,
   auto_snooze_urgent_minutes INTEGER NOT NULL DEFAULT 5,
   auto_snooze_high_minutes INTEGER NOT NULL DEFAULT 15,
