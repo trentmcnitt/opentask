@@ -2,6 +2,7 @@
 
 import { Check, ChevronDown, Clock3, FolderOpen, Forward, Sprout, X } from 'lucide-react'
 import { DateTime } from 'luxon'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
@@ -20,6 +21,7 @@ import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
+import { requestShowInList, showInListHref } from '@/lib/show-in-list'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
@@ -495,6 +497,8 @@ function SegmentRowPeek({
   segmentHorizon: SegmentKind
 }) {
   const { task } = row
+  const pathname = usePathname()
+  const router = useRouter()
   return (
     <RowPeekBody
       title={task.title}
@@ -516,6 +520,13 @@ function SegmentRowPeek({
         // would stack a popover behind a dialog (the reminder panel's rule).
         actions.closePeek()
         actions.openDetails(task)
+      }}
+      onShowInList={() => {
+        // The dashboard's list (2026-10-30): asked directly when it is on
+        // screen, else opened on it (`src/lib/show-in-list.ts`).
+        actions.closePeek()
+        if (pathname === '/') requestShowInList(task.id)
+        else router.push(showInListHref(task.id))
       }}
       onDelete={() => {
         actions.closePeek()

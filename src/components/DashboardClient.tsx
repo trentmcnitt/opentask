@@ -18,6 +18,7 @@ import {
   type SortedTaskGroup,
 } from '@/lib/task-grouping'
 import { useDashboardMode } from '@/hooks/useDashboardMode'
+import { useShowInList } from '@/hooks/useShowInList'
 import { listsEveryRow, MODES } from '@/lib/modes/registry'
 import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
 import { useNowFolds } from '@/hooks/useNowFolds'
@@ -1268,6 +1269,22 @@ function HomeContent({
     },
     [isCollapsed, expand, sortedGroups, openFold],
   )
+  // Show in list (`src/lib/show-in-list.ts`): the queue row bubble's button,
+  // here or — through `?task=<id>&show=1` — from /reminders.
+  const showInList = useShowInList({
+    loading,
+    viewKnown: groupingLoaded,
+    tasks,
+    listed: tasks_,
+    groups: sortedGroups,
+    modesOn: dashMode.enabled,
+    mode: dashMode.mode,
+    setMode: setDashMode,
+    searching: !!searchQuery,
+    reveal: revealRow,
+    clearNarrowing: clearListNarrowing,
+    onMissing: (taskId) => void toastForUnshownTask(taskId),
+  })
   useEffect(() => {
     if (taskParamProcessed.current || loading) return
     const taskIdParam = searchParams.get('task')
@@ -1283,6 +1300,11 @@ function HomeContent({
       window.history.replaceState(window.history.state, '', window.location.pathname)
     }
     if (isNaN(taskId)) return consume()
+    // Show in list from /reminders: the hook waits for the list itself.
+    if (searchParams.get('show') === '1') {
+      showInList(taskId)
+      return consume()
+    }
     if (tasks.length === 0) return
     // A sectioned mode that doesn't list the task (Today, for a task due next
     // week): All lists every open task, so the link goes there.
@@ -1354,6 +1376,7 @@ function HomeContent({
     groupingLoaded,
     selection,
     clearListNarrowing,
+    showInList,
   ])
 
   // Just now (`src/lib/just-added.ts`): each task created — or targeted from
