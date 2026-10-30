@@ -27,7 +27,8 @@ const FIELD_WINDOW = 12
 
 const HOME_MARKER = /\bRULE ([A-Z][A-Z0-9-]*):/g
 const POINTER = /\(restates RULE ([A-Z][A-Z0-9-]*), home: ([^)\s]+)\)/g
-const DOC_CITE = /\(RULE ([A-Z][A-Z0-9-]*)\)/g
+/** A cite in the docs: `(RULE X)`, or `RULE X` inside a longer parenthesis. */
+const DOC_CITE = /\bRULE ([A-Z][A-Z0-9-]*[A-Z0-9])/g
 
 const registry: Record<string, { home: string; symbol: string; pins: readonly string[] }> =
   RULE_REGISTRY
@@ -142,7 +143,7 @@ describe('RL-G: every task-state rule has one commented home (src/lib/rule-regis
     expect(wrong).toEqual([])
   })
 
-  test('RL-G08: every (RULE X) cited in docs/TASK-MODEL.md is registered', () => {
+  test('RL-G08: every RULE X cited in docs/TASK-MODEL.md is registered', () => {
     const doc = fs.readFileSync(path.join(ROOT, 'docs/TASK-MODEL.md'), 'utf8')
     const cited = [...doc.matchAll(DOC_CITE)].map((m) => m[1])
     expect(cited.length).toBeGreaterThan(0)
