@@ -92,7 +92,7 @@ export function countTasks(
     const target = countableTarget(t)
     if (target === null) continue
     const due = new Date(target)
-    if (targetArrived(due, now)) overdue++
+    if (isOverdue(t, now)) overdue++
     if (due >= todayStart && due < tomorrowStart) today++
   }
   return { total: tasks.length, overdue, today }

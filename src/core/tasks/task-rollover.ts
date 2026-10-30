@@ -99,7 +99,7 @@ import {
   repeatStep,
 } from '@/lib/task-segments'
 import { getTaskById, rowToTask, taskColumns, type TaskRow } from './read'
-import { TARGET_SET_FIELD } from './target-set'
+import { ATTEMPTS_RESET_SQL, TARGET_SET_FIELD } from './target-set'
 import { taskQueueEnabled } from './task-queue'
 import { rolloverTimeForUser } from './rollover-time'
 import type { Task } from '@/types'
@@ -717,7 +717,7 @@ function release(w: WaitRow, user: UserRow, nowStr: string, ctx: ApplyCtx): bool
     db.prepare(
       `UPDATE tasks
           SET occurrence_at = due_at, original_due_at = due_at, skip_count = ?,
-              repeat_count_used = ?, attempts = 0, attempts_counted_through = NULL,
+              repeat_count_used = ?, ${ATTEMPTS_RESET_SQL},
               queued_at = NULL, queued_from_due_at = NULL, try_tomorrow = 0,
               rolled_over_at = ?, updated_at = ?
         WHERE id = ?`,
@@ -912,7 +912,9 @@ function rollRepeating(
  * net holds it).
  *
  * Which days: the cron strips days BEFORE the rollover's OpenTask day (a deck
- * for today made at 1 AM, a calendar date, A2, survives the 6:30 rollover);
+ * for today made at 1 AM, a calendar date, A2, survives the 6:30 rollover —
+ * that is red-team A2 of 10-20; since 2026-10-24 the deck day is an OpenTask
+ * date, so a deck for "today" made then is the ending day's);
  * Roll over now strips days up to AND including the current OpenTask day and
  * leaves the coming day's (A3).
  *
@@ -950,7 +952,9 @@ function stripDecks(
     // A DEADLINE task's expired deck is only cleared, never queued (the
     // deadlines page, 2026-10-22, plan §5): it goes back to the page, whose
     // safety net holds it from the day before its deadline. (Before the page,
-    // a deck whose automatic target had arrived was cleared the same way.)
+    // a deck whose automatic target had arrived was cleared the same way:
+    // `nagging` keeps that 10-20 A1 name. A deck with a target: PARKED
+    // I-01/I-02.)
     const nagging = task.deadline_at !== null
     if (nagging) {
       db.prepare(
