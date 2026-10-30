@@ -38,38 +38,42 @@ export function PeriodChipRow({
   const choices = ordered.some((s) => s.start_time === defaultTime)
     ? ordered
     : [{ start_time: defaultTime, label: 'Default' } as TimeSlot, ...ordered]
+  // `w-0 min-w-full`: the row fills the picker but adds nothing to its width,
+  // so a long list scrolls instead of widening the popover past the screen.
   return (
-    <div
-      role="group"
-      aria-label="Periods"
-      data-picker-periods
-      className="-mx-3 flex gap-1.5 overflow-x-auto overscroll-x-contain px-3 pt-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      {choices.map((slot) => {
-        const on = slot.start_time === value
-        const isDefault = slot.start_time === defaultTime
-        return (
-          <button
-            key={`${slot.label}-${slot.start_time}`}
-            type="button"
-            aria-pressed={on}
-            aria-label={`${slot.label} ${slot.start_time}${isDefault ? ', the default task time' : ''}`}
-            data-picker-period={slot.start_time}
-            data-picker-default={isDefault ? '' : undefined}
-            onClick={() => onPick(slot.start_time)}
-            className={cn(
-              'shrink-0 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap transition-colors',
-              on ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-accent',
-              isDefault && 'font-bold',
-            )}
-          >
-            {slot.label}
-            <span className={cn('ml-1', on ? 'opacity-80' : 'text-muted-foreground')}>
-              {DateTime.fromFormat(slot.start_time, 'HH:mm').toFormat('h:mm')}
-            </span>
-          </button>
-        )
-      })}
+    <div className="w-0 min-w-full">
+      <div
+        role="group"
+        aria-label="Periods"
+        data-picker-periods
+        className="-mx-3 flex gap-1.5 overflow-x-auto overscroll-x-contain px-3 pt-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {choices.map((slot) => {
+          const on = slot.start_time === value
+          const isDefault = slot.start_time === defaultTime
+          return (
+            <button
+              key={`${slot.label}-${slot.start_time}`}
+              type="button"
+              aria-pressed={on}
+              aria-label={`${slot.label} ${slot.start_time}${isDefault ? ', the default task time' : ''}`}
+              data-picker-period={slot.start_time}
+              data-picker-default={isDefault ? '' : undefined}
+              onClick={() => onPick(slot.start_time)}
+              className={cn(
+                'shrink-0 rounded-full border px-2.5 py-1 text-xs whitespace-nowrap transition-colors',
+                on ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-accent',
+                isDefault && 'font-bold',
+              )}
+            >
+              {slot.label}
+              <span className={cn('ml-1', on ? 'opacity-80' : 'text-muted-foreground')}>
+                {DateTime.fromFormat(slot.start_time, 'HH:mm').toFormat('h:mm')}
+              </span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

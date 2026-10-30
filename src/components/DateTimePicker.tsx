@@ -11,7 +11,7 @@ import { snapToNearestFiveMinutes } from '@/lib/quick-select-dates'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
 import { PickerTimeFields } from '@/components/PickerTimeFields'
-import { useSlotsWhenOpen } from '@/hooks/useSlotsWhenOpen'
+import { useTimeSlots } from '@/hooks/useTimeSlots'
 
 interface DateTimePickerProps {
   /** Current value as UTC ISO string, or null if no date */
@@ -167,7 +167,8 @@ export function DateTimePicker({
   const controlled = controlledOpen !== undefined
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlled ? controlledOpen : uncontrolledOpen
-  const slots = useSlotsWhenOpen(open)
+  // The page's own period list (the editor never fetches its own).
+  const { timeSlots: slots } = useTimeSlots(undefined, { revalidate: false })
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [hour12, setHour12] = useState(9)
   const [minute, setMinute] = useState(0)
