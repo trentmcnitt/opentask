@@ -408,3 +408,32 @@ export function pageAfterFinishing(
   }
   return finished < naturalSlot ? naturalSlot : null
 }
+
+/**
+ * The Reminders surface's NEXT SECTION after one is finished (Trent,
+ * 2026-10-29: "after you complete a section, it automatically jumps to the
+ * next one, the same way that filling segments does on the dashboard or on
+ * the widget"). The pager's own rule, `pageAfterFinishing`, over the same
+ * pages — the periods in the day's order, then the task segments in screen
+ * order — answered as a section key, and only when that section still has
+ * something waiting: `pageAfterFinishing`'s fallback for a finished past slot
+ * (the natural slot, finished or not) is where a pager rests, not somewhere
+ * worth scrolling to. Null: stay.
+ */
+export function sectionAfterFinishing(
+  pages: readonly { key: string; waiting: number }[],
+  slotCount: number,
+  finishedKey: string,
+  naturalSlot: number,
+): string | null {
+  const finished = pages.findIndex((p) => p.key === finishedKey)
+  if (finished < 0) return null
+  const target = pageAfterFinishing(
+    pages.map((p) => p.waiting),
+    slotCount,
+    finished,
+    naturalSlot,
+  )
+  if (target === null || pages[target].waiting === 0) return null
+  return pages[target].key
+}

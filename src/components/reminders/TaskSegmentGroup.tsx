@@ -116,6 +116,8 @@ export function TaskSegmentGroup({
       ref={sectionRef}
       aria-label={label}
       data-task-segment={segment.horizon}
+      // The section the user last touched (`useScrollToNextSection`).
+      data-section-key={segmentKey(segment)}
       // The slot section's own frame (`ReminderSlotGroup`), so the column
       // reads as one list of segments.
       className={cn('bg-muted/30 rounded-2xl pb-1 transition-colors', open && 'pb-2')}

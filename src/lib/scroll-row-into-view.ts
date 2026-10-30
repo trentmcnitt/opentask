@@ -34,8 +34,11 @@ export function scrollRowIntoView(el: HTMLElement | null): void {
  * `block: 'start'`, not the row's `'center'`: a started slot draws every row,
  * so a section can be taller than the screen, and centring it would put the
  * very header the user asked for above the top. The section's own
- * `scroll-margin-top` keeps it clear of the sticky top bar.
+ * `scroll-margin-top` keeps it clear of the sticky top bar. Under reduced
+ * motion it jumps instead of gliding (it also runs on its own, after a
+ * section is finished — `useScrollToNextSection`).
  */
 export function scrollSectionIntoView(el: HTMLElement | null): void {
-  el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  el?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
 }
