@@ -159,9 +159,22 @@ interface UseTaskSegmentsOptions {
   /** The user's timezone, for the Today menu's toast. */
   timezone: string
   refresh: () => Promise<void>
-  onUndo: () => void
+  /** Undo the last action (the toast's Undo); awaited when it returns a promise. */
+  onUndo: () => void | Promise<unknown>
   onCompleted?: () => void
 }
+
+/**
+ * One of this surface's own writes, by the undo entry it wrote: its rows, and
+ * whether its toast's Undo has already put them back (the token of that
+ * overlay) — `useUndoRestore`.
+ */
+interface OwnWrite {
+  ids: number[]
+  restored: number | null
+}
+/** How many of this surface's own writes an `undone_id` can name. */
+const OWN_WRITES_KEPT = 20
 
 async function post(url: string, body: unknown): Promise<unknown> {
   const res = await fetch(url, {
@@ -185,6 +198,8 @@ export function useTaskSegments({
 }: UseTaskSegmentsOptions) {
   const [pending, setPending] = useState<PendingMap<number, Overlay>>(new Map())
   const ops = usePendingOps(setPending, requestSeq)
+  // Undo puts a write's rows back at once (`useUndoRestore`).
+  const undos = useUndoRestore(ops, refresh)
   // Each tap's change, until the payload on screen was requested after its
   // write answered (`src/lib/pending-overlay.ts`).
   const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
@@ -206,11 +221,12 @@ export function useTaskSegments({
       send: () => Promise<unknown>,
       message: string,
     ) => {
+      const wasWaiting = waitingIds(view, ids)
       const token = ops.add(ids, to)
       try {
-        await send()
+        const data = await send()
         ops.settle(ids, token)
-        toastResult(message, onUndo)
+        undoToast(message, wasWaiting ? data : null, ids, undos, onUndo)
         onCompleted?.()
       } catch (err) {
         ops.drop(ids, token)
@@ -222,7 +238,7 @@ export function useTaskSegments({
         void refresh()
       }
     },
-    [ops, onUndo, onCompleted, refresh],
+    [ops, onUndo, onCompleted, refresh, view, undos],
   )
 
   // In the safety net a consider marks the row seen and keeps it waiting.
@@ -328,7 +344,93 @@ export function useTaskSegments({
     closeDetails: () => setDetailsTask(null),
     ...peek,
     refresh,
+    /** The undo pipeline's `undone_id` (`useUndoRedo`'s `onUndone`). */
+    applyUndone: undos.applyUndone,
   }
+}
+
+/**
+ * Whether every one of `ids` is waiting now (read before a tap): only those go
+ * back to waiting on an undo — a consider, done, Today, Defer all, the Target
+ * menu all take waiting rows off their list.
+ */
+function waitingIds(view: SegmentView[], ids: number[]): boolean {
+  const waiting = new Set(
+    view.flatMap((s) => s.rows.filter((r) => r.state === 'waiting').map((r) => r.task.id)),
+  )
+  return ids.every((id) => waiting.has(id))
+}
+
+/**
+ * A write's toast. When the write answered with the undo entry it wrote
+ * (`data.undo_id`) and its rows were waiting, its Undo puts them back at once
+ * (`useUndoRestore`); otherwise it is the plain undo.
+ */
+function undoToast(
+  message: string,
+  data: unknown,
+  ids: number[],
+  undos: UndoRestore,
+  onUndo: () => void | Promise<unknown>,
+): void {
+  const undoId = (data as { undo_id?: unknown } | null)?.undo_id
+  if (typeof undoId === 'number') undos.remember(undoId, ids)
+  const onClick =
+    typeof undoId === 'number' ? () => void undos.undoFromToast(undoId, onUndo) : onUndo
+  showToast({ message, type: 'success', action: { label: 'Undo', onClick } })
+}
+
+/**
+ * UNDO PUTS A SEGMENT ROW BACK AT ONCE (Trent, 2026-10-29: "undoing is quite
+ * laggy when I consider one of the heads-up items"; the reminder rows' twin
+ * is `src/lib/reminder-undo.ts`). A write that took waiting rows off their
+ * list records the undo entry it wrote (`remember`). Then:
+ * - the toast's Undo draws them waiting again before any request
+ *   (`undoFromToast`): an overlay of its own, replacing the write's;
+ * - an undo that names the entry — the toast's own, or the header's — keeps
+ *   that overlay (or draws it, for the header) until a payload requested after
+ *   the undo answered (`applyUndone`: settled at the guard's mark then, just
+ *   before the pipeline's refresh goes out — `src/lib/pending-overlay.ts`);
+ * - a toast Undo the answer did not name (it undid something else, or
+ *   nothing) settles at the current mark and refreshes: the server's state
+ *   shows, whatever it is.
+ */
+type UndoRestore = ReturnType<typeof useUndoRestore>
+
+function useUndoRestore(ops: PendingOps, refresh: () => Promise<void>) {
+  const own = useRef(new Map<number, OwnWrite>())
+  return useMemo(() => {
+    const putBack = (write: OwnWrite) => {
+      write.restored ??= ops.add(write.ids, 'waiting')
+      return write.restored
+    }
+    return {
+      remember(undoId: number, ids: number[]) {
+        own.current.set(undoId, { ids, restored: null })
+        if (own.current.size > OWN_WRITES_KEPT) {
+          own.current.delete(own.current.keys().next().value as number)
+        }
+      },
+      async undoFromToast(undoId: number, onUndo: () => void | Promise<unknown>) {
+        const write = own.current.get(undoId)
+        if (!write) return void (await onUndo())
+        const token = putBack(write)
+        await onUndo()
+        // Still remembered: the undo's answer did not name this write.
+        if (own.current.get(undoId) === write) {
+          own.current.delete(undoId)
+          ops.settle(write.ids, token)
+          void refresh()
+        }
+      },
+      applyUndone(undoneId: number) {
+        const write = own.current.get(undoneId)
+        if (!write) return
+        own.current.delete(undoneId)
+        ops.settle(write.ids, putBack(write))
+      },
+    }
+  }, [ops, refresh])
 }
 
 /**

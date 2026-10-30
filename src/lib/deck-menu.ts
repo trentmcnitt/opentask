@@ -253,6 +253,47 @@ export function todayReplaces(
     : `On deck ${day.toFormat('ccc')}`
 }
 
+/**
+ * What deck / On deck tomorrow / Today would replace on a TASK SEGMENT ROW
+ * (Trent, 2026-10-29, of a weekly repeat targeted for 4 PM: "it has a target
+ * already, so decking it or targeting it would remove that"): ONE rule for the
+ * three buttons — the row already has a target (a picked one, an automatic
+ * one, a repeat's occurrence time) or is already on deck. The buttons are then
+ * faded and ask first. `label` goes in the tooltip ("replaces …"); the two
+ * messages are the confirms. The dashboard's rows keep `deckReplaces` /
+ * `todayReplaces` (there the clock defers a task that is due).
+ */
+export interface SegmentReplace {
+  label: string
+  deck: string
+  today: string
+}
+
+export function segmentReplaces(
+  task: { due_at: string | null; rrule?: string | null; on_deck_day?: string | null },
+  timezone: string,
+  /** The user's day boundary (`useDayStart`): "today" is the OpenTask day. */
+  dayStart: string,
+  now: Date = new Date(),
+): SegmentReplace | null {
+  const deck = todayReplaces(task, timezone, dayStart, now)
+  if (deck) return { label: deck, deck: `Replaces ${deck}`, today: `Replaces ${deck}` }
+  if (task.due_at === null) return null
+  const at = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
+  const time = at.toFormat(at.minute === 0 ? 'h a' : 'h:mm a')
+  if (task.rrule) {
+    // A repeat keeps its schedule: a deck or a Today moves THIS occurrence.
+    const which = `this ${at.toFormat('cccc')}’s ${time}`
+    return {
+      label: `${which} occurrence`,
+      deck: `Moves ${which} occurrence to the deck`,
+      today: `Moves ${which} target to today`,
+    }
+  }
+  const target = `target ${at.toFormat('ccc')} ${time}`
+  return { label: target, deck: `Replaces ${target}`, today: `Replaces ${target}` }
+}
+
 /** One day of the deadlines page's Defer menu (`deferLeadDays`). */
 export interface DeferLeadDay {
   /** "Tomorrow", "Thursday", "Sat Nov 7". */

@@ -123,3 +123,42 @@ test('a scroll by hand after the last tick keeps the page where the user put it'
     await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, days] } })
   }
 })
+
+test('with a notch inset the header still lands below the top bar', async ({
+  authenticatedPage: page,
+}) => {
+  // The iOS app's top bar grows by the safe-area inset (~47–59px); Chromium's
+  // is 0, so the inset is stood in for through the one variable both the bar
+  // and the landing line read (`--safe-top`).
+  const tomorrow = await openTaskDay(page, 1)
+  const headsUp = await create(page, {
+    title: uniqueTitle('NS notch heads up'),
+    target_at: DateTime.fromISO(tomorrow, { zone: TZ }).set({ hour: 9 }).toUTC().toISO(),
+  })
+  targetSetDaysAgo(headsUp, 10)
+  const days = await create(page, { title: uniqueTitle('NS notch days'), horizon: 'days' })
+  backdateCreated([days], { inSegments: true })
+  try {
+    await onlyTheseTasks(page, [headsUp, days])
+    await page.goto('/reminders')
+    await page.addStyleTag({ content: ':root { --safe-top: 54px !important; }' })
+    const row = page.locator(`[data-section-key="tasks:upcoming"] [data-segment-task="${headsUp}"]`)
+    const daysSection = page.locator('[data-section-key="tasks:days"]')
+    await expect(row).toBeVisible()
+
+    await row.getByRole('button', { name: /as considered/ }).click()
+
+    // The header's top, measured, is at or below the bar's bottom edge, and
+    // the page has come to rest there.
+    await expect
+      .poll(async () => {
+        const bar = (await page.locator('header').first().boundingBox())!
+        const top = (await daysSection.boundingBox())!.y
+        return top >= bar.y + bar.height && top < bar.y + bar.height + 40
+      })
+      .toBe(true)
+  } finally {
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, days] } })
+  }
+})

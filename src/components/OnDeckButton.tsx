@@ -67,7 +67,8 @@ export function OnDeckButton({
   className,
   iconClassName,
   boxClassName,
-  replaces = null,
+  replaces: replacesGiven = null,
+  replaceMessage,
   litFor = 'any',
 }: {
   task: Task
@@ -75,6 +76,8 @@ export function OnDeckButton({
   onDeck: (task: Task, day: string | null | undefined) => void
   /** What a deck would replace ("target Fri 6 PM", `deckReplaces`): faded, and it asks. */
   replaces?: string | null
+  /** The confirm's words instead of "Replaces <replaces>" (`segmentReplaces`). */
+  replaceMessage?: string
   /**
    * The A1 limit for the hold menu (`deckLimit`). Omitted: worked out from
    * the task. The Quick panel passes it from a STAGED deadline.
@@ -94,6 +97,10 @@ export function OnDeckButton({
 }) {
   // "Today" for a deck is the OpenTask day ("Day starts at" PR 2).
   const dayStart = useDayStart()
+  // A LIT button replaces nothing: its tap takes the deck off.
+  const forToday = deckIsToday(task, timezone, new Date(), dayStart)
+  const active = litFor === 'today' ? forToday : !!task.on_deck_day
+  const replaces = active ? null : replacesGiven
   const [menuOpen, setMenuOpen] = useState(false)
   // The day a replacing deck waits on the confirm with (`replaces`).
   const [pending, setPending] = useState<{ day: string | null | undefined } | null>(null)
@@ -109,11 +116,9 @@ export function OnDeckButton({
     // The tap can take the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
-  // What a tap toggles: on deck for TODAY. With `litFor` 'any' a later deck
-  // wears the filled icon too (the row's only sign of it) but is not
-  // "pressed" — a tap moves it to today.
-  const forToday = deckIsToday(task, timezone, new Date(), dayStart)
-  const active = litFor === 'today' ? forToday : !!task.on_deck_day
+  // What a tap toggles: on deck for TODAY (`forToday`). With `litFor` 'any' a
+  // later deck wears the filled icon too (the row's only sign of it) but is
+  // not "pressed" — a tap moves it to today.
   const title = replaces
     ? `On deck — replaces ${replaces} · hold for a day`
     : forToday
@@ -136,6 +141,7 @@ export function OnDeckButton({
       >
         <MaybeReplace
           replaces={replaces}
+          message={replaceMessage}
           pending={pending}
           onCancel={() => setPending(null)}
           onConfirm={(day) => onDeck(task, day)}
@@ -211,12 +217,14 @@ export const DECK_LIT = 'text-(--deck-lit)'
  */
 function MaybeReplace({
   replaces,
+  message,
   pending,
   onCancel,
   onConfirm,
   children,
 }: {
   replaces: string | null
+  message?: string
   pending: { day: string | null | undefined } | null
   onCancel: () => void
   onConfirm: (day: string | null | undefined) => void
@@ -229,7 +237,7 @@ function MaybeReplace({
       onOpenChange={(open) => {
         if (!open) onCancel()
       }}
-      message={`Replaces ${replaces}`}
+      message={message ?? `Replaces ${replaces}`}
       confirmLabel="Deck"
       onConfirm={() => {
         if (pending) onConfirm(pending.day)

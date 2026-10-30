@@ -134,6 +134,7 @@ import {
   type RowPending,
 } from '@/lib/pending-overlay'
 import type { FormattedTask } from '@/lib/format-task'
+import { scrollPageToTop } from '@/lib/scroll-to-top'
 
 interface DashboardClientProps {
   initialTasks?: FormattedTask[]
@@ -1103,7 +1104,7 @@ function HomeContent({
   const handleDashboardReset = useCallback(() => {
     clearListNarrowing()
     setNowShowAll(false)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    scrollPageToTop()
   }, [clearListNarrowing])
 
   // Build task groups for keyboard navigation.

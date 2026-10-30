@@ -521,8 +521,15 @@
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* The top inset, ONE value for the bar's padding and every landing line
+   below it (2026-10-29: the Reminders sections' landing ignored it, so in the
+   iOS app a section's header ended up under the bar). A test can set it to
+   stand in for a phone's notch. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+}
 .safe-top {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--safe-top);
 }
 
 /* Where a scroll-to-section lands: just under the sticky top bar. The bar is
@@ -530,10 +537,11 @@
    `viewport-fit=cover`) plus its ~61px row; 4.5rem leaves a small gap below
    it. Used by the dashboard's jumps (`useJumpToTaskList`): the overdue/today
    jump on the first task group, and the "Jump to tasks" chevron on the list
-   wrapper (so the list's toolbar row lands here). `JumpToTasksFab` reads this
-   margin back as its landing line. */
+   wrapper (so the list's toolbar row lands here), and the Reminders
+   surface's sections (`goToSlot`: the day bar, a deep link, the move to the
+   next section). `JumpToTasksFab` reads this margin back as its landing line. */
 .scroll-below-header {
-  scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+  scroll-margin-top: calc(var(--safe-top) + 4.5rem);
 }
 
 /* THE LEAN ROW'S TINTS (2026-10-29). Plain classes with literal values, on

@@ -226,6 +226,10 @@ export function ReminderSlotGroup({
         // Bottom padding in every state, so the hairline sits inside the card
         // rather than flush with its edge when folded.
         'bg-muted/30 rounded-2xl pb-1 transition-colors',
+        // Lands just under the sticky top bar, its safe-area inset included,
+        // when `goToSlot` brings this card to the top (the `?slot=` deep link,
+        // a tap on the day bar, the move to the next section).
+        'scroll-below-header',
         open && 'pb-2',
         !started && 'opacity-70',
       )}
@@ -234,9 +238,6 @@ export function ReminderSlotGroup({
       data-slot-key={slotKey}
       // The section the user last touched (`useScrollToNextSection`).
       data-section-key={slotKey}
-      // Clears the sticky top bar when `goToSlot` lands this card at the top
-      // (the `?slot=<slotId>` deep link, or a tap on the headline's day bar).
-      style={{ scrollMarginTop: '4.5rem' }}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
         {!canOpen ? (

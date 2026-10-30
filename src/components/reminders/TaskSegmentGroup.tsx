@@ -120,9 +120,12 @@ export function TaskSegmentGroup({
       data-section-key={segmentKey(segment)}
       // The slot section's own frame (`ReminderSlotGroup`), so the column
       // reads as one list of segments.
-      className={cn('bg-muted/30 rounded-2xl pb-1 transition-colors', open && 'pb-2')}
-      // Clears the sticky top bar when the day bar scrolls it to the top.
-      style={{ scrollMarginTop: '4.5rem' }}
+      // `scroll-below-header`: lands just under the sticky top bar, its
+      // safe-area inset included, when `goToSlot` brings it to the top.
+      className={cn(
+        'bg-muted/30 scroll-below-header rounded-2xl pb-1 transition-colors',
+        open && 'pb-2',
+      )}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
         <button

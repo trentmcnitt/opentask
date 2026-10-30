@@ -811,8 +811,7 @@ function groupHeadingClass(group: SortedTaskGroup, collapsed: boolean): string {
   return cn(
     'flex min-h-7 items-center justify-between px-1',
     !collapsed && 'mb-2',
-    group.section &&
-      'bg-background sticky top-[calc(env(safe-area-inset-top,0px)+61px)] z-[5] -mx-1 px-2 py-1',
+    group.section && 'bg-background sticky top-[calc(var(--safe-top)+61px)] z-[5] -mx-1 px-2 py-1',
   )
 }
 
