@@ -18,6 +18,13 @@
  * - Switching to a tab never scrolls, and starts a fresh cycle.
  * `stepWalk` decides every tap — the one place to change the rule (Trent may
  * try "the next stop below where the page is" instead).
+ *
+ * The stops, each surface marking its own:
+ * - Reminders: one period, then one task segment (`retapOrder`).
+ * - Dashboard: the Reminders card, the Task queue card, then the task list's
+ *   groups that need you (`taskGroupNeedsYou`), in screen order. Not the
+ *   Quotas card: some quota is nearly always unmet, a tap every cycle.
+ * - Quotas: the first period group (Today, with daily quotas).
  */
 import type { Task } from '@/types'
 import { isOverdue } from '@/lib/task-counts'

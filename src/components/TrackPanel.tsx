@@ -561,11 +561,7 @@ export function TrackPanel({
       ref={panelRef}
       aria-label="Quotas"
       data-track-panel
-      // The dashboard's card is a stop of the Dashboard tab's re-tap walk
-      // while a quota is unmet (src/lib/retap-walk.ts).
-      data-retap-stop={standalone ? undefined : ''}
-      data-needs-you={!standalone && overall.met < overall.count ? '' : undefined}
-      className={cn(!standalone && 'scroll-below-header mb-6')}
+      className={cn(!standalone && 'mb-6')}
     >
       <TrackHeader standalone={standalone} section={section} overall={overall} showMet={showMet} />
 
