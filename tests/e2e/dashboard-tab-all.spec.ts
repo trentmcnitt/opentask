@@ -54,6 +54,13 @@ test.describe('Dashboard tab shows Now', () => {
     const summary = page.locator('[data-now-summary]')
     await summary.getByRole('button', { name: /^Show all \d+$/ }).click()
     await expect(summary.getByRole('button', { name: /^Show \d+ now$/ })).toBeVisible()
+    // The reset is the end of the re-tap's cycle (2026-10-29, src/lib/retap-walk.ts):
+    // with nothing that needs you left to walk to, the tap resets the view.
+    await page.evaluate(() =>
+      document
+        .querySelectorAll('[data-needs-you]')
+        .forEach((el) => el.removeAttribute('data-needs-you')),
+    )
     await sidebarTab(page).click()
     await expect(summary.getByRole('button', { name: /^Show all \d+$/ })).toBeVisible()
   })

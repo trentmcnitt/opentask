@@ -34,6 +34,7 @@ import {
 } from '@/components/TaskSegmentRow'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
+import { retapStopAttrs } from '@/lib/retap-walk'
 
 /**
  * One task segment on /reminders, as a SECTION shaped exactly like a slot's
@@ -121,10 +122,7 @@ export function TaskSegmentGroup({
       data-task-segment={segment.horizon}
       // The section the user last touched (`useScrollToNextSection`).
       data-section-key={segmentKey(segment)}
-      // A stop of the tab's re-tap walk (src/lib/retap-walk.ts).
-      data-retap-stop
-      data-needs-you={retapPlace !== undefined ? '' : undefined}
-      data-retap-order={retapPlace}
+      {...retapStopAttrs(retapPlace)}
       // The slot section's own frame (`ReminderSlotGroup`), so the column
       // reads as one list of segments.
       // `scroll-below-header`: lands just under the sticky top bar, its

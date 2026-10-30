@@ -12,6 +12,7 @@ import type { ReminderGroup } from '@/hooks/useReminders'
 import { ConsideredPromptRow } from '@/components/QuotaPromptRow'
 import { ReminderRow, type ReminderRowHandlers } from '@/components/reminders/ReminderRow'
 import type { Task } from '@/types'
+import { retapStopAttrs } from '@/lib/retap-walk'
 
 /** A section's header sweep: a slot's "Considered all", a task segment's "Defer all". */
 export const SLOT_SWEEP_CLASS =
@@ -197,11 +198,9 @@ export function ReminderSlotGroup({
   onOpenDetail: (task: Task) => void
 }) {
   const label = slotLabel(group)
-  const time = group.slot ? formatClockTime(group.slot.start_time) : null
   // Waiting and considered count quota prompts exactly as reminders.
   const count = groupWaiting(group)
   const considered = groupConsidered(group)
-  const slotTotal = count + considered
   // A slot with nothing waiting can still open: its considered items live
   // behind the counter, and one of them may need putting back.
   const canOpen = !locked && (count > 0 || hasConsideredRows(group))
@@ -214,7 +213,7 @@ export function ReminderSlotGroup({
   const headerRow = (
     <SlotHeaderRow
       label={label}
-      time={time}
+      time={group.slot ? formatClockTime(group.slot.start_time) : null}
       count={count}
       considered={considered}
       open={open}
@@ -227,12 +226,11 @@ export function ReminderSlotGroup({
       ref={sectionRef}
       className={cn(
         // Bottom padding in every state, so the hairline sits inside the card
-        // rather than flush with its edge when folded.
-        'bg-muted/30 rounded-2xl pb-1 transition-colors',
-        // Lands just under the sticky top bar, its safe-area inset included,
+        // rather than flush with its edge when folded. `scroll-below-header`:
+        // lands just under the sticky top bar, its safe-area inset included,
         // when `goToSlot` brings this card to the top (the `?slot=` deep link,
-        // a tap on the day bar, the move to the next section).
-        'scroll-below-header',
+        // a tap on the day bar, the move to the next section, a re-tap).
+        'bg-muted/30 scroll-below-header rounded-2xl pb-1 transition-colors',
         open && 'pb-2',
         !started && 'opacity-70',
       )}
@@ -241,10 +239,7 @@ export function ReminderSlotGroup({
       data-slot-key={slotKey}
       // The section the user last touched (`useScrollToNextSection`).
       data-section-key={slotKey}
-      // A stop of the tab's re-tap walk (src/lib/retap-walk.ts).
-      data-retap-stop
-      data-needs-you={retapPlace !== undefined ? '' : undefined}
-      data-retap-order={retapPlace}
+      {...retapStopAttrs(retapPlace)}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
         {!canOpen ? (
@@ -272,7 +267,7 @@ export function ReminderSlotGroup({
         )}
       </div>
 
-      <SlotHairline label={label} considered={considered} total={slotTotal} />
+      <SlotHairline label={label} considered={considered} total={count + considered} />
 
       {open && (
         <>

@@ -127,6 +127,10 @@ test('Dashboard: the Reminders card, the Task queue card, the task list, then th
     title: uniqueTitle('RW dash over target'),
     target_at: DateTime.now().minus({ hours: 2 }).toUTC().toISO(),
   })
+  // The modes need the lean row and the task queue (as dashboard-modes.spec).
+  const queue = await p.request.post('/api/test/task-queue', { data: { enabled: true } })
+  expect(queue.ok()).toBeTruthy()
+  await p.addInitScript(() => window.localStorage.setItem('opentask_task_rows', 'lean'))
   try {
     await onlyThese(p, [reminder, days, late])
     await p.goto('/?mode=today')
@@ -146,8 +150,43 @@ test('Dashboard: the Reminders card, the Task queue card, the task list, then th
     // It only scrolled: the cards kept their pages and the mode its view.
     expect(new URL(p.url()).searchParams.get('mode') ?? 'today').toBe('today')
   } finally {
+    await p.request.post('/api/test/task-queue', { data: { enabled: false } })
     await p.unrouteAll({ behavior: 'ignoreErrors' })
     await p.request.post('/api/tasks/bulk/delete', { data: { ids: [reminder, days, late] } })
+  }
+})
+
+test('a scroll by hand resets the cycle: the next tap goes to the top, then stop 1', async ({
+  authenticatedPage: p,
+}) => {
+  const reminder = await create(p, {
+    title: uniqueTitle('RW hand reminder'),
+    is_reminder: true,
+    due_at: inStartedSlot(),
+  })
+  const days = await create(p, { title: uniqueTitle('RW hand days'), horizon: 'days' })
+  backdateCreated([days], { inSegments: true })
+  try {
+    await onlyThese(p, [reminder, days])
+    await p.goto('/reminders')
+    await expect(p.locator(`li[data-reminder-id="${reminder}"]`)).toBeVisible()
+    await room(p)
+    const period = p.locator('[data-slot-key][data-needs-you]')
+
+    await tab(p, 'Reminders').click()
+    await landed(period)
+    // By hand: the wheel.
+    const before = await p.evaluate(() => window.scrollY)
+    await p.mouse.move(200, 400)
+    await p.mouse.wheel(0, 120)
+    await expect.poll(() => p.evaluate(() => window.scrollY)).toBeGreaterThan(before)
+    await tab(p, 'Reminders').click()
+    await atTop(p)
+    await tab(p, 'Reminders').click()
+    await landed(period)
+  } finally {
+    await p.unrouteAll({ behavior: 'ignoreErrors' })
+    await p.request.post('/api/tasks/bulk/delete', { data: { ids: [reminder, days] } })
   }
 })
 

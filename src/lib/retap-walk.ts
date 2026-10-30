@@ -66,6 +66,20 @@ export function taskGroupNeedsYou(
   return tasks.some((t) => isOverdue(t, now))
 }
 
+/**
+ * A stop's attributes: always a stop, needing you when it has a place in the
+ * walk (`place`, its order — `retapOrder`).
+ */
+export function retapStopAttrs(place: number | undefined): {
+  'data-retap-stop': ''
+  'data-needs-you'?: ''
+  'data-retap-order'?: number
+} {
+  return place === undefined
+    ? { 'data-retap-stop': '' }
+    : { 'data-retap-stop': '', 'data-needs-you': '', 'data-retap-order': place }
+}
+
 /** Where the cycle is: at its start, on stop `at` (by index), or reset by a scroll by hand. */
 export type WalkState = { kind: 'start' } | { kind: 'at'; at: number } | { kind: 'hand' }
 
