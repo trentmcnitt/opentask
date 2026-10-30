@@ -195,6 +195,10 @@ test('a label chip is never cut: segment rows, Upcoming rows and the task row wr
       }
     }
     await page.request.post('/api/tasks/bulk/delete', { data: { ids: [days, daysBare, daysHuge] } })
+    // Out of the cleanup list too: `bulk/delete` refuses a whole batch that
+    // names a task already in the trash, and the quota left behind showed up
+    // as an extra reminder in a later spec on this user (tq-segments-always).
+    ids.splice(0, ids.length, ...ids.filter((id) => ![days, daysBare, daysHuge].includes(id)))
 
     // 2. Upcoming rows: "Inbox · Medium · Target <tomorrow> ⌄ · chip chip".
     const upTitle = uniqueTitle('SL upcoming row')

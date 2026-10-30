@@ -13,7 +13,7 @@
  * - and the slow refresh, when it lands, keeps it there.
  */
 import { DateTime } from 'luxon'
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
@@ -107,6 +107,51 @@ test.describe('Reminders: undo puts a considered row back at once', () => {
     } finally {
       await page.unrouteAll({ behavior: 'ignoreErrors' })
       await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id, other] } })
+    }
+  })
+
+  test("a task segment row: the toast's Undo and the header's put it back at once", async ({
+    authenticatedPage: page,
+  }) => {
+    // Trent, 2026-10-29: "undoing is quite laggy when I consider one of the
+    // heads-up items" — the segment rows' undo (`useTaskSegments`).
+    const id = (
+      await (
+        await page.request.post('/api/tasks', {
+          data: { title: uniqueTitle('UI segment undo'), horizon: 'days' },
+        })
+      ).json()
+    ).data.id as number
+    backdateCreated([id], { inSegments: true })
+    const waitingRow = page.locator(
+      `[data-task-segments] [data-segment-task="${id}"][data-segment-state="waiting"]`,
+    )
+    try {
+      await page.goto('/reminders')
+      await expect(waitingRow).toBeVisible()
+      await slow(page, '**/api/reminders?*')
+      await slow(page, '**/api/undo')
+
+      // The toast's Undo: back to waiting before any request answers.
+      await waitingRow.getByRole('button', { name: /as considered/ }).click()
+      await expect(waitingRow).toHaveCount(0)
+      await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).last().click()
+      await expect(waitingRow).toBeVisible({ timeout: 300 })
+      await page.waitForResponse((r) => r.url().endsWith('/api/undo'), { timeout: 10_000 })
+      await page.waitForResponse((r) => r.url().includes('/api/reminders?'), { timeout: 10_000 })
+      await expect(waitingRow).toBeVisible()
+
+      // The header's Undo: back as soon as the undo answers, before the refresh.
+      await page.unroute('**/api/undo')
+      await waitingRow.getByRole('button', { name: /as considered/ }).click()
+      await expect(waitingRow).toHaveCount(0)
+      const undone = page.waitForResponse((r) => r.url().endsWith('/api/undo'))
+      await page.getByRole('banner').getByRole('button', { name: /^Undo/ }).click()
+      await undone
+      await expect(waitingRow).toBeVisible({ timeout: 300 })
+    } finally {
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
+      await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id] } })
     }
   })
 })

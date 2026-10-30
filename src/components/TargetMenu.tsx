@@ -125,6 +125,7 @@ export function TargetTodayButton({
   boxClassName,
   showLabel = false,
   replaces = null,
+  replaceMessage,
   face,
 }: {
   task: Task
@@ -137,6 +138,8 @@ export function TargetTodayButton({
    * time from the hold menu) asks first — a target takes the task off deck.
    */
   replaces?: string | null
+  /** The confirm's words instead of "Replaces <replaces>" (`segmentReplaces`). */
+  replaceMessage?: string
   /** Layout and hit-target classes of the button. */
   className?: string
   iconClassName?: string
@@ -178,6 +181,7 @@ export function TargetTodayButton({
           there left the picker unanchored, off screen (CI, 2026-10-22). */}
       <MaybeReplaceTarget
         replaces={replaces}
+        message={replaceMessage}
         pending={pending}
         onCancel={() => setPending(null)}
         onConfirm={(p) => (p.at ? onTargetAt(task, p.at) : onTargetToday(task))}
@@ -246,12 +250,14 @@ export function TargetTodayButton({
 /** Today's confirm (`ReplaceConfirm`) when it would replace a deck, else the button alone. */
 function MaybeReplaceTarget({
   replaces,
+  message,
   pending,
   onCancel,
   onConfirm,
   children,
 }: {
   replaces: string | null
+  message?: string
   pending: { at?: string } | null
   onCancel: () => void
   onConfirm: (pending: { at?: string }) => void
@@ -264,7 +270,7 @@ function MaybeReplaceTarget({
       onOpenChange={(open) => {
         if (!open) onCancel()
       }}
-      message={`Replaces ${replaces}`}
+      message={message ?? `Replaces ${replaces}`}
       confirmLabel={pending?.at ? 'Target' : 'Today'}
       onConfirm={() => {
         if (pending) onConfirm(pending)

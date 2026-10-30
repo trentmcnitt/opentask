@@ -10,6 +10,7 @@ import { TargetTodayButton } from '@/components/TargetMenu'
 import { DECK_LIT, DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
 import {
   deckReplaces,
+  segmentReplaces,
   deckTomorrowIfKnown,
   deferLeadDays,
   offersDeck,
@@ -826,8 +827,10 @@ function TaskSegmentRowActions({
           timezone={timezone}
           onTargetToday={(t) => void actions.targetToday(t)}
           onTargetAt={(t, at) => void actions.targetAt(t, at)}
-          // Faded on a decked row: a target takes it off deck (plan §5).
-          replaces={todayReplaces(task, timezone, dayStart)}
+          // Faded when the row already has a target or is on deck: a tap
+          // replaces it, and asks first (`segmentReplaces`, Trent 2026-10-29).
+          replaces={segmentReplaces(task, timezone, dayStart)?.label ?? null}
+          replaceMessage={segmentReplaces(task, timezone, dayStart)?.today}
           // The lean rows' single plain clock, no word (Trent, 2026-10-29:
           // "we should probably change it to a clock from today… it's just
           // not consistent"): a tap targets today, a hold picks the time.
@@ -907,18 +910,23 @@ function SegmentDeckSlot({
   panel: boolean
   queueUi: 'on' | 'off' | 'pending'
 }) {
+  const dayStart = useDayStart()
   if (queueUi === 'off') return null
   if (queueUi === 'pending') return <DeckPlaceholder panel={panel} />
   // A row without the button keeps its place empty (Trent, 2026-10-20), so
   // the row's controls line up down the column. (Since 2026-10-22 every task
   // row has it; a picked target makes it faded — `replaces`.)
+  const replace = segmentReplaces(row.task, timezone, dayStart)
   if (!offersDeck(row.task)) return <DeckSlotSpacer panel={panel} empty />
   return (
     <OnDeckButton
       task={row.task}
       timezone={timezone}
       onDeck={(t, day) => void actions.deck(t, day)}
-      replaces={deckReplaces(row.task, timezone)}
+      // Faded when the row already has a target or is on deck
+      // (`segmentReplaces`, Trent 2026-10-29: repeats count).
+      replaces={replace?.label ?? null}
+      replaceMessage={replace?.deck}
       // Lit for TODAY's deck only: tomorrow's lights On deck tomorrow
       // (`DeckTomorrowButton`), a later one neither (2026-10-27).
       litFor="today"
@@ -1071,11 +1079,21 @@ function DeckTomorrowSlot({
   timezone: string
   panel: boolean
 }) {
+  const dayStart = useDayStart()
   if (!offersDeck(row.task)) {
     return <span aria-hidden data-deck-tomorrow-empty className={SLOT_HIT} />
   }
+  // Faded when the row already has a target or is on deck (`segmentReplaces`).
+  const replace = segmentReplaces(row.task, timezone, dayStart)
   return (
-    <DeckTomorrowButton task={row.task} onDeck={actions.deck} timezone={timezone} panel={panel} />
+    <DeckTomorrowButton
+      task={row.task}
+      onDeck={actions.deck}
+      timezone={timezone}
+      panel={panel}
+      replaces={replace?.label ?? null}
+      replaceMessage={replace?.deck}
+    />
   )
 }
 
@@ -1090,6 +1108,8 @@ export function DeckTomorrowButton({
   timezone,
   panel,
   className,
+  replaces: replacesGiven,
+  replaceMessage,
 }: {
   task: Task
   onDeck: (task: Task, day: string | null) => unknown
@@ -1097,14 +1117,31 @@ export function DeckTomorrowButton({
   panel: boolean
   /** The button's hit box instead of the segment rows' (`SLOT_HIT`): the lean row's slots. */
   className?: string
+  /**
+   * What a deck would replace, when the caller has its own rule (a segment
+   * row: `segmentReplaces`); omitted, `deckReplaces` (the lean row).
+   */
+  replaces?: string | null
+  /** The confirm's words instead of "Replaces <replaces>". */
+  replaceMessage?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const dayStart = useDayStart()
   // Until the browser knows the day start, the tap commits no day
   // (`deckTomorrowIfKnown`): midnight's tomorrow can be a day late.
   const dayKnown = useDayStartKnown()
-  // A picked target this would replace (plan §5): faded, and it asks first.
-  const replaces = deckReplaces(task, timezone)
+  const tomorrow = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
+  // LIT (2026-10-27, Trent): on deck for tomorrow — On deck's own active
+  // state, its filled icon and teal (`DECK_LIT`), on the button that names
+  // the day. A tap then takes it off deck, as a lit On deck does (one rule).
+  const lit = tomorrow !== null && task.on_deck_day === tomorrow
+  // What this would replace (plan §5): faded, and it asks first. A LIT button
+  // replaces nothing: its tap takes the deck off.
+  const replaces = lit
+    ? null
+    : replacesGiven === undefined
+      ? deckReplaces(task, timezone)
+      : replacesGiven
   const [pending, setPending] = useState<string | null>(null)
   // Nothing to replace any more (the row changed under an open confirm): drop it.
   if (!replaces && pending) setPending(null)
@@ -1112,11 +1149,6 @@ export function DeckTomorrowButton({
     if (replaces && day !== null) setPending(day)
     else void onDeck(task, day)
   }
-  const tomorrow = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
-  // LIT (2026-10-27, Trent): on deck for tomorrow — On deck's own active
-  // state, its filled icon and teal (`DECK_LIT`), on the button that names
-  // the day. A tap then takes it off deck, as a lit On deck does (one rule).
-  const lit = tomorrow !== null && task.on_deck_day === tomorrow
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
     onShortPress: () => {
@@ -1198,7 +1230,7 @@ export function DeckTomorrowButton({
             onOpenChange={(open) => {
               if (!open) setPending(null)
             }}
-            message={`Replaces ${replaces}`}
+            message={replaceMessage ?? `Replaces ${replaces}`}
             confirmLabel="Deck"
             onConfirm={() => {
               if (pending) void onDeck(task, pending)

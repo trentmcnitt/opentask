@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { sectionAfterFinishing } from '@/lib/time-slot-assign'
+import { PAGE_RETAP_EVENT } from '@/lib/scroll-to-top'
 
 /**
  * How long the finished section's green "done" shows before the page moves
@@ -31,8 +32,8 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
  *   pages: the earliest period up to now still waiting, then the task
  *   segments in screen order. Nothing left waiting: no move.
  * - WHEN: `NEXT_SECTION_DELAY_MS` later, so the finished section's green
- *   registers first. A wheel, touch scroll or scroll key in that time cancels
- *   it: the user has taken the page.
+ *   registers first. A wheel, touch scroll, scroll key or a re-tap of the tab
+ *   (`PAGE_RETAP_EVENT`) in that time cancels it: the user has taken the page.
  * - Undo puts a row back (waiting up again) and never scrolls back.
  *
  * `goTo` is the surface's `goToSlot` (opens and uncaps the section, then
@@ -84,6 +85,7 @@ export function useScrollToNextSection({
       window.removeEventListener('wheel', cancel)
       window.removeEventListener('touchmove', cancel)
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener(PAGE_RETAP_EVENT, cancel)
       if (cancelPending.current === cancel) cancelPending.current = null
     }
     const timer = window.setTimeout(() => {
@@ -93,6 +95,8 @@ export function useScrollToNextSection({
     window.addEventListener('wheel', cancel, { passive: true })
     window.addEventListener('touchmove', cancel, { passive: true })
     window.addEventListener('keydown', onKey)
+    // A re-tap of the Reminders tab (`scrollPageToTop`) takes the page too.
+    window.addEventListener(PAGE_RETAP_EVENT, cancel)
     cancelPending.current = cancel
   }, [signature])
 

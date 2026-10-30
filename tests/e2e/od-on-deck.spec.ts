@@ -886,7 +886,7 @@ test.describe('touch', () => {
   })
 })
 
-test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietly); a future deck, then Today', async ({
+test('REPEATING: a waiting queue row — tap asks, then decks the missed occurrence; a future deck, then Today', async ({
   page,
 }) => {
   const ids: number[] = []
@@ -907,7 +907,15 @@ test('REPEATING: a waiting queue row — tap decks the missed occurrence (quietl
     const button = r.locator('[data-on-deck]')
     await expect(button).toBeVisible()
     await expect(r.locator('[data-deck-slot-empty]')).toHaveCount(0)
+    // The row has its missed occurrence's time: the button is faded and asks
+    // first, naming what moves (Trent, 2026-10-29: repeats count —
+    // `segmentReplaces`).
+    await expect(button).toHaveAttribute('data-replaces', '')
     await button.click()
+    await expect(page.locator('[data-replace-confirm]')).toContainText(
+      /^Moves this \w+’s .+ occurrence to the deck/,
+    )
+    await page.locator('[data-replace-confirm] [data-replace-ok]').click()
     await expect(r).toHaveCount(0)
     await expect(toast(page, `On deck for today: “${title}”`)).toBeVisible()
     await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))

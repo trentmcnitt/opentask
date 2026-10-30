@@ -285,13 +285,19 @@ export function RemindersView({
     }
   }, [refreshRef, refresh])
 
+  // An undo names the entry it reversed: a reminder consider's rows, or a
+  // task segment write's, go back at once (`applyUndone` on each).
+  const applySegmentUndone = segments.applyUndone
   useEffect(() => {
     if (!undoneRef) return
-    undoneRef.current = applyUndone
+    undoneRef.current = (undoneId) => {
+      applyUndone(undoneId)
+      applySegmentUndone(undoneId)
+    }
     return () => {
       undoneRef.current = null
     }
-  }, [undoneRef, applyUndone])
+  }, [undoneRef, applyUndone, applySegmentUndone])
 
   // A slot shows while it has something waiting OR something considered today
   // (a full bar is worth seeing); a slot with neither is noise.
