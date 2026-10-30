@@ -186,7 +186,7 @@ export function TaskSegmentGroup({
         <>
           <SegmentNudge segment={segment} className="mx-3" />
           {/* Tomorrow, then Later (2026-10-25): each with its own count,
-              "Nothing today ✓" and "Show N considered". */}
+              "Show N considered"; an empty section is not drawn. */}
           <UpcomingSections segment={segment} actions={actions} timezone={timezone} panel={false} />
         </>
       )}

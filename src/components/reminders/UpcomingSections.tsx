@@ -24,10 +24,12 @@ import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
  *
  * Each section: a quiet heading (the word and its own "n of m", green with a
  * check once nothing waits — the slot header's count, `SlotHeaderRow`), its
- * rows, and its own considered rows. BOTH HEADINGS ARE ALWAYS DRAWN; an
- * empty section reads "Nothing today ✓" (decision 3), so the segment-level
- * empty line is not drawn for Upcoming. The heading wears no teal: the
- * segment's title above already carries the one accent.
+ * rows, and its own considered rows. AN EMPTY SECTION IS NOT DRAWN (Trent,
+ * 2026-10-30: "hide an empty section", reversing decision 3's "both headings
+ * always drawn"): a section shows only on a day it has rows, waiting or
+ * considered. With both empty the page reads "Nothing today ✓" once, as any
+ * empty segment does. The heading wears no teal: the segment's title above
+ * already carries the one accent.
  *
  * What stays the PAGE's (decision 11): the header's "N of M" (both sections),
  * one "Considered all" and one "Defer all", the over-50 nudge, and on the
@@ -64,6 +66,9 @@ export function UpcomingSections({
 }) {
   const sections = upcomingSections(segment.rows)
   const budget = capAcrossSections(sections, cap)
+  if (sections.length === 0) {
+    return <EmptySegmentLine className={cn('px-3', panel ? 'pb-3' : 'pb-1')} />
+  }
   return (
     <div className={cn(panel ? 'pb-1' : 'space-y-1')} data-upcoming-sections>
       {sections.map((section, i) => (
@@ -122,7 +127,6 @@ function UpcomingSectionBlock({
             : null
         }
       />
-      {section.empty && <EmptySegmentLine className={cn('px-3', panel ? 'pb-2' : 'pb-1')} />}
       {visible > 0 && (
         <ul className={cn('space-y-0.5', panel ? 'px-2 pb-1' : 'px-1')} aria-label={title}>
           {section.waiting.slice(0, visible).map((row, i) => (
@@ -173,7 +177,7 @@ function UpcomingSectionBlock({
  * "Tomorrow                1 of 3" — the section's word (small, muted, not
  * uppercase: it sits under the segment's own uppercase title) and its count,
  * read exactly as the slot header's: "n of m", climbing; green with a check
- * when nothing waits (an empty section too: "0 of 0 ✓", done from the start).
+ * when nothing waits (every row considered).
  */
 function SectionHeading({
   title,
