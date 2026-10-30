@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils'
 import { DOCS_URL } from '@/lib/docs-url'
 import { useRemindersBadge } from '@/hooks/useReminders'
 import { useTaskNavCounts } from '@/hooks/useTaskNavCounts'
-import { useDashboardTabClick } from '@/hooks/useDashboardTabClick'
 import { useTabRetap } from '@/hooks/useTabRetap'
 import { useTimezone } from '@/hooks/useTimezone'
 import { BUILD_ID, VERSION, formatBuildDate } from '@/lib/build-info'
@@ -46,7 +45,6 @@ export function Sidebar({ onAddClick }: SidebarProps) {
   // Tasks carries the top bar's overdue (red) and due-today (blue) numbers, so
   // the other surface is visible from here.
   const taskCounts = useTaskNavCounts()
-  const onDashboardClick = useDashboardTabClick()
   // Clicking the page you are on scrolls it to the top (`scrollPageToTop`).
   const retap = useTabRetap()
 
@@ -89,7 +87,7 @@ export function Sidebar({ onAddClick }: SidebarProps) {
               <div key={item.href} className="relative">
                 <GuardedLink
                   href={item.href}
-                  onClick={item.href === '/' ? onDashboardClick : retap(item.href)}
+                  onClick={retap(item.href)}
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                     isActive

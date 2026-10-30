@@ -67,6 +67,7 @@ import { useSnoozeGuard } from '@/hooks/useSnoozeGuard'
 import { SnoozeGuardDialog } from '@/components/SnoozeGuardDialog'
 
 import { useSelection, type SelectionContextType } from './SelectionProvider'
+import { taskGroupNeedsYou } from '@/lib/retap-walk'
 
 interface TaskListProps {
   tasks: Task[]
@@ -658,11 +659,13 @@ export function TaskList({
           return (
             // `data-task-group` + `scroll-below-header`: the dashboard's
             // overdue/today jump scrolls the FIRST of these to just under the
-            // top bar (`useJumpToTaskList`).
+            // top bar (`useJumpToTaskList`). A stop of the Dashboard tab's
+            // re-tap walk while it needs you (`taskGroupNeedsYou`).
             <section
               key={group.label}
               data-task-group
               data-deck-section={group.deck ? '' : undefined}
+              {...retapAttrs(group, sortedTasks, now)}
               {...sectionAttrs(group)}
               className="scroll-below-header"
             >
@@ -785,6 +788,17 @@ function withAgeSteps(
   return tasks.map((task) =>
     render(task, group, createdBucket(task.created_at, ctx.now, ctx.timezone, ctx.dayStart)),
   )
+}
+
+/** A group as a stop of the Dashboard tab's re-tap walk (`taskGroupNeedsYou`). */
+function retapAttrs(
+  group: SortedTaskGroup,
+  tasks: Task[],
+  now: Date,
+): { 'data-retap-stop': ''; 'data-needs-you'?: '' } {
+  return taskGroupNeedsYou(group.section?.id, tasks, now)
+    ? { 'data-retap-stop': '', 'data-needs-you': '' }
+    : { 'data-retap-stop': '' }
 }
 
 /** A group's section marker, for a mode section (tests and the sticky heading find it). */

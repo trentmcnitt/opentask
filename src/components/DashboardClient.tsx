@@ -134,7 +134,6 @@ import {
   type RowPending,
 } from '@/lib/pending-overlay'
 import type { FormattedTask } from '@/lib/format-task'
-import { scrollPageToTop } from '@/lib/scroll-to-top'
 
 interface DashboardClientProps {
   initialTasks?: FormattedTask[]
@@ -1100,13 +1099,6 @@ function HomeContent({
     setSearchResults([])
   }, [selection, clearAllFilters])
 
-  // Full view reset: clears everything including search (triggered by tapping Dashboard tab)
-  const handleDashboardReset = useCallback(() => {
-    clearListNarrowing()
-    setNowShowAll(false)
-    scrollPageToTop()
-  }, [clearListNarrowing])
-
   // Build task groups for keyboard navigation.
   const taskGroups = useMemo(
     () => buildTaskGroups(tasks_, projects, grouping),
@@ -1604,13 +1596,9 @@ function HomeContent({
     return () => window.removeEventListener('task-created', handler)
   }, [fetchTasks])
 
-  // Reset view when user taps Dashboard tab while already on the dashboard.
-  // Clears all filters, search, selection, and scrolls to top (standard active-tab-tap UX).
-  useEffect(() => {
-    const handler = () => handleDashboardReset()
-    window.addEventListener('dashboard-reset', handler)
-    return () => window.removeEventListener('dashboard-reset', handler)
-  }, [handleDashboardReset])
+  // Tapping the Dashboard tab resets nothing (Trent, 2026-10-29: "No filters
+  // or anything should be reset by tapping a tab"): a re-tap only scrolls —
+  // the walk to what needs you, or the top (`useTabRetap`).
 
   // Prefetch QuickActionPopover chunk after initial load so first interaction is instant
   // (CreateTaskPanel is prefetched by AppLayout which wraps all pages)

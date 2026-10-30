@@ -1,9 +1,10 @@
 /**
- * The Dashboard tab puts the view switch back on the front door when it is on
- * Newest (2026-09-30, when the front door was All; Now since 2026-10-14, when
- * the Today view was dropped) — from another page and when already on the
- * dashboard, on the desktop sidebar and on the phone tab bar. Already on the
- * dashboard, it also turns Now's Show all off.
+ * The Dashboard tab resets nothing (Trent, 2026-10-29: "No filters or
+ * anything should be reset by tapping a tab"). Until then it put the view
+ * switch back on Now when it was on Newest (2026-09-30) and, already on the
+ * dashboard, turned Now's Show all off. Now a tap from another page opens the
+ * dashboard as it was left, and a re-tap only scrolls (`useTabRetap`,
+ * nav-retap-walk.spec) — on the desktop sidebar and on the phone tab bar.
  */
 import { test, expect, waitForPreferenceSave } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -19,55 +20,51 @@ async function switchView(page: Page, name: string) {
 
 const sidebarTab = (page: Page) => page.locator('aside').getByRole('link', { name: 'Dashboard' })
 
-test.describe('Dashboard tab shows Now', () => {
+test.describe('the Dashboard tab keeps the view', () => {
   test.afterEach(async ({ authenticatedPage: page }) => {
     await page.request.patch('/api/user/preferences', { data: { default_grouping: 'project' } })
   })
 
-  test('from another page, Newest switches back to Now', async ({ authenticatedPage: page }) => {
+  test('from another page, Newest stays Newest', async ({ authenticatedPage: page }) => {
     await page.goto('/')
     await switchView(page, 'Newest')
     await page.goto('/history')
-    const saved = waitForPreferenceSave(page, 'default_grouping')
     await sidebarTab(page).click()
     await page.waitForURL('/')
-    await saved
-    await expect(view(page, 'Now')).toHaveAttribute('aria-pressed', 'true')
+    await expect(view(page, 'Newest')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  test('already on the dashboard, Newest switches back to Now', async ({
-    authenticatedPage: page,
-  }) => {
+  test('already on the dashboard, Newest stays Newest', async ({ authenticatedPage: page }) => {
     await page.goto('/')
     await switchView(page, 'Newest')
-    const saved = waitForPreferenceSave(page, 'default_grouping')
     await sidebarTab(page).click()
-    await saved
-    await expect(view(page, 'Now')).toHaveAttribute('aria-pressed', 'true')
+    await expect(view(page, 'Newest')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  test('already on the dashboard, Show all goes back to Now', async ({
-    authenticatedPage: page,
-  }) => {
+  test('already on the dashboard, Show all stays on', async ({ authenticatedPage: page }) => {
     await page.goto('/')
     await switchView(page, 'Now')
     const summary = page.locator('[data-now-summary]')
     await summary.getByRole('button', { name: /^Show all \d+$/ }).click()
     await expect(summary.getByRole('button', { name: /^Show \d+ now$/ })).toBeVisible()
+    // Even at the end of the re-tap's cycle (nothing left that needs you).
+    await page.evaluate(() =>
+      document
+        .querySelectorAll('[data-needs-you]')
+        .forEach((el) => el.removeAttribute('data-needs-you')),
+    )
     await sidebarTab(page).click()
-    await expect(summary.getByRole('button', { name: /^Show all \d+$/ })).toBeVisible()
+    await expect(summary.getByRole('button', { name: /^Show \d+ now$/ })).toBeVisible()
   })
 
   test.describe('on a phone', () => {
     test.use({ viewport: { width: 375, height: 812 } })
 
-    test('the tab bar’s Dashboard does the same', async ({ authenticatedPage: page }) => {
+    test('the tab bar’s Dashboard keeps it too', async ({ authenticatedPage: page }) => {
       await page.goto('/')
       await switchView(page, 'Newest')
-      const saved = waitForPreferenceSave(page, 'default_grouping')
       await page.getByRole('link', { name: 'Dashboard' }).last().click()
-      await saved
-      await expect(view(page, 'Now')).toHaveAttribute('aria-pressed', 'true')
+      await expect(view(page, 'Newest')).toHaveAttribute('aria-pressed', 'true')
     })
   })
 })

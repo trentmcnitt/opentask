@@ -34,6 +34,7 @@ import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveReminderDetail } from '@/lib/save-reminder-detail'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
+import { retapOrder } from '@/lib/retap-walk'
 
 /**
  * The dashboard's Reminders panel (approved mockup:
@@ -239,11 +240,16 @@ export function DashboardRemindersPanel({
   // The slots alone: the natural page is the clock's slot, and finishing one
   // goes to the earliest slot up to now still waiting (`pageAfterFinishing`
   // with every page a slot is `slotAfterFinishing`).
-  const pager = usePanelPager(
-    pages,
-    pages.length,
-    pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0,
-  )
+  const naturalSlot = pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0
+  const pager = usePanelPager(pages, pages.length, naturalSlot)
+  // A stop of the Dashboard tab's re-tap walk while a period that has come
+  // round still waits — the pager's own order (`retapOrder`).
+  const needsYou =
+    retapOrder(
+      pages.map((p) => p.waiting),
+      pages.length,
+      naturalSlot,
+    ).length > 0
   const tasksCard = (
     <>
       <DashboardTasksPanel actions={segments} timezone={timezone} hydrated={reminders.hydrated} />
@@ -262,9 +268,11 @@ export function DashboardRemindersPanel({
         aria-label="Reminders"
         data-reminders-panel
         data-reminders-slot={page.key}
+        data-retap-stop
+        data-needs-you={needsYou ? '' : undefined}
         // Closer to the Tasks card beneath it, so the two read as a pair.
         className={cn(
-          'bg-muted/30 overflow-hidden rounded-2xl',
+          'bg-muted/30 scroll-below-header overflow-hidden rounded-2xl',
           segments.segments.length > 0 ? 'mb-3' : 'mb-6',
         )}
       >
