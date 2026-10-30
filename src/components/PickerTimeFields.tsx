@@ -6,6 +6,15 @@ import { PeriodRowForFields } from '@/components/PeriodChipRow'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
 /**
+ * Two digits at whatever size the text is (the iOS app runs at 119%): text
+ * fields with the numeric keypad (`inputMode`), no number spinners — a spinner
+ * in a fixed `w-14` with `px-3` cut "00" to "0" at 375 (Trent, 2026-10-30) —
+ * and the width in `ch` of the field's own font. The values are clamped on
+ * change, as before.
+ */
+const TIME_FIELD = 'h-8 w-[calc(2ch+1.25rem)] px-2 text-center text-sm'
+
+/**
  * A custom picker's time: 12-hour hour and minute fields with an AM/PM
  * toggle, and under them the user's periods and the Default task time
  * (`PeriodChipRow`, 2026-10-30). The picker owns the values.
@@ -30,26 +39,24 @@ export function PickerTimeFields({
       <div className="flex items-center gap-2">
         <label className="text-muted-foreground text-xs">Time:</label>
         <Input
-          type="number"
-          min={1}
-          max={12}
+          type="text"
           value={hour12}
           onChange={(e) =>
             onSet(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)), minute, period)
           }
-          className="h-8 w-14 text-center text-sm"
+          inputMode="numeric"
+          className={TIME_FIELD}
           aria-label="Hour"
         />
         <span className="text-muted-foreground text-sm">:</span>
         <Input
-          type="number"
-          min={0}
-          max={59}
+          type="text"
           value={minute.toString().padStart(2, '0')}
           onChange={(e) =>
             onSet(hour12, Math.min(59, Math.max(0, parseInt(e.target.value) || 0)), period)
           }
-          className="h-8 w-14 text-center text-sm"
+          inputMode="numeric"
+          className={TIME_FIELD}
           aria-label="Minute"
         />
         <Button

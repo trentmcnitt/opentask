@@ -30,6 +30,8 @@ async function trash(page: Page, ids: number[]) {
 /** Select the rows, then the bar's Target → Custom…; the picker dialog. */
 async function openCustomFromTarget(page: Page, ids: number[]) {
   await page.goto('/')
+  // The iOS app's text size (119%, ios/OpenTask/WebView.swift).
+  await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
   await showAllNow(page)
   for (const id of ids) await cmdClickRow(page.locator(`#task-row-${id}`))
   const bar = page.locator('[data-selection-sheet]')
@@ -38,6 +40,13 @@ async function openCustomFromTarget(page: Page, ids: number[]) {
   await page.getByRole('button', { name: 'Custom...' }).click()
   const dialog = page.getByRole('dialog', { name: 'Set target' })
   await expect(dialog).toBeVisible()
+  // Each time field shows its two digits whole.
+  for (const label of ['Hour', 'Minute']) {
+    const fits = await dialog
+      .getByLabel(label)
+      .evaluate((e) => e.scrollWidth <= e.clientWidth && e.clientWidth > 0)
+    expect(fits, `${label} fits its digits`).toBe(true)
+  }
   return dialog
 }
 
