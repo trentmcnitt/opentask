@@ -204,7 +204,7 @@ export function useTaskSegments({
   // write answered (`src/lib/pending-overlay.ts`).
   const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
   const view = useMemo(
-    () => mergePulled(segmentViews(segments, overlay)).filter((v) => v.rows.length > 0),
+    () => listedSegments(mergePulled(segmentViews(segments, overlay))),
     [segments, overlay],
   )
   // Which rows are the deadlines page's, and which of those its safety net
@@ -521,6 +521,24 @@ export function mergePulled(views: SegmentView[]): SegmentView[] {
   const at = views.findIndex((v) => v === today || v === earlier)
   const rest = views.filter((v) => v !== today && v !== earlier)
   return [...rest.slice(0, at), merged, ...rest.slice(at)]
+}
+
+/**
+ * RULE SEG-VISIBLE-WEB: The client drops a segment kind that has no rows today, waiting or
+ *   considered, after Pulled's merge. A segment finished today keeps its rows. The order stays
+ *   fixed.
+ * Why: People who never use a kind never see its section ("people that really don't use
+ *   deadlines will just never see a deadline section").
+ * Ruling: Trent 2026-10-30: 'people that really don't use deadlines will just never see a
+ *   deadline section'.
+ */
+/**
+ * The segments the web lists (2026-10-30): every one that holds a row today —
+ * waiting, considered or left — in the order given. The server's `fill`
+ * (`?fill=1`) still sends every kind; only the display drops the empty ones.
+ */
+export function listedSegments(views: SegmentView[]): SegmentView[] {
+  return views.filter((v) => v.rows.length > 0)
 }
 
 /**

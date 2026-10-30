@@ -7,7 +7,7 @@
 import { showsHorizonDot } from '@/lib/row-corner'
 import { dayStartMoment, openTaskDayOf, openTaskDaysBetween } from '@/lib/opentask-day'
 import { isOverdue } from '@/lib/task-counts'
-import { deckIsToday, inSafetyNet, isPastDeadline } from '@/lib/task-segments'
+import { deckIsToday, hasPickedTarget, inSafetyNet, isPastDeadline } from '@/lib/task-segments'
 import { isTracked } from '@/lib/track'
 import type { Task } from '@/types'
 import type { ModeContext } from './types'
@@ -22,10 +22,9 @@ export function isOverTarget(task: Task, ctx: ModeContext): boolean {
   return isOverdue(task, ctx.now)
 }
 
-/** A target the user picked (not the deadline's automatic one). */
-export function hasPickedTarget(task: Task): boolean {
-  return task.due_at !== null && task.target_auto !== true
-}
+// (restates RULE TGT-PICKED, home: src/lib/task-segments.ts)
+/** A target the user picked (not the deadline's automatic one): the one test, re-exported. */
+export { hasPickedTarget }
 
 /** Whether an instant falls later on today's OpenTask day. */
 function laterToday(iso: string, ctx: ModeContext): boolean {

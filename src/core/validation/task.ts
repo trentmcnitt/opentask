@@ -7,6 +7,7 @@ import { ValidationError } from '@/core/errors'
 import { isValidRRule, isPeriodRRule, normalizeRRule } from '@/core/recurrence/rrule-builder'
 import { canonicalLabels } from '@/lib/label-vocabulary'
 import { MAX_REPEAT_COUNT, REPEAT_END_MESSAGES } from '@/core/tasks/repeat-schedule'
+import { HORIZON_ORDER } from '@/lib/task-segments'
 
 /**
  * ISO 8601 datetime string validator
@@ -332,7 +333,8 @@ function oneEnd(data: { repeat_count?: number | null; repeat_until?: string | nu
   return !(data.repeat_count != null && data.repeat_until != null)
 }
 
-export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
+// (restates RULE HZ-VALUES, home: src/lib/task-segments.ts) — the one list, under the schemas' name.
+export const HORIZONS = HORIZON_ORDER
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
 
@@ -433,7 +435,9 @@ export const taskUpdateSchema = z
      */
     // RETIRED 2026-10-12 (§8): accepted from old clients and ignored. An old
     // "Remove target" sends it with `due_at: null`, which on a deadline task
-    // now means "back to the automatic target".
+    // means "back to the automatic target" with the task-queue switch off; with
+    // it on there is no automatic target and the task goes on the deadlines
+    // page (2026-10-22).
     deadline_nag_off: z.boolean().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),

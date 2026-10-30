@@ -64,6 +64,7 @@ import type { RepeatAnchor } from '@/types'
  * Why: One ordered list every horizon rule reads, so "sooner" and "one step out" mean the same
  *   everywhere.
  * Ruling: none recorded.
+ * Restated at: src/core/validation/task.ts (HORIZONS, an alias of this list).
  */
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
@@ -92,6 +93,20 @@ export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
   return kind === 'queue_today' || kind === 'queue_previous'
+}
+
+// (restates RULE SEG-NOT-TODAY, home: src/core/tasks/task-segments.ts)
+/**
+ * Whether a segment offers "Not today, all" (`segment_deferred_at`: off
+ * today's list, back tomorrow; "Defer all" until Trent renamed it, 2026-10-30).
+ * Not the queue's two panels (spec rule 8: consider, Today and done) — queue
+ * select mode offers "Not today" on the rows picked there instead (Trent,
+ * 2026-10-30) — and not the DEADLINES page (2026-10-22): its Defer moves a
+ * row's lead day (`/api/task-segments/defer-lead`), one row at a time.
+ * Moved here from TaskSegmentRow.tsx unchanged (the rules map, 2026-10-30).
+ */
+export function offersDeferAll(kind: SegmentKind): boolean {
+  return !isQueueKind(kind) && kind !== 'deadlines'
 }
 
 /**
@@ -599,10 +614,7 @@ export function effectiveHorizon(
   task: { horizon: string | null; deadline_at: string | null },
   now: Date,
 ): HorizonValue {
-  const set = (HORIZON_ORDER as readonly string[]).includes(task.horizon ?? '')
-    ? (task.horizon as HorizonValue)
-    : UNSET_HORIZON
-  return sooner(set, deadlineHorizon(task.deadline_at, now))
+  return sooner(setHorizonOrUnset(task.horizon), deadlineHorizon(task.deadline_at, now))
 }
 
 /**

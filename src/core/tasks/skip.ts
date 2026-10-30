@@ -41,7 +41,12 @@ import { isTracked } from '@/lib/track'
 import { loadTaskForMutation } from './access'
 import type Database from 'better-sqlite3'
 import type { Task } from '@/types'
-import { QUEUE_CLEAR_SQL, TARGET_SET_FIELD, queueStateToClear } from './target-set'
+import {
+  ATTEMPTS_RESET_SQL,
+  QUEUE_CLEAR_SQL,
+  TARGET_SET_FIELD,
+  queueStateToClear,
+} from './target-set'
 import { DECK_CLEAR_SQL } from './deck-clear'
 import { REPEAT_ENDED_MESSAGE } from './mark-done'
 
@@ -267,7 +272,7 @@ export function writeRecurringSkip(
         SET due_at = ?, occurrence_at = ?, original_due_at = ?, target_day_first_at = ?,
         deadline_at = ?, lead_from = ?,
             skip_count = ?, repeat_count_used = ?, progress_current = 0, ${TARGET_SET_FIELD} = ?,
-            attempts = 0, attempts_counted_through = NULL, ${QUEUE_CLEAR_SQL}${deckClear},
+            ${ATTEMPTS_RESET_SQL}, ${QUEUE_CLEAR_SQL}${deckClear},
             updated_at = ?
       WHERE id = ?`,
   ).run(

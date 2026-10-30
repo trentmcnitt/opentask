@@ -148,7 +148,8 @@ export function effectiveDueAt(
   // the snooze-overdue sweep, the day simulator) goes through here, so they
   // all agree. A deck WITH a target is a one-off's deadline automatic target
   // (the deadline protects regardless, A1's belt and braces): that target is
-  // the truth, as below.
+  // the truth, as below. (That A1 is the 10-20 rule; the deadlines page
+  // replaced it 2026-10-22. A deck with a target: PARKED I-01/I-02.)
   /**
    * RULE DECK-NEVER-NAGS: A deck with no due_at is never due: no overdue state, no badge, no
    *   notification, no sweep. A deck that still has a due_at is treated as due. That is read-time
