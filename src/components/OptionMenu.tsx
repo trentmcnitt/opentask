@@ -30,6 +30,74 @@ export interface OptionMenuItem {
   disabled?: boolean
   /** A short note after the label — why a disabled option is ("deadline reminds from Tue"). */
   caption?: string
+  /**
+   * Drawn as a BUTTON in a wrapping row under this small heading, with the
+   * group's other consecutive items (T1's periods, 2026-10-30): a long list
+   * of short choices that stays a few lines tall. The caption sits inside
+   * the button, after the label; the icon isn't drawn.
+   */
+  chipGroup?: string
+}
+
+type MenuPart =
+  | { kind: 'item'; opt: OptionMenuItem }
+  | { kind: 'chips'; label: string; items: OptionMenuItem[] }
+
+/** The options as drawn: single rows, and each run of one `chipGroup` as one part. */
+function menuParts(options: OptionMenuItem[]): MenuPart[] {
+  const parts: MenuPart[] = []
+  for (const opt of options) {
+    const last = parts.at(-1)
+    if (!opt.chipGroup) parts.push({ kind: 'item', opt })
+    else if (last?.kind === 'chips' && last.label === opt.chipGroup) last.items.push(opt)
+    else parts.push({ kind: 'chips', label: opt.chipGroup, items: [opt] })
+  }
+  return parts
+}
+
+/** A chip group: its heading, then its buttons, wrapping. */
+function ChipGroup({
+  label,
+  items,
+  isChoice,
+  onSelect,
+  large,
+}: {
+  label: string
+  items: OptionMenuItem[]
+  isChoice: (e: React.MouseEvent) => boolean
+  onSelect: (option: string) => void
+  /** The phone sheet's size; the desktop dropdown's is smaller. */
+  large: boolean
+}) {
+  return (
+    <div data-option-chips={label} role="group" aria-label={label} className="px-2 pt-2 pb-1">
+      <p className="text-muted-foreground mb-1.5 text-[11px] font-medium tracking-wider uppercase">
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((opt) => (
+          <button
+            key={opt.option}
+            type="button"
+            role="menuitem"
+            data-option-chip={opt.option}
+            disabled={opt.disabled}
+            onClick={(e) => {
+              if (isChoice(e)) onSelect(opt.option)
+            }}
+            className={cn(
+              'hover:bg-accent active:bg-accent rounded-full border whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-40',
+              large ? 'px-3 py-1.5 text-sm' : 'px-2.5 py-1 text-xs',
+            )}
+          >
+            {opt.label}{' '}
+            {opt.caption && <span className="text-muted-foreground ml-1">{opt.caption}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 /** An option's caption, quieter than its label. */
@@ -107,22 +175,35 @@ export function OptionMenu({
               <SheetTitle>{title}</SheetTitle>
               <SheetDescription className="sr-only">Choose when</SheetDescription>
             </SheetHeader>
-            <div className="space-y-1 px-4 pb-4">
-              {options.map((opt) => (
-                <button
-                  key={opt.option}
-                  type="button"
-                  disabled={opt.disabled}
-                  onClick={(e) => {
-                    if (isChoice(e)) onSelect(opt.option)
-                  }}
-                  className="hover:bg-accent active:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors disabled:pointer-events-none disabled:opacity-40"
-                >
-                  <span className="text-muted-foreground [&_svg]:size-4">{opt.icon}</span>
-                  {opt.label}
-                  <Caption text={opt.caption} />
-                </button>
-              ))}
+            {/* Never taller than the screen (2026-10-30): with many options
+                the list scrolls under its title instead of pushing the
+                title and the first options off the top. */}
+            <div className="max-h-[calc(100dvh-8rem)] space-y-1 overflow-y-auto overscroll-contain px-4 pb-4">
+              {menuParts(options).map((part) =>
+                part.kind === 'chips' ? (
+                  <ChipGroup
+                    key={`chips:${part.label}`}
+                    label={part.label}
+                    items={part.items}
+                    isChoice={isChoice}
+                    onSelect={onSelect}
+                    large
+                  />
+                ) : (
+                  <button
+                    key={part.opt.option}
+                    type="button"
+                    disabled={part.opt.disabled}
+                    onClick={(e) => {
+                      if (isChoice(e)) onSelect(part.opt.option)
+                    }}
+                    className="hover:bg-accent active:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <span className="text-muted-foreground [&_svg]:size-4">{part.opt.icon}</span>
+                    {part.opt.label} <Caption text={part.opt.caption} />
+                  </button>
+                ),
+              )}
             </div>
             <div className="h-6 sm:hidden" />
           </SheetContent>
@@ -143,13 +224,14 @@ export function OptionMenu({
           role="menu"
           aria-label={`${title} options`}
           align="end"
-          className="w-auto min-w-[200px] p-1"
+          className={cn(
+            'max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-y-auto p-1',
+            options.some((o) => o.chipGroup) && 'w-[20rem]',
+          )}
           // Focus stays where it was: the trigger's own keys still work.
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          {options.map((opt) => (
-            <OptionItem key={opt.option} opt={opt} isChoice={isChoice} onSelect={onSelect} />
-          ))}
+          <MenuItems options={options} isChoice={isChoice} onSelect={onSelect} />
         </PopoverContent>
         {after}
       </Popover>
@@ -217,10 +299,13 @@ function OptionDropdown({
     menu.style.left = `${rect.right}px` // right-aligned with trigger
     if (rect.top > window.innerHeight / 2) {
       menu.style.bottom = `${window.innerHeight - rect.top + 4}px` // 4px gap above
+      menu.style.maxHeight = `${rect.top - 12}px`
     } else {
       menu.style.top = `${rect.bottom + 4}px` // 4px gap below
+      menu.style.maxHeight = `${window.innerHeight - rect.bottom - 12}px`
     }
   }, [triggerRef])
+  // (Never past the window's edge: `maxHeight` above, and the list scrolls.)
 
   // Close on pointerdown outside. Using pointerdown instead of click prevents
   // the pointer-up from a long-press (which synthesizes a click) from closing
@@ -257,14 +342,43 @@ function OptionDropdown({
       data-no-row-press
       role="menu"
       aria-label={label}
-      className="bg-popover text-popover-foreground fixed z-50 min-w-[200px] rounded-md border p-1 shadow-md"
+      className={cn(
+        'bg-popover text-popover-foreground fixed z-50 max-w-[22rem] min-w-[200px] overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md',
+        // A chip group wraps across the menu's width: give it one, or the
+        // rows' width leaves one chip per line (T1's periods, 2026-10-30).
+        options.some((o) => o.chipGroup) && 'w-[20rem]',
+      )}
       style={{ transform: 'translateX(-100%)' }}
     >
-      {options.map((opt) => (
-        <OptionItem key={opt.option} opt={opt} isChoice={isChoice} onSelect={onSelect} />
-      ))}
+      <MenuItems options={options} isChoice={isChoice} onSelect={onSelect} />
     </div>,
     document.body,
+  )
+}
+
+/** The desktop menu's rows and chip groups, in order. */
+function MenuItems({
+  options,
+  isChoice,
+  onSelect,
+}: {
+  options: OptionMenuItem[]
+  isChoice: (e: React.MouseEvent) => boolean
+  onSelect: (option: string) => void
+}) {
+  return menuParts(options).map((part) =>
+    part.kind === 'chips' ? (
+      <ChipGroup
+        key={`chips:${part.label}`}
+        label={part.label}
+        items={part.items}
+        isChoice={isChoice}
+        onSelect={onSelect}
+        large={false}
+      />
+    ) : (
+      <OptionItem key={part.opt.option} opt={part.opt} isChoice={isChoice} onSelect={onSelect} />
+    ),
   )
 }
 
@@ -293,8 +407,7 @@ function OptionItem({
       )}
     >
       {opt.icon}
-      {opt.label}
-      <Caption text={opt.caption} />
+      {opt.label} <Caption text={opt.caption} />
     </button>
   )
 }

@@ -62,21 +62,18 @@ test.describe('Snooze', () => {
     // Verify menu items
     await expect(menu.getByRole('menuitem', { name: '1 hour' })).toBeVisible()
     await expect(menu.getByRole('menuitem', { name: '2 hours' })).toBeVisible()
-    // The user's time slots are targets too (Trent, 2026-09-22), each labelled
-    // with where it lands: "Midday · 12:00 PM", or "… · tomorrow …" once begun.
-    // Whichever slot starts next leads the menu as "Next period · Midday 12:00 PM"
-    // (#106), so each slot may appear in either form depending on the hour.
-    const slotItem = (name: string, time: string) =>
+    // The user's time slots are targets too (Trent, 2026-09-22). Whichever
+    // starts next leads the menu as "Next period · Midday 12:00 PM" (#106);
+    // the rest are T1's period buttons, "Midday 12:00" (2026-10-30), so each
+    // slot may appear in either form depending on the hour.
+    const slotItem = (name: string, time: string, short: string) =>
       menu.getByRole('menuitem', {
-        name: new RegExp(
-          `^(Next period · ${name} (tomorrow )?${time}|${name} · (tomorrow )?${time})$`,
-        ),
+        name: new RegExp(`^(Next period · ${name} (tomorrow )?${time}|${name} ${short})$`),
       })
-    await expect(slotItem('Midday', '12:00 PM')).toBeVisible()
-    await expect(slotItem('Evening', '8:30 PM')).toBeVisible()
-    // Tomorrow morning is always offered: as "Tomorrow at 9:00 AM", or as the
-    // time slot that already lands there.
-    await expect(menu.getByRole('menuitem', { name: /tomorrow( at)? 9:00 AM$/i })).toBeVisible()
+    await expect(slotItem('Midday', '12:00 PM', '12:00')).toBeVisible()
+    await expect(slotItem('Evening', '8:30 PM', '8:30')).toBeVisible()
+    // T1's day rows: Tomorrow always, at the morning time, with its weekday.
+    await expect(menu.getByRole('menuitem', { name: /^Tomorrow \w{3} 9:00 AM$/ })).toBeVisible()
 
     // Dismiss with Escape. The menu registers its keydown listener in a
     // setTimeout(0) after opening, so an Escape can arrive first; toPass

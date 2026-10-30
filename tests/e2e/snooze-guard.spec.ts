@@ -21,7 +21,7 @@
  * 2. The snooze menu grows after it opens. It renders its fixed options first
  *    and inserts the user's time slots when `/api/time-slots` answers
  *    (`useSlotsWhenOpen`, SnoozeMenu.tsx). That moves every item below them,
- *    and after 09:00 it replaces "Tomorrow at 9:00 AM" with the Morning slot.
+ *    (with T1, 2026-10-30, the Next period row and the period buttons).
  *    A click resolved before the fetch landed on whatever slid into its place.
  *    `openedMenu` waits for a slot item before anything is chosen.
  * 3. The long-press was hand-timed: 500ms against the app's 400ms. Under load
@@ -205,9 +205,8 @@ test.describe('Snooze guards', () => {
       await holdUntil(snoozeBtn, () => expect(menuShown).toBeVisible())
 
       const menu = await openedMenu(page)
-      // "Tomorrow at 9:00 AM", or — when a time slot already lands there — that
-      // slot's "… · tomorrow 9:00 AM" in its place (see SnoozeMenu).
-      await menu.getByRole('menuitem', { name: /tomorrow( at)? 9:00 AM$/i }).click()
+      // T1's Tomorrow row (2026-10-30): "Tomorrow  Thu 9:00 AM".
+      await menu.getByRole('menuitem', { name: /^Tomorrow \w{3} 9:00 AM$/ }).click()
 
       const dialog = page.getByRole('alertdialog')
       await expect(dialog).toBeVisible()

@@ -87,6 +87,10 @@ const ALLOWLIST: Record<string, [number, string]> = {
     1,
     `${ON_OPENTASK_DATE} (a passed deadline's deck limit: yesterday)`,
   ],
+  'src/lib/target-menu.ts: const weekday = openTaskLocalDay(now, timezone, dayStart).weekday': [
+    1,
+    `${ON_OPENTASK_DATE} (T1's weekend and next-week rows: the OpenTask day's weekday, from openTaskLocalDay)`,
+  ],
 
   // ── The user's words (enrichment) ───────────────────────────────────
   "src/core/ai/enrichment.ts: const today = DateTime.fromJSDate(now).setZone(timezone).startOf('day')":
