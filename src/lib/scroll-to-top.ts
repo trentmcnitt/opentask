@@ -3,7 +3,7 @@
  * 2026-10-29: "if you tap the tab, it should scroll you to the top the same
  * way it does when you tap on Dashboard… The same is true for quotas").
  * Every tab of the phone's tab bar and every link of the desktop sidebar
- * (`useTabRetap`), and the Dashboard tab's own reset (`dashboard-reset`).
+ * (`useTabRetap`), the Dashboard's included.
  *
  * Smooth, except under reduced motion, where it jumps. It first announces the
  * re-tap (`PAGE_RETAP_EVENT`): a scroll the page had scheduled on its own —
