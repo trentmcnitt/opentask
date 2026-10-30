@@ -390,7 +390,11 @@ test.describe('desktop', () => {
       )
       await page.keyboard.press('Escape')
       await expect(bubble(page, id)).toHaveCount(0)
+      // The row has its missed occurrence's time: faded, and it asks first
+      // (Trent, 2026-10-29: repeats count — `segmentReplaces`).
+      await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute('data-replaces', '')
       await r.locator('[data-deck-tomorrow]').click()
+      await page.locator('[data-replace-confirm] [data-replace-ok]').click()
       await expect(r).toHaveCount(0)
       await expect(toast(page, `On deck for tomorrow: “${title}”`)).toBeVisible()
       await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
