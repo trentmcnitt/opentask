@@ -34,8 +34,8 @@ import {
 import {
   AGE_THRESHOLDS,
   HORIZON_ORDER,
-  UNSET_HORIZON,
   latestSegmentDay,
+  setHorizonOrUnset,
   type CheckInDay,
   type HorizonValue,
   type SegmentState,
@@ -63,9 +63,7 @@ export const AGED_OUT_QUERY = '&aged=1'
  * Weeks, so it grows to Months. Eventually has nowhere to go (null).
  */
 export function growStep(horizon: string | null): HorizonValue | null {
-  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
-    ? (horizon as HorizonValue)
-    : UNSET_HORIZON
+  const on = setHorizonOrUnset(horizon)
   return HORIZON_ORDER[HORIZON_ORDER.indexOf(on) + 1] ?? null
 }
 
@@ -166,9 +164,7 @@ export function ageWords(
  * ">1 month", ">3 months" — its `AGE_THRESHOLDS` entry, unset read as Weeks.
  */
 export function cutoffWords(horizon: string | null): string {
-  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
-    ? (horizon as HorizonValue)
-    : UNSET_HORIZON
+  const on = setHorizonOrUnset(horizon)
   const { days, months } = AGE_THRESHOLDS[on]
   const n = days ?? months ?? 0
   return `>${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
@@ -183,9 +179,7 @@ export function cutoffWords(horizon: string | null): string {
 export type AgedOutGroup = Exclude<HorizonValue, 'eventually'>
 
 export function agedOutGroup(horizon: string | null): AgedOutGroup {
-  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
-    ? (horizon as HorizonValue)
-    : UNSET_HORIZON
+  const on = setHorizonOrUnset(horizon)
   return on === 'eventually' ? 'months' : on
 }
 

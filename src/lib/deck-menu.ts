@@ -28,6 +28,7 @@ import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
+  deckIsToday,
   lastDeferDay,
   openTaskToday,
   repeatingDeadlineDay,
@@ -184,9 +185,7 @@ export function deckTapDay(
   now: Date,
   dayStart: string,
 ): null | undefined {
-  return task.on_deck_day && task.on_deck_day <= openTaskToday(timezone, now, dayStart)
-    ? null
-    : undefined
+  return deckIsToday(task, timezone, now, dayStart) ? null : undefined
 }
 
 /**

@@ -97,7 +97,8 @@ export interface NowOptions {
 export function isRelevantNow(task: Task, timezone: string, now: Date, opts: NowOptions): boolean {
   // Over target first. Belt and braces: A1 (strict) keeps a deck off a task
   // whose automatic target has arrived, but one that nags is relevant, deck
-  // or not.
+  // or not. (A1 strict is the 10-20 rule; the deadlines page replaced it
+  // 2026-10-22. A deck with a target: PARKED I-01/I-02.)
   if (task.due_at !== null && isOverdue(task, now)) return true
   // The deadlines page (queue on): a target-less deadline task, deck or not,
   // is relevant only in its safety net.
