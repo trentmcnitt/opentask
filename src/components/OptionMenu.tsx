@@ -141,6 +141,7 @@ export function OptionMenu({
   children,
   after,
   anchored = false,
+  triggerClassName,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -160,6 +161,8 @@ export function OptionMenu({
    * a click outside the dialog.
    */
   anchored?: boolean
+  /** The trigger's wrapper on a wider screen (a selection bar's verb takes its share of the row). */
+  triggerClassName?: string
 }) {
   const isMobile = useIsMobile()
   const triggerRef = useRef<HTMLDivElement>(null)
@@ -217,7 +220,7 @@ export function OptionMenu({
     return (
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverAnchor asChild>
-          <div className="relative inline-flex">{children}</div>
+          <div className={cn('relative inline-flex', triggerClassName)}>{children}</div>
         </PopoverAnchor>
         <PopoverContent
           data-no-row-press
@@ -242,7 +245,7 @@ export function OptionMenu({
   // This escapes all stacking contexts (SwipeableRow's position:relative)
   // so the dropdown renders above subsequent task rows.
   return (
-    <div ref={triggerRef} className="relative inline-flex">
+    <div ref={triggerRef} className={cn('relative inline-flex', triggerClassName)}>
       {children}
       {open && (
         <OptionDropdown

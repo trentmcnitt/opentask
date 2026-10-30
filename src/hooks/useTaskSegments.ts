@@ -12,7 +12,7 @@ import {
   type SegmentState,
   type UpcomingSection,
 } from '@/lib/task-segments'
-import { HORIZON_LABELS, SEGMENT_TITLES } from '@/lib/task-model-words'
+import { HORIZON_LABELS, NOT_TODAY, SEGMENT_TITLES } from '@/lib/task-model-words'
 import { growStep } from '@/lib/aged-out'
 import type { TaskSegmentPayload } from '@/hooks/useReminders'
 import { deckErrorMessage, deckToastMessage, sendDeck } from '@/lib/deck-request'
@@ -291,9 +291,7 @@ export function useTaskSegments({
         ids,
         'deferred',
         () => post('/api/task-segments/defer', { ids }),
-        ids.length === 1
-          ? 'Deferred 1 task to tomorrow'
-          : `Deferred ${ids.length} tasks to tomorrow`,
+        `${NOT_TODAY}: ${nTasks(ids.length)}, back tomorrow`,
       )
     },
     [run],
@@ -323,7 +321,9 @@ export function useTaskSegments({
 
   const removeTarget = useRemoveTarget(run)
   const deck = useDeck(ops, timezone, onUndo, refresh, onCompleted, pageRows)
+  const bulk = useBulkSegmentActions(run, considered)
   const actions = {
+    ...bulk,
     deck,
     deferLead,
     consider,
@@ -911,3 +911,73 @@ function horizonToast(task: Task, horizon: HorizonValue | null, segment?: Segmen
 }
 
 export type TaskSegmentActions = ReturnType<typeof useTaskSegments>
+
+/** "3 tasks" / "1 task". */
+const nTasks = (n: number) => (n === 1 ? '1 task' : `${n} tasks`)
+
+/**
+ * THE QUEUE'S SELECT MODE (the U1 bar, Trent 2026-10-30): its verbs for
+ * several rows at once — each ONE request (one undo entry), drawn at once
+ * like a row's own tap (`run`), with Undo on its toast.
+ */
+function useBulkSegmentActions(run: RunSegmentAction, considered: (id: number) => Overlay) {
+  return useMemo(
+    () => ({
+      considerMany: (ids: number[]) =>
+        run(
+          ids,
+          considered,
+          () => post('/api/task-segments/consider', { ids }),
+          `Considered ${nTasks(ids.length)}`,
+        ),
+      doneMany: (ids: number[]) =>
+        run(
+          ids,
+          { left: 'done' },
+          () => post('/api/tasks/bulk/done', { ids }),
+          `Done: ${nTasks(ids.length)}`,
+        ),
+      /** Not today: off today's list, back tomorrow (`/api/task-segments/defer`). */
+      notTodayMany: (ids: number[]) =>
+        run(
+          ids,
+          'deferred',
+          () => post('/api/task-segments/defer', { ids }),
+          `Not today: ${nTasks(ids.length)}`,
+        ),
+      /** Target: each a target at `at` (Today's long-press time, `target-today`). */
+      targetMany: (ids: number[], at: string) =>
+        run(
+          ids,
+          { left: 'target' },
+          () => post('/api/task-segments/target-today', { ids, at }),
+          `Targeted ${nTasks(ids.length)}`,
+        ),
+      /** Remove target: the picked targets go (`bulk/edit`, `include_task_ids` past the sweep filter). */
+      removeTargetsMany: (ids: number[]) =>
+        run(
+          ids,
+          'gone',
+          () =>
+            post('/api/tasks/bulk/edit', { ids, changes: { due_at: null }, include_task_ids: ids }),
+          `Targets removed: ${nTasks(ids.length)}`,
+        ),
+      /** Skip until: the repeating ones past this occurrence, or to a day. */
+      skipUntilMany: (ids: number[], until: string | null) =>
+        run(
+          ids,
+          { left: 'considered' },
+          () => post('/api/tasks/bulk/skip-until', { ids, until }),
+          `Skipped: ${nTasks(ids.length)}`,
+        ),
+      removeMany: (ids: number[]) =>
+        run(
+          ids,
+          'gone',
+          () => post('/api/tasks/bulk/delete', { ids }),
+          `Moved ${nTasks(ids.length)} to Trash`,
+        ),
+    }),
+    [run, considered],
+  )
+}

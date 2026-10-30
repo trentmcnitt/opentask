@@ -279,6 +279,7 @@ export function DeckMenu({
   onOpenChange,
   onPick,
   children,
+  triggerClassName,
 }: {
   task: Pick<Task, 'on_deck_day' | 'deadline_at' | 'due_at' | 'target_auto' | 'rrule'>
   timezone: string
@@ -289,6 +290,8 @@ export function DeckMenu({
   /** A yyyy-MM-dd day, or null for Remove. */
   onPick: (day: string | null) => void
   children: React.ReactNode
+  /** `OptionMenu`'s trigger wrapper class (a selection bar's verb). */
+  triggerClassName?: string
 }) {
   const { checkInDay } = useCheckInDay()
   const dayStart = useDayStart()
@@ -332,6 +335,7 @@ export function DeckMenu({
       // A Radix popover on desktop, so the menu also works in the Quick
       // panel's dialog (`OptionMenu`'s `anchored`).
       anchored
+      triggerClassName={triggerClassName}
       after={
         <DeckDatePicker
           key={pickerKey}

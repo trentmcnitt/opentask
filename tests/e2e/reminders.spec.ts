@@ -355,7 +355,7 @@ test.describe('Reminders surface', () => {
       await expect(row('A thought left alone')).toBeVisible()
       await expect(page.getByText('Considered \u201cA thought to tap away\u201d')).toBeVisible()
       // A tap is not a selection: the bar never appears on the way.
-      await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Cancel selection' })).toHaveCount(0)
 
       await toastUndo(page).click()
       await expect(row('A thought to tap away')).toBeVisible()
@@ -1041,7 +1041,7 @@ test.describe('Reminders selection bar on a phone', () => {
       await row('Another for the phone bar').click()
       await expect(page.getByText('2 selected')).toBeVisible()
       await expectClearOnFirstRow(page, 'two selected')
-      await page.getByRole('button', { name: 'Clear selection' }).click()
+      await page.getByRole('button', { name: 'Cancel selection' }).click()
       await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
 
       // With a link in a reminder's title on the page, the page stays a
@@ -1271,9 +1271,9 @@ test.describe('Reminder details', () => {
 
       // The row is still selected behind the closed editor — the hold said so
       // and nothing since has said otherwise — and Escape is the way out.
-      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Cancel selection' })).toBeVisible()
       await page.keyboard.press('Escape')
-      await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Cancel selection' })).toHaveCount(0)
 
       // Neither the hold nor the editor considered anything: the thoughts are
       // both still on the surface with no completion behind them.

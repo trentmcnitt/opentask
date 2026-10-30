@@ -444,7 +444,7 @@ test.describe('?task=<id> deep link', () => {
         await expect(page.getByRole('dialog')).toHaveCount(0)
         // The widget's tap is "show me", not "act on it": nothing selected.
         await expect(row).toHaveAttribute('aria-selected', 'false')
-        await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+        await expect(page.getByRole('button', { name: 'Cancel selection' })).toHaveCount(0)
         // The param is spent, so a reload does not flash the same row again.
         await expect(page).toHaveURL('/')
       } finally {
@@ -481,7 +481,7 @@ test.describe('?task=<id> deep link', () => {
     await expect(row).toHaveAttribute('aria-selected', 'true')
     await expect(row).toBeInViewport()
     // The action bar is up for it...
-    await expect(page.getByRole('button', { name: 'Clear selection' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel selection' })).toBeVisible()
     // ...and nothing opened over the list.
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(page).toHaveURL('/')
@@ -565,7 +565,7 @@ test.describe('?task=<id> deep link', () => {
     await page.goto(`/?task=${id}`)
     await expect(page.getByText('“A task deleted before the tap” is in the trash')).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Cancel selection' })).toHaveCount(0)
     await expect(page).toHaveURL('/')
 
     await page.goto('/?task=987654321')

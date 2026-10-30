@@ -682,7 +682,7 @@ export function deferLeads(
 /** Defer All: off today's segment, back tomorrow. Not a consider. */
 export function deferTasks(userId: number, ids: number[]): number {
   const n = ids.length
-  return stampTasks(userId, ids, 'segment_deferred_at', `Deferred ${plural(n)} to tomorrow`)
+  return stampTasks(userId, ids, 'segment_deferred_at', `Not today: ${plural(n)}, back tomorrow`)
 }
 
 /**

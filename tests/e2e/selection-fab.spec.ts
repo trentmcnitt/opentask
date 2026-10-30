@@ -121,7 +121,7 @@ test.describe('Selection and the floating bar', () => {
       for (const id of ids) await cmdClickRow(row(page, id))
       await expect(bar(page)).toContainText('2 selected')
 
-      await bar(page).getByRole('button', { name: 'Clear selection' }).click()
+      await bar(page).getByRole('button', { name: 'Cancel selection' }).click()
       await expect(bar(page)).toHaveCount(0)
       for (const id of ids) {
         await expect(row(page, id)).toHaveAttribute('aria-selected', 'false')
@@ -153,7 +153,7 @@ test.describe('The floating bar on a phone', () => {
           expect(box.x).toBeGreaterThanOrEqual(0)
           expect(box.x + box.width).toBeLessThanOrEqual(width)
         }
-        await bar(page).getByRole('button', { name: 'Clear selection' }).click()
+        await bar(page).getByRole('button', { name: 'Cancel selection' }).click()
         await expect(bar(page)).toHaveCount(0)
       }
     })
@@ -171,7 +171,7 @@ test.describe('The floating bar on a phone', () => {
         for (const id of ids) await cmdClickRow(row(page, id))
         await expect(bar(page)).toContainText('3 selected')
         await expectClearOnFirstRow(page, `root ${rootSize}`, { oneRow: rootSize !== '20px' })
-        await bar(page).getByRole('button', { name: 'Clear selection' }).click()
+        await bar(page).getByRole('button', { name: 'Cancel selection' }).click()
         await expect(bar(page)).toHaveCount(0)
       }
     })

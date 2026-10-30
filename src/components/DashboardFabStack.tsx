@@ -3,6 +3,7 @@
 import { useRef, type CSSProperties, type ReactNode } from 'react'
 import { useToastClearance } from '@/hooks/useToastClearance'
 import { useSelectionBarClearance } from '@/hooks/useSelectionBarClearance'
+import { useSelectionBarUp } from '@/components/SelectionBarShell'
 
 /**
  * The dashboard's right-hand FAB column — one fixed container for every
@@ -55,7 +56,9 @@ export function DashboardFabStack({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const toast = useToastClearance(ref)
-  const bar = useSelectionBarClearance(ref, selectionBarUp)
+  // Any selection bar (the list's or the task queue's, 2026-10-30).
+  const anyBarUp = useSelectionBarUp()
+  const bar = useSelectionBarClearance(ref, selectionBarUp || anyBarUp)
   const clearance = toast === null && bar === null ? null : Math.max(toast ?? 0, bar ?? 0)
   return (
     <div

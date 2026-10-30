@@ -2,6 +2,7 @@
 
 import { Check, CheckCheck, ChevronLeft, ChevronRight, Forward } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { NOT_TODAY_ALL } from '@/lib/task-model-words'
 
 /**
  * The dashboard's two pager cards share these (2026-10-11): the Reminders card
@@ -51,6 +52,7 @@ export function SlotPagerHeader({
   prevLabel = 'Previous time slot',
   nextLabel = 'Next time slot',
   sweep,
+  beforeCount,
   onToggleExpanded,
   showConsidered,
   onToggleConsidered,
@@ -74,8 +76,10 @@ export function SlotPagerHeader({
   /** The chevrons' names: time slots, or task segments on the Tasks card. */
   prevLabel?: string
   nextLabel?: string
-  /** "Considered all" on a slot, "Defer all" on a task segment (`PagerSweep`). */
+  /** "Considered all" on a slot, "Not today, all" on a task segment (`PagerSweep`). */
   sweep: React.ReactNode
+  /** Just left of the count: the task queue card's "Select" (2026-10-30). */
+  beforeCount?: React.ReactNode
   /** Tapping the bar between the chevrons opens and shuts the slot. */
   onToggleExpanded: () => void
   showConsidered: boolean
@@ -157,6 +161,7 @@ export function SlotPagerHeader({
           bar in the footer: "Show Considered stacked on Show More looks like a
           big UX no-no"). A button only when there is something behind it —
           otherwise it is a plain readout and must not look pressable. */}
+      {beforeCount}
       {considered > 0 ? (
         <button
           type="button"
@@ -296,7 +301,7 @@ export function PagerSweep({
       ) : (
         <Forward className="size-3.5" strokeWidth={2.5} />
       )}
-      <span className="hidden sm:inline">{consider ? 'Considered all' : 'Defer all'}</span>
+      <span className="hidden sm:inline">{consider ? 'Considered all' : NOT_TODAY_ALL}</span>
     </button>
   )
 }

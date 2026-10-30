@@ -21,6 +21,7 @@ import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
+import { useQueueSelect } from '@/components/QueueSelect'
 import { requestShowInList, showInListHref } from '@/lib/show-in-list'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
@@ -335,6 +336,9 @@ export function TaskSegmentRow({
   // The deadlines page's safety net (2026-10-22): a row already seen today
   // stays, waiting — another consider would change nothing.
   const seenInNet = !!row.safetyNet && !!row.seen
+  // The queue card's select mode (2026-10-30): a checkbox for the circle, no
+  // buttons, and a tap picks the row (`QueueSelect`).
+  const pick = useRowPick(task.id, panel && !considered)
   // Aged out (2026-10-29): considering there is Process's keep.
   const aged = segmentHorizon === 'aged_out'
   const consider = () => {
@@ -343,7 +347,7 @@ export function TaskSegmentRow({
   }
   const rowProps = useSegmentRowPress({
     onPeek: (viaKeyboard) => actions.openPeek(task, viaKeyboard),
-    onConsider: consider,
+    onConsider: pick ? pick.toggle : consider,
     enabled: !considered,
     // A seen safety-net row: a tap changes nothing, so it doesn't say "tap".
     considerable: !seenInNet,
@@ -396,17 +400,13 @@ export function TaskSegmentRow({
         // `select-none` and no iOS callout: a held finger opens the bubble,
         // never a text selection or the system's copy sheet (the reminder
         // rows' `select-none`; the callout rule of the row's own buttons).
-        className={cn(
-          'group relative items-start rounded-xl border border-transparent select-none [-webkit-touch-callout:none]',
-          hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-          panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
-          considered
-            ? 'opacity-60'
-            : cn(
-                !seenInNet && 'cursor-pointer',
-                panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]',
-              ),
-        )}
+        className={segmentRowClass({
+          hiddenWhenNarrow,
+          panel,
+          considered,
+          seenInNet,
+          pick,
+        })}
       >
         {tryTomorrow && (
           <span
@@ -418,14 +418,16 @@ export function TaskSegmentRow({
             style={{ backgroundColor: 'var(--segment-queue_today)' }}
           />
         )}
-        <SegmentRowCircle
-          task={task}
-          considered={considered}
-          seenInNet={seenInNet}
-          panel={panel}
-          keeps={aged}
-          onConsider={consider}
-        />
+        <RowLead pick={pick} title={task.title}>
+          <SegmentRowCircle
+            task={task}
+            considered={considered}
+            seenInNet={seenInNet}
+            panel={panel}
+            keeps={aged}
+            onConsider={consider}
+          />
+        </RowLead>
         <div className="min-w-0 flex-1">
           {/* THE TITLE WRAPS AROUND THE BUTTONS (Trent, 2026-10-26, mock "B").
               The buttons float right INSIDE the title's column, so its first
@@ -435,7 +437,7 @@ export function TaskSegmentRow({
               one word a line. A float, so the buttons come first in the
               DOM; the meta line below is a flex box, which keeps clear of
               the float on its own. */}
-          {!considered && (
+          {!considered && !pick && (
             <div data-segment-actions className="float-right ml-2">
               <TaskSegmentRowActions
                 row={row}
@@ -1993,4 +1995,96 @@ export function ConsideredSegmentRow({
       </p>
     </li>
   )
+}
+
+/**
+ * A row's checkbox in the queue's select mode (2026-10-30): in the circle's
+ * place and size (the panel's 19px control), blue and ticked when picked.
+ */
+function PickBox({
+  title,
+  picked,
+  onToggle,
+}: {
+  title: string
+  picked: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={picked}
+      aria-label={`Select “${title}”`}
+      data-pick-box
+      data-no-row-press
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      className={cn(
+        'mt-px flex size-[19px] shrink-0 items-center justify-center rounded-[5px] border transition-colors',
+        picked
+          ? 'border-blue-500 bg-blue-500 text-white'
+          : 'border-foreground/30 hover:border-foreground/50',
+      )}
+    >
+      {picked && <Check className="size-3.5" strokeWidth={3} />}
+    </button>
+  )
+}
+
+/** The row in the queue's select mode: picked or not, and its toggle; null when off. */
+function useRowPick(id: number, pickable: boolean) {
+  const mode = useQueueSelect()
+  if (!mode || !pickable) return null
+  return { picked: mode.selected.has(id), toggle: () => mode.toggle(id) }
+}
+
+/**
+ * The row's box: the SAME geometry as the rows around it (Trent, 2026-10-11:
+ * circles and checkboxes must line up down the whole column) — on the panel
+ * the panel's reminder row (`gap-2.5 px-1 py-1.5`), on /reminders the page's
+ * (`gap-3 px-2 py-2.5`), `QuotaPromptRow`'s two variants, its 1px transparent
+ * border included. `select-none` and no iOS callout: a held finger opens the
+ * bubble, never a text selection. A picked row (select mode) is tinted blue.
+ */
+function segmentRowClass({
+  hiddenWhenNarrow,
+  panel,
+  considered,
+  seenInNet,
+  pick,
+}: {
+  hiddenWhenNarrow: boolean
+  panel: boolean
+  considered: boolean
+  seenInNet: boolean
+  pick: { picked: boolean } | null
+}): string {
+  return cn(
+    'group relative items-start rounded-xl border border-transparent select-none [-webkit-touch-callout:none]',
+    hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
+    panel ? 'gap-2.5 px-1 py-1.5' : 'gap-3 px-2 py-2.5',
+    considered
+      ? 'opacity-60'
+      : cn(
+          !seenInNet && 'cursor-pointer',
+          panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]',
+        ),
+    pick?.picked && 'bg-blue-500/10 hover:bg-blue-500/15',
+  )
+}
+
+/** The row's lead: its checkbox in the select mode, else its own circle. */
+function RowLead({
+  pick,
+  title,
+  children,
+}: {
+  pick: { picked: boolean; toggle: () => void } | null
+  title: string
+  children: React.ReactNode
+}) {
+  return pick ? <PickBox title={title} picked={pick.picked} onToggle={pick.toggle} /> : children
 }

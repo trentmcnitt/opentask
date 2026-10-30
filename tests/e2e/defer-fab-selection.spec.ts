@@ -272,7 +272,7 @@ test.describe('The Defer FAB with a selection on a phone', () => {
           const f = (await fab(page).boundingBox())!
           const b = (await bar(page).boundingBox())!
           const c = (await bar(page)
-            .getByRole('button', { name: 'Clear selection' })
+            .getByRole('button', { name: 'Cancel selection' })
             .boundingBox())!
           return f.y + f.height <= Math.min(b.y, c.y)
         })

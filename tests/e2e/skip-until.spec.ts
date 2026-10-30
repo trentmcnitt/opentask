@@ -191,13 +191,10 @@ test.describe('Skip until', () => {
           await cmdClickRow(row(page, id))
           await expect(row(page, id)).toHaveAttribute('aria-selected', 'true')
         }
-        await page
-          .locator('[data-selection-sheet]')
-          .getByRole('button', { name: 'More', exact: true })
-          .click()
-        const sheet = page.getByRole('dialog', { name: '3 tasks selected' })
-        // Two of the three repeat: the button says so.
-        await sheet.locator('[data-bulk-skip-until]').click()
+        // The bar's More (the U1 bar, 2026-10-30) holds Skip until….
+        await page.locator('[data-selection-sheet] [data-bar-more]').click()
+        // Two of the three repeat: the item says so.
+        await page.getByRole('menuitem', { name: 'Skip until… (2)' }).click()
         await expect(skipDialog(page)).toContainText('2 repeating tasks · 1 other task left as is')
 
         const target = await pickDay(page, 4)
@@ -208,7 +205,7 @@ test.describe('Skip until', () => {
         // The whole selection goes; the server skips the repeating ones and counts the rest.
         expect([...body.ids].sort()).toEqual([a, b, oneOff].sort())
         expect(body.until).toBe(target.toFormat('yyyy-MM-dd'))
-        await expect(sheet).toHaveCount(0)
+        await expect(skipDialog(page)).toHaveCount(0)
         for (const id of [a, b]) expect((await stateOf(page, id)).target_at).toBe(nineAm(4))
         expect((await stateOf(page, oneOff)).target_at).toBe(nineAm(1))
 

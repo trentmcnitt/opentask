@@ -75,7 +75,7 @@ test.describe('Quick panel dialogs fit long content', () => {
         await page.goto('/')
         const row = page.locator(`#task-row-${id}`)
         await cmdClickRow(row)
-        await page.getByRole('button', { name: 'More', exact: true }).click()
+        await page.locator('[data-selection-sheet] [data-bar-details]').click()
         const dialog = page.getByRole('dialog')
         await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible()
         await expectNothingPastTheRightEdge(dialog)

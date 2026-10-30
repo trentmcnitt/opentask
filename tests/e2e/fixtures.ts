@@ -385,9 +385,9 @@ export async function expectClearOnFirstRow(
   { oneRow = false }: { oneRow?: boolean } = {},
 ): Promise<void> {
   const sheet = page.locator('[data-selection-sheet]')
-  const clear = (await sheet.getByRole('button', { name: 'Clear selection' }).boundingBox())!
+  const clear = (await sheet.getByRole('button', { name: 'Cancel selection' }).boundingBox())!
   const first = (await sheet
-    .locator('button:not([aria-label="Clear selection"])')
+    .locator('button:not([aria-label="Cancel selection"])')
     .first()
     .boundingBox())!
   const firstRowBottom = first.y + first.height
@@ -399,7 +399,7 @@ export async function expectClearOnFirstRow(
   )
   if (!oneRow) return
   const verbs = await sheet
-    .locator('button:not([aria-label="Clear selection"])')
+    .locator('button:not([aria-label="Cancel selection"])')
     .evaluateAll((els) =>
       els.map((el) => ({
         name: el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '',

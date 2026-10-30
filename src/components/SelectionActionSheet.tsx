@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Check, FileText, SkipForward, Trash2, XCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Check, FileText, Trash2 } from 'lucide-react'
 import {
   Sheet,
   SheetContent,
@@ -37,11 +36,8 @@ import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { formatTimeInTimezone } from '@/lib/format-date'
 import { taskWord } from '@/lib/utils'
 import { DirtyCard } from '@/components/DirtyCard'
-import { SelectionBarShell } from '@/components/SelectionBarShell'
-import { removableTargetIds } from '@/lib/row-corner'
-import { REMOVE_TARGET } from '@/lib/task-model-words'
-import { canSkipUntil } from '@/lib/skip-until'
-import { SkipUntilDialog } from '@/components/SkipUntilDialog'
+import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
+import { DeckVerb, MoreVerb, TargetVerb } from '@/components/SelectionBarVerbs'
 import type { Task, Project } from '@/types'
 
 interface SnoozeCategories {
@@ -126,6 +122,10 @@ interface SelectionActionSheetProps {
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   /** Called when user wants to navigate to task detail (single task only) */
   onNavigateToDetail?: (taskId: number) => void
+  /** Target: move the selection's targets to this instant (the T1 menu). */
+  onTarget?: (until: string) => void
+  /** Deck: put the selection on deck for a day (null: take it off). */
+  onDeck?: (day: string | null) => void
   /** Available projects for project picker (enables inline project selection) */
   projects?: Project[]
   /** Ref populated with openSheet function for external triggering (e.g., Cmd+S shortcut) */
@@ -141,6 +141,8 @@ export function SelectionActionSheet({
   onClear,
   onSkipUntil,
   onNavigateToDetail,
+  onTarget,
+  onDeck,
   projects,
   sheetOpenRef,
 }: SelectionActionSheetProps) {
@@ -381,31 +383,10 @@ export function SelectionActionSheet({
   const modalTitle =
     selectedCount === 1 && selectedTasks[0]
       ? selectedTasks[0].title
-      : `${selectedCount} tasks selected`
+      : `Details · ${selectedCount} tasks`
 
   const panelContent = (
     <DirtyCard dirty={isPanelDirty} flat className="space-y-3">
-      <BulkRemoveTarget
-        selectedTasks={selectedTasks}
-        disabled={isPanelDirty}
-        onSaveAll={onSaveAll}
-        onFinished={() => {
-          setSheetOpen(false)
-          onClear()
-        }}
-      />
-      {onSkipUntil && (
-        <BulkSkipUntil
-          selectedTasks={selectedTasks}
-          disabled={isPanelDirty}
-          timezone={timezone}
-          onSkipUntil={onSkipUntil}
-          onFinished={() => {
-            setSheetOpen(false)
-            onClear()
-          }}
-        />
-      )}
       <QuickActionPanel
         task={null}
         selectedTasks={selectedTasks}
@@ -436,45 +417,24 @@ export function SelectionActionSheet({
           second click of a double-click on a row near the bottom, whose first
           click summoned the bar over it — opens Details when one task is
           selected, instead of pressing whichever verb it hit. */}
-      <SelectionBarShell count={selectedCount} onClear={onClear} onDoubleClickIntent={openDetails}>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onDone}
-          className="bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
-        >
-          <Check className="mr-1 size-4" />
-          Done
-        </Button>
-
-        {/* Details button - only show for single task selection. Icon-only on
-            a phone, where Done, Details, More, Trash and Clear did not fit
-            across the screen at a larger text size (2026-10-14). */}
-        {openDetails && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={handleNavigateToDetail}
-            aria-label="Details"
-          >
-            <FileText className="size-4 sm:mr-1" />
-            <span className="hidden sm:inline">Details</span>
-          </Button>
-        )}
-
-        <Button size="sm" variant="secondary" onClick={openSheet}>
-          More
-        </Button>
-
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={handleDelete}
-          aria-label={`Delete ${selectedCount} ${taskWord(selectedCount)}`}
-        >
-          <Trash2 className="size-4" />
-        </Button>
-      </SelectionBarShell>
+      <ListSelectionBar
+        selectedTasks={selectedTasks}
+        timezone={timezone}
+        onDone={onDone}
+        onTarget={onTarget}
+        onDeck={onDeck}
+        onDetails={openDetails ?? openSheet}
+        onDoubleClickIntent={openDetails}
+        onDelete={handleDelete}
+        onSkipUntil={onSkipUntil}
+        onRemoveTargets={(ids) => {
+          void onSaveAll({ due_at: null }, ids)
+            .then(onClear)
+            // The parent has already toasted why; the selection stays.
+            .catch(() => undefined)
+        }}
+        onClear={onClear}
+      />
 
       {/* Mobile: bottom sheet */}
       {isMobile ? (
@@ -609,129 +569,63 @@ export function SelectionActionSheet({
 }
 
 /**
- * REMOVE TARGET for the whole selection (2026-10-14), at the top of the More
- * sheet: the bulk form of the row's own "Remove target".
- *
- * It applies to the selected tasks whose row would offer it
- * (`removableTargetIds`): a one-off with a target the user picked. The target
- * goes; a task with a deadline then goes on the deadlines page from its lead
- * day (2026-10-22, when "Back to auto" went). Repeating tasks, reminders,
- * quotas and undated tasks are left as they are, and the button says how many
- * it will change when that is not all of them.
- *
- * It rides the sheet's one save path (`onSaveAll` → `saveQuickPanelChanges`):
- * `{ due_at: null }` scoped to those ids, which for several tasks is ONE
- * bulk/edit request — one transaction, one undo entry (`bulk_edit`), with
- * `include_task_ids` so High and Urgent picks are not held back by the sweep
- * filter — and the dashboard's toast with Undo. Disabled while the panel
- * below has unsaved edits, which this would otherwise drop.
+ * The list's U1 bar (Trent, 2026-10-30): Done · Target · Deck · Details ·
+ * Delete · More. Delete is a verb of its own, never under More ("It's too
+ * common to bury it"). Details opens the one task, or the bulk editor for
+ * several (the old More sheet, retitled). More holds Skip until… and Remove
+ * target.
  */
-function BulkRemoveTarget({
+function ListSelectionBar({
   selectedTasks,
-  disabled,
-  onSaveAll,
-  onFinished,
-}: {
-  selectedTasks: Task[]
-  disabled: boolean
-  onSaveAll: (changes: QuickActionPanelChanges, dateTaskIds?: number[]) => Promise<void>
-  onFinished: () => void
-}) {
-  const ids = removableTargetIds(selectedTasks)
-  if (ids.length === 0) return null
-  const count = ids.length < selectedTasks.length ? ` (${ids.length})` : ''
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      data-bulk-remove-target
-      disabled={disabled}
-      title={
-        disabled
-          ? 'Save or reset your changes first'
-          : 'Tasks with a deadline go on the deadlines page'
-      }
-      onClick={async () => {
-        try {
-          await onSaveAll({ due_at: null }, ids)
-        } catch {
-          // The parent has already toasted why; the sheet and selection stay.
-          return
-        }
-        onFinished()
-      }}
-      className="w-full justify-start"
-    >
-      <XCircle className="mr-1 size-4" />
-      {REMOVE_TARGET}
-      {count}
-    </Button>
-  )
-}
-
-/**
- * SKIP UNTIL for the selection (task queue PR 4; spec rule 10), under Remove
- * target at the top of the More sheet — the same shape: an action button, not
- * a staged edit, disabled while the panel below has unsaved edits.
- *
- * It applies to the selection's repeating tasks (`canSkipUntil`: not
- * reminders or quotas), and says how many when that is not all of them; the
- * picker (`SkipUntilDialog`) offers "Skip this occurrence" and a day. The
- * whole selection is sent: the server skips the repeating tasks and counts the
- * rest, so the toast says how many were skipped and how many were not
- * repeating. One request, one undo entry (`bulk_skip`).
- */
-function BulkSkipUntil({
-  selectedTasks,
-  disabled,
   timezone,
+  onDone,
+  onTarget,
+  onDeck,
+  onDetails,
+  onDoubleClickIntent,
+  onDelete,
   onSkipUntil,
-  onFinished,
+  onRemoveTargets,
+  onClear,
 }: {
   selectedTasks: Task[]
-  disabled: boolean
   timezone: string
-  onSkipUntil: (ids: number[], until: string | null) => Promise<void>
-  onFinished: () => void
+  onDone: () => void
+  onTarget?: (until: string) => void
+  onDeck?: (day: string | null) => void
+  onDetails: () => void
+  onDoubleClickIntent?: () => void
+  onDelete: () => void
+  onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
+  onRemoveTargets: (ids: number[]) => void
+  onClear: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const repeating = selectedTasks.filter(canSkipUntil)
-  if (repeating.length === 0) return null
-  const count = repeating.length < selectedTasks.length ? ` (${repeating.length})` : ''
+  const count = selectedTasks.length
   return (
-    <>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        data-bulk-skip-until
-        disabled={disabled}
-        title={
-          disabled
-            ? 'Save or reset your changes first'
-            : 'Skip this occurrence, or every one before a day'
-        }
-        onClick={() => setOpen(true)}
-        className="w-full justify-start"
-      >
-        <SkipForward className="mr-1 size-4" />
-        Skip until…{count}
-      </Button>
-      <SkipUntilDialog
-        open={open}
-        onOpenChange={setOpen}
-        tasks={repeating}
-        leftAlone={selectedTasks.length - repeating.length}
-        timezone={timezone}
-        onSkip={async (until) => {
-          await onSkipUntil(
-            selectedTasks.map((t) => t.id),
-            until,
-          )
-          onFinished()
-        }}
+    <SelectionBarShell count={count} onClear={onClear} onDoubleClickIntent={onDoubleClickIntent}>
+      <BarAction tone="done" icon={<Check />} label="Done" onClick={onDone} />
+      {onTarget && <TargetVerb count={count} onTarget={onTarget} />}
+      {onDeck && <DeckVerb timezone={timezone} onDeck={onDeck} />}
+      <BarAction icon={<FileText />} label="Details" onClick={onDetails} data-bar-details />
+      <BarAction
+        tone="danger"
+        icon={<Trash2 />}
+        label="Delete"
+        onClick={onDelete}
+        ariaLabel={`Delete ${count} ${taskWord(count)}`}
       />
-    </>
+      <MoreVerb
+        selectedTasks={selectedTasks}
+        timezone={timezone}
+        onSkipUntil={
+          onSkipUntil &&
+          (async (ids, until) => {
+            await onSkipUntil(ids, until)
+            onClear()
+          })
+        }
+        onRemoveTargets={onRemoveTargets}
+      />
+    </SelectionBarShell>
   )
 }

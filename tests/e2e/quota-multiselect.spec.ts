@@ -107,7 +107,7 @@ test.describe('Quotas page — selecting chips', () => {
     // Tap toggles one out; the bar's × ends selection mode.
     await b.click()
     await expect(selectedIn(panel)).toHaveCount(2)
-    await page.getByRole('button', { name: 'Clear selection' }).click()
+    await page.getByRole('button', { name: 'Cancel selection' }).click()
     await expect(selectedIn(panel)).toHaveCount(0)
 
     // One chip selected: Details is its bubble.
