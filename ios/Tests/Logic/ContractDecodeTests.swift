@@ -434,7 +434,11 @@ final class ContractDecodeTests: WidgetStoreTestCase {
             "every kind is known"
         )
         XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -17, -18, -10, -11, -12, -13])
-        XCTAssertEqual(TaskSegmentDTO.listed(segments).count, 8, "every segment is a page, empty ones too")
+        // The server sends every kind (`?fill=1`); only the ones with rows are pages (2026-10-30).
+        XCTAssertEqual(
+            TaskSegmentDTO.listed(segments).map(\.horizon),
+            ["deadlines", "upcoming", "queue_today", "queue_previous", "weeks"]
+        )
         XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
         XCTAssertEqual(segments.map(\.title)[0...2], ["Deadlines", "Heads up", "Today's pulls"])
 

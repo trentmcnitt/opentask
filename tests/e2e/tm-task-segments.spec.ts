@@ -256,22 +256,15 @@ test.describe('Task segments on the dashboard', () => {
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
       const remBox = (await remindersCard(page).boundingBox())!
       expect((await tasks.boundingBox())!.y).toBeGreaterThan(remBox.y + remBox.height - 1)
-      // Its own strip: one bar per segment — every segment, every day, in
-      // its fixed place (2026-10-24; the switch off: no queue pages) — no
-      // divider. The empty ones are done.
+      // Its own strip: one bar per segment WITH ROWS, in its fixed order
+      // (2026-10-30: an empty one is hidden; the switch off: no queue
+      // pages) — no divider.
       const strip = tasks.getByRole('group', { name: "Today's task segments" })
       const bars = strip.getByRole('button')
-      // Heads up before the horizons since 2026-10-29 (the strip's groups).
-      const order = ['upcoming', 'days', 'weeks', 'months', 'eventually']
+      const order = ['days', 'weeks']
       await expect(bars).toHaveCount(order.length)
       for (let i = 0; i < order.length; i++) {
         await expect(bars.nth(i)).toHaveAttribute('data-slot-segment', `tasks:${order[i]}`)
-      }
-      for (const empty of ['upcoming', 'months', 'eventually']) {
-        await expect(strip.locator(`[data-slot-segment="tasks:${empty}"]`)).toHaveAttribute(
-          'data-slot-state',
-          'done',
-        )
       }
       await expect(strip.locator('[data-segment-divider]')).toHaveCount(0)
       // The card's header says "Task queue" on every page (2026-10-29).
@@ -289,17 +282,11 @@ test.describe('Task segments on the dashboard', () => {
       await expect(cardRow(page, days[0])).toBeVisible()
       await expect.poll(async () => (await stateOf(page, days[0])).last_considered_at).toBeNull()
 
-      // The chevrons page through every segment, an empty one included
-      // ("Nothing today ✓", 0 of 0 — on Upcoming once, its empty sections
-      // not drawn since 2026-10-30).
-      // Heads up comes before Days since 2026-10-29.
-      await tasks.getByRole('button', { name: 'Previous task segment' }).click()
-      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:upcoming')
-      await expect(tasks.locator('[data-upcoming-section]')).toHaveCount(0)
-      await expect(tasks.locator('[data-segment-empty]')).toHaveCount(1)
-      await tasks.getByRole('button', { name: 'Next task segment' }).click()
+      // The chevrons page through the segments with rows only.
+      await expect(tasks.getByRole('button', { name: 'Previous task segment' })).toBeDisabled()
       await tasks.getByRole('button', { name: 'Next task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      await expect(tasks.getByRole('button', { name: 'Next task segment' })).toBeDisabled()
       await tasks.getByRole('button', { name: 'Previous task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
 
@@ -381,21 +368,13 @@ test.describe('Task segments on the dashboard', () => {
       await page.goto('/reminders')
       const headline = page.locator('[data-reminders-headline]')
       const bar = headline.getByRole('group', { name: 'Go to a period' })
-      // Every task segment, every day, in its fixed place (2026-10-24; the
-      // switch off), after the slots; the empty ones done.
+      // Only the task segments with rows (2026-10-30; the switch off), after
+      // the slots: here Days alone, still waiting.
       const segs = bar.locator('[data-day-segment^="tasks:"]')
-      // Heads up before the horizons since 2026-10-29 (the strip's groups).
-      const order = ['upcoming', 'days', 'weeks', 'months', 'eventually']
-      await expect(segs).toHaveCount(order.length)
-      for (let i = 0; i < order.length; i++) {
-        await expect(segs.nth(i)).toHaveAttribute('data-day-segment', `tasks:${order[i]}`)
-      }
+      await expect(segs).toHaveCount(1)
+      await expect(segs.first()).toHaveAttribute('data-day-segment', 'tasks:days')
       await expect(bar.locator('[data-day-segment="tasks:days"]')).not.toHaveAttribute(
         'data-day-segment-done',
-      )
-      await expect(bar.locator('[data-day-segment="tasks:eventually"]')).toHaveAttribute(
-        'data-day-segment-done',
-        '',
       )
       // The queue's bars on their own line under the periods (2026-10-29, their words).
       await expect(bar.locator('[data-day-bar-break]')).toHaveCount(1)

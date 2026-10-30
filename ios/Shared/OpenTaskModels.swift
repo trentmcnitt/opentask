@@ -1276,19 +1276,18 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     /// marked done leaves the payload entirely). So a page listing 2 rows can
     /// read "3 of 5"; that is the web header's count, on purpose.
     var handledCount: Int { tasks.count - waitingCount }
-    /// No rows at all today (native PR E, the server's `?fill=1`): the
-    /// segment is DONE from the start of the day — a full bar in the done
-    /// colour, "0 of 0 ✓", "Nothing today ✓" — and stays on the strip and in
-    /// the ring, in its fixed place.
+    /// No rows at all today (the server's `?fill=1` sends such a segment):
+    /// not listed since 2026-10-30 (`isListed`) — no bar, no page.
     var isEmpty: Bool { tasks.isEmpty }
 
-    /// Whether the segment is a page today. EVERY segment the server sends
-    /// (native PR E, 2026-10-26, Trent 10-24 on the web: "always show every
-    /// queue segment, every day, in fixed positions" — the server's `?fill=1`
-    /// sends every kind, an empty one with no rows). Before PR E an empty or
-    /// all-deferred segment dropped out of the ring; an older server, which
-    /// ignores `fill`, simply sends fewer segments.
-    var isListed: Bool { true }
+    /// Whether the segment is a page today: only one with rows (Trent,
+    /// 2026-10-30, the web's rule, reversing 10-24's "always show every queue
+    /// segment, every day"). The server's `?fill=1` still sends every kind,
+    /// an empty one with no rows; it is hidden — no bar, no page, no place in
+    /// the ring. A segment finished today keeps its rows (considered,
+    /// deferred, or left handled) and stays, done, until the rollover. The
+    /// order is fixed; only presence changes.
+    var isListed: Bool { !tasks.isEmpty }
 
     /// "Defer all" on this page (`SegmentKind.offersDeferAll`): never on the
     /// queue's panels or the deadlines page. A kind this build doesn't know
@@ -1299,7 +1298,7 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
         TaskSegmentDTO(horizon: horizon, tasks: tasks, nudge: nudge)
     }
 
-    /// Segments with a page today, in screen order — every one (`isListed`).
+    /// Segments with a page today, in screen order — the ones with rows (`isListed`).
     static func listed(_ segments: [TaskSegmentDTO]) -> [TaskSegmentDTO] {
         segments.filter(\.isListed)
     }

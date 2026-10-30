@@ -27,9 +27,10 @@ import type { SegmentView, TaskSegmentActions } from '@/hooks/useTaskSegments'
  * rows, and its own considered rows. AN EMPTY SECTION IS NOT DRAWN (Trent,
  * 2026-10-30: "hide an empty section", reversing decision 3's "both headings
  * always drawn"): a section shows only on a day it has rows, waiting or
- * considered. With both empty the page reads "Nothing today ✓" once, as any
- * empty segment does. The heading wears no teal: the segment's title above
- * already carries the one accent.
+ * considered. An Upcoming with no rows at all never gets here: it is hidden
+ * with its segment (`useTaskSegments`); the empty line below is a guard. The
+ * heading wears no teal: the segment's title above already carries the one
+ * accent.
  *
  * What stays the PAGE's (decision 11): the header's "N of M" (both sections),
  * one "Considered all" and one "Defer all", the over-50 nudge, and on the

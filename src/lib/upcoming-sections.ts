@@ -9,8 +9,8 @@
  * segment-level "N of M", "Considered all" and "Defer all" stay the page's
  * (decision 11). A section with no rows today (none waiting, none
  * considered) is NOT drawn (Trent, 2026-10-30: "hide an empty section" —
- * reversing decision 3's "both headings always drawn"); with both empty the
- * page reads "Nothing today ✓" once, like any empty segment.
+ * reversing decision 3's "both headings always drawn"). An Upcoming with no
+ * rows at all is hidden with its segment (`useTaskSegments`, the same day).
  *
  * Pure: the split is tested in `tests/behavioral/up-sections-web.test.ts`.
  */

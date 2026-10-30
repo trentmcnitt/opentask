@@ -26,20 +26,20 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
 
     // MARK: Ring
 
-    /// EVERY segment is a page (native PR E, `?fill=1`: "always show every
-    /// queue segment, every day, in fixed positions") — an all-deferred one
-    /// and an empty one too, which used to drop out of the ring.
-    func testSegmentsComeAfterTheSlotsAndEverySegmentIsAPage() throws {
+    /// A segment with rows today is a page — an all-deferred one too — and
+    /// an EMPTY one is not (Trent, 2026-10-30: "hide an empty section",
+    /// reversing 10-24's "every segment, every day"; the server's `?fill=1`
+    /// still sends it).
+    func testSegmentsComeAfterTheSlotsAndOnlyOnesWithRowsArePages() throws {
         let groups = try Fixtures.reminders()
         let listed = TaskSegmentDTO.listed(segments() + [TaskSegmentDTO(horizon: "eventually", tasks: [])])
-        XCTAssertEqual(listed.map(\.horizon), ["days", "weeks", "months", "eventually"])
+        XCTAssertEqual(listed.map(\.horizon), ["days", "weeks", "months"])
         // Under the slots (Trent, 10-11), so after them in the ring.
         XCTAssertEqual(
             RemindersTimeline.pageKeys(groups: groups, segments: listed),
-            groups.map(\.slotKey) + [-10, -11, -12, -13]
+            groups.map(\.slotKey) + [-10, -11, -12]
         )
-        XCTAssertTrue(listed[3].isEmpty)
-        XCTAssertFalse(listed[3].hasWaiting, "an empty segment waits for nothing")
+        XCTAssertFalse(listed[2].hasWaiting, "an all-deferred segment waits for nothing, and stays")
     }
 
     /// The queue's panels and the deadlines page (native PR E): their own

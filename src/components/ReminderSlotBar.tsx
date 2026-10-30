@@ -335,8 +335,10 @@ export function ReminderSlotBar({
     .filter((s) => s.item.total > 0 || s.item.emptyDone)
 
   // One segment is not a bar — it would say only "everything is here", which
-  // the header already says better.
-  if (shown.length < 2) return null
+  // the header already says better. The task queue's strip is the exception
+  // (Trent, 2026-10-30): with only one segment holding rows (only Due, only
+  // Soon) it shows just that word, so the card still says which it is.
+  if (shown.length === 0 || (shown.length < 2 && !shown[0].item.mark)) return null
 
   const bar = ({ item, index: i }: { item: SlotBarItem; index: number }) => (
     <SlotBarButton

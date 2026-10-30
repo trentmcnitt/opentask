@@ -4,10 +4,12 @@
  * to the next one, the same way that filling segments does on the dashboard
  * or on the widget"; `useScrollToNextSection`, `sectionAfterFinishing`).
  *
- * Two real tasks: one in Heads up (targeted tomorrow, so today is its heads-up
- * day) and one in Days. Heads up comes before Days, so considering the Heads
- * up row finishes that section and the page lands Days' header under the top
- * bar. The E2E users are shared, so the reminders answer is trimmed to these
+ * Real tasks: one in Heads up (targeted tomorrow, so today is its heads-up
+ * day) and a dozen in Days. Heads up comes before Days, so considering the
+ * Heads up row finishes that section and the page lands Days' header under the
+ * top bar. Days needs the dozen: an empty segment isn't drawn (2026-10-30), so
+ * Days is the page's last section, and its rows are what leave the page room
+ * to scroll its header up to the bar. The E2E users are shared, so the reminders answer is trimmed to these
  * two tasks (and no periods): the next section is then Days whatever other
  * specs left behind. The actions themselves are real.
  */
@@ -52,6 +54,17 @@ async function onlyTheseTasks(page: Page, ids: number[]) {
   })
 }
 
+/** A dozen Days tasks — the last section's height (see the header). */
+async function daysTasks(page: Page, title: string): Promise<number[]> {
+  const ids = await Promise.all(
+    Array.from({ length: 12 }, (_, i) =>
+      create(page, { title: uniqueTitle(`${title} ${i}`), horizon: 'days' }),
+    ),
+  )
+  backdateCreated(ids, { inSegments: true })
+  return ids
+}
+
 test.use({ viewport: { width: 390, height: 640 } })
 
 test('finishing Heads up scrolls Days, the next section still waiting, under the top bar', async ({
@@ -63,10 +76,10 @@ test('finishing Heads up scrolls Days, the next section still waiting, under the
     target_at: DateTime.fromISO(tomorrow, { zone: TZ }).set({ hour: 9 }).toUTC().toISO(),
   })
   targetSetDaysAgo(headsUp, 10)
-  const days = await create(page, { title: uniqueTitle('NS days'), horizon: 'days' })
-  backdateCreated([days], { inSegments: true })
+  const fill = await daysTasks(page, 'NS days')
+  const days = fill[0]
   try {
-    await onlyTheseTasks(page, [headsUp, days])
+    await onlyTheseTasks(page, [headsUp, ...fill])
     await page.goto('/reminders')
     const upcoming = page.locator('[data-section-key="tasks:upcoming"]')
     const daysSection = page.locator('[data-section-key="tasks:days"]')
@@ -83,7 +96,7 @@ test('finishing Heads up scrolls Days, the next section still waiting, under the
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
-    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, days] } })
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, ...fill] } })
   }
 })
 
@@ -96,10 +109,9 @@ test('a scroll by hand after the last tick keeps the page where the user put it'
     target_at: DateTime.fromISO(tomorrow, { zone: TZ }).set({ hour: 9 }).toUTC().toISO(),
   })
   targetSetDaysAgo(headsUp, 10)
-  const days = await create(page, { title: uniqueTitle('NS days'), horizon: 'days' })
-  backdateCreated([days], { inSegments: true })
+  const fill = await daysTasks(page, 'NS days')
   try {
-    await onlyTheseTasks(page, [headsUp, days])
+    await onlyTheseTasks(page, [headsUp, ...fill])
     // The page's timers run on a clock the test steps: the move's delay
     // passes exactly when the test says so.
     await page.clock.install()
@@ -120,7 +132,7 @@ test('a scroll by hand after the last tick keeps the page where the user put it'
     expect(await page.evaluate(() => window.scrollY)).toBe(handScrolled)
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
-    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, days] } })
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, ...fill] } })
   }
 })
 
@@ -136,10 +148,9 @@ test('with a notch inset the header still lands below the top bar', async ({
     target_at: DateTime.fromISO(tomorrow, { zone: TZ }).set({ hour: 9 }).toUTC().toISO(),
   })
   targetSetDaysAgo(headsUp, 10)
-  const days = await create(page, { title: uniqueTitle('NS notch days'), horizon: 'days' })
-  backdateCreated([days], { inSegments: true })
+  const fill = await daysTasks(page, 'NS notch days')
   try {
-    await onlyTheseTasks(page, [headsUp, days])
+    await onlyTheseTasks(page, [headsUp, ...fill])
     await page.goto('/reminders')
     await page.addStyleTag({ content: ':root { --safe-top: 54px !important; }' })
     const row = page.locator(`[data-section-key="tasks:upcoming"] [data-segment-task="${headsUp}"]`)
@@ -159,6 +170,6 @@ test('with a notch inset the header still lands below the top bar', async ({
       .toBe(true)
   } finally {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
-    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, days] } })
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, ...fill] } })
   }
 })

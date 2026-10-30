@@ -2,7 +2,7 @@
  * THE DEADLINES PAGE'S OWN TEAL (2026-10-26, an experiment for Trent: "change
  * the color on that one and see what that's like"). The deadlines segment's
  * title, its bar in the Tasks card's strip and the /reminders day bar, its
- * hairline and its finished "N of N ✓" / "Nothing today ✓" all wear its teal
+ * hairline and its finished "N of N ✓" all wear its teal
  * (globals.css) — where every other segment turns GREEN when done, this one
  * stays its teal (`segmentDoneColor` / `segmentDoneTextColor` in
  * TaskSegmentRow.tsx). Two tokens in light mode: TEXT (the title, the count's
@@ -11,8 +11,9 @@
  *
  * Read from computed styles, against the token and the done green resolved
  * in the page itself (Tailwind 4's green is oklch, so never a hard-coded
- * rgb). The other segments keep green: an empty Weekly, done from the start
- * of the day, is the control beside the empty deadlines page. While a bar
+ * rgb). The other segments keep green: a finished Weekly (its one row
+ * considered) is the control beside the finished deadlines page (its one row
+ * considered — an empty segment is not drawn since 2026-10-30). While a bar
  * FILLS it is the reminders' purple on every segment (2026-10-26), the
  * deadlines page's included: a part-filled Daily is the check.
  *
@@ -21,6 +22,8 @@
  * one-offs. Unique titles; every task trashed in `finally`; the switch off
  * again after the file.
  */
+import path from 'path'
+import Database from 'better-sqlite3'
 import { test, expect, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
@@ -47,6 +50,38 @@ async function create(page: Page, data: Record<string, unknown>): Promise<number
 async function consider(page: Page, id: number) {
   const res = await page.request.post('/api/task-segments/consider', { data: { ids: [id] } })
   expect(res.ok(), `consider ${id}`).toBeTruthy()
+}
+
+/** A deadline five days out with a long lead: on the deadlines page today. */
+const deadlineTask = () => ({
+  title: uniqueTitle('DT deadline'),
+  deadline_at: fromNow(5 * DAY),
+  lead_days: 30,
+})
+
+/** A Weekly task added a month ago: in Weeks today, whatever the check-in day. */
+function createdLongAgo(id: number) {
+  const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+  try {
+    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(fromNow(-30 * DAY), id)
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Daily two rows, one considered (part-filled: purple); the deadlines page
+ * and Weekly one row each, considered (finished: teal and green).
+ */
+async function finishedSetup(page: Page, ids: number[]) {
+  ids.push(await create(page, { title: uniqueTitle('DT daily'), horizon: 'days' }))
+  ids.push(await create(page, { title: uniqueTitle('DT daily 2'), horizon: 'days' }))
+  const deadline = await create(page, deadlineTask())
+  ids.push(deadline)
+  const weekly = await create(page, { title: uniqueTitle('DT weekly'), horizon: 'weeks' })
+  ids.push(weekly)
+  createdLongAgo(weekly)
+  for (const id of [ids[1], deadline, weekly]) await consider(page, id)
 }
 
 async function trash(page: Page, ids: number[]) {
@@ -113,12 +148,9 @@ for (const viewport of VIEWPORTS) {
     }) => {
       const ids: number[] = []
       try {
-        // Two Daily rows, one considered: the card is a pager (not the
-        // one-line done card) and Daily's bar is part-way filled; the
-        // deadlines page and Weekly are empty — done from the start.
-        ids.push(await create(page, { title: uniqueTitle('DT daily'), horizon: 'days' }))
-        ids.push(await create(page, { title: uniqueTitle('DT daily 2'), horizon: 'days' }))
-        await consider(page, ids[1])
+        // Daily part-way filled keeps the card a pager (not the one-line
+        // done card); the deadlines page and Weekly are finished.
+        await finishedSetup(page, ids)
         await page.goto('/?tasks=deadlines')
         const card = page.locator('[data-tasks-panel]')
         await expect(card).toHaveAttribute('data-tasks-page', 'tasks:deadlines')
@@ -142,25 +174,18 @@ for (const viewport of VIEWPORTS) {
         expect(p.purpleFill).not.toBe(p.tealFill)
         expect(await fillOf(fill('tasks:days'))).toBe(p.purpleFill)
 
-        // The header: the title in the text teal; the ✓ glyphs (the header's
-        // and "Nothing today ✓") in the fill teal.
+        // The header: the title in the text teal; its ✓ in the fill teal.
         const title = card.locator('[data-slot-header-toggle] span.uppercase')
         // "Task queue" on every page (2026-10-29), in the page's teal.
         await expect(title).toHaveText(/Task queue/i)
         expect(await colorOf(title)).toBe(p.teal)
         expect(await colorOf(card.locator('[data-done-check]').first())).toBe(p.tealGlyph)
-        expect(await colorOf(card.locator('[data-segment-empty] [data-done-check]'))).toBe(
-          p.tealGlyph,
-        )
 
         // Weekly's page: its own title colour, and the done check is green.
         await page.goto('/?tasks=weeks')
         await expect(card).toHaveAttribute('data-tasks-page', 'tasks:weeks')
         expect(await colorOf(title)).not.toBe(p.teal)
         expect(await colorOf(card.locator('[data-done-check]').first())).toBe(p.greenText)
-        expect(await colorOf(card.locator('[data-segment-empty] [data-done-check]'))).toBe(
-          p.greenText,
-        )
       } finally {
         await trash(page, ids)
       }
@@ -171,9 +196,7 @@ for (const viewport of VIEWPORTS) {
     }) => {
       const ids: number[] = []
       try {
-        ids.push(await create(page, { title: uniqueTitle('DT daily'), horizon: 'days' }))
-        ids.push(await create(page, { title: uniqueTitle('DT daily 2'), horizon: 'days' }))
-        await consider(page, ids[1])
+        await finishedSetup(page, ids)
         // A reminder in the first period: without one the page is its empty
         // state, with no headline and so no day bar.
         const slots = (await (await page.request.get('/api/time-slots')).json()).data
@@ -201,20 +224,17 @@ for (const viewport of VIEWPORTS) {
             `[data-reminders-headline] [data-day-segment="${key}"] > span:not([data-strip-word]) > span`,
           )
 
-        // Empty, so done: title and "0 of 0" in the text teal; its ✓, the
-        // "Nothing today ✓", the hairline and the day bar in the fill teal.
-        await expect(section('deadlines').locator('[data-segment-empty]')).toBeVisible()
+        // Finished: title and "1 of 1" in the text teal; its ✓, the hairline
+        // and the day bar in the fill teal.
+        await expect(section('deadlines').locator('[data-done-count]')).toBeVisible()
         expect(await colorOf(title('deadlines'))).toBe(p.teal)
         expect(await colorOf(section('deadlines').locator('[data-done-count]'))).toBe(p.teal)
         expect(
           await colorOf(section('deadlines').locator('[data-done-count] [data-done-check]')),
         ).toBe(p.tealGlyph)
-        expect(
-          await colorOf(section('deadlines').locator('[data-segment-empty] [data-done-check]')),
-        ).toBe(p.tealGlyph)
         expect(await fillOf(hairline('deadlines'))).toBe(p.tealFill)
         expect(await fillOf(dayFill('tasks:deadlines'))).toBe(p.tealFill)
-        // Weekly, empty too: green as before, and a title of its own colour.
+        // Weekly, finished too: green as before, and a title of its own colour.
         expect(await colorOf(section('weeks').locator('[data-done-count]'))).toBe(p.greenText)
         expect(await colorOf(section('weeks').locator('[data-done-count] [data-done-check]'))).toBe(
           p.greenText,
@@ -227,12 +247,8 @@ for (const viewport of VIEWPORTS) {
         expect(await fillOf(hairline('days'))).toBe(p.purpleFill)
         expect(await fillOf(dayFill('tasks:days'))).toBe(p.purpleFill)
 
-        // With a row on the page (filling): the title is still the teal.
-        const deadline = await create(page, {
-          title: uniqueTitle('DT deadline'),
-          deadline_at: fromNow(5 * DAY),
-          lead_days: 30,
-        })
+        // With a row waiting on the page (filling): the title is still the teal.
+        const deadline = await create(page, deadlineTask())
         ids.push(deadline)
         await page.reload()
         await expect(
@@ -253,7 +269,7 @@ test.describe('dark', () => {
   test('the dark token is its own value, and the deadlines page wears it', async ({ page }) => {
     const ids: number[] = []
     try {
-      ids.push(await create(page, { title: uniqueTitle('DT daily'), horizon: 'days' }))
+      await finishedSetup(page, ids)
       await page.goto('/reminders')
       await expect(page.locator('html')).toHaveClass(/dark/)
       const p = await palette(page)

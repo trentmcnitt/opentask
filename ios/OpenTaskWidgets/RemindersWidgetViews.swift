@@ -1028,8 +1028,10 @@ private struct ReminderSlotStrip: View {
         // says better"). Task segment bars count (2026-10-11): one period and
         // one task segment is two pages, and the strip is how you find the
         // second.
+        // The queue's row is the exception (2026-10-30, the web's): with one
+        // segment holding rows (only Due, only Soon) it shows just that word.
         let shown = bars
-        if shown.count >= 2 {
+        if shown.count >= 2 || shown.contains(where: { $0.kind == .taskSegment }) {
             // THE QUEUE ON ITS OWN ROW, WITH ITS WORDS (2026-10-29, Trent's
             // option (a) — the web's Q2; W3 the same day: the queue's row
             // first, then the periods'), each queue bar with its mark above it

@@ -54,6 +54,16 @@ async function trash(page: Page, ids: number[]) {
 }
 
 /** Backdate `target_set_at` (the API stamps now) straight in the E2E database. */
+/** Made yesterday: a Days one-off then waits in today's Days segment at any hour. */
+function createdYesterday(id: number) {
+  const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
+  try {
+    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(fromNow(-DAY), id)
+  } finally {
+    db.close()
+  }
+}
+
 function backdateTargetSet(id: number, days: number) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
@@ -372,8 +382,13 @@ test.describe('before the lead day, and Remove target', () => {
       })
       ids.push(id)
       backdateTargetSet(id, 10)
+      // A Days row, the sign the segments have drawn (an empty segment isn't
+      // drawn since 2026-10-30, so with this task quiet there may be none).
+      const anchor = await create(page, { title: uniqueTitle('DL anchor'), horizon: 'days' })
+      ids.push(anchor)
+      createdYesterday(anchor)
       await page.goto('/reminders')
-      await expect(page.locator('[data-task-segment]').first()).toBeVisible()
+      await expect(row(page.locator('[data-task-segment="days"]'), anchor)).toBeVisible()
       await expect(row(page.locator('[data-task-segment="upcoming"]'), id)).toHaveCount(0)
       await expect(row(section(page), id)).toHaveCount(0)
     } finally {
