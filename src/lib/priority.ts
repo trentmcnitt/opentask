@@ -1,4 +1,10 @@
 /**
+ * RULE PRIO-THRESHOLDS: High = 3 and Urgent = 4 are the boundaries for nag tiers, notification
+ *   prefixes and levels, the bulk sweep and lead kinds.
+ * Why: One pair of boundaries for every priority rule.
+ * Ruling: none recorded.
+ */
+/**
  * Priority value at which a due date stops being a reminder and becomes a
  * deadline (3=High, 4=Urgent). It is the boundary for per-priority auto-snooze
  * and for the HIGH/URGENT prefix on notifications.

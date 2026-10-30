@@ -57,6 +57,15 @@ import {
 import { NIGHT_SUFFIX } from '@/lib/night-day'
 import type { RepeatAnchor } from '@/types'
 
+/**
+ * RULE HZ-VALUES: A horizon is one of days, weeks, months or eventually, soonest first; null means
+ *   unset. This order drives the effective horizon, grow steps, the horizon sort and the segment
+ *   order.
+ * Why: One ordered list every horizon rule reads, so "sooner" and "one step out" mean the same
+ *   everywhere.
+ * Ruling: none recorded.
+ * Restated at: src/core/validation/task.ts (HORIZONS, an alias of this list).
+ */
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
 
@@ -86,6 +95,20 @@ export function isQueueKind(kind: SegmentKind): kind is QueueKind {
   return kind === 'queue_today' || kind === 'queue_previous'
 }
 
+// (restates RULE SEG-NOT-TODAY, home: src/core/tasks/task-segments.ts)
+/**
+ * Whether a segment offers "Not today, all" (`segment_deferred_at`: off
+ * today's list, back tomorrow; "Defer all" until Trent renamed it, 2026-10-30).
+ * Not the queue's two panels (spec rule 8: consider, Today and done) — queue
+ * select mode offers "Not today" on the rows picked there instead (Trent,
+ * 2026-10-30) — and not the DEADLINES page (2026-10-22): its Defer moves a
+ * row's lead day (`/api/task-segments/defer-lead`), one row at a time.
+ * Moved here from TaskSegmentRow.tsx unchanged (the rules map, 2026-10-30).
+ */
+export function offersDeferAll(kind: SegmentKind): boolean {
+  return !isQueueKind(kind) && kind !== 'deadlines'
+}
+
 /**
  * Whether the server sends this segment only with the task-queue switch on:
  * the queue's two panels and the deadlines page (2026-10-22). A client that
@@ -95,6 +118,13 @@ export function onlyWithQueue(kind: SegmentKind): boolean {
   return isQueueKind(kind) || kind === 'deadlines'
 }
 
+/**
+ * RULE SEG-COUNTS: X is considered plus deferred rows, with left rows counting as considered. Y is
+ *   every row the segment holds today. The same rule applies to every panel.
+ * Why: The number climbs as rows are handled and never shrinks when a row leaves handled (the
+ *   comment below).
+ * Ruling: Trent 2026-10-11; day roster Trent 2026-10-22 (src/lib/task-segments.ts:98).
+ */
 /**
  * "X of Y" for a segment, the slots' count (Trent, 2026-10-11): X is what was
  * handled today and Y everything that came round today, so the number climbs
@@ -116,6 +146,14 @@ export function segmentCounts(segment: {
   return { handled: segment.considered + segment.deferred, total: segment.rows.length }
 }
 
+/**
+ * RULE SEG-ORDER: The display order is: deadlines, upcoming ('Heads up'), queue_today,
+ *   queue_previous, days, weeks, months, eventually, aged_out, in four strip groups. The order is
+ *   fixed; only which segments appear changes. Display order is separate from placement precedence.
+ * Why: A fixed order keeps every surface walking the segments the same way; the deadlines page is
+ *   first as the only queue page that nags.
+ * Ruling: Trent's tight N2 / Q2, 2026-10-29; deadlines first 2026-10-22.
+ */
 /**
  * The order the screens walk the segments, in the strip's four GROUPS
  * (Trent's tight N2, 2026-10-29; `SEGMENT_STRIP_GROUP`): DATED — the
@@ -139,9 +177,17 @@ export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'aged_out',
 ]
 
+// (restates RULE HZ-UNSET, home: src/lib/task-segments.ts)
 /** Unset reads as weeks — but is never reported as set (`task.horizon` stays null). */
 export const UNSET_HORIZON: HorizonValue = 'weeks'
 
+/**
+ * RULE SEG-NUDGE: A segment with more than 50 WAITING rows sets nudge. Considered and deferred rows
+ *   do not count toward the 50.
+ * Why: A segment this big asks for Process or AI help instead of a tap-through; considered and
+ *   deferred rows are not "here" any more.
+ * Ruling: Trent 2026-10-11 (src/core/tasks/task-segments.ts:127).
+ */
 /** A segment this big asks for Process or AI help instead of a tap-through. */
 export const SEGMENT_NUDGE_THRESHOLD = 50
 
@@ -159,6 +205,13 @@ const DEADLINE_PULL_DAYS: [number, HorizonValue][] = [
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/**
+ * RULE DL-FIELD: deadline_at changes only when a write sends it. No snooze or defer path sends it.
+ *   Enrichment sets it only from a date stated in the wording.
+ * Why: No snooze path ever sends deadline_at, which is what keeps a snooze from moving a deadline
+ *   (collectTaskModelFields).
+ * Ruling: 2026-10-10 task model (DEV_LOG.md:13): 'no snooze moves it'.
+ */
 /** The fields that decide a task's target. */
 export interface TargetFields {
   due_at: string | null
@@ -192,6 +245,14 @@ export function setClientTargetContext(ctx: TargetContext | null): void {
 }
 
 /**
+ * RULE TGT-PICKED: A target is PICKED when due_at is set and target_auto is not. This is the single
+ *   test for that question.
+ * Why: Only a picked target makes a task quiet until its date; an automatic target leaves it on its
+ *   horizon rhythm (the comment below).
+ * Ruling: Spec §8.5, 2026-10-12 (comment at src/lib/task-segments.ts:194).
+ * Restated at: src/lib/modes/predicates.ts (hasPickedTarget, a re-export).
+ */
+/**
  * Whether the task has a target the USER picked (§8.5, 2026-10-12): a target
  * that is not the deadline's automatic one. Only a picked target makes a task
  * quiet until its date (no horizon segment, Upcoming heads-ups). An automatic
@@ -207,6 +268,17 @@ function morningOn(day: DateTime, ctx: TargetContext): DateTime {
   return day.set({ hour, minute, second: 0, millisecond: 0 })
 }
 
+/**
+ * RULE DL-AUTO-TARGET: With the task-queue switch off, a one-off (not a reminder or quota) with a
+ *   deadline and no picked target stores an automatic target (target_auto). It is the user's
+ *   morning on the lead-table day, or the deadline's own time if that is earlier. A moment already
+ *   past becomes now, so the task is overdue at once. A deadline already past gives the deadline
+ *   itself.
+ * Why: With the switch off a one-off with a deadline must still come up before it; kept one
+ *   release, then deleted (plan A1).
+ * Ruling: Spec §8.1, 2026-10-12. One lead table: Trent 2026-10-21 ('one rule everywhere'). Past
+ *   means now: ruling Q10. To be deleted after one release: plan A1 (2026-10-22).
+ */
 /**
  * THE DEADLINE'S AUTOMATIC TARGET (§8.1, 2026-10-12 — replaces the read-time
  * implied target, `deadline_nag_off` and the deadline-day re-arm). Setting a
@@ -253,6 +325,7 @@ export function autoTargetAt(
   return (at < deadline ? at : deadline).toUTC().toISO()!
 }
 
+// (restates RULE DL-CAP, home: src/lib/task-segments.ts)
 /**
  * TARGET ≤ DEADLINE WHILE THE DEADLINE IS AHEAD (§8.2; Trent's ruling,
  * 2026-10-12). Every move — a single PATCH, a snooze, a quick snooze, a bulk
@@ -273,6 +346,16 @@ export function capAtDeadline(
   return capsAt(dueAt, deadlineAt, now) ? deadlineAt! : dueAt
 }
 
+/**
+ * RULE DL-CAP: While the deadline is still in the future, every move stops at the deadline: PATCH,
+ *   snooze, bulk, snooze-overdue, Today, native quick snoozes and notification buttons. Once the
+ *   deadline has passed the cap is off and any target can be picked.
+ * Why: There is no "past the deadline anyway" while it is ahead: to go later, change or remove the
+ *   deadline (capAtDeadline's comment).
+ * Ruling: Trent, 2026-10-12 (spec §8.2). Passed deadline means no cap: Trent 2026-10-12 ('sometimes
+ *   it's for a client and you're in a rush').
+ * Restated at: src/lib/task-segments.ts (capAtDeadline).
+ */
 /**
  * Whether the cap pulls `dueAt` back: it lies after a deadline that is still
  * ahead of `now`.
@@ -337,6 +420,16 @@ export interface ResolvedTarget {
 }
 
 /**
+ * RULE DL-RELATIVE-WRITE-RULES: A relative one-off is a non-recurring task with a deadline and both
+ *   offsets (not a reminder or quota), and its target is PICKED. Any non-null target written makes
+ *   the target fixed. target_at: null clears everything. deadline_at: null keeps the current target
+ *   as a fixed one. A write to the deadline or the offsets re-derives the target and restamps
+ *   target_set_at.
+ * Why: A relative target is a pick expressed against the deadline: any other pick replaces it, and
+ *   only the deadline or the offsets re-derive it.
+ * Ruling: Rulings 1, 3, 5, 7, relative-targets plan approved 2026-10-24.
+ */
+/**
  * RELATIVE TARGETS (2026-10-24; docs/TASK-MODEL.md § Relative targets): what a
  * write does to a one-off's relative target, in order —
  *  1. a non-null target written (a pick, any defer, Today) makes it FIXED: the
@@ -359,6 +452,14 @@ function resolveRelative(
   return { relative, derived: rederive ? relativeTargetAt(w.deadlineAt, relative, timezone) : null }
 }
 
+/**
+ * RULE TGT-RESOLVE: Every writer of due_at or deadline_at on an ordinary task asks resolveTarget:
+ *   PATCH, bulk edit, the snooze paths, Today, create and enrichment. It applies, in order: a
+ *   relative target, then the automatic target (switch off), then the deadline cap.
+ * Why: One resolver keeps the invariants however a task is written: the target is never after a
+ *   deadline still ahead, and (switch off) a deadline one-off always has a target.
+ * Ruling: §8, 2026-10-12 (comment at src/lib/task-segments.ts:362).
+ */
 /**
  * THE TARGET A WRITE LEAVES (§8, 2026-10-12). Every writer of `due_at` or
  * `deadline_at` on an ordinary task asks this — the single PATCH, bulk edit,
@@ -402,6 +503,24 @@ export function resolveTarget(
   return resolveFixed(w, ctx, now)
 }
 
+/**
+ * RULE TGT-DEADLINE-CHANGE: An automatic target is re-derived from the new deadline. A picked fixed
+ *   target stays, pulled back if the new deadline is earlier. A relative target is re-derived.
+ *   Removing the deadline removes an automatic target and leaves a picked or relative target as a
+ *   fixed one.
+ * Why: The automatic target belongs to its deadline; a picked one is the user's, and only the cap
+ *   may pull it in.
+ * Ruling: §8.4 2026-10-12; relative targets ruling 5, 2026-10-24.
+ */
+/**
+ * RULE DL-NO-FAKE-TARGET: With OPENTASK_TASK_QUEUE on, nothing writes an automatic target: no
+ *   writer, no startup step, no undo. A deadline task with no target stays target-less and goes on
+ *   the deadlines page. Data steps that depend on the switch run only in the server process.
+ * Why: A deadline is not a target: with the deadlines page there is nothing to fake, since the page
+ *   holds a target-less deadline task from its lead day.
+ * Ruling: Deadlines-page plan L1/A1, approved 2026-10-22. Scripts gated by isServerProcess after
+ *   the 2026-10-24 incident (AGENTS.md § Database).
+ */
 /** `resolveTarget` for a target that is not relative: the automatic one, and the cap. */
 function resolveFixed(w: TargetWrite, ctx: TargetContext | null, now: Date): ResolvedTarget {
   let dueAt = w.dueAt
@@ -422,6 +541,17 @@ function resolveFixed(w: TargetWrite, ctx: TargetContext | null, now: Date): Res
   return { dueAt, auto, capped: false }
 }
 
+/**
+ * RULE DL-DEADLINE-DAY-PICK: The pickers offer the user's morning on the deadline's OpenTask day,
+ *   or the deadline itself if that is earlier. A deadline between midnight and the day start counts
+ *   as the evening before. The pick is offered only while both the deadline and that moment are
+ *   still ahead.
+ * Why: A deadline in the late night belongs to the evening's OpenTask day, so its morning is that
+ *   day's, not the next (L9 part 2).
+ * Ruling: Ruling Q8 2026-10-12; never once passed: Trent 2026-10-12
+ *   (src/lib/editor-target-labels.ts:362); L9 night rule part 2, 2026-10-26.
+ * Restated at: src/lib/editor-target-labels.ts (deadlineDayPick).
+ */
 /**
  * The picker's "Morning of the deadline" (ruling Q8): the user's morning on the
  * deadline's own local day — or the deadline itself, if that is earlier. L9
@@ -448,6 +578,17 @@ export function deadlineDayTarget(
   return (morning < deadline ? morning : deadline).toUTC().toISO()!
 }
 
+/**
+ * RULE DL-HORIZON-PULL: The effective horizon is the sooner of the set horizon (unset reads as
+ *   weeks) and the one the deadline implies. A deadline 7 days away or less implies days, 21 or
+ *   less weeks, and 90 or less months; a deadline that has passed implies days. A deadline never
+ *   pushes a horizon out. The days are measured as 24-hour spans.
+ * Why: A close deadline must surface the task often enough; a deadline only ever pulls a horizon
+ *   in, and growth is Process asking (effectiveHorizon's comment).
+ * Ruling: Spec §2 (Trent quote at src/lib/task-segments.ts:148); the 90-day step is 'this build's
+ *   call' (DEV_LOG.md:21).
+ * Restated at: src/lib/task-segments.ts (effectiveHorizon).
+ */
 /** The horizon a deadline implies on its own, or null when it is far enough away to imply none. */
 export function deadlineHorizon(deadlineAt: string | null, now: Date): HorizonValue | null {
   if (!deadlineAt) return null
@@ -463,6 +604,7 @@ function sooner(a: HorizonValue, b: HorizonValue | null): HorizonValue {
   return HORIZON_ORDER.indexOf(b) < HORIZON_ORDER.indexOf(a) ? b : a
 }
 
+// (restates RULE DL-HORIZON-PULL, home: src/lib/task-segments.ts)
 /**
  * The soonest of the set horizon (unset = weeks) and what the deadline implies.
  * A deadline only ever pulls a horizon IN; nothing here grows one — growth is
@@ -472,10 +614,7 @@ export function effectiveHorizon(
   task: { horizon: string | null; deadline_at: string | null },
   now: Date,
 ): HorizonValue {
-  const set = (HORIZON_ORDER as readonly string[]).includes(task.horizon ?? '')
-    ? (task.horizon as HorizonValue)
-    : UNSET_HORIZON
-  return sooner(set, deadlineHorizon(task.deadline_at, now))
+  return sooner(setHorizonOrUnset(task.horizon), deadlineHorizon(task.deadline_at, now))
 }
 
 /**
@@ -485,6 +624,13 @@ export function effectiveHorizon(
  * `week_start` (the quota changeover), and no part of Upcoming.
  */
 export type CheckInDay = 1 | 2 | 3 | 4 | 5 | 6 | 7
+/**
+ * RULE SEG-CHECKIN-DAY: users.check_in_day is a Luxon weekday, 1 = Monday to 7 = Sunday, defaulting
+ *   to 6 (Saturday). Any other value reads as the default. It is independent of week_start.
+ * Why: Saturday is the day the segments always used; the quota changeover (week_start) is a
+ *   separate setting.
+ * Ruling: 2026-10-12 spec §3 (src/lib/task-segments.ts:481).
+ */
 export const CHECK_IN_DAY_DEFAULT: CheckInDay = 6
 
 /** A stored/sent value as a CheckInDay — anything else reads as the default. */
@@ -499,6 +645,15 @@ function firstCheckInDayOf(month: DateTime, checkInDay: CheckInDay): DateTime {
   return first.plus({ days: (checkInDay - first.weekday + 7) % 7 })
 }
 
+/**
+ * RULE HZ-SEGMENT-CADENCE: Days comes round every day. Weeks comes round every check-in day. Months
+ *   comes round on the first check-in day of the month. Eventually comes round on the first
+ *   check-in day of January, April, July and October. All of these are OpenTask days.
+ * Why: Each horizon comes round at its own pace; on OpenTask days, so the check-in day is the day
+ *   as the user lives it (segmentState).
+ * Ruling: Trent 10-10 (src/lib/task-segments.ts:33); quarterly per Trent, months this build's call
+ *   (DEV_LOG.md:21).
+ */
 /**
  * The most recent day, on or before `today`, that this horizon's segment comes
  * round. `today` is a local start-of-day DateTime. Weeks: every check-in day;
@@ -615,6 +770,16 @@ export function segmentState(
   dayStart: string,
   checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
 ): { horizon: HorizonValue; state: SegmentState } | null {
+  /**
+   * RULE TGT-QUIET: A one-off with a picked target sits in no horizon segment. Before its day it
+   *   shows only on its Upcoming heads-up days, and from its day on it is overdue. A deck keeps a
+   *   task quiet the same way, and so does any target on today's OpenTask day, including later
+   *   today. An automatic target leaves the task on its horizon rhythm until the target arrives.
+   * Why: A target is a commitment for its day: the task leaves the horizon segment the moment it is
+   *   set rather than showing in two places (targetIsToday's comment).
+   * Ruling: 2026-10-12, reversing 10-10's 'horizon before the target' (docs/TASK-MODEL.md:28; spec
+   *   §1, §8.5).
+   */
   if (hasPickedTarget(task)) return null
   // ON DECK is quiet like a picked target (B6): no horizon segment. A future
   // deck shows in Upcoming on its heads-up days, today's in the On deck section.
@@ -627,6 +792,15 @@ export function segmentState(
   const dayOf = (iso: string) => localDay(iso, timezone, dayStart)
   const horizon = effectiveHorizon(task, now)
 
+  /**
+   * RULE SEG-CARRYOVER: A task appears once its segment has come round since it was last seen,
+   *   meaning the later of last_considered_at and created_at. It then shows every day until it is
+   *   considered. A task created on a shown day shows that day.
+   * Why: Anything not considered is reshown until it is, so nothing silently drops off a segment.
+   * Ruling: Trent 2026-10-11: 'anything not considered shows again the next day until it is'
+   *   (src/lib/task-segments.ts:600).
+   */
+  // (restates RULE SEG-ROW-STATE, home: src/lib/task-segments.ts)
   if (task.last_considered_at && +dayOf(task.last_considered_at) === +today) {
     return { horizon, state: 'considered' }
   }
@@ -649,6 +823,16 @@ export function segmentState(
 // THE TWO BADGES (spec §7, 2026-10-12 — Trent: "separate signals")
 // ===========================================================================
 
+/**
+ * RULE AGE-THRESHOLDS: The thresholds are: days 10 days, weeks (and unset) 1 calendar month, months
+ *   1 quarter, eventually 6 months. A task must be strictly past its threshold, computed with
+ *   calendar maths in the user's zone.
+ * Why: One set of thresholds, so the age badge, Process's growth ask and Aged out never disagree on
+ *   what is old.
+ * Ruling: One set: ruling Q7 2026-10-12. Days = 10: Trent 2026-10-29 ('the days threshold 10 is
+ *   settled for old, yes, for now').
+ * Restated at: src/lib/process-rules.ts (WHEN GROWTH ASKS).
+ */
 /**
  * AGE — only a task with NEITHER a target NOR a deadline (truly undated),
  * counted from `created_at`, and shown only past one threshold per horizon
@@ -673,6 +857,14 @@ export const AGE_THRESHOLDS: Record<HorizonValue, { days?: number; months?: numb
  */
 export const AGE_LABEL = 'old'
 
+/**
+ * RULE HZ-UNSET: Every rule treats a null horizon as weeks, but task.horizon stays null in the API.
+ *   The UI shows it as 'Weeks (unset)'.
+ * Why: Unset is not a choice the user made, so it is never reported as one, but every rule needs a
+ *   pace to read.
+ * Ruling: 'Weeks (unset)' wording: Trent 2026-10-29 (src/lib/task-model-words.ts:191).
+ * Restated at: src/lib/task-segments.ts (UNSET_HORIZON).
+ */
 /** A stored horizon as a HorizonValue, unset read as weeks. */
 export function setHorizonOrUnset(horizon: string | null): HorizonValue {
   return (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
@@ -723,6 +915,14 @@ function isQuotaOrReminder(task: BadgeTaskFields): boolean {
   return !!task.is_reminder || !!task.is_tracked || (task.progress_target ?? 1) > 1
 }
 
+/**
+ * RULE TGT-AGE: Only a one-off with neither a target nor a deadline shows 'old', and not one on
+ *   deck, a reminder, a quota or a done task. It shows once the task is past its horizon's
+ *   threshold, counted from created_at.
+ * Why: Age is the signal for a task with nothing else (a target, a deadline) telling the user it is
+ *   slipping.
+ * Ruling: Rulings Q6/Q7 2026-10-12; label 'old': Trent 2026-10-29.
+ */
 /**
  * The age badge's label ("old", `AGE_LABEL`), or null: not undated, a repeating task, a
  * reminder or quota, done, or not yet past its horizon's threshold.
@@ -780,6 +980,16 @@ export function canAttempt(task: BadgeTaskFields): boolean {
 /** `attempts_counted_through`'s format: a local calendar date. */
 export const ATTEMPTS_DATE_FORMAT = 'yyyy-MM-dd'
 
+/**
+ * RULE TGT-ATTEMPTS: An attempt is one OpenTask day (owner-local, with the switch on) on which the
+ *   task was over target. It counts the moment the target arrives, at most once a day. It never
+ *   counts before the target's day, the day the target was set, or the creation day. Only an
+ *   ordinary open task can count attempts (canAttempt). The count is computed on every read from
+ *   the stored checkpoint.
+ * Why: Attempts count real days of debt: moves the same day add nothing, and moving a target that
+ *   has not arrived adds nothing (the ATTEMPTS comment above).
+ * Ruling: Spec §7, rulings Q5 and Q10, 2026-10-12; OpenTask days B7 2026-10-19.
+ */
 /**
  * The task's attempts as of `now`, in the owner's `timezone`: the stored
  * checkpoint plus the over-target local days since it (see above). Pure; no
@@ -868,6 +1078,14 @@ export function putBackCountedThrough(
   return DateTime.max(counted, yesterday)!.toFormat(ATTEMPTS_DATE_FORMAT)
 }
 
+/**
+ * RULE TGT-ATTEMPTS-LABEL: The badge reads 'N×' only while the task has a target and at least one
+ *   attempt. Its tone is light for 1-2, medium for 3-6 and strong for 7 or more.
+ * Why: The badge speaks only while there is a target to have missed.
+ * Ruling: Spec §7, 2026-10-12; Trent ruled plum out natively 2026-10-28
+ *   (ios/Shared/TargetAge.swift:31).
+ * Restated at: ios/Shared/TargetAge.swift (attempts tones).
+ */
 /** The badge's label ("3×"), or null: no target, or no attempt yet. */
 export function attemptsLabel(task: { due_at: string | null; attempts?: number }): string | null {
   return task.due_at !== null && (task.attempts ?? 0) >= 1 ? `${task.attempts}×` : null
@@ -881,6 +1099,16 @@ export function attemptsTone(attempts: number): AttemptsTone {
   return 'light'
 }
 
+/**
+ * RULE TGT-ATTEMPTS-OFFER: At 3 attempts the row offers targetReset ('remove'), never
+ *   automatically. With the queue on, no offer goes to a task the rollover would strip; High and
+ *   deadline tasks keep theirs, a passed deadline included. With the queue off, nothing is offered
+ *   once the deadline has passed. 'auto' is never sent.
+ * Why: Dropping the target is offered, never done for the user; with the queue on, the rollover
+ *   does the offer's job on a strippable task.
+ * Ruling: Ruling Q9 2026-10-12; 'Back to auto?' gone 2026-10-22; retired on strippable tasks by
+ *   task-queue build-plan resolution 1 (2026-10-19).
+ */
 /**
  * At ATTEMPTS_OFFER_REMOVE (3×) the row and Process OFFER to drop the target
  * — never automatically: "Remove target?" on a one-off whose target the user
@@ -922,6 +1150,17 @@ export function attemptsOffer(
 export const QUEUE_KEEP_PRIORITY = 3
 
 /**
+ * RULE TQ-ROLLOVER-WHO: The rollover takes an open, ordinary, unarchived, target-anchored task
+ *   below High that has no deadline (passed or ahead) and has a target. That target must be marked
+ *   or before the rollover, and not set after it. Early-morning picks are spared. A deadline task
+ *   is never stripped, rolled, waited or queued.
+ * Why: High, Urgent and deadline tasks are never stripped: their nag is their protection.
+ *   ELIGIBLE_SQL in src/core/tasks/task-rollover.ts is the SQL twin (it also admits target-anchored
+ *   repeats, which roll or wait).
+ * Ruling: Task-queue resolution 3 (any deadline excluded).
+ * Restated at: src/core/tasks/task-rollover.ts (ELIGIBLE_SQL).
+ */
+/**
  * A task whose target the rollover may STRIP (task queue, 2026-10-19; spec
  * rule 2, resolution 3): a one-off below High with no deadline (passed or
  * ahead). The kind test only — the rollover also excludes reminders, quotas,
@@ -935,6 +1174,14 @@ export function queueStrippable(task: {
   return !task.rrule && task.deadline_at === null && (task.priority ?? 0) < QUEUE_KEEP_PRIORITY
 }
 
+/**
+ * RULE TQ-PANEL-KIND: A task is in the queue when queued_at is set and its target has not arrived.
+ *   It goes in queue_today if it was queued at or after the latest rollover, and in queue_previous
+ *   otherwise; queue_previous never drops a row.
+ * Why: A task the queue holds is in one panel and nowhere else (rule 7), and the queue drops
+ *   nothing (rule 6).
+ * Ruling: Resolution 6 (queue_previous accumulates); panel titles Trent 2026-10-21.
+ */
 /**
  * THE TASK QUEUE'S PANELS (task queue PR 3, 2026-10-19; spec rules 6-8,
  * resolution 6). Which panel a QUEUED task shows in today, or null when it is
@@ -965,6 +1212,15 @@ export function queueKind(
 }
 
 /**
+ * RULE SEG-ROW-STATE: A row is 'considered' if last_considered_at is today. Otherwise it is
+ *   'deferred' if segment_deferred_at is today ('Not today'). Otherwise it is 'waiting'. 'Today'
+ *   means the OpenTask day.
+ * Why: One considered state for every panel (rule 7), read on the OpenTask day the panels split on.
+ * Ruling: Rule 7: one considered state.
+ * Restated at: src/lib/task-segments.ts (segmentState), src/lib/task-segments.ts (upcomingState),
+ *   src/lib/aged-out.ts (agedOutState).
+ */
+/**
  * A queue row's state today: considered today (listed ticked behind "Show N
  * considered", like a horizon row), deferred today, else waiting. Never
  * hidden: the queue drops nothing (spec rule 6) — a one-off leaves it only by
@@ -991,6 +1247,14 @@ export function queueRowState(
   return 'waiting'
 }
 
+/**
+ * RULE TQ-PANEL-ORDER: Queue rows are sorted by priority, highest first. Then the older remembered
+ *   target comes first: queued_from_due_at, or for a deck the day-start moment of its day. Then id.
+ *   Try Tomorrow rows are not lifted to the top.
+ * Why: Priority first, then the oldest plan; Try Tomorrow rows carry a mark instead of being
+ *   lifted.
+ * Ruling: Designer 10-19 (Try Tomorrow not lifted).
+ */
 /**
  * The queue panels' order (spec "Medium stays in the strip … sorted by
  * priority"; the brief's tie-breaks): priority, highest first; then the OLDER
@@ -1029,6 +1293,15 @@ export interface QueueSortFields {
   queued_from_deck_day?: string | null
 }
 
+/**
+ * RULE DL-PASSED-MARKER: A deadline has passed when deadline_at is strictly before now. That drives
+ *   the red marker and stripe, the lean row's passed state, the deadline chip, Late mode and the
+ *   High sweep tier. The cap and some other checks instead treat a deadline at now as passed; see
+ *   issue I-04.
+ * Why: Once any target can be picked, the row still shows that the deadline has gone (the red
+ *   marker).
+ * Ruling: none recorded.
+ */
 /** Whether a deadline has passed — the over-target row's past-deadline marker. */
 export function isPastDeadline(deadlineAt: string | null, now: Date): boolean {
   return deadlineAt !== null && Date.parse(deadlineAt) < now.getTime()
@@ -1120,6 +1393,16 @@ function localHHMM(at: DateTime): string {
 }
 
 /**
+ * RULE TGT-OCCURRENCE: A repeat has one scheduled instant, occurrence_at. occurrenceDates derives
+ *   the target from it: on a target-anchored repeat the target is the occurrence itself. On a
+ *   deadline-anchored repeat it comes from the offsets before the deadline, and with no offsets
+ *   there is no target. A move changes only due_at. Done and skip write the next occurrence's
+ *   derived dates.
+ * Why: Keeping the occurrence apart from the target means a move never resets the schedule (no
+ *   double fire, no drifting deadline).
+ * Ruling: §6 2026-10-12; deadline-anchored 2026-10-21; no fake targets L1 2026-10-22.
+ */
+/**
  * THE DERIVATION: the dates of one occurrence of a repeating task (pure).
  *  - target-anchored: the occurrence is the target, and there is no deadline;
  *  - deadline-anchored: the occurrence is the deadline; the target is
@@ -1162,6 +1445,15 @@ export function occurrenceDates(
   return { occurrenceAt, targetAt, deadlineAt: occurrenceAt, leadFrom: null }
 }
 
+/**
+ * RULE DL-RELATIVE-DERIVE: A relative target is the deadline's local date minus days_before
+ *   (calendar days), at target_time under the DST rule, then clamped to the deadline, all in the
+ *   owner's zone. Nothing else does date maths on the offsets. Deadline-anchored repeats share this
+ *   derivation.
+ * Why: One derivation means one DST rule and one clamp; guard RT-G01 fails on date maths on the
+ *   offsets anywhere else.
+ * Ruling: Relative-targets plan, approved 2026-10-24 (guard RT-G01).
+ */
 /**
  * THE RELATIVE TARGET'S ONE DERIVATION (2026-10-24, pulled out of
  * `occurrenceDates`; docs/TASK-MODEL.md § Relative targets): the target that
@@ -1277,6 +1569,14 @@ export function relativeTargetOf(
 }
 
 /**
+ * RULE TGT-TARGET-MOVED: A repeat's target counts as moved when due_at differs from what
+ *   occurrenceDates gives for the occurrence. A moved target, or a deck, keeps its own occurrence
+ *   across a schedule change; a queued repeat does not.
+ * Why: A moved target, or a deck, makes this occurrence the user's own, so it survives a schedule
+ *   change.
+ * Ruling: PR 4a plan RT-1, ruling A1, 2026-10-22 (src/lib/task-segments.ts:1294).
+ */
+/**
  * Whether a repeating task's target was MOVED this occurrence: it is not what
  * `occurrenceDates` derives for its scheduled occurrence. False with no target
  * (on deck) or no occurrence.
@@ -1355,6 +1655,14 @@ export function occurrenceTarget(
   return occurrenceDates(task, task.occurrence_at, timezone).targetAt
 }
 
+/**
+ * RULE DL-SCHEDULE-BASE: Every from_due advance of a deadline-anchored repeat starts from the first
+ *   rule occurrence on or after occurrence_at. So pulling a deadline earlier never produces a
+ *   second occurrence in its period.
+ * Why: Walking on from a rescheduled date would make a second occurrence in the same period (Fri
+ *   pulled to Thu, done Thu, back that Fri).
+ * Ruling: 2026-10-21 deadline-anchored repeats.
+ */
 /**
  * WHERE AN ADVANCE STARTS (2026-10-21): the occurrence done, skip and skip
  * until advance FROM — the rule's own instant this occurrence stands for.
@@ -1667,6 +1975,15 @@ export const RELATIVE_TARGET_MESSAGES: Record<RelativeTargetProblem, string> = {
 }
 
 /**
+ * RULE DL-RELATIVE-VALIDATION: On a repeat, offsets are refused if they would put the target later
+ *   than the deadline on the same day, or on or before the previous occurrence's deadline. On a
+ *   one-off, each of these is a 400: no deadline, only one of the pair, target_at together with
+ *   offsets, deadline_at: null with offsets, a reminder or quota, or a deck write.
+ * Why: A clamp would silently change a rule the user typed, so it is refused instead. The one-off
+ *   half is relativeOneOffProblem (src/core/tasks/relative-target.ts).
+ * Ruling: A6 (refused, never clamped); ruling 7, relative-targets plan approved 2026-10-24.
+ */
+/**
  * WRITE-TIME VALIDATION of a deadline-anchored repeat's relative target — the
  * POST, PATCH, bulk edit and the migration all ask it. Refused, never
  * clamped (a clamp would silently change a rule the user typed):
@@ -1701,6 +2018,16 @@ export function relativeTargetProblem(
   return null
 }
 
+/**
+ * RULE DL-LEAD-TABLE: deadlineLeadDays(wait) gives 0 for a wait under 2 days, 1 (the day before) up
+ *   to 7 days, 3 under 16 days, and 4 for 16 days or more. It is the single table behind the
+ *   automatic target, a repeat's default offsets, the deadlines page's lead day and Upcoming's
+ *   default Later lead.
+ * Why: One table everywhere ("one rule everywhere"), so replacing the automatic targets is one
+ *   change.
+ * Ruling: A1 decided 2026-10-21; Trent 2026-10-21 'one rule everywhere'.
+ * Restated at: src/lib/task-segments.ts (leadDaysForWait).
+ */
 /**
  * THE DEADLINE LEAD (A1, decided 2026-10-21): how many local days before a
  * deadline its default target falls, by the WAIT — the local days from the
@@ -1921,6 +2248,14 @@ function repeatLeadFrom(
 export const LEAD_DAYS_TOO_LONG_MESSAGE =
   'Lead time (lead_days) must be shorter than the time between occurrences'
 
+/**
+ * RULE DL-LEAD-OVERRIDE: lead_days ranges from 1 to 90 and null means use the table. On a repeat it
+ *   applies to the whole series and must be shorter than the rule's smallest gap between
+ *   occurrences; otherwise the write is a 400, never a clamp.
+ * Why: A lead as long as the gap would put every occurrence on the page, or in Upcoming's Later,
+ *   the moment the last one was done.
+ * Ruling: 2026-10-22 (page); every repeat since the Upcoming split, 2026-10-25.
+ */
 export function leadDaysProblem(
   leadDays: number | null,
   rule: RepeatRule,
@@ -1940,6 +2275,15 @@ export interface LeadFields extends RepeatSchedule {
   progress_target?: number
 }
 
+/**
+ * RULE DL-LEAD-DAY: lead_from is stored per instance. It is the deadline's OpenTask day D minus
+ *   lead_days, or minus the lead-table value when lead_days is unset. It is clamped to no earlier
+ *   than today and no later than D. It is re-derived on every deadline, schedule, kind or override
+ *   write and on every advance.
+ * Why: The lead day is a target-less deadline task's heads-up, so it is stored per instance and
+ *   re-derived by every write that could move it.
+ * Ruling: Deadlines-page plan approved 2026-10-22; L9.
+ */
 /**
  * THE LEAD DAY A ROW CARRIES (`lead_from`), derived now, or null: no
  * deadline, a reminder or a quota, a deadline-anchored repeat WITH a relative
@@ -1991,6 +2335,17 @@ export type DeadlinePlace =
    */
   | null
 
+/**
+ * RULE DL-PAGE-MEMBERSHIP: The deadlines page holds an open, ordinary, unqueued task with
+ *   deadline_at set and due_at NULL. That is a one-off, or a deadline-anchored repeat with no
+ *   relative target. The page exists only with the switch on and the ?deadlines=1 opt-in, and it
+ *   comes first in task_segments.
+ * Why: The page is where a deadline task with no target lives, instead of a fake target.
+ * Ruling: Deadlines-page plan approved 2026-10-22; Trent 2026-10-22 (first; 'the only queue page
+ *   that nags'); ruling 2.
+ * Restated at: src/core/notifications/deadline-nags.ts (hasDeadlineCandidate),
+ *   src/core/tasks/task-segments.ts (deadlinePlacer).
+ */
 /** Whether a task belongs to the page's rules: a deadline, and no target. */
 export function isDeadlinePageTask(task: {
   due_at: string | null
@@ -2013,6 +2368,23 @@ export function inSafetyNet(
   return openTaskToday(timezone, now, rolloverTime) >= shiftDay(d, -1, timezone)
 }
 
+/**
+ * RULE DL-PLACE: From lead_from the row is on the page, and once seen it is 'considered' for that
+ *   OpenTask day. From the day before the deadline onward, past the deadline included, the safety
+ *   net holds it as 'waiting' even when seen; only a target or done takes it off. On a deck day
+ *   outside the safety net, On deck holds it instead. Before the lead day it is placed nowhere.
+ * Why: Seeing a row answers the page until the deadline is close; in the safety net only acting (a
+ *   target or done) does.
+ * Ruling: Nag-map ruling 3 (2026-10-22); A8; A7.
+ */
+/**
+ * RULE DL-UPCOMING-RULE3: With the deadlines page drawn, a deadline task with no target never
+ *   appears in Upcoming, and a future deck on one gets no Upcoming row either. Its lead day is its
+ *   heads-up. A relative target is a real target and does get Upcoming rows.
+ * Why: The deadlines page alone holds a target-less deadline task, so it is never in two places.
+ * Ruling: Upcoming-split plan approved 2026-10-25 (rule 3; plan Q8 'strict').
+ * Restated at: src/core/tasks/task-segments.ts (getTaskSegments, placeDeadline).
+ */
 /**
  * WHERE A TARGET-LESS DEADLINE TASK STANDS TODAY (the caller has already
  * chosen an open, ordinary, unqueued task with a deadline and no target —
@@ -2079,6 +2451,11 @@ function derivedLeadDay(
 }
 
 /**
+ * RULE DL-ORDER: Rows are ordered by priority (highest first), then the nearest deadline, then id.
+ * Why: Priority first, then the deadline that is closest.
+ * Ruling: A4, approved 2026-10-22.
+ */
+/**
  * The page's order (A4, APPROVED 10-22): priority, highest first; then the
  * NEAREST deadline; then id.
  */
@@ -2103,6 +2480,15 @@ export const LEAD_DEFER_MESSAGES: Record<LeadDeferRefusal, string> = {
   not_on_page: 'Only a deadline task with no target is on the deadlines page',
 }
 
+/**
+ * RULE DL-DEFER-LEAD: Defer moves this instance's lead_from to a later day, from tomorrow up to two
+ *   days before the deadline; with no day given it is tomorrow. It is refused in the safety net,
+ *   after that last day, for a day that is not later, and for a task with a target or no deadline.
+ *   It stamps target_set_at and writes one task_segment undo entry for what moved. With the switch
+ *   off it answers 409.
+ * Why: Defer is acting ("silencing = acting"), but the safety net cannot be deferred away.
+ * Ruling: A3 (tap = tomorrow, hold = day menu), plan §3, 2026-10-22; nag-map ruling 3.
+ */
 /**
  * DEFER (plan §3): moves THIS instance's lead day to `day` — later than
  * today and than its current lead day, and at most D−2 (the safety net's start minus one). Refused once
@@ -2197,6 +2583,7 @@ export function waitDays(targetDay: DateTime, setDay: DateTime): number {
   return Math.round(targetDay.diff(setDay, 'days').days)
 }
 
+// (restates RULE DL-LEAD-TABLE, home: src/lib/task-segments.ts)
 /**
  * THE 3/4 LEAD: the default Later day for a long wait, and the far end of the
  * one lead table (`deadlineLeadDays`, which the deadlines page and the
@@ -2207,6 +2594,16 @@ export function leadDaysForWait(wait: number): number {
   return wait < HEADS_UP_LONG_WAIT ? HEADS_UP_EARLY_LEAD_DAYS : HEADS_UP_LONG_LEAD_DAYS
 }
 
+/**
+ * RULE UP-DAYS: A is the anchor's OpenTask day, the set day is the OpenTask day of target_set_at,
+ *   and the wait is A minus the set day. The lead is lead_days, or the lead table's value. The
+ *   Tomorrow row is A−1 and shows only when the wait is at least 2. The Later row is A minus the
+ *   lead, but no earlier than the day after the set day, and shows only if that is on or before
+ *   A−2.
+ * Why: Heads-ups before the day, counted in OpenTask days so DST and late nights give the right
+ *   wait (the UPCOMING comment above).
+ * Ruling: Lead table A1 2026-10-21; split plan approved 2026-10-25.
+ */
 /**
  * THE TWO UPCOMING DAYS for an anchor on `anchorDay` set on `setDay` (both
  * local start-of-day), with the lead override `leadDays` (null = the default
@@ -2241,6 +2638,7 @@ export interface UpcomingTaskFields extends TargetFields {
   lead_days?: number | null
 }
 
+// (restates RULE TGT-SET-AT, home: src/core/tasks/target-set.ts)
 /**
  * When the target was set: `target_set_at`, or — for a row from before the
  * column existed — `created_at`, and for a repeating task the later of that
@@ -2252,6 +2650,13 @@ export function targetSetAtOf(task: UpcomingTaskFields): string {
   return done && Date.parse(done) > Date.parse(task.created_at) ? done : task.created_at
 }
 
+/**
+ * RULE UP-MEMBERS: Upcoming holds one-offs with a picked target (relative targets included),
+ *   repeats' next occurrences, and future decks (with ?deck=1). It never holds reminders, quotas or
+ *   an automatic target. With the deadlines page drawn, it never holds a target-less deadline task.
+ * Why: Upcoming is the one exception to "a target makes a task quiet until its date".
+ * Ruling: 2026-10-12 spec §2; rule 3 2026-10-25.
+ */
 /**
  * Whether the task belongs in Upcoming at all (whatever today is): a target
  * the user PICKED on a one-off (§8.5 — an automatic deadline target never has
@@ -2290,6 +2695,14 @@ function upcomingAnchor(
   return { day: dayOf(task.due_at!), target: task.due_at! }
 }
 
+/**
+ * RULE UP-PLACEMENT: A Tomorrow row shows only on A−1. A Later row shows from its Later day and
+ *   carries over until it is seen, up to A−2 at the latest. Seen is tracked per section. On day A
+ *   the task leaves Upcoming.
+ * Why: One row a day; seeing it in Later does not silence Tomorrow, whose day comes after that
+ *   stamp.
+ * Ruling: none recorded.
+ */
 /**
  * Where the task stands in today's Upcoming, or null when it is not there:
  * - its anchor is today or earlier (over target / on deck), or it has none;
@@ -2335,6 +2748,7 @@ export function upcomingState(
     return null
   }
 
+  // (restates RULE SEG-ROW-STATE, home: src/lib/task-segments.ts)
   const considered = task.last_considered_at ? dayOf(task.last_considered_at) : null
   if (considered && +considered === +today) return { state: 'considered', target, section }
   if (considered && considered >= from) return null
@@ -2401,6 +2815,20 @@ function nightWords(date: string, timezone: string): string {
 }
 
 /**
+ * RULE TGT-REMOVE: Remove target is offered only on a one-off with a picked target, with or without
+ *   a deadline. It is never offered with no target, on an automatic target or on a repeat, whose
+ *   target goes only with Stop repeating. It sends target_at: null. With the switch on, the task
+ *   goes back to its horizon segment, or onto the deadlines page if it has a deadline. With the
+ *   switch off, the server stores the automatic target again. Every Upcoming row offers Today; only
+ *   a picked one-off also offers Remove target.
+ * Why: A repeating task's target goes with its recurrence, and an automatic target has nothing to
+ *   reset to (ruling Q9). Every surface that offers it reads it here.
+ * Ruling: Ruling Q9 2026-10-12 (no reset on an automatic target). 'Remove target' replaced 'Back to
+ *   auto' 2026-10-22 (commit 3546108a). Not in the clock menu since 2026-10-30 (commit 41613af4,
+ *   Trent). Repeats: editor PR 4c, 2026-10-22.
+ * Restated at: src/lib/task-segments.ts (upcomingRowActions).
+ */
+/**
  * Whether a target can be removed ("Remove target", 2026-10-22 — it replaced
  * "Back to auto"): a one-off with a target the user picked, deadline or not.
  * Removed, a task with no deadline goes back to its horizon segment, and one
@@ -2421,6 +2849,7 @@ export function targetReset(task: {
   return 'remove'
 }
 
+// (restates RULE TGT-REMOVE, home: src/lib/task-segments.ts)
 /**
  * Which buttons an Upcoming row offers (2026-10-12): Today and its picker on
  * EVERY row — since the occurrence is kept apart from the target (§6), moving
@@ -2498,6 +2927,15 @@ export function parseDeckDay(day: string, timezone: string): DateTime | null {
 }
 
 /**
+ * RULE DECK-DAY: on_deck_day is the owner's OpenTask date. A day before today's is a 400, and
+ *   omitting the day means today. Between midnight and the day start, 'today' is the day that is
+ *   ending.
+ * Why: The deck day is the day as the user lives it, so a late-night deck for "today" ends with
+ *   that day.
+ * Ruling: 'Day starts at' PR 2, Trent 2026-10-24: everything uses the OpenTask date (replaces
+ *   red-team A2).
+ */
+/**
  * What is wrong with a deck day, or null: not a yyyy-MM-dd date, or a day
  * before today's OpenTask date (the earliest deck is today). `dayStart`: the
  * owner's day boundary (`dayBoundaryForUser` / `useDayStart`).
@@ -2516,6 +2954,15 @@ export function deckDayProblem(
 }
 
 /**
+ * RULE DECK-TODAY: A task is on deck today when on_deck_day is on or before today's OpenTask date,
+ *   so a leftover counts until the rollover strips it. Its target must not have arrived. In the
+ *   safety net the deadlines page holds it instead. Today's decks are ordered by priority, then id.
+ * Why: A rollover that has not run yet leaves yesterday's leftovers counting until it sends them to
+ *   the queue.
+ * Ruling: A13.
+ * Restated at: src/core/tasks/deck.ts (onDeckToday).
+ */
+/**
  * Whether the task is on deck for TODAY (the OpenTask day): its day, or an
  * earlier one not yet stripped — a rollover that has not run yet leaves
  * yesterday's leftovers counting until it sends them to the queue.
@@ -2529,6 +2976,15 @@ export function deckIsToday(
   return !!task.on_deck_day && task.on_deck_day <= openTaskDayOf(now, timezone, dayStart)
 }
 
+/**
+ * RULE DECK-ELIGIBLE: Any open task can be decked except a reminder, a quota, or a done or trashed
+ *   task, and repeats are allowed. The deck endpoint skips and counts the rest, while PATCH and
+ *   bulk edit refuse them. Creating a repeat on deck is refused. Enrichment never decks a repeat or
+ *   a deadline task.
+ * Why: Reminders and quotas have their own rows and no target to plan; a done or trashed task has
+ *   nothing to plan.
+ * Ruling: Repeating decks: Trent 2026-10-20 ('It needs to be added.').
+ */
 /**
  * The kind test: what keeps a task off deck altogether, or null. A repeating
  * task is no longer one of them (2026-10-20); `'recurring'` stays in the type
@@ -2550,6 +3006,15 @@ export function deckSkip(task: {
   return null
 }
 
+/**
+ * RULE DECK-A1: While its deadline is ahead, a deadline task (one-off or repeat) may be decked for
+ *   any day up to and including the deadline's OpenTask day. A passed deadline gives
+ *   'deadline_nagging' and a later day gives 'after_auto_target'. If a deadline is added or moved
+ *   so it falls before the deck day, the same write takes the deck off.
+ * Why: A deck must never sit on a task whose deadline has passed, or would pass while decked; the
+ *   safety net still holds a deck on D.
+ * Ruling: Deadlines-page plan §5, approved 2026-10-22 (replaces the 10-20 'A1 strict').
+ */
 /**
  * A1, THE DEADLINES PAGE'S RULE (2026-10-22, plan §5 — replaces the 10-20
  * "before the automatic target's day" rule): a deadline task, one-off or

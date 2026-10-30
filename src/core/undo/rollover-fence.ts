@@ -26,6 +26,14 @@
 import type Database from 'better-sqlite3'
 import type { UndoSnapshot } from '@/types'
 
+/**
+ * RULE TQ-FENCE: The cron writes no undo entry. It stamps rolled_over_at on every task it changes.
+ *   Undo and redo skip that task's snapshot in any entry written before the stamp. Each changed
+ *   task gets one activity row with source 'rollover'.
+ * Why: Undoing last night's sweep must not put a stripped target back behind the rollover's back
+ *   (the module comment).
+ * Ruling: B5.
+ */
 /** Whether the rollover changed this snapshot's task after `entryCreatedAt`. */
 export function rolledOverSince(
   tx: Database.Database,

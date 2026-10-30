@@ -7,6 +7,7 @@ import { ValidationError } from '@/core/errors'
 import { isValidRRule, isPeriodRRule, normalizeRRule } from '@/core/recurrence/rrule-builder'
 import { canonicalLabels } from '@/lib/label-vocabulary'
 import { MAX_REPEAT_COUNT, REPEAT_END_MESSAGES } from '@/core/tasks/repeat-schedule'
+import { HORIZON_ORDER } from '@/lib/task-segments'
 
 /**
  * ISO 8601 datetime string validator
@@ -332,7 +333,8 @@ function oneEnd(data: { repeat_count?: number | null; repeat_until?: string | nu
   return !(data.repeat_count != null && data.repeat_until != null)
 }
 
-export const HORIZONS = ['days', 'weeks', 'months', 'eventually'] as const
+// (restates RULE HZ-VALUES, home: src/lib/task-segments.ts) — the one list, under the schemas' name.
+export const HORIZONS = HORIZON_ORDER
 export type Horizon = (typeof HORIZONS)[number]
 const horizon = z.enum(HORIZONS).nullable()
 
@@ -424,9 +426,18 @@ export const taskUpdateSchema = z
     // growth clock (`horizon_set_at`) without changing it. Needed because
     // sending the same horizon is a no-op, and an unset horizon must stay unset.
     affirm_horizon: z.boolean().optional(),
+    /**
+     * RULE DL-LEGACY-FLAGS: allow_past_deadline(_ids), cap_at_deadline(_ids) and deadline_nag_off
+     *   are accepted and ignored, because every move is capped anyway. cap_at_deadline only marks a
+     *   single PATCH's caller for the A3 feedback push.
+     * Why: A move is a move, always capped, and old clients must keep working.
+     * Ruling: Rulings Q1/Q4, 2026-10-12.
+     */
     // RETIRED 2026-10-12 (§8): accepted from old clients and ignored. An old
     // "Remove target" sends it with `due_at: null`, which on a deadline task
-    // now means "back to the automatic target".
+    // means "back to the automatic target" with the task-queue switch off; with
+    // it on there is no automatic target and the task goes on the deadlines
+    // page (2026-10-22).
     deadline_nag_off: z.boolean().optional(),
     rrule: rruleString,
     recurrence_mode: recurrenceMode.optional(),
@@ -450,6 +461,7 @@ export const taskUpdateSchema = z
     labels: labels.optional(),
     notes: z.string().max(10000, 'Notes too long').nullable().optional(),
     auto_snooze_minutes: autoSnoozeMinutes.optional(),
+    // (restates RULE TGT-MOVE-ONE-GESTURE, home: src/core/tasks/helpers/collect-field-changes.ts)
     // §6 (2026-10-12, ruling Q4): there is no snooze/re-target split any more —
     // every date change is one "move target". `retarget` (alias
     // `reset_original_due_at`), `allow_past_deadline` and `cap_at_deadline`
@@ -689,6 +701,15 @@ export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>
 
 /**
  * Validate and transform input
+ */
+/**
+ * RULE TGT-FIELD: A task's target (when nagging starts) is stored in due_at. The API calls it
+ *   target_at and also returns due_at, now a deprecated alias, with the same value. A request that
+ *   sends both with different values is a 400.
+ * Why: Older native builds, Shortcuts and the desks send due_at, so both names are accepted; two
+ *   different values are refused rather than guessed.
+ * Ruling: none recorded.
+ * Restated at: src/lib/format-task.ts (formatTaskResponse).
  */
 /**
  * The target's API names (2026-10-10). `target_at` is the primary name for the

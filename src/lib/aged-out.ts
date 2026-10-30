@@ -34,8 +34,8 @@ import {
 import {
   AGE_THRESHOLDS,
   HORIZON_ORDER,
-  UNSET_HORIZON,
   latestSegmentDay,
+  setHorizonOrUnset,
   type CheckInDay,
   type HorizonValue,
   type SegmentState,
@@ -51,13 +51,19 @@ export const AGED_OUT_ENABLED = process.env.NEXT_PUBLIC_AGED_OUT === '1'
 export const AGED_OUT_QUERY = '&aged=1'
 
 /**
+ * RULE AG-GROW-STEP: Grow steps Days to Weeks to Months to Eventually, with unset counting as
+ *   Weeks, and Eventually goes nowhere. With 'to', the task moves to the picked horizon instead.
+ *   Grow runs as a bulk edit, so the clock restarts, the keep count goes to 0 and the task is
+ *   considered today.
+ * Why: Grow is one step out; the hold menu lets the user pick the horizon instead.
+ * Ruling: Grow hold menu: Trent 2026-10-29 (src/core/tasks/task-segments.ts:821).
+ */
+/**
  * Grow: one step out — Days → Weeks → Months → Eventually; unset counts as
  * Weeks, so it grows to Months. Eventually has nowhere to go (null).
  */
 export function growStep(horizon: string | null): HorizonValue | null {
-  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
-    ? (horizon as HorizonValue)
-    : UNSET_HORIZON
+  const on = setHorizonOrUnset(horizon)
   return HORIZON_ORDER[HORIZON_ORDER.indexOf(on) + 1] ?? null
 }
 
@@ -67,6 +73,15 @@ export interface AgedOutFields extends ProcessTaskFields {
   segment_deferred_at: string | null
 }
 
+/**
+ * RULE AG-MEMBERS: Aged out holds exactly the tasks growthAsk would ask about, and they join only
+ *   if already aged at the start of the latest check-in day. They carry over daily until handled.
+ *   On those days the task is in no horizon segment. The segment sits behind NEXT_PUBLIC_AGED_OUT
+ *   and ?aged=1.
+ * Why: Tasks that outlived their horizon are processed in the queue, and never also shown in their
+ *   horizon segment (the module comment).
+ * Ruling: Trent 2026-10-29 first pass (src/lib/aged-out.ts:2).
+ */
 /**
  * Where a task stands in Aged out today, or null when it is not there:
  * 'considered' when grown or kept today (it stays as a handled row),
@@ -94,6 +109,7 @@ export function agedOutState(
   const shownDay = latestSegmentDay('weeks', openTaskLocalDay(now, timezone, dayStart), checkInDay)
   const shownStart = openTaskLocalDayStart(shownDay, timezone, dayStart)
   if (!growthAsk(task, timezone, shownStart, dayStart)) return null
+  // (restates RULE SEG-ROW-STATE, home: src/lib/task-segments.ts)
   return onToday(task.segment_deferred_at) ? 'deferred' : 'waiting'
 }
 
@@ -148,9 +164,7 @@ export function ageWords(
  * ">1 month", ">3 months" — its `AGE_THRESHOLDS` entry, unset read as Weeks.
  */
 export function cutoffWords(horizon: string | null): string {
-  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
-    ? (horizon as HorizonValue)
-    : UNSET_HORIZON
+  const on = setHorizonOrUnset(horizon)
   const { days, months } = AGE_THRESHOLDS[on]
   const n = days ?? months ?? 0
   return `>${n} ${days !== undefined ? 'day' : 'month'}${n === 1 ? '' : 's'}`
@@ -165,9 +179,7 @@ export function cutoffWords(horizon: string | null): string {
 export type AgedOutGroup = Exclude<HorizonValue, 'eventually'>
 
 export function agedOutGroup(horizon: string | null): AgedOutGroup {
-  const on = (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
-    ? (horizon as HorizonValue)
-    : UNSET_HORIZON
+  const on = setHorizonOrUnset(horizon)
   return on === 'eventually' ? 'months' : on
 }
 
@@ -180,6 +192,12 @@ export function agedClockStart(
   return Math.max(onSince, kept)
 }
 
+/**
+ * RULE AG-GROUPS: Rows are grouped Days, then Weeks (unset included), then Months. Within each
+ *   group the oldest age clock comes first, then id.
+ * Why: All the days, then the weeks, then the months together, oldest first within each.
+ * Ruling: Trent 2026-10-29.
+ */
 /**
  * Aged out's order: by group (Days, Weeks, Months), then the oldest first —
  * the clock that started longest ago — then id. It was priority, then id,

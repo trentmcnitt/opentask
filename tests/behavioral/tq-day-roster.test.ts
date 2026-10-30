@@ -94,7 +94,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
   })
   afterAll(() => teardownTestDb())
 
-  test('TQ-R01: 75 came round; deck, Today and done on three → "3 of 75", not "0 of 72"', () => {
+  test('TQ-R01r: 75 came round; deck, Today and done on three → "3 of 75", not "0 of 72"', () => {
     const tasks = daysTasks(75)
     expect(counts(segment('2026-10-22T08:00', 'days'))).toBe('0 of 75')
 
@@ -120,7 +120,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(counts(segment('2026-10-22T09:05', 'days', false))).toBe('0 of 72')
   })
 
-  test('TQ-R02: a consider raises N, M stays; handled rows are not duplicated by an Undo', () => {
+  test('TQ-R02r: a consider raises N, M stays; handled rows are not duplicated by an Undo', () => {
     const tasks = daysTasks(5)
     expect(counts(segment('2026-10-22T08:00', 'days'))).toBe('0 of 5')
     setClock('2026-10-22T09:00')
@@ -136,7 +136,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(days.tasks.filter((r) => r.task.id === tasks[1].id)).toHaveLength(1)
   })
 
-  test('TQ-R03: a row that left unhandled — trashed — drops out of M', () => {
+  test('TQ-R03r: a row that left unhandled — trashed — drops out of M', () => {
     const tasks = daysTasks(4)
     expect(counts(segment('2026-10-22T08:00', 'days'))).toBe('0 of 4')
     setClock('2026-10-22T09:00')
@@ -144,7 +144,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(counts(segment('2026-10-22T09:01', 'days'))).toBe('0 of 3')
   })
 
-  test('TQ-R04: an Upcoming heads-up whose target arrives is not "handled"', () => {
+  test('TQ-R04r: an Upcoming heads-up whose target arrives is not "handled"', () => {
     // A picked target tomorrow: a heads-up row in Upcoming today.
     const t = makeAt('2026-10-20T09:00', {
       title: 'Dentist forms',
@@ -157,7 +157,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(segment('2026-10-22T09:30', 'upcoming')).toBeUndefined()
   })
 
-  test('TQ-R05: a new day starts a new roster', () => {
+  test('TQ-R05r: a new day starts a new roster', () => {
     const tasks = daysTasks(3)
     expect(counts(segment('2026-10-22T08:00', 'days'))).toBe('0 of 3')
     setClock('2026-10-22T09:00')
@@ -167,7 +167,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(counts(segment('2026-10-23T08:00', 'days'))).toBe('0 of 2')
   })
 
-  test("TQ-R06: the queue's panel counts a consider that takes a one-off out of the queue", () => {
+  test("TQ-R06r: the queue's panel counts a consider that takes a one-off out of the queue", () => {
     // Targeted Wed 16:00, missed: Thursday's 06:30 rollover queues it.
     const t = makeAt('2026-10-21T09:00', {
       title: 'Call the bank',
@@ -198,7 +198,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(segment('2026-10-22T07:15', 'queue_today')).toBeUndefined()
   })
 
-  test('TQ-R08: a one-off done, reopened, then decked reads "deck", not "done"', () => {
+  test('TQ-R08r: a one-off done, reopened, then decked reads "deck", not "done"', () => {
     const [t] = daysTasks(2)
     expect(counts(segment('2026-10-22T08:00', 'days'))).toBe('0 of 2')
     setClock('2026-10-22T09:00')
@@ -212,7 +212,7 @@ describe('TQ-R: the day roster keeps "N of M" fixed for the day', () => {
     expect(days.tasks.find((r) => r.task.id === t.id)?.left).toBe('deck')
   })
 
-  test('TQ-R07: reading the roster is bookkeeping — no undo entry, no sync event', () => {
+  test('TQ-R07r: reading the roster is bookkeeping — no undo entry, no sync event', () => {
     daysTasks(2)
     const undoRows = () =>
       (getDb().prepare('SELECT COUNT(*) AS n FROM undo_log').get() as { n: number }).n

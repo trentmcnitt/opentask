@@ -166,6 +166,7 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
   return result
 }
 
+// (restates RULE DECK-TODAY, home: src/lib/task-segments.ts)
 /**
  * TODAY'S DECKS (A13; the On deck section D2 draws, and the slot push's
  * count): the user's own open tasks on deck for today's OpenTask date or an
@@ -174,6 +175,8 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
  * target on the dashboard, not on deck (the A1 checks keep this from
  * happening; a deck can only meet its deadline's automatic target in the
  * minutes between a morning_time earlier than the rollover and the rollover).
+ * A1 strict is the 10-20 rule; the deadlines page replaced it 2026-10-22. A
+ * deck with a target: PARKED I-01/I-02.
  */
 export function onDeckToday(userId: number, timezone: string, now: Date = new Date()): Task[] {
   const rows = getDb()

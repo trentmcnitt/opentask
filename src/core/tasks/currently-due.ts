@@ -36,6 +36,7 @@ interface DueCandidate {
   timezone: string
 }
 
+// (restates RULE TGT-OVERDUE, home: src/core/recurrence/occurrence.ts)
 /**
  * Candidate rows for a user: every recurring task (its due_at is untrustworthy,
  * so the schedule must be consulted) plus one-offs already past due.
@@ -68,7 +69,10 @@ function fetchDueCandidates(userId: number, now: Date): DueCandidate[] {
           -- On deck (2026-10-20): a deck never nags — a decked repeating
           -- task (no target) must not have its schedule asked; a deck with a
           -- target is a deadline's automatic one, which protects regardless
-          -- (effectiveDueAt says the same).
+          -- (effectiveDueAt says the same). That is the 10-20 A1, replaced
+          -- 2026-10-22 by the deadlines page. A deck with a target: PARKED
+          -- I-01/I-02.
+          -- (restates RULE DECK-NEVER-NAGS, home: src/core/recurrence/occurrence.ts)
           AND (t.on_deck_day IS NULL OR t.due_at IS NOT NULL)
           AND (
             t.rrule IS NOT NULL

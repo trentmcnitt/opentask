@@ -13,6 +13,7 @@
 
 import { getDb } from '@/core/db'
 
+// (restates RULE NOTIFIABLE-USERS, home: src/core/notifications/notifiable-users.ts)
 /**
  * The condition on `users` (aliased `alias`) for a query that joins its own
  * user columns — the overdue checker's task JOIN.
@@ -26,6 +27,13 @@ export interface NotifiableUser {
   timezone: string
 }
 
+/**
+ * RULE NOTIFIABLE-USERS: Cron senders notify only users with notifications_enabled = 1 and is_demo
+ *   = 0.
+ * Why: One rule for every cron sender, instead of relying on the demo seeding notifications off.
+ * Ruling: Nag-map fix #10, 2026-10-22.
+ * Restated at: src/core/notifications/notifiable-users.ts (notifiableUserSql).
+ */
 /** Every user the cron senders may notify, by id. */
 export function notifiableUsers(): NotifiableUser[] {
   return getDb()

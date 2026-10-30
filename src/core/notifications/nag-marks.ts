@@ -111,6 +111,15 @@ function nearestMark(target: number, grid: number, timezone: string): number {
 }
 
 /**
+ * RULE MARKS-GRID: First pushes are exact. A repeat lands on the local clock mark nearest the last
+ *   push plus the interval, a tie going to the earlier mark. The grid is 60 minutes for intervals
+ *   of 60 or more, otherwise the largest divisor of 60 that does not exceed the interval. Overdue
+ *   repeats are worked out from the due time alone, with no stored state.
+ * Why: Repeats read as "the top of the hour", not "every 60 minutes from whenever" (the module
+ *   comment).
+ * Ruling: Trent 2026-10-26 (src/core/notifications/nag-marks.ts:1).
+ */
+/**
  * When the repeat after a send at `last` goes: the local clock mark nearest
  * `last + I` (to the minute), a tie to the earlier mark, judged in the offset
  * at the mark. `last` is floored to its minute first — the cron runs on the
