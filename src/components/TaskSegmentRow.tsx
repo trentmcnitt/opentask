@@ -1,7 +1,8 @@
 'use client'
 
-import { Check, ChevronDown, Clock3, FolderOpen, Forward, Sprout } from 'lucide-react'
+import { Check, ChevronDown, Clock3, FolderOpen, Forward, Sprout, X } from 'lucide-react'
 import { DateTime } from 'luxon'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { recurrenceSummary } from '@/lib/recurrence-summary'
@@ -20,6 +21,7 @@ import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
+import { requestShowInList, showInListHref } from '@/lib/show-in-list'
 import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
@@ -27,12 +29,7 @@ import { getPriorityOption } from '@/lib/priority'
 import { useProjects } from '@/components/ProjectsProvider'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { LabelBadges } from '@/components/LabelBadges'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   HORIZON_LABELS,
   UNSET_HORIZON_WORDS,
@@ -500,6 +497,8 @@ function SegmentRowPeek({
   segmentHorizon: SegmentKind
 }) {
   const { task } = row
+  const pathname = usePathname()
+  const router = useRouter()
   return (
     <RowPeekBody
       title={task.title}
@@ -521,6 +520,13 @@ function SegmentRowPeek({
         // would stack a popover behind a dialog (the reminder panel's rule).
         actions.closePeek()
         actions.openDetails(task)
+      }}
+      onShowInList={() => {
+        // The dashboard's list (2026-10-30): asked directly when it is on
+        // screen, else opened on it (`src/lib/show-in-list.ts`).
+        actions.closePeek()
+        if (pathname === '/') requestShowInList(task.id)
+        else router.push(showInListHref(task.id))
       }}
       onDelete={() => {
         actions.closePeek()
@@ -1798,29 +1804,32 @@ function UpcomingMeta({
       )}
       {gap.target &&
         (reset ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
+          // A picked target's time chip (`TimeChip`) with an X inside it
+          // (Trent, 2026-10-30): the X removes the target in one tap, with
+          // the usual Undo toast — it was a chevron opening a menu whose only
+          // item was "Remove target". Only a picked one-off has it. No
+          // "choose target" here: that is the row's clock ("people might
+          // forget that you can use the clock icon").
+          <span data-target-chip className={timeChipClasses('target', 'pr-0')}>
+            {chipWords(gap.target)}
+            <button
+              type="button"
+              data-remove-target
               data-no-row-press
-              data-target-chip
-              aria-label={`${gap.target}. Options`}
-              // A picked target's time chip (`TimeChip`), the menu's chevron
-              // inside it (only a picked one-off has the menu).
-              className={timeChipClasses(
-                'target',
-                'transition-opacity hover:opacity-80 data-[state=open]:opacity-80',
-              )}
+              onClick={(e) => {
+                e.stopPropagation()
+                void actions.removeTarget(task)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={REMOVE_TARGET}
+              aria-label={`${REMOVE_TARGET}: “${task.title}”`}
+              // The chip's own height, a little wider for a thumb; the X
+              // dims on hover like the chip's other controls.
+              className="-my-0.5 inline-flex items-center justify-center self-stretch rounded px-1 transition-opacity hover:opacity-70"
             >
-              {chipWords(gap.target)}
-              <ChevronDown className="size-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem data-remove-target onSelect={() => void actions.removeTarget(task)}>
-                {REMOVE_TARGET}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <X className="size-3" strokeWidth={2.5} aria-hidden />
+            </button>
+          </span>
         ) : (
           <span data-target-chip className="text-foreground/70 inline-flex items-center">
             {/* A target is a time chip; a deck's words ("On deck tomorrow")

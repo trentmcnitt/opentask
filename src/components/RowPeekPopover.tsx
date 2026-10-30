@@ -85,6 +85,7 @@ export function RowPeekBody({
   meta,
   notes,
   onOpen,
+  onShowInList,
   onDelete,
   deleteLabel,
 }: {
@@ -92,6 +93,8 @@ export function RowPeekBody({
   meta: React.ReactNode
   notes: string | null | undefined
   onOpen: () => void
+  /** A task row's "Show in list" beside Open (`src/lib/show-in-list.ts`). */
+  onShowInList?: () => void
   onDelete: () => void
   deleteLabel: string
 }) {
@@ -112,13 +115,20 @@ export function RowPeekBody({
         )}
       </div>
 
-      <PopoverFooter onOpen={onOpen} onDelete={onDelete} deleteLabel={deleteLabel} />
+      <PopoverFooter
+        onOpen={onOpen}
+        onShowInList={onShowInList}
+        onDelete={onDelete}
+        deleteLabel={deleteLabel}
+      />
     </div>
   )
 }
 
 /**
- * Open plus a trash can, side by side.
+ * Open plus a trash can, side by side — and, on a queue row's bubble, "Show
+ * in list" between them (Trent, 2026-10-30): the task's row in the
+ * dashboard's list (`src/lib/show-in-list.ts`).
  *
  * No confirmation dialog, deliberately. Trent, 2026-09-21, after testing what
  * tasks already do: "tasks do not have a confirmation but it does let you undo
@@ -129,10 +139,12 @@ export function RowPeekBody({
  */
 export function PopoverFooter({
   onOpen,
+  onShowInList,
   onDelete,
   deleteLabel,
 }: {
   onOpen: () => void
+  onShowInList?: () => void
   onDelete: () => void
   deleteLabel: string
 }) {
@@ -141,6 +153,17 @@ export function PopoverFooter({
       <Button size="sm" className="flex-1" onClick={onOpen}>
         Open
       </Button>
+      {onShowInList && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1"
+          onClick={onShowInList}
+          data-show-in-list
+        >
+          Show in list
+        </Button>
+      )}
       <Button
         size="sm"
         variant="ghost"
