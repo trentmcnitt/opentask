@@ -549,7 +549,7 @@ describe('Task model', () => {
   })
 
   describe('attempts (spec §7 — replaced the target-age badge)', () => {
-    test('TM-040: one per local day over target; moves keep the count, a re-target too (§6)', () => {
+    test('TM-040b: one per local day over target; moves keep the count, a re-target too (§6)', () => {
       const t = make({ due_at: at('2026-10-07T09:00') })
       ageTargeted(t.id, '2026-10-01T09:00')
       // Over target Wed Oct 7 … Sat Oct 10: 4×.
@@ -578,7 +578,7 @@ describe('Task model', () => {
       expect(getTaskById(t.id)!.attempts).toBe(5)
     })
 
-    test('TM-041: a removed target freezes the count; a new one resumes it', () => {
+    test('TM-041b: a removed target freezes the count; a new one resumes it', () => {
       const t = make({ due_at: at('2026-10-08T09:00') })
       ageTargeted(t.id, '2026-10-01T09:00')
       updateTask({ userId: TEST_USER_ID, userTimezone: tz, taskId: t.id, input: { due_at: null } })
