@@ -147,13 +147,13 @@ test.describe('Upcoming', () => {
       await expect(row(page, t.repeating).getByRole('button', { name: /^Done:/ })).toHaveCount(1)
       // No horizon chip on any Upcoming row.
       await expect(section.locator('[data-horizon-chip]')).toHaveCount(0)
-      // The one-offs' target chips open a menu (Remove target);
-      // the repeating row's doesn't.
-      await expect(row(page, t.withDeadline).getByRole('button', { name: /Options$/ })).toHaveCount(
-        1,
-      )
-      await expect(row(page, t.repeating).getByRole('button', { name: /Options$/ })).toHaveCount(0)
-      await expect(row(page, t.plain).getByRole('button', { name: /Options$/ })).toHaveCount(1)
+      // The one-offs' target chips carry an X (Remove target, 2026-10-30 —
+      // a chevron menu before); the repeating row's doesn't. No menu.
+      const removeX = /^Remove target: /
+      await expect(row(page, t.withDeadline).getByRole('button', { name: removeX })).toHaveCount(1)
+      await expect(row(page, t.repeating).getByRole('button', { name: removeX })).toHaveCount(0)
+      await expect(row(page, t.plain).getByRole('button', { name: removeX })).toHaveCount(1)
+      await expect(section.locator('[data-target-chip] svg.lucide-chevron-down')).toHaveCount(0)
     } finally {
       await trash(page, [...Object.values(t), days])
     }
@@ -166,10 +166,8 @@ test.describe('Upcoming', () => {
     try {
       const before = await stateOf(page, t.plain)
       await page.goto('/reminders')
-      await row(page, t.plain)
-        .getByRole('button', { name: /Options$/ })
-        .click()
-      await page.locator('[data-remove-target]').click()
+      // One tap on the chip's X: no menu between.
+      await row(page, t.plain).locator('[data-remove-target]').click()
       await expect(row(page, t.plain)).toHaveCount(0)
       await expect(
         page.locator('[data-task-segment="days"]').locator(`[data-segment-task="${t.plain}"]`),
@@ -192,11 +190,8 @@ test.describe('Upcoming', () => {
       const before = await stateOf(page, t.withDeadline)
       expect(before.target_auto).toBe(false)
       await page.goto('/reminders')
-      await row(page, t.withDeadline)
-        .getByRole('button', { name: /Options$/ })
-        .click()
       await expect(page.locator('[data-back-to-auto]')).toHaveCount(0)
-      await page.locator('[data-remove-target]').click()
+      await row(page, t.withDeadline).locator('[data-remove-target]').click()
       await expect(row(page, t.withDeadline)).toHaveCount(0)
       // With the task queue off the server still keeps an automatic target
       // (A1, one release); with it on there is none (deadlines-page.spec.ts).

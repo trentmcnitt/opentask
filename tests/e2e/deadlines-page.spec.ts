@@ -398,9 +398,9 @@ test.describe('before the lead day, and Remove target', () => {
       backdateTargetSet(id, 10)
       await page.goto('/reminders')
       const up = row(page.locator('[data-task-segment="upcoming"]'), id)
-      await up.getByRole('button', { name: /Options$/ }).click()
       await expect(page.locator('[data-back-to-auto]')).toHaveCount(0)
-      await page.locator('[data-remove-target]').click()
+      // The target chip's X (2026-10-30): one tap.
+      await up.locator('[data-remove-target]').click()
       await expect(up).toHaveCount(0)
       await expect.poll(async () => (await stateOf(page, id)).target_at).toBeNull()
       expect((await stateOf(page, id)).target_auto).toBe(false)
