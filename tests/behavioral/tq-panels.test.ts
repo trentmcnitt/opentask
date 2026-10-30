@@ -121,7 +121,7 @@ describe('TQ-P: the task queue panels', () => {
   })
   afterAll(() => teardownTestDb())
 
-  test('TQ-P01: the segment order: Dated, New, Pulled, Horizon, Aged out', () => {
+  test('TQ-P01q: the segment order: Dated, New, Pulled, Horizon, Aged out', () => {
     // The deadlines page first (2026-10-22, APPROVED: first in the carousel,
     // the only queue page that nags), then Heads up, then the queue's panels
     // (Trent's tight N2, 2026-10-29: the strip's groups).
@@ -140,7 +140,7 @@ describe('TQ-P: the task queue panels', () => {
     ])
   })
 
-  test('TQ-P02: precedence — a stripped one-off is in the queue, not its horizon segment', () => {
+  test('TQ-P02q: precedence — a stripped one-off is in the queue, not its horizon segment', () => {
     const t = strippedOneOff()
     // Before the rollover it is over target: in no segment at all.
     expect(placement('2026-10-20T06:10', [t.id])).toEqual({})
@@ -150,7 +150,7 @@ describe('TQ-P: the task queue panels', () => {
     expect(kinds('2026-10-20T07:00')).not.toContain('days')
   })
 
-  test('TQ-P03: precedence over Upcoming — a waiting weekly task on its heads-up day', () => {
+  test('TQ-P03q: precedence over Upcoming — a waiting weekly task on its heads-up day', () => {
     const w = waitingWeekly()
     roll('2026-10-20T06:30')
     expect(task(w.id).due_at).toBe(at('2026-10-26T08:00'))
@@ -161,7 +161,7 @@ describe('TQ-P: the task queue panels', () => {
     expect(placement('2026-10-25T09:00', [w.id])).toEqual({ [w.id]: 'upcoming:waiting' })
   })
 
-  test('TQ-P04: the split across three days, and resolution 6', () => {
+  test('TQ-P04q: the split across three days, and resolution 6', () => {
     const a = strippedOneOff('Tuesday strip')
     const w = waitingWeekly()
     roll('2026-10-20T06:30')
@@ -200,7 +200,7 @@ describe('TQ-P: the task queue panels', () => {
     })
   })
 
-  test('TQ-P05: consider on a stripped one-off — out of the queue, ticked in its horizon; undo', () => {
+  test('TQ-P05q: consider on a stripped one-off — out of the queue, ticked in its horizon; undo', () => {
     const t = strippedOneOff()
     getDb().prepare('UPDATE tasks SET try_tomorrow = 1 WHERE id = ?').run(t.id)
     roll('2026-10-20T06:30')
@@ -227,7 +227,7 @@ describe('TQ-P: the task queue panels', () => {
     expect(placement('2026-10-20T07:03', [t.id])).toEqual({ [t.id]: 'queue_today:waiting' })
   })
 
-  test('TQ-P06: consider on a waiting repeating task — it stays queued; undo', () => {
+  test('TQ-P06q: consider on a waiting repeating task — it stays queued; undo', () => {
     const w = waitingWeekly()
     roll('2026-10-20T06:30')
     setClock('2026-10-20T07:00')
@@ -240,7 +240,7 @@ describe('TQ-P: the task queue panels', () => {
     expect(placement('2026-10-20T07:03', [w.id])).toEqual({ [w.id]: 'queue_today:waiting' })
   })
 
-  test('TQ-P07: Consider all — one call, one undo entry', () => {
+  test('TQ-P07q: Consider all — one call, one undo entry', () => {
     const a = strippedOneOff('One')
     const w = waitingWeekly()
     roll('2026-10-20T06:30')
@@ -264,7 +264,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
   })
   afterAll(() => teardownTestDb())
 
-  test('TQ-P08: Today from the queue — out of the queue, then a new attempt', () => {
+  test('TQ-P08q: Today from the queue — out of the queue, then a new attempt', () => {
     const t = strippedOneOff()
     // Over target on Mon: one attempt, kept through the strip (B7).
     roll('2026-10-20T06:30')
@@ -281,7 +281,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(task(t.id).attempts).toBe(2)
   })
 
-  test('TQ-P09: a retarget from details (PATCH) takes it out of the queue', () => {
+  test('TQ-P09q: a retarget from details (PATCH) takes it out of the queue', () => {
     const t = strippedOneOff()
     roll('2026-10-20T06:30')
     setClock('2026-10-20T08:00')
@@ -300,7 +300,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
 
   // Priority in the one order (2026-11-11, `byPriorityRank`): unset sits
   // just below Medium, never below Low.
-  test('TQ-P10: sorted by priority (unset above Low), then the older remembered target, then id', () => {
+  test('TQ-P10q: sorted by priority (unset above Low), then the older remembered target, then id', () => {
     const low = makeAt('2026-10-19T09:00', {
       title: 'Low',
       priority: 1,
@@ -337,7 +337,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     ).toBeGreaterThan(0)
   })
 
-  test('TQ-P11: a queued task whose target has arrived is not in the queue', () => {
+  test('TQ-P11q: a queued task whose target has arrived is not in the queue', () => {
     const now = new Date(at('2026-10-20T09:00'))
     const m = new Date(at('2026-10-20T06:30'))
     expect(queueKind({ queued_at: at('2026-10-20T06:30'), due_at: null }, now, m)).toBe(
@@ -352,7 +352,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(queueKind({ queued_at: null, due_at: null }, now, m)).toBeNull()
   })
 
-  test('TQ-P12: switch off — no queue kinds; a stripped task is back in its horizon segment', () => {
+  test('TQ-P12q: switch off — no queue kinds; a stripped task is back in its horizon segment', () => {
     const t = strippedOneOff()
     roll('2026-10-20T06:30')
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
@@ -362,7 +362,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(placement('2026-10-20T07:00', [t.id])).toEqual({ [t.id]: 'days:waiting' })
   })
 
-  test('TQ-P14: without the opt-in, queued tasks are in no segment (old native builds)', () => {
+  test('TQ-P14q: without the opt-in, queued tasks are in no segment (old native builds)', () => {
     const t = strippedOneOff()
     const w = waitingWeekly()
     const plain = makeAt('2026-10-19T09:00', { title: 'Plain', horizon: 'days' })
@@ -381,7 +381,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(sunday.flatMap((s) => s.tasks.map((r) => r.task.id))).not.toContain(w.id)
   })
 
-  test("TQ-P15: a queue row's considered state lasts the OpenTask day, not the calendar day — and so does a horizon row's", () => {
+  test("TQ-P15q: a queue row's considered state lasts the OpenTask day, not the calendar day — and so does a horizon row's", () => {
     const w = waitingWeekly()
     roll('2026-10-20T06:30')
     // Considered at 23:30 Tue …
@@ -404,7 +404,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(placement('2026-10-22T06:30', [d.id])).toEqual({ [d.id]: 'days:waiting' })
   })
 
-  test('TQ-P13: switch off — segments are exactly as before for unqueued tasks', () => {
+  test('TQ-P13q: switch off — segments are exactly as before for unqueued tasks', () => {
     const plain = makeAt('2026-10-19T09:00', { title: 'Plain', horizon: 'days' })
     const on = placement('2026-10-20T07:00', [plain.id])
     vi.stubEnv('OPENTASK_TASK_QUEUE', '')
