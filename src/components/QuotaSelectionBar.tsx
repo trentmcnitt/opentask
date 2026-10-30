@@ -1,8 +1,7 @@
 'use client'
 
 import { FileText, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { SelectionBarShell } from '@/components/SelectionBarShell'
+import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
 
 /**
  * The Quotas page's verbs inside the shared selection bar (2026-10-16, Trent:
@@ -43,19 +42,14 @@ export function QuotaSelectionBar({
       onDoubleClickIntent={onDetails}
       testAttr="data-quota-selection-bar"
     >
-      <Button size="sm" variant="secondary" onClick={onDetails}>
-        <FileText className="mr-1 size-4" />
-        Details
-      </Button>
-      <Button
-        size="sm"
-        variant="secondary"
+      <BarAction icon={<FileText />} label="Details" onClick={onDetails} />
+      <BarAction
+        tone="danger"
+        icon={<Trash2 />}
+        label="Delete"
         onClick={onDelete}
-        aria-label={count === 1 ? 'Move to Trash' : `Move ${count} quotas to Trash`}
-        className="bg-primary-foreground/10 text-primary-foreground hover:bg-destructive active:bg-destructive hover:text-white"
-      >
-        <Trash2 className="size-4" />
-      </Button>
+        ariaLabel={count === 1 ? 'Move to Trash' : `Move ${count} quotas to Trash`}
+      />
     </SelectionBarShell>
   )
 }

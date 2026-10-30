@@ -371,10 +371,10 @@ test.describe('Dashboard multi-select — only tasks', () => {
 /** The seeded user's zone (tests/e2e/globalSetup.ts). */
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
 
-/** More → the quick panel for the selection. */
+/** Details → the bulk editor for the selection (the U1 bar's Details, 2026-10-30). */
 async function openPanel(page: Page, count: number) {
-  await bar(page).getByRole('button', { name: 'More', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: `${count} tasks selected` })
+  await bar(page).locator('[data-bar-details]').click()
+  const dialog = page.getByRole('dialog', { name: `Details · ${count} tasks` })
   await expect(dialog).toBeVisible()
   return dialog
 }
@@ -511,13 +511,13 @@ test.describe('Dashboard multi-select — the panel date line and "…" menu', (
 })
 
 /**
- * More → "+1 day" → priority Medium → Save, for a selection of overdue Low
+ * Details → "+1 day" → priority Medium → Save, for a selection of overdue Low
  * tasks. Returns the two request bodies once both responses are in: the date
  * goes out as bulk/snooze, the priority as bulk/edit, at the same time.
  */
 async function saveDateAndPriority(page: Page, ids: number[]): Promise<Record<string, unknown>> {
-  await bar(page).getByRole('button', { name: 'More', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: `${ids.length} tasks selected` })
+  await bar(page).locator('[data-bar-details]').click()
+  const dialog = page.getByRole('dialog', { name: `Details · ${ids.length} tasks` })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: '+1 day', exact: true }).click()
   // The priority picker's trigger reads the selection's shared priority.

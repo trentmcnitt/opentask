@@ -2060,7 +2060,7 @@ private struct TaskSegmentListView: View {
     @ViewBuilder
     private func bottomLeading(width: CGFloat, pages: Int, page: Int, metrics: WidgetTextMetrics) -> some View {
         let pagerText: String? = pages > 1 ? "\(page + 1)/\(pages)" : nil
-        let deferWidth = WidgetTheme.measuredWidth(for: "Defer all", font: metrics.caption2Font(weight: .semibold))
+        let deferWidth = WidgetTheme.measuredWidth(for: TaskWording.notTodayAll, font: metrics.caption2Font(weight: .semibold))
         // Never on the queue's panels or the deadlines page (native PR E, the
         // web's `offersDeferAll`): the deadlines page's Defer is one row's
         // lead day, which native leaves to the app (the row's link).
@@ -2109,7 +2109,7 @@ private struct TaskSegmentListView: View {
     /// "Defer all", measured in the semibold caption2 it is drawn in.
     private func deferAllButton(metrics: WidgetTextMetrics) -> some View {
         Button(intent: DeferSegmentIntent(horizon: segment.horizon)) {
-            Text("Defer all")
+            Text(TaskWording.notTodayAll)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(WidgetTheme.indigoAccent)
                 .lineLimit(1)
@@ -2118,7 +2118,7 @@ private struct TaskSegmentListView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
+        .accessibilityLabel(Text("Not today: all \(segment.label) tasks, back tomorrow"))
     }
 
     // MARK: Header — `RemindersListView.header`'s layout

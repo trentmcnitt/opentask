@@ -447,8 +447,8 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     await page.goto('/reminders')
     const earlier = panel(page, 'queue_previous')
     await expect(row(earlier, a)).toBeVisible()
-    // No Defer all on a queue panel.
-    await expect(earlier.getByRole('button', { name: /^Defer all/ })).toHaveCount(0)
+    // No "Not today, all" on a queue panel.
+    await expect(earlier.getByRole('button', { name: /^Not today: all/ })).toHaveCount(0)
     await earlier
       .getByRole('button', {
         name: /^Mark all \d+ in Pulled as considered$/,

@@ -290,7 +290,7 @@ export function TaskRow({
 
   // The widget's `?task=<id>&highlight=1` landing: kept centred while it
   // flashes (`useRowHighlight`, shared with the lean row).
-  const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
+  const { rowRef, highlightProps, highlightClass } = useRowHighlight(highlighted, onHighlightDone)
 
   // The row's press: selection, activation and double-click (`useRowPress`,
   // shared with the dashboard-modes prototype's lean row).
@@ -437,7 +437,7 @@ export function TaskRow({
         // border, on its inner rounding — and it never takes a pointer.
         isKeyboardFocused &&
           "after:pointer-events-none after:absolute after:inset-0 after:z-[2] after:rounded-[calc(var(--radius-lg)-1px)] after:shadow-[inset_0_0_0_2px_#3b82f6] after:content-['']",
-        highlighted && 'animate-row-highlight',
+        highlightClass,
       )}
     >
       {/* The corner (2026-10-14): horizon dot · attempts · priority tab —

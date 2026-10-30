@@ -17,6 +17,15 @@ export const OVERDUE_WORD = 'Overdue'
  * task with no target goes on the deadlines page instead of getting an
  * automatic target).
  */
+/**
+ * The task queue's "come back tomorrow" (Trent, 2026-10-30: the queue's Defer
+ * renamed): the segment's sweep, the select bar's verb, their toasts. "Defer"
+ * now only ever means moving a target (the swipe, the hold menu).
+ */
+export const NOT_TODAY = 'Not today'
+/** The segment's sweep: every row still waiting, not today (beside "Considered all"). */
+export const NOT_TODAY_ALL = 'Not today, all'
+
 export const REMOVE_TARGET = 'Remove target'
 /** The editor's target line with no target (2026-10-22). */
 export const NO_TARGET = 'No target'

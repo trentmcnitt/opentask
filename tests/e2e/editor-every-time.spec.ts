@@ -493,8 +493,8 @@ test('bulk: a deadline in the selection disables it; one-offs take one rule, wit
     await withPreferences(page, unified, async () => {
       await waitForPrefsLoaded(page, () => page.goto('/'), row(a))
       for (const id of [a, c]) await cmdClickRow(row(id))
-      await bar.getByRole('button', { name: 'More', exact: true }).click()
-      let dialog = page.getByRole('dialog', { name: '2 tasks selected' })
+      await bar.locator('[data-bar-details]').click()
+      let dialog = page.getByRole('dialog', { name: 'Details · 2 tasks' })
       const link = dialog.locator('[data-quick-panel-repeat-link]')
       await expect(link).toBeDisabled()
       await expect(link).toHaveAttribute(
@@ -506,8 +506,8 @@ test('bulk: a deadline in the selection disables it; one-offs take one rule, wit
       await cmdClickRow(row(b))
       await expect(bar).toContainText('2 selected')
 
-      await bar.getByRole('button', { name: 'More', exact: true }).click()
-      dialog = page.getByRole('dialog', { name: '2 tasks selected' })
+      await bar.locator('[data-bar-details]').click()
+      dialog = page.getByRole('dialog', { name: 'Details · 2 tasks' })
       await dialog.locator('[data-quick-panel-repeat-link]').click()
       const region = dialog.getByRole('region', { name: 'Editing every time' })
       await expect(region.getByRole('radiogroup', { name: 'Repeats on' })).toHaveCount(0)
@@ -604,8 +604,8 @@ test('bulk with different rules reads "Repeats — mixed"; an untouched placehol
     await withPreferences(page, unified, async () => {
       await waitForPrefsLoaded(page, () => page.goto('/'), row(a))
       for (const id of [a, b]) await cmdClickRow(row(id))
-      await bar.getByRole('button', { name: 'More', exact: true }).click()
-      const dialog = page.getByRole('dialog', { name: '2 tasks selected' })
+      await bar.locator('[data-bar-details]').click()
+      const dialog = page.getByRole('dialog', { name: 'Details · 2 tasks' })
       const link = dialog.locator('[data-quick-panel-repeat-link]')
       await expect(link).toContainText('Repeats — mixed')
       await link.click()
@@ -971,16 +971,20 @@ test.describe('The editor is one surface (desktop, light)', () => {
     }
   })
 
-  test('the selection bar’s More dialog and the create dialog: no card inside them', async ({
+  test('the selection bar’s Details dialog and the create dialog: no card inside them', async ({
     authenticatedPage: page,
   }) => {
+    // Two picked: the bar's Details opens the bulk editor (one opens the
+    // task's own page since the U1 bar, 2026-10-30).
     const id = await firstSaturdayNoon(page)
+    const second = await firstSaturdayNoon(page)
     try {
       await withPreferences(page, unified, async () => {
         const row = page.locator(`#task-row-${id}`)
         await waitForPrefsLoaded(page, () => page.goto('/'), row)
         await cmdClickRow(row)
-        await page.getByRole('button', { name: 'More', exact: true }).click()
+        await cmdClickRow(page.locator(`#task-row-${second}`))
+        await page.locator('[data-selection-sheet] [data-bar-details]').click()
         const more = page.getByRole('dialog')
         await expectFlat(more)
         await settle(page)
@@ -999,7 +1003,7 @@ test.describe('The editor is one surface (desktop, light)', () => {
         await page.screenshot({ path: '.tmp/screens/flat-create-every-time-1280.png' })
       })
     } finally {
-      await trash(page, [id])
+      await trash(page, [id, second])
     }
   })
 })

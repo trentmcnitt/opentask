@@ -130,7 +130,7 @@ for (const viewport of VIEWPORTS) {
         await expect(first).toContainText(/Deadlines/i)
         await expect(row(first, ids[0])).toBeVisible()
         // No Defer all on the page (its Defer is per row).
-        await expect(first.getByRole('button', { name: /Defer all/ })).toHaveCount(0)
+        await expect(first.getByRole('button', { name: /Not today: all/ })).toHaveCount(0)
 
         await page.goto('/')
         const card = page.locator('[data-tasks-panel]')

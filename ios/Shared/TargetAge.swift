@@ -331,6 +331,11 @@ enum TaskWording {
     /// The past-deadline marker's word.
     static let pastDeadline = "Past deadline"
 
+    /// A task segment's sweep: every row still waiting off today's list, back
+    /// tomorrow (Trent, 2026-10-30: the queue's "Defer all" renamed — "Defer"
+    /// now only ever means moving a target). The web's `NOT_TODAY_ALL`.
+    static let notTodayAll = "Not today, all"
+
     /// Every task segment's title started with it from 2026-10-20 to 10-29;
     /// kept for `withoutTaskQueuePrefix`, which still reads an old title.
     static let taskQueuePrefix = "Task queue"

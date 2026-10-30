@@ -19,6 +19,8 @@ import {
 } from '@/lib/task-grouping'
 import { useDashboardMode } from '@/hooks/useDashboardMode'
 import { useShowInList } from '@/hooks/useShowInList'
+import { useBulkDeck } from '@/hooks/useBulkDeck'
+import { QUEUE_BULK_DETAILS_EVENT } from '@/components/QueueSelect'
 import { listsEveryRow, MODES } from '@/lib/modes/registry'
 import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
 import { useNowFolds } from '@/hooks/useNowFolds'
@@ -1522,6 +1524,29 @@ function HomeContent({
       morningTime,
     })
 
+  // The task queue's select mode, Details with several picked (2026-10-30):
+  // the list's bulk editor for them (`QUEUE_BULK_DETAILS_EVENT`).
+  const selectAll = selection.selectAll
+  useEffect(() => {
+    const openBulkDetails = (e: Event) => {
+      selectAll((e as CustomEvent<number[]>).detail)
+      bulkSheetOpenRef.current?.()
+    }
+    window.addEventListener(QUEUE_BULK_DETAILS_EVENT, openBulkDetails)
+    return () => window.removeEventListener(QUEUE_BULK_DETAILS_EVENT, openBulkDetails)
+  }, [selectAll])
+
+  // The selection bar's Deck (the U1 bar, 2026-10-30): one request for the
+  // whole selection, the deck's toast with Undo.
+  const deckSelected = useBulkDeck({
+    onUndo: () => void actions.handleUndo(),
+    onUndoable: actions.bumpUndoCount,
+    onFinished: () => {
+      selection.clear()
+      void refreshAll()
+    },
+  })
+
   // Global keyboard shortcuts (extracted to hook)
   useDashboardKeyboard({
     keyboard,
@@ -1763,6 +1788,7 @@ function HomeContent({
         onSkipUntil={bulk.skipUntil}
         onSnoozeOverdue={handleSnoozeAllOverdue}
         onSnoozeSelected={handleSnoozeSelected}
+        onDeckSelected={(day) => void deckSelected([...selection.selectedIds], day)}
         focusedTask={focusedTask}
         quickActionOpen={quickActionOpen}
         onTaskFocus={setFocusedTask}
@@ -2141,6 +2167,7 @@ function DashboardView({
   onSkipUntil,
   onSnoozeOverdue,
   onSnoozeSelected,
+  onDeckSelected,
   focusedTask,
   quickActionOpen,
   onTaskFocus,
@@ -2295,6 +2322,8 @@ function DashboardView({
   onSnoozeOverdue: (until?: string) => void
   /** The Defer button with a selection: defers `selectedTasks` (`useSnoozeOverdue`). */
   onSnoozeSelected: (until?: string) => void
+  /** The selection bar's Deck: the selection on deck for a day (null: off). */
+  onDeckSelected: (day: string | null) => void
   focusedTask: Task | null
   quickActionOpen: boolean
   onTaskFocus: (task: Task) => void
@@ -2822,6 +2851,8 @@ function DashboardView({
         onSkipUntil={onSkipUntil}
         onClear={selection.clear}
         onNavigateToDetail={onNavigateToDetail}
+        onTarget={(until) => onSnoozeSelected(until)}
+        onDeck={onDeckSelected}
         projects={projects}
       />
 

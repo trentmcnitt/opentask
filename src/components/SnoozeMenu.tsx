@@ -88,6 +88,8 @@ interface SnoozeMenuProps {
    * the deadline (ruling Q8).
    */
   onCustom?: () => void
+  /** `OptionMenu`'s trigger wrapper class (a selection bar's verb). */
+  triggerClassName?: string
 }
 
 /**
@@ -104,6 +106,7 @@ export function SnoozeMenu({
   deadlineAt = null,
   title = 'Defer',
   onCustom,
+  triggerClassName,
 }: SnoozeMenuProps) {
   const timezone = useTimezone()
   const { morningTime } = useSnoozePreferences()
@@ -182,6 +185,7 @@ export function SnoozeMenu({
         icon: <OptionIcon option={o.option} className="size-4" />,
       }))}
       onSelect={handleSelect}
+      triggerClassName={triggerClassName}
       after={
         <CustomSnoozePicker
           open={customPickerOpen}

@@ -480,13 +480,13 @@ struct TaskSegmentSection: View {
                 Button {
                     model.deferSegment(segment)
                 } label: {
-                    Label("Defer all", systemImage: "arrow.turn.down.right")
+                    Label(TaskWording.notTodayAll, systemImage: "arrow.turn.down.right")
                         .font(.footnote.weight(.semibold))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
-                .accessibilityLabel(Text("Defer all \(segment.label) tasks to tomorrow"))
+                .accessibilityLabel(Text("Not today: all \(segment.label) tasks, back tomorrow"))
             }
         }
     }

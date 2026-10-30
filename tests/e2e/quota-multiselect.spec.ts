@@ -8,7 +8,7 @@
  * edits the selection together (the quota editor's multi-edit) or trashes it,
  * each with one Undo. The full gesture table is `useQuotaChipSelection`'s.
  */
-import { test, expect, expectClearOnFirstRow } from './fixtures'
+import { test, expect, expectCancelOnTopLine } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const made: number[] = []
@@ -107,7 +107,7 @@ test.describe('Quotas page — selecting chips', () => {
     // Tap toggles one out; the bar's × ends selection mode.
     await b.click()
     await expect(selectedIn(panel)).toHaveCount(2)
-    await page.getByRole('button', { name: 'Clear selection' }).click()
+    await page.getByRole('button', { name: 'Cancel selection' }).click()
     await expect(selectedIn(panel)).toHaveCount(0)
 
     // One chip selected: Details is its bubble.
@@ -223,6 +223,6 @@ test.describe('Quotas page — the selection bar on a phone', () => {
     await a.click({ modifiers: ['ControlOrMeta'] })
     await c.click({ modifiers: ['Shift'] })
     await expect(page.locator('[data-quota-selection-bar]')).toContainText('3 selected')
-    await expectClearOnFirstRow(page, 'three selected', { oneRow: true })
+    await expectCancelOnTopLine(page, 'three selected', { oneRow: true })
   })
 })

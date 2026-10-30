@@ -33,6 +33,7 @@ import {
 } from '@/components/TaskSegmentRow'
 import { usePanelPager } from '@/hooks/usePanelPager'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
+import { QueueSelectContext, QueueSelectToggle, useQueueSelectMode } from '@/components/QueueSelect'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { TASK_QUEUE_TITLE } from '@/lib/task-model-words'
 import { useTaskQueue } from '@/components/PreferencesProvider'
@@ -81,12 +82,18 @@ export function DashboardTasksPanel({
   actions,
   timezone,
   hydrated,
+  onUndo,
 }: {
   actions: TaskSegmentActions
   timezone: string
   /** The reminders fetch has landed (`useReminders().hydrated`): the segments are today's. */
   hydrated: boolean
+  /** The dashboard's undo (a select-mode toast's Undo). */
+  onUndo: () => void
 }) {
+  // Select mode (2026-10-30): "Select" in the header, checkboxes on the rows,
+  // the U1 bar once something is picked (`QueueSelect`).
+  const select = useQueueSelectMode({ actions, timezone, onUndo })
   const pages = actions.segments.map((segment) => {
     const { handled, total } = segmentCounts(segment)
     return {
@@ -200,13 +207,14 @@ export function DashboardTasksPanel({
               {offersDeferAll(segment.horizon) && (
                 <PagerSweep
                   kind="defer"
-                  ariaLabel={`Defer all ${page.waiting} in ${page.label}`}
+                  ariaLabel={`Not today: all ${page.waiting} in ${page.label}`}
                   onClick={() => void actions.deferAll(segment)}
                 />
               )}
             </>
           ) : null
         }
+        beforeCount={<QueueSelectToggle on={select.on} onToggle={select.toggleMode} />}
         onToggleExpanded={() => setExpanded(!expanded)}
         showConsidered={showConsidered}
         onToggleConsidered={pager.toggleConsidered}
@@ -218,14 +226,17 @@ export function DashboardTasksPanel({
         onJump={goTo}
         ariaLabel="Today's task segments"
       />
-      <TaskPageBody
-        segment={segment}
-        actions={actions}
-        timezone={timezone}
-        expanded={expanded}
-        showConsidered={showConsidered}
-        onToggleExpanded={() => setExpanded(!expanded)}
-      />
+      <QueueSelectContext.Provider value={select.state}>
+        <TaskPageBody
+          segment={segment}
+          actions={actions}
+          timezone={timezone}
+          expanded={expanded}
+          showConsidered={showConsidered}
+          onToggleExpanded={() => setExpanded(!expanded)}
+        />
+      </QueueSelectContext.Provider>
+      {select.bar}
     </section>
   )
 }

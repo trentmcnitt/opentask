@@ -402,10 +402,11 @@ test.describe('Row corner · target time and segments', () => {
     try {
       await gotoDashboard(page)
       for (const id of [a, b, c]) await cmdClickRow(taskRow(page, id))
-      await page.getByRole('button', { name: 'More', exact: true }).click()
-      const remove = page.locator('[data-bulk-remove-target]')
+      // The bar's More (the U1 bar, 2026-10-30) holds Remove target.
+      await page.locator('[data-selection-sheet] [data-bar-more]').click()
       // Two of the three have a picked target.
-      await expect(remove).toHaveText('Remove target (2)')
+      const remove = page.getByRole('menuitem', { name: 'Remove target (2)' })
+      await expect(remove).toBeVisible()
       await page.screenshot({ path: `${SHOTS}/bulk-sheet-desktop.png`, animations: 'disabled' })
       await remove.click()
       await expect.poll(async () => (await stateOf(page, a)).target_at).toBeNull()

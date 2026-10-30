@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react'
 import { CheckCheck, Forward } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { NOT_TODAY_ALL } from '@/lib/task-model-words'
 import {
   SLOT_FOOTER_TOGGLE_CLASS,
   SLOT_SWEEP_CLASS,
@@ -163,12 +164,12 @@ export function TaskSegmentGroup({
           <button
             type="button"
             onClick={() => void actions.deferAll(segment)}
-            aria-label={`Defer all ${waiting.length} in ${label}`}
+            aria-label={`Not today: all ${waiting.length} in ${label}`}
             title="Take the rest off today's list; they come back tomorrow"
             className={SLOT_SWEEP_CLASS}
           >
             <Forward className="size-3.5" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Defer all</span>
+            <span className="hidden sm:inline">{NOT_TODAY_ALL}</span>
           </button>
         )}
       </div>

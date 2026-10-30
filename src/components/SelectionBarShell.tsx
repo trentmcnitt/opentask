@@ -1,8 +1,7 @@
 'use client'
 
-import { X } from 'lucide-react'
-import { type ReactNode } from 'react'
-import { Button } from '@/components/ui/button'
+import { useEffect, useSyncExternalStore, type ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 
 /** The hint line's id, for the `aria-describedby` of the verb it explains. */
 export const SELECTION_BAR_HINT_ID = 'selection-bar-hint'
@@ -23,16 +22,47 @@ export const SELECTION_BAR_HINT_ID = 'selection-bar-hint'
  * double-click guard and took the shell's spacing (a 4px count margin and
  * Clear gap, where it had 8px).
  *
+ * THE U1 BAR (Trent, 2026-10-30, "Set B" style): one dark panel — "N selected"
+ * and Cancel on a line of their own, then the verbs in one row of equal
+ * buttons, each an icon over its word (`BarAction`), like an iOS toolbar. It
+ * replaced the white pill (count · Done · More · trash · a ✕ on the corner),
+ * and is the same object on the dashboard's list, the task queue, Reminders
+ * and Quotas. Cancel leaves the selection.
+ *
  * `data-selection-sheet` is load-bearing beyond styling: the toast system
  * watches for it and lifts toasts clear of the bar, so a surface that hand-rolls
  * its own bar silently loses that.
  */
+/**
+ * WHETHER A SELECTION BAR IS UP, whichever surface's (the list's, the task
+ * queue's, Reminders', Quotas'): the bars count themselves in while mounted,
+ * and `useSelectionBarUp` reads it — the dashboard's floating buttons lift
+ * above any of them (`DashboardFabStack`), not only the list's.
+ */
+let barsUp = 0
+const barListeners = new Set<() => void>()
+function setBarsUp(next: number) {
+  barsUp = next
+  for (const listener of barListeners) listener()
+}
+export function useSelectionBarUp(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      barListeners.add(listener)
+      return () => barListeners.delete(listener)
+    },
+    () => barsUp > 0,
+    () => false,
+  )
+}
+
 export function SelectionBarShell({
   count,
   onClear,
   onDoubleClickIntent,
   testAttr,
   hint,
+  more,
   children,
 }: {
   count: number
@@ -51,22 +81,64 @@ export function SelectionBarShell({
   /**
    * One short line under the verbs, saying why one of them is unavailable for
    * this selection (e.g. Reminders' "Details: pick only reminders or only
-   * quotas"). Muted, inside the pill, so the bar stays one object. A verb it
+   * quotas"). Muted, inside the panel, so the bar stays one object. A verb it
    * explains points at it with `aria-describedby={SELECTION_BAR_HINT_ID}`.
    */
   hint?: string
-  /** The surface's verbs. Clear is supplied here and always sits last. */
+  /**
+   * The bar's "⋯" (More), up on the count's line beside Cancel (Trent,
+   * 2026-10-30): out of the verbs' row, so the queue's seven verbs keep their
+   * words at full size on a phone, and in the same place on every bar.
+   */
+  more?: ReactNode
+  /** The surface's verbs (`BarAction`s), in one row. */
   children: ReactNode
 }) {
-  if (count === 0) return null
+  return count === 0 ? null : (
+    <BarPanel
+      count={count}
+      onClear={onClear}
+      onDoubleClickIntent={onDoubleClickIntent}
+      testAttr={testAttr}
+      hint={hint}
+      more={more}
+    >
+      {children}
+    </BarPanel>
+  )
+}
 
+/** The bar itself, counted in while it is mounted (`useSelectionBarUp`). */
+function BarPanel({
+  count,
+  onClear,
+  onDoubleClickIntent,
+  testAttr,
+  hint,
+  more,
+  children,
+}: {
+  count: number
+  onClear: () => void
+  onDoubleClickIntent?: () => void
+  testAttr?: string
+  hint?: string
+  more?: ReactNode
+  children: ReactNode
+}) {
+  useEffect(() => {
+    setBarsUp(barsUp + 1)
+    return () => setBarsUp(barsUp - 1)
+  }, [])
   const attrs = testAttr ? { [testAttr]: '' } : {}
 
   return (
     <div
       data-selection-sheet
       {...attrs}
-      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-fit max-w-[calc(100vw-32px)] md:bottom-6"
+      // A 16px margin each side on a phone (in px: a rem margin grew with the
+      // text size and took the verbs' room), at most 28rem wide on a desktop.
+      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100vw-16px))] md:bottom-6"
       onClickCapture={(e) => {
         if (e.detail < 2) return
         e.preventDefault()
@@ -75,58 +147,88 @@ export function SelectionBarShell({
       }}
     >
       <div
-        className="bg-primary text-primary-foreground relative rounded-xl px-2 py-3 shadow-xl sm:px-4"
+        className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
         aria-live="polite"
       >
-        {/* Wraps rather than overflowing: the bar is capped at the screen's
-            width, and a verb pushed past it was cut off with Clear out of
-            reach (iPhone at a larger text size, 2026-10-14). Centred with
-            `inset-x-0 mx-auto w-fit`, not `left-1/2 -translate-x-1/2`: a
-            fixed box at `left: 50%` may only grow to half the screen, so a
-            row allowed to wrap would wrap at half width.
-            CLEAR SITS ON THE CORNER (2026-10-26), out of the row: as the last
-            item of a wrapping row it was the one that fell to a line of its
-            own — an X alone under "Considered · Details · trash" on Trent's
-            phone at 119% text, a whole extra row of bar for one small button.
-            On the pill's top-right corner it costs the verbs no width at all,
-            so at that size the three fit on one line, and when a screen is too
-            narrow even for them, only a verb wraps and Clear stays put. Its
-            hit area is larger than the disc (the `after:` inset).
-            TIGHTER ON A PHONE (2026-10-26): `px-2 gap-1.5` below `sm`. At a
-            375 screen and the app's 119% text, "3 selected · Done · More ·
-            trash" was 11px too wide for one row (Reminders' "Considered ·
-            Details · trash" 3px), so the trash fell to a row of its own; the
-            tighter padding gives back ~16px. The bar's cap keeps a 16px
-            margin in px, not 1rem: a rem margin grew with the text too (19px
-            a side at 119%) and took 6px of that back, leaving the dashboard's
-            verbs half a pixel short of one row. */}
-        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
-          {count > 1 && (
-            <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
-          )}
-
+        <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
+          <span data-selection-count className="text-sm font-semibold tabular-nums">
+            {count} selected
+          </span>
+          <div className="flex items-center gap-1.5">
+            {more}
+            <button
+              type="button"
+              onClick={onClear}
+              aria-label="Cancel selection"
+              data-selection-clear
+              className="rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+        <div data-selection-actions className="mt-1 flex items-stretch justify-between">
           {children}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClear}
-          aria-label="Clear selection"
-          data-selection-clear
-          className="bg-primary text-primary-foreground/70 hover:bg-primary hover:text-primary-foreground active:bg-primary ring-background absolute -top-2.5 -right-2.5 size-7 rounded-full shadow-md ring-2 after:absolute after:-inset-2 after:content-['']"
-        >
-          <X className="size-3.5" />
-        </Button>
         {hint && (
           <p
             id={SELECTION_BAR_HINT_ID}
             data-selection-hint
-            className="text-primary-foreground/60 mt-1.5 text-xs"
+            className="px-2 pt-0.5 text-xs text-white/60"
           >
             {hint}
           </p>
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * One verb of the bar: its icon over its word (the U1 bar, 2026-10-30). Each
+ * takes its word's width plus an equal share of what is left (`flex-auto`),
+ * so the words sit evenly spaced and a longer one ("Not today", 50.6px at
+ * 11px) never runs into its neighbour on a 375 phone — the queue's seven fit
+ * at full size where equal shares (49px) cut it. `tone`: Done's green; a destructive verb is plain
+ * until hovered (red), as before.
+ */
+export function BarAction({
+  icon,
+  label,
+  onClick,
+  tone,
+  disabled = false,
+  ariaLabel,
+  describedBy,
+  ...data
+}: {
+  icon: ReactNode
+  label: string
+  onClick?: () => void
+  tone?: 'done' | 'danger'
+  disabled?: boolean
+  /** A fuller name than the word ("Move 3 to Trash"). */
+  ariaLabel?: string
+  describedBy?: string
+} & { [key: `data-${string}`]: string | undefined }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      aria-describedby={describedBy}
+      {...data}
+      className={cn(
+        'flex flex-auto flex-col items-center gap-1 rounded-lg px-px pt-1.5 pb-1 text-[11px] leading-none whitespace-nowrap transition-colors',
+        'hover:bg-white/10 active:bg-white/10 disabled:pointer-events-none disabled:opacity-35',
+        tone === 'done' && 'text-green-400',
+        tone === 'danger' && 'hover:text-red-400',
+        '[&_svg]:size-5 [&_svg]:shrink-0',
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   )
 }

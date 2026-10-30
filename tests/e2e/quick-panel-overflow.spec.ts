@@ -66,27 +66,26 @@ test.describe('Quick panel dialogs fit long content', () => {
     await page.setViewportSize({ width: 1512, height: 900 })
   })
 
-  test('the selection bar’s More dialog, with a long title and unbroken notes', async ({
+  test('the selection bar’s Details dialog, with a long task in the selection', async ({
     authenticatedPage: page,
   }) => {
+    // Two picked: Details is the bulk editor (one picked opens the task's own
+    // page since the U1 bar, 2026-10-30; its long title and notes are the
+    // double-click panel's test below).
     const id = await createLongTask(page)
+    const other = await createLongTask(page)
     try {
       await withPreferences(page, { default_grouping: 'unified' }, async () => {
         await page.goto('/')
-        const row = page.locator(`#task-row-${id}`)
-        await cmdClickRow(row)
-        await page.getByRole('button', { name: 'More', exact: true }).click()
-        const dialog = page.getByRole('dialog')
+        await cmdClickRow(page.locator(`#task-row-${id}`))
+        await cmdClickRow(page.locator(`#task-row-${other}`))
+        await page.locator('[data-selection-sheet] [data-bar-details]').click()
+        const dialog = page.getByRole('dialog', { name: 'Details · 2 tasks' })
         await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible()
-        await expectNothingPastTheRightEdge(dialog)
-
-        // Unclamp the notes: the unbroken path must wrap, not run out.
-        await dialog.getByRole('button', { name: 'more', exact: true }).click()
-        await expect(dialog.getByRole('button', { name: 'less', exact: true })).toBeVisible()
         await expectNothingPastTheRightEdge(dialog)
       })
     } finally {
-      await page.request.delete(`/api/tasks/${id}`)
+      await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id, other] } })
     }
   })
 

@@ -88,8 +88,8 @@ test.describe('Task segments', () => {
       await expect(segmentRow(page, ids[1])).toHaveCount(0)
       await expect.poll(async () => (await stateOf(page, ids[1])).target_at).not.toBeNull()
 
-      // Defer all → off today's list, not considered.
-      await days.getByRole('button', { name: /^Defer all/ }).click()
+      // Not today, all ("Defer all" until 2026-10-30) → off today's list, not considered.
+      await days.getByRole('button', { name: /^Not today: all/ }).click()
       await expect(segmentRow(page, ids[2])).toHaveCount(0)
       await expect
         .poll(async () => (await stateOf(page, ids[2])).segment_deferred_at)
@@ -293,7 +293,7 @@ test.describe('Task segments on the dashboard', () => {
       // Defer all, behind the header tap, finishes Days: on to Weeks, the
       // next with work.
       await tasks.locator('[data-slot-header-toggle]').click()
-      await tasks.getByRole('button', { name: /^Defer all/ }).click()
+      await tasks.getByRole('button', { name: /^Not today: all/ }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
       for (const id of days) {
         await expect.poll(async () => (await stateOf(page, id)).segment_deferred_at).not.toBeNull()

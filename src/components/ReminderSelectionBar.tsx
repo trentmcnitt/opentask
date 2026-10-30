@@ -1,8 +1,7 @@
 'use client'
 
 import { CheckCheck, FileText, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { SELECTION_BAR_HINT_ID, SelectionBarShell } from '@/components/SelectionBarShell'
+import { BarAction, SELECTION_BAR_HINT_ID, SelectionBarShell } from '@/components/SelectionBarShell'
 
 /**
  * The floating action bar for a selection on the Reminders surface.
@@ -64,37 +63,22 @@ export function ReminderSelectionBar({
       onDoubleClickIntent={canDetails ? onDetails : undefined}
       hint={mixed ? MIXED_DETAILS_HINT : undefined}
     >
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={onConsidered}
-        className="bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
-      >
-        <CheckCheck className="mr-1 size-4" />
-        Considered
-      </Button>
-
-      <Button
-        size="sm"
-        variant="secondary"
+      <BarAction tone="done" icon={<CheckCheck />} label="Considered" onClick={onConsidered} />
+      <BarAction
+        icon={<FileText />}
+        label="Details"
         onClick={onDetails}
         disabled={!canDetails}
-        aria-describedby={mixed ? SELECTION_BAR_HINT_ID : undefined}
-      >
-        <FileText className="mr-1 size-4" />
-        Details
-      </Button>
-
+        describedBy={mixed ? SELECTION_BAR_HINT_ID : undefined}
+      />
       {promptCount === 0 && (
-        <Button
-          size="sm"
-          variant="secondary"
+        <BarAction
+          tone="danger"
+          icon={<Trash2 />}
+          label="Delete"
           onClick={onDelete}
-          aria-label={selectedCount === 1 ? 'Move to Trash' : `Move ${selectedCount} to Trash`}
-          className="bg-primary-foreground/10 text-primary-foreground hover:bg-destructive active:bg-destructive hover:text-white"
-        >
-          <Trash2 className="size-4" />
-        </Button>
+          ariaLabel={selectedCount === 1 ? 'Move to Trash' : `Move ${selectedCount} to Trash`}
+        />
       )}
     </SelectionBarShell>
   )

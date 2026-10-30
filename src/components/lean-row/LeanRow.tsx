@@ -190,7 +190,7 @@ export function LeanRow({
     onDoubleClick,
     cancelLongPressRef,
   })
-  const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
+  const { rowRef, highlightProps, highlightClass } = useRowHighlight(highlighted, onHighlightDone)
   const isAiProcessing = task.labels.includes('ai-to-process')
   const timezone = useTimezone()
   const dayStart = useDayStart()
@@ -239,6 +239,7 @@ export function LeanRow({
         'group-data-swiping/swipe:ring-0',
         tintClass(state, isOverdue),
         isAiProcessing && !highlighted && 'animate-ai-processing',
+        highlightClass,
       )}
     >
       <DoneControl
