@@ -2792,7 +2792,7 @@ paths:
             enum: ['1']
           description: >
             `1` (2026-10-29, first pass): this client draws the `aged_out` segment (see
-            `task_segments`). Honoured only on a build with `NEXT_PUBLIC_AGED_OUT=1` (dev); the
+            `task_segments`). Honoured only on a build with `NEXT_PUBLIC_AGED_OUT=1` (the prod and dev builds since 2026-10-29; not CI's); the
             web there sends it, beside `REMINDERS_URL`, which the native apps share. Omitted:
             nothing changes.
       responses:

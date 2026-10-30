@@ -624,14 +624,14 @@ Notification polling runs **in-process** within the Next.js server via `node-cro
 
 - **Channel:** Web Push (browser-native, no third-party relay)
 - **Trigger:** Cron job every minute checks for undone tasks past their `due_at`
-- **Cooldown:** Priority-based per task (P4: 5m, P3: 15m, P0-P2: 30m, per-task override available)
+- **Cooldown:** Priority-based per task, the user's overdue tiers — by default Unset 30m, Low 240m, Medium 60m, High 15m, Urgent 5m (RULE NAG-TIER-DEFAULTS in the code) — with a per-task override (0 = off); repeats land on clock marks
 - **Scope:** Per-user (each user gets alerts for their own tasks + shared project tasks)
 
 ### Critical Alerts
 
 - **Channel:** APNs with `critical` interruption level (bypasses mute, DND and every Focus mode, at the user's critical-alert volume). Only Urgent breaks through: since 2026-10-26 (Trent) High is `active`, no longer `time-sensitive`; the phone's Sleep mode handles nights
 - **Trigger:** Overdue P4 (Urgent) tasks — checked every minute alongside regular overdue notifications
-- **Cooldown:** 60 minutes per task via `last_critical_alert_at` (independent of Web Push cooldown)
+- **Cooldown:** none of its own: an Urgent overdue repeats at the user's Urgent tier (5 minutes by default) on clock marks, and is critical whether or not it leads its minute (RULE INTERRUPTION-LEVEL, RULE TICK-LEAD-ORDER in the code). `last_critical_alert_at` is no longer read
 - **Use sparingly:** School pickup, medication, hard deadlines only
 - **No per-task toggle needed:** Setting a task to Urgent (P4) priority is the mechanism. If it's worth bypassing DND, make it Urgent.
 
