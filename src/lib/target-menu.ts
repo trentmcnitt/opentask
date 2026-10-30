@@ -26,7 +26,7 @@
  * Pure: `tests/behavioral/tm-target-menu.test.ts`.
  */
 import { DateTime } from 'luxon'
-import { addDays, openTaskDayOf, periodOpensAt } from '@/lib/opentask-day'
+import { addDays, openTaskDayOf, openTaskLocalDay, periodOpensAt } from '@/lib/opentask-day'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
 
@@ -86,7 +86,7 @@ export function targetMenu({
   const snooze = (option: string) =>
     computeSnoozeTime(option, timezone, morningTime, dayStart, [], now)
   const today = openTaskDayOf(now, timezone, dayStart)
-  const weekday = DateTime.fromISO(today).weekday
+  const weekday = openTaskLocalDay(now, timezone, dayStart).weekday
   const morning = (date: string) => morningOf(date, morningTime, timezone, dayStart)
   const when = (date: string, format: string) =>
     DateTime.fromJSDate(morning(date)).setZone(timezone).toFormat(format)
