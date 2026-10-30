@@ -21,7 +21,7 @@ import type { Task } from '@/types'
  */
 
 /** On a wider screen a menu's trigger wrapper takes the verb's share of the row. */
-const VERB_WRAPPER = 'flex min-w-0 flex-1'
+const VERB_WRAPPER = 'flex flex-auto'
 
 /** Target: T1's menu, titled for the selection ("Target · 3 tasks"). */
 export function TargetVerb({
@@ -87,7 +87,8 @@ const REMOVE = 'remove-target'
 /**
  * More: Skip until… (the selection's repeating tasks) and Remove target (its
  * one-offs with a picked target), each offered when some selected task takes
- * it, with how many when not all do. Disabled when neither applies.
+ * it, with how many when not all do. Disabled when neither applies. A "⋯"
+ * on the bar's top line, beside Cancel (the shell's `more`), not a verb.
  */
 export function MoreVerb({
   selectedTasks,
@@ -126,15 +127,18 @@ export function MoreVerb({
           if (option === SKIP) setSkipOpen(true)
           else if (option === REMOVE) onRemoveTargets(removable)
         }}
-        triggerClassName={VERB_WRAPPER}
       >
-        <BarAction
-          icon={<MoreHorizontal />}
-          label="More"
+        <button
+          type="button"
           onClick={() => setOpen(true)}
           disabled={options.length === 0}
+          aria-label="More"
+          title="More"
           data-bar-more
-        />
+          className="flex size-[30px] items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 active:bg-white/20 disabled:pointer-events-none disabled:opacity-35"
+        >
+          <MoreHorizontal className="size-4" />
+        </button>
       </OptionMenu>
       {onSkipUntil && (
         <SkipUntilDialog

@@ -62,6 +62,7 @@ export function SelectionBarShell({
   onDoubleClickIntent,
   testAttr,
   hint,
+  more,
   children,
 }: {
   count: number
@@ -84,6 +85,12 @@ export function SelectionBarShell({
    * explains points at it with `aria-describedby={SELECTION_BAR_HINT_ID}`.
    */
   hint?: string
+  /**
+   * The bar's "⋯" (More), up on the count's line beside Cancel (Trent,
+   * 2026-10-30): out of the verbs' row, so the queue's seven verbs keep their
+   * words at full size on a phone, and in the same place on every bar.
+   */
+  more?: ReactNode
   /** The surface's verbs (`BarAction`s), in one row. */
   children: ReactNode
 }) {
@@ -94,6 +101,7 @@ export function SelectionBarShell({
       onDoubleClickIntent={onDoubleClickIntent}
       testAttr={testAttr}
       hint={hint}
+      more={more}
     >
       {children}
     </BarPanel>
@@ -107,6 +115,7 @@ function BarPanel({
   onDoubleClickIntent,
   testAttr,
   hint,
+  more,
   children,
 }: {
   count: number
@@ -114,6 +123,7 @@ function BarPanel({
   onDoubleClickIntent?: () => void
   testAttr?: string
   hint?: string
+  more?: ReactNode
   children: ReactNode
 }) {
   useEffect(() => {
@@ -137,22 +147,25 @@ function BarPanel({
       }}
     >
       <div
-        className="rounded-2xl border border-white/10 bg-neutral-900 px-2 pt-2.5 pb-1.5 text-white shadow-xl"
+        className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
         aria-live="polite"
       >
         <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
           <span data-selection-count className="text-sm font-semibold tabular-nums">
             {count} selected
           </span>
-          <button
-            type="button"
-            onClick={onClear}
-            aria-label="Cancel selection"
-            data-selection-clear
-            className="rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
-          >
-            Cancel
-          </button>
+          <div className="flex items-center gap-1.5">
+            {more}
+            <button
+              type="button"
+              onClick={onClear}
+              aria-label="Cancel selection"
+              data-selection-clear
+              className="rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
         <div data-selection-actions className="mt-1 flex items-stretch justify-between">
           {children}
@@ -172,8 +185,11 @@ function BarPanel({
 }
 
 /**
- * One verb of the bar: its icon over its word, an equal share of the row
- * (the U1 bar, 2026-10-30). `tone`: Done's green; a destructive verb is plain
+ * One verb of the bar: its icon over its word (the U1 bar, 2026-10-30). Each
+ * takes its word's width plus an equal share of what is left (`flex-auto`),
+ * so the words sit evenly spaced and a longer one ("Not today", 50.6px at
+ * 11px) never runs into its neighbour on a 375 phone — the queue's seven fit
+ * at full size where equal shares (49px) cut it. `tone`: Done's green; a destructive verb is plain
  * until hovered (red), as before.
  */
 export function BarAction({
@@ -204,7 +220,7 @@ export function BarAction({
       aria-describedby={describedBy}
       {...data}
       className={cn(
-        'flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg px-0.5 pt-1.5 pb-1 text-[11px] leading-none whitespace-nowrap transition-colors',
+        'flex flex-auto flex-col items-center gap-1 rounded-lg px-px pt-1.5 pb-1 text-[11px] leading-none whitespace-nowrap transition-colors',
         'hover:bg-white/10 active:bg-white/10 disabled:pointer-events-none disabled:opacity-35',
         tone === 'done' && 'text-green-400',
         tone === 'danger' && 'hover:text-red-400',

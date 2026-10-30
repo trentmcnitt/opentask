@@ -142,8 +142,9 @@ export function QueueSelectToggle({ on, onToggle }: { on: boolean; onToggle: () 
 
 /**
  * The queue's U1 bar: Consider · Done · Target · Not today · Deck · Details ·
- * Delete · More — the list's bar (`SelectionActionSheet`) with the queue's
- * own two, Consider and Not today.
+ * Delete — the list's bar (`SelectionActionSheet`) with the queue's own two,
+ * Consider and Not today — and More as the "⋯" beside Cancel (seven verbs
+ * keep their words at full size on a 375 phone; eight did not).
  */
 export function QueueSelectionBar({
   selectedTasks,
@@ -174,7 +175,19 @@ export function QueueSelectionBar({
 }) {
   const count = selectedTasks.length
   return (
-    <SelectionBarShell count={count} onClear={onCancel} testAttr="data-queue-selection-bar">
+    <SelectionBarShell
+      count={count}
+      onClear={onCancel}
+      testAttr="data-queue-selection-bar"
+      more={
+        <MoreVerb
+          selectedTasks={selectedTasks}
+          timezone={timezone}
+          onRemoveTargets={onRemoveTargets}
+          onSkipUntil={onSkipUntil}
+        />
+      }
+    >
       <BarAction icon={<CheckCheck />} label="Consider" onClick={onConsider} data-bar-consider />
       <BarAction tone="done" icon={<Check />} label="Done" onClick={onDone} />
       <TargetVerb count={count} onTarget={onTarget} />
@@ -187,12 +200,6 @@ export function QueueSelectionBar({
         label="Delete"
         onClick={onDelete}
         ariaLabel={`Delete ${count} ${count === 1 ? 'task' : 'tasks'}`}
-      />
-      <MoreVerb
-        selectedTasks={selectedTasks}
-        timezone={timezone}
-        onRemoveTargets={onRemoveTargets}
-        onSkipUntil={onSkipUntil}
       />
     </SelectionBarShell>
   )

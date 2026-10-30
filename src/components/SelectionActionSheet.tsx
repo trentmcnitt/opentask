@@ -570,7 +570,7 @@ export function SelectionActionSheet({
 
 /**
  * The list's U1 bar (Trent, 2026-10-30): Done · Target · Deck · Details ·
- * Delete · More. Delete is a verb of its own, never under More ("It's too
+ * Delete, and More as the "⋯" beside Cancel. Delete is a verb of its own, never under More ("It's too
  * common to bury it"). Details opens the one task, or the bulk editor for
  * several (the old More sheet, retitled). More holds Skip until… and Remove
  * target.
@@ -602,7 +602,25 @@ function ListSelectionBar({
 }) {
   const count = selectedTasks.length
   return (
-    <SelectionBarShell count={count} onClear={onClear} onDoubleClickIntent={onDoubleClickIntent}>
+    <SelectionBarShell
+      count={count}
+      onClear={onClear}
+      onDoubleClickIntent={onDoubleClickIntent}
+      more={
+        <MoreVerb
+          selectedTasks={selectedTasks}
+          timezone={timezone}
+          onSkipUntil={
+            onSkipUntil &&
+            (async (ids, until) => {
+              await onSkipUntil(ids, until)
+              onClear()
+            })
+          }
+          onRemoveTargets={onRemoveTargets}
+        />
+      }
+    >
       <BarAction tone="done" icon={<Check />} label="Done" onClick={onDone} />
       {onTarget && <TargetVerb count={count} onTarget={onTarget} />}
       {onDeck && <DeckVerb timezone={timezone} onDeck={onDeck} />}
@@ -613,18 +631,6 @@ function ListSelectionBar({
         label="Delete"
         onClick={onDelete}
         ariaLabel={`Delete ${count} ${taskWord(count)}`}
-      />
-      <MoreVerb
-        selectedTasks={selectedTasks}
-        timezone={timezone}
-        onSkipUntil={
-          onSkipUntil &&
-          (async (ids, until) => {
-            await onSkipUntil(ids, until)
-            onClear()
-          })
-        }
-        onRemoveTargets={onRemoveTargets}
       />
     </SelectionBarShell>
   )

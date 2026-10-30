@@ -110,8 +110,8 @@ test.describe('phone', () => {
         'Deck',
         'Details',
         'Delete',
-        'More',
       ])
+      await expect(queueBar(page).locator('[data-bar-more]')).toBeVisible()
       // One row at 375: every verb on the same line, none past the screen.
       const boxes = await verbs.evaluateAll((els) =>
         els.map((e) => {
@@ -121,10 +121,27 @@ test.describe('phone', () => {
       )
       expect(new Set(boxes.map((b) => b.top)).size).toBe(1)
       for (const b of boxes) expect(b.right, b.label ?? '').toBeLessThanOrEqual(375)
+      // Each word inside its own button: none runs into its neighbour.
+      const overflow = await verbs.evaluateAll((els) =>
+        els
+          .filter((e) => {
+            const word = e.querySelector('span')!.getBoundingClientRect()
+            const own = e.getBoundingClientRect()
+            return word.left < own.left - 0.5 || word.right > own.right + 0.5
+          })
+          .map((e) => e.textContent),
+      )
+      expect(overflow).toEqual([])
       await page.screenshot({
         path: '.tmp/screens/select-bar-queue-375.png',
         animations: 'disabled',
       })
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await page.screenshot({
+        path: '.tmp/screens/select-bar-queue-375-dark.png',
+        animations: 'disabled',
+      })
+      await page.emulateMedia({ colorScheme: 'light' })
 
       // Not today: both leave today's list, one Undo puts them back.
       await queueBar(page).getByRole('button', { name: 'Not today' }).click()
@@ -176,7 +193,9 @@ test.describe('desktop', () => {
       const verbs = bar.locator(
         '[data-selection-actions] > button, [data-selection-actions] > div > button',
       )
-      await expect(verbs).toHaveText(['Done', 'Target', 'Deck', 'Details', 'Delete', 'More'])
+      await expect(verbs).toHaveText(['Done', 'Target', 'Deck', 'Details', 'Delete'])
+      // More: the "⋯" beside Cancel, on the count's line.
+      await expect(bar.locator('[data-bar-more]')).toBeVisible()
       await page.screenshot({
         path: '.tmp/screens/select-bar-list-1280.png',
         animations: 'disabled',
