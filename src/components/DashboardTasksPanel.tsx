@@ -191,8 +191,11 @@ export function DashboardTasksPanel({
         onNext={() => goTo(index + 1)}
         prevLabel="Previous task segment"
         nextLabel="Next task segment"
+        // No sweeps while selecting (2026-10-30): the bar has Consider and
+        // Not today for the picked rows, and with "Select" in the header the
+        // two pushed it past a 402 phone's width at the app's 119% text.
         sweep={
-          expanded && page.waiting > 0 ? (
+          expanded && page.waiting > 0 && !select.on ? (
             <>
               {/* "Considered all" (task queue PR 3, spec rule 9): the slot
                   page's sweep, beside Defer all, with the queue on. The
@@ -215,6 +218,7 @@ export function DashboardTasksPanel({
           ) : null
         }
         beforeCount={<QueueSelectToggle on={select.on} onToggle={select.toggleMode} />}
+        compact={select.on}
         onToggleExpanded={() => setExpanded(!expanded)}
         showConsidered={showConsidered}
         onToggleConsidered={pager.toggleConsidered}

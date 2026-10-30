@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Clock, CalendarDays } from 'lucide-react'
 import {
   Dialog,
@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/dialog'
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { OptionMenu, type OptionMenuItem } from '@/components/OptionMenu'
+import { useSlotsWhenOpen } from '@/hooks/useSlotsWhenOpen'
 import {
   useDayStart,
   useDayStartKnown,
@@ -25,38 +25,8 @@ import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { SLOT_OPTION_PREFIX, targetMenu } from '@/lib/target-menu'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
-
-/**
- * The user's time slots, fetched when a menu opens and kept for the session.
- *
- * Not `useTimeSlots`: every task row mounts its own `SnoozeMenu`, and that
- * hook fetches on mount — one request per row, for a menu most rows never
- * open. Here nothing is fetched until a menu opens; the first open shows the
- * slots as soon as they arrive, and every later one starts from the cache
- * while it refreshes (slots are rarely edited, but they can be).
- */
-let slotCache: TimeSlot[] = []
-function useSlotsWhenOpen(open: boolean): TimeSlot[] {
-  const [slots, setSlots] = useState<TimeSlot[]>(slotCache)
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    fetch('/api/time-slots')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        const fresh = json?.data?.time_slots as TimeSlot[] | undefined
-        if (!fresh) return
-        slotCache = fresh
-        if (!cancelled) setSlots(fresh)
-      })
-      // A failed fetch keeps whatever was cached: the fixed options still work.
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [open])
-  return slots
-}
+import { customPickerStart } from '@/lib/custom-picker-start'
+import { PickerTimeFields } from '@/components/PickerTimeFields'
 
 /** The picker's "Morning of the deadline" (ruling Q8, 2026-10-12). */
 const DEADLINE_DAY_OPTION = 'deadline-day'
@@ -90,6 +60,14 @@ interface SnoozeMenuProps {
   onCustom?: () => void
   /** `OptionMenu`'s trigger wrapper class (a selection bar's verb). */
   triggerClassName?: string
+  /**
+   * What the built-in Custom… picker says: "Set target" when the menu picks a
+   * target (Trent, 2026-10-30: "I press the target button, but it says
+   * 'defer'"), else "Defer until…". Omitted: from the title ("Target…").
+   */
+  customPurpose?: 'defer' | 'target'
+  /** The targets the Custom… picker should not open before (`customPickerStart`). */
+  customFrom?: readonly (string | null | undefined)[]
 }
 
 /**
@@ -107,6 +85,8 @@ export function SnoozeMenu({
   title = 'Defer',
   onCustom,
   triggerClassName,
+  customPurpose,
+  customFrom = [],
 }: SnoozeMenuProps) {
   const timezone = useTimezone()
   const { morningTime } = useSnoozePreferences()
@@ -115,6 +95,8 @@ export function SnoozeMenu({
   const dayStart = useDayStart()
   const dayKnown = useDayStartKnown()
   const [customPickerOpen, setCustomPickerOpen] = useState(false)
+  // The Custom… picker opens afresh each time (`key`), on `customPickerStart`.
+  const [picker, setPicker] = useState<{ key: number; startAt: string }>({ key: 0, startAt: '' })
 
   const slots = useSlotsWhenOpen(open)
 
@@ -155,7 +137,13 @@ export function SnoozeMenu({
     if (option === 'custom') {
       onOpenChange(false)
       if (onCustom) onCustom()
-      else setCustomPickerOpen(true)
+      else {
+        setPicker((p) => ({
+          key: p.key + 1,
+          startAt: customPickerStart({ from: customFrom, timezone, morningTime, dayStart }),
+        }))
+        setCustomPickerOpen(true)
+      }
       return
     }
     // A period: its next start, and an offset: from now (the menu may have
@@ -188,9 +176,13 @@ export function SnoozeMenu({
       triggerClassName={triggerClassName}
       after={
         <CustomSnoozePicker
+          key={picker.key}
           open={customPickerOpen}
           onOpenChange={setCustomPickerOpen}
           timezone={timezone}
+          startAt={picker.startAt}
+          slots={slots}
+          purpose={customPurpose ?? (title.startsWith('Target') ? 'target' : 'defer')}
           onSnooze={handleCustomSnooze}
         />
       }
@@ -201,46 +193,46 @@ export function SnoozeMenu({
 }
 
 /**
- * Custom date/time picker dialog for snooze. Calendar + 12-hour time inputs.
- * Opens on tomorrow at the user's Morning time (it was a fixed 9:00 AM until
- * the anchor times, 2026-10-21), in the user's timezone.
+ * The menu's Custom… dialog: a calendar and 12-hour time inputs, then the
+ * user's periods (`PeriodChipRow`). It opens on `startAt` — the Default task
+ * time, on tomorrow or a later target's day (`customPickerStart`, Trent
+ * 2026-10-30); mounted afresh on each open (the menu's `key`), so it never
+ * keeps the last pick. It used to set that only from the dialog's own
+ * `onOpenChange`, which a menu opening it never calls — so it opened on
+ * whatever was last left there (Nov 16, 1:00 AM on Trent's phone). Its words
+ * follow its purpose: "Set target" from a Target menu, "Defer until…"
+ * otherwise.
  */
 function CustomSnoozePicker({
   open,
   onOpenChange,
   timezone,
+  startAt,
+  slots,
+  purpose,
   onSnooze,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   timezone: string
+  startAt: string
+  slots: readonly TimeSlot[]
+  purpose: 'defer' | 'target'
   onSnooze: (until: string) => void
 }) {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
-  const [hour12, setHour12] = useState(9)
-  const [minute, setMinute] = useState(0)
-  const [period, setPeriod] = useState<'AM' | 'PM'>('AM')
-
   const { morningTime } = useSnoozePreferences()
-  const dayStart = useDayStart()
-
-  // Initialize to tomorrow at the Morning time when opening, via the
-  // open-change handler (same pattern as DateTimePicker — avoids
-  // setState-in-effect cascade)
-  const handleOpenChange = useCallback(
-    (newOpen: boolean) => {
-      if (newOpen) {
-        const at = computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
-        const tomorrow = DateTime.fromISO(at, { zone: 'utc' }).setZone(timezone)
-        setSelectedDate(tomorrow.toJSDate())
-        setHour12(to12Hour(tomorrow.hour))
-        setMinute(tomorrow.minute)
-        setPeriod(tomorrow.hour >= 12 ? 'PM' : 'AM')
-      }
-      onOpenChange(newOpen)
-    },
-    [timezone, morningTime, dayStart, onOpenChange],
+  const start = startAt ? DateTime.fromISO(startAt, { zone: 'utc' }).setZone(timezone) : null
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() =>
+    start
+      ? DateTime.fromObject({ year: start.year, month: start.month, day: start.day }).toJSDate()
+      : undefined,
   )
+  const [hour12, setHour12] = useState(() => (start ? to12Hour(start.hour) : 9))
+  const [minute, setMinute] = useState(() => start?.minute ?? 0)
+  const [period, setPeriod] = useState<'AM' | 'PM'>(() => (start && start.hour >= 12 ? 'PM' : 'AM'))
+  const target = purpose === 'target'
+  const title = target ? 'Set target' : 'Defer until...'
+  const action = target ? 'Set target' : 'Defer'
 
   const handleSnooze = () => {
     if (!selectedDate) return
@@ -253,12 +245,14 @@ function CustomSnoozePicker({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Defer until...</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">
-            Choose a custom date and time to defer
+            {target
+              ? 'Choose a date and time for the target'
+              : 'Choose a custom date and time to defer'}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center">
@@ -271,47 +265,23 @@ function CustomSnoozePicker({
             defaultMonth={selectedDate}
           />
           <div className="w-full border-t px-3 pt-3 pb-1">
-            <div className="flex items-center gap-2">
-              <label className="text-muted-foreground text-xs">Time:</label>
-              <Input
-                type="number"
-                min={1}
-                max={12}
-                value={hour12}
-                onChange={(e) =>
-                  setHour12(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)))
-                }
-                className="h-8 w-14 text-center text-sm"
-                aria-label="Hour"
-              />
-              <span className="text-muted-foreground text-sm">:</span>
-              <Input
-                type="number"
-                min={0}
-                max={59}
-                value={minute.toString().padStart(2, '0')}
-                onChange={(e) =>
-                  setMinute(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))
-                }
-                className="h-8 w-14 text-center text-sm"
-                aria-label="Minute"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 w-12 text-xs font-medium"
-                onClick={() => setPeriod((p) => (p === 'AM' ? 'PM' : 'AM'))}
-                aria-label={`Toggle AM/PM, currently ${period}`}
-              >
-                {period}
-              </Button>
-            </div>
+            <PickerTimeFields
+              hour12={hour12}
+              minute={minute}
+              period={period}
+              slots={slots}
+              defaultTime={morningTime}
+              onSet={(h, m, p) => {
+                setHour12(h)
+                setMinute(m)
+                setPeriod(p)
+              }}
+            />
           </div>
         </div>
         <Button onClick={handleSnooze} disabled={!selectedDate} className="w-full">
           <Clock className="mr-1.5 size-4" />
-          Defer
+          {action}
         </Button>
       </DialogContent>
     </Dialog>

@@ -217,3 +217,52 @@ test.describe('desktop', () => {
     }
   })
 })
+
+test.describe("Trent's phone", () => {
+  // An iPhone 16 Pro at the app's 119% text (ios/OpenTask/WebView.swift).
+  test.use({ viewport: { width: 402, height: 874 } })
+
+  test('select mode never widens the page: the sweeps step aside, nothing scrolls sideways', async ({
+    page,
+  }) => {
+    const ids = await daysTasks(page, 13)
+    try {
+      await page.request.post('/api/task-segments/consider', { data: { ids: ids.slice(0, 2) } })
+      await page.goto('/')
+      await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
+      await expect(row(page, ids[5])).toBeVisible()
+      // Open the header: its sweeps (Considered all, Not today, all) show.
+      await card(page).locator('[data-slot-header-toggle]').click()
+      const sweeps = card(page).getByRole('button', { name: /^(Mark all|Not today: all)/ })
+      await expect(sweeps).toHaveCount(2)
+      await card(page).locator('[data-queue-select-toggle]').click()
+      // Selecting: the bar has Consider and Not today; the header drops its sweeps.
+      await expect(sweeps).toHaveCount(0)
+      await row(page, ids[5]).locator('[data-pick-box]').click()
+      await row(page, ids[6]).locator('[data-pick-box]').click()
+      await expect(queueBar(page)).toContainText('2 selected')
+      const width = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+        header: Math.round(
+          document
+            .querySelector('[data-tasks-panel] [data-slot-header-toggle]')!
+            .parentElement!.getBoundingClientRect().right,
+        ),
+      }))
+      expect(width.scroll).toBeLessThanOrEqual(width.client)
+      expect(width.header).toBeLessThanOrEqual(width.client)
+      await page.setViewportSize({ width: 375, height: 812 })
+      // "TASK QUEUE" on one line at 375 and 119% text: the header's gaps give
+      // way in select mode (`compact`), the title is never truncated.
+      const titleLines = await card(page)
+        .locator('[data-slot-header-toggle] span span')
+        .first()
+        .evaluate((e) => e.getClientRects().length)
+      expect(titleLines).toBe(1)
+      await page.screenshot({ path: '.tmp/screens/select-header-375.png', animations: 'disabled' })
+    } finally {
+      await trash(page, ids)
+    }
+  })
+})

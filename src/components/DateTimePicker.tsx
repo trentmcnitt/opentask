@@ -5,12 +5,13 @@ import { CalendarDays } from 'lucide-react'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { DateTime } from 'luxon'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { snapToNearestFiveMinutes } from '@/lib/quick-select-dates'
 import { computeSnoozeTime } from '@/lib/snooze'
 import { useDayStart, useSnoozePreferences } from '@/components/PreferencesProvider'
+import { PickerTimeFields } from '@/components/PickerTimeFields'
+import { useTimeSlots } from '@/hooks/useTimeSlots'
 
 interface DateTimePickerProps {
   /** Current value as UTC ISO string, or null if no date */
@@ -166,6 +167,8 @@ export function DateTimePicker({
   const controlled = controlledOpen !== undefined
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlled ? controlledOpen : uncontrolledOpen
+  // The page's own period list (the editor never fetches its own).
+  const { timeSlots: slots } = useTimeSlots(undefined, { revalidate: false })
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [hour12, setHour12] = useState(9)
   const [minute, setMinute] = useState(0)
@@ -275,39 +278,18 @@ export function DateTimePicker({
           defaultMonth={selectedDate}
         />
         <div className="border-t px-3 py-3">
-          {/* Time inputs — 12-hour format with AM/PM toggle */}
-          <div className="flex items-center gap-2">
-            <label className="text-muted-foreground text-xs">Time:</label>
-            <Input
-              type="number"
-              min={1}
-              max={12}
-              value={hour12}
-              onChange={(e) => setHour12(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)))}
-              className="h-8 w-14 text-center text-sm"
-              aria-label="Hour"
-            />
-            <span className="text-muted-foreground text-sm">:</span>
-            <Input
-              type="number"
-              min={0}
-              max={59}
-              value={minute.toString().padStart(2, '0')}
-              onChange={(e) => setMinute(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
-              className="h-8 w-14 text-center text-sm"
-              aria-label="Minute"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 w-12 text-xs font-medium"
-              onClick={() => setPeriod((p) => (p === 'AM' ? 'PM' : 'AM'))}
-              aria-label={`Toggle AM/PM, currently ${period}`}
-            >
-              {period}
-            </Button>
-          </div>
+          <PickerTimeFields
+            hour12={hour12}
+            minute={minute}
+            period={period}
+            slots={slots}
+            defaultTime={morningTime}
+            onSet={(h, m, p) => {
+              setHour12(h)
+              setMinute(m)
+              setPeriod(p)
+            }}
+          />
           <PickerActions
             submitLabel={submitLabel}
             onSubmit={handleSetDate}

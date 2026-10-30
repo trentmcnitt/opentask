@@ -26,9 +26,12 @@ const VERB_WRAPPER = 'flex flex-auto'
 /** Target: T1's menu, titled for the selection ("Target · 3 tasks"). */
 export function TargetVerb({
   count,
+  targets,
   onTarget,
 }: {
   count: number
+  /** The selection's targets (`customPickerStart`: one shared target opens Custom… on it). */
+  targets: readonly (string | null)[]
   onTarget: (until: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -38,6 +41,8 @@ export function TargetVerb({
       onOpenChange={setOpen}
       title={`Target · ${count} ${taskWord(count)}`}
       onSnooze={onTarget}
+      customPurpose="target"
+      customFrom={targets}
       triggerClassName={VERB_WRAPPER}
     >
       <BarAction icon={<Clock3 />} label="Target" onClick={() => setOpen(true)} data-bar-target />
