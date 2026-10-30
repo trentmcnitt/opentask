@@ -40,6 +40,9 @@ export function useRowHighlight(highlighted: boolean | undefined, onHighlightDon
 
   const highlightProps = {
     'data-task-highlight': highlighted ? '' : undefined,
+    // The flash itself (`animate-row-highlight`): handed out here so no row
+    // can wire the hook and forget the class — the lean and compact rows did,
+    // so Show in list scrolled to a row that never lit up (Trent, 2026-10-30).
     onAnimationEnd: (e: React.AnimationEvent<HTMLDivElement>) => {
       // Filtered: the row can also run `animate-ai-processing`, whose
       // `animationend` must not spend the one-shot highlight early.
@@ -48,5 +51,9 @@ export function useRowHighlight(highlighted: boolean | undefined, onHighlightDon
       }
     },
   }
-  return { rowRef, highlightProps }
+  return {
+    rowRef,
+    highlightProps,
+    highlightClass: highlighted ? 'animate-row-highlight' : undefined,
+  }
 }

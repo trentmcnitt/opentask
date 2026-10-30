@@ -67,7 +67,7 @@ export function CompactRow({
     onDoubleClick,
     cancelLongPressRef,
   })
-  const { rowRef, highlightProps } = useRowHighlight(highlighted, onHighlightDone)
+  const { rowRef, highlightProps, highlightClass } = useRowHighlight(highlighted, onHighlightDone)
   const timezone = useTimezone()
   const dayStart = useDayStart()
   // The deadline's day word moves with the clock: re-read on the hour.
@@ -104,6 +104,7 @@ export function CompactRow({
       onPointerLeave={pointer.onPointerLeave}
       onPointerCancel={pointer.onPointerUp}
       className={cn(
+        highlightClass,
         'group/lean border-border/40 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
         isSelectionMode && 'cursor-pointer',
         isSelected && 'bg-accent ring-ring rounded-lg ring-2',

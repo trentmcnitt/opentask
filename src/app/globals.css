@@ -17,6 +17,8 @@
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
+  --row-highlight: rgb(59 130 246 / 0.2);
+  --row-highlight-ring: rgb(59 130 246);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
@@ -135,6 +137,8 @@
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
+  --row-highlight: rgb(96 165 250 / 0.25);
+  --row-highlight-ring: rgb(96 165 250);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
@@ -372,9 +376,9 @@
    off by an ancestor regardless of that ancestor's overflow state. */
 @keyframes row-highlight {
   0%,
-  55% {
-    background-color: var(--accent);
-    box-shadow: inset 0 0 0 2px var(--ring);
+  70% {
+    background-color: var(--row-highlight);
+    box-shadow: inset 0 0 0 2px var(--row-highlight-ring);
   }
   100% {
     background-color: transparent;
@@ -382,8 +386,12 @@
   }
 }
 
+/* UNMISTAKABLE (Trent, 2026-10-30, of Show in list: "it didn't actually
+   highlight the item"): a clear blue tint and a blue ring — it was the
+   neutral accent grey, which barely showed on a tinted row — held ~1.7s,
+   past the scroll's landing, then a ~0.7s fade. */
 .animate-row-highlight {
-  animation: row-highlight 2s ease-out;
+  animation: row-highlight 2.4s ease-out;
 }
 
 /* Hide scrollbar for horizontal scroll areas */

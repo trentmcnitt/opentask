@@ -11,7 +11,7 @@
  */
 import path from 'path'
 import Database from 'better-sqlite3'
-import { test, expect, holdUntil, uniqueTitle } from './fixtures'
+import { test, expect, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 async function signIn(page: Page) {
@@ -49,7 +49,18 @@ const allMode = (page: Page) => page.locator('[data-mode-switch] [data-mode="all
 /** Hold the row open, then press the bubble's Show in list. */
 async function showInList(page: Page, row: Locator, id: number, title: string) {
   await expect(row).toBeVisible()
-  await holdUntil(row.getByText(title), () => expect(bubble(page, id)).toBeVisible())
+  // Held near the title's start: on a phone its centre can sit under the
+  // row's buttons (the title wraps around them).
+  const text = row.getByText(title)
+  await text.scrollIntoViewIfNeeded()
+  const box = (await text.boundingBox())!
+  await page.mouse.move(box.x + 12, box.y + 8)
+  await page.mouse.down()
+  try {
+    await expect(bubble(page, id)).toBeVisible()
+  } finally {
+    await page.mouse.up()
+  }
   const b = bubble(page, id)
   await expect(b.getByRole('button', { name: 'Open' })).toBeVisible()
   await b.getByRole('button', { name: 'Show in list' }).click()
@@ -91,6 +102,8 @@ test('on the dashboard: the list switches to All and its row is scrolled to and 
     await showInList(page, cardRow, id, title)
     await expect(allMode(page)).toHaveAttribute('aria-pressed', 'true')
     await expect(listRow(page, id)).toHaveAttribute('data-task-highlight', '')
+    // It visibly lights up (the lean row had the hook but not the class, 2026-10-30).
+    await expect(listRow(page, id)).toHaveClass(/animate-row-highlight/)
     await expect(listRow(page, id)).toBeInViewport()
     // Show, not act: nothing selected, nothing opened.
     await expect(listRow(page, id)).toHaveAttribute('aria-selected', 'false')
@@ -142,4 +155,34 @@ test('from /reminders: it opens the dashboard on All with the row flashed', asyn
   } finally {
     await trash(page, ids)
   }
+})
+
+test.describe('phone, dark', () => {
+  test.use({ viewport: { width: 375, height: 812 }, colorScheme: 'dark' })
+
+  test('from /reminders the row lights up, blue, on the dashboard', async ({ page }) => {
+    const ids: number[] = []
+    try {
+      const title = uniqueTitle('SIL phone')
+      const id = await daysTask(page, title)
+      ids.push(id)
+      await page.goto('/reminders')
+      const row = page.locator(
+        `[data-task-segments] [data-task-segment="days"] [data-segment-task="${id}"]`,
+      )
+      await showInList(page, row, id, title)
+      await expect(page).toHaveURL('/')
+      const target = listRow(page, id)
+      await expect(allMode(page)).toHaveAttribute('aria-pressed', 'true')
+      await expect(target).toHaveClass(/animate-row-highlight/)
+      await expect(target).toBeInViewport()
+      // Lit while it holds: the ring is the highlight's blue, not transparent.
+      await expect
+        .poll(() => target.evaluate((e) => getComputedStyle(e).boxShadow))
+        .toMatch(/rgb\(96, 165, 250\)/)
+      await page.screenshot({ path: '.tmp/screens/show-in-list-375-dark.png' })
+    } finally {
+      await trash(page, ids)
+    }
+  })
 })
