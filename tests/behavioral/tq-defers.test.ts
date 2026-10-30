@@ -581,7 +581,7 @@ describe('TQ-R: repeating tasks — a defer is capped at the next occurrence (B2
     return makeRepeating('FREQ=DAILY;BYHOUR=20;BYMINUTE=0', at('2026-10-19T20:00'))
   }
 
-  test('TQ-R01: a sweep past the next occurrence lands ON it, counted and said', () => {
+  test('TQ-R01d: a sweep past the next occurrence lands ON it, counted and said', () => {
     const t = lateDaily()
     const r = sweep([t.id], { until: at('2026-10-20T22:00') })
     expect(task(t.id).due_at).toBe(at('2026-10-20T20:00'))
@@ -590,13 +590,13 @@ describe('TQ-R: repeating tasks — a defer is capped at the next occurrence (B2
     expect(r.summary).toBe('Deferred "Task" · 1 stopped at its next occurrence')
   })
 
-  test('TQ-R02: a manual snooze may pass it', () => {
+  test('TQ-R02d: a manual snooze may pass it', () => {
     const t = lateDaily()
     snoozeTask({ ...u, taskId: t.id, until: at('2026-10-20T22:00') })
     expect(task(t.id).due_at).toBe(at('2026-10-20T22:00'))
   })
 
-  test('TQ-R03: a multi-select (a pick) passes it too', () => {
+  test('TQ-R03d: a multi-select (a pick) passes it too', () => {
     const t = lateDaily()
     const r = bulkSnooze({
       ...u,
@@ -608,7 +608,7 @@ describe('TQ-R: repeating tasks — a defer is capped at the next occurrence (B2
     expect(r.cappedOccurrence).toBe(0)
   })
 
-  test('TQ-R04: High is never capped', () => {
+  test('TQ-R04d: High is never capped', () => {
     setClock('2026-10-20T07:00')
     const t = makeRepeating('FREQ=DAILY;BYHOUR=20;BYMINUTE=0', at('2026-10-19T20:00'), {
       priority: 3,
@@ -617,7 +617,7 @@ describe('TQ-R: repeating tasks — a defer is capped at the next occurrence (B2
     expect(task(t.id).due_at).toBe(at('2026-10-20T22:00'))
   })
 
-  test('TQ-R05: a sweep within the occurrence is not capped', () => {
+  test('TQ-R05d: a sweep within the occurrence is not capped', () => {
     const t = lateDaily()
     const r = sweep([t.id], { until: at('2026-10-20T12:00') })
     expect(task(t.id).due_at).toBe(at('2026-10-20T12:00'))
@@ -764,7 +764,7 @@ describe('TQ-T: Try Tomorrow', () => {
 describe('TQ-O: switch off — a sweep is exactly today’s', () => {
   beforeEach(() => vi.stubEnv('OPENTASK_TASK_QUEUE', ''))
 
-  test('TQ-O01: lands on until, no mark, the old counts and line', () => {
+  test('TQ-O01d: lands on until, no mark, the old counts and line', () => {
     const a = make({ title: 'A', due_at: at('2026-10-20T15:00') })
     const b = make({
       title: 'B',
@@ -798,7 +798,7 @@ describe('TQ-O: switch off — a sweep is exactly today’s', () => {
     })
   })
 
-  test('TQ-O02: one task is not named', () => {
+  test('TQ-O02d: one task is not named', () => {
     const a = make({ title: 'A', due_at: at('2026-10-20T15:00') })
     expect(sweep([a.id], { until: at('2026-10-21T08:30') }).summary).toBe('Deferred 1 task')
   })
