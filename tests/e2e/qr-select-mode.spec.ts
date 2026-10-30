@@ -253,6 +253,13 @@ test.describe("Trent's phone", () => {
       expect(width.scroll).toBeLessThanOrEqual(width.client)
       expect(width.header).toBeLessThanOrEqual(width.client)
       await page.setViewportSize({ width: 375, height: 812 })
+      // "TASK QUEUE" on one line at 375 and 119% text: the header's gaps give
+      // way in select mode (`compact`), the title is never truncated.
+      const titleLines = await card(page)
+        .locator('[data-slot-header-toggle] span span')
+        .first()
+        .evaluate((e) => e.getClientRects().length)
+      expect(titleLines).toBe(1)
       await page.screenshot({ path: '.tmp/screens/select-header-375.png', animations: 'disabled' })
     } finally {
       await trash(page, ids)

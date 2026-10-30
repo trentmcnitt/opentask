@@ -53,6 +53,7 @@ export function SlotPagerHeader({
   nextLabel = 'Next time slot',
   sweep,
   beforeCount,
+  compact = false,
   onToggleExpanded,
   showConsidered,
   onToggleConsidered,
@@ -80,6 +81,12 @@ export function SlotPagerHeader({
   sweep: React.ReactNode
   /** Just left of the count: the task queue card's "Select" (2026-10-30). */
   beforeCount?: React.ReactNode
+  /**
+   * Tighter gaps and padding (the queue card in select mode, 2026-10-30): with
+   * "Select" beside the count, "TASK QUEUE" stays on one line at a 375 phone
+   * and the app's 119% text — never truncated, the gaps give way instead.
+   */
+  compact?: boolean
   /** Tapping the bar between the chevrons opens and shuts the slot. */
   onToggleExpanded: () => void
   showConsidered: boolean
@@ -105,7 +112,9 @@ export function SlotPagerHeader({
     />
   )
   return (
-    <div className="flex min-h-11 items-center gap-1.5 px-2 py-1.5">
+    <div
+      className={cn('flex min-h-11 items-center py-1.5', compact ? 'gap-1 px-1.5' : 'gap-1.5 px-2')}
+    >
       <button
         type="button"
         onClick={onPrev}
@@ -131,7 +140,10 @@ export function SlotPagerHeader({
         onClick={onToggleExpanded}
         aria-expanded={expanded}
         data-slot-header-toggle
-        className="hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left transition-colors"
+        className={cn(
+          'hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1 text-left transition-colors',
+          compact ? 'px-0.5' : 'px-1',
+        )}
       >
         {/* The name may wrap, never truncate: "TASK QUEUE · PREVIOUSLY
             STAGED" (2026-10-20) is wider than a phone's header and read
@@ -170,7 +182,8 @@ export function SlotPagerHeader({
           data-considered-toggle
           aria-label={`${considered} of ${total} considered — show what was considered`}
           className={cn(
-            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+            compact ? 'px-1' : 'px-1.5',
             // THE BOX IS THE WHOLE SIGNAL. Trent, 2026-09-21: "when you
             // highlight it there's a little box around the text. When the
             // considered stuff is open there should still be a gray box
@@ -202,7 +215,10 @@ export function SlotPagerHeader({
         </button>
       ) : (
         <span
-          className="flex shrink-0 items-center gap-1 px-1.5 text-xs whitespace-nowrap tabular-nums"
+          className={cn(
+            'flex shrink-0 items-center gap-1 text-xs whitespace-nowrap tabular-nums',
+            compact ? 'px-1' : 'px-1.5',
+          )}
           aria-label={`${considered} of ${total} considered`}
         >
           <span className="text-muted-foreground">

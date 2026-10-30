@@ -129,7 +129,7 @@ export function QueueSelectToggle({ on, onToggle }: { on: boolean; onToggle: () 
       aria-pressed={on}
       data-queue-select-toggle
       className={cn(
-        'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+        'shrink-0 rounded-full px-1.5 py-1 text-xs font-medium transition-colors',
         on
           ? 'bg-foreground text-background'
           : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground',

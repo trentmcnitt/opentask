@@ -218,6 +218,7 @@ export function DashboardTasksPanel({
           ) : null
         }
         beforeCount={<QueueSelectToggle on={select.on} onToggle={select.toggleMode} />}
+        compact={select.on}
         onToggleExpanded={() => setExpanded(!expanded)}
         showConsidered={showConsidered}
         onToggleConsidered={pager.toggleConsidered}
