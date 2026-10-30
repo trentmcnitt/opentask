@@ -166,6 +166,7 @@ export function deckTasks(opts: DeckTasksOptions): DeckTasksResult {
   return result
 }
 
+// (restates RULE DECK-TODAY, home: src/lib/task-segments.ts)
 /**
  * TODAY'S DECKS (A13; the On deck section D2 draws, and the slot push's
  * count): the user's own open tasks on deck for today's OpenTask date or an

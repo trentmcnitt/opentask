@@ -1,4 +1,10 @@
 /**
+ * RULE DAY-GUARD: No code in src/ works out 'today' or a day boundary by its own arithmetic, apart
+ *   from an exact allowlist. No function defaults its day start.
+ * Why: One place computes a day boundary, so "today" cannot mean two things.
+ * Ruling: Trent 2026-10-24 (TQ-G01); v2 Trent 2026-10-26.
+ */
+/**
  * THE OPENTASK DAY (task queue, 2026-10-19; docs/TASK-MODEL.md § The OpenTask
  * day, picks and defers). THE ONE PLACE a day boundary is computed: every
  * "which day is it", "when does today start / end", "when does the day turn
@@ -140,6 +146,12 @@ export function calendarDateOf(instant: Date, timezone: string): string {
 }
 
 /**
+ * RULE LOCAL-MOMENT-DST: A time that a spring-forward gap skips resolves to the next valid minute.
+ *   A time that a fall-back repeats resolves to its first instant.
+ * Why: One rule for every derived local moment: the day start and a relative target alike.
+ * Ruling: none recorded.
+ */
+/**
  * A LOCAL WALL-CLOCK MOMENT: `time` ("HH:MM") on the local date `localDate`
  * (yyyy-MM-dd) in `timezone`, as an instant. One rule for every derived
  * local moment — the day start (`dayStartMoment`) and a deadline-anchored
@@ -195,6 +207,14 @@ export function dayStartOnDate(calendarDate: string, timezone: string, dayStart:
 }
 
 /**
+ * RULE DAY-NAMING: If the day starts at or before 12:00, the day is named by the date it begins on;
+ *   if after 12:00, by the next date. openTaskDayOf(x) = D exactly when dayStartMoment(D) <= x <
+ *   dayStartMoment(D+1).
+ * Why: A day start after noon names the day it mostly covers; everything is built on openTaskDayOf
+ *   and dayStartMoment (the module comment).
+ * Ruling: Trent 2026-10-24 (both directions; src/lib/opentask-day.ts:14).
+ */
+/**
  * The OpenTask day (yyyy-MM-dd) an instant belongs to (the header's rule).
  * With 06:30: 00:00–06:29 belongs to the previous date, 06:30 exactly starts
  * the new one. With 23:00: 23:00 exactly is already the next date.
@@ -235,6 +255,12 @@ export function openTaskDaySpan(now: Date, timezone: string, dayStart: string): 
   return openTaskDateSpan(openTaskDayOf(now, timezone, dayStart), timezone, dayStart)
 }
 
+/**
+ * RULE PERIOD-OPENS-AT: A period opens at the one instant of its wall-clock time inside the
+ *   OpenTask day. A period that starts before the day start opens at the end of the day.
+ * Why: A 1:00 AM period, with the day starting at 3:00, is the end of the day, not its beginning.
+ * Ruling: Part of 2026-10-23 one day boundary (src/core/notifications/slot-nags.ts:76).
+ */
 /**
  * When a reminder period (`start`, HH:MM) opens within the OpenTask day
  * `date`: the one instant in `[dayStartMoment(date), dayStartMoment(date+1))`
@@ -299,6 +325,16 @@ export function isLateNight(instant: Date, timezone: string, dayStart: string): 
   return openTaskDayOf(instant, timezone, dayStart) < calendarDateOf(instant, timezone)
 }
 
+/**
+ * RULE TQ-EARLY-PICK: Take a target between local midnight and the day start, on a calendar day
+ *   later than the day it was set. It belongs to that calendar day: the rollover spares an unmarked
+ *   one at its first rollover, and attempts count that day. A marked task is always stripped, and
+ *   Roll over now spares nothing.
+ * Why: At 22:00, "tomorrow 6:00" is a pick for the coming day, not the evening's leftover; one rule
+ *   for the rollover and attempts, so they cannot drift apart.
+ * Ruling: Designer ruling, 2026-10-19 (src/lib/opentask-day.ts:303); no Trent ruling cited.
+ * Restated at: src/core/tasks/task-rollover.ts (earlyMorningPick).
+ */
 /**
  * AN EARLY-MORNING PICK (designer ruling, 2026-10-19): a target in the LATE
  * NIGHT (`isLateNight`) of its calendar day X — between midnight and the day

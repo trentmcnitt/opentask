@@ -3392,6 +3392,14 @@ function withoutDateFields(
 }
 
 /**
+ * RULE DL-ENRICH: Enrichment goes through resolveTarget like any other writer, so with the switch
+ *   on 'by Friday' leaves the task target-less and on the page. It never writes a rule onto a task
+ *   that has a deadline; such a rule is logged and dropped.
+ * Why: A rule on a task with a deadline would make, through raw SQL, a shape the API refuses
+ *   (planRepeatSchedule, L9/A3).
+ * Ruling: 2026-10-21 (withoutRuleOnDeadline header); explicit-wording rule AGENTS.md:515.
+ */
+/**
  * NO RULE ONTO A DEADLINE (2026-10-21, until PR 5 teaches enrichment
  * deadline-anchored repeats): a rule on a task with a deadline would make a
  * target-anchored repeat WITH a deadline through raw SQL — a shape the API

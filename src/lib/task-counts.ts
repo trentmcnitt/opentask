@@ -45,6 +45,15 @@ export function hasDebtDueDate(task: CountableTask): task is CountableTask & { d
 }
 
 /**
+ * RULE TGT-OVERDUE-CLIENT: The client counts a task as overdue when due_at is strictly before now
+ *   (<). Quotas are excluded, and the counts route also drops reminders. No schedule fallback runs
+ *   here. This drives the Overdue pill, the filter chips, the sort, Now's relevance and the mode
+ *   sections.
+ * Why: One client definition shared by the pills, the chips and the counts route, so they cannot
+ *   drift. Its boundary (<) differs from the server's isCurrentlyDue (<=): issue I-03, open.
+ * Ruling: none recorded.
+ */
+/**
  * THE definition of "overdue" on the Tasks page: a real due date strictly in
  * the past. Shared by `countTasks` (header pills, nav badges, GET
  * /api/tasks/counts) and `classifyTaskDueDate` (the Overdue filter chips and

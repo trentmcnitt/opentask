@@ -25,6 +25,12 @@
  * mutations dismiss it: `namedPushEndCheck` in reminder-nags.ts.
  */
 
+/**
+ * RULE NAMED-PUSH-THRESHOLD: A waiting reminder at Medium or above, or a prompt whose quota is at
+ *   Medium or above, gets its own push and is left out of the period count and the slot nag.
+ * Why: Priority is the one dial (the module comment).
+ * Ruling: Trent 2026-10-26; prompts Push PR 4.
+ */
 /** The lowest priority whose reminders are pushed by name: Medium. */
 export const NAMED_REMINDER_MIN_PRIORITY = 2
 

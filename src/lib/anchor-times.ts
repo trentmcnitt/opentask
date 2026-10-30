@@ -232,6 +232,13 @@ export interface ResolvedDayStart extends ResolvedTime {
 }
 
 /**
+ * RULE DAY-START-DEFAULT: The start of the OpenTask day is the user's 'Day starts at': a custom
+ *   time, a linked period's start, or 03:00 for everyone when unset.
+ * Why: Every user needs a day start; unset reads one fixed default.
+ * Ruling: Trent 2026-10-23 (Day starts at); Trent 2026-10-24 (fixed 3:00 AM default).
+ * Restated at: src/lib/anchor-times.ts (dayStartTimeOf).
+ */
+/**
  * THE DAY-START RULE: a setting resolves like any anchor (`resolveTime`);
  * unset reads `DEFAULT_DAY_START`.
  */
@@ -244,6 +251,7 @@ export function resolveDayStart(
   return { time: DEFAULT_DAY_START, slot_id: null, slot_label: null, default: true }
 }
 
+// (restates RULE DAY-START-DEFAULT, home: src/lib/anchor-times.ts)
 /**
  * `resolveDayStart`'s time over bare rows — for a reader below the resolver
  * (`stampRolloverDates` at startup, the deadline-leads migration). The same

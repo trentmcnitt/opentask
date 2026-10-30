@@ -211,6 +211,15 @@ function anyRungDue(user: NotifiableUser, tiers: NagTiers, now: Date): boolean {
 }
 
 /**
+ * RULE SLOT-NAG: While a slot that has opened today still has None or Low reminders or prompts
+ *   waiting, one push per user names the latest such slot. It is paced through nag_sends, writes
+ *   nothing to tasks and never counts in the badge.
+ * Why: A conscious exception to §6 ("a missed slot is a missed thought"), requested by Trent; it
+ *   never marks anything overdue (the module comment).
+ * Ruling: Trent 2026-09-21 (§6 exception, src/core/notifications/slot-nags.ts:54); Trent
+ *   2026-10-22.
+ */
+/**
  * Every nag that should go out this minute — at most one per user.
  *
  * Read-only. `planSlotNagSends` is what claims the send for the tick.

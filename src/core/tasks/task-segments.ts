@@ -1,4 +1,12 @@
 /**
+ * RULE SEG-NEVER-NOTIFIED: Task segments are not in groups[]. Their rows never count in the badge,
+ *   slot notifications or the slot nag, and a segment never sends a push. The deadlines nag has its
+ *   own rule (DL-NAG).
+ * Why: A task segment never makes the reminders channel nag (spec §3); anything time-critical has a
+ *   target.
+ * Ruling: Headline counted separately: Trent 2026-10-26 ruling 'B' (docs/TASK-MODEL.md:207).
+ */
+/**
  * Task segments on the reminders screen (2026-10-10, docs/TASK-MODEL.md
  * § Task segments). The rules for which task shows where are pure and live in
  * `src/lib/task-segments.ts`; this module reads the rows and writes the three
@@ -132,6 +140,13 @@ export interface TaskSegment {
   nudge: boolean
 }
 
+/**
+ * RULE SEG-ELIGIBLE: The owner's own open, non-deleted, unarchived one-offs that are not reminders
+ *   or quotas.
+ * Why: A recurring task's schedule already brings it round, and reminders and quotas have their own
+ *   rows (the module comment).
+ * Ruling: none recorded.
+ */
 /** The user's segment-eligible tasks: own, open, one-off, not a reminder or quota. */
 export function eligibleTasks(userId: number): Task[] {
   const rows = getDb()
@@ -280,6 +295,14 @@ export function getTaskSegments(
   }
   const placeInQueue = queuePlacer(userId, timezone, now)
   const deckMoment = deckMomentFor(userId, timezone)
+  /**
+   * RULE TQ-OPT-IN: Without ?queue=1, queued tasks are left out of every segment. Without ?deck=1,
+   *   a decked task is in no segment. Without ?deadlines=1, target-less deadline tasks fall back to
+   *   their horizon segment. The web and native PR E send all of them (REMINDERS_URL).
+   * Why: A shipped native build would list an unknown kind as a page of its own, so each new kind
+   *   is opt-in (the options below).
+   * Ruling: none recorded.
+   */
   // Queued, but the caller can't show the queue: left out of every segment.
   const place = (task: Task) => {
     const queued = placeInQueue(task)
@@ -290,11 +313,23 @@ export function getTaskSegments(
     const heads = upcomingState(task, timezone, now, dayStart)
     if (heads) upcoming.push({ task, ...heads })
   }
+  // (restates RULE DL-UPCOMING-RULE3, home: src/lib/task-segments.ts)
   // A target-less deadline task (the page drawn) is on the page or nowhere:
   // never in Upcoming, a future deck's row included (rule 3, 2026-10-25).
   const placeDeadline = deadlinePlacer(userId, timezone, now, deadlineRows, (task, entry) => {
     add('deadlines', { task, state: entry.state, safetyNet: entry.safetyNet, seen: entry.seen })
   })
+  /**
+   * RULE TQ-PRECEDENCE: For one-offs, getTaskSegments places a task in the first of these that
+   *   takes it: the queue (hidden without ?queue=1), the deadlines page, on deck, a picked target
+   *   (Upcoming), Aged out (when asked for), then the horizon segment. Repeats go: queue, deadlines
+   *   page, on deck, a target-less deadline repeat in a horizon segment (degrade), then Upcoming.
+   *   This describes the read order only; whether exclusivity belongs at write time is PARKED
+   *   (issue I-02). In short: the read's order today; write-time vs read-time is PARKED (I-02).
+   * Why: A task the queue or the deadlines page takes is in no other segment, so it is never in two
+   *   places.
+   * Ruling: Spec rule 7 (2026-10-19). Deadlines page first: Trent 2026-10-22. Rule 3, 2026-10-25.
+   */
   // The queue's panels first (rule 7), then the deadlines page: a task one
   // of them takes is in no other segment. True when it was taken (or hidden).
   const placeFirst = (task: Task): boolean => {
@@ -371,6 +406,13 @@ export function getTaskSegments(
       deadlines: deadlineRows && taskQueueEnabled(),
     })
   }
+  /**
+   * RULE SEG-FILL: With fill, the server returns every kind the caller can draw, in SEGMENT_ORDER,
+   *   including empty ones. Without it, a segment comes back only on days it has rows. This affects
+   *   display only, never placement.
+   * Why: Display only: which task lands where is the same either way.
+   * Ruling: Trent 2026-10-24 (server side); display reversed 2026-10-30.
+   */
   const queueOn = taskQueueEnabled()
   const shown = (kind: SegmentKind): boolean => {
     if (byKind.has(kind)) return true
@@ -389,12 +431,25 @@ export function getTaskSegments(
     } else if (kind === 'aged_out') {
       tasks.sort((a, b) => compareAgedOut(a.task, b.task))
     } else if (kind !== 'upcoming') {
+      /**
+       * RULE SEG-ORDER-WITHIN: Rows are ordered by priority (highest first), then id. The horizon
+       *   decides whether a task shows, never where it sits.
+       * Why: Acting on one row never reorders the rest under the finger.
+       * Ruling: The 09-05 rule (src/core/tasks/task-segments.ts:193).
+       */
       tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
     }
     return segmentOf(kind, tasks)
   })
 }
 
+/**
+ * RULE UP-ORDER: Tomorrow rows come first, then rows by anchor instant, then by id. Rows that left
+ *   go to the end of their section.
+ * Why: The order the dates come in; a Tomorrow row's anchor can be a later instant than a Later
+ *   row's, so the section goes first.
+ * Ruling: none recorded.
+ */
 /** Upcoming's section order: Tomorrow, then Later. */
 function sectionRank(section: UpcomingSection | undefined): number {
   return section === 'tomorrow' ? 0 : 1
@@ -443,6 +498,7 @@ function addLeftRows(
 
 type DeadlineEntry = Exclude<ReturnType<typeof deadlinePlace>, null>
 
+// (restates RULE DL-PAGE-MEMBERSHIP, home: src/lib/task-segments.ts)
 /**
  * The deadlines page's placement for this user and moment (switch on and a
  * caller that draws it), or one that places nothing. Returns whether it took
@@ -517,6 +573,15 @@ function ownOpenTasks(userId: number, ids: number[]): Task[] {
 
 type StampColumn = 'last_considered_at' | 'segment_deferred_at'
 
+/**
+ * RULE SEG-ACTIONS: Consider stamps last_considered_at and is never a completion. On a queued
+ *   one-off it also clears queued_at and try_tomorrow, while a waiting repeat stays queued. Put
+ *   back clears both stamps and never re-queues. Every action refuses ids that are not the caller's
+ *   own open tasks, and each writes one task_segment undo entry, even when nothing changed.
+ * Why: The client offers Undo on every tap; without an entry of its own that Undo would reverse
+ *   whatever came before it.
+ * Ruling: Spec rule 8; put-back 2026-10-11.
+ */
 /**
  * Write one stamp on each task, as one undo entry. Logged even when a task is
  * already stamped today: the client offers Undo on every tap, and without an
@@ -679,6 +744,15 @@ export function deferLeads(
   return { day: target, deferred: moving.length, refused, summary }
 }
 
+/**
+ * RULE SEG-NOT-TODAY: 'Not today' stamps segment_deferred_at: the row is off today's list and back
+ *   tomorrow, and it does not count as a consider. 'Not today, all' is offered on every segment
+ *   except the queue panels and the deadlines page. Queue select mode offers 'Not today' on picked
+ *   rows.
+ * Why: Not today is not a consider, which keeps "considered" honest.
+ * Ruling: Renamed 'Not today': Trent 2026-10-30 (commit 11d9723a). Select mode: Trent 2026-10-30.
+ * Restated at: src/lib/task-segments.ts (offersDeferAll).
+ */
 /** Defer All: off today's segment, back tomorrow. Not a consider. */
 export function deferTasks(userId: number, ids: number[]): number {
   const n = ids.length
@@ -756,6 +830,16 @@ function assertTargetDay(at: string, timezone: string, now: Date, dayStart: stri
   }
 }
 
+/**
+ * RULE SEG-TARGET-TODAY: 'Today' targets the next period start if it is still today, otherwise the
+ *   top of the next hour, or an explicit 'at' today or later. The move is capped at the deadline.
+ *   It also stamps considered and segment_targeted_at in one bulk edit, counting each id as an
+ *   explicit pick. On a repeat it moves only the target.
+ * Why: Today is a deliberate target; one bulk edit, so one Undo puts back the target and the stamps
+ *   together.
+ * Ruling: Repeating rows targeted since §6, 2026-10-12, replacing ruling Q1
+ *   (src/core/tasks/task-segments.ts:771).
+ */
 /**
  * Target today: a move of the target (§6 — one gesture; there is no separate
  * re-target any more). Goes through bulk edit for one undo entry, the

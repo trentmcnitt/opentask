@@ -90,6 +90,23 @@ export type PushKind =
   | 'deadlines'
 
 /**
+ * RULE TICK-LEAD-ORDER: Each minute, a user's lead push is the highest-ranked send that would sound
+ *   on its own. A silent send leads only when nothing sounds. The lead gets ' · N more waiting',
+ *   and the rest go out passive, except Urgent overdue, which is always critical. If the lead
+ *   reaches no device, the next sounding send is promoted.
+ * Why: One alert per user per minute; a silent send must not take the lead from one that sounds
+ *   (Trent, on #362).
+ * Ruling: Trent 2026-10-26 (src/core/notifications/tick.ts:1, :22, :114).
+ */
+/**
+ * RULE SOUND-ONLY-ON-OVERDUE: The slot-open push, the slot nag and the deadlines nag are silent,
+ *   and so is a Medium named push. High and Urgent named pushes and overdue pushes sound.
+ * Why: Each sender sets `silent` by its own rule; named here so the choices sit in one place: the
+ *   slot-open push (slot-reminders.ts), the slot nag (slot-nags.ts), the deadlines nag
+ *   (deadline-nags.ts), and the named pushes by priority (reminder-nags.ts, prompt-nags.ts).
+ * Ruling: Ruling 5, Trent 2026-10-22; High/Urgent named pushes sound, Trent 2026-10-26.
+ */
+/**
  * Most important first. The `reminder_*` kinds are the named reminder pushes
  * (reminder-nags.ts), the `prompt_*` kinds the named quota-prompt pushes
  * (prompt-nags.ts) — each listed after its reminder twin, whose rank it
