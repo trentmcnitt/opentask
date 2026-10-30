@@ -622,7 +622,13 @@ function ListSelectionBar({
       }
     >
       <BarAction tone="done" icon={<Check />} label="Done" onClick={onDone} />
-      {onTarget && <TargetVerb count={count} onTarget={onTarget} />}
+      {onTarget && (
+        <TargetVerb
+          count={count}
+          targets={selectedTasks.map((t) => t.due_at)}
+          onTarget={onTarget}
+        />
+      )}
       {onDeck && <DeckVerb timezone={timezone} onDeck={onDeck} />}
       <BarAction icon={<FileText />} label="Details" onClick={onDetails} data-bar-details />
       <BarAction

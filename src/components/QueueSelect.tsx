@@ -190,7 +190,7 @@ export function QueueSelectionBar({
     >
       <BarAction icon={<CheckCheck />} label="Consider" onClick={onConsider} data-bar-consider />
       <BarAction tone="done" icon={<Check />} label="Done" onClick={onDone} />
-      <TargetVerb count={count} onTarget={onTarget} />
+      <TargetVerb count={count} targets={selectedTasks.map((t) => t.due_at)} onTarget={onTarget} />
       <BarAction icon={<Forward />} label={NOT_TODAY} onClick={onNotToday} data-bar-not-today />
       <DeckVerb timezone={timezone} onDeck={onDeck} />
       <BarAction icon={<FileText />} label="Details" onClick={onDetails} data-bar-details />
