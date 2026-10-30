@@ -68,7 +68,14 @@ export default function RemindersPage() {
     refreshRef.current?.()
   }, [])
 
-  const actions = useUndoRedo({ onRefresh: refresh })
+  // What an undo reversed, told to the surface before the refresh: an entry
+  // one of its own considers wrote is put back at once (`applyUndone`).
+  const undoneRef = useRef<((undoneId: number) => void) | null>(null)
+  const undone = useCallback((undoneId: number) => {
+    undoneRef.current?.(undoneId)
+  }, [])
+
+  const actions = useUndoRedo({ onRefresh: refresh, onUndone: undone })
 
   useUndoRedoShortcuts(actions.handleUndoRef, actions.handleRedoRef)
 
@@ -99,6 +106,7 @@ export default function RemindersPage() {
           onUndo={actions.handleUndo}
           onCompleted={actions.bumpUndoCount}
           refreshRef={refreshRef}
+          undoneRef={undoneRef}
           searchQuery={searchQuery}
         />
       </main>

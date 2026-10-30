@@ -18,6 +18,7 @@ import { log } from '@/lib/logger'
 import type { RouteContext } from '@/types/api'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -53,6 +54,9 @@ export const POST = withLogging(async function POST(request: NextRequest, contex
       // Repeat ends (2026-10-22): this done closed the last occurrence — the
       // task is now done and archived, with no next occurrence.
       series_ended: result.seriesEnded,
+      // The undo entry this request wrote (2026-10-29): the Reminders surface
+      // puts a consider back at once when an undo names it.
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (!(err instanceof AppError)) log.error('api', 'POST /api/tasks/:id/done error:', err)

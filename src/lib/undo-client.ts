@@ -18,6 +18,8 @@ export interface UndoRedoResult {
   description: string
   undoable_count?: number
   redoable_count?: number
+  /** The entry an undo reversed (`POST /api/undo`). */
+  undone_id?: number
 }
 
 /**

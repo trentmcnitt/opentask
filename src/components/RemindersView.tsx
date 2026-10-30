@@ -91,8 +91,8 @@ import type { Task } from '@/types'
  */
 
 interface RemindersViewProps {
-  /** Undo the last action — wired to the completion toast. */
-  onUndo: () => void
+  /** Undo the last action — wired to the completion toast (awaited when it returns a promise). */
+  onUndo: () => void | Promise<unknown>
   /** Called after a completion, so the page can keep its own undo counter in step. */
   onCompleted?: () => void
   /**
@@ -101,6 +101,11 @@ interface RemindersViewProps {
    * undone completion would stay invisible until a reload.
    */
   refreshRef?: React.MutableRefObject<(() => void) | null>
+  /**
+   * Registers `applyUndone` with the page's undo pipeline: an undo that
+   * reverses one of this surface's own considers puts its rows back at once.
+   */
+  undoneRef?: React.MutableRefObject<((undoneId: number) => void) | null>
   /**
    * Narrow the surface to thoughts matching this text. Filtering happens here,
    * on data the surface already holds, rather than through the API the Tasks
@@ -115,6 +120,7 @@ export function RemindersView({
   onUndo,
   onCompleted,
   refreshRef,
+  undoneRef,
   searchQuery,
 }: RemindersViewProps) {
   const timezone = useTimezone()
@@ -148,6 +154,7 @@ export function RemindersView({
     payloadSeq,
     requestSeq,
     create,
+    applyUndone,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   // Task segments (2026-10-10): tasks whose target hasn't arrived, as sections
   // after the slots (2026-10-11). Never counted in the nav badge; with the
@@ -277,6 +284,14 @@ export function RemindersView({
       refreshRef.current = null
     }
   }, [refreshRef, refresh])
+
+  useEffect(() => {
+    if (!undoneRef) return
+    undoneRef.current = applyUndone
+    return () => {
+      undoneRef.current = null
+    }
+  }, [undoneRef, applyUndone])
 
   // A slot shows while it has something waiting OR something considered today
   // (a full bar is worth seeing); a slot with neither is noise.
