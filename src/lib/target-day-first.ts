@@ -42,6 +42,15 @@ export function effectiveTargetDayFirst(
   return dayOf(first, timezone, dayStart) === dayOf(dueAt, timezone, dayStart) ? first : dueAt
 }
 
+/**
+ * RULE TGT-DAY-FIRST: target_day_first_at is the target as it first landed on its current OpenTask
+ *   day. A new target, or a move to another day, resets it, and a move within the same day keeps
+ *   it. A stored value from another day reads as the target itself. The lean row shows 'was <time>'
+ *   only when the day matches and the time differs.
+ * Why: original_due_at is the first target ever and cannot say the day's first; a write that misses
+ *   the column can only drop the "was", never show a wrong one.
+ * Ruling: Trent, 2026-10-29 (src/lib/target-day-first.ts:2).
+ */
 /** The value a move of the target from `oldDue` to `newDue` leaves. */
 export function nextTargetDayFirst(
   oldDue: string | null,

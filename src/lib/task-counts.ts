@@ -56,6 +56,15 @@ export function targetArrived(target: string | Date, now: Date): boolean {
 }
 
 /**
+ * RULE TGT-OVERDUE-CLIENT: The client counts a task as overdue when due_at is at or before now
+ *   (<=, targetArrived), the server's boundary. Quotas are excluded, and the counts route also
+ *   drops reminders. No schedule fallback runs here. This drives the Overdue pill, the filter
+ *   chips, the sort, Now's relevance and the mode sections.
+ * Why: One client definition shared by the pills, the chips and the counts route, so they cannot
+ *   drift, and one boundary with the server: a 9:00 target is over target at 9:00:00.
+ * Ruling: The design session's call, 2026-11-12 (closes issue I-03; the client was a strict <).
+ */
+/**
  * THE definition of "overdue" on the Tasks page: a real due date that has
  * arrived (`targetArrived`: at or before now). Shared by `countTasks` (header pills, nav badges, GET
  * /api/tasks/counts) and `classifyTaskDueDate` (the Overdue filter chips and

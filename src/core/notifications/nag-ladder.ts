@@ -1,4 +1,12 @@
 /**
+ * RULE NO-QUIET-HOURS: The overdue nag, slot nag and deadlines nag send whenever they are due, 3 AM
+ *   included. Clock marks decide where a repeat lands but never hold one back.
+ * Why: OpenTask has no time-of-day behaviour; the phone's sleep mode handles nights. Marks place a
+ *   repeat, never hold one back.
+ * Ruling: Ruling 2 / Trent 2026-10-22 ('Do not add them back without Trent',
+ *   src/core/notifications/slot-nags.ts:38).
+ */
+/**
  * THE NAG LADDER — how often each kind of nag repeats, by priority, in ONE
  * table (nag-map ruling 1; Trent 2026-10-22: "one considering ladder, no
  * special cases").
@@ -79,6 +87,14 @@ function ladder(times: number): Ladder {
 /** The considering pace: overdue ×2, every priority (Trent, 2026-10-22). */
 const CONSIDERING = ladder(2)
 
+/**
+ * RULE NAG-LADDER: How often a nag repeats is read from one table keyed by kind and priority. The
+ *   overdue row is the user's tiers. The considering rows (deadlines page, slot nag, and the named
+ *   reminder and prompt pushes, through slot_nag) are the same tier ×2 at every priority.
+ * Why: One considering ladder, no special cases: priority sets how often, never how many.
+ * Ruling: Trent 2026-10-22: 'one considering ladder, no special cases'
+ *   (src/core/notifications/nag-ladder.ts:79).
+ */
 /** THE TABLE, keyed (kind, priority 0–4). */
 export const NAG_LADDER: Record<NagKind, Ladder> = {
   overdue: ladder(1),
@@ -88,6 +104,12 @@ export const NAG_LADDER: Record<NagKind, Ladder> = {
   quota_prompt: CONSIDERING,
 }
 
+/**
+ * RULE NAG-SAFETY-NET: From the day before a deadline onward, a deadlines-page row's rung is capped
+ *   at 60 minutes. Faster rungs keep their pace.
+ * Why: From the day before a deadline the nag must not be slower than hourly.
+ * Ruling: A2 (no person or date in code).
+ */
 /** The deadlines page's safety net nags at least this often (A2). */
 export const SAFETY_NET_FLOOR_MINUTES = 60
 

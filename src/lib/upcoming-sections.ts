@@ -34,6 +34,12 @@ export function sectionOf(row: SegmentRow): UpcomingSection {
 }
 
 /**
+ * RULE UP-SECTIONS-WEB: Upcoming splits into Tomorrow, then Later, each with its own count. A
+ *   section with no rows today is not drawn. A row with no section reads as Later.
+ * Why: An empty section is not drawn (Trent, 2026-10-30).
+ * Ruling: Trent 2026-10-30 'hide an empty section' (src/lib/upcoming-sections.ts:10).
+ */
+/**
  * The segment's rows split into Tomorrow then Later (`UPCOMING_SECTIONS`),
  * leaving out a section with no rows today (2026-10-30). An empty list: the
  * whole page is empty.

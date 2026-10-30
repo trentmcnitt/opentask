@@ -24,6 +24,15 @@ export function rolloverTimeForUser(userId: number): string {
 }
 
 /**
+ * RULE DAY-BOUNDARY-SWITCH: Every reader keyed to the day uses the user's day start when the switch
+ *   is on and midnight when it is off. The server reads it through dayBoundaryForUser, the browser
+ *   through useDayStart and native through DayStartStore.
+ * Why: With the switch off a server without the queue stays exactly as it was.
+ * Ruling: Trent 2026-10-23 ('one day boundary everywhere').
+ * Restated at: src/lib/browser-day-start.ts (browserDayStart), src/core/tasks/rollover-time.ts
+ *   (attemptsRolloverTime).
+ */
+/**
  * THE DAY BOUNDARY of the day-keyed surfaces (2026-10-23, "one day boundary
  * everywhere"): the Reminders screen's roster and "considered today", quota
  * prompts and their day keys, a daily quota's count, and the slot nag. With
@@ -36,6 +45,7 @@ export function dayBoundaryForUser(userId: number): string {
   return taskQueueEnabled() ? rolloverTimeForUser(userId) : CALENDAR_DAY_START
 }
 
+// (restates RULE DAY-BOUNDARY-SWITCH, home: src/core/tasks/rollover-time.ts)
 /**
  * The rollover time attempts count OpenTask days from (B7) — the owner's,
  * with the switch on — or null (calendar days, the switch off). For the
