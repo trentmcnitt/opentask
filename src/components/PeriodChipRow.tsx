@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
@@ -19,6 +20,11 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  * just be bolded"): the period that starts at it is BOLD; when none does, a
  * "Default · 6:30" pill leads the row. Bold (the default) and pressed (what
  * the fields say) are separate looks, so one button can be both.
+ *
+ * THE ROW SAYS IT SCROLLS (2026-10-30): an edge with more periods past it
+ * fades out (`useRowEdges`), and on open the row scrolls the pressed button —
+ * else the default — into the middle, so the one that matters is never off to
+ * the side.
  */
 export function PeriodChipRow({
   slots,
@@ -38,6 +44,7 @@ export function PeriodChipRow({
   const choices = ordered.some((s) => s.start_time === defaultTime)
     ? ordered
     : [{ start_time: defaultTime, label: 'Default' } as TimeSlot, ...ordered]
+  const { ref, edges } = useRowEdges(choices.map((c) => c.start_time).join())
   // `w-0 min-w-full`: the row fills the picker but adds nothing to its width,
   // so a long list scrolls instead of widening the popover past the screen.
   return (
@@ -46,6 +53,10 @@ export function PeriodChipRow({
         role="group"
         aria-label="Periods"
         data-picker-periods
+        data-more-start={edges.start ? '' : undefined}
+        data-more-end={edges.end ? '' : undefined}
+        ref={ref}
+        style={{ maskImage: edgeFade(edges), WebkitMaskImage: edgeFade(edges) }}
         className="-mx-3 flex gap-1.5 overflow-x-auto overscroll-x-contain px-3 pt-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {choices.map((slot) => {
@@ -76,6 +87,47 @@ export function PeriodChipRow({
       </div>
     </div>
   )
+}
+
+/** The fade on each edge with more past it (a mask: the buttons go transparent). */
+function edgeFade({ start, end }: { start: boolean; end: boolean }): string | undefined {
+  if (!start && !end) return undefined
+  const from = start ? 'transparent, black 1.5rem' : 'black'
+  const to = end ? 'black calc(100% - 1.5rem), transparent' : 'black'
+  return `linear-gradient(to right, ${from}, ${to})`
+}
+
+/**
+ * Which edges of the scrolling row have more past them, kept current on
+ * scroll and resize; and, each time the list changes (the periods arrive
+ * after the picker opens), the pressed button — else the default — scrolled
+ * to the middle. The 1px is sub-pixel scroll positions, which can stop a
+ * fraction short of the end.
+ */
+function useRowEdges(listKey: string) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = useState({ start: false, end: false })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const target =
+      el.querySelector<HTMLElement>('[aria-pressed="true"]') ??
+      el.querySelector<HTMLElement>('[data-picker-default]')
+    if (target) el.scrollLeft = target.offsetLeft - (el.clientWidth - target.offsetWidth) / 2
+    const measure = () =>
+      setEdges({
+        start: el.scrollLeft > 1,
+        end: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
+      })
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    el.addEventListener('scroll', measure, { passive: true })
+    return () => {
+      observer.disconnect()
+      el.removeEventListener('scroll', measure)
+    }
+  }, [listKey])
+  return { ref, edges }
 }
 
 /**

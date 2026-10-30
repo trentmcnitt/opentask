@@ -99,6 +99,20 @@ test('targets differ: the Default task time, the default period pressed; a perio
     // The default is what the fields say: marked and pressed at once.
     const def = periods.locator('[data-picker-default]')
     await expect(def).toHaveAttribute('aria-pressed', 'true')
+    // More periods than fit: the row fades on the side they are, and the
+    // pressed one is in view.
+    const more = await periods.evaluate((e) => e.scrollWidth > e.clientWidth)
+    if (more) {
+      expect(
+        await periods.evaluate(
+          (e) => e.hasAttribute('data-more-end') || e.hasAttribute('data-more-start'),
+        ),
+      ).toBe(true)
+    }
+    const row = (await periods.boundingBox())!
+    const pressed = (await def.boundingBox())!
+    expect(pressed.x).toBeGreaterThanOrEqual(row.x)
+    expect(pressed.x + pressed.width).toBeLessThanOrEqual(row.x + row.width)
     await page.screenshot({
       path: '.tmp/screens/custom-picker-mixed-375.png',
       animations: 'disabled',
