@@ -164,7 +164,11 @@ export function DashboardTasksPanel({
       data-tasks-panel
       data-tasks-page={page.key}
       data-task-segment={segment.horizon}
-      className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
+      // A stop of the Dashboard tab's re-tap walk while a segment waits
+      // (src/lib/retap-walk.ts).
+      data-retap-stop
+      data-needs-you={pages.some((p) => p.waiting > 0) ? '' : undefined}
+      className="bg-muted/30 scroll-below-header mb-6 overflow-hidden rounded-2xl"
     >
       <SlotPagerHeader
         // "Task queue" on every page (2026-10-29); the strip's words say which.

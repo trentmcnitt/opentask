@@ -1,6 +1,8 @@
 import { useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import { useDefaultGrouping } from '@/components/PreferencesProvider'
+import { retapWalk } from '@/lib/retap-walk'
+import { PAGE_RETAP_EVENT } from '@/lib/scroll-to-top'
 
 /**
  * The Dashboard tab's click (desktop sidebar and phone tab bar).
@@ -30,7 +32,11 @@ export function useDashboardTabClick() {
       }
       if (isActive) {
         e.preventDefault()
-        window.dispatchEvent(new CustomEvent('dashboard-reset'))
+        // A re-tap walks to the next place that needs you (the Reminders
+        // card, the Task queue card, the task list — src/lib/retap-walk.ts);
+        // with none left, the full reset and the top.
+        window.dispatchEvent(new CustomEvent(PAGE_RETAP_EVENT))
+        if (!retapWalk()) window.dispatchEvent(new CustomEvent('dashboard-reset'))
       }
     },
     [defaultGrouping, setDefaultGrouping, groupingLoaded, isActive],

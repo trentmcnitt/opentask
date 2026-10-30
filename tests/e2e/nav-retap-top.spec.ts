@@ -2,9 +2,10 @@
  * Re-tapping the tab you are on scrolls its page to the top (Trent,
  * 2026-10-29: "if you tap the tab, it should scroll you to the top the same
  * way it does when you tap on Dashboard… The same is true for quotas";
- * `scrollPageToTop`, `useTabRetap`). The phone's tab bar and the desktop
- * sidebar, every destination. The page is made taller than the screen first,
- * so there is always somewhere to scroll from.
+ * `scrollPageToTop`, `useTabRetap`) — the end of the re-tap's walk, when
+ * nothing that needs you is left (nav-retap-walk.spec). The phone's tab bar
+ * and the desktop sidebar, every destination. The page is made taller than
+ * the screen first, so there is always somewhere to scroll from.
  */
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
@@ -28,6 +29,13 @@ async function scrolledDown(page: Page) {
   await page.addStyleTag({ content: 'body { min-height: 4000px; }' })
   await page.evaluate(() => window.scrollTo(0, 1200))
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000)
+  // Nothing that needs you left on the page, so the re-tap's walk
+  // (`retapWalk`, nav-retap-walk.spec) has nowhere to go: the top.
+  await page.evaluate(() =>
+    document
+      .querySelectorAll('[data-needs-you]')
+      .forEach((el) => el.removeAttribute('data-needs-you')),
+  )
 }
 
 test.describe('phone tab bar', () => {

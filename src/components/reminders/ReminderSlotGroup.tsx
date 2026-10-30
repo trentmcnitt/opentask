@@ -157,6 +157,7 @@ export function ReminderSlotGroup({
   slotKey,
   scrollRequest,
   onScrollServed,
+  retapPlace,
   onToggle,
   onExpand,
   completingIds,
@@ -181,6 +182,8 @@ export function ReminderSlotGroup({
   scrollRequest?: number
   /** The request has been carried out — clear it, so a remount cannot replay it. */
   onScrollServed?: (seq: number) => void
+  /** Its place in a re-tap of the Reminders tab's walk, when it needs you (src/lib/retap-walk.ts). */
+  retapPlace?: number
   onToggle: () => void
   onExpand: (expanded: boolean) => void
   completingIds: Set<number | string>
@@ -238,6 +241,10 @@ export function ReminderSlotGroup({
       data-slot-key={slotKey}
       // The section the user last touched (`useScrollToNextSection`).
       data-section-key={slotKey}
+      // A stop of the tab's re-tap walk (src/lib/retap-walk.ts).
+      data-retap-stop
+      data-needs-you={retapPlace !== undefined ? '' : undefined}
+      data-retap-order={retapPlace}
     >
       <div className="flex min-h-11 items-center gap-2 px-3">
         {!canOpen ? (

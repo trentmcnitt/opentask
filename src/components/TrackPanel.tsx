@@ -561,7 +561,11 @@ export function TrackPanel({
       ref={panelRef}
       aria-label="Quotas"
       data-track-panel
-      className={cn(!standalone && 'mb-6')}
+      // The dashboard's card is a stop of the Dashboard tab's re-tap walk
+      // while a quota is unmet (src/lib/retap-walk.ts).
+      data-retap-stop={standalone ? undefined : ''}
+      data-needs-you={!standalone && overall.met < overall.count ? '' : undefined}
+      className={cn(!standalone && 'scroll-below-header mb-6')}
     >
       <TrackHeader standalone={standalone} section={section} overall={overall} showMet={showMet} />
 
@@ -1001,7 +1005,15 @@ function PeriodSection({
   return (
     <li
       data-quota-period={s.key}
-      className={cn(!first && foldClass(period ? period.state : true, SECTION_DIVIDER))}
+      // The Quotas page's re-tap stop (Trent, 2026-10-29: "bring the Today
+      // item up to the very top, underneath the nav bar"): its first period —
+      // Today, when there are daily quotas — then the top on the next tap.
+      data-retap-stop={first && selection ? '' : undefined}
+      data-needs-you={first && selection ? '' : undefined}
+      className={cn(
+        first && selection && 'scroll-below-header',
+        !first && foldClass(period ? period.state : true, SECTION_DIVIDER),
+      )}
     >
       <div className="relative">
         <PeriodHeading section={s} />

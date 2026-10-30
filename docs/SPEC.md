@@ -55,6 +55,10 @@ No comments, attachments, assignments, relationships, Gantt charts, sprints, mil
 
 This system manages client work and critical reminders. No operation should silently corrupt data. Partial updates (PATCH semantics), soft delete, and transactional batch operations are architectural requirements, not nice-to-haves.
 
+### 6. Finish Without Scrolling
+
+(Trent, 2026-10-29.) "Being able to complete everything without needing to scroll, and being able to tap and efficiently get to where you need to be" — reminders, quotas, the task queue and the dashboard's items alike. The app takes you to what needs you: finishing a section moves the page on to the next one still waiting (`useScrollToNextSection`), and re-tapping the tab you are on goes to the next place that needs you, then back to the top (`src/lib/retap-walk.ts`). Accepted limits: browsing reminders other than the one that needs you, and a task list longer than the screen, still take a scroll.
+
 ---
 
 ## Users and Roles

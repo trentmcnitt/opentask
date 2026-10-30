@@ -10,7 +10,18 @@
  * the Reminders surface's move to the next section (`useScrollToNextSection`)
  * — is cancelled, so it can't pull the page back down after the tap.
  */
+import { retapWalk } from '@/lib/retap-walk'
+
 export const PAGE_RETAP_EVENT = 'page-retap'
+
+/**
+ * A re-tap of the tab you are on (`useTabRetap`): the next place that needs
+ * you, else the top (src/lib/retap-walk.ts).
+ */
+export function retapPage(): void {
+  window.dispatchEvent(new CustomEvent(PAGE_RETAP_EVENT))
+  if (!retapWalk()) scrollPageToTop()
+}
 
 export function scrollPageToTop(): void {
   window.dispatchEvent(new CustomEvent(PAGE_RETAP_EVENT))

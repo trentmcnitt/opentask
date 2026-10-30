@@ -25,6 +25,7 @@ import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
 import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
 import { useTaskSegments } from '@/hooks/useTaskSegments'
 import { useScrollToNextSection } from '@/hooks/useScrollToNextSection'
+import { retapOrder } from '@/lib/retap-walk'
 import { segmentKey } from '@/components/TaskSegmentRow'
 import { usePromptRows } from '@/components/QuotaPromptRow'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
@@ -433,16 +434,28 @@ export function RemindersView({
   // `useScrollToNextSection`): the dashboard pager's rule over the same pages
   // — the periods in the day's order, then the task segments in screen order.
   const dayGroups = orderGroupsByDay(groups, dayStart)
+  const sectionPages = [
+    ...dayGroups.map((g) => ({ key: slotGroupKey(g), waiting: groupWaiting(g) })),
+    ...segments.segments.map((s) => ({ key: segmentKey(s), waiting: s.waiting })),
+  ]
+  const naturalSlot =
+    dayGroups.length > 0 ? naturalSlotIndex(dayGroups, timezone, new Date(), dayStart) : 0
   const nextSection = useScrollToNextSection({
-    pages: [
-      ...dayGroups.map((g) => ({ key: slotGroupKey(g), waiting: groupWaiting(g) })),
-      ...segments.segments.map((s) => ({ key: segmentKey(s), waiting: s.waiting })),
-    ],
+    pages: sectionPages,
     slotCount: dayGroups.length,
-    naturalSlot:
-      dayGroups.length > 0 ? naturalSlotIndex(dayGroups, timezone, new Date(), dayStart) : 0,
+    naturalSlot,
     goTo: goToSlot,
   })
+  // A re-tap of the Reminders tab walks the sections in the dashboard card's
+  // own order (`retapOrder`, src/lib/retap-walk.ts): each section's place in
+  // that walk, by key; a section not in it needs nothing.
+  const retapPlaces = new Map(
+    retapOrder(
+      sectionPages.map((p) => p.waiting),
+      dayGroups.length,
+      naturalSlot,
+    ).map((page, n) => [sectionPages[page].key, n]),
+  )
   const slotDeepLinkDone = useRef(false)
   useEffect(() => {
     if (slotDeepLinkDone.current || !hydrated || error) return
@@ -693,6 +706,7 @@ export function RemindersView({
       onToggle={toggleOpen}
       scroll={slotScroll}
       onScrollServed={slotScrollServed}
+      retapPlaces={retapPlaces}
     />
   )
 
@@ -761,6 +775,7 @@ export function RemindersView({
                   <ReminderSlotGroup
                     key={key}
                     slotKey={key}
+                    retapPlace={retapPlaces.get(key)}
                     scrollRequest={slotScroll?.key === key ? slotScroll.seq : undefined}
                     onScrollServed={slotScrollServed}
                     group={group}

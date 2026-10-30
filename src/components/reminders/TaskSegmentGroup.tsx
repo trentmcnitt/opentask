@@ -73,6 +73,7 @@ export function TaskSegmentGroup({
   onToggle,
   scrollRequest,
   onScrollServed,
+  retapPlace,
 }: {
   segment: SegmentView
   actions: TaskSegmentActions
@@ -83,6 +84,8 @@ export function TaskSegmentGroup({
    *  (`goToSlot`): scrolls the section into view, as for a slot. */
   scrollRequest?: number
   onScrollServed?: (seq: number) => void
+  /** Its place in a re-tap of the tab's walk, when it needs you (src/lib/retap-walk.ts). */
+  retapPlace?: number
 }) {
   const sectionRef = useSlotScroll<HTMLElement>(scrollRequest, onScrollServed)
   const queueOn = useQueueOn(segment.horizon)
@@ -118,6 +121,10 @@ export function TaskSegmentGroup({
       data-task-segment={segment.horizon}
       // The section the user last touched (`useScrollToNextSection`).
       data-section-key={segmentKey(segment)}
+      // A stop of the tab's re-tap walk (src/lib/retap-walk.ts).
+      data-retap-stop
+      data-needs-you={retapPlace !== undefined ? '' : undefined}
+      data-retap-order={retapPlace}
       // The slot section's own frame (`ReminderSlotGroup`), so the column
       // reads as one list of segments.
       // `scroll-below-header`: lands just under the sticky top bar, its
@@ -277,11 +284,14 @@ export function TaskSegmentSections({
   onToggle,
   scroll,
   onScrollServed,
+  retapPlaces,
 }: {
   actions: TaskSegmentActions
   timezone: string
   isOpen: (key: string) => boolean
   onToggle: (key: string) => void
+  /** Each segment's place in a re-tap of the tab's walk, by key (src/lib/retap-walk.ts). */
+  retapPlaces?: ReadonlyMap<string, number>
   /** `goToSlot`'s pending request, when it is for a task segment. */
   scroll?: { key: string; seq: number } | null
   onScrollServed?: (seq: number) => void
@@ -299,6 +309,7 @@ export function TaskSegmentSections({
           onToggle={() => onToggle(segmentKey(segment))}
           scrollRequest={scroll?.key === segmentKey(segment) ? scroll.seq : undefined}
           onScrollServed={onScrollServed}
+          retapPlace={retapPlaces?.get(segmentKey(segment))}
         />
       ))}
     </div>
