@@ -15,6 +15,7 @@ import { log } from '@/lib/logger'
 import { ZodError } from 'zod'
 import { withLogging } from '@/lib/with-logging'
 import { notifyDemoEngagement } from '@/lib/demo-notify'
+import { requestUndoId } from '@/core/request-context'
 
 export const POST = withLogging(async function POST(request: NextRequest) {
   try {
@@ -41,6 +42,8 @@ export const POST = withLogging(async function POST(request: NextRequest) {
       series_ended_count: result.seriesEndedCount,
       one_off_count: result.oneOffCount,
       quota_skipped: result.quotaSkipped,
+      // The undo entry this request wrote (2026-10-29; see /api/tasks/:id/done).
+      undo_id: requestUndoId(),
     })
   } catch (err) {
     if (err instanceof AuthError) {

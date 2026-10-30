@@ -28,6 +28,12 @@ import { postUndoRedo, type UndoRedoKind } from '@/lib/undo-client'
 interface UseUndoRedoOptions {
   /** Re-fetch what the page shows after an undo/redo lands. */
   onRefresh: () => void
+  /**
+   * The undo entry an undo reversed, told BEFORE `onRefresh`, so a surface
+   * that knows what that entry took away can put it back without waiting for
+   * the refresh (the Reminders surface: `useReminders`' `applyUndone`).
+   */
+  onUndone?: (undoneId: number) => void
   sessionScoped?: boolean
 }
 
@@ -36,11 +42,13 @@ const LABELS: Record<UndoRedoKind, { done: string; nothing: string; failed: stri
   redo: { done: 'Redid', nothing: 'Nothing to redo', failed: 'Redo failed' },
 }
 
-export function useUndoRedo({ onRefresh, sessionScoped = true }: UseUndoRedoOptions) {
+export function useUndoRedo({ onRefresh, onUndone, sessionScoped = true }: UseUndoRedoOptions) {
   // Kept in a ref so the handlers stay stable across renders.
   const onRefreshRef = useRef(onRefresh)
+  const onUndoneRef = useRef(onUndone)
   useEffect(() => {
     onRefreshRef.current = onRefresh
+    onUndoneRef.current = onUndone
   })
 
   const [undoCount, setUndoCount] = useState(0)
@@ -75,6 +83,9 @@ export function useUndoRedo({ onRefresh, sessionScoped = true }: UseUndoRedoOpti
         }
         if (typeof data.undoable_count === 'number') setUndoCount(data.undoable_count)
         if (typeof data.redoable_count === 'number') setRedoCount(data.redoable_count)
+        if (kind === 'undo' && typeof data.undone_id === 'number') {
+          onUndoneRef.current?.(data.undone_id)
+        }
         onRefreshRef.current()
         const remaining = kind === 'undo' ? data.undoable_count : data.redoable_count
         const countSuffix =

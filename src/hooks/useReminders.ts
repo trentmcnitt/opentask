@@ -14,6 +14,7 @@ import {
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
+import { PinnedUndone, restoreInPlace } from '@/lib/reminder-undo'
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 import { REMINDERS_URL } from '@/lib/reminders-query'
 import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
@@ -66,8 +67,12 @@ function applyPromptRestores(groups: ReminderGroup[], keys: Set<string>): Remind
 }
 
 interface UseRemindersOptions {
-  /** Undo the last action — wired to the completion toast. */
-  onUndo: () => void
+  /**
+   * Undo the last action — wired to the completion toast. Awaited when it
+   * returns a promise (the pages' `useUndoRedo`): its answer is what confirms
+   * an optimistic restore (`src/lib/reminder-undo.ts`).
+   */
+  onUndo: () => void | Promise<unknown>
   /**
    * Called after a reminder is completed. The page uses this to keep its own
    * undo counter in step; completion here goes through the ordinary /done
@@ -116,6 +121,13 @@ export interface UseRemindersReturn {
    * hold anything back — see `completeIds`.
    */
   registerRow: (id: number | string) => () => void
+  /**
+   * The undo pipeline's answer (`POST /api/undo`'s `undone_id`): when it is
+   * the entry one of this surface's own considers wrote, that consider's rows
+   * are put back at once, without waiting for the refresh
+   * (`src/lib/reminder-undo.ts`).
+   */
+  applyUndone: (undoneId: number) => void
   /**
    * True once a fetch has resolved since this hook mounted. The module cache
    * paints the surface instantly on a revisit, so `loading === false` is not
@@ -320,11 +332,14 @@ function reconcileInFlight(
     restoringPrompts,
   )
   if (pending.size === 0 && restoring.size === 0) return withPrompts
+  // A row being put back wins over its own consider still in flight: an
+  // Undo pressed before the consider's request answered (`reminder-undo.ts`).
+  const isLeaving = (id: number) => pending.has(id) && !restoring.has(id)
   return withPrompts.map((g) => {
-    const leaving = g.reminders.filter((r) => pending.has(r.id))
+    const leaving = g.reminders.filter((r) => isLeaving(r.id))
     const returning = g.consideredItems.filter((r) => restoring.has(r.id))
     if (leaving.length === 0 && returning.length === 0) return g
-    const reminders = [...g.reminders.filter((r) => !pending.has(r.id)), ...returning]
+    const reminders = [...g.reminders.filter((r) => !isLeaving(r.id)), ...returning]
     const consideredItems = [...leaving, ...g.consideredItems.filter((r) => !restoring.has(r.id))]
     return {
       ...g,
@@ -372,6 +387,16 @@ function insertIntoGroups(
   })
   return at < 0 ? [...groups, fresh] : [...groups.slice(0, at), fresh, ...groups.slice(at)]
 }
+
+/** One of this surface's own considers, by the undo entry it wrote. */
+interface OwnConsider {
+  ids: number[]
+  keys: string[]
+  /** The groups before it, for putting its rows back where they were. */
+  snapshot: ReminderGroup[]
+}
+/** How many of this surface's own considers an `undone_id` can name. */
+const OWN_CONSIDERS_KEPT = 20
 
 export function useReminders({
   onUndo,
@@ -423,6 +448,11 @@ export function useReminders({
   const pendingMovesRef = useRef<Map<string, number>>(new Map())
   // Prompt keys whose put-back is still out (`putBackPrompt`).
   const restoringPromptsRef = useRef<Set<string>>(new Set())
+  // Rows an undo put back, pinned waiting until a payload requested after the
+  // undo lands (`src/lib/reminder-undo.ts`), and this surface's own considers
+  // by the undo entry each wrote — what an `undone_id` names.
+  const pinnedRef = useRef<PinnedUndone>(new PinnedUndone())
+  const ownConsidersRef = useRef<Map<number, OwnConsider>>(new Map())
   /**
    * IDs whose row is still on screen, collapsing. They are still in `groups`,
    * so a server payload — which no longer lists them — cannot be applied
@@ -474,10 +504,10 @@ export function useReminders({
     reconcileInFlight(
       incoming,
       pendingIdsRef.current,
-      restoringIdsRef.current,
+      new Set([...restoringIdsRef.current, ...pinnedRef.current.ids()]),
       pendingPromptsRef.current,
       pendingMovesRef.current,
-      restoringPromptsRef.current,
+      new Set([...restoringPromptsRef.current, ...pinnedRef.current.keys()]),
     )
 
   const refresh = useCallback(async () => {
@@ -495,6 +525,8 @@ export function useReminders({
       // shared cache the nav badge reads.
       if (!requestGuard.isLatest(seq)) return
       const parsed = parseRemindersPayload(json)
+      // Undos confirmed before this request was sent are in it: stop pinning.
+      pinnedRef.current.settle(seq)
       writeGroups(stripPending(parsed.groups), {
         hasAny: parsed.hasAny,
         notToday: parsed.notToday,
@@ -569,6 +601,48 @@ export function useReminders({
   /** The action each collapsing prompt row commits when it has gone. */
   const leavingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
 
+  /**
+   * Put a consider's rows back, at once (`src/lib/reminder-undo.ts`): out of
+   * the considered list into their place, a row still collapsing un-struck,
+   * prompts waiting again — and pinned there until a payload from after the
+   * undo lands.
+   */
+  const restoreLocally = useCallback(
+    (ids: number[], keys: string[], snapshot: ReminderGroup[]) => {
+      const all: (number | string)[] = [...ids, ...keys]
+      for (const key of all) {
+        leavingIdsRef.current.delete(key)
+        if (typeof key === 'string') leavingPromptsRef.current.delete(key)
+      }
+      setCompletingIds((prev) => {
+        if (!all.some((key) => prev.has(key))) return prev
+        const next = new Set(prev)
+        for (const key of all) next.delete(key)
+        return next
+      })
+      pinnedRef.current.pin(all)
+      writeGroups(restoreInPlace(groupsRef.current, snapshot, new Set(ids), new Set(keys)))
+      // A refresh held behind a row that was collapsing may run now.
+      releaseHeldRefresh()
+    },
+    [writeGroups, releaseHeldRefresh],
+  )
+
+  const applyUndone = useCallback(
+    (undoneId: number) => {
+      const own = ownConsidersRef.current.get(undoneId)
+      if (!own) return
+      ownConsidersRef.current.delete(undoneId)
+      const all = [...own.ids, ...own.keys]
+      // The header's undo: nothing was put back yet. The toast's: it was.
+      if (pinnedRef.current.unconfirmed(all).length === 0)
+        restoreLocally(own.ids, own.keys, own.snapshot)
+      // The undo is on the server: the next refresh sent includes it.
+      pinnedRef.current.confirm(all, requestGuard.latest() + 1)
+    },
+    [requestGuard, restoreLocally],
+  )
+
   const registerRow = useCallback((id: number | string) => {
     mountedIdsRef.current.add(id)
     return () => {
@@ -623,6 +697,8 @@ export function useReminders({
       // has no row to reflow under anyone's pointer, so it leaves at once, the
       // way everything used to.
       const all: (number | string)[] = [...ids, ...keys]
+      // Considered again after an undo: no longer pinned waiting.
+      pinnedRef.current.release(all)
       const onScreen = all.filter((id) => mountedIdsRef.current.has(id))
       const offScreen = all.filter((id) => !mountedIdsRef.current.has(id))
       for (const id of ids) pendingIdsRef.current.add(id)
@@ -648,18 +724,42 @@ export function useReminders({
       const request = (async () => {
         const res = await fetch(...completionRequest(ids, keys, intent))
         if (!res.ok) throw new Error('Failed to complete reminders')
+        // The undo entry this consider wrote: an undo that names it puts these
+        // rows back without waiting for a refresh (`applyUndone`).
+        const body = (await res.json().catch(() => null)) as {
+          data?: { undo_id?: number | null }
+        } | null
+        const undoId = body?.data?.undo_id
+        if (typeof undoId === 'number') {
+          const own = ownConsidersRef.current
+          own.set(undoId, { ids, keys, snapshot })
+          if (own.size > OWN_CONSIDERS_KEPT) own.delete(own.keys().next().value as number)
+        }
         callbacksRef.current.onCompleted?.()
       })()
 
-      // Undo waits for the completion to be recorded, then undoes exactly it.
+      // Undo puts the rows back AT ONCE, then waits for the completion to be
+      // recorded and undoes exactly it. If the undo's answer did not name this
+      // consider (it undid something else, or nothing), the server still has
+      // these considered: stop pinning them, and a refresh shows the truth.
       let settledOk = false
+      const undo = async () => {
+        await request
+        await callbacksRef.current.onUndo()
+        const stray = pinnedRef.current.unconfirmed(all)
+        if (stray.length > 0) {
+          pinnedRef.current.release(stray)
+          void refresh()
+        }
+      }
       showToast({
         message: message(ids.length + keys.length),
         type: 'success',
         action: {
           label: 'Undo',
           onClick: () => {
-            void request.then(() => callbacksRef.current.onUndo()).catch(() => undefined)
+            restoreLocally(ids, keys, snapshot)
+            void undo().catch(() => undefined)
           },
         },
       })
@@ -699,7 +799,7 @@ export function useReminders({
         if (settledOk || keys.length > 0) void refresh()
       }
     },
-    [refresh, commitConsidered, commitPrompts, releaseHeldRefresh, writeGroups],
+    [refresh, commitConsidered, commitPrompts, releaseHeldRefresh, writeGroups, restoreLocally],
   )
 
   /**
@@ -876,6 +976,7 @@ export function useReminders({
     movePrompt,
     rowLeft,
     registerRow,
+    applyUndone,
     hydrated,
     putBack,
     putBackPrompt,

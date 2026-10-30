@@ -442,6 +442,8 @@ paths:
                               REPEAT ENDS: this done closed the series' last occurrence — the
                               task is now done and archived on that occurrence, and
                               `next_due_at` is null. `POST /api/tasks/{id}/undone` reopens it.
+                          undo_id:
+                            $ref: '#/components/schemas/UndoId'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1311,7 +1313,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkResult'
+                allOf:
+                  - $ref: '#/components/schemas/BulkResult'
+                  - type: object
+                    properties:
+                      undo_id:
+                        $ref: '#/components/schemas/UndoId'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
