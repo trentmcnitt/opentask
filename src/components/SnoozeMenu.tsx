@@ -12,22 +12,20 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { OptionMenu } from '@/components/OptionMenu'
+import { OptionMenu, type OptionMenuItem } from '@/components/OptionMenu'
 import {
   useDayStart,
   useDayStartKnown,
   useSnoozePreferences,
 } from '@/components/PreferencesProvider'
 import { useTimezone } from '@/hooks/useTimezone'
-import { computeSnoozeTime, formatMorningTime } from '@/lib/snooze'
+import { computeSnoozeTime } from '@/lib/snooze'
 import { to12Hour, to24Hour } from '@/lib/time-utils'
 import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
+import { SLOT_OPTION_PREFIX, targetMenu } from '@/lib/target-menu'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
 import { REMOVE_TARGET as REMOVE_TARGET_LABEL } from '@/lib/task-model-words'
-import { openTaskDayOf } from '@/lib/opentask-day'
-
-const SLOT_PREFIX = 'slot:'
 
 /**
  * The user's time slots, fetched when a menu opens and kept for the session.
@@ -131,65 +129,33 @@ export function SnoozeMenu({
 
   const slots = useSlotsWhenOpen(open)
 
-  // THE USER'S TIME SLOTS ARE SNOOZE TARGETS (Trent, 2026-09-22: "snooze till
-  // tomorrow morning (early), tomorrow morning… midday, afternoon, evening").
-  // Each goes to that slot's next start — today if it is still ahead, else
-  // tomorrow, and the label says which. "Tomorrow at <morning>" stays too,
-  // unless a slot already lands on that exact moment — then it would be the
-  // same choice listed twice.
+  // T1 (Trent, 2026-10-30; `src/lib/target-menu.ts`): Next period, 1 hour, 2
+  // hours, Tomorrow, This (or Next) weekend, Next week — then the deadline's
+  // morning when the task has one, then every other period as ONE wrapping
+  // row of buttons (the menu stays the same height at 8 or 10 periods), then
+  // Custom… and Remove target. A period goes to its next start — today if
+  // still ahead, else tomorrow — as before.
   const now = new Date()
-  const slotOptions = slots.map((slot) => {
-    const until = nextSlotStart(slot.start_time, timezone, now)
-    const tomorrow =
-      openTaskDayOf(new Date(until), timezone, dayStart) > openTaskDayOf(now, timezone, dayStart)
-    return {
-      label: `${slot.label} \u00b7 ${tomorrow ? 'tomorrow ' : ''}${formatMorningTime(slot.start_time)}`,
-      option: `${SLOT_PREFIX}${slot.start_time}`,
-      until,
-    }
-  })
-  // NEXT PERIOD FIRST, THE REST IN TIME ORDER (Trent, 2026-09-26: "none for
-  // 'next period' … I have to do mental math to figure out which period is the
-  // one I want"). The slots are sorted by when they next start — later today,
-  // then tomorrow — and the soonest is offered first, named: "Next period ·
-  // After School 4:30 PM". It is the same target as the notification's
-  // "Next period" (`nextPeriodStart`).
-  slotOptions.sort((a, b) => a.until.localeCompare(b.until))
-  const [nextPeriod, ...laterSlots] = slotOptions
-  const tomorrowMorning = computeSnoozeTime('tomorrow', timezone, morningTime, dayStart)
+  const menu = targetMenu({ now, timezone, dayStart, morningTime, slots })
+  const pick = new Map(menu.rows.map((r) => [r.option, r.at]))
   const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now, dayStart)
   const resetLabel = onRemoveTarget && targetReset ? REMOVE_TARGET_LABEL : null
-  const options = [
-    ...(nextPeriod
-      ? [
-          {
-            label: `Next period \u00b7 ${nextPeriod.label.replace(' \u00b7 ', ' ')}`,
-            option: nextPeriod.option,
-          },
-        ]
-      : []),
-    { label: '1 hour', option: '60' },
-    { label: '2 hours', option: '120' },
-    ...laterSlots.map(({ label, option }) => ({ label, option })),
-    ...(slotOptions.some((o) => o.until === tomorrowMorning)
-      ? []
-      : [
-          {
-            label: `Tomorrow at ${formatMorningTime(morningTime)}`,
-            option: 'tomorrow',
-            disabled: !dayKnown,
-          },
-        ]),
+  const options: Omit<OptionMenuItem, 'icon'>[] = [
+    ...menu.rows.map((r) => ({
+      label: r.label,
+      option: r.option,
+      caption: r.detail,
+      disabled: r.needsDay && !dayKnown,
+    })),
     ...(deadlineDay ? [{ label: deadlineDay.label, option: DEADLINE_DAY_OPTION }] : []),
+    ...menu.periods.map((p) => ({
+      label: p.label,
+      option: p.option,
+      caption: p.time,
+      chipGroup: 'Periods',
+    })),
     { label: 'Custom...', option: 'custom' },
-    ...(resetLabel
-      ? [
-          {
-            label: resetLabel,
-            option: REMOVE_TARGET,
-          },
-        ]
-      : []),
+    ...(resetLabel ? [{ label: resetLabel, option: REMOVE_TARGET }] : []),
   ]
 
   const handleSelect = (option: string) => {
@@ -209,11 +175,15 @@ export function SnoozeMenu({
       else setCustomPickerOpen(true)
       return
     }
-    onSnooze(
-      option.startsWith(SLOT_PREFIX)
-        ? nextSlotStart(option.slice(SLOT_PREFIX.length), timezone)
-        : computeSnoozeTime(option, timezone, morningTime, dayStart),
-    )
+    // A period: its next start, and an offset: from now (the menu may have
+    // sat open). A named day: as the menu worked it out.
+    const at = option.startsWith(SLOT_OPTION_PREFIX)
+      ? nextSlotStart(option.slice(SLOT_OPTION_PREFIX.length), timezone)
+      : /^\d+$/.test(option)
+        ? computeSnoozeTime(option, timezone, morningTime, dayStart)
+        : pick.get(option)
+    if (!at) return
+    onSnooze(at)
     onOpenChange(false)
   }
 
