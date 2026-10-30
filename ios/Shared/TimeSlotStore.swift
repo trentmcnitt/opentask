@@ -96,4 +96,32 @@ enum TimeSlotStore {
         }
         return starts.min()
     }
+
+    /// The slots in the order they next start STRICTLY after `base` — later
+    /// today first, then tomorrow's (the server's `slot: "next"` rule, which
+    /// rolls over). The notification actions' choices (`notificationChoices`).
+    static func slotsByNextStart(
+        slots: [TimeSlotDTO], after base: Date, calendar: Calendar = .current
+    ) -> [TimeSlotDTO] {
+        let timed: [(slot: TimeSlotDTO, at: Date)] = slots.compactMap { slot in
+            guard let at = nextPeriodStart(slots: [slot], after: base, calendar: calendar) else { return nil }
+            return (slot, at)
+        }
+        return timed.sorted { $0.at < $1.at }.map(\.slot)
+    }
+
+    /// How many named periods a notification offers after "All → Next
+    /// period" (Trent, 2026-10-30, option B): the list stays this short at 8
+    /// or 10 periods; every other time is the long-press SnoozeGrid's.
+    static let namedNotificationSlots = 3
+
+    /// The periods a task notification names after "All → Next period"
+    /// (`slotSnoozeActions`): the next `namedNotificationSlots` to start
+    /// after it, in time order — rolling into tomorrow's late in the day, as
+    /// the server's `slot: "next"` does.
+    static func notificationChoices(
+        slots: [TimeSlotDTO], after base: Date, calendar: Calendar = .current
+    ) -> [TimeSlotDTO] {
+        Array(slotsByNextStart(slots: slots, after: base, calendar: calendar).dropFirst().prefix(namedNotificationSlots))
+    }
 }

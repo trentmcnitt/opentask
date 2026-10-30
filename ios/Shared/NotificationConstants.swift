@@ -7,23 +7,21 @@ import UserNotifications
 /// dispatch in `NotificationActionRunner.swift`, so `OpenTaskLogicTests` —
 /// which leaves this file out to stay off UserNotifications — can test them.
 
-/// Slot-snooze actions built from the cached `GET /api/time-slots` list
-/// (`TimeSlotStore.cachedSlots`), appended after the existing bulk-snooze
-/// action on every category that offers one — and reused verbatim by the
-/// content extension's own action list (`NotificationViewController`), so the
-/// identifier scheme, ordering and titles never drift between the two.
+/// The bulk period actions every task notification carries (TASK_REMINDER
+/// and TASK_SUMMARY, on the iPhone, the Watch and the Mac): "All → Next
+/// period", then "All → <period>" for the next three periods after it
+/// (option B, Trent 2026-10-30 — before, one per period: 14 buttons at 10
+/// periods). No "Tomorrow" button: the default task time is a period's
+/// time (Early morning), so it would be listed twice.
 ///
-/// Order: "All → Next period" first (the server-resolved "next slot to
-/// start", never computed on-device), then one action per cached slot,
-/// earliest start first. Titles mirror the "All → …" style the content
-/// extension already uses for a resolved custom time.
-///
-/// Empty when no slots are cached yet — a fresh install, or a build running
-/// before the first successful `refreshSlotActions()` fetch, registers
-/// exactly what it did before this feature existed. This is also why "Next
-/// period" is never registered alone: it is built from the same guard, so it
-/// only appears once there is at least one real slot to snooze into.
-func slotSnoozeActions() -> [UNNotificationAction] {
+/// The registered categories are worked out when they are registered
+/// (launch, foreground, a slot change; on the Mac at each period start too),
+/// so on a banner they can be a period behind; the iPhone's long-press
+/// (`NotificationViewController`) works them out as it opens. A button names
+/// a period's start time and always lands on its NEXT start, so a stale one
+/// still does what it says. "All → Next period" is never registered alone:
+/// with no cached slot there is nothing to snooze into.
+func slotSnoozeActions(now: Date = Date()) -> [UNNotificationAction] {
     let slots = TimeSlotStore.cachedSlots
     guard !slots.isEmpty else { return [] }
 
@@ -34,7 +32,7 @@ func slotSnoozeActions() -> [UNNotificationAction] {
             options: []
         ),
     ]
-    actions += slots.map { slot in
+    actions += TimeSlotStore.notificationChoices(slots: slots, after: now).map { slot in
         UNNotificationAction(
             identifier: NotificationAction.snoozeAllSlotIdentifier(startTime: slot.startTime),
             title: "All \u{2192} \(slot.label)",
@@ -48,15 +46,15 @@ func slotSnoozeActions() -> [UNNotificationAction] {
 /// Called by both AppDelegate (iOS) and WatchAppDelegate (watchOS).
 ///
 /// Six categories:
-/// - TASK_REMINDER: individual task (Done, +1hr, All +1hr, then one
-///   All → <slot> action per cached time slot — see `slotSnoozeActions()`)
+/// - TASK_REMINDER: individual task (Done, +1hr, All +1hr, then All → Next
+///   period and the next three periods — see `slotSnoozeActions()`)
 /// - TASK_ADDED: the "AI finished" notification for a just-added task
 ///   (Done, Delete). No snooze: a task added a minute ago isn't overdue.
 ///   Delete is `.destructive` (drawn red) and deliberately NOT
 ///   `.authenticationRequired` — it is a soft delete the app can undo, the
 ///   same weight as Done, and neither iOS nor watchOS requires unlocking for
 ///   a destructive action unless that option is set.
-/// - TASK_SUMMARY: overflow summary (All +1hr, then the same slot actions —
+/// - TASK_SUMMARY: overflow summary (All +1hr, then the same period actions —
 ///   no single-task actions)
 /// - SLOT_REMINDER: §6 time slot (Complete all; long-press expands to the
 ///   batch checklist, which supplies its own "Complete checked" button).
