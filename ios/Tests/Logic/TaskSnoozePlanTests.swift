@@ -75,6 +75,26 @@ final class TaskSnoozePlanTests: XCTestCase {
         XCTAssertEqual(TaskSnoozePlan.target(.nextPeriod, dueAt: at(12), now: now, slots: slots), at(16))
     }
 
+    /// Option B (Trent, 2026-10-30): a notification names "All → Next
+    /// period" and then only the NEXT THREE periods after it, in time order,
+    /// rolling into tomorrow's — never one button per period.
+    func testNotificationNamesTheThreePeriodsAfterTheNext() {
+        let starts = { (base: Date) in
+            TimeSlotStore.notificationChoices(slots: self.slots, after: base).map(\.startTime)
+        }
+        // 10:20: next is 12:00 (the "Next period" button); then 16:00, 20:30, tomorrow's 7:00.
+        XCTAssertEqual(starts(at(10, 20)), ["16:00", "20:30", "07:00"])
+        // 20:45: next is tomorrow's 07:00; then 9, 12, 16 — tomorrow's.
+        XCTAssertEqual(starts(at(20, 45)), ["09:00", "12:00", "16:00"])
+        // Ten periods: still three.
+        let ten = (0..<10).map { TimeSlotDTO(id: 100 + $0, label: "P\($0)", startTime: String(format: "%02d:30", 6 + $0)) }
+        XCTAssertEqual(TimeSlotStore.notificationChoices(slots: ten, after: at(10, 20)).map(\.startTime), ["11:30", "12:30", "13:30"])
+        // Two periods: just the one after the next.
+        let two = Array(slots.prefix(2))
+        XCTAssertEqual(TimeSlotStore.notificationChoices(slots: two, after: at(10, 20)).count, 1)
+        XCTAssertEqual(TimeSlotStore.notificationChoices(slots: [], after: at(10, 20)), [])
+    }
+
     func testNextPeriodAfterTheLastSlotIsTomorrowsFirst() {
         XCTAssertEqual(TaskSnoozePlan.target(.nextPeriod, dueAt: at(20, 45), now: now, slots: slots), at(7, day: 1))
         XCTAssertEqual(

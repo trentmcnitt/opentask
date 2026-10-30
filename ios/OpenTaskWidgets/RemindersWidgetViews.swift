@@ -1046,7 +1046,14 @@ private struct ReminderSlotStrip: View {
             // 2026-10-29): the row the "Task queue" header speaks for sits
             // right under it.
             VStack(alignment: .leading, spacing: Self.rowGap) {
-                if !queue.isEmpty { queueRow(queue) }
+                // The horizons' words, else — when the words don't fit the
+                // card — their dots (Trent, 2026-10-30).
+                if !queue.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        queueRow(queue, dots: false)
+                        queueRow(queue, dots: true)
+                    }
+                }
                 if !periods.isEmpty { barRow(periods) }
             }
             .padding(.bottom, WidgetTheme.reminderSlotStripHeight - maxSegmentHeight)
@@ -1092,7 +1099,7 @@ private struct ReminderSlotStrip: View {
     /// an empty segment's faded — the web's `StripWord`. The word's size is
     /// fixed (it does not grow with the text size): at the largest sizes the
     /// eight words still fit a card.
-    private func queueRow(_ row: [ReminderDayProgress.StripBar]) -> some View {
+    private func queueRow(_ row: [ReminderDayProgress.StripBar], dots: Bool) -> some View {
         // Its groups (tight N2, 2026-10-29): Dated · Pulled · the horizons,
         // a hairline between groups.
         let runs = Self.groupRuns(row)
@@ -1108,7 +1115,7 @@ private struct ReminderSlotStrip: View {
                 ForEach(run, id: \.key) { bar in
                     jumpButton(bar) {
                         VStack(spacing: 3) {
-                            mark(for: bar)
+                            mark(for: bar, dots: dots)
                             segmentBar(for: bar)
                                 .frame(height: maxSegmentHeight)
                         }
@@ -1138,11 +1145,11 @@ private struct ReminderSlotStrip: View {
     /// web's: Days big and dark, Eventually small and light). The page on
     /// screen's in the primary colour, an empty segment's faded.
     @ViewBuilder
-    private func mark(for bar: ReminderDayProgress.StripBar) -> some View {
+    private func mark(for bar: ReminderDayProgress.StripBar, dots: Bool) -> some View {
         let isCurrent = bar.key == currentKey
         let tint = isCurrent ? Color.primary : Color.secondary
         Group {
-            if case .horizon(let horizon) = bar.segment {
+            if dots, case .horizon(let horizon) = bar.segment {
                 let dot = Self.horizonDot(horizon)
                 Circle()
                     .fill(Color.primary.opacity(0.8 * dot.opacity))

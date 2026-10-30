@@ -14,6 +14,8 @@ import WidgetKit
 /// rule for suppressing foreground banners, and no `.criticalAlert` in the
 /// authorization request.
 final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    /// Re-registers the notification categories as each period starts (`scheduleSlotActionRefresh`).
+    var slotActionTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // This app and the code it shares with the iPhone app diagnose
@@ -38,6 +40,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         // blocking the initial (cache-only) category registration above on a
         // network round trip.
         Task { await refreshSlotActions() }
+        scheduleSlotActionRefresh()
 
         // The menu bar item: its overdue list (first fetch, then its own
         // polling) and the status item that shows it.
@@ -325,5 +328,24 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         } else {
             completionHandler([.banner, .list, .sound, .badge])
         }
+    }
+}
+
+extension MacAppDelegate {
+    /// The notification actions name the next three periods after "Next
+    /// period" (`slotSnoozeActions`), worked out when the categories are
+    /// registered. The Mac app runs all day, so it re-registers them as each
+    /// period starts — a banner then never offers a period that has just
+    /// begun as one of the next three. (The iPhone's long-press works them
+    /// out as it opens; the Watch and the iPhone re-register on foreground.)
+    func scheduleSlotActionRefresh() {
+        slotActionTimer?.invalidate()
+        guard let next = TimeSlotStore.nextPeriodStart(now: Date()) else { return }
+        let timer = Timer(fire: next.addingTimeInterval(1), interval: 0, repeats: false) { [weak self] _ in
+            registerNotificationCategories()
+            self?.scheduleSlotActionRefresh()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        slotActionTimer = timer
     }
 }

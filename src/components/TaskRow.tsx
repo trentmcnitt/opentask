@@ -31,7 +31,6 @@ import {
   attemptsOffer,
   effectiveAttempts,
   isPastDeadline,
-  targetReset,
   type HorizonValue,
 } from '@/lib/task-segments'
 import { REMOVE_TARGET } from '@/lib/task-model-words'
@@ -703,9 +702,6 @@ export function TaskRow({
             open={snoozeMenuOpen}
             onOpenChange={setSnoozeMenuOpen}
             onSnooze={(until) => onSnooze(task.id, until)}
-            // Remove target (`targetReset`): never on a repeating task.
-            targetReset={onRemoveTarget ? targetReset(task) : null}
-            onRemoveTarget={onRemoveTarget ? () => onRemoveTarget(task) : undefined}
             deadlineAt={task.deadline_at}
           >
             <Button

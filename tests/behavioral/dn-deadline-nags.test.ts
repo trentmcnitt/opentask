@@ -346,6 +346,15 @@ describe('DN-005 the sender', () => {
     expect(pending()[0].content.body).toBe('Deadline passed: 1 unplanned · 5 more to plan')
   })
 
+  test('a deadline earlier today that has gone by is "passed", not "today" (2026-10-30)', () => {
+    // The clock is 10:00 on Oct 20; a 9:00 deadline that day has passed.
+    make({ deadline_at: at('2026-10-20T09:00'), priority: 1 })
+    expect(pending()[0].content.body).toBe('Deadline passed: 1 unplanned')
+    // One later today stays "today" — but the passed one is the closer word.
+    make({ deadline_at: at('2026-10-20T20:00'), priority: 1 })
+    expect(pending()[0].content.body).toBe('Deadline passed: 1 unplanned · 1 more to plan')
+  })
+
   test('a far nearest deadline is a date', () => {
     onPage(2)
     expect(pending()[0].content.body).toBe('1 deadline to plan · nearest Oct 27')

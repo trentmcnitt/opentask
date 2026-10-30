@@ -94,7 +94,9 @@ test.describe('Deadline: the snooze menu', () => {
         await (await snoozeButton(page, id, title)).click()
         const menu = page.getByRole('menu', { name: 'Defer options' })
         await expect(menu).toBeVisible()
-        await expect(menu.getByRole('menuitem', { name: 'Remove target' })).toBeVisible()
+        // No Remove target in the clock's menu since 2026-10-30 (the target
+        // chip's X does it).
+        await expect(menu.getByRole('menuitem', { name: 'Remove target' })).toHaveCount(0)
         await expect(menu.getByRole('menuitem', { name: 'Back to auto' })).toHaveCount(0)
         await menu
           .getByRole('menuitem', {

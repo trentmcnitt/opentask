@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { cn } from '@/lib/utils'
 import { HorizonDotMark } from '@/components/HorizonDot'
 import {
@@ -138,9 +138,9 @@ export interface SlotBarItem {
 /** What a task segment's bar wears: `SEGMENT_STRIP_WORDS` / `SEGMENT_STRIP_GROUP`. */
 export interface StripMarkSpec {
   group: StripGroup
-  /** Its words, the short one where the strip is narrow; null for a horizon. */
+  /** Its words, the short one where the strip is narrow. */
   word: { long: string; short: string } | null
-  /** A horizon's dot; null otherwise. */
+  /** A horizon's dot, its mark when the strip is too cramped for words; null otherwise. */
   horizon: HorizonValue | null
 }
 
@@ -166,12 +166,16 @@ export function StripMark({
   mark,
   current,
   empty,
+  dots = false,
 }: {
   mark: StripMarkSpec
   current: boolean
   empty: boolean
+  /** The strip is too cramped for words (`useStripWords`): a horizon shows its dot. */
+  dots?: boolean
 }) {
-  const { word, horizon } = mark
+  const { horizon } = mark
+  const word = dots && horizon ? null : mark.word
   return (
     <span
       data-strip-word
@@ -194,6 +198,57 @@ export function StripMark({
       ) : null}
     </span>
   )
+}
+
+/**
+ * THE HORIZON WORDS OR THE DOTS (Trent, 2026-10-30: "we're going to need to
+ * actually write out the days unless space gets cramped"). The strip shows
+ * "Days · Weeks · Months · Eventually" like its other words, and falls back to
+ * the horizons' dots only when the words don't fit: it renders the words,
+ * measures (before paint) whether the strip now overflows, and if so draws the
+ * dots instead; it tries the words again whenever the strip's width changes.
+ * Measured in the app's font: on a 375 phone with every group present (Due,
+ * Soon, Pulled, four horizons, Aged) the words need about 322px and the card's
+ * strip has about 304 — dots there; any fewer groups, or a wider screen, and
+ * the words fit. `key` names the bars shown, so a bar appearing re-measures.
+ */
+export function useStripWords(ref: RefObject<HTMLElement | null>, key: string): boolean {
+  const [dots, setDots] = useState(false)
+  // Read by the observer's callback; kept current before it can run.
+  const dotsRef = useRef(dots)
+  useLayoutEffect(() => {
+    dotsRef.current = dots
+  }, [dots])
+  // The strip and its columns, observed: a column resizes when the words go
+  // in, the strip when the screen does. Re-subscribed when the bars change
+  // (`key`), whose first callback tries the words again.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // The width the words last failed at: they are tried again only once the
+    // strip is WIDER than that — never on a narrowing (the dots' own, if the
+    // strip's width follows its content), which would flip back and forth.
+    // A new set of bars (`key`) re-subscribes, and its first callback tries
+    // the words again.
+    let failedAt = dotsRef.current ? -1 : Infinity
+    const observer = new ResizeObserver(() => {
+      const width = el.clientWidth
+      if (dotsRef.current && width > failedAt) {
+        dotsRef.current = false
+        setDots(false)
+        return
+      }
+      if (!dotsRef.current && el.scrollWidth > width + 1) {
+        failedAt = width
+        dotsRef.current = true
+        setDots(true)
+      }
+    })
+    observer.observe(el)
+    for (const child of Array.from(el.children)) observer.observe(child)
+    return () => observer.disconnect()
+  }, [ref, key])
+  return dots
 }
 
 /** A mark's least width: a dot's bar stays a thumb's width (the mockup's 26px). */
@@ -333,6 +388,9 @@ export function ReminderSlotBar({
   const shown = items
     .map((item, index) => ({ item, index }))
     .filter((s) => s.item.total > 0 || s.item.emptyDone)
+  // The task queue's strip: the horizons' words, or their dots when cramped.
+  const stripRef = useRef<HTMLDivElement>(null)
+  const dots = useStripWords(stripRef, shown.map((s) => s.item.key).join(' '))
 
   // One segment is not a bar — it would say only "everything is here", which
   // the header already says better. The task queue's strip is the exception
@@ -345,6 +403,7 @@ export function ReminderSlotBar({
       key={item.key}
       item={item}
       current={i === currentIndex}
+      dots={dots}
       onClick={() => onJump(i)}
     />
   )
@@ -356,6 +415,8 @@ export function ReminderSlotBar({
     const runs = stripRuns(shown, (s) => s.item.mark?.group ?? 'aged')
     return (
       <div
+        ref={stripRef}
+        data-strip-dots={dots ? '' : undefined}
         className="@container flex items-end gap-1 px-3 pb-2"
         role="group"
         aria-label={ariaLabel}
@@ -392,10 +453,13 @@ export function ReminderSlotBar({
 function SlotBarButton({
   item,
   current,
+  dots,
   onClick,
 }: {
   item: SlotBarItem
   current: boolean
+  /** The horizons show their dots, not their words (`useStripWords`). */
+  dots: boolean
   onClick: () => void
 }) {
   const { considered, total, label, doneColor, mark } = item
@@ -435,7 +499,7 @@ function SlotBarButton({
         minWidth: mark ? 'max-content' : MIN_SEGMENT_PX,
       }}
     >
-      {mark && <StripMark mark={mark} current={current} empty={total === 0} />}
+      {mark && <StripMark mark={mark} current={current} empty={total === 0} dots={dots} />}
       <span className={trackClass(state, current, !!mark, !!doneColor)}>
         {fraction > 0 && (
           <span

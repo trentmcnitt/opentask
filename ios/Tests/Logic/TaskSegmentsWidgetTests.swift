@@ -539,8 +539,9 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(
             [SegmentKind.deadlines, .queueToday, .queuePrevious, .horizon(.days), .upcoming,
              .horizon(.weeks), .horizon(.months), .horizon(.eventually)].map(\.stripWord),
-            // Tight N2 (2026-10-29): the phone words; a horizon wears its dot.
-            ["Due", "Pulled", "Pulled", nil, "Soon", nil, nil, nil]
+            // The phone words; a horizon by name since 2026-10-30 (its dot
+            // only when the words don't fit the card, `ViewThatFits`).
+            ["Due", "Pulled", "Pulled", "Days", "Soon", "Weeks", "Months", "Eventually"]
         )
         // No dot to wrap at any more: the wrapping title is the title.
         XCTAssertEqual(TaskSegmentDTO(horizon: "eventually", tasks: []).wrappingTitle, "Eventually")

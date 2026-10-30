@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useCallback, useState } from 'react'
-import { Clock, XCircle, CalendarDays } from 'lucide-react'
+import { Clock, CalendarDays } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,6 @@ import { DateTime } from 'luxon'
 import { nextSlotStart, type TimeSlot } from '@/lib/time-slot-assign'
 import { SLOT_OPTION_PREFIX, targetMenu } from '@/lib/target-menu'
 import { deadlineDayPick } from '@/lib/editor-target-labels'
-import { REMOVE_TARGET as REMOVE_TARGET_LABEL } from '@/lib/task-model-words'
 
 /**
  * The user's time slots, fetched when a menu opens and kept for the session.
@@ -59,15 +58,12 @@ function useSlotsWhenOpen(open: boolean): TimeSlot[] {
   return slots
 }
 
-/** The menu's Remove target entry (not a snooze option). */
-const REMOVE_TARGET = 'remove-target'
 /** The picker's "Morning of the deadline" (ruling Q8, 2026-10-12). */
 const DEADLINE_DAY_OPTION = 'deadline-day'
 
-/** Each option's icon: custom → calendar, Remove target → ✕, else a clock. */
+/** Each option's icon: custom → calendar, else a clock. */
 function OptionIcon({ option, className }: { option: string; className: string }) {
   if (option === 'custom') return <CalendarDays className={className} />
-  if (option === REMOVE_TARGET) return <XCircle className={className} />
   return <Clock className={className} />
 }
 
@@ -78,14 +74,6 @@ interface SnoozeMenuProps {
   onSnooze: (until: string) => void
   /** Trigger element — rendered as-is; parent controls click/long-press behavior */
   children?: React.ReactNode
-  /**
-   * Remove the target (2026-10-10; on a deadline task too since 2026-10-22,
-   * when "Back to auto" went — the task goes on the deadlines page). Offered
-   * only where the caller passes it and `targetReset` allows it.
-   */
-  onRemoveTarget?: () => void
-  /** `targetReset(task)`: 'remove' → "Remove target", null → nothing. */
-  targetReset?: 'remove' | null
   /**
    * The task's deadline: while it is ahead the menu offers "Morning of the deadline"
    * (ruling Q8 — the morning of its day, or the deadline itself if earlier),
@@ -113,8 +101,6 @@ export function SnoozeMenu({
   onOpenChange,
   onSnooze,
   children,
-  onRemoveTarget,
-  targetReset = 'remove',
   deadlineAt = null,
   title = 'Defer',
   onCustom,
@@ -139,7 +125,6 @@ export function SnoozeMenu({
   const menu = targetMenu({ now, timezone, dayStart, morningTime, slots })
   const pick = new Map(menu.rows.map((r) => [r.option, r.at]))
   const deadlineDay = deadlineDayPick(deadlineAt, { timezone, morningTime }, now, dayStart)
-  const resetLabel = onRemoveTarget && targetReset ? REMOVE_TARGET_LABEL : null
   const options: Omit<OptionMenuItem, 'icon'>[] = [
     ...menu.rows.map((r) => ({
       label: r.label,
@@ -154,16 +139,11 @@ export function SnoozeMenu({
       caption: p.time,
       chipGroup: 'Periods',
     })),
+    // No Remove target here since 2026-10-30: the target chip's X does it.
     { label: 'Custom...', option: 'custom' },
-    ...(resetLabel ? [{ label: resetLabel, option: REMOVE_TARGET }] : []),
   ]
 
   const handleSelect = (option: string) => {
-    if (option === REMOVE_TARGET) {
-      onOpenChange(false)
-      onRemoveTarget?.()
-      return
-    }
     if (option === DEADLINE_DAY_OPTION && deadlineDay) {
       onSnooze(deadlineDay.at)
       onOpenChange(false)

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useRef, type ReactNode } from 'react'
 import { CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatClockTime } from '@/lib/time-utils'
@@ -25,6 +25,7 @@ import {
   StripMark,
   stripMarkFor,
   stripRuns,
+  useStripWords,
   type StripMarkSpec,
 } from '@/components/ReminderSlotBar'
 import {
@@ -123,6 +124,9 @@ export function RemindersHeadline({
   // beside the periods they ran past the bar on a phone and on the desktop
   // row alike. They wrap under the periods instead, where the divider was;
   // the periods share the first line between them alone.
+  // The queue's horizons by name, or their dots when cramped (`useStripWords`).
+  const queueRef = useRef<HTMLDivElement>(null)
+  const dots = useStripWords(queueRef, taskSegments.map(segmentKey).join(' '))
   const queueLine = taskSegments.length > 0 && segments.length > 0
   const share = fitShare(segments.length > 0 ? segments.length : taskSegments.length)
   const dayDone = counts.done
@@ -197,7 +201,12 @@ export function RemindersHeadline({
           {taskSegments.length > 0 && (
             // The queue's bars in their groups, a hairline between groups
             // (tight N2, 2026-10-29) — the dashboard card's strip.
-            <div data-day-bar-queue className="flex basis-full items-end gap-1">
+            <div
+              ref={queueRef}
+              data-day-bar-queue
+              data-strip-dots={dots ? '' : undefined}
+              className="flex basis-full items-end gap-1"
+            >
               {stripRuns(taskSegments, (s) => stripMarkFor(s.horizon, s.pulled).group).map(
                 (run, r) => (
                   <Fragment key={segmentKey(run[0])}>
@@ -220,6 +229,7 @@ export function RemindersHeadline({
                             doneColor={segmentDoneColor(segment.horizon)}
                             emptyDone
                             mark={stripMarkFor(segment.horizon, segment.pulled)}
+                            dots={dots}
                             share={share}
                             onClick={() => onGoToSlot(key)}
                           />
@@ -410,6 +420,7 @@ function DayBarButton({
   doneColor,
   emptyDone = false,
   mark,
+  dots = false,
   share,
   onClick,
 }: {
@@ -424,6 +435,8 @@ function DayBarButton({
   emptyDone?: boolean
   /** A task segment's mark above its bar (Q2, tight N2: `stripMarkFor`): the bar is then never narrower than it. */
   mark?: StripMarkSpec
+  /** The horizons show their dots, not their words (`useStripWords`). */
+  dots?: boolean
   /** Its even share of the bar (`fitShare`): the most its minimum may be. */
   share: string
   onClick: () => void
@@ -461,7 +474,7 @@ function DayBarButton({
         mark && 'flex flex-col items-stretch gap-[3px] pt-0',
       )}
     >
-      {mark && <StripMark mark={mark} current={false} empty={total === 0} />}
+      {mark && <StripMark mark={mark} current={false} empty={total === 0} dots={dots} />}
       <span
         className={cn(
           'relative block h-2 overflow-hidden rounded-full transition-colors',

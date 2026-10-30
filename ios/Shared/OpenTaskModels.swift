@@ -561,7 +561,10 @@ enum SegmentKind: Hashable {
         case .deadlines: return "Due"
         case .upcoming: return "Soon"
         case .queueToday, .queuePrevious: return TaskWording.pulledTitle
-        case .horizon: return nil
+        // The horizons by name (Trent, 2026-10-30: "dot makes no sense
+        // without the other dots around it"); the strip falls back to the
+        // dots only when the words don't fit (`ViewThatFits`).
+        case .horizon(let horizon): return horizon.label
         }
     }
 
