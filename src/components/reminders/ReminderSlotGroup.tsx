@@ -232,6 +232,8 @@ export function ReminderSlotGroup({
       data-slot-group={label}
       data-slot-started={started}
       data-slot-key={slotKey}
+      // The section the user last touched (`useScrollToNextSection`).
+      data-section-key={slotKey}
       // Clears the sticky top bar when `goToSlot` lands this card at the top
       // (the `?slot=<slotId>` deep link, or a tap on the headline's day bar).
       style={{ scrollMarginTop: '4.5rem' }}

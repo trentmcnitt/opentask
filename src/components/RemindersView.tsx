@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Lightbulb } from 'lucide-react'
 import { slotGroupKey, UNSLOTTED_LABEL } from '@/lib/reminder-slots'
-import { parseHHMM } from '@/lib/time-slot-assign'
+import { naturalSlotIndex, orderGroupsByDay, parseHHMM } from '@/lib/time-slot-assign'
 import { summarizeReminders } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import { slotAtMinutes } from '@/lib/reminder-rule'
@@ -24,6 +24,8 @@ import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
 import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
 import { useTaskSegments } from '@/hooks/useTaskSegments'
+import { useScrollToNextSection } from '@/hooks/useScrollToNextSection'
+import { segmentKey } from '@/components/TaskSegmentRow'
 import { usePromptRows } from '@/components/QuotaPromptRow'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import type { ReminderRowHandlers } from '@/components/reminders/ReminderRow'
@@ -405,6 +407,21 @@ export function RemindersView({
   const slotScrollServed = useCallback((seq: number) => {
     setSlotScroll((prev) => (prev?.seq === seq ? null : prev))
   }, [])
+
+  // Finishing a section scrolls to the next one still waiting (2026-10-29,
+  // `useScrollToNextSection`): the dashboard pager's rule over the same pages
+  // — the periods in the day's order, then the task segments in screen order.
+  const dayGroups = orderGroupsByDay(groups, dayStart)
+  const nextSection = useScrollToNextSection({
+    pages: [
+      ...dayGroups.map((g) => ({ key: slotGroupKey(g), waiting: groupWaiting(g) })),
+      ...segments.segments.map((s) => ({ key: segmentKey(s), waiting: s.waiting })),
+    ],
+    slotCount: dayGroups.length,
+    naturalSlot:
+      dayGroups.length > 0 ? naturalSlotIndex(dayGroups, timezone, new Date(), dayStart) : 0,
+    goTo: goToSlot,
+  })
   const slotDeepLinkDone = useRef(false)
   useEffect(() => {
     if (slotDeepLinkDone.current || !hydrated || error) return
@@ -661,7 +678,12 @@ export function RemindersView({
   return (
     // Clearance below the last row for the floating selection bar, so the
     // end of the list can always be scrolled out from under it.
-    <section aria-label="Reminders" className="w-full pb-24">
+    <section
+      aria-label="Reminders"
+      className="w-full pb-24"
+      onPointerDownCapture={nextSection.onInteract}
+      onKeyDownCapture={nextSection.onInteract}
+    >
       {/* Creating lives here, on the surface, not on the task form: a thought
           typed and entered is a daily reminder in the default slot, on screen
           at once; the plus opens the editor for anything more. */}
