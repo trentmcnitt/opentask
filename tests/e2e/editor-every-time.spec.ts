@@ -971,15 +971,19 @@ test.describe('The editor is one surface (desktop, light)', () => {
     }
   })
 
-  test('the selection bar’s More dialog and the create dialog: no card inside them', async ({
+  test('the selection bar’s Details dialog and the create dialog: no card inside them', async ({
     authenticatedPage: page,
   }) => {
+    // Two picked: the bar's Details opens the bulk editor (one opens the
+    // task's own page since the U1 bar, 2026-10-30).
     const id = await firstSaturdayNoon(page)
+    const second = await firstSaturdayNoon(page)
     try {
       await withPreferences(page, unified, async () => {
         const row = page.locator(`#task-row-${id}`)
         await waitForPrefsLoaded(page, () => page.goto('/'), row)
         await cmdClickRow(row)
+        await cmdClickRow(page.locator(`#task-row-${second}`))
         await page.locator('[data-selection-sheet] [data-bar-details]').click()
         const more = page.getByRole('dialog')
         await expectFlat(more)
@@ -999,7 +1003,7 @@ test.describe('The editor is one surface (desktop, light)', () => {
         await page.screenshot({ path: '.tmp/screens/flat-create-every-time-1280.png' })
       })
     } finally {
-      await trash(page, [id])
+      await trash(page, [id, second])
     }
   })
 })

@@ -222,7 +222,10 @@ test.describe('Skip until', () => {
         await expect(
           page.locator('[data-selection-sheet]').getByRole('button', { name: 'Details' }),
         ).toBeVisible()
-        await page.locator('[data-selection-sheet]').getByRole('button', { name: /clear/i }).click()
+        await page
+          .locator('[data-selection-sheet]')
+          .getByRole('button', { name: 'Cancel selection' })
+          .click()
         await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
 
         const undone = page.waitForResponse('**/api/undo')

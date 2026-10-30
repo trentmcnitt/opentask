@@ -17,7 +17,7 @@
 import {
   test,
   expect,
-  expectClearOnFirstRow,
+  expectCancelOnTopLine,
   hideStraySegmentTasks,
   waitForGetsSettled,
 } from './fixtures'
@@ -1037,10 +1037,10 @@ test.describe('Reminders selection bar on a phone', () => {
       const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
       await longPressRow(page, row('A thought for the phone bar'))
       await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
-      await expectClearOnFirstRow(page, 'one selected', { oneRow: true })
+      await expectCancelOnTopLine(page, 'one selected', { oneRow: true })
       await row('Another for the phone bar').click()
       await expect(page.getByText('2 selected')).toBeVisible()
-      await expectClearOnFirstRow(page, 'two selected')
+      await expectCancelOnTopLine(page, 'two selected')
       await page.getByRole('button', { name: 'Cancel selection' }).click()
       await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
 

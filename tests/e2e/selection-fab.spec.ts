@@ -19,7 +19,7 @@ import {
   test,
   expect,
   cmdClickRow,
-  expectClearOnFirstRow,
+  expectCancelOnTopLine,
   holdUntil,
   uniqueTitle,
   waitForPrefsLoaded,
@@ -96,14 +96,15 @@ test.describe('Selection and the floating bar', () => {
       await cmdClickRow(row(page, ids[0]))
       await expect(row(page, ids[0])).toHaveAttribute('aria-selected', 'true')
       await expect(bar(page)).toBeVisible()
-      // One row: no count, but Details (the single-task link) is offered.
-      await expect(bar(page)).not.toContainText('selected')
+      // One row: counted too since the U1 bar (2026-10-30), Details its page.
+      await expect(bar(page)).toContainText('1 selected')
       await expect(bar(page).getByRole('button', { name: 'Details' })).toBeVisible()
 
       await cmdClickRow(row(page, ids[1]))
       await expect(bar(page)).toContainText('2 selected')
       await expect(bar(page).getByRole('button', { name: 'Delete 2 tasks' })).toBeVisible()
-      await expect(bar(page).getByRole('button', { name: 'Details' })).toHaveCount(0)
+      // Several: Details is the bulk editor.
+      await expect(bar(page).getByRole('button', { name: 'Details' })).toBeVisible()
       await expect(row(page, ids[2])).toHaveAttribute('aria-selected', 'false')
 
       // Cmd/Ctrl-click again takes one back out.
@@ -159,7 +160,7 @@ test.describe('The floating bar on a phone', () => {
     })
   })
 
-  test('with three selected, Clear stays level with the first row of verbs', async ({
+  test('with three selected, Cancel sits above one row of verbs', async ({
     authenticatedPage: page,
   }) => {
     // At the iOS app's 119% text (19.04px root, ios/OpenTask/WebView.swift)
@@ -170,7 +171,7 @@ test.describe('The floating bar on a phone', () => {
         await page.evaluate((size) => (document.documentElement.style.fontSize = size), rootSize)
         for (const id of ids) await cmdClickRow(row(page, id))
         await expect(bar(page)).toContainText('3 selected')
-        await expectClearOnFirstRow(page, `root ${rootSize}`, { oneRow: rootSize !== '20px' })
+        await expectCancelOnTopLine(page, `root ${rootSize}`, { oneRow: true })
         await bar(page).getByRole('button', { name: 'Cancel selection' }).click()
         await expect(bar(page)).toHaveCount(0)
       }
