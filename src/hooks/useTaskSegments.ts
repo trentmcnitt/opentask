@@ -203,7 +203,10 @@ export function useTaskSegments({
   // Each tap's change, until the payload on screen was requested after its
   // write answered (`src/lib/pending-overlay.ts`).
   const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
-  const view = useMemo(() => mergePulled(segmentViews(segments, overlay)), [segments, overlay])
+  const view = useMemo(
+    () => mergePulled(segmentViews(segments, overlay)).filter((v) => v.rows.length > 0),
+    [segments, overlay],
+  )
   // Which rows are the deadlines page's, and which of those its safety net
   // holds — what a consider or a deck does to a row depends on it. Read
   // through a ref, so the actions keep one identity across refreshes.
@@ -436,16 +439,20 @@ function useUndoRestore(ops: PendingOps, refresh: () => Promise<void>) {
 /**
  * The segments as drawn: the payload with each tap's overlay over its row. A
  * `{ left }` overlay is a considered row that left the segment handled (the
- * day roster); 'gone' drops the row. A segment with no rows left is not drawn.
+ * day roster); 'gone' drops the row. A segment with no rows is dropped by the caller.
  */
 function segmentViews(
   segments: TaskSegmentPayload[],
   overlay: Map<number, Overlay>,
 ): SegmentView[] {
-  // NO FILTER ON EMPTY SEGMENTS (Trent, 2026-10-24: "always show every queue
-  // segment, every day, in fixed positions"). The server sends every kind
-  // the web draws (`?fill=1`), an empty one with no rows; it stays, and reads
-  // as done ("Nothing today ✓") — so does one whose last row was trashed.
+  // AN EMPTY SEGMENT IS HIDDEN (Trent, 2026-10-30, reversing 10-24's "always
+  // show every queue segment, every day"): the server still sends every kind
+  // (`?fill=1`), and `useTaskSegments` drops — after Pulled's merge — one
+  // with no rows today, none waiting and none considered. Its place stays
+  // fixed (`SEGMENT_ORDER`); only its presence changes. A segment finished
+  // today keeps its rows (considered, deferred, or left handled — the day
+  // roster), so it stays, green, until the rollover. Trent: "people that
+  // really don't use deadlines will just never see a deadline section".
   return segments.map((seg) => {
     const rows = seg.tasks
       .map((t) => {

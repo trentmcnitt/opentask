@@ -3,7 +3,7 @@
  * split PR B; docs/TASK-MODEL.md § Upcoming):
  *
  * - the Upcoming section on /reminders draws "Tomorrow" then "Later", each
- *   with its own count; an empty one reads "Nothing today ✓" (1280 light and
+ *   with its own count; an empty one is not drawn (2026-10-30; 1280 light and
  *   375 dark, no sideways scroll); a Tomorrow row says only the time;
  * - seen is per section: a row seen in Later still shows in Tomorrow, one
  *   seen in Later before Tomorrow's day does not show at all;
@@ -65,7 +65,7 @@ const section = (page: Page, name: 'tomorrow' | 'later') =>
   upcoming(page).locator(`[data-upcoming-section="${name}"]`)
 
 test.describe('Upcoming: Tomorrow and Later', () => {
-  test('two sections in order, each its own count; Nothing today ✓; a Tomorrow row says only the time — 1280 light, 375 dark', async ({
+  test('sections in order, each its own count; an empty one hidden; a Tomorrow row says only the time — 1280 light, 375 dark', async ({
     authenticatedPage: page,
   }) => {
     hideStraySegmentTasks()
@@ -76,17 +76,11 @@ test.describe('Upcoming: Tomorrow and Later', () => {
       await page.setViewportSize({ width: 1280, height: 900 })
       await page.emulateMedia({ colorScheme: 'light' })
       await page.goto('/reminders')
-      // Wait for the sections to draw before reading their order.
-      await expect(upcoming(page).locator('[data-upcoming-section]')).toHaveCount(2)
-      const names = await upcoming(page)
-        .locator('[data-upcoming-section]')
-        .evaluateAll((els) => els.map((e) => e.getAttribute('data-upcoming-section')))
-      expect(names).toEqual(['tomorrow', 'later'])
+      // Later is empty today: not drawn (2026-10-30, "hide an empty section").
+      await expect(section(page, 'tomorrow')).toBeVisible()
+      await expect(upcoming(page).locator('[data-upcoming-section]')).toHaveCount(1)
       await expect(section(page, 'tomorrow').locator('[data-upcoming-section-title]')).toHaveText(
         'Tomorrow',
-      )
-      await expect(section(page, 'later').locator('[data-upcoming-section-title]')).toHaveText(
-        'Later',
       )
       const row = section(page, 'tomorrow').locator(`[data-segment-task="${soon}"]`)
       await expect(row).toBeVisible()
@@ -95,15 +89,8 @@ test.describe('Upcoming: Tomorrow and Later', () => {
       await expect(section(page, 'tomorrow').locator('[data-upcoming-section-count]')).toHaveText(
         '0 of 1',
       )
-      // Later is empty today: done from the start.
-      await expect(section(page, 'later').locator('[data-segment-empty]')).toHaveText(
-        'Nothing today',
-      )
-      await expect(section(page, 'later').locator('[data-upcoming-section-count]')).toHaveText(
-        '0 of 0',
-      )
-      // No segment-level empty line besides the sections' own.
-      await expect(upcoming(page).locator('[data-segment-empty]')).toHaveCount(1)
+      // No empty line: the page has rows, and the empty section is gone.
+      await expect(upcoming(page).locator('[data-segment-empty]')).toHaveCount(0)
 
       // Consider it: Tomorrow "1 of 1", its own "Show 1 considered".
       await row.getByRole('button', { name: /as considered/ }).click()
@@ -115,15 +102,14 @@ test.describe('Upcoming: Tomorrow and Later', () => {
       await expect(
         section(page, 'tomorrow').locator(`[data-considered-task-id="${soon}"]`),
       ).toBeVisible()
-      await expect(section(page, 'later').locator('[data-segment-considered-toggle]')).toHaveCount(
-        0,
-      )
+      // Considered, Tomorrow still has a row: it stays drawn ("1 of 1 ✓").
+      await expect(section(page, 'later')).toHaveCount(0)
 
       await page.setViewportSize({ width: 375, height: 812 })
       await page.emulateMedia({ colorScheme: 'dark' })
       await page.goto('/reminders')
       await expect(section(page, 'tomorrow')).toBeVisible()
-      await expect(section(page, 'later').locator('[data-segment-empty]')).toBeVisible()
+      await expect(section(page, 'later')).toHaveCount(0)
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth,
       )

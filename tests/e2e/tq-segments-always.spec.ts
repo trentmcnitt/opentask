@@ -1,19 +1,19 @@
 /**
- * EVERY SEGMENT, EVERY DAY (Trent, 2026-10-24: "always show every queue
- * segment, every day, in fixed positions"; docs/TASK-MODEL.md § Task
- * segments). With the task-queue switch on, the web (`?fill=1`) shows all
- * eight segments in `SEGMENT_ORDER` — the deadlines page first — on the
- * dashboard's Tasks card and on /reminders, whether or not they have rows. An
- * empty one is done from the start of the day: green in the strip and the
- * day bar, "0 of 0 ✓", "Nothing today ✓" on its page or section. The card
- * opens on the first segment with work, and its chevrons step through all
- * eight.
+ * ONLY THE SEGMENTS WITH ROWS (Trent, 2026-10-30, reversing 10-24's "always
+ * show every queue segment, every day"; docs/TASK-MODEL.md § Task segments).
+ * With the task-queue switch on, the server still sends every kind
+ * (`?fill=1`), and the web shows only the ones with rows today — waiting or
+ * considered — in `SEGMENT_ORDER`, the deadlines page first, on the
+ * dashboard's Tasks card and on /reminders. A segment finished today keeps
+ * its rows, so it stays, done, until the rollover. With one segment the
+ * card's strip still shows its one word; a hidden group leaves no stray
+ * hairline.
  *
  * Its own user (`queue@opentask.local`, as tq-queue-panels): with the switch
  * on, the minute cron's rollover would strip the shared user's past-target
- * one-offs. Here it holds ONE task, a Daily one-off (and, for /reminders' day
- * bar, one reminder). Unique titles; everything trashed in `finally`; the
- * switch off again after the file.
+ * one-offs. Here it holds a Daily one-off and, part-way, a deadline on the
+ * deadlines page (and, for /reminders' day bar, reminders). Unique titles;
+ * everything trashed in `finally`; the switch off again after the file.
  */
 import { test, expect, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
@@ -27,7 +27,14 @@ test.use({ timezoneId: TZ })
  * (`mergePulled`), drawn as `queue_today`.
  */
 const ORDER = ['deadlines', 'upcoming', 'queue_today', 'days', 'weeks', 'months', 'eventually']
-const KEYS = ORDER.map((k) => `tasks:${k}`)
+const DAY = 24 * 60 * 60 * 1000
+
+/** A deadline five days out with a long lead: on the deadlines page today. */
+const deadlineTask = () => ({
+  title: uniqueTitle('SA deadline'),
+  deadline_at: new Date(Date.now() + 5 * DAY).toISOString(),
+  lead_days: 30,
+})
 
 async function signIn(page: Page) {
   await page.goto('/login')
@@ -47,11 +54,21 @@ async function trash(page: Page, ids: number[]) {
   if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
 }
 
-/** The user's own open tasks that sit in a segment today — this file wants exactly one. */
+/** The user's own open tasks that sit in a segment today — this file wants only its own. */
 async function segmentRowIds(page: Page): Promise<number[]> {
   const res = await page.request.get('/api/reminders?queue=1&deck=1&handled=1&deadlines=1')
   const segs = (await res.json()).data.task_segments as { tasks: { id: number }[] }[]
   return segs.flatMap((s) => s.tasks.map((t) => t.id))
+}
+
+/** The kinds the web draws today — those with rows, Pulled's two panels as one. */
+async function drawnKinds(page: Page): Promise<string[]> {
+  const res = await page.request.get('/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1')
+  const segs = (await res.json()).data.task_segments as { horizon: string; tasks: unknown[] }[]
+  const kinds = segs
+    .filter((s) => s.tasks.length > 0)
+    .map((s) => (s.horizon === 'queue_previous' ? 'queue_today' : s.horizon))
+  return ORDER.filter((k) => kinds.includes(k))
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -74,7 +91,7 @@ for (const viewport of VIEWPORTS) {
   test.describe(`at ${viewport.width}`, () => {
     test.use({ viewport })
 
-    test('the dashboard card: all eight in order, empties done, the pager steps through all', async ({
+    test('the dashboard card: only segments with rows, in order; one alone keeps its word; a finished one stays', async ({
       page,
     }) => {
       const ids: number[] = []
@@ -85,56 +102,57 @@ for (const viewport of VIEWPORTS) {
 
         await page.goto('/')
         const card = page.locator('[data-tasks-panel]')
-        // Opens on the first segment with work, not on the empty deadlines page.
         await expect(card).toHaveAttribute('data-tasks-page', 'tasks:days')
         await expect(card.locator(`[data-segment-task="${ids[0]}"]`)).toBeVisible()
 
-        // The strip: every segment, in the fixed order; the empties done (green).
+        // One segment with rows: one bar, its word still shown; no hairline.
         const bars = card.locator('[data-slot-segment]')
-        await expect(bars).toHaveCount(ORDER.length)
-        for (let i = 0; i < KEYS.length; i++) {
-          await expect(bars.nth(i)).toHaveAttribute('data-slot-segment', KEYS[i])
-          await expect(bars.nth(i)).toHaveAttribute(
-            'data-slot-state',
-            KEYS[i] === 'tasks:days' ? 'behind' : 'done',
-          )
-        }
+        await expect(bars).toHaveCount(1)
+        await expect(bars.first()).toHaveAttribute('data-slot-segment', 'tasks:days')
+        await expect(bars.first().locator('[data-strip-word]')).toBeVisible()
+        await expect(card.locator('[data-strip-group-divider]')).toHaveCount(0)
 
-        // Back to the first page: the deadlines page, empty, "Nothing today ✓".
+        // A deadline joins: the deadlines page's bar, FIRST, one hairline
+        // between the two groups (Dated | Horizon), nothing in between.
+        ids.push(await create(page, deadlineTask()))
+        await page.reload()
+        await expect(bars).toHaveCount(2)
+        await expect(bars.nth(0)).toHaveAttribute('data-slot-segment', 'tasks:deadlines')
+        await expect(bars.nth(1)).toHaveAttribute('data-slot-segment', 'tasks:days')
+        await expect(card.locator('[data-strip-group-divider]')).toHaveCount(1)
+
+        // The chevrons step through those two only.
         const prev = card.getByRole('button', { name: 'Previous task segment' })
         const next = card.getByRole('button', { name: 'Next task segment' })
-        for (const key of [KEYS[2], KEYS[1], KEYS[0]]) {
-          await prev.click()
-          await expect(card).toHaveAttribute('data-tasks-page', key)
-        }
+        await expect(card).toHaveAttribute('data-tasks-page', 'tasks:deadlines')
         await expect(prev).toBeDisabled()
-        await expect(card.locator('[data-segment-empty]')).toHaveText('Nothing today')
-        await expect(card.getByLabel('0 of 0 considered', { exact: true })).toBeVisible()
-
-        // Forward through every page, in order, to the last.
-        for (const key of KEYS.slice(1)) {
-          await next.click()
-          await expect(card).toHaveAttribute('data-tasks-page', key)
-          // Upcoming's two sections (2026-10-25) each read "Nothing today ✓".
-          await expect(card.locator('[data-segment-empty]')).toHaveCount(
-            key === 'tasks:days' ? 0 : key === 'tasks:upcoming' ? 2 : 1,
-          )
-        }
+        await next.click()
+        await expect(card).toHaveAttribute('data-tasks-page', 'tasks:days')
         await expect(next).toBeDisabled()
+
+        // The deadline considered: its segment is finished, and STAYS, done.
+        const res = await page.request.post('/api/task-segments/consider', {
+          data: { ids: [ids[1]] },
+        })
+        expect(res.ok()).toBeTruthy()
+        await page.reload()
+        await expect(bars).toHaveCount(2)
+        await expect(bars.nth(0)).toHaveAttribute('data-slot-state', 'done')
+        await expect(bars.nth(1)).toHaveAttribute('data-slot-state', 'behind')
       } finally {
         await trash(page, ids)
       }
     })
 
-    test('/reminders: every section and day-bar segment in order, deadlines first, empties done', async ({
+    test('/reminders: only sections and day-bar segments with rows, in order, deadlines first', async ({
       page,
     }) => {
       const ids: number[] = []
       try {
         ids.push(await create(page, { title: uniqueTitle('SA daily'), horizon: 'days' }))
+        ids.push(await create(page, deadlineTask()))
         // A reminder in every period today, so the headline's day bar has
-        // every period's bar before the eight task segments' — the most a
-        // phone's bar has to fit.
+        // every period's bar before the task segments'.
         const slots = (await (await page.request.get('/api/time-slots')).json()).data
           .time_slots as { start_time: string }[]
         expect(slots.length).toBeGreaterThan(0)
@@ -148,42 +166,31 @@ for (const viewport of VIEWPORTS) {
             }),
           )
         }
+        // Consider the deadline: finished today, it stays (done).
+        const res = await page.request.post('/api/task-segments/consider', {
+          data: { ids: [ids[1]] },
+        })
+        expect(res.ok()).toBeTruthy()
         await page.goto('/reminders')
 
         const sections = page.locator('[data-task-segments] [data-task-segment]')
-        await expect(sections).toHaveCount(ORDER.length)
-        for (let i = 0; i < ORDER.length; i++) {
-          const section = sections.nth(i)
-          await expect(section).toHaveAttribute('data-task-segment', ORDER[i])
-          if (ORDER[i] === 'days') {
-            await expect(section.locator(`[data-segment-task="${ids[0]}"]`)).toBeVisible()
-            await expect(section.locator('[data-segment-empty]')).toHaveCount(0)
-          } else if (ORDER[i] === 'upcoming') {
-            // Both sections, Tomorrow then Later, each "Nothing today ✓" (2026-10-25).
-            await expect(
-              section.locator('[data-upcoming-section] [data-segment-empty]'),
-            ).toHaveText(['Nothing today', 'Nothing today'])
-          } else {
-            await expect(section.locator('[data-segment-empty]')).toHaveText('Nothing today')
-          }
-        }
+        await expect(sections).toHaveCount(2)
+        await expect(sections.nth(0)).toHaveAttribute('data-task-segment', 'deadlines')
+        await expect(sections.nth(1)).toHaveAttribute('data-task-segment', 'days')
+        await expect(sections.nth(1).locator(`[data-segment-task="${ids[0]}"]`)).toBeVisible()
+        await expect(page.locator('[data-task-segments] [data-segment-empty]')).toHaveCount(0)
 
         const bar = page.locator('[data-reminders-headline] [data-day-segment^="tasks:"]')
-        await expect(bar).toHaveCount(ORDER.length)
-        for (let i = 0; i < KEYS.length; i++) {
-          await expect(bar.nth(i)).toHaveAttribute('data-day-segment', KEYS[i])
-          if (KEYS[i] === 'tasks:days') {
-            await expect(bar.nth(i)).not.toHaveAttribute('data-day-segment-done')
-          } else {
-            await expect(bar.nth(i)).toHaveAttribute('data-day-segment-done', '')
-          }
-        }
+        await expect(bar).toHaveCount(2)
+        await expect(bar.nth(0)).toHaveAttribute('data-day-segment', 'tasks:deadlines')
+        await expect(bar.nth(0)).toHaveAttribute('data-day-segment-done', '')
+        await expect(bar.nth(1)).toHaveAttribute('data-day-segment', 'tasks:days')
+        await expect(bar.nth(1)).not.toHaveAttribute('data-day-segment-done')
 
-        // An empty segment's bar still goes to its section.
-        await bar.nth(ORDER.indexOf('eventually')).click()
-        await expect(sections.nth(ORDER.indexOf('eventually'))).toBeInViewport()
+        // A finished segment's bar still goes to its section.
+        await bar.nth(0).click()
+        await expect(sections.nth(0)).toBeInViewport()
 
-        // Eight segments after the periods still fit a phone: no sideways scroll.
         const overflow = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         )
@@ -380,9 +387,10 @@ async function segmentRowLayout(row: Locator) {
 /**
  * THE DAY BAR FITS A PHONE (2026-10-24). On real data — five periods of 20-odd
  * reminders each, every task segment — the bar's thumb-wide minimums pushed
- * the count beside it 7px off a 375 screen. Six periods of 21 reminders, all
- * eight segments (the switch on): at 375 and 320 the page never scrolls
- * sideways and the count is whole and on screen.
+ * the count beside it 7px off a 375 screen. Six periods of 21 reminders and
+ * every segment with rows (the switch on; empty ones hidden since 2026-10-30):
+ * at 375 and 320 the page never scrolls sideways and the count is whole and
+ * on screen.
  *
  * And at the iOS app's text sizes (2026-10-26), with a long link in a task
  * segment row's title (`LINK_TITLE`): 375 and 402 (an iPhone 17 Pro) at 100%,
@@ -443,7 +451,10 @@ async function dayBarFits(page: Page, widths: number[]) {
       await page.setViewportSize({ width, height: 812 })
       await page.goto('/reminders')
       const headline = page.locator('[data-reminders-headline]')
-      await expect(headline.locator('[data-day-segment^="tasks:"]')).toHaveCount(ORDER.length)
+      // Every segment with rows (2026-10-30: the empty ones are hidden).
+      await expect(headline.locator('[data-day-segment^="tasks:"]')).toHaveCount(
+        (await drawnKinds(page)).length,
+      )
       await expect(
         headline.locator('[data-day-segment]:not([data-day-segment^="tasks:"])'),
       ).toHaveCount(slots.length)

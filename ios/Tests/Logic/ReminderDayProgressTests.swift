@@ -217,22 +217,18 @@ final class ReminderDayProgressTests: XCTestCase {
         let segments = [
             TaskSegmentDTO(horizon: "days", tasks: [row(1, .considered), row(2, .deferred), row(3, .waiting)]),
             TaskSegmentDTO(horizon: "weeks", tasks: [row(4, .considered)]),
-            // All deferred: still a page and a bar since native PR E (`?fill=1`
-            // — every segment, every day, in fixed positions), done.
+            // All deferred: it has rows today, so still a page and a bar, done.
             TaskSegmentDTO(horizon: "months", tasks: [row(5, .deferred)]),
-            // Empty: done from the start, a full bar.
+            // Empty: no bar (Trent, 2026-10-30: "hide an empty section").
             TaskSegmentDTO(horizon: "eventually", tasks: []),
         ]
         let bars = ReminderDayProgress.stripBars(groups: groups, segments: segments, now: noon, day: day)
-        XCTAssertEqual(bars.map(\.key), [1, 3, 4, -10, -11, -12, -13])
-        XCTAssertEqual(
-            bars.map(\.kind), [.period, .period, .period, .taskSegment, .taskSegment, .taskSegment, .taskSegment]
-        )
-        XCTAssertEqual(bars.map(\.state), [.behind, .done, .upcoming, .behind, .done, .done, .done])
-        XCTAssertEqual(bars.map(\.total), [4, 2, 5, 3, 1, 1, 0], "a segment weighs its rows today, deferred included")
-        XCTAssertEqual(bars.map(\.handled), [3, 2, 0, 2, 1, 1, 0])
+        XCTAssertEqual(bars.map(\.key), [1, 3, 4, -10, -11, -12])
+        XCTAssertEqual(bars.map(\.kind), [.period, .period, .period, .taskSegment, .taskSegment, .taskSegment])
+        XCTAssertEqual(bars.map(\.state), [.behind, .done, .upcoming, .behind, .done, .done])
+        XCTAssertEqual(bars.map(\.total), [4, 2, 5, 3, 1, 1], "a segment weighs its rows today, deferred included")
+        XCTAssertEqual(bars.map(\.handled), [3, 2, 0, 2, 1, 1])
         XCTAssertEqual(bars[3].fraction, 2.0 / 3.0, accuracy: 1e-9)
-        XCTAssertEqual(bars[6].fraction, 1, "an empty segment's bar is full")
         XCTAssertEqual(bars[3].label, "Days")
     }
 
@@ -241,7 +237,8 @@ final class ReminderDayProgressTests: XCTestCase {
     /// its teal, every other kind green.
     func testTheDeadlinesPageFinishesTealOnTheStrip() {
         let segments = [
-            TaskSegmentDTO(horizon: "deadlines", tasks: []),
+            // Finished today (its row considered): it stays, done, until the rollover.
+            TaskSegmentDTO(horizon: "deadlines", tasks: [row(3, .considered)]),
             TaskSegmentDTO(horizon: "queue_today", tasks: [row(1, .waiting)]),
             TaskSegmentDTO(horizon: "queue_previous", tasks: [row(2, .considered)]),
         ]
@@ -256,9 +253,15 @@ final class ReminderDayProgressTests: XCTestCase {
         XCTAssertEqual(bars[1].segment?.titleHex.light, 0x0A6670)
         XCTAssertEqual(bars[1].segment?.titleHex.dark, 0x36B8C6)
         XCTAssertEqual(bars[2].segment?.titleHex.dark, 0x7FBCC4)
-        // A waiting row keeps the day open; an empty deadlines page doesn't.
+        // A waiting row keeps the day open; a finished deadlines page doesn't.
         XCTAssertFalse(ReminderDayProgress.isDayComplete([], segments: segments))
         XCTAssertTrue(ReminderDayProgress.isDayComplete([], segments: [segments[0], segments[2]]))
+        // An EMPTY segment has no bar (2026-10-30); the order of the rest holds.
+        let hidden = ReminderDayProgress.stripBars(
+            groups: [], segments: [TaskSegmentDTO(horizon: "deadlines", tasks: [])] + segments.dropFirst(),
+            now: noon, day: day
+        )
+        XCTAssertEqual(hidden.map(\.key), [-17, -18])
     }
 
     func testATaskSegmentBarIsNeverUpcoming() {

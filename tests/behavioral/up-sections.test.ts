@@ -61,31 +61,34 @@ describe('Upcoming sections on the web (pure)', () => {
     expect(tomorrow.waiting.map((r) => r.task.id)).toEqual([1])
     expect(tomorrow.handled.map((r) => r.task.id)).toEqual([2])
     expect(tomorrow.counts).toEqual({ handled: 1, total: 2 })
-    expect(tomorrow.empty).toBe(false)
     expect(later.section).toBe('later')
     expect(later.waiting.map((r) => r.task.id)).toEqual([3, 5])
     expect(later.handled.map((r) => r.task.id)).toEqual([4])
     expect(later.counts).toEqual({ handled: 1, total: 3 })
   })
 
-  test('UP-121: both sections always come back; an empty one is empty (Nothing today ✓)', () => {
-    const none = upcomingSections([])
-    expect(none.map((s) => [s.section, s.empty, s.counts.total])).toEqual([
-      ['tomorrow', true, 0],
-      ['later', true, 0],
+  test('UP-121: a section with no rows is left out (2026-10-30, "hide an empty section")', () => {
+    // Both empty: no sections (the page's one "Nothing today ✓").
+    expect(upcomingSections([])).toEqual([])
+    // An empty Tomorrow is hidden; Later alone.
+    const later = upcomingSections([row(3, 'waiting', 'later')])
+    expect(later.map((s) => s.section)).toEqual(['later'])
+    // An empty Later is hidden; Tomorrow alone.
+    expect(upcomingSections([row(1, 'waiting', 'tomorrow')]).map((s) => s.section)).toEqual([
+      'tomorrow',
     ])
-    // All handled is not empty: "1 of 1 ✓", its considered row behind the toggle.
-    const [tomorrow, later] = upcomingSections([row(7, 'considered', 'later')])
-    expect(tomorrow.empty).toBe(true)
-    expect(later.empty).toBe(false)
-    expect(later.waiting).toEqual([])
-    expect(later.counts).toEqual({ handled: 1, total: 1 })
+    // All handled is not empty: "1 of 1 ✓" stays drawn, its considered row behind the toggle.
+    const [handled, ...rest] = upcomingSections([row(7, 'considered', 'later')])
+    expect(rest).toEqual([])
+    expect(handled.section).toBe('later')
+    expect(handled.waiting).toEqual([])
+    expect(handled.counts).toEqual({ handled: 1, total: 1 })
   })
 
   test('UP-122: a row with no section reads as Later', () => {
-    const [tomorrow, later] = upcomingSections([row(9, 'waiting')])
-    expect(tomorrow.empty).toBe(true)
-    expect(later.waiting.map((r) => r.task.id)).toEqual([9])
+    const sections = upcomingSections([row(9, 'waiting')])
+    expect(sections.map((s) => s.section)).toEqual(['later'])
+    expect(sections[0].waiting.map((r) => r.task.id)).toEqual([9])
   })
 
   test('UP-123: the row cap is one budget across both sections, Tomorrow first', () => {

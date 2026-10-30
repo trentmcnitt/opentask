@@ -57,11 +57,11 @@ import { retapStopAttrs } from '@/lib/retap-walk'
  *   hand yet; a segment always is, like a started slot, which shows everything.
  * - Rows are not selectable (no selection bar for tasks here); the circle and
  *   a tap on the row consider, as before.
- * - EMPTY IS DONE (Trent, 2026-10-24: "always show every queue segment, every
- *   day, in fixed positions"): a segment with no rows today is still here, in
- *   its place, finished from the start of the day — "0 of 0 ✓", a green
- *   hairline, and "Nothing today ✓" where its rows would be. An empty slot
- *   is never drawn at all.
+ * - EMPTY IS HIDDEN (Trent, 2026-10-30, reversing 10-24's "always show every
+ *   queue segment, every day"): a segment with no rows today is not drawn
+ *   (`useTaskSegments`), as an empty slot never is. One finished today keeps
+ *   its rows, so it stays — "N of N ✓", a green hairline — until the
+ *   rollover.
  * - UPCOMING (2026-10-25) has two sub-lists under its one header, Tomorrow
  *   then Later (`UpcomingSections`); the header's count, Considered all and
  *   Defer all stay the segment's.
@@ -186,7 +186,7 @@ export function TaskSegmentGroup({
         <>
           <SegmentNudge segment={segment} className="mx-3" />
           {/* Tomorrow, then Later (2026-10-25): each with its own count,
-              "Nothing today ✓" and "Show N considered". */}
+              "Show N considered"; an empty section is not drawn. */}
           <UpcomingSections segment={segment} actions={actions} timezone={timezone} panel={false} />
         </>
       )}
@@ -271,8 +271,8 @@ function SegmentConsideredDisclosure({
  * Every task segment, AFTER the slots (Trent, 10-11: "Tasks should go
  * underneath Reminders"), in screen order (`SEGMENT_ORDER`: with the switch on
  * the deadlines page, then the task queue's two panels; days, upcoming,
- * weeks, months, eventually), with the slots' spacing. Every one, every day
- * (2026-10-24, the server's `?fill=1`): an empty one reads "Nothing today ✓". Open/folded comes from the slots' own
+ * weeks, months, eventually), with the slots' spacing. Only the ones with
+ * rows today (2026-10-30: an empty segment is hidden). Open/folded comes from the slots' own
  * `useSlotDisclosure`, under a "tasks:<horizon>" key that is never a slot id.
  */
 export function TaskSegmentSections({

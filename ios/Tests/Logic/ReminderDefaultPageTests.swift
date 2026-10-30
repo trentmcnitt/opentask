@@ -303,7 +303,8 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
         let boundary = RemindersTimeline.scheduledPage(
             groups: groups, segments: segments, now: at(12), override: WidgetStore.slotOverride()
         )
-        XCTAssertEqual(boundary.segmentIndex, 3)
+        // Daily is the second listed page: only Deadlines and Daily have rows.
+        XCTAssertEqual(boundary.segmentIndex, 1)
         XCTAssertNotNil(WidgetStore.slotOverride(), "a pre-computed entry never clears it")
 
         // The last unseen deadline row seen (elsewhere): the default moves

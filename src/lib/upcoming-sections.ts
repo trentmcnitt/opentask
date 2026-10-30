@@ -7,8 +7,10 @@
  * draws them as two sub-lists under one segment header — "Tomorrow" first,
  * then "Later" — each with its own "n of m" and its own considered rows. The
  * segment-level "N of M", "Considered all" and "Defer all" stay the page's
- * (decision 11). BOTH headings are always drawn; an empty one reads
- * "Nothing today ✓" (decision 3).
+ * (decision 11). A section with no rows today (none waiting, none
+ * considered) is NOT drawn (Trent, 2026-10-30: "hide an empty section" —
+ * reversing decision 3's "both headings always drawn"). An Upcoming with no
+ * rows at all is hidden with its segment (`useTaskSegments`, the same day).
  *
  * Pure: the split is tested in `tests/behavioral/up-sections-web.test.ts`.
  */
@@ -24,8 +26,6 @@ export interface UpcomingSectionView {
   handled: SegmentRow[]
   /** "n of m": n handled, m everything the section held today. */
   counts: { handled: number; total: number }
-  /** No rows at all today: "Nothing today ✓". */
-  empty: boolean
 }
 
 /** A row's section; a row with none (never sent so by the server) reads as Later. */
@@ -33,19 +33,18 @@ export function sectionOf(row: SegmentRow): UpcomingSection {
   return row.section ?? 'later'
 }
 
-/** The segment's rows split into Tomorrow then Later (`UPCOMING_SECTIONS`). */
+/**
+ * The segment's rows split into Tomorrow then Later (`UPCOMING_SECTIONS`),
+ * leaving out a section with no rows today (2026-10-30). An empty list: the
+ * whole page is empty.
+ */
 export function upcomingSections(rows: readonly SegmentRow[]): UpcomingSectionView[] {
-  return UPCOMING_SECTIONS.map((section) => {
+  return UPCOMING_SECTIONS.flatMap((section) => {
     const mine = rows.filter((r) => sectionOf(r) === section)
+    if (mine.length === 0) return []
     const waiting = mine.filter((r) => r.state === 'waiting')
     const handled = mine.filter((r) => r.state !== 'waiting')
-    return {
-      section,
-      waiting,
-      handled,
-      counts: { handled: handled.length, total: mine.length },
-      empty: mine.length === 0,
-    }
+    return [{ section, waiting, handled, counts: { handled: handled.length, total: mine.length } }]
   })
 }
 

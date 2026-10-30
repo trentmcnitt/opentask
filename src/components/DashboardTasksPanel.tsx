@@ -59,12 +59,11 @@ import {
  * that opens what was considered with put-back, ‹ ›), the same rows, and
  * "Defer all" behind the header tap where a slot has "Considered all".
  *
- * EVERY SEGMENT, EVERY DAY (Trent, 2026-10-24: "always show every queue
- * segment, every day, in fixed positions"). The server sends every kind the
- * web draws (`?fill=1`), so the strip always has the same bars in the same
- * places and the chevrons step through all of them. An EMPTY segment is done
- * from the start of the day: a green bar, "0 of 0 ✓", "Nothing today ✓" on
- * its page (`segmentEmpty`).
+ * ONLY THE SEGMENTS WITH ROWS (Trent, 2026-10-30, reversing 10-24's "every
+ * segment, every day"): a segment with no rows today is not drawn — no bar,
+ * no page (`useTaskSegments`). The order stays fixed; only presence changes.
+ * A segment finished today keeps its rows and stays, green, until the
+ * rollover. With only one segment the strip still shows its one word.
  *
  * WHERE IT OPENS: the first segment with anything waiting — an empty one
  * waits for nothing, so it is never where the card opens; finishing one (its

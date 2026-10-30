@@ -39,18 +39,21 @@ final class UpcomingSectionsTests: WidgetStoreTestCase {
 
     // MARK: The split
 
-    func testSplitAlwaysHasBothSectionsTomorrowFirst() {
+    /// Tomorrow first, and an EMPTY section left out (2026-10-30, "hide an
+    /// empty section"); a section of considered rows only stays, finished.
+    func testSplitLeavesOutAnEmptySectionTomorrowFirst() {
         let sections = UpcomingSections.split([
             row(1, .waiting, .later), row(2, .considered, .later), row(3, .deferred, .later),
         ])
-        XCTAssertEqual(sections.map(\.section), [.tomorrow, .later])
-        XCTAssertEqual(sections[0].countText, "0 of 0")
-        XCTAssertTrue(sections[0].isEmpty)
-        XCTAssertTrue(sections[0].finished, "an empty section is done from the start: 0 of 0 ✓")
-        XCTAssertEqual(sections[1].waiting.map(\.id), [1])
-        XCTAssertEqual(sections[1].countText, "2 of 3", "considered and deferred both count as handled")
-        XCTAssertFalse(sections[1].finished)
-        XCTAssertEqual(sections.map(\.section.title), ["Tomorrow", "Later"])
+        XCTAssertEqual(sections.map(\.section), [.later], "an empty Tomorrow is not a section")
+        XCTAssertEqual(sections[0].waiting.map(\.id), [1])
+        XCTAssertEqual(sections[0].countText, "2 of 3", "considered and deferred both count as handled")
+        XCTAssertFalse(sections[0].finished)
+
+        let both = UpcomingSections.split([row(4, .considered, .tomorrow), row(5, .waiting, .later)])
+        XCTAssertEqual(both.map(\.section.title), ["Tomorrow", "Later"])
+        XCTAssertTrue(both[0].finished, "all considered: 1 of 1 ✓, still drawn")
+        XCTAssertEqual(UpcomingSections.split([]), [])
     }
 
     func testSplitKeepsTheServersOrderWithinASection() {
