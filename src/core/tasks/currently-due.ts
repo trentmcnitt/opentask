@@ -36,6 +36,7 @@ interface DueCandidate {
   timezone: string
 }
 
+// (restates RULE TGT-OVERDUE, home: src/core/recurrence/occurrence.ts)
 /**
  * Candidate rows for a user: every recurring task (its due_at is untrustworthy,
  * so the schedule must be consulted) plus one-offs already past due.

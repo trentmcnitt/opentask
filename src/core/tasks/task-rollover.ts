@@ -73,7 +73,7 @@
  * being a user action, writes one undo entry.
  *
  * It writes targets with fixed SQL and sets the queue state rather than
- * clearing it — the deliberate exception to TQ-G01 (tq-summary.test.ts).
+ * clearing it — the deliberate exception to TQ-G10 (tq-summary.test.ts).
  */
 
 import { getDb, withTransaction } from '@/core/db'
@@ -189,6 +189,18 @@ interface RolloverHook {
   skipped: boolean
 }
 
+/**
+ * RULE TQ-ROLLOVER-ONCE: users.last_rollover_date names the OpenTask day whose rollover last ran. A
+ *   run happens only if the stamp is older, and the stamp is the run's first write, made with a
+ *   conditional UPDATE. Catching up after downtime runs once, as of the latest rollover. With the
+ *   switch off it only stamps. The rollover runs at the head of both minute jobs, so nothing nags
+ *   or counts a marked task before it is stripped. A day that changes nothing still sends one sync
+ *   event per user.
+ * Why: Whoever writes the stamp owns the run, so a doubled tick or a restart never runs it twice;
+ *   one sync event a day so open tabs refetch the new day.
+ * Ruling: Task-queue PR 2 (2026-10-19). One sync event per day: coordinator ruling 2026-10-23
+ *   (src/core/tasks/task-rollover.ts:217).
+ */
 function rolloverUser(user: UserRow, now: Date, result: TaskRolloverResult): void {
   const rolloverTime = rolloverTimeForUser(user.id)
   const day = openTaskDayOf(now, user.timezone, rolloverTime)
@@ -277,6 +289,7 @@ function dispatchRolloverWebhooks(user: UserRow, hooks: RolloverHook[], manual: 
  */
 const TARGET_ANCHORED_SQL = `repeat_anchor = 'target'`
 
+// (restates RULE TQ-ROLLOVER-WHO, home: src/lib/task-segments.ts)
 /** The tasks the rollover may strip, roll or send to wait (module doc: EXCLUDED). */
 const ELIGIBLE_SQL = `
   user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
@@ -472,6 +485,7 @@ function checkpoint(
   )
 }
 
+// (restates RULE TQ-REMEMBER-TARGET, home: src/core/tasks/bulk.ts)
 /**
  * The target the queue remembers (spec rule 2, "the original target is
  * remembered"): a task a defer MARKED keeps the pre-sweep target its sweep
@@ -484,6 +498,7 @@ function keptTarget(task: Task): string | null {
   return task.queue_mark && task.queued_from_due_at ? task.queued_from_due_at : task.due_at
 }
 
+// (restates RULE TQ-EARLY-PICK, home: src/lib/opentask-day.ts)
 /**
  * AN EARLY-MORNING PICK IS SPARED AT ITS FIRST ROLLOVER (designer ruling,
  * 2026-10-19). An unmarked one-off whose target falls between local midnight
@@ -505,6 +520,13 @@ function earlyMorningPick(task: Task, timezone: string, rolloverTime: string, m:
   )
 }
 
+/**
+ * RULE TQ-STRIP-ONEOFF: The strip sets due_at to NULL, moves the remembered target into
+ *   queued_from_due_at and sets queued_at. It clears the mark and stamps target_set_at and
+ *   rolled_over_at. Attempts are checkpointed and kept (B7), and the Try Tomorrow flag stays.
+ * Why: The queue keeps what was planned (queued_from_due_at) and the attempts already earned.
+ * Ruling: B7 (no reset on the strip).
+ */
 /** 1. Strip a one-off's target into the queue. */
 function strip(
   row: TaskRow,
@@ -634,6 +656,14 @@ interface WaitRow {
 }
 
 /**
+ * RULE TQ-RELEASE: At the rollover, a queued repeat whose target falls before the next rollover is
+ *   released. occurrence_at moves to that target, a skip is logged only if needed, and the queue
+ *   state is cleared. Releases run before the strip pass.
+ * Why: A wait ends on the day its occurrence arrives, and the task then nags normally (spec rule
+ *   5b).
+ * Ruling: Spec rule 5b.
+ */
+/**
  * 3. A WAIT IS OVER (spec rule 5b: "waits ... until the next occurrence
  * arrives, then auto-skips to it and nags normally"). On the day its
  * occurrence arrives — its target, the next occurrence the wait set, falls
@@ -728,6 +758,15 @@ function release(w: WaitRow, user: UserRow, nowStr: string, ctx: ApplyCtx): bool
   return false
 }
 
+/**
+ * RULE TQ-ROLL-WAIT: A repeat is never stripped. If its rule has an occurrence before the next
+ *   rollover, it rolls to it, logging a skip only when a stored occurrence was passed over.
+ *   Otherwise it waits (B3): due_at becomes the next occurrence, occurrence_at stays on the missed
+ *   one, and queued_at is set. When the missed occurrence would end the series, the task is left
+ *   alone (A4).
+ * Why: A repeat's schedule brings it round anyway; stripping it would lose its occurrence.
+ * Ruling: Resolution 2; B3; repeat-ends ruling A4 (2026-10-22).
+ */
 /** 2. A repeating task: roll to this day's occurrence, or wait for the next. */
 function rollRepeating(
   row: TaskRow,
@@ -757,6 +796,7 @@ function rollRepeating(
     const skipCount = (task.skip_count ?? 0) + (next.skipped ? 1 : 0)
     // Repeat ends: the missed occurrence is closed — one, like `skip_count`.
     const used = (task.repeat_count_used ?? 0) + (next.skipped ? 1 : 0)
+    // (restates RULE TGT-ATTEMPTS-RESET, home: src/core/tasks/target-set.ts)
     const counted = next.skipped
       ? { attempts: 0, countedThrough: null }
       : checkpoint(row, task, user, rolloverTime, m)
@@ -847,6 +887,16 @@ function rollRepeating(
   return 'waiting'
 }
 
+/**
+ * RULE DECK-ROLLOVER: The cron takes undone decks whose day is before today; Roll over now also
+ *   takes today's. A one-off with no deadline goes to the queue at every priority, remembering its
+ *   day. A deadline one-off's deck is only cleared, never queued. A repeat's deck gets its target
+ *   back and then rolls or waits.
+ * Why: A deck never nagged, so an ended one is queued at every priority; a deadline deck goes back
+ *   to the deadlines page.
+ * Ruling: B5, A8 (every priority). Deadline decks only cleared: deadlines-page plan §5, 2026-10-22.
+ *   Roll over now days: A3.
+ */
 /**
  * 5. ON DECK (2026-10-20; docs/TASK-MODEL.md § On deck; red-team B5, A3). An
  * undone deck whose day has ENDED goes to the queue at EVERY priority — a deck
