@@ -143,10 +143,10 @@ test.describe('Dashboard modes · the switch', () => {
     await page.reload()
     await expect(page.locator('[data-mode="pick-mode"]')).toHaveAttribute('aria-pressed', 'true')
 
-    // All: the list as it was — its own view toggle, no sort pill, no sections.
+    // All: the list as it was — its own view toggle, no sort, no sections.
     await page.locator('[data-mode="all"]').click()
     await expect(page.getByRole('group', { name: 'View mode' })).toBeVisible()
-    await expect(page.locator('[data-sort-pill]')).toHaveCount(0)
+    await expect(page.locator('[data-sort-button]')).toHaveCount(0)
     await expect(page.locator('section[data-mode-section]')).toHaveCount(0)
 
     await page.goto('/?mode=today')
@@ -304,14 +304,15 @@ test.describe('Dashboard modes · the sort pill', () => {
     })
     try {
       await open(page, 'pick-mode')
-      const pill = page.locator('[data-sort-pill]')
-      await expect(pill).toHaveText(/Sort: Newest/)
+      // The dock's ⇅ (P2, 2026-10-30): the sort is its label.
+      const pill = page.locator('[data-sort-button]')
+      await expect(pill).toHaveAttribute('aria-label', /Sort: Newest/)
       // Newest first by default (high was made last).
       expect(await idsIn(section(page, 'horizon-weeks'))).toEqual([high, low])
 
       await pill.click()
       await page.locator('[data-sort-option="oldest"]').click()
-      await expect(pill).toHaveText(/Sort: Oldest/)
+      await expect(pill).toHaveAttribute('aria-label', /Sort: Oldest/)
       expect(await idsIn(section(page, 'horizon-weeks'))).toEqual([low, high])
       // Newest keeps its own order.
       expect(await idsIn(section(page, 'newest'))).toEqual([high, low])
@@ -320,10 +321,10 @@ test.describe('Dashboard modes · the sort pill', () => {
       await page
         .locator(`[data-project-row] [data-project-chip="${(await projectFor(page)).id}"]`)
         .click()
-      await expect(page.locator('[data-sort-pill]')).toHaveText(/Sort: Oldest/)
+      await expect(page.locator('[data-sort-button]')).toHaveAttribute('aria-label', /Sort: Oldest/)
       expect(await idsIn(section(page, 'horizon-weeks'))).toEqual([low, high])
 
-      await page.locator('[data-sort-pill]').click()
+      await page.locator('[data-sort-button]').click()
       await page.locator('[data-sort-everywhere]').click()
       await expect.poll(() => idsIn(section(page, 'newest'))).toEqual([low, high])
     } finally {
@@ -381,36 +382,42 @@ test.describe('Dashboard modes · project chips and All', () => {
   })
 })
 
-test.describe('Dashboard modes · phone', () => {
-  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
+for (const width of [375, 402]) {
+  test.describe(`Dashboard modes · phone ${width}`, () => {
+    test.use({ viewport: { width, height: 812 }, hasTouch: true, isMobile: true })
 
-  test('the switch fits; the sort pill clears the tab bar and the FABs', async ({
-    authenticatedPage: page,
-  }) => {
-    const id = await create(page, { title: uniqueTitle('MD phone'), horizon: 'weeks' })
-    try {
-      await open(page, 'pick-mode')
-      const switcher = (await page.locator('[data-mode-switch]').boundingBox())!
-      expect(switcher.x + switcher.width).toBeLessThanOrEqual(375)
-      const pill = (await page.locator('[data-sort-pill]').boundingBox())!
-      const tabs = (await page.locator('nav.fixed').boundingBox())!
-      expect(pill.y + pill.height).toBeLessThanOrEqual(tabs.y)
-      const fabs = (await page.locator('[data-fab-stack]').boundingBox())!
-      const overlaps =
-        pill.x < fabs.x + fabs.width &&
-        pill.x + pill.width > fabs.x &&
-        pill.y < fabs.y + fabs.height &&
-        pill.y + pill.height > fabs.y
-      expect(overlaps).toBe(false)
-      // The page never scrolls sideways.
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        375,
-      )
-    } finally {
-      await cleanUp(page, [id])
-    }
+    test('the dock (P2): switch and sort fit, clear of the tab bar and the FABs, at 100% and 119% text', async ({
+      authenticatedPage: page,
+    }) => {
+      const id = await create(page, { title: uniqueTitle('MD phone'), horizon: 'weeks' })
+      try {
+        await open(page, 'pick-mode')
+        for (const root of ['16px', '19.04px']) {
+          await page.evaluate((size) => (document.documentElement.style.fontSize = size), root)
+          const dock = (await page.locator('[data-mode-dock]').boundingBox())!
+          expect(dock.x, root).toBeGreaterThanOrEqual(0)
+          expect(dock.x + dock.width, root).toBeLessThanOrEqual(width)
+          await expect(page.locator('[data-mode-dock] [data-sort-button]')).toBeVisible()
+          const tabs = (await page.locator('nav.fixed').boundingBox())!
+          expect(dock.y + dock.height, root).toBeLessThanOrEqual(tabs.y)
+          const fabs = (await page.locator('[data-fab-stack]').boundingBox())!
+          const overlaps =
+            dock.x < fabs.x + fabs.width &&
+            dock.x + dock.width > fabs.x &&
+            dock.y < fabs.y + fabs.height &&
+            dock.y + dock.height > fabs.y
+          expect(overlaps, `${root}: the dock and the FAB column`).toBe(false)
+        }
+        // The page never scrolls sideways.
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        )
+      } finally {
+        await cleanUp(page, [id])
+      }
+    })
   })
-})
+}
 
 test.describe('Today · Late, then Today', () => {
   test.use({ viewport: { width: 1280, height: 800 } })

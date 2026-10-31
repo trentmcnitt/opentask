@@ -26,8 +26,8 @@ import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
 import { useNowFolds } from '@/hooks/useNowFolds'
 import { inDeckSection, isRelevantNow } from '@/lib/now-view'
 import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
-import { ModeSwitch } from '@/components/modes/ModeSwitch'
-import { SortPill } from '@/components/modes/SortPill'
+import { ModeDock } from '@/components/modes/ModeDock'
+import { useSelectionBarUp } from '@/components/SelectionBarShell'
 import type { ModeSort } from '@/lib/modes/sorts'
 import type { ModeId, SectionView } from '@/lib/modes/types'
 
@@ -2414,6 +2414,8 @@ function DashboardView({
   // still auto-expands as before.
   const hiddenActiveFilterCount =
     activeFilterCount - (selectedDateFilters.includes('overdue') ? 1 : 0)
+  // Any select bar (the list's, the task queue's) takes the bottom: the mode dock steps aside.
+  const selectionBarUp = useSelectionBarUp()
   const { expanded: filtersExpanded, toggleExpanded: onToggleFilters } =
     useFilterSection(hiddenActiveFilterCount)
 
@@ -2711,14 +2713,13 @@ function DashboardView({
               ios/OpenTask/WebView.swift) the toggle and "20 of 134 now · Show
               all 134" are wider than a phone, and the row ran 12px off it. */}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            {/* The modes' switch is the dock at the bottom (`ModeDock`, P2):
+                here, only All's own Now / Newest view — or, with the modes
+                off, the view toggle as it was. */}
             {modes.mode ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <ModeSwitch mode={modes.mode} onMode={modes.setMode} />
-                {/* All is the list as it was: its own Now / Newest view. */}
-                {modes.mode === 'all' && (
-                  <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
-                )}
-              </div>
+              modes.mode === 'all' && (
+                <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
+              )
             ) : (
               <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
             )}
@@ -2836,9 +2837,15 @@ function DashboardView({
         </div>
       </main>
 
-      {/* The sort pill: Today and Scan, out of the action bar's way. */}
-      {modes.sectioned && selection.selectedIds.size === 0 && (
-        <SortPill sort={modes.sort} onSort={modes.setSort} />
+      {/* The mode dock (P2): Today | Scan | All and, in Today and Scan, the
+          sort — out of the way of any select bar. */}
+      {modes.mode && !selectionBarUp && (
+        <ModeDock
+          mode={modes.mode}
+          onMode={modes.setMode}
+          sort={modes.sort}
+          onSort={modes.setSort}
+        />
       )}
 
       <SelectionActionSheet
