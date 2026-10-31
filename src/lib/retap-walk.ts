@@ -21,15 +21,19 @@
  *
  * The stops, each surface marking its own:
  * - Reminders: one period, then one task segment (`retapOrder`).
- * - Dashboard: the Reminders card, the Task queue card, then the task list's
- *   groups that need you (`taskGroupNeedsYou`), in screen order. Not the
- *   Quotas card: some quota is nearly always unmet, a tap every cycle.
+ * - Dashboard, TWO-COLUMN only: the Reminders card, the Task queue card,
+ *   then the task list's groups that need you (`taskGroupNeedsYou`), in
+ *   screen order. Not the Quotas card: some quota is nearly always unmet, a
+ *   tap every cycle. In ONE column (a phone) the Dashboard's re-tap is not a
+ *   walk since 2026-10-31: it toggles between the tasks and the top
+ *   (`dashboardRetap`, src/lib/dashboard-landing.ts).
  * - Quotas: the first period group (Today, with daily quotas).
  */
 import type { Task } from '@/types'
 import { isOverdue } from '@/lib/task-counts'
 import { pageAfterFinishing } from '@/lib/time-slot-assign'
 import { scrollSectionIntoView } from '@/lib/scroll-row-into-view'
+import { dashboardRetap } from '@/lib/dashboard-landing'
 
 /**
  * The Reminders page's walk (Trent, 2026-10-29, his final rule): at most two
@@ -136,6 +140,12 @@ function listenForHandScrolls() {
 export function retapWalk(): boolean {
   listenForHandScrolls()
   const path = window.location.pathname
+  // The Dashboard in one column: two positions, the tasks and the top
+  // (Trent, 2026-10-31; src/lib/dashboard-landing.ts) — no walk.
+  if (path === '/') {
+    const toggled = dashboardRetap()
+    if (toggled !== null) return toggled
+  }
   if (walk.path !== path) walk = { path, state: { kind: 'start' } }
   const stops = [...document.querySelectorAll<HTMLElement>('[data-retap-stop][data-needs-you]')]
     // Drawn: a hidden copy (the narrow layout's) is no place to go.

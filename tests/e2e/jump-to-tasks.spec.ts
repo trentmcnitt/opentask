@@ -17,7 +17,7 @@
  * overdue rows that the page is tall enough for the list's toolbar row to
  * reach the top bar. `beforeEach` starts every test in the Newest view.
  */
-import { test, expect, uniqueTitle, waitForPreferenceSave } from './fixtures'
+import { test, expect, uniqueTitle, waitForPreferenceSave, fromTheTop } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -117,6 +117,9 @@ function usePhoneSeed(): number[] {
     await page.reload()
     await expect(landingMarker(page)).toHaveCount(1)
     await expect(page.locator('[data-task-group]').first()).toBeVisible()
+    // At the top: a fresh load opens on the tasks (one column, 2026-10-31);
+    // these tests are about getting down to them.
+    await fromTheTop(page)
   })
 
   test.afterEach(async ({ authenticatedPage: page }) => {

@@ -57,7 +57,7 @@ This system manages client work and critical reminders. No operation should sile
 
 ### 6. Finish Without Scrolling
 
-(Trent, 2026-10-29.) "Being able to complete everything without needing to scroll, and being able to tap and efficiently get to where you need to be" — reminders, quotas, the task queue and the dashboard's items alike. The app takes you to what needs you: finishing a section moves the page on to the next one still waiting (`useScrollToNextSection`), and re-tapping the tab you are on goes to the next place that needs you, then back to the top (`src/lib/retap-walk.ts`). Accepted limits: browsing reminders other than the one that needs you, and a task list longer than the screen, still take a scroll.
+(Trent, 2026-10-29.) "Being able to complete everything without needing to scroll, and being able to tap and efficiently get to where you need to be" — reminders, quotas, the task queue and the dashboard's items alike. The app takes you to what needs you: finishing a section moves the page on to the next one still waiting (`useScrollToNextSection`), and re-tapping the tab you are on goes to the next place that needs you, then back to the top (`src/lib/retap-walk.ts`). The Dashboard in one column (a phone) is the exception since 2026-10-31: it opens on the tasks — "tasks are arguably the most important thing, and it's the easiest to forget, whereas reminders get a lot of attention because I have them on my iOS widget" — on a cold launch, a fresh load or the first visit since launch, and a re-tap toggles between the tasks and the top, two positions and nothing else (`src/lib/dashboard-landing.ts`). Accepted limits: browsing reminders other than the one that needs you, and a task list longer than the screen, still take a scroll.
 
 ---
 

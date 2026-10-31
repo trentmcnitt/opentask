@@ -1,0 +1,152 @@
+/**
+ * THE DASHBOARD OPENS ON THE TASKS (Trent, 2026-10-31: "when you open the app
+ * fresh, it should actually jump right to the tasks… I think maybe it'll just
+ * be two positions. When you open Dashboard… it will jump to the tasks, and
+ * then you can jump to the top, and that's it… tasks are arguably the most
+ * important thing, and it's the easiest to forget, whereas reminders get a
+ * lot of attention because I have them on my iOS widget"). docs/SPEC.md §
+ * Guiding Principles 6.
+ *
+ * In the SINGLE-COLUMN layout only (a phone, or any window without the
+ * second column): there the Reminders card, the task queue card and Quotas
+ * stack above the task list. The two-column desktop shows the list at the
+ * top already, and its re-tap keeps the walk (src/lib/retap-walk.ts).
+ *
+ * - THE TASKS are the list's anchor (`data-task-list-landing`): the start of
+ *   the task list under Quotas — the Late / Today headers, or the "Targets
+ *   done" line / the all-clear card when those are empty — on its landing
+ *   line, under the top bar (`scroll-below-header`, the safe area included).
+ *   The jump-to-tasks button's own target: that position, or the page's
+ *   bottom on a page too short to scroll it that far (`JumpToTasksFab`).
+ * - THE FIRST VISIT SINCE LAUNCH (a cold launch, a fresh load, or the first
+ *   switch to the Dashboard from another tab) lands there, before the first
+ *   paint of the data — no visible jump from the top — and stays pinned there
+ *   while the cards above it load and grow, until the user touches, scrolls
+ *   or types. Not with a deep link (`deepLinked`), which has a place of its
+ *   own to go. Later switches to the Dashboard never scroll (2026-10-29).
+ * - A RE-TAP of the Dashboard tab toggles between the two positions: at the
+ *   tasks or below them → the top; above them → the tasks. Where the page is
+ *   decides, so a scroll by hand changes nothing about the rule.
+ */
+import { scrollSectionIntoView } from '@/lib/scroll-row-into-view'
+
+const ANCHOR = '[data-task-list-landing]'
+
+/** The dashboard's grid is one column (the Reminders, queue and Quotas cards above the list). */
+export function dashboardSingleColumn(): boolean {
+  const main = document.querySelector<HTMLElement>('main')
+  if (!main) return false
+  return getComputedStyle(main).gridTemplateColumns.trim().split(/\s+/).length === 1
+}
+
+/**
+ * The scroll position of the tasks: the anchor on its landing line, or the
+ * page's bottom when the page can't scroll that far. Null without an anchor.
+ */
+export function tasksScrollY(): number | null {
+  const anchor = document.querySelector<HTMLElement>(ANCHOR)
+  const list = anchor?.parentElement
+  if (!anchor || !list) return null
+  const landing = parseFloat(getComputedStyle(list).scrollMarginTop) || 0
+  const at = anchor.getBoundingClientRect().top + window.scrollY - landing
+  const max = document.documentElement.scrollHeight - window.innerHeight
+  return Math.max(0, Math.min(at, max))
+}
+
+/** The re-tap's choice: at the tasks or below them → the top; above → the tasks. */
+export function dashboardRetapGoes(scrollY: number, tasksAt: number): 'top' | 'tasks' {
+  return scrollY >= tasksAt - 1 ? 'top' : 'tasks'
+}
+
+/**
+ * A re-tap of the Dashboard tab in the single-column layout: scrolls to the
+ * tasks and says so, or says it goes to the top (false — the caller scrolls
+ * there). Null when the rule doesn't apply (two columns, no anchor).
+ */
+export function dashboardRetap(): boolean | null {
+  if (!dashboardSingleColumn()) return null
+  const tasksAt = tasksScrollY()
+  if (tasksAt === null) return null
+  if (dashboardRetapGoes(window.scrollY, tasksAt) === 'top') return false
+  scrollSectionIntoView(document.querySelector<HTMLElement>(ANCHOR)?.parentElement ?? null)
+  return true
+}
+
+/** Landed once this launch: later visits to the Dashboard keep their place. */
+let landed = false
+
+/**
+ * A deep link has its own place to go: a task (`?task=`), the Tasks card's
+ * page (`?tasks=`), a filter or a project (`?filter=`, `?project=`, both
+ * scroll to their rows or the top) or the quick add (`?action=`, the add box
+ * at the top). Read before their own effects consume them: this runs in a
+ * layout effect, theirs in effects after it.
+ */
+const DEEP_LINKS = ['task', 'tasks', 'filter', 'project', 'action'] as const
+/**
+ * The URL the app launched with. On a fresh load the dashboard shows a
+ * loading screen first, and some links' effects (`?project=`) consume their
+ * param during it — before the landing's layout effect can see it — so the
+ * launch's own URL is asked too. (A client visit has no loading screen: the
+ * landing runs first and sees the current URL.)
+ */
+const launch =
+  typeof window === 'undefined'
+    ? null
+    : { path: window.location.pathname, search: window.location.search }
+function deepLinked(): boolean {
+  const has = (search: string) => {
+    const params = new URLSearchParams(search)
+    return DEEP_LINKS.some((key) => params.has(key))
+  }
+  return has(window.location.search) || (launch?.path === '/' && has(launch.search))
+}
+
+/**
+ * THE FIRST VISIT'S LANDING (see the header): called from a layout effect on
+ * the dashboard's first render with data, so the jump happens before that
+ * render is painted. Then PINNED: as the cards above load and the page grows
+ * (a `ResizeObserver` on <html>), the tasks are put back on their line —
+ * until the first touch, wheel, press or key (a tab re-tap is a press too),
+ * or any scroll that isn't the pin's own (the app's jumps, a scrollbar drag),
+ * after which the page is the user's. Returns the unpin, for the effect's
+ * cleanup.
+ */
+export function landOnTasksOnce(): () => void {
+  if (landed) return () => {}
+  landed = true
+  if (deepLinked() || !dashboardSingleColumn()) return () => {}
+  // Where the pin last put the page: a scroll anywhere else is not the
+  // pin's — a jump of the app's own (a filter's, a link's) or the user's —
+  // and ends the pin.
+  let placed = window.scrollY
+  const place = () => {
+    const at = tasksScrollY()
+    if (at !== null && Math.abs(window.scrollY - at) > 0.5) {
+      placed = at
+      window.scrollTo({ top: at, behavior: 'instant' })
+    }
+  }
+  const onScroll = () => {
+    if (Math.abs(window.scrollY - placed) > 1) unpin()
+  }
+  place()
+  const ro = new ResizeObserver(place)
+  ro.observe(document.documentElement)
+  const unpin = () => {
+    ro.disconnect()
+    for (const type of USER_INPUT) window.removeEventListener(type, unpin)
+    window.removeEventListener('scroll', onScroll)
+  }
+  for (const type of USER_INPUT) window.addEventListener(type, unpin, { passive: true })
+  window.addEventListener('scroll', onScroll, { passive: true })
+  return unpin
+}
+
+/** What hands the page to the user: any touch, wheel, press or key. */
+const USER_INPUT = ['pointerdown', 'touchstart', 'wheel', 'keydown'] as const
+
+/** Tests: start a fresh "launch". */
+export function resetLandingForTests(): void {
+  landed = false
+}

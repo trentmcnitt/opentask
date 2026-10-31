@@ -109,7 +109,9 @@ for (const width of [375, 402]) {
           await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
           await pickMode(page, 'all')
           const r = page.locator(`#task-row-${ids[0]}`)
-          await r.scrollIntoViewIfNeeded()
+          // Centred: at the screen's edge the bottom-left view pill can sit
+          // over the row's left side, where the press lands.
+          await r.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }))
           const box = (await r.boundingBox())!
           const cdp: CDPSession = await page.context().newCDPSession(page)
           await cdp.send('Input.dispatchTouchEvent', {

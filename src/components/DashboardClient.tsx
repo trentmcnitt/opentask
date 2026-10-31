@@ -111,6 +111,7 @@ import { useTaskActions } from '@/hooks/useTaskActions'
 import type { ListTaskActionsReturn } from '@/hooks/useTaskActions'
 import { useUndoRedoShortcuts } from '@/hooks/useUndoRedoShortcuts'
 import { useFilterState, type TaskFilterCriteria } from '@/hooks/useFilterState'
+import { useLandOnTasks } from '@/hooks/useLandOnTasks'
 import { useJumpToTaskList } from '@/hooks/useJumpToTaskList'
 import { useFilterSection } from '@/hooks/useFilterSection'
 import { useTaskCounts, useDateFacetCounts } from '@/hooks/useTaskCounts'
@@ -2513,6 +2514,8 @@ function DashboardView({
   // The zero-height marker at the top of the list wrapper that
   // `JumpToTasksFab` watches to know whether the page is above its landing.
   const taskListLandingRef = useRef<HTMLDivElement>(null)
+  // The first visit since launch opens on the tasks (one column; 2026-10-31).
+  useLandOnTasks()
   const onPillFilter = (filter: HeaderPillFilter) => {
     if (activePillFilter !== filter) requestJump()
     onExclusiveDateFilter(filter)
