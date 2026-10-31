@@ -85,6 +85,7 @@ export function SlotPagerHeader({
    * Tighter gaps and padding (the queue card in select mode, 2026-10-30): with
    * "Select" beside the count, "TASK QUEUE" stays on one line at a 375 phone
    * and the app's 119% text — never truncated, the gaps give way instead.
+   * The Reminders card always (2026-10-31): "EARLY MORNING · 7:00 AM" at 402.
    */
   compact?: boolean
   /** Tapping the bar between the chevrons opens and shuts the slot. */

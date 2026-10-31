@@ -268,6 +268,26 @@ describe('TS-RT: a period delete keeps its linked targets at its start', () => {
     expect(raw(closed.id).target_slot_id).toBe(slotId)
   })
 
+  test('TS-RT13: a deleted period unlinks a linked REPEAT too — its time kept, and the next one keeps it', () => {
+    const rule = 'FREQ=WEEKLY;BYDAY=TU;BYHOUR=8;BYMINUTE=30'
+    const t = linked('2026-11-03T08:30', 1, { rrule: rule })
+    const result = deleteTimeSlot({ ...u, slotId: evening().id })
+    expect(result.targets_converted).toBe(1)
+    expect(getTaskById(t.id)).toMatchObject({
+      rrule: rule,
+      target_slot_id: null,
+      target_days_before: 1,
+      target_time: '20:30',
+      due_at: at('2026-11-02T20:30'),
+    })
+    markDone({ ...u, taskId: t.id })
+    expect(getTaskById(t.id)).toMatchObject({
+      deadline_at: at('2026-11-10T08:30'),
+      due_at: at('2026-11-09T20:30'),
+      target_slot_id: null,
+    })
+  })
+
   test('TS-RT11: undo re-links compare-and-set — a closed row whose time changed stays custom', () => {
     const closed = linked('2026-11-04T08:30')
     markDone({ ...u, taskId: closed.id })
