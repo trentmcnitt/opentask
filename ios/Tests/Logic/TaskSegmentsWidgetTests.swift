@@ -42,6 +42,34 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertFalse(listed[2].hasWaiting, "an all-deferred segment waits for nothing, and stays")
     }
 
+    /// AGED OUT (2026-10-30): a kind of its own with the web's words — the
+    /// widget's strip read "Aged_Out" while it was unknown (Trent's Bedtime
+    /// widget). Its own page key, group, colours; Defer all as on the web.
+    func testAgedOutHasTheWebsWords() {
+        let segment = TaskSegmentDTO(horizon: "aged_out", tasks: [])
+        XCTAssertEqual(segment.kind, .agedOut)
+        XCTAssertEqual(segment.kind?.raw, "aged_out")
+        XCTAssertEqual(segment.label, "Aged out")
+        XCTAssertEqual(segment.title, "Aged out")
+        XCTAssertEqual(segment.kind?.stripWord, "Aged")
+        XCTAssertEqual(segment.kind?.stripGroup, 3)
+        XCTAssertEqual(segment.pageKey, -19)
+        XCTAssertTrue(segment.offersDeferAll)
+        XCTAssertNil(segment.kind?.doneColorHex, "finishes green")
+    }
+
+    /// A kind this build doesn't know: its wire string spaced and
+    /// sentence-cased — never an underscore on screen.
+    func testAnUnknownKindNeverShowsAnUnderscore() {
+        let segment = TaskSegmentDTO(horizon: "some_new_kind", tasks: [])
+        XCTAssertNil(segment.kind)
+        XCTAssertEqual(segment.label, "Some new kind")
+        XCTAssertEqual(segment.title, "Some new kind")
+        XCTAssertFalse(segment.title.contains("_"))
+        XCTAssertEqual(SegmentKind.fallbackWord("someday"), "Someday")
+        XCTAssertEqual(SegmentKind.fallbackWord("AGED_OUT"), "Aged out")
+    }
+
     /// The queue's panels and the deadlines page (native PR E): their own
     /// page keys, so an override never lands on another page.
     func testTheNewKindsHaveTheirOwnPageKeys() {
