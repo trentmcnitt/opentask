@@ -44,7 +44,8 @@ async function daysTask(page: Page, title: string): Promise<number> {
 
 const bubble = (page: Page, id: number) => page.locator(`[data-task-peek="${id}"]`)
 const listRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
-const allMode = (page: Page) => page.locator('[data-mode-switch] [data-mode="all"]')
+/** The view pill naming All (P1, `ModeDock`). */
+const allMode = (page: Page) => page.locator('[data-mode-pill="all"]')
 
 /**
  * Hold the row, then press Show in list: on the queue card the hold selects
@@ -104,15 +105,12 @@ test('on the dashboard: the list switches to All and its row is scrolled to and 
     const id = await daysTask(page, title)
     ids.push(id)
     await page.goto('/')
-    await expect(page.locator('[data-mode-switch] [data-mode="today"]')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    await expect(page.locator('[data-mode-pill="today"]')).toBeVisible()
     // Today doesn't list an undated Days task: All does.
     await expect(listRow(page, id)).toHaveCount(0)
     const cardRow = page.locator(`[data-tasks-panel] [data-segment-task="${id}"]`)
     await showInList(page, cardRow, id, title)
-    await expect(allMode(page)).toHaveAttribute('aria-pressed', 'true')
+    await expect(allMode(page)).toBeVisible()
     await expect(listRow(page, id)).toHaveAttribute('data-task-highlight', '')
     // It visibly lights up (the lean row had the hook but not the class, 2026-10-30).
     await expect(listRow(page, id)).toHaveClass(/animate-row-highlight/)
@@ -161,7 +159,7 @@ test('from /reminders: it opens the dashboard on All with the row flashed', asyn
     )
     await showInList(page, row, id, title)
     await expect(page).toHaveURL('/')
-    await expect(allMode(page)).toHaveAttribute('aria-pressed', 'true')
+    await expect(allMode(page)).toBeVisible()
     await expect(listRow(page, id)).toHaveAttribute('data-task-highlight', '')
     await expect(listRow(page, id)).toBeInViewport()
   } finally {
@@ -185,7 +183,7 @@ test.describe('phone, dark', () => {
       await showInList(page, row, id, title)
       await expect(page).toHaveURL('/')
       const target = listRow(page, id)
-      await expect(allMode(page)).toHaveAttribute('aria-pressed', 'true')
+      await expect(allMode(page)).toBeVisible()
       await expect(target).toHaveClass(/animate-row-highlight/)
       await expect(target).toBeInViewport()
       // Lit while it holds: the ring is the highlight's blue, not transparent.

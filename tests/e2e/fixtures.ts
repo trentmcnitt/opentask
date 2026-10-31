@@ -473,3 +473,32 @@ export async function chipContrast(chip: Locator): Promise<number> {
     return (Math.max(back, text) + 0.05) / (Math.min(back, text) + 0.05)
   })
 }
+
+/**
+ * The dashboard's view pill (P1, 2026-10-30, `ModeDock`): open its menu and
+ * pick a view (`today`, `pick-mode`, `all`); the pill then names it. A menu
+ * that just closed stays mounted through its exit animation, so this waits it
+ * out and only ever acts on the OPEN one — else a click lands on the dying
+ * menu's item as it detaches.
+ */
+export async function openModeMenu(page: Page): Promise<Locator> {
+  await expect(page.locator('[data-mode-menu]')).toHaveCount(0)
+  await page.locator('[data-mode-pill]').click()
+  const menu = page.locator('[data-mode-menu][data-state="open"]')
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+export async function pickMode(page: Page, mode: 'today' | 'pick-mode' | 'all'): Promise<void> {
+  const menu = await openModeMenu(page)
+  await menu.locator(`[data-mode="${mode}"]`).click()
+  await expect(page.locator(`[data-mode-pill="${mode}"]`)).toBeVisible()
+  await expect(page.locator('[data-mode-menu]')).toHaveCount(0)
+}
+
+/** All's order from the view pill's menu (it replaced the Now / Newest toggle in the modes). */
+export async function pickAllOrder(page: Page, order: 'project' | 'new'): Promise<void> {
+  const menu = await openModeMenu(page)
+  await menu.locator(`[data-all-order="${order}"]`).click()
+  await expect(page.locator('[data-mode-menu]')).toHaveCount(0)
+}

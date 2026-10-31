@@ -11,7 +11,7 @@
  * The lean row (production's). Unique titles; every task trashed in `finally`. Today / Scan / All is
  * client state (`useDashboardMode`), so switching it saves nothing.
  */
-import { test, expect, uniqueTitle, withPreferences } from './fixtures'
+import { test, expect, pickMode, uniqueTitle, withPreferences } from './fixtures'
 import type { CDPSession, Page } from '@playwright/test'
 
 const LONG_URL =
@@ -45,13 +45,6 @@ function pastEdge(page: Page) {
     })
     return past ? `${past.tagName} "${(past.textContent ?? '').trim().slice(0, 40)}"` : null
   })
-}
-
-/** The dashboard modes' stable ids, in the switch's order. */
-function modeIds(page: Page): Promise<string[]> {
-  return page
-    .locator('[data-mode]')
-    .evaluateAll((els) => els.map((e) => e.getAttribute('data-mode')!))
 }
 
 async function seed(page: Page): Promise<number[]> {
@@ -94,15 +87,9 @@ for (const width of [375, 402]) {
         await withPreferences(page, { default_grouping: 'new' }, async () => {
           await page.goto('/')
           await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
-          await expect(page.locator('[data-mode-switch]')).toBeVisible()
-          const modes = await modeIds(page)
-          expect(modes.length).toBeGreaterThan(1)
-          for (const mode of modes) {
-            await page.locator(`[data-mode="${mode}"]`).click()
-            await expect(page.locator(`[data-mode="${mode}"]`)).toHaveAttribute(
-              'aria-pressed',
-              'true',
-            )
+          await expect(page.locator('[data-mode-pill]')).toBeVisible()
+          for (const mode of ['today', 'pick-mode', 'all'] as const) {
+            await pickMode(page, mode)
             if (mode === 'all') await expect(page.locator(`#task-row-${ids[0]}`)).toBeVisible()
             expect(await pastEdge(page), mode).toBeNull()
           }
@@ -120,7 +107,7 @@ for (const width of [375, 402]) {
         await withPreferences(page, { default_grouping: 'new' }, async () => {
           await page.goto('/')
           await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
-          await page.locator('[data-mode="all"]').click()
+          await pickMode(page, 'all')
           const r = page.locator(`#task-row-${ids[0]}`)
           await r.scrollIntoViewIfNeeded()
           const box = (await r.boundingBox())!
