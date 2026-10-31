@@ -299,11 +299,19 @@ test.describe('Task segments on the dashboard', () => {
         await expect.poll(async () => (await stateOf(page, id)).segment_deferred_at).not.toBeNull()
       }
 
-      // The last segment finished: one line, never a "Nothing left here" page.
+      // The last segment finished: the card stays full-size, like the
+      // Reminders card (Trent, 2026-10-30) — "TASK QUEUE", its page's count
+      // green with ✓, the strip, "Nothing left here", and the pages to flip.
       await consider(page, weeks)
-      await expect(tasks).toHaveAttribute('data-tasks-done')
-      await expect(tasks.locator('[data-considered-toggle]')).toHaveText(/^3 of 3/)
-      await expect(tasks.getByText('Nothing left here')).toHaveCount(0)
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
+      await expect(tasks).toContainText(/task queue/i)
+      await expect(tasks.locator('[data-considered-toggle]')).toHaveText(/^1 of 1/)
+      await expect(tasks.getByText('Nothing left here')).toBeVisible()
+      await expect(tasks.getByLabel("Today's task segments")).toBeVisible()
+      await tasks.getByRole('button', { name: 'Previous task segment' }).click()
+      await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
+      await expect(tasks.locator('[data-considered-toggle]')).toHaveText(/^2 of 2/)
+      await expect(tasks.getByText('Nothing left here')).toBeVisible()
       // The Reminders card never moved.
       await expect(remindersCard(page)).toHaveAttribute('data-reminders-slot', String(slot.id))
     } finally {

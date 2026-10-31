@@ -1,8 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useRef, useState } from 'react'
-import { Check } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Fragment, useEffect, useRef } from 'react'
 import { ReminderSlotBar, stripMarkFor } from '@/components/ReminderSlotBar'
 import {
   NARROW_CAP,
@@ -75,9 +73,15 @@ import {
  * waits for nothing, so it is never where the card opens; finishing one (its
  * last row, or Defer all) moves to the next that waits. It never lands on a
  * finished segment while another waits — Trent's screenshot had the old pager
- * on a weeks segment at "75 of 75 — Nothing left here". When every segment is
- * finished the card collapses to one line ("Tasks · 75 of 75 ✓"), whose count
- * still opens what was considered.
+ * on a weeks segment at "75 of 75 — Nothing left here".
+ *
+ * EVERY SEGMENT FINISHED: the card stays as it is, like the Reminders card
+ * above it (Trent, 2026-10-30: "I was disappointed that it completely
+ * collapsed, unlike the reminders one above, which is more satisfying") —
+ * "TASK QUEUE" with the page's count in green and ✓, the strip all green,
+ * "Nothing left here", and every finished segment still a page to flip to,
+ * its considered rows behind the count. It used to fold to one line,
+ * "Tasks · 75 of 75 ✓".
  *
  * Never counted in the nav badge or "Considered all so far"; the Reminders
  * page's headline counts them (task queue on) as its tasks half, apart from
@@ -144,17 +148,13 @@ export function DashboardTasksPanel({
     const rest = withoutTasksPanelParam(search)
     window.history.replaceState(window.history.state, '', window.location.pathname + rest)
   })
-  // Bring the card into view, once (the link's page is shown on it; with
-  // every page finished the one-line card has no ref and nothing scrolls).
+  // Bring the card into view, once (the link's page is shown on it).
   useEffect(() => {
     if (!scrollPending.current) return
     scrollPending.current = false
     sectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   })
   if (!pager) return null
-  if (pages.every((p) => p.waiting === 0)) {
-    return <TasksDoneLine segments={actions.segments} actions={actions} />
-  }
   const { page, index, expanded, setExpanded, showConsidered } = pager
   const { segment } = page
   // A page flip closes a row's peek bubble (the reminder panel's `onJump`):
@@ -248,78 +248,6 @@ export function DashboardTasksPanel({
         </QueueSelectContext.Provider>
       </QueueSelectEnterContext.Provider>
       {select.bar}
-    </section>
-  )
-}
-
-/**
- * Every segment finished: one line, "Tasks · 75 of 75 ✓", rather than a page
- * that says "Nothing left here". Its count opens everything considered or
- * deferred today, each with its put-back — the pager's own "X of Y" tap.
- *
- * Kept with every segment always shown (2026-10-24): with nothing waiting
- * anywhere there is nothing to page to, and the strip would only be a row of
- * green bars. A day with no task rows at all reads "Tasks · 0 of 0 ✓", the
- * count then a plain readout (nothing behind it to open).
- */
-function TasksDoneLine({
-  segments,
-  actions,
-}: {
-  segments: SegmentView[]
-  actions: TaskSegmentActions
-}) {
-  const [open, setOpen] = useState(false)
-  const handled = segments.reduce((n, s) => n + segmentCounts(s).handled, 0)
-  const total = segments.reduce((n, s) => n + segmentCounts(s).total, 0)
-  return (
-    <section
-      aria-label="Tasks"
-      data-tasks-panel
-      data-tasks-done
-      className="bg-muted/30 mb-6 overflow-hidden rounded-2xl"
-    >
-      <div className="flex min-h-11 items-center gap-1.5 px-3 py-1.5">
-        <span className="text-muted-foreground min-w-0 flex-1 text-xs font-semibold tracking-wider whitespace-nowrap uppercase">
-          Tasks
-        </span>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          disabled={handled === 0}
-          aria-expanded={open}
-          data-considered-toggle
-          aria-label={`${handled} of ${total} considered — show what was considered`}
-          className={cn(
-            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs whitespace-nowrap tabular-nums transition-colors disabled:pointer-events-none',
-            open && 'bg-foreground/5',
-          )}
-        >
-          <span className={open ? 'text-foreground' : 'text-muted-foreground'}>
-            {handled} of {total}
-          </span>
-          <Check
-            className="size-3.5 text-green-700 dark:text-green-400"
-            strokeWidth={2.5}
-            aria-hidden="true"
-          />
-        </button>
-      </div>
-      {open && (
-        <ul className="space-y-0.5 px-2 pb-1" aria-label="Considered tasks">
-          {segments.flatMap((s) =>
-            handledRows(s).map((row) => (
-              <ConsideredSegmentRow
-                key={row.task.id}
-                row={row}
-                panel
-                segmentHorizon={s.horizon}
-                onPutBack={(task) => void actions.restore(task)}
-              />
-            )),
-          )}
-        </ul>
-      )}
     </section>
   )
 }
