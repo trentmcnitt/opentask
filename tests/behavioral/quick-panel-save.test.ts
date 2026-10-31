@@ -43,6 +43,17 @@ describe('planQuickPanelSave — request routing', () => {
     expect(planQuickPanelSave([5], { delta_minutes: 60 })).toBeNull()
   })
 
+  test('several ids, a horizon → bulk/edit carries it (the select bar, 2026-10-30)', () => {
+    expect(planQuickPanelSave([1, 2], { horizon: 'months' })).toEqual({
+      kind: 'bulk',
+      url: '/api/tasks/bulk/edit',
+      body: { ids: [1, 2], changes: { horizon: 'months' } },
+    })
+    expect(planQuickPanelSave([1, 2], { horizon: null })).toMatchObject({
+      body: { changes: { horizon: null } },
+    })
+  })
+
   test('several ids, date only → bulk/snooze with include_task_ids', () => {
     expect(planQuickPanelSave([1, 2], { due_at: TARGET })).toEqual({
       kind: 'bulk',

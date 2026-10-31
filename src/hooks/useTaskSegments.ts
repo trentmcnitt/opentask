@@ -297,6 +297,7 @@ export function useTaskSegments({
     [run],
   )
   const setHorizon = useSetHorizon(onUndo, refresh, onCompleted)
+  const horizonMany = useSetHorizonMany(onUndo, refresh, onCompleted)
 
   // Put back (2026-10-11): a considered or deferred row from "Show N
   // considered" waits again — the slots' put-back.
@@ -334,6 +335,7 @@ export function useTaskSegments({
     targetToday,
     deferAll,
     setHorizon,
+    horizonMany,
     restore,
     removeTarget,
     remove,
@@ -583,6 +585,37 @@ function useSetHorizon(onUndo: () => void, refresh: () => Promise<void>, onCompl
         if (!res.ok) throw new Error('Could not change the horizon')
         showToast({
           message: horizonToast(task, horizon, segment),
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted?.()
+      } catch (err) {
+        showToast({ message: err instanceof Error ? err.message : 'Failed', type: 'error' })
+      } finally {
+        void refresh()
+      }
+    },
+    [onUndo, onCompleted, refresh],
+  )
+}
+
+/**
+ * The select bar's horizon (2026-10-30, `SelectionDetail.tsx`): every picked
+ * task's horizon in ONE request (`bulk/edit`), one Undo — like the dot's
+ * menu, the rows stay where they are until the refresh.
+ */
+function useSetHorizonMany(
+  onUndo: () => void,
+  refresh: () => Promise<void>,
+  onCompleted?: () => void,
+) {
+  return useCallback(
+    async (ids: number[], horizon: HorizonValue | null) => {
+      try {
+        await post('/api/tasks/bulk/edit', { ids, changes: { horizon } })
+        const word = horizon ? `Horizon: ${HORIZON_LABELS[horizon]}` : 'Horizon cleared'
+        showToast({
+          message: ids.length === 1 ? word : `${word} · ${nTasks(ids.length)}`,
           type: 'success',
           action: { label: 'Undo', onClick: onUndo },
         })

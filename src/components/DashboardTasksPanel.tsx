@@ -33,7 +33,12 @@ import {
 } from '@/components/TaskSegmentRow'
 import { usePanelPager } from '@/hooks/usePanelPager'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
-import { QueueSelectContext, QueueSelectToggle, useQueueSelectMode } from '@/components/QueueSelect'
+import {
+  QueueSelectContext,
+  QueueSelectEnterContext,
+  QueueSelectToggle,
+  useQueueSelectMode,
+} from '@/components/QueueSelect'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { TASK_QUEUE_TITLE } from '@/lib/task-model-words'
 import { useTaskQueue } from '@/components/PreferencesProvider'
@@ -230,16 +235,18 @@ export function DashboardTasksPanel({
         onJump={goTo}
         ariaLabel="Today's task segments"
       />
-      <QueueSelectContext.Provider value={select.state}>
-        <TaskPageBody
-          segment={segment}
-          actions={actions}
-          timezone={timezone}
-          expanded={expanded}
-          showConsidered={showConsidered}
-          onToggleExpanded={() => setExpanded(!expanded)}
-        />
-      </QueueSelectContext.Provider>
+      <QueueSelectEnterContext.Provider value={select.enter}>
+        <QueueSelectContext.Provider value={select.state}>
+          <TaskPageBody
+            segment={segment}
+            actions={actions}
+            timezone={timezone}
+            expanded={expanded}
+            showConsidered={showConsidered}
+            onToggleExpanded={() => setExpanded(!expanded)}
+          />
+        </QueueSelectContext.Provider>
+      </QueueSelectEnterContext.Provider>
       {select.bar}
     </section>
   )

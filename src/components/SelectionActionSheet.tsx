@@ -1,5 +1,8 @@
 'use client'
 
+import { BarHorizonControl, SelectionDetailLines } from '@/components/SelectionDetail'
+import { requestShowInList } from '@/lib/show-in-list'
+import type { HorizonValue } from '@/lib/task-segments'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Check, FileText, Trash2 } from 'lucide-react'
 import {
@@ -433,6 +436,12 @@ export function SelectionActionSheet({
             // The parent has already toasted why; the selection stays.
             .catch(() => undefined)
         }}
+        // The horizon keeps the selection (the parent toasts, with Undo).
+        onHorizon={(horizon) => void onSaveAll({ horizon }).catch(() => undefined)}
+        onShowInList={(id) => {
+          requestShowInList(id)
+          onClear()
+        }}
         onClear={onClear}
       />
 
@@ -586,6 +595,8 @@ function ListSelectionBar({
   onDelete,
   onSkipUntil,
   onRemoveTargets,
+  onHorizon,
+  onShowInList,
   onClear,
 }: {
   selectedTasks: Task[]
@@ -598,14 +609,32 @@ function ListSelectionBar({
   onDelete: () => void
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   onRemoveTargets: (ids: number[]) => void
+  onHorizon: (horizon: HorizonValue | null) => void
+  onShowInList: (id: number) => void
   onClear: () => void
 }) {
   const count = selectedTasks.length
+  const one = count === 1 ? selectedTasks[0] : null
   return (
     <SelectionBarShell
       count={count}
       onClear={onClear}
       onDoubleClickIntent={onDoubleClickIntent}
+      // One task: its details on the bar; several: the horizon beside ⋯
+      // (`SelectionDetail.tsx`, 2026-10-30).
+      title={one?.title}
+      detail={
+        one && (
+          <SelectionDetailLines
+            task={one}
+            timezone={timezone}
+            onHorizon={onHorizon}
+            onOpen={onDetails}
+            onShowInList={() => onShowInList(one.id)}
+          />
+        )
+      }
+      aside={!one && <BarHorizonControl tasks={selectedTasks} onChange={onHorizon} />}
       more={
         <MoreVerb
           selectedTasks={selectedTasks}

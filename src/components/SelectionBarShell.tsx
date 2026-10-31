@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 /** The hint line's id, for the `aria-describedby` of the verb it explains. */
@@ -63,6 +64,9 @@ export function SelectionBarShell({
   testAttr,
   hint,
   more,
+  title,
+  detail,
+  aside,
   children,
 }: {
   count: number
@@ -91,6 +95,16 @@ export function SelectionBarShell({
    * words at full size on a phone, and in the same place on every bar.
    */
   more?: ReactNode
+  /**
+   * ONE TASK PICKED (2026-10-30, `SelectionDetail.tsx`): its title in place
+   * of "1 selected" (one line, truncated; "1 selected" stays for screen
+   * readers), and `detail` — its meta line, notes, Open · Show in list —
+   * under it, above the verbs.
+   */
+  title?: string
+  detail?: ReactNode
+  /** Beside ⋯ on the count's line: the horizon control with several picked. */
+  aside?: ReactNode
   /** The surface's verbs (`BarAction`s), in one row. */
   children: ReactNode
 }) {
@@ -102,10 +116,35 @@ export function SelectionBarShell({
       testAttr={testAttr}
       hint={hint}
       more={more}
+      title={title}
+      detail={detail}
+      aside={aside}
     >
       {children}
     </BarPanel>
   )
+}
+
+/**
+ * ROOM FOR THE BAR (2026-10-30): the bar floats over the page, and once it
+ * showed one task's details (title, meta, notes, links) it covered the last
+ * rows of a short list — the row you meant to pick next was under it, out of
+ * reach. While it is up, a spacer of its own height sits at the end of
+ * <body>, so every row can scroll clear of it. Measured (a ResizeObserver
+ * callback), so it follows the bar as it grows and shrinks.
+ */
+function useBarSpacer(ref: React.RefObject<HTMLDivElement | null>): ReactNode {
+  const [height, setHeight] = useState(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new ResizeObserver(() => setHeight(el.offsetHeight))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [ref])
+  return height > 0 && typeof document !== 'undefined'
+    ? createPortal(<div aria-hidden data-selection-bar-space style={{ height }} />, document.body)
+    : null
 }
 
 /** The bar itself, counted in while it is mounted (`useSelectionBarUp`). */
@@ -116,6 +155,9 @@ function BarPanel({
   testAttr,
   hint,
   more,
+  title,
+  detail,
+  aside,
   children,
 }: {
   count: number
@@ -124,6 +166,9 @@ function BarPanel({
   testAttr?: string
   hint?: string
   more?: ReactNode
+  title?: string
+  detail?: ReactNode
+  aside?: ReactNode
   children: ReactNode
 }) {
   useEffect(() => {
@@ -131,56 +176,75 @@ function BarPanel({
     return () => setBarsUp(barsUp - 1)
   }, [])
   const attrs = testAttr ? { [testAttr]: '' } : {}
+  const panelRef = useRef<HTMLDivElement>(null)
+  const spacer = useBarSpacer(panelRef)
 
   return (
-    <div
-      data-selection-sheet
-      {...attrs}
-      // A 16px margin each side on a phone (in px: a rem margin grew with the
-      // text size and took the verbs' room), at most 28rem wide on a desktop.
-      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100vw-16px))] md:bottom-6"
-      onClickCapture={(e) => {
-        if (e.detail < 2) return
-        e.preventDefault()
-        e.stopPropagation()
-        onDoubleClickIntent?.()
-      }}
-    >
+    <>
+      {spacer}
       <div
-        className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
-        aria-live="polite"
+        ref={panelRef}
+        data-selection-sheet
+        {...attrs}
+        // A 16px margin each side on a phone (in px: a rem margin grew with the
+        // text size and took the verbs' room), at most 28rem wide on a desktop.
+        className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100vw-16px))] md:bottom-6"
+        onClickCapture={(e) => {
+          if (e.detail < 2) return
+          e.preventDefault()
+          e.stopPropagation()
+          onDoubleClickIntent?.()
+        }}
       >
-        <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
-          <span data-selection-count className="text-sm font-semibold tabular-nums">
-            {count} selected
-          </span>
-          <div className="flex items-center gap-1.5">
-            {more}
-            <button
-              type="button"
-              onClick={onClear}
-              aria-label="Cancel selection"
-              data-selection-clear
-              className="rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
-            >
-              Cancel
-            </button>
+        <div
+          className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
+            {title ? (
+              <span data-selection-title className="min-w-0 truncate text-sm font-semibold">
+                <span data-selection-count className="sr-only">
+                  {count} selected:{' '}
+                </span>
+                {title}
+              </span>
+            ) : (
+              <span data-selection-count className="shrink-0 text-sm font-semibold tabular-nums">
+                {count} selected
+              </span>
+            )}
+            {/* The aside (the horizon control) gives way first: its word
+                truncates before ⋯ or Cancel moves (a 375 phone at a 20px root). */}
+            <div className={cn('flex items-center gap-1.5', title ? 'shrink-0' : 'min-w-0')}>
+              {aside && <span className="flex min-w-0">{aside}</span>}
+              <span className="flex shrink-0 items-center gap-1.5">{more}</span>
+              <button
+                type="button"
+                onClick={onClear}
+                aria-label="Cancel selection"
+                data-selection-clear
+                className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
+          {detail}
+          <div data-selection-actions className="mt-1 flex items-stretch justify-between">
+            {children}
+          </div>
+          {hint && (
+            <p
+              id={SELECTION_BAR_HINT_ID}
+              data-selection-hint
+              className="px-2 pt-0.5 text-xs text-white/60"
+            >
+              {hint}
+            </p>
+          )}
         </div>
-        <div data-selection-actions className="mt-1 flex items-stretch justify-between">
-          {children}
-        </div>
-        {hint && (
-          <p
-            id={SELECTION_BAR_HINT_ID}
-            data-selection-hint
-            className="px-2 pt-0.5 text-xs text-white/60"
-          >
-            {hint}
-          </p>
-        )}
       </div>
-    </div>
+    </>
   )
 }
 

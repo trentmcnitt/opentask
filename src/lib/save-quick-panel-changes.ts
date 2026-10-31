@@ -182,5 +182,8 @@ function editFields(changes: QuickActionPanelChanges): Record<string, unknown> {
     edit.reset_original_due_at = changes.reset_original_due_at
   }
   if (changes.notes !== undefined) edit.notes = changes.notes
+  // The select bar's horizon with several picked (2026-10-30): it was the one
+  // editor field a multi-task save dropped.
+  if (changes.horizon !== undefined) edit.horizon = changes.horizon
   return edit
 }
