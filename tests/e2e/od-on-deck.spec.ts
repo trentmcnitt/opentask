@@ -582,7 +582,12 @@ async function stageDeadline(page: Page, dialog: Locator, days: number) {
     [t.year, t.month, t.day],
   )
   const cell = page.locator(`button[data-day="${key}"]`).first()
-  if ((await cell.count()) === 0) await page.getByRole('button', { name: /next month/i }).click()
+  // The empty picker opens on tomorrow's month, so the day can be in the
+  // month before as well as after: on Oct 31, yesterday is in October and the
+  // picker shows November (it only ever turned forward, and hung).
+  if ((await cell.count()) === 0) {
+    await page.getByRole('button', { name: days < 0 ? /previous month/i : /next month/i }).click()
+  }
   await cell.click()
   await page.getByRole('button', { name: 'Set Date', exact: true }).click()
   await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
