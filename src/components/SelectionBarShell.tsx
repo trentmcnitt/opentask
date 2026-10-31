@@ -135,14 +135,30 @@ export function SelectionBarShell({
  */
 function useBarSpacer(ref: React.RefObject<HTMLDivElement | null>): ReactNode {
   const [height, setHeight] = useState(0)
+  // A page that keeps its own room at the bottom (the dashboard's
+  // `[data-dock-space]`, the view pill and FABs) takes the bar's height as
+  // `--selection-bar-space` and keeps the taller of the two — the bar hides
+  // the pill, so the two rooms never stack.
+  const [docked, setDocked] = useState(false)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const observer = new ResizeObserver(() => setHeight(el.offsetHeight))
+    const observer = new ResizeObserver(() => {
+      setHeight(el.offsetHeight)
+      setDocked(!!document.querySelector('[data-dock-space]'))
+    })
     observer.observe(el)
     return () => observer.disconnect()
   }, [ref])
-  return height > 0 && typeof document !== 'undefined'
+  useEffect(() => {
+    if (!docked || height === 0) return
+    const root = document.documentElement
+    root.style.setProperty('--selection-bar-space', `${height}px`)
+    return () => {
+      root.style.removeProperty('--selection-bar-space')
+    }
+  }, [docked, height])
+  return height > 0 && !docked && typeof document !== 'undefined'
     ? createPortal(<div aria-hidden data-selection-bar-space style={{ height }} />, document.body)
     : null
 }

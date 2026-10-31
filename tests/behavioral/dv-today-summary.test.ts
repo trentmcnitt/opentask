@@ -55,7 +55,9 @@ describe('today summary', () => {
       rrule: 'FREQ=DAILY',
     })
     markDone({ userId: TEST_USER_ID, userTimezone: TEST_TIMEZONE, taskId: reminder.id })
-    expect(summary().done).toBe(2)
+    const { done, items } = summary()
+    expect(done).toBe(2)
+    expect(items.filter((i) => i.kind === 'done').map((i) => i.title)).toEqual(['late', 'today'])
   })
 
   test('moved to tomorrow: out of today onto tomorrow; not one moved further, nor one already tomorrow', () => {
@@ -90,11 +92,17 @@ describe('today summary', () => {
     // The activity log's `created_at` is SQLite's own 'now' (the real clock,
     // not the frozen one): stamp this test's rows at the frozen instant.
     getDb().prepare('UPDATE activity_log SET created_at = ?').run(NOW)
-    expect(summary()).toEqual({ done: 0, moved: 2 })
+    const { done, moved, items } = summary()
+    expect({ done, moved }).toEqual({ done: 0, moved: 2 })
+    // The list is the same set: the counts are its lengths.
+    expect(items.map((i) => [i.kind, i.title]).sort()).toEqual([
+      ['moved', 'late'],
+      ['moved', 'today'],
+    ])
   })
 
   test('a quiet day: nothing done, nothing moved', () => {
     task('later', '2026-01-20T09:00')
-    expect(summary()).toEqual({ done: 0, moved: 0 })
+    expect(summary()).toEqual({ done: 0, moved: 0, items: [] })
   })
 })

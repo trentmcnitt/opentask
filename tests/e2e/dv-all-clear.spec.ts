@@ -113,6 +113,29 @@ for (const width of [375, 402]) {
           path: `.tmp/screens/all-clear-counts-${width}.png`,
           animations: 'disabled',
         })
+
+        // The counts open the same rows (Trent, 11:18 PM): done struck through
+        // with its time, moved with where it went.
+        const toggle = card(page).locator('[data-all-clear-counts]')
+        await toggle.click()
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        const items = card(page).locator('[data-all-clear-items]')
+        const doneItem = items.locator('[data-all-clear-item="done"]', { hasText: 'AC done' })
+        await expect(doneItem).toContainText(/Done \d{1,2}:\d{2} [AP]M/)
+        await expect(doneItem.locator('.line-through')).toHaveCount(1)
+        await expect(
+          items.locator('[data-all-clear-item="moved"]', { hasText: 'AC moved' }),
+        ).toContainText('Moved to tomorrow 10:00 AM')
+
+        // Room at the bottom: scrolled to the end, the card clears the view pill.
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+        const pill = (await page.locator('[data-mode-pill]').boundingBox())!
+        const end = (await card(page).boundingBox())!
+        expect(end.y + end.height).toBeLessThanOrEqual(pill.y)
+        await page.screenshot({
+          path: `.tmp/screens/all-clear-open-${width}.png`,
+          animations: 'disabled',
+        })
       } finally {
         await trash(page, ids)
       }
