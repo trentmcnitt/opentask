@@ -901,13 +901,13 @@ test.describe('Lean row · the setting', () => {
       await expect(page.locator(`#task-row-${id}`)).toBeVisible()
       await expect(row(page, id)).toHaveCount(0)
 
-      await expect(page.locator('[data-mode-switch]')).toHaveCount(0)
+      await expect(page.locator('[data-mode-pill]')).toHaveCount(0)
 
       // Lean rows bring the dashboard modes; the row is in All.
       await page.goto('/settings')
       await page.locator('[data-task-rows-setting]').selectOption('lean')
       await page.goto('/?mode=all')
-      await expect(page.locator('[data-mode-switch]')).toBeVisible()
+      await expect(page.locator('[data-mode-pill]')).toBeVisible()
       await gotoDashboard(page)
       await expect(row(page, id)).toBeVisible()
 
@@ -916,7 +916,7 @@ test.describe('Lean row · the setting', () => {
       await gotoDashboard(page)
       await expect(row(page, id)).toHaveCount(0)
       await expect(page.locator(`#task-row-${id}`)).toBeVisible()
-      await expect(page.locator('[data-mode-switch]')).toHaveCount(0)
+      await expect(page.locator('[data-mode-pill]')).toHaveCount(0)
     } finally {
       await cleanUp(page, [id])
     }

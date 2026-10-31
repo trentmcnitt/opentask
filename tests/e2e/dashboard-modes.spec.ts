@@ -17,7 +17,16 @@
  * at. The task-queue switch is on for the file (decks need it).
  */
 import { DateTime } from 'luxon'
-import { test, expect, backdateCreated, openTaskDay, uniqueTitle } from './fixtures'
+import {
+  test,
+  expect,
+  backdateCreated,
+  openTaskDay,
+  openModeMenu,
+  pickAllOrder,
+  pickMode,
+  uniqueTitle,
+} from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const HOUR = 60 * 60 * 1000
@@ -129,28 +138,33 @@ test.describe('Dashboard modes · the switch', () => {
     authenticatedPage: page,
   }) => {
     await page.goto('/')
-    const switcher = page.locator('[data-mode-switch]')
-    await expect(switcher.getByRole('button')).toHaveText(['Today', 'Scan', 'All'])
-    await expect(switcher.locator('[data-mode="today"]')).toHaveAttribute('aria-pressed', 'true')
-    // No Now / Newest toggle and no "N of M now" outside All.
+    // The view pill (P1): it names the view; its menu lists the three.
+    const pill = page.locator('[data-mode-pill]')
+    await expect(pill).toHaveAttribute('data-mode-pill', 'today')
+    await expect(pill).toHaveText(/^Today/)
+    let menu = await openModeMenu(page)
+    await expect(menu.locator('[data-mode]')).toHaveText([/^Today/, /^Scan/, /^All/])
+    await expect(menu.locator('[data-mode="today"]')).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('Escape')
+    // No Now / Newest toggle at the top in the modes (All's order is the pill's).
     await expect(page.getByRole('group', { name: 'View mode' })).toHaveCount(0)
 
-    await switcher.locator('[data-mode="pick-mode"]').click()
-    await expect(switcher.locator('[data-mode="pick-mode"]')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    await pickMode(page, 'pick-mode')
+    await expect(pill).toHaveText(/Scan\s*·\s*Newest/)
     await page.reload()
-    await expect(page.locator('[data-mode="pick-mode"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-mode-pill="pick-mode"]')).toBeVisible()
 
-    // All: the list as it was — its own view toggle, no sort, no sections.
-    await page.locator('[data-mode="all"]').click()
-    await expect(page.getByRole('group', { name: 'View mode' })).toBeVisible()
-    await expect(page.locator('[data-sort-button]')).toHaveCount(0)
+    // All: the list as it was — its order on the pill, no sort, no sections.
+    await pickMode(page, 'all')
+    await expect(pill).toHaveText(/All\s*·\s*Now/)
+    menu = await openModeMenu(page)
+    await expect(menu.locator('[data-all-order="project"]')).toHaveAttribute('aria-checked', 'true')
+    await expect(menu.locator('[data-sort-option]')).toHaveCount(0)
+    await page.keyboard.press('Escape')
     await expect(page.locator('section[data-mode-section]')).toHaveCount(0)
 
     await page.goto('/?mode=today')
-    await expect(page.locator('[data-mode="today"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-mode-pill="today"]')).toBeVisible()
   })
 })
 
@@ -304,15 +318,14 @@ test.describe('Dashboard modes · the sort pill', () => {
     })
     try {
       await open(page, 'pick-mode')
-      // The dock's ⇅ (P2, 2026-10-30): the sort is its label.
-      const pill = page.locator('[data-sort-button]')
-      await expect(pill).toHaveAttribute('aria-label', /Sort: Newest/)
+      // The view pill (P1, 2026-10-30): Scan's sort is on it, its menu sets it.
+      const pill = page.locator('[data-mode-pill]')
+      await expect(pill).toHaveText(/Scan\s*·\s*Newest/)
       // Newest first by default (high was made last).
       expect(await idsIn(section(page, 'horizon-weeks'))).toEqual([high, low])
 
-      await pill.click()
-      await page.locator('[data-sort-option="oldest"]').click()
-      await expect(pill).toHaveAttribute('aria-label', /Sort: Oldest/)
+      await (await openModeMenu(page)).locator('[data-sort-option="oldest"]').click()
+      await expect(pill).toHaveText(/Scan\s*·\s*Oldest/)
       expect(await idsIn(section(page, 'horizon-weeks'))).toEqual([low, high])
       // Newest keeps its own order.
       expect(await idsIn(section(page, 'newest'))).toEqual([high, low])
@@ -321,11 +334,10 @@ test.describe('Dashboard modes · the sort pill', () => {
       await page
         .locator(`[data-project-row] [data-project-chip="${(await projectFor(page)).id}"]`)
         .click()
-      await expect(page.locator('[data-sort-button]')).toHaveAttribute('aria-label', /Sort: Oldest/)
+      await expect(page.locator('[data-mode-pill]')).toHaveText(/Scan\s*·\s*Oldest/)
       expect(await idsIn(section(page, 'horizon-weeks'))).toEqual([low, high])
 
-      await page.locator('[data-sort-button]').click()
-      await page.locator('[data-sort-everywhere]').click()
+      await (await openModeMenu(page)).locator('[data-sort-everywhere]').click()
       await expect.poll(() => idsIn(section(page, 'newest'))).toEqual([low, high])
     } finally {
       await cleanUp(page, [low, high])
@@ -361,14 +373,11 @@ test.describe('Dashboard modes · project chips and All', () => {
 
       // All: every task — no Now folds, no On deck section, no group capped
       // ("Show all N"), in both of its views.
-      await page.locator('[data-mode="all"]').click()
+      await pickMode(page, 'all')
       // The view is a SERVER preference (`default_grouping`): end on Now,
       // and put it back below whatever happens, for the specs after this one.
-      for (const view of ['Newest', 'Now']) {
-        await page
-          .getByRole('group', { name: 'View mode' })
-          .getByRole('button', { name: view })
-          .click()
+      for (const view of ['new', 'project'] as const) {
+        await pickAllOrder(page, view)
         await expect(page.locator('[data-lean-row]')).toHaveCount(10)
         await expect(page.locator(`[data-lean-row="${mine}"]`)).toBeVisible()
         await expect(page.getByRole('button', { name: /^Show all \d+/ })).toHaveCount(0)
@@ -386,7 +395,7 @@ for (const width of [375, 402]) {
   test.describe(`Dashboard modes · phone ${width}`, () => {
     test.use({ viewport: { width, height: 812 }, hasTouch: true, isMobile: true })
 
-    test('the dock (P2): switch and sort fit, clear of the tab bar and the FABs, at 100% and 119% text', async ({
+    test('the view pill (P1) and its menu fit, clear of the tab bar and the FABs, at 100% and 119% text', async ({
       authenticatedPage: page,
     }) => {
       const id = await create(page, { title: uniqueTitle('MD phone'), horizon: 'weeks' })
@@ -397,7 +406,7 @@ for (const width of [375, 402]) {
           const dock = (await page.locator('[data-mode-dock]').boundingBox())!
           expect(dock.x, root).toBeGreaterThanOrEqual(0)
           expect(dock.x + dock.width, root).toBeLessThanOrEqual(width)
-          await expect(page.locator('[data-mode-dock] [data-sort-button]')).toBeVisible()
+          await expect(page.locator('[data-mode-dock] [data-mode-pill]')).toBeVisible()
           const tabs = (await page.locator('nav.fixed').boundingBox())!
           expect(dock.y + dock.height, root).toBeLessThanOrEqual(tabs.y)
           const fabs = (await page.locator('[data-fab-stack]').boundingBox())!
@@ -408,9 +417,8 @@ for (const width of [375, 402]) {
             dock.y + dock.height > fabs.y
           expect(overlaps, `${root}: the dock and the FAB column`).toBe(false)
         }
-        // The sort menu keeps the 16px gutter from both edges (2026-10-30).
-        await page.locator('[data-sort-button]').click()
-        const menu = page.getByRole('menu')
+        // The menu keeps the 16px gutter from both edges (2026-10-30).
+        const menu = await openModeMenu(page)
         await expect(menu).toBeVisible()
         const m = (await menu.boundingBox())!
         expect(m.x).toBeGreaterThanOrEqual(16)

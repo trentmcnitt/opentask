@@ -2713,16 +2713,9 @@ function DashboardView({
               ios/OpenTask/WebView.swift) the toggle and "20 of 134 now · Show
               all 134" are wider than a phone, and the row ran 12px off it. */}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            {/* The modes' switch is the dock at the bottom (`ModeDock`, P2):
-                here, only All's own Now / Newest view — or, with the modes
-                off, the view toggle as it was. */}
-            {modes.mode ? (
-              modes.mode === 'all' && (
-                <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
-              )
-            ) : (
-              <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />
-            )}
+            {/* With the modes on, the view — and All's Now / Newest — is the
+                pill at the bottom (`ModeDock`, P1). Off, the toggle as it was. */}
+            {!modes.mode && <ViewModeToggle grouping={grouping} onChange={onGroupingChange} />}
             {nowSummary && <NowSummary {...nowSummary} />}
           </div>
 
@@ -2837,14 +2830,16 @@ function DashboardView({
         </div>
       </main>
 
-      {/* The mode dock (P2): Today | Scan | All and, in Today and Scan, the
-          sort — out of the way of any select bar. */}
+      {/* The view pill (P1): the view, Scan's sort or All's order, and the
+          menu that changes them — out of the way of any select bar. */}
       {modes.mode && !selectionBarUp && (
         <ModeDock
           mode={modes.mode}
           onMode={modes.setMode}
           sort={modes.sort}
           onSort={modes.setSort}
+          grouping={grouping}
+          onGrouping={onGroupingChange}
         />
       )}
 
@@ -2874,7 +2869,8 @@ function DashboardView({
         />
         <ViewModeFab
           grouping={grouping}
-          isSelectionMode={selection.isSelectionMode}
+          // The view pill says "All · Newest" itself (P1).
+          isSelectionMode={selection.isSelectionMode || !!modes.mode}
           onShowAll={() => onGroupingChange('project')}
         />
         {/* Counts the date facet (`headerCounts`), like the red pill and the

@@ -53,8 +53,7 @@ test('hold the clock, tap Tomorrow: the task defers and its details do not open'
   const id = (await res.json()).data.id as number
   try {
     const before = await dueAt(page, id)
-    await page.goto('/')
-    await page.locator('[data-mode="today"]').click()
+    await page.goto('/?mode=today')
     const row = page.locator(`#task-row-${id}`)
     const clock = row.locator('[data-lean-defer]')
     await expect(clock).toBeVisible()
