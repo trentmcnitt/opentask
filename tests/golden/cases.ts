@@ -67,10 +67,12 @@ export const caseScenarios: GoldenScenario[] = [
       },
     ],
     // Wait 1 (2026-10-21's one lead table): the deadline day at the morning,
-    // Tue 9:00 — before the deadline's 3 PM. Monday it is in Days (the
-    // deadline is a day out); over target from Tuesday. An automatic target
+    // Tue 9:00 — before the deadline's 3 PM. Monday, the day it is made, it
+    // is quiet: a new task waits for its next cadence day (Trent,
+    // 2026-10-31; it showed in Days the day it was made until then), and its
+    // target comes first. Over target from Tuesday. An automatic target
     // offers nothing. (Until 10-21 the 3-day lead put it in the past: now.)
-    expect: { task: { '2026-10-12': 'days', '2026-10-13': 'over 1×', '2026-10-14': 'over 2×' } },
+    expect: { task: { '2026-10-12': 'quiet', '2026-10-13': 'over 1×', '2026-10-14': 'over 2×' } },
   },
   {
     id: 'case-squeaky-door',
@@ -208,13 +210,15 @@ export const caseScenarios: GoldenScenario[] = [
     ],
     // Mon Oct 5, deadline Mon Oct 12 17:00 (wait 7 → the day before, the one
     // lead table of 2026-10-21): the automatic target is Sun Oct 11 9:00;
-    // until then the deadline pulls it into Days. Over target Sun–Mon (auto:
+    // until then the deadline pulls it into Days — from Tuesday: the day it
+    // is made it waits for its next cadence day (2026-10-31). Over target Sun–Mon (auto:
     // no offer). Tue 10:00 the picked target — Tuesday already counted (3×).
     // Wait Tue → Fri 3: Tomorrow on Thursday. Fri over again (4×). No "Back to
     // auto?": the deadline has passed.
     expect: {
       task: {
-        '2026-10-05..2026-10-10': 'days',
+        '2026-10-05': 'quiet',
+        '2026-10-06..2026-10-10': 'days',
         '2026-10-11': 'over 1×',
         '2026-10-12': 'over 2×',
         '2026-10-13..2026-10-14': 'quiet 3×',
@@ -254,9 +258,10 @@ export const caseScenarios: GoldenScenario[] = [
         '2026-10-10': 'weeks old',
         '2026-10-11': 'quiet old',
       },
-      // Made Oct 1 at 10:00: strictly past 10 days from Oct 11 10:00 (the
-      // threshold, 2026-10-29; it was 7 days, ">1 wk" from Oct 8).
-      days: { '2026-10-01..2026-10-10': 'days', '2026-10-11': 'days old' },
+      // Made Oct 1 at 10:00: first in Days the next day — a new task waits for
+      // its next cadence day (2026-10-31). Strictly past 10 days from Oct 11
+      // 10:00 (the threshold, 2026-10-29; it was 7 days, ">1 wk" from Oct 8).
+      days: { '2026-10-01': 'quiet', '2026-10-02..2026-10-10': 'days', '2026-10-11': 'days old' },
     },
   },
 ]

@@ -595,10 +595,16 @@ export function targetIsToday(
  *
  * - Considered today → 'considered' (shown ticked, so the segment can go green).
  * - Otherwise it appears when its segment has come round since it was last
- *   last considered. A task created AFTER its segment's latest shown day waits
- *   for the next one (a weeks task added on Tuesday waits for Saturday); one
- *   created ON a shown day appears that day — a new days task shows today
- *   (Trent's rule, 2026-10-11: anything not considered is reshown until it is).
+ *   considered (Trent's rule, 2026-10-11: anything not considered is reshown
+ *   until it is). A NEW TASK WAITS FOR ITS NEXT CADENCE DAY (Trent,
+ *   2026-10-31: "It should only show up at the next cadence, not today's…
+ *   It should wait till the next cadence"): created ON or after its segment's
+ *   latest shown day, it waits for the next one — a days task made today
+ *   first shows tomorrow, a weeks task made on the check-in Saturday next
+ *   Saturday, months and eventually likewise. Writing a task down is seeing
+ *   it (docs/TASK-MODEL.md § Carry-over), on its cadence day too. Every
+ *   creator alike (the app, the API, a hub session); Scan's Newest still
+ *   shows it at once. Until 10-31 one made ON a shown day showed that day.
  * - Deferred today (Defer All) → 'deferred': off today's list, back tomorrow.
  *
  * A PICKED TARGET MAKES A TASK QUIET UNTIL ITS DATE (2026-10-12, spec §1, §8.5):
@@ -636,9 +642,10 @@ export function segmentState(
   if (task.last_considered_at && shownDay <= dayOf(task.last_considered_at)) {
     return null
   }
-  // Created AFTER that day: it waits for the next one. Created on it — a days
-  // task today, a weeks task on a Saturday — it shows today (2026-10-11).
-  if (shownDay < dayOf(task.created_at)) return null
+  // Created ON or after that day: it waits for the next one — a days task
+  // made today shows tomorrow, a weeks task made on a Saturday next Saturday
+  // (2026-10-31; it showed the same day from 10-11).
+  if (shownDay <= dayOf(task.created_at)) return null
 
   if (task.segment_deferred_at && +dayOf(task.segment_deferred_at) === +today) {
     return { horizon, state: 'deferred' }

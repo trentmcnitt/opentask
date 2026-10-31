@@ -114,22 +114,27 @@ describe('Task model', () => {
   })
 
   describe('segments', () => {
-    test("TM-010: a task shows from its segment's first shown day on or after its creation", () => {
+    test("TM-010: a task shows from its segment's first shown day AFTER its creation", () => {
       const old = make({ title: 'Squeaky door' })
       age(old.id, '2026-10-01T09:00')
       expect(segmentOf(old.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
-      // Created ON a shown day (Saturday, weeks): it shows today.
+      // Created ON a shown day (Saturday, weeks): it waits for the next one
+      // (Trent, 2026-10-31: "It should wait till the next cadence"; it
+      // showed the same day from 10-11).
       const fresh = make({ title: 'Just added' })
-      expect(segmentOf(fresh.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
-      // A days task shows the day it is written down.
+      expect(segmentOf(fresh.id)).toBeNull()
+      // A days task written down today first shows tomorrow.
       vi.setSystemTime(new Date(at('2026-10-11T12:00'))) // Sunday
       const today = make({ title: 'Days, new', horizon: 'days' })
-      expect(segmentOf(today.id)).toEqual({ horizon: 'days', state: 'waiting' })
+      expect(segmentOf(today.id)).toBeNull()
       // A weeks task created AFTER Saturday waits for the next one.
       const sunday = make({ title: 'Weeks, Sunday' })
       expect(segmentOf(sunday.id)).toBeNull()
+      vi.setSystemTime(new Date(at('2026-10-12T09:00'))) // Monday
+      expect(segmentOf(today.id)).toEqual({ horizon: 'days', state: 'waiting' })
       vi.setSystemTime(new Date(at('2026-10-17T09:00'))) // next Saturday
       expect(segmentOf(sunday.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
+      expect(segmentOf(fresh.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
     })
 
     test('TM-011: a weeks task not considered on Saturday carries over daily until it is', () => {

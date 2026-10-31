@@ -24,10 +24,16 @@ import type { Page } from '@playwright/test'
 const TZ = process.env.E2E_TZ || 'America/Chicago'
 const DAY = 24 * 60 * 60 * 1000
 
+/**
+ * Made "yesterday": a task made today waits for its segment's next cadence
+ * day (2026-10-31), and this spec reads tasks in today's segments.
+ */
 async function create(page: Page, data: Record<string, unknown>): Promise<number> {
   const res = await page.request.post('/api/tasks', { data })
   expect(res.ok(), `create ${JSON.stringify(data)}`).toBeTruthy()
-  return (await res.json()).data.id as number
+  const id = (await res.json()).data.id as number
+  backdateCreated([id], { inSegments: true })
+  return id
 }
 
 async function stateOf(page: Page, id: number): Promise<Record<string, unknown>> {

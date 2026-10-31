@@ -21,7 +21,7 @@
  * Its own user (`queue@opentask.local`, as deadlines-teal): the switch on.
  * Unique titles; every task trashed in `finally`.
  */
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
 import type { Page, Route } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
@@ -34,10 +34,17 @@ async function signIn(page: Page) {
   await page.waitForURL('/', { timeout: 10_000 })
 }
 
+/**
+ * A task is made "yesterday": a task made today waits for its segment's next
+ * cadence day (2026-10-31), and this spec reads tasks in today's segments. A
+ * reminder is made as is (the rule is the task segments').
+ */
 async function create(page: Page, data: Record<string, unknown>): Promise<number> {
   const res = await page.request.post('/api/tasks', { data })
   expect(res.ok(), `create ${JSON.stringify(data)}`).toBeTruthy()
-  return (await res.json()).data.id as number
+  const id = (await res.json()).data.id as number
+  if (!data.is_reminder) backdateCreated([id], { inSegments: true })
+  return id
 }
 
 async function trash(page: Page, ids: number[]) {
