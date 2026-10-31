@@ -802,10 +802,14 @@ export function segmentState(
   /**
    * RULE SEG-CARRYOVER: A task appears once its segment has come round since it was last seen,
    *   meaning the later of last_considered_at and created_at. It then shows every day until it is
-   *   considered. A task created on a shown day shows that day.
-   * Why: Anything not considered is reshown until it is, so nothing silently drops off a segment.
-   * Ruling: Trent 2026-10-11: 'anything not considered shows again the next day until it is'
-   *   (src/lib/task-segments.ts:600).
+   *   considered. A task created on or after its segment's latest shown day waits for the next
+   *   one: a days task made today first shows tomorrow, a weeks task made on the check-in day
+   *   the next check-in day.
+   * Why: Anything not considered is reshown until it is, so nothing silently drops off a segment;
+   *   writing a task down is seeing it, on its cadence day too.
+   * Ruling: Trent 2026-10-11: 'anything not considered shows again the next day until it is';
+   *   2026-10-31: 'It should only show up at the next cadence, not today's' (until then one made
+   *   on a shown day showed that day; docs/TASK-MODEL.md § Carry-over).
    */
   // (restates RULE SEG-ROW-STATE, home: src/lib/task-segments.ts)
   if (task.last_considered_at && +dayOf(task.last_considered_at) === +today) {
