@@ -486,11 +486,26 @@ enum SegmentKind: Hashable {
     /// `?queue=1`, after the deadlines page and before Days.
     case queueToday
     case queuePrevious
+    /// AGED OUT (2026-10-29 on the web, `src/lib/aged-out.ts`; native 10-30):
+    /// a task past its horizon, asked to grow or keep its pace. Last in the
+    /// ring, its own wordless group on the web's strip. Native had no case for
+    /// it, and the unknown-kind fallback `capitalized` drew "Aged_Out" on the
+    /// widget's strip (Trent, 10-30).
+    case agedOut
 
     static let upcomingRaw = "upcoming"
     static let deadlinesRaw = "deadlines"
     static let queueTodayRaw = "queue_today"
     static let queuePreviousRaw = "queue_previous"
+    static let agedOutRaw = "aged_out"
+
+    /// The words for a kind this build doesn't know: its wire string with
+    /// "_" as a space, sentence-cased ("some_kind" → "Some kind") — never an
+    /// underscore on screen (`capitalized` drew "Aged_Out", 2026-10-30).
+    static func fallbackWord(_ raw: String) -> String {
+        let spaced = raw.replacingOccurrences(of: "_", with: " ").lowercased()
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
+    }
 
     /// Nil for a string this build doesn't know (a future segment).
     init?(raw: String) {
@@ -499,6 +514,7 @@ enum SegmentKind: Hashable {
         case Self.deadlinesRaw: self = .deadlines
         case Self.queueTodayRaw: self = .queueToday
         case Self.queuePreviousRaw: self = .queuePrevious
+        case Self.agedOutRaw: self = .agedOut
         default:
             guard let horizon = TaskHorizon(rawValue: raw) else { return nil }
             self = .horizon(horizon)
@@ -513,6 +529,7 @@ enum SegmentKind: Hashable {
         case .deadlines: return Self.deadlinesRaw
         case .queueToday: return Self.queueTodayRaw
         case .queuePrevious: return Self.queuePreviousRaw
+        case .agedOut: return Self.agedOutRaw
         }
     }
 
@@ -527,7 +544,7 @@ enum SegmentKind: Hashable {
         switch self {
         case .horizon(let horizon): return horizon.label
         case .upcoming: return "Heads up"
-        case .deadlines, .queueToday, .queuePrevious: return titleWord
+        case .deadlines, .queueToday, .queuePrevious, .agedOut: return titleWord
         }
     }
 
@@ -545,6 +562,7 @@ enum SegmentKind: Hashable {
         case .deadlines: return "Deadlines"
         case .queueToday: return "Today's pulls"
         case .queuePrevious: return "Previous pulls"
+        case .agedOut: return "Aged out"
         }
     }
 
@@ -565,6 +583,7 @@ enum SegmentKind: Hashable {
         // without the other dots around it"); the strip falls back to the
         // dots only when the words don't fit (`ViewThatFits`).
         case .horizon(let horizon): return horizon.label
+        case .agedOut: return "Aged"
         }
     }
 
@@ -575,6 +594,8 @@ enum SegmentKind: Hashable {
         case .deadlines, .upcoming: return 0
         case .queueToday, .queuePrevious: return 1
         case .horizon: return 2
+        // Its own group, as on the web (`SEGMENT_STRIP_GROUP`: 'aged').
+        case .agedOut: return 3
         }
     }
 
@@ -590,6 +611,7 @@ enum SegmentKind: Hashable {
         case .deadlines: return -16
         case .queueToday: return -17
         case .queuePrevious: return -18
+        case .agedOut: return -19
         }
     }
 
@@ -609,6 +631,8 @@ enum SegmentKind: Hashable {
         case .deadlines: return (0x0D9488, 0x2DD4BF)
         case .queueToday: return (0x0D7F8C, 0x36B8C6)
         case .queuePrevious: return (0x5C9BA3, 0x7FBCC4)
+        // `--segment-aged_out` (#7f9e9a, dark #9dbbb7).
+        case .agedOut: return (0x7F9E9A, 0x9DBBB7)
         }
     }
 
@@ -623,7 +647,7 @@ enum SegmentKind: Hashable {
     var doneColorHex: (light: UInt32, dark: UInt32)? {
         switch self {
         case .deadlines: return colorHex
-        case .horizon, .upcoming, .queueToday, .queuePrevious: return nil
+        case .horizon, .upcoming, .queueToday, .queuePrevious, .agedOut: return nil
         }
     }
 
@@ -638,6 +662,8 @@ enum SegmentKind: Hashable {
         case .deadlines: return (0x008464, 0x2DD4BF)
         case .queueToday: return (0x0A6670, 0x36B8C6)
         case .queuePrevious: return (0x0A6670, 0x7FBCC4)
+        // `--segment-title-aged_out` (#4d6b67; dark the fill, #9dbbb7).
+        case .agedOut: return (0x4D6B67, 0x9DBBB7)
         }
     }
 
@@ -648,7 +674,9 @@ enum SegmentKind: Hashable {
     /// link into the app, never a widget button.
     var offersDeferAll: Bool {
         switch self {
-        case .horizon, .upcoming: return true
+        // Aged out keeps "Defer all" (the web's `offersDeferAll`, and what
+        // this build gave it as an unknown kind).
+        case .horizon, .upcoming, .agedOut: return true
         case .deadlines, .queueToday, .queuePrevious: return false
         }
     }
@@ -1216,16 +1244,19 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
 
     /// "Days", "Weeks", "Upcoming", … — the segment's word (its spoken
     /// "Defer all Days tasks"); the page's TITLE is `title`.
-    var label: String { pulled ? TaskWording.pulledTitle : (kind?.label ?? horizon.capitalized) }
+    var label: String {
+        pulled ? TaskWording.pulledTitle : (kind?.label ?? SegmentKind.fallbackWord(horizon))
+    }
 
     /// The segment's title everywhere it is named — the widget page's header,
     /// the strip bar's spoken label, the watch section and the Smart Stack
     /// card: "Task queue · Daily" (2026-10-26, the web's `segmentTitle`; with
     /// the task-queue switch off too, as on the web). A kind this build
-    /// doesn't know keeps its raw word ("Task queue · Someday").
+    /// doesn't know keeps its raw word, spaced and sentence-cased ("Task
+    /// queue · Someday", never "Some_Kind": `SegmentKind.fallbackWord`).
     var title: String {
         if pulled { return TaskWording.taskQueueTitle(TaskWording.pulledTitle) }
-        return kind?.title ?? TaskWording.taskQueueTitle(horizon.capitalized)
+        return kind?.title ?? TaskWording.taskQueueTitle(SegmentKind.fallbackWord(horizon))
     }
 
     /// PULLED, ONE PAGE (Trent, 2026-10-29 — the web's `mergePulled`): the
