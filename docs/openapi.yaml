@@ -289,6 +289,41 @@ paths:
                           on ("Day starts at" PR 2); the local calendar day with it off.
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/tasks/today-summary:
+    get:
+      summary: What happened today, for Today's all-clear card
+      operationId: getTodaySummary
+      tags: [Tasks]
+      description: |
+        Of the tasks that were in Late or Today during the user's OpenTask day
+        (a target at or before the day's end), how many were done and how many
+        moved to tomorrow — the dashboard's "All clear for today" card
+        ("4 done · 2 moved to tomorrow"). Tasks only: reminders and quotas are
+        not counted. An undone completion does not count; a move counts while
+        the task is still open with its target on tomorrow.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
+      responses:
+        '200':
+          description: Today's summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      done:
+                        type: integer
+                        description: Completions today of an occurrence due by the end of today.
+                      moved:
+                        type: integer
+                        description: >
+                          Tasks a move today took from by-the-end-of-today to later,
+                          still open with their target on tomorrow.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/tasks/{id}:
     parameters:
       - $ref: '#/components/parameters/TaskId'
