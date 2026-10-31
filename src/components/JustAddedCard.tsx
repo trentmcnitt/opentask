@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Folder, Sparkles } from 'lucide-react'
+import { ChevronDown, Folder, Sparkles } from 'lucide-react'
+import { OnDeckIcon } from '@/components/icons/OnDeckIcon'
 import { cn } from '@/lib/utils'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { formatDueTimeParts } from '@/lib/format-date'
@@ -59,9 +60,14 @@ interface JustAddedCardProps {
  * maybe it should show two things, and then you can show more, like show five
  * more until you get to the end of the list"): the two newest entries, then
  * "Show 5 more" adding five a tap, its last step "Show N more" for what is
- * left. Clear still hides them all. The cap counts added and targeted entries
- * only: deck updates have their own fold, and unfolding it lists them all
- * (capped, "Show 2 on deck updates" would often have revealed nothing).
+ * left. Clear still hides them all.
+ *
+ * THE DECK UPDATES ARE ONE ENTRY (Trent's 10:12 PM screenshot, 2026-10-30):
+ * folded, they are a single row in the list — "3 on deck updates", at the
+ * place of the newest of them — that counts toward the two like any entry,
+ * and opens to list them under it. It was a "Show 3 on deck updates" footer
+ * outside the cap: with only deck updates recent, the card showed that line
+ * and nothing above it.
  */
 const FIRST_SHOWN = 2
 const SHOW_MORE_STEP = 5
@@ -77,12 +83,21 @@ export function JustAddedCard({
   const [showDecks, setShowDecks] = useState(false)
   const [shown, setShown] = useState(FIRST_SHOWN)
   if (entries.length === 0) return null
-  const deckUpdates = entries.filter((e) => isDeckUpdate(e)).length
-  const listed = showDecks ? entries : entries.filter((e) => !isDeckUpdate(e))
-  const capped = listed.filter((e) => !isDeckUpdate(e))
-  const kept = new Set(capped.slice(0, shown))
-  const visible = listed.filter((e) => isDeckUpdate(e) || kept.has(e))
-  const more = Math.min(SHOW_MORE_STEP, capped.length - shown)
+  const decks = entries.filter((e) => isDeckUpdate(e))
+  const items = cardItems(entries)
+  const visible = items.slice(0, shown)
+  const more = Math.min(SHOW_MORE_STEP, items.length - shown)
+  const row = (entry: JustAddedEntry) => (
+    <li key={justAddedEntryKey(entry)}>
+      <JustAddedRow
+        entry={entry}
+        project={projects.find((p) => p.id === entry.task.project_id)}
+        now={now}
+        timezone={timezone}
+        onShow={() => onShow(entry.task)}
+      />
+    </li>
+  )
   return (
     <section
       aria-label="Just now"
@@ -102,17 +117,34 @@ export function JustAddedCard({
         </button>
       </div>
       <ul className="space-y-0.5">
-        {visible.map((entry) => (
-          <li key={justAddedEntryKey(entry)}>
-            <JustAddedRow
-              entry={entry}
-              project={projects.find((p) => p.id === entry.task.project_id)}
-              now={now}
-              timezone={timezone}
-              onShow={() => onShow(entry.task)}
-            />
-          </li>
-        ))}
+        {visible.map((item) =>
+          item === DECKS ? (
+            <li key="decks">
+              <button
+                type="button"
+                onClick={() => setShowDecks((s) => !s)}
+                aria-expanded={showDecks}
+                data-just-added-deck-toggle
+                className="hover:bg-background flex w-full items-center gap-3 rounded-lg px-1.5 py-2 text-left transition-colors sm:px-2"
+              >
+                <OnDeckIcon size={16} className="text-muted-foreground -ml-0.5 shrink-0" />
+                <span className="text-muted-foreground min-w-0 flex-1 text-[15px] leading-snug">
+                  {decks.length} on deck update{decks.length === 1 ? '' : 's'}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'text-muted-foreground size-4 shrink-0 transition-transform',
+                    showDecks && 'rotate-180',
+                  )}
+                  aria-hidden
+                />
+              </button>
+              {showDecks && <ul className="space-y-0.5 pl-4">{decks.map(row)}</ul>}
+            </li>
+          ) : (
+            row(item)
+          ),
+        )}
       </ul>
       {more > 0 && (
         <button
@@ -124,23 +156,24 @@ export function JustAddedCard({
           Show {more} more
         </button>
       )}
-      {deckUpdates > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowDecks((s) => !s)}
-          aria-expanded={showDecks}
-          data-just-added-deck-toggle
-          // The slots' footer toggle, without its row-circle indent: the
-          // card's entries start at the dot.
-          className={cn(SLOT_FOOTER_TOGGLE_CLASS, 'pl-1.5 sm:pl-2')}
-        >
-          {showDecks
-            ? 'Show less'
-            : `Show ${deckUpdates} on deck update${deckUpdates === 1 ? '' : 's'}`}
-        </button>
-      )}
     </section>
   )
+}
+
+/** The deck updates' one row in the list (`cardItems`). */
+const DECKS = 'decks' as const
+
+/**
+ * The card's list: every added or targeted entry, and the deck updates as ONE
+ * item at the place of the newest of them (entries are newest first).
+ */
+function cardItems(entries: JustAddedEntry[]): (JustAddedEntry | typeof DECKS)[] {
+  const items: (JustAddedEntry | typeof DECKS)[] = []
+  for (const entry of entries) {
+    if (!isDeckUpdate(entry)) items.push(entry)
+    else if (!items.includes(DECKS)) items.push(DECKS)
+  }
+  return items
 }
 
 function JustAddedRow({
