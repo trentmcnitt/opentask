@@ -79,6 +79,15 @@ export interface ListedRow {
 }
 
 /**
+ * RULE SEG-ROSTER: With ?handled=1, every row that each segment lists is remembered for the
+ *   OpenTask day. A remembered row that has since left comes back as a considered row with
+ *   segment_left set to done, deck, target, deferred or considered; it counts in N of M and has no
+ *   put-back. A listed row always wins. Nothing here writes undo, activity or sync.
+ * Why: M is everything that came round today, fixed for the day; acting on a row raises N and never
+ *   shrinks M (the module comment).
+ * Ruling: Trent's phone review, 2026-10-22; Defer counts as handled: nag-map ruling 3.
+ */
+/**
  * Remember today's rows and return, per segment, the remembered rows that
  * left it handled today. `listed`: each segment's rows as placed now.
  */

@@ -17,7 +17,7 @@
  * `tests/behavioral/up-upcoming.test.ts` (UP-080…UP-090) fail when a file
  * under `src` writes `due_at` / `deadline_at` without importing it (and
  * exercise every path), so a new writer can't skip it. The queue-state guard
- * (TQ-G01, `tests/behavioral/tq-summary.test.ts`) does the same for clearing.
+ * (TQ-G10, `tests/behavioral/tq-summary.test.ts`) does the same for clearing.
  *
  * Undo / redo never stamp: they restore the snapshot's value.
  * Distinct from `segment_targeted_at` (targeted FROM a task segment only).
@@ -55,6 +55,17 @@ import type { Task } from '@/types'
 
 /** The queue columns a target write clears, as a SQL fragment (always safe to run). */
 export const QUEUE_CLEAR_SQL = 'queue_mark = 0, try_tomorrow = 0, queued_at = NULL'
+
+/**
+ * RULE TGT-ATTEMPTS-RESET: Done of a one-off, and done or skip of a repeat, set attempts to 0 and
+ *   clear the checkpoint; the completion row keeps the count. Removing the target freezes the
+ *   count, and the queue strip keeps it. Put-back restores the count.
+ * Why: A new occurrence is a new debt, and the completion row keeps the old count. One fragment, so
+ *   the fixed-SQL writers cannot drift.
+ * Ruling: Spec §7, 2026-10-12; no reset on the strip, B7 2026-10-19.
+ * Restated at: src/core/tasks/task-rollover.ts (rollRepeating's skipped roll).
+ */
+export const ATTEMPTS_RESET_SQL = 'attempts = 0, attempts_counted_through = NULL'
 
 type QueueState = Pick<Task, 'queue_mark' | 'try_tomorrow' | 'queued_at'>
 
@@ -109,6 +120,36 @@ export interface CollectedWrite {
   afterState?: Partial<Task>
 }
 
+/**
+ * RULE TGT-SET-AT: Every write that changes due_at or deadline_at stamps target_set_at in the same
+ *   UPDATE and undo snapshot. It anchors Upcoming's wait. A new deck day also stamps it, while a
+ *   period retime keeps it. Undo and redo restore it and never stamp. Rows from before the column
+ *   read created_at instead, or a repeat's later last completion.
+ * Why: It is the anchor of Upcoming's wait, and undo and redo must restore it, so it rides in the
+ *   same write and snapshot (the module comment).
+ * Ruling: 2026-10-12 (src/core/tasks/target-set.ts:3); keepSetAt: relative-targets decision 11,
+ *   2026-10-24.
+ * Restated at: src/lib/task-segments.ts (targetSetAtOf).
+ */
+/**
+ * RULE TGT-ATTEMPTS-CHECKPOINT: Before a write moves due_at or deadline_at, it saves the attempt
+ *   count as of now, read from the row before the move. The minute cron saves the stored columns
+ *   for every target that has arrived. Neither creates an undo entry, bumps updated_at or emits a
+ *   sync event.
+ * Why: Without it, a task that went over target and was moved before the minute cron would lose
+ *   that day's attempt.
+ * Ruling: Spec §7, 2026-10-12.
+ */
+/**
+ * RULE TQ-CLEAR-ON-TARGET: Every write that changes due_at or deadline_at clears queue_mark,
+ *   try_tomorrow and queued_at in the same write and snapshot, and keeps queued_from_due_at. The
+ *   defer that sets the mark keeps it. A deck write leaves the queue the same way and stamps
+ *   target_set_at, but only when the day changes. Fixed-SQL writers use QUEUE_CLEAR_SQL.
+ * Why: A queued task that gets a target leaves the queue (spec rule 8), and one write keeps the
+ *   undo whole.
+ * Ruling: Spec 'Picks and defers' and rule 8 (quoted at src/core/tasks/target-set.ts:41); B8, A6
+ *   for decks.
+ */
 /**
  * Add `target_set_at = now` to a collected write when it moves the target.
  * Pushes the clause and its value together (they are bound in order), the

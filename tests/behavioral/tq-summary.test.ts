@@ -171,7 +171,7 @@ describe('TQ-G: queue-state guard', () => {
     })
   }
 
-  test('TQ-G01: every fixed-SQL target_set_at writer also clears the queue state', () => {
+  test('TQ-G10: every fixed-SQL target_set_at writer also clears the queue state', () => {
     const root = process.cwd()
     const offenders = files(path.join(root, 'src'))
       .map((f) => path.relative(root, f))

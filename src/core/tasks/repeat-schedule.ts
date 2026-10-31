@@ -77,6 +77,15 @@ export interface RowKind {
 }
 
 /**
+ * RULE DL-REPEAT-ANCHOR: A rule with a deadline is deadline-anchored: occurrence_at is the
+ *   deadline, deadline_at mirrors it, and the rule must use the deadline's time (another time is a
+ *   400). The anchor is inferred on create. A target-anchored repeat may not carry a deadline, and
+ *   reminders and quotas are never deadline-anchored.
+ * Why: A repeating deadline is the schedule: a rule that walked a target while the deadline moved
+ *   would drift.
+ * Ruling: 2026-10-21; L9/A3, A4, A6.
+ */
+/**
  * The anchor a CREATE gives the row: 'deadline' when sent, or inferred from a
  * rule with a deadline on an ordinary task; else 'target'. Throws the 400s
  * that need no dates.
@@ -138,6 +147,15 @@ export function assertRuleOnDeadline(
   }
 }
 
+/**
+ * RULE DL-REPEAT-NO-DEFAULT: With the switch on, a deadline-anchored repeat written without offsets
+ *   gets no relative target, and each occurrence goes on the deadlines page. With the switch off it
+ *   gets the default offsets from the lead table. With the switch on, target_at: null on a repeat
+ *   with offsets removes this one occurrence's target (A5) and puts it on the page.
+ * Why: No fake targets with the switch on (L1); the default offsets stay for the switch-off release
+ *   (A1).
+ * Ruling: L1 and A5, deadlines-page plan approved 2026-10-22; A1 default decided 2026-10-21.
+ */
 /**
  * The relative target a deadline-anchored repeat is written with, validated
  * against its rule from its first deadline:

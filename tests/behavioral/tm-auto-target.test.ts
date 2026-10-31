@@ -482,7 +482,7 @@ describe("TM8: the deadline's automatic target", () => {
   })
 
   describe('§8.5 only a picked target is quiet', () => {
-    test('TM8-040: an automatic target keeps the horizon rhythm, no Upcoming rows, then nags', () => {
+    test('TM8-050: an automatic target keeps the horizon rhythm, no Upcoming rows, then nags', () => {
       // Deadline Fri Oct 23 23:59 (days pull-in from Oct 17) → auto Tue Oct 20.
       const t = make({ deadline_at: at('2026-10-23T23:59') })
       setClock('2026-10-17T12:00')
@@ -495,7 +495,7 @@ describe("TM8: the deadline's automatic target", () => {
       expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toContain(t.id)
     })
 
-    test('TM8-041: a picked target on a deadline task is quiet — Upcoming only', () => {
+    test('TM8-051: a picked target on a deadline task is quiet — Upcoming only', () => {
       const t = make({ due_at: at('2026-10-21T09:00'), deadline_at: at('2026-10-23T23:59') })
       setClock('2026-10-17T12:00')
       expect(places(t.id)).toEqual([])
@@ -503,7 +503,7 @@ describe("TM8: the deadline's automatic target", () => {
       expect(places(t.id)).toEqual(['upcoming'])
     })
 
-    test('TM8-042: Process never lists an automatic target as stale, and asks no growth of a picked one', () => {
+    test('TM8-052: Process never lists an automatic target as stale, and asks no growth of a picked one', () => {
       // Both made Sep 25, both over target 7+ days by Oct 12.
       setClock('2026-09-25T12:00')
       const auto = make({ deadline_at: at('2026-10-05T23:59') }) // auto Fri Oct 2

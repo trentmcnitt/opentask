@@ -101,6 +101,16 @@ const UNDO_FIELDS = [
 /** Thrown inside a dry run's transaction to roll it back. */
 class DryRunRollback extends Error {}
 
+/**
+ * RULE TQ-RUN-NOW: Roll over now runs the same rollover for the caller, as of now. It differs from
+ *   the cron in five ways: queued_at is the next real rollover, nothing is spared as an
+ *   early-morning pick, Try Tomorrow flags are not cleared, last_rollover_date is untouched, and
+ *   decks are stripped up to and including today (A3). It writes one undo entry, task_rollover.
+ *   With the switch off it answers 409.
+ * Why: "End my day now" hands the rows to the coming day; it is a user action, so it can be undone
+ *   (the module comment).
+ * Ruling: A3 (deck days).
+ */
 export function runRolloverNow(opts: {
   userId: number
   now?: Date

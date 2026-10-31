@@ -339,6 +339,14 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   // Whatever moved the target above: its first time on its day (2026-10-29).
   collectTargetDayFirst(data, task, ctx.timezone)
 
+  /**
+   * RULE TGT-REMINDER-NO-SNOOZE: The snooze endpoint refuses a reminder, bulk snooze skips one, and
+   *   a bare PATCH that moves a dated reminder's due_at is refused. The one exception is an
+   *   explicit reschedule (reset_original_due_at: true), which a period move sends.
+   * Why: A reminder carries no debt (§6), and a bare due_at on a dated reminder is a move by every
+   *   other measure.
+   * Ruling: none recorded.
+   */
   // §6: a reminder is never snoozed — the same refusal `snoozeTask` makes,
   // enforced here because a bare `{ due_at }` on a dated reminder is a move
   // by every other measure and used to walk straight past it. Here rather
@@ -467,6 +475,14 @@ function withRuleTime(
   return rrule === input.rrule ? input : { ...input, rrule }
 }
 
+/**
+ * RULE DL-CAP-REPORT: A move that stopped at the deadline reports it. A single move returns
+ *   capped_at_deadline, true only when the date the caller sent was pulled back. Bulk returns a
+ *   capped_deadline count. The description reads 'Deferred to deadline …', and a capped
+ *   notification-button defer sends one quiet push.
+ * Why: The caller learns that its date was pulled back (ruling A3's feedback).
+ * Ruling: Ruling A3, Trent 2026-10-11, revised by §8 2026-10-12.
+ */
 /**
  * §8 (2026-10-12): put the target the write leaves through `resolveTarget` —
  * the automatic target of a deadline with none, its re-derivation when the
@@ -692,6 +708,14 @@ function collectDeckChange(
   })
 }
 
+/**
+ * RULE DECK-REPEATING: Decking a repeat decks its current occurrence: due_at becomes NULL and
+ *   occurrence_at stays. Taking it off deck gives the target back on the occurrence. A schedule
+ *   change keeps the deck unless A1 outranks it. Done or skip ends the deck.
+ * Why: A repeating task is never left without a target off deck: the debt returns with its
+ *   occurrence, intended.
+ * Ruling: Trent 2026-10-20; PR 4a 2026-10-22.
+ */
 /**
  * ON DECK, REPEATING (2026-10-20): a repeating task is never left without a
  * target off deck. Whatever takes it off — the deck write's `null`, the A1
@@ -1233,6 +1257,7 @@ function collectQuotaDateClear(data: FieldChangeData, task: Task, willBeTracked:
   }
 }
 
+// (restates RULE TGT-ORIGIN, home: src/core/tasks/helpers/collect-field-changes.ts)
 /**
  * A reminder's explicit reschedule makes the new date its first-target date —
  * see the comment at its call in collectBasicFields.
@@ -1270,6 +1295,15 @@ function collectTaskModelFields(
   if (input.segment_targeted_at !== undefined) {
     trackField(data, 'segment_targeted_at', task.segment_targeted_at, input.segment_targeted_at)
   }
+  /**
+   * RULE HZ-CLOCK: A real horizon change stamps horizon_set_at, or clears it when the horizon is
+   *   cleared, and resets growth_kept_count to 0. Re-sending the same value changes nothing. Keep
+   *   (affirm_horizon) leaves horizon_set_at alone, stamps growth_kept_at and adds 1 to
+   *   growth_kept_count.
+   * Why: Process reads horizon_set_at to ask whether a horizon should grow; Keep must ask again
+   *   only a threshold later without changing the horizon.
+   * Ruling: Keep = growth_kept_at: ruling Q7 2026-10-12; keep count: Aged out 2026-10-29.
+   */
   if (input.horizon !== undefined && input.horizon !== task.horizon) {
     trackField(data, 'horizon', task.horizon, input.horizon)
     trackField(
@@ -1785,6 +1819,26 @@ function collectTargetDayFirst(data: FieldChangeData, task: Task, timezone: stri
   trackField(data, 'target_day_first_at', task.target_day_first_at, next)
 }
 
+/**
+ * RULE TGT-MOVE-ONE-GESTURE: Any date change on a dated task without a schedule change is a move of
+ *   due_at. There is no snooze state and no snooze/re-target split. Old clients' retarget and
+ *   reset_original_due_at change nothing on a task. A move never touches deadline_at or
+ *   occurrence_at. Only a non-null date the user sent counts as a move (the snooze stat and
+ *   'Deferred to …'); a clear or a server-derived target does not.
+ * Why: "Snooze is just retargeting" (Trent): with one gesture there is no snooze state to drift.
+ * Ruling: Spec §6, rulings Q1/Q4, 2026-10-12. UI word 'Defer' since 2026-10-21.
+ * Restated at: src/core/validation/task.ts (reset_original_due_at).
+ */
+/**
+ * RULE TGT-ORIGIN: A move keeps original_due_at, setting it to the old target if it was empty. A
+ *   first target sets it. Clearing the target clears it, and so does a schedule change with a date.
+ *   A repeat's done, skip or put-back sets it to the next or restored occurrence. A reminder's
+ *   explicit reschedule sets it. It no longer drives any web badge.
+ * Why: Shipped native builds still read original_due_at; no web badge does. Its writers are spread
+ *   across files (issue I-12).
+ * Ruling: Target-age badge replaced by attempts, spec §7, 2026-10-12 (docs/TASK-MODEL.md:40).
+ * Restated at: src/core/tasks/helpers/collect-field-changes.ts (collectOriginReset).
+ */
 function collectDueAtChanges(
   data: FieldChangeData,
   task: Task,

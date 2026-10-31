@@ -16,6 +16,14 @@ export function notificationTitlePrefix(priority: number): string {
 }
 
 /**
+ * RULE INTERRUPTION-LEVEL: Urgent (P4) overdue uses the critical APNs level at the user's volume.
+ *   Everything else is active, or passive when it does not lead. The time-sensitive level is not
+ *   used.
+ * Why: Only Urgent breaks through Focus: nights are the phone's Sleep mode's to handle, not
+ *   OpenTask's.
+ * Ruling: Trent 2026-10-26 (src/core/notifications/format.ts:23); ruling 4 2026-10-22.
+ */
+/**
  * APNs interruption level by priority. P4 is a critical alert (bypasses mute
  * and Do Not Disturb, at the user's critical_alert_volume); everything else,
  * High included, is `active` — a banner and a sound that respect Focus.

@@ -90,6 +90,13 @@ export function nagSendDue(
 }
 
 /**
+ * RULE NAG-SENDS-PACING: A paced nag is due when it has never sent, or when the mark after its last
+ *   send has come. A claim is a compare-and-swap, so a doubled tick sends once. When several rungs
+ *   apply, the one whose next mark comes first wins.
+ * Why: Restart-safe: a doubled tick, or a new process overlapping the old, sends once.
+ * Ruling: Nag-map fix #5, 2026-10-22; Trent 2026-10-22 (priority paces it).
+ */
+/**
  * CLAIM a send: true when this call may send, recording `now` as the last
  * send. A second claim for the same moment — a double tick — loses. `since`
  * as in `nagSendDue`.
@@ -132,6 +139,12 @@ export function stampNagSend(userId: number, key: string, now: Date): void {
     .run(userId, key, now.toISOString())
 }
 
+/**
+ * RULE TICK-MINUTE-CLAIM: Each sender claims the minute per user. A second run of the same minute
+ *   sends nothing that sender already sent.
+ * Why: A deploy's new process overlapping the old one's last tick must not send twice.
+ * Ruling: Trent 2026-10-26 (src/core/notifications/tick.ts:1).
+ */
 /**
  * CLAIM A TICK MINUTE for one sender and user (tick.ts): true once per
  * minute, false for any later claim of the same minute — another run of the
