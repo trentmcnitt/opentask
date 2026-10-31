@@ -87,6 +87,11 @@ const ALLOWLIST: Record<string, [number, string]> = {
     1,
     `${ON_OPENTASK_DATE} (a passed deadline's deck limit: yesterday)`,
   ],
+  "src/lib/modes/all-clear.ts: const dayName = openTaskLocalDay(new Date(first.due_at!), timezone, dayStart).toFormat('ccc')":
+    [
+      1,
+      `${ON_OPENTASK_DATE} (the all-clear card's "Next" weekday: the target's OpenTask day, from openTaskLocalDay)`,
+    ],
   'src/lib/target-menu.ts: const weekday = openTaskLocalDay(now, timezone, dayStart).weekday': [
     1,
     `${ON_OPENTASK_DATE} (T1's weekend and next-week rows: the OpenTask day's weekday, from openTaskLocalDay)`,

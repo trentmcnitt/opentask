@@ -23,6 +23,8 @@ import { useBulkDeck } from '@/hooks/useBulkDeck'
 import { QUEUE_BULK_DETAILS_EVENT } from '@/components/QueueSelect'
 import { listsEveryRow, MODES } from '@/lib/modes/registry'
 import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
+import { LATE, TODAY } from '@/lib/modes/sections'
+import { AllClearCard } from '@/components/modes/AllClearCard'
 import { useNowFolds } from '@/hooks/useNowFolds'
 import { inDeckSection, isRelevantNow } from '@/lib/now-view'
 import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
@@ -1187,6 +1189,18 @@ function HomeContent({
         : null,
     [modeSections, tasks_, now, timezone, dayStart, dashMode.sort, sectionExtra],
   )
+  // TODAY'S ALL-CLEAR (E2, 2026-10-30, `AllClearCard`): Late and Today both
+  // empty — in the list shown AND over every task, so a project chip or a
+  // search that narrows them away is not "all clear".
+  const todayAllClear = useMemo(() => {
+    if (dashMode.mode !== 'today' || !modeViews) return false
+    const empty = (views: SectionView[]) =>
+      !views.some((v) => (v.id === LATE.id || v.id === TODAY.id) && v.tasks.length > 0)
+    if (!empty(modeViews)) return false
+    return empty(
+      selectSections(visibleTasks, [LATE, TODAY], { now, timezone, dayStart }, dashMode.sort, {}),
+    )
+  }, [dashMode.mode, dashMode.sort, modeViews, visibleTasks, now, timezone, dayStart])
   const sortedGroups = useMemo(() => {
     if (modeViews) return modeSectionGroups(modeViews)
     const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
@@ -1701,6 +1715,7 @@ function HomeContent({
       <DemoTour />
       <DashboardView
         modes={{ ...dashMode, sectioned: modeViews !== null }}
+        todayAllClear={todayAllClear}
         onSectionMore={(id) =>
           setSectionExtra((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + SHOW_MORE_STEP }))
         }
@@ -2120,6 +2135,7 @@ function DashboardView({
   isFoldOpen,
   onToggleFold,
   timeSlots,
+  todayAllClear,
   searchQuery,
   searchHits,
   searchResultCount,
@@ -2261,6 +2277,8 @@ function DashboardView({
   onToggleFold: (key: string) => void
   /** §6.0 time slots (periods), for "Next period" snoozes. Fetched once by the parent. */
   timeSlots: TimeSlot[]
+  /** Today with Late and Today both empty: the all-clear card in their place. */
+  todayAllClear: boolean
   searchQuery: string | null
   /**
    * The raw search hit list (HomeContent's `searchResults`), only as a view
@@ -2516,6 +2534,7 @@ function DashboardView({
   const renderTaskList = (part: 'deck' | 'rest' | 'all') => (
     <TaskList
       part={part}
+      hideEmpty={todayAllClear}
       chrome={!modes.sectioned}
       onSectionMore={onSectionMore}
       onSectionLess={onSectionLess}
@@ -2826,6 +2845,9 @@ function DashboardView({
           className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
+          {todayAllClear && (
+            <AllClearCard tasks={allTasks} timeSlots={timeSlots} timezone={timezone} now={now} />
+          )}
           {modes.sectioned ? renderTaskList('all') : renderTaskList('rest')}
         </div>
       </main>

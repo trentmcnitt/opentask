@@ -204,6 +204,11 @@ interface TaskListProps {
    */
   part?: 'all' | 'deck' | 'rest'
   /**
+   * No "All caught up!" for an empty list: something else says it (Today's
+   * all-clear card, 2026-10-30 — two all-clear messages on one screen).
+   */
+  hideEmpty?: boolean
+  /**
    * The list's header row (Unified, the sort). Default on; off in a
    * dashboard mode's sections, where the sort pill orders them.
    */
@@ -295,6 +300,7 @@ export function TaskList({
   justAddedNow = 0,
   revealRef,
   part = 'all',
+  hideEmpty = false,
   deckRevealRef,
   chrome = true,
   onSectionMore,
@@ -469,6 +475,7 @@ export function TaskList({
   if (part === 'deck' && groups.length === 0) return null
 
   if (tasks.length === 0) {
+    if (hideEmpty) return null
     return (
       <>
         <div className="flex flex-col items-center justify-center py-16 text-center">
