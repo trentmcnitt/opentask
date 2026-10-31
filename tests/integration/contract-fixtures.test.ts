@@ -634,6 +634,11 @@ async function deadlineRows(
       // clamped to today, so the row is on the page.
       lead_days: 6,
     })
+    // Made before today: a task made today waits for its segment's next
+    // cadence day (2026-10-31), and the plain form lists these in Days.
+    backdate([created.deadlineWindow, created.deadlinePassed, created.deadlineRepeat], 2, [
+      'created_at',
+    ])
     const withDeadlines = await call('/api/reminders?queue=1&deck=1&deadlines=1')
     const plain = await call('/api/reminders?queue=1&deck=1')
     const deferred = await call('/api/task-segments/defer-lead', {
@@ -983,6 +988,9 @@ describe('contract fixtures (native clients)', () => {
     created.deadlineRepeat = res.data.id
     ids.register('task', res.data.id, placeholder)
     captured['task-deadline-anchored'] = await call(`/api/tasks/${res.data.id}`)
+    // Made before today (after its capture): its Days row in the later
+    // reminders captures (a task made today waits for its next cadence day).
+    backdate([res.data.id], 2, ['created_at'])
   })
 
   // 18. Repeat ends (2026-10-22): a counted repeat ON ITS LAST OCCURRENCE, as

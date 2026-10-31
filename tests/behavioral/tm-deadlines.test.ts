@@ -81,6 +81,20 @@ function setClock(local: string) {
 function make(input: Record<string, unknown> = {}): Task {
   return createTask({ ...u, input: { title: 'Synthetic task', ...input } })
 }
+/**
+ * Made the day before: a task made today waits for its segment's next
+ * cadence day (2026-10-31), so a test of where a task sits in its horizon
+ * segment makes it a day early.
+ */
+function madeYesterday<T>(fn: () => T): T {
+  const now = new Date()
+  vi.setSystemTime(new Date(now.getTime() - 86_400_000))
+  try {
+    return fn()
+  } finally {
+    vi.setSystemTime(now)
+  }
+}
 function task(id: number): Task {
   return getTaskById(id)!
 }
@@ -516,7 +530,7 @@ describe('DL-S: the page', () => {
   hooks()
 
   test('DL-S01: opt-in — without ?deadlines=1 a target-less one-off is in its horizon segment', () => {
-    const t = make({ deadline_at: at('2026-10-21T23:59') })
+    const t = madeYesterday(() => make({ deadline_at: at('2026-10-21T23:59') }))
     expect(placesOf(t.id)).toEqual(['deadlines'])
     // A shipped native build: the deadline pulls it into Days, a dated degrade.
     expect(placesOf(t.id, { queuePanels: true, deckRows: true })).toEqual(['days'])
@@ -779,7 +793,7 @@ describe('DL-F: review fixes', () => {
   })
 
   test('DL-F02: without ?deadlines=1 a target-less repeat is in its horizon segment, never nowhere', () => {
-    const w = weekly('2026-10-24T08:00')
+    const w = madeYesterday(() => weekly('2026-10-24T08:00'))
     const plain = { queuePanels: true, deckRows: true }
     expect(placesOf(w.id, plain)).toEqual(['days'])
     setClock('2026-10-24T10:00')

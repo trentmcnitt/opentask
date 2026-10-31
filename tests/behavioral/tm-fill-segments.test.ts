@@ -39,12 +39,15 @@ describe('TM-FILL: every segment, every day', () => {
   let dailyId: number
   beforeEach(() => {
     setupTestDb()
-    vi.setSystemTime(NOW)
+    // Made the day before: a task made today waits for its next cadence day
+    // (2026-10-31), and these tests need a row in Days today.
+    vi.setSystemTime(new Date(NOW.getTime() - 86_400_000))
     dailyId = createTask({
       userId: TEST_USER_ID,
       userTimezone: tz,
       input: { title: 'Daily one-off', horizon: 'days' },
     }).id
+    vi.setSystemTime(NOW)
   })
   afterEach(() => {
     vi.unstubAllEnvs()

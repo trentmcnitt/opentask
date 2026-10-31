@@ -441,14 +441,16 @@ export const onDeckScenarios: GoldenScenario[] = [
         '2027-03-15..2027-03-16': 'queue_previous queued',
       },
       late: {
-        // Undated on Saturday, the check-in day: its weeks segment (unset = weeks).
-        '2027-03-13': 'weeks',
+        // Made on Saturday, the check-in day: quiet — a new task waits for its
+        // next cadence day (2026-10-31; it was in weeks that day until then).
+        '2027-03-13': 'quiet',
         '2027-03-14': 'queue_today queued',
         '2027-03-15..2027-03-16': 'queue_previous queued',
       },
       sun: {
-        // Undated on Saturday, the check-in day: its weeks segment (unset = weeks).
-        '2027-03-13': 'weeks',
+        // Made on Saturday, the check-in day: quiet — a new task waits for its
+        // next cadence day (2026-10-31; it was in weeks that day until then).
+        '2027-03-13': 'quiet',
         '2027-03-14': 'deck',
         '2027-03-15': 'queue_today queued',
         '2027-03-16': 'queue_previous queued',

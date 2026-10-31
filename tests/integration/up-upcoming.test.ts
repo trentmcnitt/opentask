@@ -28,11 +28,11 @@ async function create(body: Record<string, unknown>) {
   return (await json(res)).data as { id: number; target_set_at: string | null }
 }
 
-function backdateTargetSet(ids: number[], days: number) {
+function backdateTargetSet(ids: number[], days: number, column = 'target_set_at') {
   const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
   try {
     const when = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString()
-    const stmt = db.prepare('UPDATE tasks SET target_set_at = ? WHERE id = ?')
+    const stmt = db.prepare(`UPDATE tasks SET ${column} = ? WHERE id = ?`)
     for (const id of ids) stmt.run(when, id)
   } finally {
     db.close()
@@ -79,6 +79,9 @@ describe('Upcoming over HTTP', () => {
       })
     ).id
     backdateTargetSet([oneOff, repeating], 10)
+    // Made before today: a task made today waits for its segment's next
+    // cadence day (2026-10-31), and Remove target below sends it back to Days.
+    backdateTargetSet([oneOff, repeating], 10, 'created_at')
   })
 
   test('a task carries target_set_at, stamped when made', async () => {
