@@ -19,7 +19,8 @@ final class DeepLinkRouterTests: XCTestCase {
             // Reminders
             ("opentask://reminder/12", "/reminders?reminder=12"),
             ("opentask://reminder", "/reminders"),
-            ("opentask://reminders", "/reminders"),
+            // The widget's general tap: the dashboard's Reminders card (2026-10-31).
+            ("opentask://reminders", "/?focus=reminders"),
             ("opentask://reminders/slot/3", "/reminders?slot=3"),
             ("opentask://reminders/slot/-1", "/reminders?slot=-1"),
             ("opentask://reminders/slot/x", "/reminders"),

@@ -34,6 +34,11 @@ enum DeepLinkRouter {
     /// rows) lands on the dashboard as it would open anyway.
     static let notificationDeadlinesPath = "/?tasks=deadlines"
 
+    /// The Reminders widget's general tap (2026-10-31): the dashboard with
+    /// its Reminders card under the top bar (`?focus=reminders`,
+    /// src/lib/dashboard-landing.ts), whatever page the widget showed.
+    static let remindersCardPath = "/?focus=reminders"
+
     /// The web path for a widget link, or nil when the URL isn't an
     /// `opentask://` link at all (the app then does nothing).
     static func webPath(for url: URL) -> String? {
@@ -64,7 +69,7 @@ enum DeepLinkRouter {
             // `/slot/<id>` (2026-09-23, item 2) scopes the header title Link
             // to bring that slot into view — see `WidgetLink.reminders(slot:)`.
             // Bare `reminders` (2×2, Lock Screen, "+N more"/background tap)
-            // still opens the surface unscoped.
+            // opens the dashboard's Reminders card (below, 2026-10-31).
             let parts = url.pathComponents
             if parts.count >= 3, parts[parts.count - 2] == "slot", let slotId = lastId {
                 return "/reminders?slot=\(slotId)"
@@ -75,6 +80,14 @@ enum DeepLinkRouter {
             if let promptKey = PromptDeepLink.promptKey(from: url) {
                 return PromptDeepLink.webPath(promptKey: promptKey)
             }
+            // The BARE link — the widget's general tap (its background, the
+            // 2×2, the Lock Screen families, a header title) — opens the
+            // DASHBOARD on its Reminders card, not the Reminders tab (Trent,
+            // 2026-10-31: "when you tap the widget it opens to reminders
+            // panel… on the dashboard page instead of the reminders tab").
+            // Item taps keep their own links (`reminder/<id>`, `/prompt/`,
+            // `/slot/`) and the Reminders tab.
+            if parts.count <= 1 { return remindersCardPath }
             return "/reminders"
         case "project":
             // A project-scoped Tasks header link (2026-09-23, item 2) — see
