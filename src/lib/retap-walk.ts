@@ -25,8 +25,8 @@
  *   then the task list's groups that need you (`taskGroupNeedsYou`), in
  *   screen order. Not the Quotas card: some quota is nearly always unmet, a
  *   tap every cycle. In ONE column (a phone) the Dashboard's re-tap is not a
- *   walk since 2026-10-31: it toggles between the tasks and the top
- *   (`dashboardRetap`, src/lib/dashboard-landing.ts).
+ *   walk since 2026-10-31: at the top it goes to the tasks, anywhere else to
+ *   the top (`dashboardRetap`, src/lib/dashboard-landing.ts).
  * - Quotas: the first period group (Today, with daily quotas).
  */
 import type { Task } from '@/types'
@@ -140,7 +140,7 @@ function listenForHandScrolls() {
 export function retapWalk(): boolean {
   listenForHandScrolls()
   const path = window.location.pathname
-  // The Dashboard in one column: two positions, the tasks and the top
+  // The Dashboard in one column: the tasks from the top, else the top
   // (Trent, 2026-10-31; src/lib/dashboard-landing.ts) — no walk.
   if (path === '/') {
     const toggled = dashboardRetap()

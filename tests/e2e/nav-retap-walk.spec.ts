@@ -4,8 +4,8 @@
  * - Reminders: the period that needs you, then the topmost task segment with
  *   something waiting, then the top — and round again;
  * - Dashboard in ONE column (a phone; 2026-10-31,
- *   src/lib/dashboard-landing.ts): a fresh load opens on the tasks, and a
- *   re-tap toggles between the top and the tasks — no walk;
+ *   src/lib/dashboard-landing.ts): a fresh load opens on the tasks; a re-tap
+ *   at the top goes to the tasks, anywhere else to the top — no walk;
  * - Dashboard in TWO columns: the Reminders card, the Task queue card, the
  *   task list's groups that need you, then the top;
  * - Quotas: the first period (Today), then the top;
@@ -159,7 +159,7 @@ async function cleanDashboard(p: Page, ids: number[]) {
 test.describe('one column, an iPhone 16 Pro', () => {
   test.use({ viewport: { width: 402, height: 874 } })
 
-  test('Dashboard, one column: a fresh load opens on the tasks; a tap → the top; a tap → the tasks', async ({
+  test('Dashboard, one column: a fresh load opens on the tasks; a tap at the top → the tasks, anywhere else → the top', async ({
     authenticatedPage: p,
   }) => {
     const ids = await dashboardRows(p)
@@ -195,18 +195,26 @@ test.describe('one column, an iPhone 16 Pro', () => {
       expect(first).toBeGreaterThan(0)
       await p.screenshot({ path: '.tmp/screens/dashboard-lands-on-tasks-402.png' })
 
+      // Trent's revision (10-31): only AT THE TOP does a tap go to the tasks;
+      // anywhere else — on the tasks, below them, above them — to the top.
+      // (Overscroll above the top, which a desktop browser can't make, is the
+      // predicate's: tests/behavioral/dashboard-landing.test.ts.)
       await tab(p, 'Dashboard').click()
       await atTop(p)
       await tab(p, 'Dashboard').click()
       await landed(tasks(p))
-      // Where the page is decides: scrolled by hand above the tasks, a tap goes
-      // to the tasks; below them, to the top.
-      await p.evaluate(() => window.scrollTo({ top: 40, behavior: 'instant' }))
-      await tab(p, 'Dashboard').click()
-      await landed(tasks(p))
+      // Below the tasks → the top.
       await p.evaluate(() => window.scrollBy({ top: 200, behavior: 'instant' }))
       await tab(p, 'Dashboard').click()
       await atTop(p)
+      // Mid-page ABOVE the tasks (the queue card, Quotas) → the top as well.
+      await p.evaluate(() => window.scrollTo({ top: 120, behavior: 'instant' }))
+      await tab(p, 'Dashboard').click()
+      await atTop(p)
+      // Pretty much at the top (within 8px) → the tasks.
+      await p.evaluate(() => window.scrollTo({ top: 6, behavior: 'instant' }))
+      await tab(p, 'Dashboard').click()
+      await landed(tasks(p))
       // It only scrolled: the mode kept its view.
       expect(new URL(p.url()).searchParams.get('mode') ?? 'today').toBe('today')
     } finally {

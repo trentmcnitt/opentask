@@ -1,21 +1,23 @@
 /**
- * The Dashboard's re-tap in one column (2026-10-31, src/lib/dashboard-landing.ts):
- * two positions, decided by where the page is relative to the tasks.
+ * The Dashboard's re-tap in one column (2026-10-31, src/lib/dashboard-landing.ts,
+ * Trent's revision): at the top — or overscrolled above it, the rubber band
+ * and its rebound — the tasks; anywhere else, the top.
  */
 import { describe, test, expect } from 'vitest'
-import { dashboardRetapGoes } from '@/lib/dashboard-landing'
+import { AT_TOP_PX, dashboardRetapGoes } from '@/lib/dashboard-landing'
 
 describe('dashboardRetapGoes', () => {
-  test('at the tasks or below them: the top', () => {
-    expect(dashboardRetapGoes(900, 900)).toBe('top')
-    expect(dashboardRetapGoes(899.5, 900)).toBe('top')
-    expect(dashboardRetapGoes(1400, 900)).toBe('top')
+  test('at the top, or within a few pixels of it: the tasks', () => {
+    expect(dashboardRetapGoes(0)).toBe('tasks')
+    expect(dashboardRetapGoes(AT_TOP_PX)).toBe('tasks')
   })
-  test('above the tasks (the top included): the tasks', () => {
-    expect(dashboardRetapGoes(0, 900)).toBe('tasks')
-    expect(dashboardRetapGoes(500, 900)).toBe('tasks')
+  test('overscrolled above the top (the elastic zone) and bouncing back: the tasks', () => {
+    expect(dashboardRetapGoes(-60)).toBe('tasks')
+    expect(dashboardRetapGoes(-3)).toBe('tasks')
   })
-  test('a page with nothing above the tasks: a tap at the top stays a tap to the top', () => {
-    expect(dashboardRetapGoes(0, 0)).toBe('top')
+  test('anywhere else: the top — above the tasks as much as below them', () => {
+    expect(dashboardRetapGoes(AT_TOP_PX + 1)).toBe('top')
+    expect(dashboardRetapGoes(400)).toBe('top')
+    expect(dashboardRetapGoes(5000)).toBe('top')
   })
 })

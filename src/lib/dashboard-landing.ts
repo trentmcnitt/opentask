@@ -24,9 +24,15 @@
  *   while the cards above it load and grow, until the user touches, scrolls
  *   or types. Not with a deep link (`deepLinked`), which has a place of its
  *   own to go. Later switches to the Dashboard never scroll (2026-10-29).
- * - A RE-TAP of the Dashboard tab toggles between the two positions: at the
- *   tasks or below them → the top; above them → the tasks. Where the page is
- *   decides, so a scroll by hand changes nothing about the rule.
+ * - A RE-TAP of the Dashboard tab (revised by Trent the same day, after using
+ *   it: "pressing Dashboard to get to the tasks should only happen if you're
+ *   scrolled all the way to the top… or if you tap it while you've scrolled
+ *   up past the top, where it's in that elastic zone… Otherwise it does the
+ *   natural behavior"): AT THE TOP → the tasks; ANYWHERE ELSE → the top,
+ *   above the tasks included. At the top is `scrollY` within
+ *   `AT_TOP_PX` — a negative one too, the rubber-band overscroll above the
+ *   page and its rebound, so a tap while it bounces back is still "at the
+ *   top", not a race.
  */
 import { scrollSectionIntoView } from '@/lib/scroll-row-into-view'
 
@@ -53,9 +59,12 @@ export function tasksScrollY(): number | null {
   return Math.max(0, Math.min(at, max))
 }
 
-/** The re-tap's choice: at the tasks or below them → the top; above → the tasks. */
-export function dashboardRetapGoes(scrollY: number, tasksAt: number): 'top' | 'tasks' {
-  return scrollY >= tasksAt - 1 ? 'top' : 'tasks'
+/** How near the top still counts as the top: within a few pixels, or above it (overscroll). */
+export const AT_TOP_PX = 8
+
+/** The re-tap's choice: at the top (or overscrolled above it) → the tasks; anywhere else → the top. */
+export function dashboardRetapGoes(scrollY: number): 'top' | 'tasks' {
+  return scrollY <= AT_TOP_PX ? 'tasks' : 'top'
 }
 
 /**
@@ -65,9 +74,8 @@ export function dashboardRetapGoes(scrollY: number, tasksAt: number): 'top' | 't
  */
 export function dashboardRetap(): boolean | null {
   if (!dashboardSingleColumn()) return null
-  const tasksAt = tasksScrollY()
-  if (tasksAt === null) return null
-  if (dashboardRetapGoes(window.scrollY, tasksAt) === 'top') return false
+  if (tasksScrollY() === null) return null
+  if (dashboardRetapGoes(window.scrollY) === 'top') return false
   scrollSectionIntoView(document.querySelector<HTMLElement>(ANCHOR)?.parentElement ?? null)
   return true
 }
