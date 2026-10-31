@@ -164,3 +164,33 @@ test('a selected list row: the pick blue, its ring inset and drawn whole', async
     await trash(page, ids)
   }
 })
+
+test.describe('on a phone (touch)', () => {
+  test.use({ viewport: { width: 402, height: 874 }, hasTouch: true, isMobile: true })
+
+  test('an On deck row shows deck tomorrow · deck · clock at rest, in the same slots', async ({
+    page,
+  }) => {
+    const ids = [await create(page, { title: uniqueTitle('OB phone decked') })]
+    try {
+      const today = await openTaskDay(page, 0)
+      expect((await page.request.post('/api/tasks/deck', { data: { ids, day: today } })).ok()).toBe(
+        true,
+      )
+      await page.goto('/')
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
+      const r = page.locator(`section[data-mode-section="on-deck"] #task-row-${ids[0]}`)
+      await expect(r).toBeVisible()
+      const buttons = ['[data-deck-tomorrow]', '[data-on-deck]', '[data-target-today]'].map((sel) =>
+        r.locator(sel),
+      )
+      for (const b of buttons) await expect.poll(() => opacity(b)).toBe(1)
+      const xs = [await x(buttons[0]), await x(buttons[1]), await x(buttons[2])]
+      expect(xs[0]).toBeLessThan(xs[1])
+      expect(xs[1]).toBeLessThan(xs[2])
+      await page.screenshot({ path: '.tmp/screens/od-rows-phone-402.png', animations: 'disabled' })
+    } finally {
+      await trash(page, ids)
+    }
+  })
+})
