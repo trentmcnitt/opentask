@@ -1978,6 +1978,25 @@ function useFocusQuickAddOnArrival(status: string, loading: boolean, error: stri
   }, [ready, searchParams])
 }
 
+/**
+ * THE TASKS HEADING (T1, Trent 2026-10-31: "There is no clear boundary
+ * between quotas and the above area in general and tasks themselves";
+ * `.tmp/tasks-boundary/` shots t1-mid / t1-land): a hairline, then "Tasks"
+ * in the big page-title size, where the task list starts — under Quotas on a
+ * phone, at the top of the left column on a desktop. The same word in every
+ * mode (Today, Scan, All). Not sticky. It opens the list wrapper, so it is
+ * the tasks anchor's place (`data-task-list-landing`, just above it): the
+ * cold-open landing and the Dashboard re-tap put the hairline right under the
+ * top bar (src/lib/dashboard-landing.ts).
+ */
+function TasksHeading() {
+  return (
+    <div data-tasks-heading className="border-border border-t px-1 pt-[18px] pb-3">
+      <h2 className="text-[28px] leading-tight font-bold tracking-[-0.3px]">Tasks</h2>
+    </div>
+  )
+}
+
 /** With Today all clear, On deck's count (the slim line's "N on deck"); else 0. */
 function onDeckCount(allClear: boolean, views: SectionView[] | null): number {
   if (!allClear || !views) return 0
@@ -2876,9 +2895,13 @@ function DashboardView({
 
         <div
           ref={taskListRef}
-          className="scroll-below-header min-w-0 xl:col-start-1 xl:row-start-2"
+          // `mt-6`: the gap above the "Tasks" heading's hairline sits OUTSIDE
+          // the list, so the landing (the anchor below) puts the hairline
+          // itself right under the top bar.
+          className="scroll-below-header mt-6 min-w-0 xl:col-start-1 xl:row-start-2"
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
+          <TasksHeading />
           {todayAllClear && (
             <AllClearSlot
               tasks={allTasks}
