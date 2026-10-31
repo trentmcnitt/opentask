@@ -161,7 +161,10 @@ export const RULE_REGISTRY = {
   'SEG-CARRYOVER': {
     home: 'src/lib/task-segments.ts',
     symbol: 'last_considered_at',
-    pins: ['tests/behavioral/tm-task-model.test.ts#TM-011'],
+    pins: [
+      'tests/behavioral/tm-task-model.test.ts#TM-010',
+      'tests/behavioral/tm-task-model.test.ts#TM-011',
+    ],
   },
   'AGE-THRESHOLDS': {
     home: 'src/lib/task-segments.ts',
