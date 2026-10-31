@@ -23,8 +23,8 @@ import { useBulkDeck } from '@/hooks/useBulkDeck'
 import { QUEUE_BULK_DETAILS_EVENT } from '@/components/QueueSelect'
 import { listsEveryRow, MODES } from '@/lib/modes/registry'
 import { selectSections, SHOW_MORE_STEP } from '@/lib/modes/select'
-import { LATE, TODAY } from '@/lib/modes/sections'
-import { AllClearCard } from '@/components/modes/AllClearCard'
+import { LATE, ON_DECK, TODAY } from '@/lib/modes/sections'
+import { AllClearCard, TargetsDoneLine } from '@/components/modes/AllClearCard'
 import { useNowFolds } from '@/hooks/useNowFolds'
 import { inDeckSection, isRelevantNow } from '@/lib/now-view'
 import { NowSummary, type NowSummaryState } from '@/components/NowSummary'
@@ -1191,7 +1191,9 @@ function HomeContent({
   )
   // TODAY'S ALL-CLEAR (E2, 2026-10-30, `AllClearCard`): Late and Today both
   // empty — in the list shown AND over every task, so a project chip or a
-  // search that narrows them away is not "all clear".
+  // search that narrows them away is not "all clear". With On deck still
+  // holding rows the card gives way to the slim line (A1, 2026-10-31,
+  // `TargetsDoneLine`): `onDeckLeft`, the On deck section's count.
   const todayAllClear = useMemo(() => {
     if (dashMode.mode !== 'today' || !modeViews) return false
     const empty = (views: SectionView[]) =>
@@ -1201,6 +1203,7 @@ function HomeContent({
       selectSections(visibleTasks, [LATE, TODAY], { now, timezone, dayStart }, dashMode.sort, {}),
     )
   }, [dashMode.mode, dashMode.sort, modeViews, visibleTasks, now, timezone, dayStart])
+  const onDeckLeft = onDeckCount(todayAllClear, modeViews)
   const sortedGroups = useMemo(() => {
     if (modeViews) return modeSectionGroups(modeViews)
     const sorted = sortTaskGroups(taskGroups, listSort, listReversed, listScoreMap)
@@ -1716,6 +1719,7 @@ function HomeContent({
       <DashboardView
         modes={{ ...dashMode, sectioned: modeViews !== null }}
         todayAllClear={todayAllClear}
+        onDeckLeft={onDeckLeft}
         onSectionMore={(id) =>
           setSectionExtra((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + SHOW_MORE_STEP }))
         }
@@ -1973,6 +1977,30 @@ function useFocusQuickAddOnArrival(status: string, loading: boolean, error: stri
   }, [ready, searchParams])
 }
 
+/** With Today all clear, On deck's count (the slim line's "N on deck"); else 0. */
+function onDeckCount(allClear: boolean, views: SectionView[] | null): number {
+  if (!allClear || !views) return 0
+  return views.find((v) => v.id === ON_DECK.id)?.tasks.length ?? 0
+}
+
+/** The all-clear card, or — with On deck still holding rows — the slim line (A1). */
+function AllClearSlot({
+  tasks,
+  onDeck,
+  timeSlots,
+  timezone,
+  now,
+}: {
+  tasks: Task[]
+  onDeck: number
+  timeSlots: TimeSlot[]
+  timezone: string
+  now: Date
+}) {
+  if (onDeck > 0) return <TargetsDoneLine tasks={tasks} onDeck={onDeck} timezone={timezone} />
+  return <AllClearCard tasks={tasks} timeSlots={timeSlots} timezone={timezone} now={now} />
+}
+
 function mainClass(twoColumn: boolean): string {
   return cn(
     'mx-auto grid w-full max-w-2xl flex-1 grid-cols-1 content-start items-start px-4 py-6',
@@ -2136,6 +2164,7 @@ function DashboardView({
   onToggleFold,
   timeSlots,
   todayAllClear,
+  onDeckLeft,
   searchQuery,
   searchHits,
   searchResultCount,
@@ -2279,6 +2308,8 @@ function DashboardView({
   timeSlots: TimeSlot[]
   /** Today with Late and Today both empty: the all-clear card in their place. */
   todayAllClear: boolean
+  /** With it, On deck's count: above 0, the slim "Targets done" line instead of the card. */
+  onDeckLeft: number
   searchQuery: string | null
   /**
    * The raw search hit list (HomeContent's `searchResults`), only as a view
@@ -2846,7 +2877,13 @@ function DashboardView({
         >
           <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
           {todayAllClear && (
-            <AllClearCard tasks={allTasks} timeSlots={timeSlots} timezone={timezone} now={now} />
+            <AllClearSlot
+              tasks={allTasks}
+              onDeck={onDeckLeft}
+              timeSlots={timeSlots}
+              timezone={timezone}
+              now={now}
+            />
           )}
           {modes.sectioned ? renderTaskList('all') : renderTaskList('rest')}
           {/* ROOM AT THE BOTTOM (Trent, 2026-10-30: the view pill and the FAB

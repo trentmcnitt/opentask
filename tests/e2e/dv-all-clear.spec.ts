@@ -2,7 +2,9 @@
  * TODAY'S ALL-CLEAR CARD (Trent, 2026-10-30, E2 of `.tmp/all-done/`,
  * `AllClearCard`): with Late and Today both empty, Today shows "All clear for
  * today", what happened today ("1 done · 1 moved to tomorrow", from
- * `GET /api/tasks/today-summary`), and "Next: …"; On deck carries on below.
+ * `GET /api/tasks/today-summary`), and "Next: …". With On deck still
+ * holding rows, a slim "✓ Targets done · N on deck" line takes the card's
+ * place (A1, 2026-10-31) and opens the same list.
  * Scan and All never show it.
  *
  * Its own user (`queue@opentask.local`, no seeded tasks), the switch on, lean
@@ -141,31 +143,65 @@ for (const width of [375, 402]) {
       }
     })
 
-    test('On deck carries on below the card; Scan and All never show it', async ({ page }) => {
+    test("with On deck left: the slim line instead of the card, opening today's list; Scan and All never show either", async ({
+      page,
+    }) => {
       const today = await openTaskDay(page, 0)
       const ids = [
         await create(page, { title: uniqueTitle('AC deck one') }),
         await create(page, { title: uniqueTitle('AC deck two') }),
       ]
+      // Something handled today, for the line to open onto.
+      const finished = await create(page, {
+        title: uniqueTitle('AC finished'),
+        due_at: DateTime.now().minus({ minutes: 1 }).toUTC().toISO(),
+      })
+      ids.push(finished)
       try {
         expect(
-          (await page.request.post('/api/tasks/deck', { data: { ids, day: today } })).ok(),
+          (
+            await page.request.post('/api/tasks/deck', {
+              data: { ids: ids.slice(0, 2), day: today },
+            })
+          ).ok(),
         ).toBeTruthy()
+        expect((await page.request.post(`/api/tasks/${finished}/done`)).ok()).toBeTruthy()
         await page.goto('/')
-        await expect(card(page)).toBeVisible()
+        // A1 (Trent, 2026-10-31): Late and Today empty, On deck not — the
+        // slim line, never the big card.
+        const line = page.locator('[data-targets-done]')
+        await expect(line).toBeVisible()
+        await expect(card(page)).toHaveCount(0)
+        await expect(line).toContainText(/Targets done\s*·\s*\d+ on deck/)
+        const n = Number((await line.textContent())!.match(/(\d+) on deck/)![1])
+        expect(n).toBeGreaterThanOrEqual(2)
         const deck = page.locator('section[data-mode-section="on-deck"]')
         await expect(deck).toBeVisible()
-        const cardBox = (await card(page).boundingBox())!
-        expect((await deck.boundingBox())!.y).toBeGreaterThan(cardBox.y + cardBox.height - 1)
+        const lineBox = (await line.boundingBox())!
+        expect((await deck.boundingBox())!.y).toBeGreaterThan(lineBox.y + lineBox.height - 1)
         await page.screenshot({
-          path: `.tmp/screens/all-clear-deck-${width}.png`,
-          fullPage: true,
+          path: `.tmp/screens/targets-done-closed-${width}.png`,
           animations: 'disabled',
         })
+        // Tapping the line opens what was done or moved today (the card's list).
+        const toggle = line.locator('[data-targets-done-toggle]')
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+        await toggle.click()
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        await expect(
+          line.locator('[data-all-clear-item="done"]', { hasText: 'AC finished' }),
+        ).toBeVisible()
+        await page.screenshot({
+          path: `.tmp/screens/targets-done-open-${width}.png`,
+          animations: 'disabled',
+        })
+        await toggle.click()
+        await expect(line.locator('[data-all-clear-items]')).toHaveCount(0)
         for (const mode of ['pick-mode', 'all']) {
           await page.goto(`/?mode=${mode}`)
           await expect(page.locator(`[data-mode-pill="${mode}"]`)).toBeVisible()
           await expect(card(page)).toHaveCount(0)
+          await expect(page.locator('[data-targets-done]')).toHaveCount(0)
         }
       } finally {
         await trash(page, ids)

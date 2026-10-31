@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { SELECTED_ROW } from '@/lib/selected-row'
 import { isTracked, taskPeriodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { QUEUE_TOMORROW, queueMarked, rowOverTarget } from '@/lib/queue-tomorrow'
@@ -41,7 +42,7 @@ import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { DeadlineChip } from '@/components/DeadlineChip'
-import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
+import { deckReplaces, offersDeck } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { TimeChip } from '@/components/TimeChip'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -424,7 +425,7 @@ export function TaskRow({
           'border-l-over-target hover:border-l-over-target border-l-4 pl-[9px]',
         // Right border for priority (user preference), with the same give-back
         pri.border && cn('border-r-4 pr-[9px]', pri.border),
-        isSelected && 'ring-ring bg-accent ring-2',
+        isSelected && SELECTED_ROW,
         isSelectionMode && 'cursor-pointer',
         // AI enrichment in progress — subtle border pulse. Not while the row is
         // flashing: both classes set the `animation` shorthand, so the pulse
@@ -696,8 +697,10 @@ export function TaskRow({
               timezone={timezone}
               onTargetToday={(t) => onTargetAt?.(t)}
               onTargetAt={(t, at) => onTargetAt?.(t, at)}
-              // Faded on a decked row: a target takes it off deck (plan §5).
-              replaces={todayReplaces(task, timezone, dayStart)}
+              // No "Replaces On deck today" confirm (Trent, 2026-10-31): the
+              // row's lit deck chip already says it is on deck. The tap
+              // targets it today and takes it off deck, with Undo.
+              replaces={null}
               className={dayControlClasses(dayControlsOnTouch, false)}
               iconClassName="size-4"
             />
