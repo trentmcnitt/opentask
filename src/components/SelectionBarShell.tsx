@@ -195,71 +195,81 @@ function BarPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const spacer = useBarSpacer(panelRef)
 
+  // PORTALLED TO <body> (Trent's Mac, 2026-10-31): the bar is `fixed`, but a
+  // task-queue card's bar is rendered inside the dashboard's right column, a
+  // sticky column (`useStickyColumn`). The Mac app's WKWebView composites that
+  // column as its own layer and clipped the bar to it — a fragment between
+  // the two columns, its title and most verbs cut off. Under <body> no
+  // ancestor can capture or clip it. React events still bubble through the
+  // tree as before; every DOM check finds it by `[data-selection-sheet]`.
+  const bar = (
+    <div
+      ref={panelRef}
+      data-selection-sheet
+      {...attrs}
+      // A 16px margin each side on a phone (in px: a rem margin grew with the
+      // text size and took the verbs' room), at most 28rem wide on a desktop.
+      className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100vw-16px))] md:bottom-6"
+      onClickCapture={(e) => {
+        if (e.detail < 2) return
+        e.preventDefault()
+        e.stopPropagation()
+        onDoubleClickIntent?.()
+      }}
+    >
+      <div
+        className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
+        aria-live="polite"
+      >
+        <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
+          {title ? (
+            <span data-selection-title className="min-w-0 truncate text-sm font-semibold">
+              <span data-selection-count className="sr-only">
+                {count} selected:{' '}
+              </span>
+              {title}
+            </span>
+          ) : (
+            <span data-selection-count className="shrink-0 text-sm font-semibold tabular-nums">
+              {count} selected
+            </span>
+          )}
+          {/* The aside (the horizon control) gives way first: its word
+                truncates before ⋯ or Cancel moves (a 375 phone at a 20px root). */}
+          <div className={cn('flex items-center gap-1.5', title ? 'shrink-0' : 'min-w-0')}>
+            {aside && <span className="flex min-w-0">{aside}</span>}
+            <span className="flex shrink-0 items-center gap-1.5">{more}</span>
+            <button
+              type="button"
+              onClick={onClear}
+              aria-label="Cancel selection"
+              data-selection-clear
+              className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+        {detail}
+        <div data-selection-actions className="mt-1 flex items-stretch justify-between">
+          {children}
+        </div>
+        {hint && (
+          <p
+            id={SELECTION_BAR_HINT_ID}
+            data-selection-hint
+            className="px-2 pt-0.5 text-xs text-white/60"
+          >
+            {hint}
+          </p>
+        )}
+      </div>
+    </div>
+  )
   return (
     <>
       {spacer}
-      <div
-        ref={panelRef}
-        data-selection-sheet
-        {...attrs}
-        // A 16px margin each side on a phone (in px: a rem margin grew with the
-        // text size and took the verbs' room), at most 28rem wide on a desktop.
-        className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100vw-16px))] md:bottom-6"
-        onClickCapture={(e) => {
-          if (e.detail < 2) return
-          e.preventDefault()
-          e.stopPropagation()
-          onDoubleClickIntent?.()
-        }}
-      >
-        <div
-          className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
-          aria-live="polite"
-        >
-          <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
-            {title ? (
-              <span data-selection-title className="min-w-0 truncate text-sm font-semibold">
-                <span data-selection-count className="sr-only">
-                  {count} selected:{' '}
-                </span>
-                {title}
-              </span>
-            ) : (
-              <span data-selection-count className="shrink-0 text-sm font-semibold tabular-nums">
-                {count} selected
-              </span>
-            )}
-            {/* The aside (the horizon control) gives way first: its word
-                truncates before ⋯ or Cancel moves (a 375 phone at a 20px root). */}
-            <div className={cn('flex items-center gap-1.5', title ? 'shrink-0' : 'min-w-0')}>
-              {aside && <span className="flex min-w-0">{aside}</span>}
-              <span className="flex shrink-0 items-center gap-1.5">{more}</span>
-              <button
-                type="button"
-                onClick={onClear}
-                aria-label="Cancel selection"
-                data-selection-clear
-                className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-sm transition-colors hover:bg-white/20 active:bg-white/20"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-          {detail}
-          <div data-selection-actions className="mt-1 flex items-stretch justify-between">
-            {children}
-          </div>
-          {hint && (
-            <p
-              id={SELECTION_BAR_HINT_ID}
-              data-selection-hint
-              className="px-2 pt-0.5 text-xs text-white/60"
-            >
-              {hint}
-            </p>
-          )}
-        </div>
-      </div>
+      {typeof document === 'undefined' ? bar : createPortal(bar, document.body)}
     </>
   )
 }
