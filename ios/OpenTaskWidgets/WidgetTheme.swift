@@ -1169,8 +1169,9 @@ enum WidgetLink {
     /// `/reminders?slot=<slotId>`, which brings that slot into view rather
     /// than just opening the surface at the top. Deliberately separate from
     /// the bare `reminders` above: the 2×2, Lock Screen families, and the
-    /// systemMedium/Large background tap all still mean "open Reminders",
-    /// not "open Reminders AT this slot" — only the header title Link uses
+    /// systemMedium/Large background tap are the GENERAL tap, which opens the
+    /// dashboard on its Reminders card since 2026-10-31
+    /// (`DeepLinkRouter.remindersCardPath`) — only the header title Link uses
     /// this.
     static func reminders(slot slotId: Int) -> URL {
         URL(string: "\(scheme)://reminders/slot/\(slotId)") ?? reminders
