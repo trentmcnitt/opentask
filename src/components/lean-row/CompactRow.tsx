@@ -30,6 +30,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { compactDeadline } from '@/lib/compact-row-words'
 import { priorityTab } from '@/lib/row-corner'
 import { cn } from '@/lib/utils'
+import { SELECTED_ROW } from '@/lib/selected-row'
 import { DoneControl } from './DoneControl'
 import { LeanButtons } from './LeanButtons'
 
@@ -108,7 +109,7 @@ export function CompactRow({
         highlightClass,
         'group/lean border-border/40 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
         isSelectionMode && 'cursor-pointer',
-        isSelected && 'bg-accent ring-ring rounded-lg ring-2',
+        isSelected && SELECTED_ROW,
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
       )}
     >

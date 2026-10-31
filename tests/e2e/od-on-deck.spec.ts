@@ -80,8 +80,8 @@ const dashRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 
 /**
  * A row's controls in DOM order, the reserved empty places included: On deck
- * · On deck tomorrow · Today · done since 2026-10-21 (Trent: today's deck,
- * then the next day's, then Today).
+ * tomorrow · On deck · Today · done since 2026-10-31 (Trent: right to left
+ * reads soonest to latest; On deck first from 10-21).
  */
 async function controlOrder(row: Locator): Promise<string[]> {
   return row
@@ -172,10 +172,10 @@ test('a horizon row: tap decks it for today (the row leaves), Undo puts it back'
     const button = r.locator('[data-on-deck]')
     await expect(button).toBeVisible()
     await expect(button).not.toHaveAttribute('data-on-deck-active', '')
-    // Order: On deck · On deck tomorrow · Today · done (no pencil, 2026-10-20;
-    // On deck first, 2026-10-21).
+    // Order: On deck tomorrow · On deck · Today · done (no pencil, 2026-10-20;
+    // deck tomorrow first, 2026-10-31).
     await expect(r.locator('[data-segment-details]')).toHaveCount(0)
-    expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    expect(await controlOrder(r)).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
 
     await button.click()
     await expect(r).toHaveCount(0)
@@ -309,7 +309,7 @@ test('re-deck to Tomorrow from Queued (hold menu)', async ({ page }) => {
     const r = segRow(segment(page, 'queue_today'), id)
     // A queue row reads like every segment row (2026-10-21).
     await expect(r.locator('[data-on-deck]')).toBeVisible()
-    expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    expect(await controlOrder(r)).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
     await r.locator('[data-on-deck]').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'On deck options' })
     await expect(menu.getByRole('menuitem', { name: /check-in/ })).toHaveCount(1)
@@ -358,7 +358,7 @@ test('an Upcoming deck row reads "On deck tomorrow" in Tomorrow, On deck tomorro
     await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute('aria-pressed', 'true')
     await expect(r.locator('[data-on-deck]')).not.toHaveAttribute('data-on-deck-active', '')
     // An Upcoming row reads like every segment row (2026-10-21).
-    expect(await controlOrder(r)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    expect(await controlOrder(r)).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
     // A one-off with a picked target (2026-10-22, plan §5): On deck and On
     // deck tomorrow are there, FADED — a deck would replace the target.
     const picked = await create(page, {
@@ -375,7 +375,7 @@ test('an Upcoming deck row reads "On deck tomorrow" in Tomorrow, On deck tomorro
     await page.reload()
     const p = segRow(segment(page, 'upcoming'), picked)
     await expect(p).toBeVisible()
-    expect(await controlOrder(p)).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+    expect(await controlOrder(p)).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
     await expect(p.locator('[data-on-deck]')).toHaveAttribute('data-replaces', '')
     await expect(p.locator('[data-deck-tomorrow]')).toHaveAttribute('data-replaces', '')
     // Today on the decked row is faded too, and asks first (it takes it off deck).
@@ -873,15 +873,15 @@ test.describe('touch', () => {
       await expect(toast(page, 'Taken off deck')).toBeVisible()
       await expect.poll(() => deckOf(page, decked)).toBeNull()
 
-      // …and Today on a section row targets it (the deck goes) — faded, it
-      // asks first (2026-10-22, plan §5: a target replaces the deck).
+      // …and Today on a section row targets it (the deck goes) at once: no
+      // "Replaces On deck today" confirm (Trent, 2026-10-31 — the row is
+      // visibly on deck already).
       await deck(page, [decked])
       await page.reload()
       const today = page.locator(`[data-deck-list] #task-row-${decked} [data-target-today]`)
-      await expect(today).toHaveAttribute('data-replaces', '')
+      await expect(today).not.toHaveAttribute('data-replaces', '')
       await today.tap()
-      await expect(page.locator('[data-replace-confirm]')).toContainText('Replaces On deck today')
-      await page.locator('[data-replace-confirm] [data-replace-ok]').tap()
+      await expect(page.locator('[data-replace-confirm]')).toHaveCount(0)
       await expect(toast(page, /Targeted/)).toBeVisible()
       await expect.poll(() => deckOf(page, decked)).toBeNull()
       expect((await stateOf(page, decked)).target_at).not.toBeNull()

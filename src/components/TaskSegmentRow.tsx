@@ -814,16 +814,11 @@ function TaskSegmentRowActions({
         panel ? '-my-[4px]' : 'relative top-[4px]',
       )}
     >
-      {/* On deck first, then On deck tomorrow (Trent, 2026-10-21): today's
-          deck, the next day's, then Today. With the switch off On deck is
-          absent and the horizon dot stands alone. */}
-      <SegmentDeckSlot
-        row={row}
-        actions={actions}
-        timezone={timezone}
-        panel={panel}
-        queueUi={queueUi}
-      />
+      {/* On deck TOMORROW first, then On deck (today), then the clock
+          (Trent, 2026-10-31; it was today's deck first since 10-21): right
+          to left reads soonest to latest, the lean rows' order. Grow and
+          Defer take deck tomorrow's place in their segments. With the switch
+          off On deck is absent and the horizon dot stands alone. */}
       {segmentHorizon === 'aged_out' ? (
         // Aged out (2026-10-29): Grow in On deck tomorrow's place, whatever
         // the switch says — the segment's own question.
@@ -850,6 +845,13 @@ function TaskSegmentRowActions({
           />
         )
       )}
+      <SegmentDeckSlot
+        row={row}
+        actions={actions}
+        timezone={timezone}
+        panel={panel}
+        queueUi={queueUi}
+      />
       {showToday && (
         <TargetTodayButton
           task={task}
@@ -917,8 +919,9 @@ function TaskSegmentRowActions({
 }
 
 /**
- * ON DECK (D2, spec rule 8) on a segment row: the first of the row's
- * controls, before On deck tomorrow and Today (2026-10-21), with the task
+ * ON DECK (D2, spec rule 8) on a segment row: the middle of the row's three
+ * controls, after On deck tomorrow and before the clock (2026-10-31; first
+ * from 2026-10-21), with the task
  * queue on — on a one-off with a target the user picked FADED, asking before
  * it replaces that target (rule 1; plan §5, 2026-10-22). Repeating rows (queue waiting rows, Upcoming) have it
  * too since 2026-10-20: it decks the current occurrence (`offersDeck`). Today's hit target and hover box (`HOVER_BOX`), without its `mr-3`: that

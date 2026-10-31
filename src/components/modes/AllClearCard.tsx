@@ -23,6 +23,12 @@
  * through, "Done 4:12 PM"; moved: an arrow and where it went, "Moved to
  * tomorrow 6:30 AM" (a queue-marked defer has no time of its own: "Moved to
  * tomorrow's queue"). The same rows the counts are (`today-summary`).
+ *
+ * WITH ON DECK STILL TO GO (A1, Trent 2026-10-31, `.tmp/left-side-2/`): the
+ * card shows only when Late, Today AND On deck are all empty. With decks left,
+ * a slim line takes its place instead — "✓ Targets done · 16 on deck"
+ * (`TargetsDoneLine`) — and tapping it opens the same list of what was done or
+ * moved today.
  */
 import { useEffect, useState } from 'react'
 import { ArrowRight, Check, ChevronDown } from 'lucide-react'
@@ -46,21 +52,8 @@ export function AllClearCard({
   now: Date
 }) {
   const dayStart = useDayStart()
-  const [summary, setSummary] = useState<TodaySummary | null>(null)
+  const summary = useTodaySummary(tasks)
   const [open, setOpen] = useState(false)
-  // Re-read when the tasks change: a put-back or an undo moves the counts.
-  useEffect(() => {
-    let live = true
-    fetch('/api/tasks/today-summary')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (live && json?.data) setSummary(json.data)
-      })
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [tasks])
   const counts = summary ? allClearCounts(summary) : null
   const next = allClearNext(tasks, timeSlots, { now, timezone, dayStart })
   return (
@@ -89,15 +82,7 @@ export function AllClearCard({
         </button>
       )}
       {open && summary && (
-        <ul data-all-clear-items className="mt-3 w-full space-y-2.5 text-left opacity-75">
-          {summary.items.map((item) => (
-            <HandledItem
-              key={`${item.kind}:${item.task_id}:${item.happened_at}`}
-              item={item}
-              timezone={timezone}
-            />
-          ))}
-        </ul>
+        <HandledList summary={summary} timezone={timezone} className="mt-3 w-full" />
       )}
       {next && (
         <p
@@ -108,6 +93,102 @@ export function AllClearCard({
         </p>
       )}
     </section>
+  )
+}
+
+/**
+ * THE SLIM LINE (A1, 2026-10-31): Late and Today are empty but On deck is
+ * not — "✓ Targets done · 16 on deck" where the card would be. When today
+ * handled anything, the line is a button that opens the card's list
+ * (`HandledList`); otherwise it is just the line.
+ */
+export function TargetsDoneLine({
+  tasks,
+  onDeck,
+  timezone,
+}: {
+  /** Every task: the summary is re-read when they change. */
+  tasks: Task[]
+  /** How many are on deck (the section's count). */
+  onDeck: number
+  timezone: string
+}) {
+  const summary = useTodaySummary(tasks)
+  const [open, setOpen] = useState(false)
+  const handled = !!summary && summary.items.length > 0
+  const words = (
+    <>
+      <Check className="size-4 shrink-0 text-green-600 dark:text-green-400" aria-hidden />
+      <span className="text-foreground font-medium">Targets done</span>
+      <span className="text-muted-foreground">· {onDeck} on deck</span>
+    </>
+  )
+  return (
+    <div data-targets-done className="animate-in fade-in-0 mb-3 duration-300">
+      {handled ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          data-targets-done-toggle
+          className="hover:bg-foreground/5 -mx-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm transition-colors"
+        >
+          {words}
+          <ChevronDown
+            className={cn(
+              'text-muted-foreground size-3.5 transition-transform',
+              open && 'rotate-180',
+            )}
+            aria-hidden
+          />
+        </button>
+      ) : (
+        <p className="inline-flex items-center gap-1.5 py-1 text-sm">{words}</p>
+      )}
+      {open && summary && <HandledList summary={summary} timezone={timezone} className="mt-2" />}
+    </div>
+  )
+}
+
+/** Today's handled tasks (`GET /api/tasks/today-summary`), re-read when the tasks change. */
+function useTodaySummary(tasks: Task[]): TodaySummary | null {
+  const [summary, setSummary] = useState<TodaySummary | null>(null)
+  // Re-read when the tasks change: a put-back or an undo moves the counts.
+  useEffect(() => {
+    let live = true
+    fetch('/api/tasks/today-summary')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (live && json?.data) setSummary(json.data)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [tasks])
+  return summary
+}
+
+/** The list of what was done or moved today, faded (the card's and the line's). */
+function HandledList({
+  summary,
+  timezone,
+  className,
+}: {
+  summary: TodaySummary
+  timezone: string
+  className?: string
+}) {
+  return (
+    <ul data-all-clear-items className={cn('space-y-2.5 text-left opacity-75', className)}>
+      {summary.items.map((item) => (
+        <HandledItem
+          key={`${item.kind}:${item.task_id}:${item.happened_at}`}
+          item={item}
+          timezone={timezone}
+        />
+      ))}
+    </ul>
   )
 }
 

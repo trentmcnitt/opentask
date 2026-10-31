@@ -263,6 +263,18 @@
        must still fit — and WebView.swift pins the native scroll view too. */
     overflow-x: clip;
   }
+  /* NO SHIFT WHEN A MENU OPENS (Trent's Mac, 2026-10-31). Radix's modal menus
+     and selects lock scrolling (react-remove-scroll-bar): `overflow: hidden`
+     on <body> plus a right margin the scrollbar's width, to make up for the
+     scrollbar going away. Here it never goes away — <html> keeps its room
+     (`scrollbar-gutter: stable`) and, being `overflow-x: clip`, does not hand
+     <body>'s overflow to the viewport — so the margin alone moved the page by
+     a scrollbar's width (15px with always-on scrollbars). More specific than
+     the library's `body[data-scroll-locked]`, so it wins.
+     tests/e2e/menu-no-shift.spec.ts. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
   /* Every enabled button is pressable, so it gets the hand (2026-10-20: Today
      and On deck on the task rows, the pager chevrons, Considered all and Show
      more all showed the arrow — browsers give a <button> `cursor: default`,

@@ -76,6 +76,7 @@ import { formatRRuleCompact } from '@/lib/format-rrule'
 import { priorityTab } from '@/lib/row-corner'
 import { effectiveAttempts, type HorizonValue } from '@/lib/task-segments'
 import { cn } from '@/lib/utils'
+import { SELECTED_ROW } from '@/lib/selected-row'
 import type { Task } from '@/types'
 import { DoneControl } from './DoneControl'
 import { LeanButtons } from './LeanButtons'
@@ -236,7 +237,7 @@ export function LeanRow({
         // The hairline: the border at 40% (Trent, 2026-10-29; it was 60%).
         'group/lean border-border/40 relative flex items-start gap-3 border-b px-1 py-2.5 select-none',
         isSelectionMode && 'cursor-pointer',
-        isSelected && 'bg-accent ring-ring rounded-lg ring-2',
+        isSelected && SELECTED_ROW,
         isKeyboardFocused && !isSelected && 'rounded-lg ring-2 ring-blue-500/50 ring-inset',
         // No outline while the row swipes (`SwipeableRow`'s `data-swiping`):
         // on the moving layer it rode along with the row (Trent, 2026-10-29).

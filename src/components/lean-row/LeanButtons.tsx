@@ -3,7 +3,11 @@
 /**
  * THE LEAN ROW'S BUTTONS (Trent, 2026-10-28, today-mode rounds 4–6):
  *
- *   (deck) (deck tomorrow) (clock)
+ *   (deck tomorrow) (deck) (clock)
+ *
+ * The order (Trent, 2026-10-31): right to left reads soonest to latest — the
+ * clock (target today) rightmost, then On deck today, then On deck tomorrow.
+ * The task queue rows have the same order (`TaskSegmentRow`).
  *
  * ONE TIME BUTTON, the plain clock, no word (the sun is gone). A tap:
  * - untargeted: target today (`TargetTodayButton`, the old Today);
@@ -14,13 +18,14 @@
  * untargeted row, the Defer menu on a targeted one.
  *
  * DESKTOP (a fine pointer): hidden at rest, shown on the row's hover or
- * focus (keyboard focus too: `group-focus-within`). A DECKED row keeps its
- * lit deck icon at rest, PARKED in the rightmost slot (where the clock sits
- * on hover), so "on deck" never floats mid-column; on hover it slides left
- * into the deck slot (180ms ease-out) while deck-tomorrow and the clock fade
- * in after it starts (120ms, 60ms late). Leaving reverses it: the two fade
- * out first, the icon slides back (150ms ease-in). With reduced motion
- * nothing slides: the buttons just appear.
+ * focus (keyboard focus too: `group-focus-within`) — EXCEPT on a DECKED row
+ * (the On deck section's rows, 2026-10-31): its lit deck icon and the clock
+ * are there at all times, so the mouse can stay in one place and click down
+ * the list, and only On deck tomorrow fades in, in its own slot on the far
+ * left. NOTHING MOVES: opacity only, every button in a fixed slot (Trent:
+ * "you go to tap 'On deck today' and it actually moves from under your
+ * mouse… That's never good"). Until 10-31 the lit icon was parked in the
+ * clock's slot and slid left on hover, and the row wobbled as it went.
  *
  * PHONE (a coarse pointer): all three always visible, each a 44px target
  * with no gap between them, pulled up into the row's top padding (`-mt`) so
@@ -29,7 +34,7 @@
  * title.
  */
 import { Clock3 } from 'lucide-react'
-import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
+import { useTaskQueue } from '@/components/PreferencesProvider'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { TargetTodayButton } from '@/components/TargetMenu'
@@ -37,7 +42,7 @@ import type { TaskRowProps } from '@/components/TaskRow'
 import { DeckTomorrowButton } from '@/components/TaskSegmentRow'
 import { useDeferPress } from '@/hooks/useDeferPress'
 import { useTimezone } from '@/hooks/useTimezone'
-import { deckReplaces, offersDeck, todayReplaces } from '@/lib/deck-menu'
+import { deckReplaces, offersDeck } from '@/lib/deck-menu'
 import { clockTap } from '@/lib/lean-clock'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
@@ -54,13 +59,6 @@ const ICON = 'size-[18px]'
  */
 const REVEAL =
   'transition-opacity duration-100 ease-in motion-reduce:transition-none pointer-fine:opacity-0 pointer-fine:group-hover/lean:opacity-100 pointer-fine:group-hover/lean:delay-[60ms] pointer-fine:group-hover/lean:duration-[120ms] pointer-fine:group-hover/lean:ease-out pointer-fine:group-focus-within/lean:opacity-100'
-/**
- * The lit deck icon at rest: two slots right (2 × 34px), in the clock's
- * slot; on hover or focus, home. It slides back a beat after the others
- * start fading.
- */
-const PARK =
-  'transition-transform delay-[60ms] duration-150 ease-in motion-reduce:transition-none pointer-fine:translate-x-[68px] pointer-fine:group-hover/lean:translate-x-0 pointer-fine:group-hover/lean:delay-0 pointer-fine:group-hover/lean:duration-[180ms] pointer-fine:group-hover/lean:ease-[cubic-bezier(0.2,0.8,0.2,1)] pointer-fine:group-focus-within/lean:translate-x-0'
 
 export function LeanButtons({
   task,
@@ -89,20 +87,20 @@ export function LeanButtons({
     >
       {showDeck && (
         <>
-          <OnDeckButton
-            task={task}
-            timezone={timezone}
-            onDeck={deck}
-            replaces={deckReplaces(task, timezone)}
-            className={cn(SLOT, decked ? PARK : REVEAL)}
-            iconClassName={ICON}
-          />
           <DeckTomorrowButton
             task={task}
             onDeck={deck}
             timezone={timezone}
             panel
             className={cn(SLOT, REVEAL)}
+          />
+          <OnDeckButton
+            task={task}
+            timezone={timezone}
+            onDeck={deck}
+            replaces={deckReplaces(task, timezone)}
+            className={cn(SLOT, !decked && REVEAL)}
+            iconClassName={ICON}
           />
         </>
       )}
@@ -112,27 +110,32 @@ export function LeanButtons({
         onTargetAt={onTargetAt}
         onSnooze={onSnooze}
         timeSlots={timeSlots}
+        reveal={!decked}
       />
     </div>
   )
 }
 
-/** The clock: Today on an untargeted row, Defer on a targeted one. */
+/**
+ * The clock: Today on an untargeted row, Defer on a targeted one. `reveal`:
+ * hidden at rest on a fine pointer (a decked row shows it always).
+ */
 function LeanTimeButton({
   task,
   isOverdue,
   onTargetAt,
   onSnooze,
   timeSlots,
+  reveal,
 }: {
   task: Task
   isOverdue: boolean
   onTargetAt?: TaskRowProps['onTargetAt']
   onSnooze: TaskRowProps['onSnooze']
   timeSlots: NonNullable<TaskRowProps['timeSlots']>
+  reveal: boolean
 }) {
   const timezone = useTimezone()
-  const dayStart = useDayStart()
   // `clockTap` is the rule: Today on an untargeted row; else the Defer
   // button, whose press defers a due target and opens the menu otherwise.
   if (onTargetAt && clockTap(task, isOverdue) === 'target-today') {
@@ -142,14 +145,24 @@ function LeanTimeButton({
         timezone={timezone}
         onTargetToday={(t) => onTargetAt(t)}
         onTargetAt={(t, at) => onTargetAt(t, at)}
-        replaces={todayReplaces(task, timezone, dayStart)}
-        className={cn(SLOT, REVEAL)}
+        // No "Replaces On deck today" confirm (Trent, 2026-10-31): the only
+        // row it asked on is a decked one, whose lit deck icon now shows at
+        // all times — the warning added nothing. The tap targets it today
+        // and takes it off deck, with Undo.
+        replaces={null}
+        className={cn(SLOT, reveal && REVEAL)}
         face={<Clock3 className={ICON} aria-hidden />}
       />
     )
   }
   return (
-    <LeanDeferButton task={task} isOverdue={isOverdue} onSnooze={onSnooze} timeSlots={timeSlots} />
+    <LeanDeferButton
+      task={task}
+      isOverdue={isOverdue}
+      onSnooze={onSnooze}
+      timeSlots={timeSlots}
+      reveal={reveal}
+    />
   )
 }
 
@@ -159,11 +172,13 @@ function LeanDeferButton({
   isOverdue,
   onSnooze,
   timeSlots,
+  reveal,
 }: {
   task: Task
   isOverdue: boolean
   onSnooze: TaskRowProps['onSnooze']
   timeSlots: NonNullable<TaskRowProps['timeSlots']>
+  reveal: boolean
 }) {
   const { menuOpen, setMenuOpen, press } = useDeferPress({
     taskId: task.id,
@@ -205,7 +220,7 @@ function LeanDeferButton({
         className={cn(
           'text-muted-foreground hover:text-foreground hover:bg-foreground/5 touch-manipulation rounded-md select-none [-webkit-touch-callout:none]',
           SLOT,
-          REVEAL,
+          reveal && REVEAL,
         )}
       >
         <Clock3 className={ICON} aria-hidden />

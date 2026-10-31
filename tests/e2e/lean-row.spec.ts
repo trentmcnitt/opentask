@@ -11,7 +11,7 @@
  * still the blue target chip; the red flag; the created date; no "ago"), its
  * buttons (done, On deck, the clock, each with Undo; the clock's defer and
  * menu on a targeted row; hidden at rest with a mouse and shown on hover or
- * focus, a decked row's lit icon parked right; always shown and thumb-sized
+ * focus, a decked row's lit deck and clock always shown; always shown and thumb-sized
  * on a touch screen; still with reduced motion), details on double-click, a
  * swipe to done, and the setting itself. The task-queue switch is on for the file (On deck
  * needs it) and off after it.
@@ -642,7 +642,7 @@ test.describe('Lean row · the clock on a targeted row', () => {
 test.describe('Lean row · buttons with a mouse', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('hidden at rest, shown on hover and on focus; a decked row keeps its lit icon, parked right, and slides it home on hover', async ({
+  test('hidden at rest, shown on hover and on focus; a decked row shows its lit deck and the clock at rest, and nothing moves on hover', async ({
     authenticatedPage: page,
   }) => {
     await page.addInitScript(LEAN)
@@ -660,7 +660,7 @@ test.describe('Lean row · buttons with a mouse', () => {
       // At rest: nothing.
       await expect.poll(() => opacity(clock)).toBe(0)
       await expect.poll(() => opacity(p.locator('[data-on-deck]'))).toBe(0)
-      // Hover: all three.
+      // Hover: all three, left to right deck tomorrow · deck · clock.
       await p.locator('[data-lean-title]').hover()
       await expect.poll(() => opacity(clock)).toBe(1)
       await expect.poll(() => opacity(p.locator('[data-deck-tomorrow]'))).toBe(1)
@@ -672,24 +672,28 @@ test.describe('Lean row · buttons with a mouse', () => {
       await expect.poll(() => opacity(clock)).toBe(1)
       await p.evaluate((el) => (el as HTMLElement).blur())
 
-      // A decked row at rest: the lit icon alone, in the clock's slot.
+      // A decked row at rest (Trent, 2026-10-31): the lit deck icon and the
+      // clock, each in its own slot; On deck tomorrow fades in on hover in
+      // the far-left slot, and NOTHING MOVES — the button under the pointer
+      // stays put.
       const d = row(page, decked)
       const deck = d.locator('[data-on-deck]')
       const dClock = d.locator('[data-target-today]')
+      const dTomorrow = d.locator('[data-deck-tomorrow]')
       await expect(deck).toHaveAttribute('data-on-deck-active', '')
       await expect.poll(() => opacity(deck)).toBe(1)
-      await expect.poll(() => opacity(dClock)).toBe(0)
-      const x = async (l: Locator) => (await l.boundingBox())!.x
-      await expect.poll(async () => Math.round((await x(deck)) - (await x(dClock)))).toBe(0)
-      // Hover: it slides home, left of deck-tomorrow and the clock.
-      await d.locator('[data-lean-title]').hover()
       await expect.poll(() => opacity(dClock)).toBe(1)
-      await expect
-        .poll(async () =>
-          Math.round((await x(d.locator('[data-deck-tomorrow]'))) - (await x(deck))),
-        )
-        .toBe(34)
-      expect(await x(dClock)).toBeGreaterThan(await x(d.locator('[data-deck-tomorrow]')))
+      await expect.poll(() => opacity(dTomorrow)).toBe(0)
+      const x = async (l: Locator) => (await l.boundingBox())!.x
+      const rest = [await x(dTomorrow), await x(deck), await x(dClock)]
+      expect(rest[0]).toBeLessThan(rest[1])
+      expect(rest[1]).toBeLessThan(rest[2])
+      await d.locator('[data-lean-title]').hover()
+      await expect.poll(() => opacity(dTomorrow)).toBe(1)
+      expect([await x(dTomorrow), await x(deck), await x(dClock)]).toEqual(rest)
+      for (const b of [deck, dClock, dTomorrow]) await expect(b).toHaveCSS('transform', 'none')
+      // The clock on a decked row asks nothing: it targets today at once.
+      await expect(dClock).not.toHaveAttribute('data-replaces', '')
     } finally {
       await cleanUp(page, [plain, decked])
     }
