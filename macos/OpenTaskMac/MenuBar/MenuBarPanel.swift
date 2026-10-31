@@ -136,7 +136,9 @@ struct MenuBarPanel: View {
     /// keeps its PROJECT colour (the panel's only project cue — not a
     /// priority mark, so the lean row's neutral square isn't copied here).
     /// The panel draws no deadline, so no flag or countdown.
-    private func row(_ task: TaskDTO, isOverdue: Bool) -> some View {
+    private func row(_ task: TaskDTO, isOverdue listOverdue: Bool) -> some View {
+        // A queue-marked target ("Queue tomorrow") is never over target.
+        let isOverdue = listOverdue && !task.isQueueMarked
         let busy = model.busyIds.contains(task.id)
         let state = LeanRow.state(task, isOverdue: isOverdue, now: model.now, day: DayStartStore.current)
         return HStack(alignment: .top, spacing: 8) {
@@ -165,12 +167,12 @@ struct MenuBarPanel: View {
                         .accessibilityLabel(Text(LeanRowStyle.spokenTitle(task.title, priority: task.priority)))
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let due = task.dueDate {
+                    if task.dueDate != nil {
                         // The attempts count (spec §7, 2026-10-12): the
                         // server's "3×" folded into the time, "Thu 9:00 AM ·
                         // 3×" — the Tasks widget's form: grey, semibold, no
                         // pill. Label only (the web's 3× offer stays in the app).
-                        let time = Text(dueText(due, isOverdue: isOverdue))
+                        let time = Text(dueText(task))
                             .foregroundStyle(LeanRowStyle.target(colorScheme, isOverdue: isOverdue))
                         Group {
                             if let badge = TargetAge.attemptsBadge(task) {
@@ -185,8 +187,8 @@ struct MenuBarPanel: View {
                         .font(.caption)
                         .accessibilityLabel(Text(
                             TargetAge.attemptsBadge(task) == nil
-                                ? dueText(due, isOverdue: isOverdue)
-                                : "\(dueText(due, isOverdue: isOverdue)), \(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")"
+                                ? dueText(task)
+                                : "\(dueText(task)), \(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")"
                         ))
                     }
                 }
@@ -274,8 +276,9 @@ struct MenuBarPanel: View {
         }
     }
 
-    private func dueText(_ due: Date, isOverdue: Bool) -> String {
-        DueLabel.parts(for: due, now: model.now, isOverdue: isOverdue, day: DayStartStore.current).plainString
+    /// The target's words (`DueLabel.parts(for: task…)`): "Queue tomorrow" for a queue-marked one.
+    private func dueText(_ task: TaskDTO) -> String {
+        DueLabel.parts(for: task, now: model.now, day: DayStartStore.current)?.plainString ?? ""
     }
 
     private func nextPeriodHelp(for task: TaskDTO) -> String {

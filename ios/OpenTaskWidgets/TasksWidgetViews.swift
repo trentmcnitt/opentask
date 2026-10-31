@@ -595,8 +595,7 @@ private struct TasksListView: View {
 
     /// `task`'s due label, split — `nil` when it has no due date.
     private func dueParts(for task: TaskDTO) -> WidgetTheme.DueLabelParts? {
-        guard let due = task.dueDate else { return nil }
-        return WidgetTheme.dueLabelParts(for: due, now: entry.date, isOverdue: task.isOverdue(now: entry.date))
+        WidgetTheme.dueLabelParts(for: task, now: entry.date)
     }
 
     @ViewBuilder
@@ -1360,10 +1359,8 @@ enum AttemptsInTime {
     /// The whole due label as VoiceOver reads it: the due words, then "over
     /// target on 3 days" and "past deadline" when shown.
     static func spokenDueLabel(for task: TaskDTO, now: Date) -> String {
-        guard let due = task.dueDate else { return "" }
-        var words = [
-            WidgetTheme.dueLabelParts(for: due, now: now, isOverdue: task.isOverdue(now: now)).plainString,
-        ]
+        guard let parts = WidgetTheme.dueLabelParts(for: task, now: now) else { return "" }
+        var words = [parts.plainString]
         if TargetAge.attemptsBadge(task) != nil {
             words.append("\(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
         }

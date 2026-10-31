@@ -97,6 +97,15 @@ enum DueLabel {
     /// date agree — with an 11 PM start, at Sat 12:30 a Sat 23:30 target is
     /// on Sunday's list but reads "Sat", never "Tomorrow". The far ladder
     /// (a week or more) is the target's own date, as on the web's row.
+    /// A TASK's label: its target's `parts(for:…)`, or — a queue-marked
+    /// target (`TaskDTO.isQueueMarked`, Trent 2026-10-31) — "Queue tomorrow"
+    /// alone, one part, never over. nil when it has no target.
+    static func parts(for task: TaskDTO, now: Date = Date(), day: OpenTaskDay) -> Parts? {
+        guard let due = task.dueDate else { return nil }
+        if task.isQueueMarked { return Parts(dayWord: TaskWording.queueTomorrow, time: nil) }
+        return parts(for: due, now: now, isOverdue: task.isOverdue(now: now), day: day)
+    }
+
     static func parts(for due: Date, now: Date = Date(), isOverdue: Bool, day: OpenTaskDay) -> Parts {
         let isDateOnly = day.minuteOfDay(due) == 0
         guard isDateOnly else {

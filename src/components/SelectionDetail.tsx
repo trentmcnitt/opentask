@@ -8,6 +8,7 @@ import { useDayStart } from '@/components/PreferencesProvider'
 import { useProjects } from '@/components/ProjectsProvider'
 import { getPriorityOption } from '@/lib/priority'
 import { momentChipWords } from '@/lib/moment-chip-words'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import { horizonOf } from '@/lib/row-corner'
 import { HORIZON_LABELS, HORIZON_WORD, UNSET_HORIZON_WORDS } from '@/lib/task-model-words'
 import type { HorizonValue } from '@/lib/task-segments'
@@ -99,7 +100,7 @@ export function SelectionDetailLines({
     </span>,
     task.due_at && (
       <span key="target" data-selection-detail-target>
-        {momentChipWords(task.due_at, timezone, dayStart)}
+        {queueMarked(task) ? QUEUE_TOMORROW : momentChipWords(task.due_at, timezone, dayStart)}
       </span>
     ),
     task.deadline_at && (

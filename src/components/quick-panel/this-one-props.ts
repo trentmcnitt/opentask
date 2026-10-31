@@ -18,6 +18,7 @@ import {
   upcomingLeadWords,
 } from '@/lib/editor-target-labels'
 import { openTaskDayOf } from '@/lib/opentask-day'
+import { QUEUE_TOMORROW } from '@/lib/queue-tomorrow'
 import { bulkEveryTimeGate, draftEnd, draftRule } from '@/lib/every-time'
 import type { StagedSchedule } from '@/hooks/useEveryTime'
 import type {
@@ -176,6 +177,8 @@ export function deadlineRowFor({
 export function targetValueFor(s: {
   timezone: string
   queued: boolean
+  /** The saved target is a queue-marked one (`queueMarked`): "Queue tomorrow". */
+  queueMarked?: boolean
   dateDirty: boolean
   none: { dirty: boolean } | null
   header: string
@@ -204,6 +207,19 @@ export function targetValueFor(s: {
   // the "This is the … one" line); the controls start from now.
   if (s.queued && !s.dateDirty) return { kind: 'none', dirty: false }
   if (s.none) return { kind: 'none', dirty: s.none.dirty }
+  // A defer that landed past the rollover (2026-10-31): the saved target
+  // reads "Queue tomorrow", not its 3:00 AM moment, until another is staged.
+  if (s.queueMarked && !s.dateDirty) {
+    return {
+      kind: 'date',
+      header: QUEUE_TOMORROW,
+      relative: '',
+      dirty: false,
+      past: false,
+      delta: null,
+      capped: null,
+    }
+  }
   if (s.relativeTarget) {
     const r = s.relativeTarget
     return {

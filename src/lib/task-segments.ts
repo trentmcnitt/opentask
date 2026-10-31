@@ -55,6 +55,7 @@ import {
   targetOpenTaskDay,
 } from '@/lib/opentask-day'
 import { NIGHT_SUFFIX } from '@/lib/night-day'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import type { RepeatAnchor } from '@/types'
 
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
@@ -2352,7 +2353,10 @@ export function upcomingState(
  * so the row can make the target a chip.
  */
 export function upcomingGap(
-  task: Pick<TargetFields, 'due_at' | 'deadline_at'> & { on_deck_day?: string | null },
+  task: Pick<TargetFields, 'due_at' | 'deadline_at'> & {
+    on_deck_day?: string | null
+    queue_mark?: boolean
+  },
   timezone: string,
   /**
    * The user's day boundary (`useDayStart`): L9's night rule (`nightDay`,
@@ -2382,6 +2386,10 @@ export function upcomingGap(
   const deck = task.on_deck_day ? parseDeckDay(task.on_deck_day, timezone) : null
   if (deck) {
     target = tomorrow ? 'On deck tomorrow' : `On deck ${deck.toFormat('ccc LLL d')}`
+  } else if (queueMarked(task)) {
+    // A defer that landed past the rollover (2026-10-31): "Queue tomorrow",
+    // never "Target 3:00 AM" — the rollover pulls it into tomorrow's queue.
+    target = QUEUE_TOMORROW
   } else if (task.due_at) {
     const time = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone).toFormat('h:mm a')
     // A Tomorrow row's 1:00 AM is tomorrow NIGHT's, not tonight's: said.

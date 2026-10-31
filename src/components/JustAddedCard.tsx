@@ -6,6 +6,7 @@ import { OnDeckIcon } from '@/components/icons/OnDeckIcon'
 import { cn } from '@/lib/utils'
 import { LABEL_COLORS } from '@/lib/label-colors'
 import { formatDueTimeParts } from '@/lib/format-date'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import { getPriorityOption } from '@/lib/priority'
 import {
   formatJustAddedLabel,
@@ -255,7 +256,9 @@ function JustAddedRow({
 /** "Tomorrow 9:00 AM · High" — what the AI (or the title) set; null when nothing. */
 function entryDetails(task: Task, timezone: string, dayStart: string): string | null {
   const parts: string[] = []
-  if (task.due_at) {
+  if (queueMarked(task)) {
+    parts.push(QUEUE_TOMORROW)
+  } else if (task.due_at) {
     const due = formatDueTimeParts(task.due_at, timezone, dayStart)
     parts.push(due.absolute ? `${due.relative} · ${due.absolute}` : due.relative)
   }

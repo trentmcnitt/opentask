@@ -10,6 +10,7 @@ import type { SortOption } from '@/lib/task-grouping'
 import { formatDueTimeParts } from '@/lib/format-date'
 import { formatRRule, withRepeatEnd } from '@/lib/format-rrule'
 import { getPriorityOption } from '@/lib/priority'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import { ageLabel, attemptsLabel, attemptsOffer, repeatRemaining } from '@/lib/task-segments'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 
@@ -158,7 +159,9 @@ function formatTaskMeta(
   const prefix = projectName ? ` [${projectName}]` : ''
   const parts: string[] = []
 
-  if (task.due_at) {
+  if (queueMarked(task)) {
+    parts.push(QUEUE_TOMORROW)
+  } else if (task.due_at) {
     parts.push(formatDueTimeParts(task.due_at, timezone, dayStart).relative)
   }
 

@@ -248,7 +248,9 @@ extension TaskDTO {
                 ? "On deck \(date.shortWeekday) \(date.shortMonthDay)"
                 : "On deck \(date.shortMonthDay)"
         }
-        let target = deck ?? (section == .tomorrow
+        // A queue-marked target (2026-10-31): "Queue tomorrow", no time.
+        let queued = isQueueMarked ? TaskWording.queueTomorrow : nil
+        let target = deck ?? queued ?? (section == .tomorrow
             ? dueDate.map { TargetAge.tomorrowTimeText($0, calendar: calendar, dayStart: dayStart) }
             : dueDate.map(day))
         var deadline: String?
@@ -330,6 +332,11 @@ enum TaskWording {
 
     /// The past-deadline marker's word.
     static let pastDeadline = "Past deadline"
+
+    /// A queue-marked target's words (Trent, 2026-10-31; `TaskDTO.isQueueMarked`,
+    /// the web's `QUEUE_TOMORROW`): a defer that landed past the next rollover
+    /// says this instead of "Tomorrow 3:00 am".
+    static let queueTomorrow = "Queue tomorrow"
 
     /// A task segment's sweep: every row still waiting off today's list, back
     /// tomorrow (Trent, 2026-10-30: the queue's "Defer all" renamed — "Defer"
