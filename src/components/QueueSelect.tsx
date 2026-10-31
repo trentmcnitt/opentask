@@ -5,6 +5,9 @@ import { Check, CheckCheck, FileText, Forward, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
 import { DeckVerb, MoreVerb, TargetVerb } from '@/components/SelectionBarVerbs'
+import { BarHorizonControl, SelectionDetailLines } from '@/components/SelectionDetail'
+import { requestShowInList } from '@/lib/show-in-list'
+import type { HorizonValue } from '@/lib/task-segments'
 import { NOT_TODAY } from '@/lib/task-model-words'
 import { useBulkDeck } from '@/hooks/useBulkDeck'
 import type { TaskSegmentActions } from '@/hooks/useTaskSegments'
@@ -34,6 +37,21 @@ export const QueueSelectContext = createContext<QueueSelectState | null>(null)
 /** The select mode around a row, or null when it is off (or not the card). */
 export function useQueueSelect(): QueueSelectState | null {
   return useContext(QueueSelectContext)
+}
+
+/**
+ * A HOLD ENTERS SELECT MODE (L1, Trent 2026-10-30): a long-press on a card
+ * row turns the mode on with that row picked — the long-press bubble is
+ * retired there; the bar's details (`SelectionDetailLines`) took its place.
+ * The main list's long-press already selected, so a hold means one thing
+ * everywhere. Provided by the card whether the mode is on or off; null off
+ * the card (/reminders' rows keep their bubble: there is no select mode
+ * there to enter).
+ */
+export const QueueSelectEnterContext = createContext<((id: number) => void) | null>(null)
+
+export function useQueueSelectEnter(): ((id: number) => void) | null {
+  return useContext(QueueSelectEnterContext)
 }
 
 /**
@@ -71,6 +89,10 @@ export function useQueueSelectMode({
     [],
   )
   const clear = useCallback(() => setSelected(new Set()), [])
+  const enter = useCallback((id: number) => {
+    setOn(true)
+    setSelected((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }, [])
   const leave = useCallback(() => {
     setOn(false)
     setSelected(new Set())
@@ -104,6 +126,16 @@ export function useQueueSelectMode({
           leave()
         }}
         onDelete={() => act(() => actions.removeMany(ids))}
+        // The horizon keeps the picks: the change is drawn on the rows they are.
+        onHorizon={(h) => void actions.horizonMany(ids, h)}
+        onOpen={() => {
+          actions.openDetails(picked[0])
+          leave()
+        }}
+        onShowInList={() => {
+          requestShowInList(picked[0].id)
+          leave()
+        }}
         onRemoveTargets={(some) => act(() => actions.removeTargetsMany(some))}
         onSkipUntil={async (some, until) => {
           await actions.skipUntilMany(some, until)
@@ -115,6 +147,7 @@ export function useQueueSelectMode({
   return {
     on,
     toggleMode: () => (on ? leave() : setOn(true)),
+    enter,
     state,
     bar,
   }
@@ -159,6 +192,9 @@ export function QueueSelectionBar({
   onRemoveTargets,
   onSkipUntil,
   onCancel,
+  onHorizon,
+  onOpen,
+  onShowInList,
 }: {
   selectedTasks: Task[]
   timezone: string
@@ -172,13 +208,30 @@ export function QueueSelectionBar({
   onRemoveTargets: (ids: number[]) => void
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   onCancel: () => void
+  onHorizon: (horizon: HorizonValue | null) => void
+  onOpen: () => void
+  onShowInList: () => void
 }) {
   const count = selectedTasks.length
+  const one = count === 1 ? selectedTasks[0] : null
   return (
     <SelectionBarShell
       count={count}
       onClear={onCancel}
       testAttr="data-queue-selection-bar"
+      title={one?.title}
+      detail={
+        one && (
+          <SelectionDetailLines
+            task={one}
+            timezone={timezone}
+            onHorizon={onHorizon}
+            onOpen={onOpen}
+            onShowInList={onShowInList}
+          />
+        )
+      }
+      aside={!one && <BarHorizonControl tasks={selectedTasks} onChange={onHorizon} />}
       more={
         <MoreVerb
           selectedTasks={selectedTasks}

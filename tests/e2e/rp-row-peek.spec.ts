@@ -249,7 +249,8 @@ test.describe('desktop', () => {
       await expect(r).toHaveAttribute('data-segment-state', 'waiting')
       expect(await deckOf(page, id)).toBeNull()
 
-      // The dashboard's right panel: the same rows, the same bubble.
+      // The dashboard's queue card: the same rows, but a hold SELECTS the row
+      // (L1, 2026-10-30) and the select bar carries the bubble's details.
       await page.setViewportSize({ width: 1600, height: 900 })
       await page.goto('/')
       const card = page.locator('[data-tasks-panel]')
@@ -263,9 +264,12 @@ test.describe('desktop', () => {
       }
       await expect(dashRow).toBeVisible()
       await expect(dashRow.locator('[data-segment-details]')).toHaveCount(0)
-      await holdUntil(dashRow.getByText(title), () => expect(bubble(page, id)).toBeVisible())
+      const bar = page.locator('[data-queue-selection-bar]')
+      await holdUntil(dashRow.getByText(title), () => expect(bar).toBeVisible())
+      await expect(bubble(page, id)).toHaveCount(0)
+      await expect(bar.locator('[data-selection-title]')).toContainText(title)
       await expect(dashRow).toHaveAttribute('data-segment-state', 'waiting')
-      await bubble(page, id).getByRole('button', { name: 'Open' }).click()
+      await bar.locator('[data-selection-open]').click()
       await expect(page.getByRole('dialog', { name: 'Quick Actions' })).toContainText(title)
     } finally {
       await trash(page, ids)

@@ -46,9 +46,16 @@ const bubble = (page: Page, id: number) => page.locator(`[data-task-peek="${id}"
 const listRow = (page: Page, id: number) => page.locator(`#task-row-${id}`)
 const allMode = (page: Page) => page.locator('[data-mode-switch] [data-mode="all"]')
 
-/** Hold the row open, then press the bubble's Show in list. */
+/**
+ * Hold the row, then press Show in list: on the queue card the hold selects
+ * the row and the select bar shows its details (L1, 2026-10-30); on
+ * /reminders it opens the row's bubble.
+ */
 async function showInList(page: Page, row: Locator, id: number, title: string) {
   await expect(row).toBeVisible()
+  const onCard = (await row.locator('xpath=ancestor::*[@data-tasks-panel]').count()) > 0
+  const bar = page.locator('[data-queue-selection-bar]')
+  const opened = onCard ? bar : bubble(page, id)
   // Held near the title's start: on a phone its centre can sit under the
   // row's buttons (the title wraps around them).
   const text = row.getByText(title)
@@ -57,14 +64,19 @@ async function showInList(page: Page, row: Locator, id: number, title: string) {
   await page.mouse.move(box.x + 12, box.y + 8)
   await page.mouse.down()
   try {
-    await expect(bubble(page, id)).toBeVisible()
+    await expect(opened).toBeVisible()
   } finally {
     await page.mouse.up()
   }
-  const b = bubble(page, id)
-  await expect(b.getByRole('button', { name: 'Open' })).toBeVisible()
-  await b.getByRole('button', { name: 'Show in list' }).click()
-  await expect(b).toHaveCount(0)
+  if (onCard) {
+    await expect(bar.locator('[data-selection-title]')).toContainText(title)
+    await expect(bar.locator('[data-selection-open]')).toBeVisible()
+    await bar.locator('[data-selection-show-in-list]').click()
+  } else {
+    await expect(opened.getByRole('button', { name: 'Open' })).toBeVisible()
+    await opened.getByRole('button', { name: 'Show in list' }).click()
+  }
+  await expect(opened).toHaveCount(0)
 }
 
 test.describe.configure({ mode: 'serial' })

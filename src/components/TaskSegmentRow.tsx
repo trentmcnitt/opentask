@@ -21,7 +21,7 @@ import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
-import { useQueueSelect } from '@/components/QueueSelect'
+import { useQueueSelect, useQueueSelectEnter } from '@/components/QueueSelect'
 import { requestShowInList, showInListHref } from '@/lib/show-in-list'
 import { fromPortal, useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
@@ -345,8 +345,13 @@ export function TaskSegmentRow({
     if (considered || seenInNet) return
     void (aged ? actions.keep(task) : actions.consider(task))
   }
+  // On the queue card a hold enters select mode with this row picked (L1,
+  // 2026-10-30, `QueueSelectEnterContext`); elsewhere it opens the bubble.
+  const enterSelect = useQueueSelectEnter()
   const rowProps = useSegmentRowPress({
-    onPeek: (viaKeyboard) => actions.openPeek(task, viaKeyboard),
+    onPeek: (viaKeyboard) =>
+      enterSelect ? enterSelect(task.id) : actions.openPeek(task, viaKeyboard),
+    holdSelects: !!enterSelect,
     onConsider: pick ? pick.toggle : consider,
     enabled: !considered,
     // A seen safety-net row: a tap changes nothing, so it doesn't say "tap".
@@ -624,6 +629,11 @@ function SegmentRowCircle({
 /** A seen safety-net row's (a tap changes nothing there). */
 export const ROW_PEEK_ONLY_DESCRIPTION =
   'Seen today; the deadline is close. Hold, right-click or press Command-Enter for details.'
+/** The queue card's rows, where a hold selects (L1). */
+const ROW_SELECT_DESCRIPTION =
+  'Tap to mark considered. Hold, right-click or press Command-Enter to select.'
+const ROW_SELECT_ONLY_DESCRIPTION =
+  'Seen today; the deadline is close. Hold, right-click or press Command-Enter to select.'
 
 /** Read to assistive tech on every waiting row: the peek's ways in. */
 export const ROW_PEEK_DESCRIPTION =
@@ -657,8 +667,11 @@ function useSegmentRowPress({
   onConsider,
   enabled,
   considerable = true,
+  holdSelects = false,
 }: {
   onPeek: (viaKeyboard: boolean) => void
+  /** The hold selects the row instead (the queue card): the description says so. */
+  holdSelects?: boolean
   onConsider: () => void
   enabled: boolean
   /** A tap still considers (not a seen safety-net row): the description says so. */
@@ -673,8 +686,12 @@ function useSegmentRowPress({
     'aria-keyshortcuts': enabled ? 'Meta+Enter Control+Enter' : undefined,
     'aria-description': enabled
       ? considerable
-        ? ROW_PEEK_DESCRIPTION
-        : ROW_PEEK_ONLY_DESCRIPTION
+        ? holdSelects
+          ? ROW_SELECT_DESCRIPTION
+          : ROW_PEEK_DESCRIPTION
+        : holdSelects
+          ? ROW_SELECT_ONLY_DESCRIPTION
+          : ROW_PEEK_ONLY_DESCRIPTION
       : undefined,
     onClick: (e: React.MouseEvent<HTMLLIElement>) => {
       // A click from a menu this row renders in a portal is not a tap on it

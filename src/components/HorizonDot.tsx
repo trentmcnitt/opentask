@@ -73,7 +73,8 @@ export function HorizonMenuContent({
   align = 'end',
   unset = true,
 }: {
-  value: HorizonValue | null
+  /** 'mixed': several tasks with different horizons — nothing is marked (the select bar). */
+  value: HorizonValue | null | 'mixed'
   onChange: (horizon: HorizonValue | null) => void
   align?: 'start' | 'end'
   /** False: no "Unset" choice (Aged out's Grow menu: unsetting is not a grow). */
@@ -93,7 +94,7 @@ export function HorizonMenuContent({
     >
       <DropdownMenuLabel>{HORIZON_WORD}</DropdownMenuLabel>
       <DropdownMenuRadioGroup
-        value={value ?? 'unset'}
+        value={value === 'mixed' ? '' : (value ?? 'unset')}
         onValueChange={(v) => onChange(v === 'unset' ? null : (v as HorizonValue))}
       >
         {HORIZON_ORDER.map((h) => (
