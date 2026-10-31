@@ -23,7 +23,9 @@
  *   paint of the data — no visible jump from the top — and stays pinned there
  *   while the cards above it load and grow, until the user touches, scrolls
  *   or types. Not with a deep link (`deepLinked`), which has a place of its
- *   own to go. Later switches to the Dashboard never scroll (2026-10-29).
+ *   own to go; the Reminders widget's general tap (`?focus=reminders`) lands
+ *   on the Reminders card instead (`focusedCard`). Later switches to the
+ *   Dashboard never scroll (2026-10-29).
  * - A RE-TAP of the Dashboard tab (revised by Trent the same day, after using
  *   it: "pressing Dashboard to get to the tasks should only happen if you're
  *   scrolled all the way to the top… or if you tap it while you've scrolled
@@ -121,25 +123,73 @@ function deepLinked(): boolean {
 }
 
 /**
+ * THE WIDGET'S GENERAL TAP (Trent, 2026-10-31: "when you tap the widget it
+ * opens to reminders panel (so just slightly scrolled down from the top) on
+ * the dashboard page instead of the reminders tab"): the Reminders widget's
+ * background, 2×2 and Lock Screen taps load `/?focus=reminders`
+ * (`DeepLinkRouter.remindersCardPath`), and the first visit lands on the
+ * Reminders card instead of the tasks — whatever page the widget showed (the
+ * task queue's too: always the Reminders card, the simplest). Item taps keep
+ * the Reminders tab. On a phone; a desktop shows the card at the top as it is.
+ */
+const FOCUS_PARAM = 'focus'
+function focusedCard(): 'reminders' | null {
+  const ask = (search: string) => new URLSearchParams(search).get(FOCUS_PARAM)
+  const asked = ask(window.location.search) ?? (launch?.path === '/' ? ask(launch.search) : null)
+  return asked === 'reminders' ? 'reminders' : null
+}
+
+/** The drawn Reminders card's scroll position on its landing line (`scroll-below-header`). */
+function remindersScrollY(): number | null {
+  const card = [...document.querySelectorAll<HTMLElement>('[data-reminders-panel]')].find(
+    (el) => el.getClientRects().length > 0,
+  )
+  if (!card) return null
+  const landing = parseFloat(getComputedStyle(card).scrollMarginTop) || 0
+  const at = card.getBoundingClientRect().top + window.scrollY - landing
+  const max = document.documentElement.scrollHeight - window.innerHeight
+  return Math.max(0, Math.min(at, max))
+}
+
+/**
  * THE FIRST VISIT'S LANDING (see the header): called from a layout effect on
  * the dashboard's first render with data, so the jump happens before that
- * render is painted. Then PINNED: as the cards above load and the page grows
- * (a `ResizeObserver` on <html>), the tasks are put back on their line —
- * until the first touch, wheel, press or key (a tab re-tap is a press too),
- * or any scroll that isn't the pin's own (the app's jumps, a scrollbar drag),
- * after which the page is the user's. Returns the unpin, for the effect's
- * cleanup.
+ * render is painted — on the tasks, or with `?focus=reminders` (the widget's
+ * general tap) on the Reminders card; nowhere with another deep link. Then
+ * PINNED: as the cards load and the page grows (a `ResizeObserver` on
+ * <html>), the target is put back on its line — until the first touch,
+ * wheel, press or key (a tab re-tap is a press too), or any scroll that isn't
+ * the pin's own (the app's jumps, a scrollbar drag), after which the page is
+ * the user's. Returns the unpin, for the effect's cleanup.
  */
-export function landOnTasksOnce(): () => void {
+export function landOnce(): () => void {
   if (landed) return () => {}
   landed = true
-  if (deepLinked() || !dashboardPhoneLayout()) return () => {}
+  const focus = focusedCard()
+  if (focus && new URLSearchParams(window.location.search).has(FOCUS_PARAM)) {
+    const params = new URLSearchParams(window.location.search)
+    params.delete(FOCUS_PARAM)
+    const rest = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      '',
+      window.location.pathname + (rest ? `?${rest}` : ''),
+    )
+  }
+  if (!dashboardPhoneLayout()) return () => {}
+  if (focus === 'reminders') return pinTo(remindersScrollY)
+  if (deepLinked()) return () => {}
+  return pinTo(tasksScrollY)
+}
+
+/** Put the page at `target()` and keep it there until the page is the user's (see `landOnce`). */
+function pinTo(target: () => number | null): () => void {
   // Where the pin last put the page: a scroll anywhere else is not the
   // pin's — a jump of the app's own (a filter's, a link's) or the user's —
   // and ends the pin.
   let placed = window.scrollY
   const place = () => {
-    const at = tasksScrollY()
+    const at = target()
     if (at !== null && Math.abs(window.scrollY - at) > 0.5) {
       placed = at
       window.scrollTo({ top: at, behavior: 'instant' })
