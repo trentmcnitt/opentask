@@ -173,7 +173,17 @@ export function OptionMenu({
       <>
         {children}
         <Sheet open={open} onOpenChange={onOpenChange}>
-          <SheetContent side="bottom" className="rounded-t-2xl" showCloseButton={false}>
+          {/* Nothing in it is selectable (Trent, 2026-10-30): the menu opens
+              from a HOLD (the row's clock), under the finger that is still
+              down, and iOS carried that long press on into a text selection
+              of the options ("Copy · Look Up · Translate"). The next tap then
+              went to the selection, not the option, and the press leaked on
+              to the row below — the task's details opened over the defer. */}
+          <SheetContent
+            side="bottom"
+            className="rounded-t-2xl select-none [-webkit-touch-callout:none]"
+            showCloseButton={false}
+          >
             <SheetHeader>
               <SheetTitle>{title}</SheetTitle>
               <SheetDescription className="sr-only">Choose when</SheetDescription>

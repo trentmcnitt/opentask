@@ -99,6 +99,17 @@ struct WebView: UIViewRepresentable {
         webView.isInspectable = true
         #endif
 
+        // The app never scrolls sideways (2026-10-30). One box wider than the
+        // screen — a task title ending in a long URL — let Trent pan the whole
+        // dashboard left and right, even with the page's `overflow-x: clip`.
+        // The web side fixes the box (TITLE_TAIL) and clips html and body; this
+        // is the native half: no horizontal bounce, and the offset pinned to
+        // rest in `scrollViewDidScroll`. Pinch zoom is off (layout.tsx's
+        // viewport), so there is no zoomed page to pan across.
+        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.delegate = context.coordinator
+
         // Pull-to-refresh
         let refreshControl = UIRefreshControl()
         refreshControl.addTarget(
@@ -171,7 +182,7 @@ struct WebView: UIViewRepresentable {
         // cold-launch session bootstrap kicked off in makeUIView.
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKHTTPCookieStoreObserver {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKHTTPCookieStoreObserver, UIScrollViewDelegate {
         var refreshControl: UIRefreshControl?
         var onNavigationError: ((Error) -> Void)?
         weak var webView: WKWebView?
@@ -225,6 +236,18 @@ struct WebView: UIViewRepresentable {
         deinit {
             if let observer = contentSizeObserver {
                 NotificationCenter.default.removeObserver(observer)
+            }
+        }
+
+        // MARK: - No sideways scroll
+
+        /// Keep the page at its horizontal rest (see `makeUIView`). The rest is
+        /// the left safe-area inset, not 0, in landscape. Setting the offset
+        /// calls this again once, now at rest, so it does not loop.
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            let restX = -scrollView.adjustedContentInset.left
+            if scrollView.contentOffset.x != restX {
+                scrollView.contentOffset.x = restX
             }
         }
 

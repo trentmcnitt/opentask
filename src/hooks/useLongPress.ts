@@ -42,6 +42,19 @@ interface UseLongPressReturn {
  * Includes jitter tolerance (10px threshold) and optional double-click detection.
  * Use this variant for components that receive React pointer events directly.
  */
+/**
+ * An event that bubbled here through React's tree from a PORTAL (Trent,
+ * 2026-10-30): a menu, sheet or dialog an element renders into <body> is not
+ * inside it in the DOM, but React still bubbles its events up the component
+ * tree. A row's clock opens the Defer sheet that way, so a tap on the sheet's
+ * "Tomorrow" bubbled on to the row as a tap — and opened the task's details
+ * over the defer (a long press on the sheet selected the row). Rows ignore
+ * any press whose target their own DOM does not hold.
+ */
+export function fromPortal(e: { currentTarget: EventTarget; target: EventTarget }): boolean {
+  return !(e.currentTarget as Node).contains(e.target as Node)
+}
+
 export function useLongPress(options: UseLongPressOptions = {}): UseLongPressReturn {
   const { onLongPress, delay = 400, trackDoubleClick = false } = options
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -67,6 +80,9 @@ export function useLongPress(options: UseLongPressOptions = {}): UseLongPressRet
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // Not a press on this element (`fromPortal`): a menu or sheet it renders
+      // in a portal, whose events still bubble here through React's tree.
+      if (fromPortal(e)) return
       lastPointerType.current = e.pointerType
 
       if (trackDoubleClick) {

@@ -257,6 +257,11 @@
        shuts pinch where iOS allows it; this is the half Safari honours in a
        browser tab too. Panning and every tap are untouched. */
     touch-action: manipulation;
+    /* Clipped here as well as on body (2026-10-30): with only body clipped,
+       the iOS app still panned sideways over a box wider than the screen (a
+       title ending in a long URL, `TITLE_TAIL`). Belt and braces — the box
+       must still fit — and WebView.swift pins the native scroll view too. */
+    overflow-x: clip;
   }
   /* Every enabled button is pressable, so it gets the hand (2026-10-20: Today
      and On deck on the task rows, the pager chevrons, Considered all and Show

@@ -54,7 +54,18 @@ interface JustAddedCardProps {
  * folded on every load — the segments' "Show N considered" toggle, in its
  * place and style. Added and targeted entries always show. Unfolded, every
  * entry is listed in its usual newest-first order.
+ *
+ * TWO, THEN FIVE AT A TIME (Trent, 2026-10-30: "it's just too much… at most
+ * maybe it should show two things, and then you can show more, like show five
+ * more until you get to the end of the list"): the two newest entries, then
+ * "Show 5 more" adding five a tap, its last step "Show N more" for what is
+ * left. Clear still hides them all. The cap counts added and targeted entries
+ * only: deck updates have their own fold, and unfolding it lists them all
+ * (capped, "Show 2 on deck updates" would often have revealed nothing).
  */
+const FIRST_SHOWN = 2
+const SHOW_MORE_STEP = 5
+
 export function JustAddedCard({
   entries,
   projects,
@@ -64,9 +75,14 @@ export function JustAddedCard({
   onClear,
 }: JustAddedCardProps) {
   const [showDecks, setShowDecks] = useState(false)
+  const [shown, setShown] = useState(FIRST_SHOWN)
   if (entries.length === 0) return null
   const deckUpdates = entries.filter((e) => isDeckUpdate(e)).length
   const listed = showDecks ? entries : entries.filter((e) => !isDeckUpdate(e))
+  const capped = listed.filter((e) => !isDeckUpdate(e))
+  const kept = new Set(capped.slice(0, shown))
+  const visible = listed.filter((e) => isDeckUpdate(e) || kept.has(e))
+  const more = Math.min(SHOW_MORE_STEP, capped.length - shown)
   return (
     <section
       aria-label="Just now"
@@ -86,7 +102,7 @@ export function JustAddedCard({
         </button>
       </div>
       <ul className="space-y-0.5">
-        {listed.map((entry) => (
+        {visible.map((entry) => (
           <li key={justAddedEntryKey(entry)}>
             <JustAddedRow
               entry={entry}
@@ -98,6 +114,16 @@ export function JustAddedCard({
           </li>
         ))}
       </ul>
+      {more > 0 && (
+        <button
+          type="button"
+          onClick={() => setShown((n) => n + SHOW_MORE_STEP)}
+          data-just-added-more
+          className={cn(SLOT_FOOTER_TOGGLE_CLASS, 'pl-1.5 sm:pl-2')}
+        >
+          Show {more} more
+        </button>
+      )}
       {deckUpdates > 0 && (
         <button
           type="button"
