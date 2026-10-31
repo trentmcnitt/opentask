@@ -502,3 +502,15 @@ export async function pickAllOrder(page: Page, order: 'project' | 'new'): Promis
   await menu.locator(`[data-all-order="${order}"]`).click()
   await expect(page.locator('[data-mode-menu]')).toHaveCount(0)
 }
+
+/**
+ * The dashboard scrolled to the TOP, as by hand. In one column a fresh load
+ * opens on the tasks (2026-10-31, src/lib/dashboard-landing.ts); a spec about
+ * what is above them (the jump-to-tasks button, the cards) starts here. A
+ * scroll that isn't the landing's own ends its pin, so nothing pulls the page
+ * back down.
+ */
+export async function fromTheTop(page: Page): Promise<void> {
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+}

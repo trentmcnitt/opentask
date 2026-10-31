@@ -14,7 +14,7 @@
  * From `md` up the same button is fixed at the viewport's bottom-right
  * (Trent, 2026-09-28) — it stays on screen while a long list scrolls.
  */
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, uniqueTitle, fromTheTop } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 import { DateTime } from 'luxon'
 
@@ -148,6 +148,9 @@ test.describe('Overdue jump: filter + scroll to the first group', () => {
     }
     await page.reload()
     await expect(firstGroup(page)).toBeVisible()
+    // At the top: a fresh load opens on the tasks in one column (2026-10-31);
+    // the jump is tested from above them.
+    await fromTheTop(page)
   })
 
   test.afterEach(async ({ authenticatedPage: page }) => {
