@@ -7,6 +7,8 @@ export interface SelectionContextType {
   selectedIds: Set<number>
   anchor: number | null
   isSelectionMode: boolean
+  /** Started by Select All: it stays through the bar's actions (`useSelectionMode`). */
+  sticky: boolean
   toggle: (id: number) => void
   rangeSelect: (id: number, orderedIds: number[], fallbackAnchor?: number | null) => void
   selectAll: (ids: number[]) => void

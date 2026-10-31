@@ -77,6 +77,15 @@ export function useQueueSelectMode({
   onUndo: () => void
 }) {
   const [on, setOn] = useState(false)
+  /**
+   * HOW THE MODE STARTED (Trent, 2026-10-30: "it was annoying… for individual
+   * items because then I have to go back and deselect select mode… It only
+   * stays in select mode if you enter select mode with the select button"):
+   * `held` — a hold on a row (`enter`) — is one action, then out: any verb
+   * that lands, or deselecting the last row, leaves the mode. The header's
+   * Select keeps it on through the verbs, as before, until Cancel or Select.
+   */
+  const [held, setHeld] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set())
   const toggle = useCallback(
     (id: number) =>
@@ -84,19 +93,32 @@ export function useQueueSelectMode({
         const next = new Set(prev)
         if (next.has(id)) next.delete(id)
         else next.add(id)
+        // A hold's selection ends with its last row.
+        if (next.size === 0 && held) {
+          setOn(false)
+          setHeld(false)
+        }
         return next
       }),
-    [],
+    [held],
   )
   const clear = useCallback(() => setSelected(new Set()), [])
-  const enter = useCallback((id: number) => {
-    setOn(true)
-    setSelected((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
-  }, [])
+  const enter = useCallback(
+    (id: number) => {
+      // A hold inside a mode the Select button started picks the row, nothing more.
+      if (!on) setHeld(true)
+      setOn(true)
+      setSelected((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+    },
+    [on],
+  )
   const leave = useCallback(() => {
     setOn(false)
+    setHeld(false)
     setSelected(new Set())
   }, [])
+  /** After a verb lands: out for a hold, the picks cleared for the Select button. */
+  const finished = held ? leave : clear
   const state = useMemo(() => (on ? { selected, toggle } : null), [on, selected, toggle])
   const deck = useBulkDeck({ onUndo, onFinished: () => void actions.refresh() })
   // The picked rows' tasks, from the card's segments (a row in two lists once).
@@ -108,7 +130,7 @@ export function useQueueSelectMode({
   const ids = picked.map((t) => t.id)
   const act = (fn: () => unknown) => {
     void fn()
-    clear()
+    finished()
   }
   const bar =
     on && picked.length > 0 ? (
@@ -126,8 +148,13 @@ export function useQueueSelectMode({
           leave()
         }}
         onDelete={() => act(() => actions.removeMany(ids))}
-        // The horizon keeps the picks: the change is drawn on the rows they are.
-        onHorizon={(h) => void actions.horizonMany(ids, h)}
+        // The Select button's mode keeps the picks (the change is drawn on the
+        // rows they are); a hold's leaves once it lands.
+        onHorizon={(h) =>
+          void actions.horizonMany(ids, h).then(() => {
+            if (held) leave()
+          })
+        }
         onOpen={() => {
           actions.openDetails(picked[0])
           leave()
@@ -139,14 +166,18 @@ export function useQueueSelectMode({
         onRemoveTargets={(some) => act(() => actions.removeTargetsMany(some))}
         onSkipUntil={async (some, until) => {
           await actions.skipUntilMany(some, until)
-          clear()
+          finished()
         }}
         onCancel={leave}
       />
     ) : null
   return {
     on,
-    toggleMode: () => (on ? leave() : setOn(true)),
+    toggleMode: () => {
+      if (on) return leave()
+      setHeld(false)
+      setOn(true)
+    },
     enter,
     state,
     bar,

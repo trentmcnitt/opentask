@@ -2852,6 +2852,7 @@ function DashboardView({
         onDelete={onBulkDelete}
         onSkipUntil={onSkipUntil}
         onClear={selection.clear}
+        sticky={selection.sticky}
         onNavigateToDetail={onNavigateToDetail}
         onTarget={(until) => onSnoozeSelected(until)}
         onDeck={onDeckSelected}
