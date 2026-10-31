@@ -1,8 +1,11 @@
 /**
- * Just now's deck updates fold (Trent's phone review, 2026-10-22): an entry
- * whose only news is a deck (`isDeckUpdate`, src/lib/just-added.ts) sits
- * behind "Show N on deck updates" / "Show less", folded by default; a task
- * created inside the window — decked or not — and a targeted one stay listed.
+ * Just now's deck updates fold (Trent's phone review, 2026-10-22): entries
+ * whose only news is a deck (`isDeckUpdate`, src/lib/just-added.ts) are ONE
+ * row, "N on deck updates", at the place of the newest of them, folded by
+ * default and counted toward the card's two like any entry (2026-10-30: with
+ * only deck updates recent the card used to show a bare "Show N…" line and
+ * nothing above it). A task created inside the window — decked or not — and
+ * a targeted one are entries of their own.
  *
  * The queue's own user (decks need the task-queue switch, on for this file,
  * off after it). Isolation: unique titles, every task trashed in `finally`.
@@ -52,7 +55,7 @@ test.afterAll(async ({ request }) => {
   await request.post('/api/test/task-queue', { data: { enabled: false } })
 })
 
-test('deck-only entries fold behind "Show N on deck updates"; new ones stay', async ({ page }) => {
+test('deck updates are one row among the two; it opens to list them', async ({ page }) => {
   const ids: number[] = []
   try {
     const old1 = await create(page, { title: uniqueTitle('JN old deck 1') })
@@ -70,25 +73,53 @@ test('deck-only entries fold behind "Show N on deck updates"; new ones stay', as
     await page.setViewportSize({ width: 375, height: 812 })
     await page.goto('/')
     await expect(card(page)).toBeVisible()
-    // Folded: the new task and the new-and-decked one are listed, the two
-    // deck updates are not.
-    await expect(entry(page, fresh)).toBeVisible()
+    // The decks are newest: their one row first, then the new-and-decked
+    // task — the two. The plain new task waits behind "Show 1 more".
+    const toggle = card(page).locator('[data-just-added-deck-toggle]')
+    await expect(toggle).toHaveText('2 on deck updates')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(entry(page, freshDecked)).toBeVisible()
     await expect(entry(page, old1)).toHaveCount(0)
     await expect(entry(page, old2)).toHaveCount(0)
-    const toggle = card(page).locator('[data-just-added-deck-toggle]')
-    await expect(toggle).toHaveText('Show 2 on deck updates')
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(entry(page, fresh)).toHaveCount(0)
+    await card(page).locator('[data-just-added-more]').click()
+    await expect(entry(page, fresh)).toBeVisible()
 
     await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(entry(page, old1)).toBeVisible()
     await expect(entry(page, old2)).toBeVisible()
-    await expect(toggle).toHaveText('Show less')
     await expect(entry(page, old1)).toContainText('On deck')
 
     await toggle.click()
     await expect(entry(page, old1)).toHaveCount(0)
-    await expect(toggle).toHaveText('Show 2 on deck updates')
+    await expect(toggle).toHaveText('2 on deck updates')
+  } finally {
+    if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
+  }
+})
+
+test('only deck updates recent: their row shows — never a bare "Show…" with nothing above it', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    for (let i = 0; i < 3; i++) {
+      const id = await create(page, { title: uniqueTitle(`JN only deck ${i}`) })
+      madeAnHourAgo(id)
+      ids.push(id)
+    }
+    const res = await page.request.post('/api/tasks/deck', { data: { ids } })
+    expect(res.ok(), await res.text()).toBeTruthy()
+
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/')
+    const toggle = card(page).locator('[data-just-added-deck-toggle]')
+    await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveText(/^\d+ on deck updates$/)
+    await expect(card(page).locator('[data-just-added-more]')).toHaveCount(0)
+    await toggle.click()
+    for (const id of ids) await expect(entry(page, id)).toBeVisible()
   } finally {
     if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
   }
