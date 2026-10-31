@@ -16,9 +16,18 @@
  *
  * Restrained: no confetti, only the page's usual fade in. Scan and All never
  * show it.
+ *
+ * WHAT WAS DONE (Trent, 11:18 PM: "Is there any way to see what items were
+ * completed for that day?"): the counts line opens, inside the card, today's
+ * handled tasks, faded (E1-open's list) — done: a green check, struck
+ * through, "Done 4:12 PM"; moved: an arrow and where it went, "Moved to
+ * tomorrow 6:30 AM" (a queue-marked defer has no time of its own: "Moved to
+ * tomorrow's queue"). The same rows the counts are (`today-summary`).
  */
 import { useEffect, useState } from 'react'
-import { Check } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown } from 'lucide-react'
+import { DateTime } from 'luxon'
+import { cn } from '@/lib/utils'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { allClearCounts, allClearNext } from '@/lib/modes/all-clear'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -37,7 +46,8 @@ export function AllClearCard({
   now: Date
 }) {
   const dayStart = useDayStart()
-  const [summary, setSummary] = useState<{ done: number; moved: number } | null>(null)
+  const [summary, setSummary] = useState<TodaySummary | null>(null)
+  const [open, setOpen] = useState(false)
   // Re-read when the tasks change: a put-back or an undo moves the counts.
   useEffect(() => {
     let live = true
@@ -64,9 +74,30 @@ export function AllClearCard({
       </span>
       <h2 className="mt-3 text-lg font-semibold">All clear for today</h2>
       {counts && (
-        <p data-all-clear-counts className="text-muted-foreground mt-0.5 text-sm">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          data-all-clear-counts
+          className="text-muted-foreground hover:text-foreground mt-0.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-sm transition-colors"
+        >
           {counts}
-        </p>
+          <ChevronDown
+            className={cn('size-3.5 transition-transform', open && 'rotate-180')}
+            aria-hidden
+          />
+        </button>
+      )}
+      {open && summary && (
+        <ul data-all-clear-items className="mt-3 w-full space-y-2.5 text-left opacity-75">
+          {summary.items.map((item) => (
+            <HandledItem
+              key={`${item.kind}:${item.task_id}:${item.happened_at}`}
+              item={item}
+              timezone={timezone}
+            />
+          ))}
+        </ul>
       )}
       {next && (
         <p
@@ -77,5 +108,49 @@ export function AllClearCard({
         </p>
       )}
     </section>
+  )
+}
+
+interface TodaySummaryItem {
+  kind: 'done' | 'moved'
+  task_id: number
+  title: string
+  happened_at: string
+  due_at: string | null
+  queued: boolean
+}
+interface TodaySummary {
+  done: number
+  moved: number
+  items: TodaySummaryItem[]
+}
+
+/** One handled task in the opened list. */
+function HandledItem({ item, timezone }: { item: TodaySummaryItem; timezone: string }) {
+  const time = (iso: string) => DateTime.fromISO(iso).setZone(timezone).toFormat('h:mm a')
+  const done = item.kind === 'done'
+  const where = item.queued
+    ? "Moved to tomorrow's queue"
+    : `Moved to tomorrow${item.due_at ? ` ${time(item.due_at)}` : ''}`
+  return (
+    <li data-all-clear-item={item.kind} className="flex items-start gap-3">
+      {done ? (
+        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-green-600 text-white dark:bg-green-500">
+          <Check className="size-3" aria-hidden />
+        </span>
+      ) : (
+        <span className="border-muted-foreground/60 text-muted-foreground mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border">
+          <ArrowRight className="size-3" aria-hidden />
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className={cn('block text-sm break-words', done && 'line-through')}>
+          {item.title}
+        </span>
+        <span className="text-muted-foreground block text-xs">
+          {done ? `Done ${time(item.happened_at)}` : where}
+        </span>
+      </span>
+    </li>
   )
 }

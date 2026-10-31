@@ -15,13 +15,31 @@
  *
  * Tasks only: reminders and quotas are not on Today's list. Days are OpenTask
  * days (`dayStart`).
+ *
+ * THE ITEMS (Trent, 2026-10-30, 11:18 PM: "Is there any way to see what
+ * items were completed for that day?"): the card's counts line opens to list
+ * them. The counts ARE these lists' lengths, from the same two queries, so
+ * the numbers and the list can't disagree. In the order they happened.
  */
 import { getDb } from '@/core/db'
 import { addDays, openTaskDateSpan, openTaskDayOf } from '@/lib/opentask-day'
 
+export interface TodaySummaryItem {
+  kind: 'done' | 'moved'
+  task_id: number
+  title: string
+  /** Done: when it was completed. Moved: when it was moved (the latest move today). */
+  happened_at: string
+  /** Moved: where its target is now. */
+  due_at: string | null
+  /** Moved: a defer the rollover will send to the queue (`queue_mark`), not a timed target. */
+  queued: boolean
+}
+
 export interface TodaySummary {
   done: number
   moved: number
+  items: TodaySummaryItem[]
 }
 
 export function todaySummary(
@@ -38,16 +56,17 @@ export function todaySummary(
   const db = getDb()
   const done = db
     .prepare(
-      `SELECT COUNT(*) AS n FROM completions c JOIN tasks t ON t.id = c.task_id
+      `SELECT c.task_id, t.title, c.completed_at FROM completions c JOIN tasks t ON t.id = c.task_id
        WHERE c.user_id = ? AND julianday(c.completed_at) >= julianday(?)
          AND julianday(c.completed_at) < julianday(?)
          AND c.due_at_was IS NOT NULL AND julianday(c.due_at_was) < julianday(?)
          AND t.is_reminder = 0 AND t.is_tracked = 0 AND t.deleted_at IS NULL`,
     )
-    .get(userId, start, end, end) as { n: number }
+    .all(userId, start, end, end) as { task_id: number; title: string; completed_at: string }[]
   const moved = db
     .prepare(
-      `SELECT COUNT(DISTINCT a.task_id) AS n FROM activity_log a JOIN tasks t ON t.id = a.task_id
+      `SELECT a.task_id, t.title, MAX(a.created_at) AS moved_at, t.due_at, t.queue_mark
+       FROM activity_log a JOIN tasks t ON t.id = a.task_id
        WHERE a.user_id = ? AND julianday(a.created_at) >= julianday(?)
          AND julianday(a.created_at) < julianday(?)
          AND json_extract(a.before, '$.due_at') IS NOT NULL
@@ -56,9 +75,10 @@ export function todaySummary(
          AND julianday(json_extract(a.after, '$.due_at')) >= julianday(?)
          AND t.done = 0 AND t.deleted_at IS NULL AND t.is_reminder = 0 AND t.is_tracked = 0
          AND t.due_at IS NOT NULL
-         AND julianday(t.due_at) >= julianday(?) AND julianday(t.due_at) < julianday(?)`,
+         AND julianday(t.due_at) >= julianday(?) AND julianday(t.due_at) < julianday(?)
+       GROUP BY a.task_id`,
     )
-    .get(
+    .all(
       userId,
       start,
       end,
@@ -66,8 +86,24 @@ export function todaySummary(
       end,
       tomorrow.start.toISOString(),
       tomorrow.end.toISOString(),
-    ) as {
-    n: number
-  }
-  return { done: done.n, moved: moved.n }
+    ) as { task_id: number; title: string; moved_at: string; due_at: string; queue_mark: number }[]
+  const items: TodaySummaryItem[] = [
+    ...done.map((r) => ({
+      kind: 'done' as const,
+      task_id: r.task_id,
+      title: r.title,
+      happened_at: r.completed_at,
+      due_at: null,
+      queued: false,
+    })),
+    ...moved.map((r) => ({
+      kind: 'moved' as const,
+      task_id: r.task_id,
+      title: r.title,
+      happened_at: r.moved_at,
+      due_at: r.due_at,
+      queued: !!r.queue_mark,
+    })),
+  ].sort((a, b) => Date.parse(a.happened_at) - Date.parse(b.happened_at))
+  return { done: done.length, moved: moved.length, items }
 }

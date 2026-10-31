@@ -2849,6 +2849,19 @@ function DashboardView({
             <AllClearCard tasks={allTasks} timeSlots={timeSlots} timezone={timezone} now={now} />
           )}
           {modes.sectioned ? renderTaskList('all') : renderTaskList('rest')}
+          {/* ROOM AT THE BOTTOM (Trent, 2026-10-30: the view pill and the FAB
+              covered the all-clear card's "Next:" line): the last content
+              scrolls clear of the bottom floats — the pill and the defer FAB,
+              4.5rem above the safe area, 3.5rem tall, plus a 1rem gap — in
+              every mode. The content already has the tab bar's 4rem and
+              main's 1.5rem; this adds the rest. With a select bar up (it hides
+              the pill) the taller of this and the bar's height
+              (`--selection-bar-space`, `SelectionBarShell`). */}
+          <div
+            aria-hidden
+            data-dock-space
+            className="h-[max(calc(env(safe-area-inset-bottom,0px)+3.5rem),var(--selection-bar-space,0px))] md:h-[max(4.5rem,var(--selection-bar-space,0px))]"
+          />
         </div>
       </main>
 

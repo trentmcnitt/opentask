@@ -27,6 +27,7 @@ const task = (fields: Partial<Task>) =>
     due_at: null,
     target_auto: false,
     on_deck_day: null,
+    queue_mark: false,
     ...fields,
   }) as unknown as Task
 
@@ -51,6 +52,12 @@ describe('all-clear: the Next line', () => {
       task({ due_at: chicago('2026-01-17T09:00'), done: true }),
     ]
     expect(allClearNext(tasks, SLOTS, ctx)).toBeNull()
+  })
+  test('a queue-marked target is not one: the rollover pulls it, it never nags', () => {
+    const marked = task({ due_at: chicago('2026-01-17T03:00'), queue_mark: true })
+    expect(allClearNext([marked], SLOTS, ctx)).toBeNull()
+    const real = task({ due_at: chicago('2026-01-17T09:00') })
+    expect(allClearNext([marked, real], SLOTS, ctx)).toBe('Morning, 8:30 AM · 1 target')
   })
   test("no targets ahead: tomorrow's decks, else nothing", () => {
     const decks = [task({ on_deck_day: '2026-01-17' }), task({ on_deck_day: '2026-01-17' })]

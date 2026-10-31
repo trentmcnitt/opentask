@@ -3,7 +3,8 @@
  * Late and Today both empty, Today shows "All clear for today" and what comes
  * next. This is the card's "Next" line:
  *
- * - the next period with picked targets coming: the earliest upcoming picked
+ * - the next period with picked targets coming (not a queue-marked one, which
+ *   the rollover pulls): the earliest upcoming picked
  *   target's period (`assignSlot`), on its OpenTask day, and how many picked
  *   targets fall in that same period that day — "Morning, 8:30 AM · 2 targets",
  *   with a weekday before it when it is not tomorrow ("Mon · Morning, …");
@@ -29,8 +30,11 @@ export function allClearNext(
   const open = tasks.filter((t) => !t.done && !t.is_reminder && !isTracked(t))
   const today = openTaskDayOf(now, timezone, dayStart)
   const tomorrow = addDays(today, 1)
+  // Not a queue-marked target (2026-10-30): a defer past the rollover lands
+  // AT it, marked, and the morning pulls it into the queue — it never nags
+  // at that time ("Next: 3:00 AM · 1 target" on Trent's card).
   const ahead = open
-    .filter((t) => hasPickedTarget(t) && new Date(t.due_at!) > now)
+    .filter((t) => hasPickedTarget(t) && !t.queue_mark && new Date(t.due_at!) > now)
     .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!))
   if (ahead.length > 0) {
     const first = ahead[0]
