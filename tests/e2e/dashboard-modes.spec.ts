@@ -408,6 +408,14 @@ for (const width of [375, 402]) {
             dock.y + dock.height > fabs.y
           expect(overlaps, `${root}: the dock and the FAB column`).toBe(false)
         }
+        // The sort menu keeps the 16px gutter from both edges (2026-10-30).
+        await page.locator('[data-sort-button]').click()
+        const menu = page.getByRole('menu')
+        await expect(menu).toBeVisible()
+        const m = (await menu.boundingBox())!
+        expect(m.x).toBeGreaterThanOrEqual(16)
+        expect(m.x + m.width).toBeLessThanOrEqual(width - 16)
+        await page.keyboard.press('Escape')
         // The page never scrolls sideways.
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width,

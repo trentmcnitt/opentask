@@ -33,6 +33,29 @@ import { MODE_LABELS, MODE_ORDER } from '@/lib/modes/registry'
 import { isSortId, SORT_ORDER, SORTS, type ModeSort } from '@/lib/modes/sorts'
 import type { ModeId } from '@/lib/modes/types'
 import { cn } from '@/lib/utils'
+import { useState } from 'react'
+
+/**
+ * The sort menu keeps the page's 16px gutter from the screen's edges, plus
+ * the safe-area inset (a phone held sideways), so it never touches the bezel
+ * (2026-10-30: at 375 it sat flush at x=0). The insets are read from a probe:
+ * `env()` only resolves inside a CSS property.
+ */
+const GUTTER = 16
+type Gutter = { left: number; right: number }
+function menuGutter(): Gutter {
+  const probe = document.createElement('div')
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)'
+  document.body.appendChild(probe)
+  const style = getComputedStyle(probe)
+  const gutter = {
+    left: GUTTER + (parseFloat(style.paddingLeft) || 0),
+    right: GUTTER + (parseFloat(style.paddingRight) || 0),
+  }
+  probe.remove()
+  return gutter
+}
 
 /** The floating surfaces' shared look: a translucent card with a hairline and a shadow. */
 const FLOAT = 'bg-background/90 border border-black/12 shadow-md backdrop-blur dark:border-white/15'
@@ -50,6 +73,7 @@ export function ModeDock({
 }) {
   // Today and Scan have a sort (`modes.sectioned`); All has its own view toggle.
   const sorts = mode !== 'all'
+  const [gutter, setGutter] = useState<Gutter>({ left: GUTTER, right: GUTTER })
   return (
     <div
       data-mode-dock
@@ -83,7 +107,7 @@ export function ModeDock({
         })}
       </div>
       {sorts && (
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => open && setGutter(menuGutter())}>
           <DropdownMenuTrigger
             data-sort-button
             aria-label={`Sort: ${SORTS[sort.id].label}`}
@@ -95,7 +119,7 @@ export function ModeDock({
           >
             <ArrowUpDown className="size-4" aria-hidden />
           </DropdownMenuTrigger>
-          <SortMenuContent sort={sort} onSort={onSort} />
+          <SortMenuContent sort={sort} onSort={onSort} gutter={gutter} />
         </DropdownMenu>
       )}
     </div>
@@ -108,9 +132,17 @@ export function ModeDock({
  * the sections that ARE an order (Today, Newest, Coming up) keep theirs
  * unless "Sort every section" is on. Remembered per device.
  */
-function SortMenuContent({ sort, onSort }: { sort: ModeSort; onSort: (s: ModeSort) => void }) {
+function SortMenuContent({
+  sort,
+  onSort,
+  gutter,
+}: {
+  sort: ModeSort
+  onSort: (s: ModeSort) => void
+  gutter: Gutter
+}) {
   return (
-    <DropdownMenuContent side="top" align="end" className="w-60">
+    <DropdownMenuContent side="top" align="end" className="w-60" collisionPadding={gutter}>
       <DropdownMenuLabel>Sort sections by</DropdownMenuLabel>
       <DropdownMenuRadioGroup
         value={sort.id}
