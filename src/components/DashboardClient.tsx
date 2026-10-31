@@ -2895,12 +2895,19 @@ function DashboardView({
 
         <div
           ref={taskListRef}
-          // `mt-6`: the gap above the "Tasks" heading's hairline sits OUTSIDE
-          // the list, so the landing (the anchor below) puts the hairline
-          // itself right under the top bar.
-          className="scroll-below-header mt-6 min-w-0 xl:col-start-1 xl:row-start-2"
+          // `pt-6`: the gap above the "Tasks" heading's hairline. Padding, so
+          // the grid's gaps are untouched; the anchor sits after it, ON the
+          // hairline, and carries the landing line itself — so the landing,
+          // the re-tap and Jump to tasks put the hairline right under the top
+          // bar.
+          className="scroll-below-header min-w-0 pt-6 xl:col-start-1 xl:row-start-2"
         >
-          <div ref={taskListLandingRef} aria-hidden data-task-list-landing className="h-0" />
+          <div
+            ref={taskListLandingRef}
+            aria-hidden
+            data-task-list-landing
+            className="scroll-below-header h-0"
+          />
           <TasksHeading />
           {todayAllClear && (
             <AllClearSlot

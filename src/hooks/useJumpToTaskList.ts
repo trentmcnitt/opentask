@@ -53,9 +53,14 @@ export function useJumpToTaskList() {
     if (request.n === 0) return
     const list = listRef.current
     if (!list) return
-    const group =
-      request.target === 'group' ? list.querySelector<HTMLElement>('[data-task-group]') : null
-    scrollSectionIntoView(group ?? list)
+    // 'list': the list's anchor (`data-task-list-landing`, on the "Tasks"
+    // heading's hairline, with the landing line of its own) — the wrapper's
+    // top is the padding above it.
+    const target =
+      request.target === 'group'
+        ? list.querySelector<HTMLElement>('[data-task-group]')
+        : list.querySelector<HTMLElement>('[data-task-list-landing]')
+    scrollSectionIntoView(target ?? list)
   }, [request])
 
   const requestJump = useCallback(

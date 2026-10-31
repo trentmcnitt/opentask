@@ -7,10 +7,10 @@
  * lot of attention because I have them on my iOS widget"). docs/SPEC.md §
  * Guiding Principles 6.
  *
- * In the SINGLE-COLUMN layout only (a phone, or any window without the
- * second column): there the Reminders card, the task queue card and Quotas
- * stack above the task list. The two-column desktop shows the list at the
- * top already, and its re-tap keeps the walk (src/lib/retap-walk.ts).
+ * On a PHONE only (`dashboardPhoneLayout`: one column, below `md`): there the
+ * Reminders card, the task queue card and Quotas stack above the task list.
+ * A desktop — two columns, or one in a narrow window — opens at the top and
+ * its re-tap keeps the walk (src/lib/retap-walk.ts).
  *
  * - THE TASKS are the list's anchor (`data-task-list-landing`): the start of
  *   the task list under Quotas — the Late / Today headers, or the "Targets
@@ -46,14 +46,24 @@ export function dashboardSingleColumn(): boolean {
 }
 
 /**
+ * The PHONE layout: one column, below `md` (48rem — where the bottom tab bar
+ * shows and the top bar stays put). Trent's ruling was the phone's; a narrow
+ * desktop window (one column at 1280, its top bar scrolling away with the
+ * page) keeps opening at the top and its re-tap keeps the walk.
+ */
+export function dashboardPhoneLayout(): boolean {
+  return dashboardSingleColumn() && !window.matchMedia('(min-width: 48rem)').matches
+}
+
+/**
  * The scroll position of the tasks: the anchor on its landing line, or the
  * page's bottom when the page can't scroll that far. Null without an anchor.
  */
 export function tasksScrollY(): number | null {
   const anchor = document.querySelector<HTMLElement>(ANCHOR)
-  const list = anchor?.parentElement
-  if (!anchor || !list) return null
-  const landing = parseFloat(getComputedStyle(list).scrollMarginTop) || 0
+  if (!anchor) return null
+  // The anchor carries the landing line itself (`scroll-below-header`).
+  const landing = parseFloat(getComputedStyle(anchor).scrollMarginTop) || 0
   const at = anchor.getBoundingClientRect().top + window.scrollY - landing
   const max = document.documentElement.scrollHeight - window.innerHeight
   return Math.max(0, Math.min(at, max))
@@ -73,10 +83,10 @@ export function dashboardRetapGoes(scrollY: number): 'top' | 'tasks' {
  * there). Null when the rule doesn't apply (two columns, no anchor).
  */
 export function dashboardRetap(): boolean | null {
-  if (!dashboardSingleColumn()) return null
+  if (!dashboardPhoneLayout()) return null
   if (tasksScrollY() === null) return null
   if (dashboardRetapGoes(window.scrollY) === 'top') return false
-  scrollSectionIntoView(document.querySelector<HTMLElement>(ANCHOR)?.parentElement ?? null)
+  scrollSectionIntoView(document.querySelector<HTMLElement>(ANCHOR))
   return true
 }
 
@@ -123,7 +133,7 @@ function deepLinked(): boolean {
 export function landOnTasksOnce(): () => void {
   if (landed) return () => {}
   landed = true
-  if (deepLinked() || !dashboardSingleColumn()) return () => {}
+  if (deepLinked() || !dashboardPhoneLayout()) return () => {}
   // Where the pin last put the page: a scroll anywhere else is not the
   // pin's — a jump of the app's own (a filter's, a link's) or the user's —
   // and ends the pin.
