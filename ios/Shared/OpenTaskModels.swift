@@ -158,6 +158,12 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// it joins the page. A row whose lead day was DEFERRED today reads
     /// "· deferred to Thu" from it (`SegmentLeft.words`).
     let leadFrom: String?
+    /// The defer that set the target landed past the next rollover (B1, the
+    /// task queue): the target is the rollover moment and the rollover pulls
+    /// the task into tomorrow's queue (`queue_mark`). Every native surface
+    /// that draws the target says "Queue tomorrow" instead of its 3:00 AM
+    /// moment (Trent, 2026-10-31; `isQueueMarked`, the web's `queueMarked`).
+    let queueMark: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -193,6 +199,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         case occurrenceAt = "occurrence_at"
         case onDeckDay = "on_deck_day"
         case leadFrom = "lead_from"
+        case queueMark = "queue_mark"
     }
 
     /// Decode-only: the server's raw `notes`. Deliberately NOT in
@@ -250,6 +257,7 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         occurrenceAt = try c.decodeIfPresent(String.self, forKey: .occurrenceAt)
         onDeckDay = try c.decodeIfPresent(String.self, forKey: .onDeckDay)
         leadFrom = try c.decodeIfPresent(String.self, forKey: .leadFrom)
+        queueMark = try c.decodeIfPresent(Bool.self, forKey: .queueMark) ?? false
     }
 
     /// Memberwise init for sample/placeholder data (the synthesized one is lost
@@ -291,10 +299,12 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         periodLastDay: String? = nil,
         periodLabel: String? = nil,
         onDeckDay: String? = nil,
-        leadFrom: String? = nil
+        leadFrom: String? = nil,
+        queueMark: Bool = false
     ) {
         self.onDeckDay = onDeckDay
         self.leadFrom = leadFrom
+        self.queueMark = queueMark
         self.id = id
         self.projectId = projectId
         self.title = title
@@ -332,6 +342,11 @@ struct TaskDTO: Codable, Identifiable, Hashable {
         guard let dueAt else { return nil }
         return DateHelpers.parseISO(dueAt)
     }
+
+    /// The target is a queue-marked one (`queueMark`): it reads
+    /// `TaskWording.queueTomorrow`, never its moment, and is never overdue —
+    /// the rollover pulls it first.
+    var isQueueMarked: Bool { queueMark && dueAt != nil }
 
     /// The Quotas widget chip's title: `shortTitle` when the quota's editor
     /// set a non-empty one, else the full `title`. The one call site every

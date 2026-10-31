@@ -56,7 +56,10 @@ enum LeanRow {
 
     /// `leanRowState`: which tint a row wears, or nil for none. `isOverdue`
     /// is the list's own answer for over target (`TaskDTO.isOverdue(now:)`).
-    static func state(_ task: TaskDTO, isOverdue: Bool, now: Date, day: OpenTaskDay) -> State? {
+    /// A queue-marked target ("Queue tomorrow") is never over: the rollover
+    /// pulls it first (the web row's rule).
+    static func state(_ task: TaskDTO, isOverdue listOverdue: Bool, now: Date, day: OpenTaskDay) -> State? {
+        let isOverdue = listOverdue && !task.isQueueMarked
         if TargetAge.isPastDeadline(task, now: now) { return isOverdue ? .bothPassed : .passed }
         if isOverdue { return .over }
         let today = day.openTaskDay(of: now)

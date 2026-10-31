@@ -68,6 +68,7 @@ import { useHourTick } from '@/hooks/useHourTick'
 import { useTimezone } from '@/hooks/useTimezone'
 import { createdDateWords } from '@/lib/created-date'
 import { leanChipWords } from '@/lib/lean-chip-words'
+import { rowOverTarget } from '@/lib/queue-tomorrow'
 import { wasTargetTime } from '@/lib/target-day-first'
 import { horizonGoverns } from '@/lib/horizon-square'
 import { leanRowState, type LeanRowState } from '@/lib/lean-row-state'
@@ -162,7 +163,7 @@ export function LeanRow({
   onSetHorizon,
   onTargetAt,
   onDeck,
-  isOverdue = false,
+  isOverdue: listOverdue = false,
   isSelected = false,
   isSelectionMode = false,
   onSelect,
@@ -193,6 +194,8 @@ export function LeanRow({
   })
   const { rowRef, highlightProps, highlightClass } = useRowHighlight(highlighted, onHighlightDone)
   const isAiProcessing = task.labels.includes('ai-to-process')
+  // A queue-marked target ("Queue tomorrow") is never over target.
+  const isOverdue = rowOverTarget(listOverdue, task)
   const timezone = useTimezone()
   const dayStart = useDayStart()
   // "Later today" moves with the clock: re-read at each top of the hour (a

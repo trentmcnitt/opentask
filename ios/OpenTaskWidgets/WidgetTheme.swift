@@ -638,6 +638,14 @@ enum WidgetTheme {
         DueLabel.parts(for: due, now: now, isOverdue: isOverdue, day: day)
     }
 
+    /// A task's due label (`DueLabel.parts(for: task…)`): "Queue tomorrow"
+    /// for a queue-marked target. nil without a target.
+    static func dueLabelParts(
+        for task: TaskDTO, now: Date = Date(), day: OpenTaskDay = DayStartStore.current
+    ) -> DueLabelParts? {
+        DueLabel.parts(for: task, now: now, day: day)
+    }
+
     /// The styled `Text` for wherever a task's due time shows (`TaskRow`,
     /// `TasksSmallView`, the Up next list) — builds on `dueLabelParts` so the
     /// words and their one colour can never drift between call sites. Built via
@@ -658,9 +666,8 @@ enum WidgetTheme {
         for task: TaskDTO, now: Date = Date(), stacked: Bool = false, scheme: ColorScheme,
         firstLineSuffix: Text? = nil
     ) -> Text {
-        guard let due = task.dueDate else { return Text("") }
-        let overdue = task.isOverdue(now: now)
-        let parts = dueLabelParts(for: due, now: now, isOverdue: overdue)
+        guard let parts = dueLabelParts(for: task, now: now) else { return Text("") }
+        let overdue = !task.isQueueMarked && task.isOverdue(now: now)
         // ONE colour, day word and time alike: the target's BLUE while it is
         // ahead, the plum "over" tone once it has passed (M1, 2026-10-29, the
         // web's lean row chip; blue-only from 10-28). Text only: the web's

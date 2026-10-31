@@ -26,6 +26,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { isTracked, taskPeriodLabel, trackState } from '@/lib/track'
 import { formatDueTimeParts } from '@/lib/format-date'
+import { QUEUE_TOMORROW, queueMarked, rowOverTarget } from '@/lib/queue-tomorrow'
 import {
   ageLabel,
   attemptsOffer,
@@ -249,7 +250,7 @@ export function TaskRow({
   onTargetAt,
   onDeck,
   dayControlsOnTouch = false,
-  isOverdue,
+  isOverdue: listOverdue,
   isSelected = false,
   isSelectionMode = false,
   onSelect,
@@ -273,6 +274,9 @@ export function TaskRow({
   highlighted = false,
   onHighlightDone,
 }: TaskRowProps) {
+  // A queue-marked target ("Queue tomorrow") is never over target — the
+  // rollover pulls it first (the lean row's rule).
+  const isOverdue = rowOverTarget(listOverdue, task)
   const timezone = useTimezone()
   // The user's day boundary ("Day starts at" PR 2): "Today" / "Tomorrow" on
   // the row, and the defaults' "tomorrow", are OpenTask days.
@@ -918,6 +922,9 @@ function buildMetaSegments(
     segments.push({
       text: DateTime.fromISO(queuedOccurrence).setZone(timezone).toFormat('ccc, LLL d, h:mm a'),
     })
+  } else if (queueMarked(task)) {
+    // A defer that landed past the rollover (`QUEUE_TOMORROW`): no time.
+    segments.push({ text: QUEUE_TOMORROW, target: true })
   } else if (task.due_at) {
     const dueParts = formatDueTimeParts(task.due_at, timezone, dayStart)
     segments.push({ text: dueParts.relative, target: true, over: isOverdue })

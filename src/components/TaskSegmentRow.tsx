@@ -77,6 +77,7 @@ import { prominenceClasses } from '@/components/reminders/ReminderRow'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import { DeadlineChip } from '@/components/DeadlineChip'
 import { TimeChip, timeChipClasses } from '@/components/TimeChip'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import { useTimezone } from '@/hooks/useTimezone'
 
 /**
@@ -1472,11 +1473,14 @@ function SegmentMetaLine({
           title={`${queuedOccurrence ? '' : 'Target '}${target.toFormat('ccc LLL d, h:mm a')}`}
         >
           {/* A target is a time chip (`TimeChip`, 2026-10-28); the occurrence
-              a waiting repeat stands for is not a target, so it stays text. */}
+              a waiting repeat stands for is not a target, so it stays text.
+              A queue-marked target says "Queue tomorrow" (`QUEUE_TOMORROW`). */}
           {queuedOccurrence ? (
             target.toFormat('LLL d')
           ) : (
-            <TimeChip tone="target">{target.toFormat('LLL d')}</TimeChip>
+            <TimeChip tone="target">
+              {queueMarked(task) ? QUEUE_TOMORROW : target.toFormat('LLL d')}
+            </TimeChip>
           )}
           {task.rrule && (
             <span className="text-muted-foreground">

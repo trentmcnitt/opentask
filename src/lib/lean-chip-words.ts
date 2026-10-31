@@ -19,10 +19,13 @@
  *   day, so a deadline "Tonight 12:30 AM" is the row's one day word and a
  *   target "Today 5:00 PM" beside it reads "5:00 PM" (and the other way
  *   round).
+ * - A queue-marked target says "Queue tomorrow" (`QUEUE_TOMORROW`, Trent
+ *   2026-10-31), never its 3:00 AM moment.
  */
 import { DateTime } from 'luxon'
 import { momentChipWords } from '@/lib/moment-chip-words'
 import { openTaskDayOf } from '@/lib/opentask-day'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 
 export interface LeanChipWords {
   deadline: string | null
@@ -48,7 +51,7 @@ export function countdownWords(deadline: Date, timezone: string, now: Date): str
 }
 
 export function leanChipWords(
-  task: { deadline_at: string | null; due_at: string | null },
+  task: { deadline_at: string | null; due_at: string | null; queue_mark?: boolean },
   timezone: string,
   dayStart: string,
   now: Date = new Date(),
@@ -63,6 +66,7 @@ export function leanChipWords(
       at > now && openTaskDayOf(at, timezone, dayStart) === openTaskDayOf(now, timezone, dayStart)
     if (laterToday) countdown = countdownWords(at, timezone, now)
   }
+  if (queueMarked(task)) return { deadline, countdown, target: QUEUE_TOMORROW }
   let target = task.due_at ? momentChipWords(task.due_at, timezone, dayStart, now) : null
   const word = todayWord(target)
   if (word && todayWord(deadline)) target = target!.slice(word.length)

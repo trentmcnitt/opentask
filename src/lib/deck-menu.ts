@@ -24,6 +24,7 @@
  * server refuses them anyway and the toast says why.
  */
 import { DateTime } from 'luxon'
+import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
@@ -216,7 +217,8 @@ export function offersDeck(task: {
  * What a deck would REPLACE (plan §5): the picked target of a one-off —
  * "target Fri 6 PM" — or null (no target, an automatic one with the task
  * queue off, a repeating task's occurrence, already on deck). The faded On
- * deck button's warning reads "Replaces target Fri 6 PM".
+ * deck button's warning reads "Replaces target Fri 6 PM". A queue-marked
+ * target is named by its chip's words: "Replaces Queue tomorrow".
  */
 export function deckReplaces(
   task: {
@@ -224,10 +226,12 @@ export function deckReplaces(
     target_auto?: boolean
     on_deck_day?: string | null
     rrule?: string | null
+    queue_mark?: boolean
   },
   timezone: string,
 ): string | null {
   if (task.rrule || task.on_deck_day || task.due_at === null || task.target_auto) return null
+  if (queueMarked(task)) return QUEUE_TOMORROW
   const at = DateTime.fromISO(task.due_at, { zone: 'utc' }).setZone(timezone)
   return `target ${at.toFormat(at.minute === 0 ? 'ccc h a' : 'ccc h:mm a')}`
 }

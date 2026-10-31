@@ -167,8 +167,10 @@ private struct TaskRow: View {
     /// here — grey, semibold, no pill. Then a red flag once the deadline has
     /// passed.
     private func dueLine(_ due: Date) -> Text {
-        var line = Text(WatchFormatting.dueLine(for: due))
-            .foregroundStyle(LeanRowStyle.target(scheme, isOverdue: task.isOverdue()))
+        // A queue-marked target says "Queue tomorrow", never over (its rule:
+        // `TaskDTO.isQueueMarked`).
+        var line = Text(dueWords(due))
+            .foregroundStyle(LeanRowStyle.target(scheme, isOverdue: !task.isQueueMarked && task.isOverdue()))
         if let label = TargetAge.attemptsBadge(task) {
             line = line + Text(" · ").foregroundStyle(.secondary)
                 + Text(label).fontWeight(.semibold).monospacedDigit().foregroundStyle(.secondary)
@@ -195,8 +197,13 @@ private struct TaskRow: View {
         return Color(red: mix(platter.r, 16), green: mix(platter.g, 8), blue: mix(platter.b, 0))
     }
 
+    /// The target's words: `WatchFormatting.dueLine`, or "Queue tomorrow".
+    private func dueWords(_ due: Date) -> String {
+        task.isQueueMarked ? TaskWording.queueTomorrow : WatchFormatting.dueLine(for: due)
+    }
+
     private func spokenDueLine(_ due: Date) -> String {
-        var words = [WatchFormatting.dueLine(for: due)]
+        var words = [dueWords(due)]
         if TargetAge.attemptsBadge(task) != nil {
             words.append("\(TaskWording.overdueLower) on \(task.attempts) day\(task.attempts == 1 ? "" : "s")")
         }

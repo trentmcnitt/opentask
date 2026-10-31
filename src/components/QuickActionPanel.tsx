@@ -3,6 +3,7 @@
 import { isDeadlineAnchored, targetReset, type HorizonValue } from '@/lib/task-segments'
 import { HorizonPicker } from '@/components/HorizonDot'
 import { REMOVE_TARGET } from '@/lib/task-model-words'
+import { queueMarked } from '@/lib/queue-tomorrow'
 import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
 import { deckLimit } from '@/lib/deck-menu'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
@@ -1242,6 +1243,7 @@ export function QuickActionPanel({
   const targetValue = targetValueFor({
     timezone,
     queued: !!queuedOccurrence,
+    queueMarked: !isBulkMode && !!effectiveTask && queueMarked(effectiveTask),
     dateDirty: isDateDirty,
     none: showsNoTarget ? { dirty: pendingDueAtCleared || (deckStaged && !allNoDueDate) } : null,
     header: headerText,

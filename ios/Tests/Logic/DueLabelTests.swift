@@ -79,4 +79,54 @@ final class DueLabelTests: XCTestCase {
         let dateOnly = at(daysFromNow: 2, hour: 0)
         XCTAssertEqual(parts(dateOnly), DueLabel.Parts(dayWord: weekday(dateOnly), time: nil))
     }
+
+    // MARK: Queue tomorrow (Trent, 2026-10-31)
+
+    private func isoString(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    /// A defer that landed past the rollover: the target is the rollover
+    /// moment with `queue_mark`, and every label says "Queue tomorrow" alone.
+    func testAQueueMarkedTargetSaysQueueTomorrowNeverItsMoment() {
+        let rollover = at(daysFromNow: 1, hour: 3)
+        let marked = TaskDTO(id: 1, title: "t", dueAt: isoString(rollover), queueMark: true)
+        let plain = TaskDTO(id: 2, title: "t", dueAt: isoString(rollover))
+        let day = OpenTaskDay.midnight(timeZone: .current)
+        XCTAssertTrue(marked.isQueueMarked)
+        XCTAssertEqual(
+            DueLabel.parts(for: marked, now: now, day: day),
+            DueLabel.Parts(dayWord: TaskWording.queueTomorrow, time: nil)
+        )
+        XCTAssertEqual(DueLabel.parts(for: marked, now: now, day: day)?.plainString, "Queue tomorrow")
+        XCTAssertEqual(DueLabel.parts(for: plain, now: now, day: day), parts(rollover))
+        XCTAssertNil(DueLabel.parts(for: TaskDTO(id: 3, title: "t", queueMark: true), now: now, day: day))
+    }
+
+    /// Never over target, even with its moment passed (a stale cache across
+    /// the rollover): the row wears no "over" tint.
+    func testAQueueMarkedTargetIsNeverOverOnTheRow() {
+        let passed = at(daysFromNow: 0, hour: 3)
+        let marked = TaskDTO(id: 1, title: "t", dueAt: isoString(passed), queueMark: true)
+        let day = OpenTaskDay.midnight(timeZone: .current)
+        XCTAssertNil(LeanRow.state(marked, isOverdue: marked.isOverdue(now: now), now: now, day: day))
+        let plain = TaskDTO(id: 2, title: "t", dueAt: isoString(passed))
+        XCTAssertEqual(LeanRow.state(plain, isOverdue: plain.isOverdue(now: now), now: now, day: day), .over)
+    }
+
+    func testQueueMarkDecodesAndSurvivesTheCache() throws {
+        let json = #"{"id":1,"title":"t","due_at":"2026-01-15T09:00:00Z","queue_mark":true}"#
+        let task = try JSONDecoder().decode(TaskDTO.self, from: Data(json.utf8))
+        XCTAssertTrue(task.queueMark)
+        let back = try JSONDecoder().decode(TaskDTO.self, from: JSONEncoder().encode(task))
+        XCTAssertTrue(back.queueMark)
+        let missing = try JSONDecoder().decode(TaskDTO.self, from: Data(#"{"id":2,"title":"t"}"#.utf8))
+        XCTAssertFalse(missing.queueMark)
+    }
+
+    func testAQueueMarkedUpcomingRowSaysQueueTomorrow() {
+        let marked = TaskDTO(id: 1, title: "t", dueAt: isoString(at(daysFromNow: 1, hour: 3)), queueMark: true)
+        XCTAssertEqual(marked.upcomingMeta(dayStart: "03:00", section: .tomorrow), "Queue\u{00A0}tomorrow")
+        XCTAssertEqual(marked.upcomingMeta(dayStart: "03:00", section: .later), "Queue\u{00A0}tomorrow")
+    }
 }
