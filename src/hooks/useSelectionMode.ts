@@ -18,6 +18,14 @@ export function useSelectionMode<K extends number | string = number>() {
   const [selectedIds, setSelectedIds] = useState<Set<K>>(new Set())
   const [anchor, setAnchor] = useState<K | null>(null)
   const [isSelectionMode, setIsSelectionMode] = useState(false)
+  /**
+   * HOW THE SELECTION STARTED (Trent, 2026-10-30: "It only stays in select
+   * mode if you enter select mode with the select button"): 'button' — Select
+   * All — keeps it through the bar's actions; 'press' — a long-press, a
+   * click, a Cmd-click on a row — is one action, then out. Null with nothing
+   * selected.
+   */
+  const [origin, setOrigin] = useState<'button' | 'press' | null>(null)
 
   const toggle = useCallback((id: K) => {
     setSelectedIds((prev) => {
@@ -31,7 +39,9 @@ export function useSelectionMode<K extends number | string = number>() {
       if (next.size === 0) {
         setIsSelectionMode(false)
         setAnchor(null)
+        setOrigin(null)
       } else {
+        if (prev.size === 0) setOrigin('press')
         setIsSelectionMode(true)
         setAnchor(id)
       }
@@ -71,6 +81,7 @@ export function useSelectionMode<K extends number | string = number>() {
       })
       setIsSelectionMode(true)
       setAnchor(effectiveAnchor)
+      setOrigin((o) => o ?? 'press')
     },
     [anchor, toggle],
   )
@@ -78,6 +89,7 @@ export function useSelectionMode<K extends number | string = number>() {
   const selectAll = useCallback((ids: K[]) => {
     setSelectedIds(new Set(ids))
     setIsSelectionMode(ids.length > 0)
+    setOrigin(ids.length > 0 ? 'button' : null)
   }, [])
 
   const addAll = useCallback((ids: K[]) => {
@@ -86,7 +98,10 @@ export function useSelectionMode<K extends number | string = number>() {
       for (const id of ids) next.add(id)
       return next
     })
-    if (ids.length > 0) setIsSelectionMode(true)
+    if (ids.length > 0) {
+      setIsSelectionMode(true)
+      setOrigin((o) => o ?? 'press')
+    }
   }, [])
 
   const removeAll = useCallback((ids: K[]) => {
@@ -96,6 +111,7 @@ export function useSelectionMode<K extends number | string = number>() {
       if (next.size === 0) {
         setIsSelectionMode(false)
         setAnchor(null)
+        setOrigin(null)
       }
       return next
     })
@@ -105,6 +121,7 @@ export function useSelectionMode<K extends number | string = number>() {
     setSelectedIds(new Set())
     setAnchor(null)
     setIsSelectionMode(false)
+    setOrigin(null)
   }, [])
 
   // Select only this item (replaces selection, standard single-click behavior)
@@ -115,11 +132,13 @@ export function useSelectionMode<K extends number | string = number>() {
       if (prev.size === 1 && prev.has(id)) {
         setAnchor(null)
         setIsSelectionMode(false)
+        setOrigin(null)
         return new Set()
       }
       // Otherwise, select only this item
       setAnchor(id)
       setIsSelectionMode(true)
+      setOrigin('press')
       return new Set([id])
     })
   }, [])
@@ -128,6 +147,8 @@ export function useSelectionMode<K extends number | string = number>() {
     selectedIds,
     anchor,
     isSelectionMode,
+    /** Started by Select All: it stays through the bar's actions (`origin`). */
+    sticky: origin === 'button',
     toggle,
     rangeSelect,
     selectAll,

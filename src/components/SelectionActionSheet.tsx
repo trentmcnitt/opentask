@@ -133,6 +133,11 @@ interface SelectionActionSheetProps {
   projects?: Project[]
   /** Ref populated with openSheet function for external triggering (e.g., Cmd+S shortcut) */
   sheetOpenRef?: React.MutableRefObject<(() => void) | null>
+  /**
+   * Started by Select All (`useSelectionMode`'s `sticky`): the selection
+   * stays through an action that would otherwise end it (the horizon).
+   */
+  sticky?: boolean
 }
 
 export function SelectionActionSheet({
@@ -148,6 +153,7 @@ export function SelectionActionSheet({
   onDeck,
   projects,
   sheetOpenRef,
+  sticky = false,
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -436,8 +442,15 @@ export function SelectionActionSheet({
             // The parent has already toasted why; the selection stays.
             .catch(() => undefined)
         }}
-        // The horizon keeps the selection (the parent toasts, with Undo).
-        onHorizon={(horizon) => void onSaveAll({ horizon }).catch(() => undefined)}
+        // One action, then out — unless Select All started it (`sticky`,
+        // Trent 2026-10-30). The parent toasts, with Undo.
+        onHorizon={(horizon) =>
+          void onSaveAll({ horizon })
+            .then(() => {
+              if (!sticky) onClear()
+            })
+            .catch(() => undefined)
+        }
         onShowInList={(id) => {
           requestShowInList(id)
           onClear()
