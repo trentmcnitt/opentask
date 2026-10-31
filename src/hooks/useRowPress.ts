@@ -7,7 +7,7 @@
  * modes prototype's lean row), so they cannot drift.
  */
 import { useCallback, useEffect } from 'react'
-import { useLongPress } from '@/hooks/useLongPress'
+import { fromPortal, useLongPress } from '@/hooks/useLongPress'
 
 export interface RowPressOptions {
   isSelectionMode?: boolean
@@ -61,6 +61,9 @@ export function useRowPress({
    */
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
+      // A click from a menu or sheet the row renders in a portal (`fromPortal`)
+      // is that menu's, never a tap on the row.
+      if (fromPortal(e)) return
       if (pointer.didFire()) {
         e.preventDefault()
         return

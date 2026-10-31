@@ -23,7 +23,7 @@ import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useQueueSelect } from '@/components/QueueSelect'
 import { requestShowInList, showInListHref } from '@/lib/show-in-list'
-import { useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
+import { fromPortal, useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
 import { getPriorityOption } from '@/lib/priority'
@@ -677,6 +677,9 @@ function useSegmentRowPress({
         : ROW_PEEK_ONLY_DESCRIPTION
       : undefined,
     onClick: (e: React.MouseEvent<HTMLLIElement>) => {
+      // A click from a menu this row renders in a portal is not a tap on it
+      // (`fromPortal`): it would consider the task.
+      if (fromPortal(e)) return
       if (press.didFire()) {
         e.preventDefault()
         return

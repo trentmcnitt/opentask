@@ -52,6 +52,7 @@
  * tabs, the right priority border. The shelved AI
  * features' props (insights, What's Next annotations) are not drawn.
  */
+import { TITLE_TAIL } from './title-tail'
 import { useMemo } from 'react'
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
 import { DeadlineChip } from '@/components/DeadlineChip'
@@ -307,7 +308,7 @@ function LeanTitle({
   return (
     <p data-lean-title className={cn('text-[16px] leading-6 text-pretty md:flow-root', titleClass)}>
       {task.title.slice(0, cut + 1)}
-      <span className="whitespace-nowrap">
+      <span className={TITLE_TAIL}>
         {task.title.slice(cut + 1)}
         {tab && <PriorityTabMark tab={tab} inline className="ml-1.5" />}
         {justAddedBadge && (

@@ -18,6 +18,7 @@
  * - The press is the lean row's (`useRowPress`): a tap on a phone, or a
  *   double-click, opens the details; selection and the keyboard as anywhere.
  */
+import { TITLE_TAIL } from './title-tail'
 import { Flag, Repeat } from 'lucide-react'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { PriorityTabMark } from '@/components/RowCorner'
@@ -132,8 +133,8 @@ export function CompactRow({
         )}
         <p data-lean-title className="text-[16px] leading-6 text-pretty md:flow-root">
           {task.title.slice(0, cut + 1)}
-          {/* The last word and everything after it stay together. */}
-          <span className="whitespace-nowrap">
+          {/* The last word and everything after it stay together (`TITLE_TAIL`). */}
+          <span className={TITLE_TAIL}>
             {task.title.slice(cut + 1)}
             {tab && <PriorityTabMark tab={tab} inline className="ml-1.5" />}
           </span>
