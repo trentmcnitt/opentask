@@ -214,8 +214,8 @@ test.describe('desktop', () => {
                   : 'done',
           ),
         )
-      // On deck first (2026-10-21).
-      expect(order).toEqual(['deck', 'deck-tomorrow', 'today', 'done'])
+      // On deck tomorrow first, then On deck, then the clock (2026-10-31).
+      expect(order).toEqual(['deck-tomorrow', 'deck', 'today', 'done'])
       await expect(r.locator('[data-deck-tomorrow]')).toHaveAttribute(
         'title',
         'On deck tomorrow · hold for a day',
