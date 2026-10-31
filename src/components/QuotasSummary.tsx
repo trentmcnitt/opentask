@@ -100,6 +100,17 @@ export function QuotasSummary({
   const [highlightId, setHighlightId] = useState<number | null>(readQuotaParam)
   const clearHighlight = useCallback(() => setHighlightId(null), [])
   const loaded = tasks !== null
+  // Read again on the first render with the list loaded (React's "adjust
+  // state while rendering", once): on a CLIENT visit — a bubble's Show in
+  // list, `router.push` — the URL is not yet the new one when the
+  // initializer runs, so the initializer alone missed the link and nothing
+  // flashed (2026-10-31). By the time the list has loaded it is.
+  const [linkRead, setLinkRead] = useState(false)
+  if (loaded && !linkRead) {
+    setLinkRead(true)
+    const linked = readQuotaParam()
+    if (linked !== null && linked !== highlightId) setHighlightId(linked)
+  }
   useEffect(() => {
     if (!loaded || !new URLSearchParams(window.location.search).has('quota')) return
     window.history.replaceState(window.history.state, '', window.location.pathname)

@@ -1048,3 +1048,77 @@ test.describe('The editor is one surface (phone, dark)', () => {
     }
   })
 })
+
+/**
+ * Trent's phone, 2026-10-31: on a weekly Sunday deadline-anchored repeat with
+ * its target "the deadline day" at 5:00 PM, picking a PERIOD for the target
+ * left Save disabled under the raw "Send target_days_before and target_time
+ * together" — the editor sent the period without the unchanged days. Both
+ * offsets now go whenever either changes: a period alone saves, then the days
+ * alone save, and the link stays.
+ */
+test('a deadline-anchored repeat: only the target period changes, it saves; then only the days', async ({
+  authenticatedPage: page,
+}) => {
+  const slots = (
+    (await (await page.request.get('/api/time-slots')).json()).data.time_slots as {
+      id: number
+      label: string
+      start_time: string
+    }[]
+  ).filter((s) => s.start_time < '21:00' && s.start_time !== '17:00')
+  const period = slots.sort((a, b) => b.start_time.localeCompare(a.start_time))[0]
+  const id = await create(page, {
+    title: uniqueTitle('Sunday deadline'),
+    rrule: 'FREQ=WEEKLY;BYDAY=SU;BYHOUR=21;BYMINUTE=0',
+    repeat_anchor: 'deadline',
+    deadline_at: nextWeekday(7, 21).toUTC().toISO(),
+    target_days_before: 0,
+    target_time: '17:00',
+  })
+  try {
+    await withPreferences(page, unified, async () => {
+      let dialog = await openPanel(page, id)
+      let region = await enterEveryTime(dialog)
+      await pick(
+        page,
+        region.getByRole('combobox', { name: 'Target follows' }),
+        new RegExp(`^${period.label}`),
+      )
+      const save = region.getByRole('button', { name: 'Save', exact: true })
+      await expect(region.locator('[data-every-time-problem]')).toHaveCount(0)
+      await expect(save).toBeEnabled()
+      const sent = patches(page, id)
+      await save.click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(() => sent.length).toBe(1)
+      expect(sent[0].postDataJSON()).toMatchObject({
+        target_days_before: 0,
+        target_time: period.start_time,
+        target_slot_id: period.id,
+      })
+      let after = await stateOf(page, id)
+      expect(after).toMatchObject({
+        target_days_before: 0,
+        target_time: period.start_time,
+        target_slot_id: period.id,
+      })
+
+      dialog = await openPanel(page, id)
+      region = await enterEveryTime(dialog)
+      await pick(
+        page,
+        region.getByRole('combobox', { name: 'Days before the deadline' }),
+        'the day before',
+      )
+      await expect(region.locator('[data-every-time-problem]')).toHaveCount(0)
+      await region.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await expect.poll(async () => (await stateOf(page, id)).target_days_before).toBe(1)
+      after = await stateOf(page, id)
+      expect(after).toMatchObject({ target_time: period.start_time, target_slot_id: period.id })
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})

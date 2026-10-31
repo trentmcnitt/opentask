@@ -1,6 +1,8 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
+import { reminderInListHref } from '@/lib/show-in-list'
 import { describeCadence, describeTimeOfDay, readSchedule } from '@/lib/reminder-rule'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
@@ -50,6 +52,7 @@ export function ReminderRowPopover({
   /** The row this bubble points at. */
   children: React.ReactNode
 }) {
+  const router = useRouter()
   return (
     <RowPeekPopover
       open={open}
@@ -62,6 +65,11 @@ export function ReminderRowPopover({
             timeSlots={timeSlots}
             timezone={timezone}
             onOpen={() => onOpen(reminder)}
+            // Its row in its period on the Reminders tab (`reminderInListHref`).
+            onShowInList={() => {
+              onOpenChange(false)
+              router.push(reminderInListHref(reminder.id))
+            }}
             onDelete={() => onDelete(reminder)}
           />
         )
@@ -77,12 +85,14 @@ function ReminderSummary({
   timeSlots,
   timezone,
   onOpen,
+  onShowInList,
   onDelete,
 }: {
   reminder: Task
   timeSlots: TimeSlot[]
   timezone: string
   onOpen: () => void
+  onShowInList: () => void
   onDelete: () => void
 }) {
   // The same two halves the editor's own summary line is built from, so the
@@ -103,6 +113,7 @@ function ReminderSummary({
       }
       notes={reminder.notes}
       onOpen={onOpen}
+      onShowInList={onShowInList}
       onDelete={onDelete}
       deleteLabel={`Move "${reminder.title}" to Trash`}
     />

@@ -302,6 +302,10 @@ export function DashboardRemindersPanel({
               />
             ) : null
           }
+          // The gaps give way so "EARLY MORNING · 7:00 AM" stays on one line
+          // at a 402 phone and the app's 119% text (Trent, 2026-10-31; the
+          // TASK QUEUE header's fix).
+          compact
           onToggleExpanded={() => setExpanded(!expanded)}
           showConsidered={showConsidered}
           onToggleConsidered={pager.toggleConsidered}

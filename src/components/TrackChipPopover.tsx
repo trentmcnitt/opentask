@@ -69,6 +69,7 @@ export function TrackChipPopover({
   open,
   onOpenChange,
   onOpen,
+  onShowInList,
   onDelete,
   periods,
   children,
@@ -82,6 +83,9 @@ export function TrackChipPopover({
   /** The popover's own "Open" button was pressed — the caller decides what
    *  that means (opening `QuotaDetailModal`, as `TrackPanel` does it). */
   onOpen: (task: Task) => void
+  /** "Show in list": the quota's chip on the Quotas tab — a prompt row's
+   *  bubble only; a chip's own bubble is already in that list. */
+  onShowInList?: (task: Task) => void
   /** Move it to Trash. Soft, undoable, and asks nothing first — see
    *  `PopoverFooter`. */
   onDelete: (task: Task) => void
@@ -118,6 +122,7 @@ export function TrackChipPopover({
             task={task}
             state={state}
             onOpen={() => onOpen(task)}
+            onShowInList={onShowInList && (() => onShowInList(task))}
             onDelete={() => onDelete(task)}
             periods={periods}
           />
@@ -131,12 +136,14 @@ function QuotaSummary({
   task,
   state,
   onOpen,
+  onShowInList,
   onDelete,
   periods,
 }: {
   task: Task
   state: TrackState
   onOpen: () => void
+  onShowInList?: () => void
   onDelete: () => void
   periods?: PromptPeriods
 }) {
@@ -172,6 +179,7 @@ function QuotaSummary({
 
       <PopoverFooter
         onOpen={onOpen}
+        onShowInList={onShowInList}
         onDelete={onDelete}
         deleteLabel={`Move "${task.title}" to Trash`}
       />

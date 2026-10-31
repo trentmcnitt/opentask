@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { trackState, trackStripeClass } from '@/lib/track'
@@ -24,6 +25,7 @@ import {
   onSurfaceRowAnimationEnd,
 } from '@/components/reminders/row-shell'
 import { showToast } from '@/lib/toast'
+import { quotaInListHref } from '@/lib/show-in-list'
 import type { Task } from '@/types'
 
 /**
@@ -737,6 +739,7 @@ function useQuotaPromptDetail({
   onRefresh: () => Promise<void>
   movePrompt: MovePrompt
 }) {
+  const router = useRouter()
   const [peekKey, setPeekKey] = useState<string | null>(null)
   const [task, setTask] = useState<Task | null>(null)
   const { saveQuotas, deleteQuotas, openEdit, modal } = useQuotaEditor({
@@ -829,6 +832,11 @@ function useQuotaPromptDetail({
         onOpen={(t) => {
           setPeekKey(null)
           openEdit([t])
+        }}
+        // The quota's own row: its chip on the Quotas tab (`quotaInListHref`).
+        onShowInList={(t) => {
+          setPeekKey(null)
+          router.push(quotaInListHref(t.id))
         }}
         onDelete={(t) => {
           setPeekKey(null)

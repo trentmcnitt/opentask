@@ -63,6 +63,7 @@ import {
   type ScheduleInput,
 } from '@/core/tasks/repeat-schedule'
 import { formatTime } from '@/lib/format-rrule'
+import { log } from '@/lib/logger'
 import { leadDaysWords, relativeDaysWords } from '@/lib/editor-target-labels'
 import { UPCOMING_SECTION_TITLES } from '@/lib/task-model-words'
 import { localMoment, openTaskLocalDay } from '@/lib/opentask-day'
@@ -873,11 +874,14 @@ function deadlinePatch(
       draft.targetTime !== task.target_time ||
       slotId !== (task.target_slot_id ?? null))
   if (offsetsChanged) {
+    // BOTH offsets, always (2026-10-31): the planner refuses one without the
+    // other, so a period picked with the days left as they were ("the
+    // deadline day" → After School) kept Save disabled. Linked: the period
+    // and its start (the time a period pick sets; the server checks they
+    // agree); custom: the time alone, which drops a stored link.
     patch.target_days_before = draft.daysBefore
-    // Linked: the period alone (the server sets the time to its start);
-    // custom: the time alone, which drops a stored link.
+    patch.target_time = draft.targetTime
     if (slotId !== null) patch.target_slot_id = slotId
-    else patch.target_time = draft.targetTime
   }
   if (wasDeadline) return patch
   patch.repeat_anchor = 'deadline'
@@ -937,8 +941,16 @@ export function problemWords(message: string, draft: EveryTimeDraft): string {
     [NEVER_OCCURS_MESSAGE]: NEVER_OCCURS_PROBLEM,
     [TARGET_AFTER_DEADLINE_MESSAGE]: 'The target must not be after the deadline.',
   }
-  return known[message] ?? message
+  // Never an API field message on screen ("Send target_days_before and
+  // target_time together", Trent's phone 2026-10-31): an unknown refusal is
+  // logged and said in plain words.
+  if (known[message]) return known[message]
+  log.warn('ui', 'Every-time draft refused:', message)
+  return COULD_NOT_SAVE_PROBLEM
 }
+
+/** An unknown planner refusal, in the panel's words. */
+export const COULD_NOT_SAVE_PROBLEM = 'Couldn’t save — try again.'
 
 /** The planner's context for an ordinary task (every-time mode never edits a reminder or quota). */
 function planContext(ctx: EveryTimeContext) {

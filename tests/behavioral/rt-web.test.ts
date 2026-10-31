@@ -22,6 +22,7 @@ import {
 import {
   createModeTask,
   draftFromTask,
+  draftProblem,
   draftReducer,
   draftToCreateFields,
   draftToPatch,
@@ -227,15 +228,20 @@ describe('RT-WEB-04: every-time mode keeps one shape — the offsets and the lin
     target_slot_id: 13,
   }
 
-  test('a linked deadline-anchored repeat opens on its link; a period pick sends the period alone', () => {
+  test('a linked deadline-anchored repeat opens on its link; a period pick sends the period with both offsets', () => {
     const draft = draftFromTask(LINKED_REPEAT, ctx)
     expect(draft).toMatchObject({ daysBefore: 1, targetTime: '20:30', targetSlotId: 13 })
     expect(draftToPatch(LINKED_REPEAT, draft, ctx)).toEqual({})
     const morning = draftReducer(draft, { type: 'targetTime', time: '06:30', slotId: 11 })
+    // Both offsets with the period (2026-10-31, Trent's phone): the period
+    // alone left the days unsent, the planner refused the pair ("Send
+    // target_days_before and target_time together") and Save stayed off.
     expect(draftToPatch(LINKED_REPEAT, morning, ctx)).toEqual({
       target_days_before: 1,
+      target_time: '06:30',
       target_slot_id: 11,
     })
+    expect(draftProblem(LINKED_REPEAT, morning, ctx)).toBeNull()
     // "Custom time…" keeps the time and drops the link: the time alone.
     const custom = draftReducer(draft, { type: 'targetTime', time: '20:30', slotId: null })
     expect(draftsEqual(custom, draft)).toBe(false)
@@ -243,10 +249,11 @@ describe('RT-WEB-04: every-time mode keeps one shape — the offsets and the lin
       target_days_before: 1,
       target_time: '20:30',
     })
-    // A days change on a linked target keeps the link.
+    // A days change on a linked target keeps the link, the time with it.
     const two = draftReducer(draft, { type: 'daysBefore', days: 2 })
     expect(draftToPatch(LINKED_REPEAT, two, ctx)).toEqual({
       target_days_before: 2,
+      target_time: '20:30',
       target_slot_id: 13,
     })
   })
