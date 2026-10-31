@@ -117,8 +117,8 @@ test('Reminders: the period that needs you, then the topmost waiting segment, th
   }
 })
 
-/** The task list's start (`data-task-list-landing`'s wrapper, whose margin is the landing line). */
-const tasks = (page: Page) => page.locator('[data-task-list-landing]').locator('..')
+/** The task list's start (`data-task-list-landing`, which carries the landing line). */
+const tasks = (page: Page) => page.locator('[data-task-list-landing]')
 
 /**
  * The dashboard's rows for these tests: a reminder in a started period, a
