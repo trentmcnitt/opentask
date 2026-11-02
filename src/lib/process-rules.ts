@@ -44,6 +44,7 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// (restates RULE AGE-THRESHOLDS, home: src/lib/task-segments.ts)
 /*
  * WHEN GROWTH ASKS (spec §7, rulings Q6/Q7, 2026-10-12): past the SAME
  * per-horizon threshold as the age badge (`AGE_THRESHOLDS` in
@@ -96,6 +97,15 @@ function setHorizon(value: string | null): HorizonValue | null {
   return (HORIZON_ORDER as readonly string[]).includes(value ?? '') ? (value as HorizonValue) : null
 }
 
+/**
+ * RULE GROW-ASK: Process asks to grow the SET horizon by one step when the task is past its
+ *   threshold, measured from the later of horizon_set_at (or created_at) and growth_kept_at. It
+ *   never asks with a picked target, a deck, a target today, a deadline close enough to steer, or a
+ *   horizon of eventually.
+ * Why: The SET horizon is the user's pace: a close deadline already decides, and a picked target
+ *   hides the horizon (the comment below).
+ * Ruling: Q6/Q7 2026-10-12; P2+ act: Trent 10-10 (src/lib/process-rules.ts:57).
+ */
 /**
  * Whether Process should ask to grow this task's horizon, and to what. Reads
  * the SET horizon, not the effective one: a deadline pulling the horizon in is

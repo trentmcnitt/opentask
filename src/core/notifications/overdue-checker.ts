@@ -119,6 +119,15 @@ interface NotificationBucket {
 }
 
 /**
+ * RULE NAG-PER-TASK-OVERRIDE: A task's auto_snooze_minutes replaces the overdue tier for that task,
+ *   and 0 means it never nags. The deadlines nag reads only the 0. Named reminder and prompt pushes
+ *   ignore the value entirely.
+ * Why: Off means off; for reminders, priority is the one dial.
+ * Ruling: Coordinator ruling 2026-10-22 (off means off); Trent 2026-10-26 ('Turn off every
+ *   nag-specific option for reminders').
+ */
+// (restates RULE NAG-TIER-DEFAULTS, home: src/core/db/schema.sql)
+/**
  * Get the effective notification repeat interval for a task in minutes.
  * Per-task override > priority-based user default.
  *
@@ -152,6 +161,13 @@ function getEffectiveInterval(task: OverdueTask): number {
 }
 
 /**
+ * RULE OVERDUE-FIRST-PUSH: An overdue task's first push goes out on the first tick at or after its
+ *   due time, and only once.
+ * Why: With <= in the query a second "minute 1" rule sent every overdue notification twice. Don't
+ *   add it back.
+ * Ruling: Trent 2026-09-29 (src/core/notifications/overdue-checker.ts:159).
+ */
+/**
  * Whether this cron minute notifies the task: its FIRST push (the first tick
  * at or after the due time — the query takes `due_at <= now`, so a task due
  * at 9:00:00 is seen by the 9:00 tick and one due at 9:00:30 by the 9:01
@@ -172,6 +188,12 @@ export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
   return isRepeatMinute(firstPush, interval, now, task.timezone)
 }
 
+/**
+ * RULE OVERDUE-CONSOLIDATION: Each tick, P0-P2 get 4 individual pushes plus a summary, P3 gets 5
+ *   plus a summary, and P4 is unlimited. Highest priority goes first, then the most overdue.
+ * Why: A tick stays a readable number of banners; Urgent is never summarised.
+ * Ruling: none recorded.
+ */
 /** Split eligible tasks into consolidation buckets. */
 function splitIntoBuckets(tasks: OverdueTask[]): {
   regular: NotificationBucket
@@ -331,6 +353,13 @@ function bucketSends(
 }
 
 /**
+ * RULE BADGE-ON-CHANGE: After the tick, a badge-only push goes out only when the user's overdue
+ *   count differs from the badge last sent. Users who just got a visible push are skipped.
+ * Why: Badge spam used up iOS's allowance, and the push that mattered was dropped (the comment
+ *   below).
+ * Ruling: none recorded.
+ */
+/**
  * Badge-only pushes, sent ONLY when a user's overdue count differs from the
  * badge their devices were last sent (badge-state.ts).
  *
@@ -372,6 +401,7 @@ async function sendChangedBadges(
   }
 }
 
+// (restates RULE TGT-OVERDUE, home: src/core/recurrence/occurrence.ts)
 /**
  * Every task overdue at `now`, with the time it is being notified about
  * (`effective_due_at`), highest priority first, then most overdue.

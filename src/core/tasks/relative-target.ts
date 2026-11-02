@@ -85,6 +85,14 @@ export type SlotsFor = (ownerId: number) => readonly TimeSlot[]
 export const ownerSlots: SlotsFor = (ownerId) => listTimeSlots(ownerId)
 
 /**
+ * RULE DL-RELATIVE-LINK: target_slot_id links target_time to the start of one of the owner's
+ *   periods. A linked row's time is always the period's current start. Retiming a period moves open
+ *   linked rows, and a row that the new time would make invalid is unlinked and keeps its old time.
+ * Why: A period the owner does not have is refused, never kept as a snapshot; a retime must not
+ *   leave a row invalid.
+ * Ruling: Relative-targets plan decisions 11, 13, 14 (2026-10-24).
+ */
+/**
  * THE LINK, resolved at write time (`resolveTime`): the input with
  * `target_time` filled from a sent period, and what the write does to the
  * link — a period id, null (unlinked: a custom time sent, or `target_slot_id:
@@ -178,6 +186,14 @@ export function assertOneOffRelative(
   return relative
 }
 
+/**
+ * RULE DL-STOP-REPEATING-KEEPS: Setting rrule to null on a deadline-anchored repeat keeps its
+ *   offsets and link, turning it into a relative one-off. This happens when the deadline stays,
+ *   this occurrence's target was not moved, and the task is not on deck.
+ * Why: Stopping the repeat keeps the relative target when nothing about this occurrence was
+ *   personal (moved or decked).
+ * Ruling: Ruling 6, 2026-10-24.
+ */
 /**
  * STOP REPEATING (ruling 6, 2026-10-24; a behaviour change): `rrule: null` on
  * a deadline-anchored repeat with a relative target keeps the offsets and the

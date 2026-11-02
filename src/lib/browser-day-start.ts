@@ -57,6 +57,13 @@ export function useLastKnownDayStart(): string | null {
 }
 
 /**
+ * RULE BROWSER-DAY-UNKNOWN: Until preferences load, the browser uses the last-known day start. With
+ *   none known it draws with midnight, and actions that commit a day wait for the load.
+ * Why: The page must draw before the preferences load without committing a day it does not know.
+ * Ruling: none recorded.
+ */
+// (restates RULE DAY-BOUNDARY-SWITCH, home: src/core/tasks/rollover-time.ts)
+/**
  * The browser's day boundary, or null when it is not known yet: once the
  * preferences have loaded, the rule (the day start with the switch on,
  * midnight off); before, the remembered one.

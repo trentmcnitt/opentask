@@ -89,6 +89,15 @@ export const DEADLINES_NAG_KEY = 'deadlines-page'
 /** Where the nag opens: the dashboard's Tasks card on the deadlines page. */
 export const DEADLINES_PAGE_PATH = tasksPanelPath('deadlines')
 
+/**
+ * RULE DL-NAG: One silent push per user while a page row waits. It never goes per task, never
+ *   counts in the badge and has no quiet hours. A row counts when it is waiting, has not left and
+ *   its Nag is not off; a decked row counts only in the safety net. The pace is the overdue tier
+ *   ×2, at least hourly in the safety net.
+ * Why: One push per user reminds them to plan, never one per task (the module comment).
+ * Ruling: Nag-map rulings 2-5 (2026-10-22); coordinator ruling 2026-10-22 ('off means off'); Trent
+ *   2026-10-22 (one ladder ×2).
+ */
 /** The page rows that keep the nag going (see the header). Pure. */
 export function countedDeadlineRows(rows: SegmentTask[]): SegmentTask[] {
   return rows.filter(
@@ -142,6 +151,14 @@ function dayName(day: string, today: string, timezone: string): string {
 }
 
 /**
+ * RULE DEADLINE-NAG-WORDS: The body shows counts only, never a title. In the safety net it names
+ *   the closest of passed, today or tomorrow, by OpenTask day and clock, so a deadline earlier
+ *   today that has gone by reads 'passed'. Otherwise it reads 'N deadlines to plan · nearest
+ *   <day>'.
+ * Why: An 11:30 deadline read "Deadline today" at 11:50 (Trent, 2026-10-30).
+ * Ruling: Ruling 5; Trent 2026-10-30 (src/core/notifications/deadline-nags.ts:126).
+ */
+/**
  * The banner, counts only (pure). In the safety net it names the closest
  * deadline's day: "Deadline tomorrow: 1 unplanned", "Deadlines today: 2
  * unplanned", "Deadline passed: 1 unplanned", with " · N more to plan" for the
@@ -173,6 +190,7 @@ export function deadlineNagContent(
   }
 }
 
+// (restates RULE DL-PAGE-MEMBERSHIP, home: src/lib/task-segments.ts)
 /**
  * Whether the user has any task the page could hold — one statement, so the
  * page itself is only built for a user with a target-less deadline task.
@@ -226,6 +244,12 @@ export interface PendingDeadlineNag {
   content: DeadlineNagContent
 }
 
+/**
+ * RULE DEADLINE-NAG-SWITCH: With the switch off there is no deadlines page and so no deadlines nag;
+ *   a deadline task nags through its automatic target instead.
+ * Why: With the switch off there is no deadlines page to nag about.
+ * Ruling: Plan A1 (one release).
+ */
 /** Every deadlines nag due this minute, at most one per user. Read-only. */
 export function pendingDeadlineNags(now: Date = new Date()): PendingDeadlineNag[] {
   if (!taskQueueEnabled()) return []

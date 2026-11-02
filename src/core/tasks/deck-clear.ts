@@ -72,6 +72,18 @@ export interface DeckClearAfter {
   }
 }
 
+/**
+ * RULE DECK-EXCLUSIVE: Decking drops a picked target, and a write that carries both a deck and a
+ *   due_at or rrule is refused (400). A write that leaves a picked target, or makes the task a
+ *   reminder or quota, clears on_deck_day in the same write and snapshot. Whether a deck may ever
+ *   coexist with a target, and whether this belongs at write time or read time, are PARKED (issues
+ *   I-01, I-02). Enforced on write today; coexistence PARKED at 51% (I-01), write vs read PARKED
+ *   (I-02).
+ * Why: Rule 1 of On deck (red-team B1, load-bearing): a task carries a picked target or a deck,
+ *   never both.
+ * Ruling: Red-team B1 ('load-bearing'); On deck D1 approved 2026-10-20. Coexistence PARKED at 51%;
+ *   write vs read PARKED.
+ */
 /** Whether a write leaving `after` must clear the task's deck (see the module doc). */
 export function deckClearedBy(task: Pick<Task, 'on_deck_day'>, after: DeckClearAfter): boolean {
   if (!task.on_deck_day) return false
@@ -103,6 +115,14 @@ export function deckRolloverTime(task: Pick<Task, 'user_id'>): string | null {
   return rolloverTimeForUser(task.user_id)
 }
 
+/**
+ * RULE DECK-A7-STAMPS: A new deck day from the user stamps last_considered_at and
+ *   segment_targeted_at (A7). It does not stamp considered when the deadlines page still holds the
+ *   row after the deck. An AI deck stamps neither.
+ * Why: A decked page row stays on the page, waiting, showing its deck day: seeing it is still its
+ *   own tap.
+ * Ruling: Trent, 2026-10-22: a decked page row stays on the page, waiting, showing its deck day.
+ */
 /**
  * Whether the DEADLINES PAGE holds the task once a deck write leaves it — no
  * target (a deck drops a picked one), the deck day, the resulting deadline —

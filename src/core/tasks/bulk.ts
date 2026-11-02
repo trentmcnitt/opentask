@@ -349,6 +349,15 @@ interface BulkSnoozeFilterResult {
 }
 
 /**
+ * RULE DL-PASSED-HIGH: In every bulk sweep, a task whose deadline has passed is read at
+ *   max(priority, High). It moves only once nothing lower is left. Tasks held back for this reason
+ *   alone are counted in skipped_deadline. The same tier decides where a defer lands.
+ * Why: A passed deadline waits for the second press like a High task, so it does not vanish in a
+ *   casual sweep.
+ * Ruling: Trent, 2026-10-12 (src/core/tasks/bulk.ts:352).
+ * Restated at: src/core/tasks/bulk.ts (filterForBulkSnooze).
+ */
+/**
  * The tier a bulk sweep reads a task at (Trent's ruling, 2026-10-12): its
  * priority — except that a task whose deadline has PASSED counts as at least
  * High (P3), so it is swept only once nothing lower is left in the batch. A
@@ -408,6 +417,17 @@ export function bulkSnoozeTier(
  * own priority is below High). It is not in `urgentSkipped`, so the native
  * apps' High/Urgent lines stay true; it reaches the API as `skipped_deadline`.
  */
+/**
+ * RULE BULK-SWEEP-CEILING: A bulk snooze or sweep moves tiers 0-2. It moves the High tier only when
+ *   no lower task in the batch is still eligible. P4 never moves and does not hold High back.
+ *   include_task_ids rescues any priority. Reminders and quotas are always skipped and cannot be
+ *   rescued. The same filter applies to bulk/snooze, snooze-overdue and bulk date edits.
+ * Why: Excluding High outright left a list of only overdue High tasks impossible to clear; a P4 is
+ *   never swept, so it must not hold High back.
+ * Ruling: Trent 2026-09-15: High joins once nothing lower is left (src/core/tasks/bulk.ts:374,
+ *   DEV_LOG.md:98).
+ */
+// (restates RULE DL-PASSED-HIGH, home: src/core/tasks/bulk.ts)
 function filterForBulkSnooze(
   tasks: Task[],
   includeTaskIds?: Set<number>,
@@ -470,6 +490,13 @@ function filterForBulkSnooze(
   return { eligible, urgentSkipped, highSkipped, deadlineSkipped, reminderSkipped, oneHighId }
 }
 
+/**
+ * RULE TQ-ONE-HIGH: With the switch on, a defer that finds only the High tier left moves one task:
+ *   the oldest target first, then the nearest deadline, then the lowest id. A pick and a bulk edit
+ *   keep the whole-tier rule. Urgent is never swept.
+ * Why: One deliberate press per High task, and the toast names it.
+ * Ruling: Task-queue B8 / resolution 8 (no person or date recorded in code).
+ */
 /**
  * Which High-tier task one press moves (resolution 8): the oldest target
  * first, then the nearest deadline (none sorts last), then the lowest id.
@@ -622,6 +649,14 @@ interface DeferContext {
   rollover: Date | null
 }
 
+/**
+ * RULE TQ-PICK-DEFER: The gesture decides the class through bulkSnooze's source. No source means a
+ *   pick, which is never marked: the editor, a single snooze, Today, multi-select and bulk edit.
+ *   source 'sweep' (every Snooze-all, snooze-overdue) or 'try_tomorrow' is a defer. Nothing records
+ *   where a target came from. try_tomorrow uses the day start even with the switch off, see I-21.
+ * Why: A pick is the user's own choice and is never marked; only a defer goes to the queue.
+ * Ruling: Spec 'Picks and defers' (task-queue design, 2026-10-19), as cited in docs.
+ */
 function deferContext(
   userId: number,
   timezone: string,
@@ -650,6 +685,16 @@ interface Landing {
   cappedOccurrence: boolean
 }
 
+/**
+ * RULE TQ-MARK-LANDING: Under a defer with the switch on, a task below High with no deadline whose
+ *   landing time is at or after the next rollover gets the rollover moment as its target, and
+ *   queue_mark is set. A below-High repeat is never deferred past its next occurrence (B2). A
+ *   deadline task moves, capped, and is never marked. High and Urgent tasks move to the landing
+ *   time.
+ * Why: A marked task's target is the rollover, so it is never over target, and never swept, before
+ *   then.
+ * Ruling: Resolution 12; B2.
+ */
 /**
  * PICKS AND DEFERS (task queue, 2026-10-19; spec "Picks and defers", B1, B2).
  *
@@ -715,6 +760,15 @@ function nextOccurrenceOf(
   return next ? occurrenceDates(task, next, timezone).targetAt : null
 }
 
+/**
+ * RULE TQ-REMEMBER-TARGET: The defer that first marks a task writes its pre-sweep target into
+ *   queued_from_due_at. A second defer keeps that value. At a strip, a marked task keeps the
+ *   recorded value and an unmarked one records its current target. A deck strip clears it, because
+ *   queued_from_deck_day remembers the day instead.
+ * Why: "The original target is remembered" (spec rule 2), so the queue can sort by it.
+ * Ruling: Spec rule 2.
+ * Restated at: src/core/tasks/task-rollover.ts (keptTarget).
+ */
 /**
  * The queue fields a defer's landing writes with its target (task queue). A
  * plain sweep's mark also clears a Try Tomorrow flag left from before. "The
@@ -876,6 +930,17 @@ export function bulkSnooze(options: BulkSnoozeOptions): BulkSnoozeResult {
   if (taskIds.length === 0) return emptySnoozeResult()
 
   validateSnoozeMode(until, deltaMinutes, source)
+  /**
+   * RULE TQ-TRY-TOMORROW: Try Tomorrow acts on exactly one task. It defers it to the next rollover
+   *   and sets queue_mark and try_tomorrow. On a High, Urgent or deadline task it is a plain move
+   *   to the rollover with no mark. The flag lasts while the row is in Today's pulls. The cron
+   *   clears it on tasks queued before the rollover, and a consider that takes the task out of the
+   *   queue clears it too.
+   * Why: Try Tomorrow is a one-row gesture; High, Urgent and deadline tasks are never stripped, so
+   *   they get a plain move.
+   * Ruling: Designer 10-19: rows not lifted, they carry a mark
+   *   (src/core/tasks/task-segments.ts:997).
+   */
   if (source === 'try_tomorrow' && new Set(taskIds).size !== 1) {
     throw new ValidationError('Try Tomorrow takes exactly one task')
   }

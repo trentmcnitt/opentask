@@ -85,10 +85,20 @@ export interface NowOptions {
   dayStart: string
 }
 
+/**
+ * RULE TQ-NOW-QUEUED: With the queue on, Now does not show a queued undated High or Urgent task
+ *   (A8). Today's decks fold behind '+ N more' and go to the On deck section. A future deck is
+ *   relevant only on its heads-up days. A target-less deadline task is relevant only in its safety
+ *   net, and there it is never in On deck.
+ * Why: The queue already holds a queued task, so it is not on two surfaces at once; with the switch
+ *   off, main's behaviour exactly.
+ * Ruling: A8, A13 (red-team resolutions); deadlines-page plan §4, 2026-10-22.
+ */
 export function isRelevantNow(task: Task, timezone: string, now: Date, opts: NowOptions): boolean {
   // Over target first. Belt and braces: A1 (strict) keeps a deck off a task
   // whose automatic target has arrived, but one that nags is relevant, deck
-  // or not.
+  // or not. (A1 strict is the 10-20 rule; the deadlines page replaced it
+  // 2026-10-22. A deck with a target: PARKED I-01/I-02.)
   if (task.due_at !== null && isOverdue(task, now)) return true
   // The deadlines page (queue on): a target-less deadline task, deck or not,
   // is relevant only in its safety net.

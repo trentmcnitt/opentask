@@ -148,7 +148,18 @@ export function effectiveDueAt(
   // the snooze-overdue sweep, the day simulator) goes through here, so they
   // all agree. A deck WITH a target is a one-off's deadline automatic target
   // (the deadline protects regardless, A1's belt and braces): that target is
-  // the truth, as below.
+  // the truth, as below. (That A1 is the 10-20 rule; the deadlines page
+  // replaced it 2026-10-22. A deck with a target: PARKED I-01/I-02.)
+  /**
+   * RULE DECK-NEVER-NAGS: A deck with no due_at is never due: no overdue state, no badge, no
+   *   notification, no sweep. A deck that still has a due_at is treated as due. That is read-time
+   *   handling under parked question I-01. Deck-with-target handling is read-time, PARKED
+   *   I-01/I-02.
+   * Why: Every "due now" reader goes through effectiveDueAt, so they all agree that a deck is a
+   *   plan, not debt.
+   * Ruling: On deck D1 rule 2, 2026-10-20.
+   * Restated at: src/core/tasks/currently-due.ts (fetchDueCandidates SQL).
+   */
   if (task.on_deck_day && !task.due_at) return null
 
   // One-offs: due_at is the whole truth.
@@ -182,6 +193,22 @@ export function effectiveDueAt(
   return todaysOccurrence(task, timezone, openTaskDaySpan(now, timezone, dayStart))
 }
 
+/**
+ * RULE TGT-OVERDUE: A task is overdue when its effective target is at or before now (<=). Done,
+ *   deleted and archived tasks are excluded, and so are quotas, reminders and target-less decks.
+ *   For a one-off, or for a deadline-anchored or from_completion repeat, the effective target is
+ *   due_at alone, so a target-less deadline task is never overdue. A target-anchored from_due
+ *   repeat with no due_at is due from its occurrence in today's OpenTask day. The badge, the
+ *   notifier, snooze-overdue, ?overdue=true, each project's overdue_count and the simulator all use
+ *   this one predicate.
+ * Why: One predicate for the badge, the notifier, the sweep and the counts, so they never disagree
+ *   (§4.6). Its boundary (<=) differs from the client's isOverdue (<): issue I-03, open.
+ * Ruling: Word 'Overdue': Trent 2026-10-21 (docs/TASK-MODEL.md:172). A recurring task carries debt:
+ *   Trent 2026-09-07 (src/core/notifications/overdue-checker.ts:380). <= cites ruling Q10
+ *   (src/core/tasks/currently-due.ts:75). No fake targets: deadlines-page plan L1, 2026-10-22.
+ * Restated at: src/core/tasks/currently-due.ts (fetchDueCandidates),
+ *   src/core/notifications/overdue-checker.ts (overdueTasksAt).
+ */
 /**
  * Whether the item is due or overdue right now.
  *

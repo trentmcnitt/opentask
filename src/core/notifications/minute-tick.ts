@@ -26,6 +26,13 @@ import { PROMPT_NAG_SOURCE } from '@/core/notifications/prompt-nags'
 import { DEADLINE_NAG_SOURCE } from '@/core/notifications/deadline-nags'
 import { runTick, type TickSource } from '@/core/notifications/tick'
 
+/**
+ * RULE TICK-SOURCE-ORDER: The tick runs: overdue, slot-open push, slot nag, named reminders, named
+ *   prompts, deadlines nag. The slot nag stands down in a minute when a slot opens.
+ * Why: The slot nag stands down the minute a slot opens rather than putting a second banner beside
+ *   it (the module comment).
+ * Ruling: Trent 2026-10-26.
+ */
 export const MINUTE_TICK_SOURCES: readonly TickSource[] = [
   OVERDUE_SOURCE,
   SLOT_REMINDER_SOURCE,

@@ -167,6 +167,13 @@ function namedReminderCandidates(userId: number): NamedReminderCandidate[] {
 }
 
 /**
+ * RULE NAMED-PUSH-TIMING: A named push fires first when its period opens, then repeats at the
+ *   slot_nag rung on clock marks. It stops once the item is considered, done or met, or the
+ *   OpenTask day ends.
+ * Why: No extra state: the roster and the end of the OpenTask day stop it.
+ * Ruling: Trent 2026-10-26 (src/core/notifications/reminder-nags.ts:1).
+ */
+/**
  * Today's OpenTask day for a user, and when each of its periods that has
  * opened opened. Shared with the named quota-prompt pushes (prompt-nags.ts).
  */
