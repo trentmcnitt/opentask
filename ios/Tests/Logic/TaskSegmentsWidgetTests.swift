@@ -246,7 +246,8 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
     }
 
     /// The deadlines page's SAFETY NET (native PR E): a consider marks the
-    /// row seen and it keeps waiting; a seen row is no longer considerable.
+    /// row seen and it keeps waiting. No control considers a net row since
+    /// 2026-11-02; this is a tap staged before an update, drawn safely.
     func testAConsiderInTheSafetyNetSeesTheRowAndKeepsItWaiting() throws {
         let net = SegmentTaskDTO(task: TaskDTO(id: 7, title: "Task 7"), state: .waiting, safetyNet: true)
         let plain = row(8)

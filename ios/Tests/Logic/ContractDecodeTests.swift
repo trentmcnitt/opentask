@@ -442,14 +442,16 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
         XCTAssertEqual(segments.map(\.title)[0...2], ["Deadlines", "Heads up", "Today's pulls"])
 
-        // The deadlines page: the seen safety-net row waits, inert; the
-        // deferred one LEFT, "· deferred to <its lead day>".
+        // The deadlines page: the seen safety-net row waits — no consider in
+        // the net (2026-11-02), its circle the target clock; the deferred one
+        // LEFT, "· deferred to <its lead day>".
         let deadlines = segments[0]
         let net = try XCTUnwrap(deadlines.tasks.first { $0.id == Fixtures.deadlinePassed })
         XCTAssertEqual(net.state, .waiting)
         XCTAssertTrue(net.safetyNet)
         XCTAssertTrue(net.seen)
         XCTAssertFalse(net.isConsiderable)
+        XCTAssertTrue(net.isInSafetyNet)
         XCTAssertTrue(deadlines.hasWaiting, "the safety net keeps the page open")
         let deferred = try XCTUnwrap(deadlines.tasks.first { $0.id == Fixtures.deadlineWindow })
         XCTAssertEqual(deferred.state, .considered)
@@ -535,7 +537,8 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertNotNil(page.kind?.doneColorHex)
         XCTAssertEqual(page.tasks.map(\.safetyNet), [true, false, false])
         XCTAssertEqual(page.tasks.map(\.seen), [false, false, false])
-        XCTAssertTrue(page.tasks.allSatisfy(\.isConsiderable))
+        // The net row has no consider (2026-11-02); the others do.
+        XCTAssertEqual(page.tasks.map(\.isConsiderable), [false, true, true])
         XCTAssertEqual(
             page.tasks.map(\.id),
             [Fixtures.deadlinePassed, Fixtures.deadlineRepeatTargetless, Fixtures.deadlineWindow]

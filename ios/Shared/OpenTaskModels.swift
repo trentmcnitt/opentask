@@ -1444,12 +1444,12 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// (`SegmentLeft.words`) and has NO controls: its way back is Undo.
     let left: SegmentLeft?
     /// The deadlines page's SAFETY NET (`safety_net`, from the day before
-    /// the deadline): seeing the row doesn't silence it, so a consider marks
-    /// it `seen` and it stays waiting. False off the deadlines page.
+    /// the deadline): only a target or done takes the row off the page, so
+    /// it has no consider (Trent, 2026-11-02) — its circle is the target
+    /// clock (`isInSafetyNet`). False off the deadlines page.
     let safetyNet: Bool
-    /// A safety-net row considered this OpenTask day (`seen`): still
-    /// waiting, its circle drawn filled and inert (a tap would change
-    /// nothing). False off the deadlines page.
+    /// A safety-net row an older client considered this OpenTask day
+    /// (`seen`). Decoded; since 2026-11-02 nothing draws it.
     let seen: Bool
     /// "Today's pulls" Try Tomorrow mark (`try_tomorrow`, the web's left-edge
     /// mark). Decoded; Try Tomorrow itself is app only, nothing native draws
@@ -1462,13 +1462,13 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// `sectionOf`).
     var section: UpcomingSection { upcomingSection ?? .later }
 
-    /// A seen safety-net row: waiting, but its circle does nothing (the web's
-    /// `seenInNet`).
-    var isSeenInSafetyNet: Bool { safetyNet && seen }
+    /// A waiting safety-net row (the web's `inNet`, 2026-11-02): its circle
+    /// is the target clock — a tap targets today — and done is its only
+    /// other control. Seen or not.
+    var isInSafetyNet: Bool { safetyNet && state == .waiting }
 
-    /// Whether the circle considers: a waiting row, unless it is a seen
-    /// safety-net row.
-    var isConsiderable: Bool { state == .waiting && !isSeenInSafetyNet }
+    /// Whether the circle considers: a waiting row, never a safety-net one.
+    var isConsiderable: Bool { state == .waiting && !safetyNet }
 
     /// A row that LEFT today, as one string: its title, then the web's words
     /// for how it left ("Fix the gate · done", "… · deferred to Thu"), the
@@ -1577,7 +1577,8 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// A consider as this row takes it: a safety-net row is SEEN and keeps
     /// waiting (the deadline is close, so it stays); any other row is
     /// considered. The optimistic draw, and what `confirmSegmentConsider`
-    /// writes into the cache.
+    /// writes into the cache. No native control considers a net row since
+    /// 2026-11-02 (`isConsiderable`); the net branch stays for a stale tap.
     func consideredByTap() -> SegmentTaskDTO {
         guard safetyNet else { return state == .waiting ? with(state: .considered) : self }
         return SegmentTaskDTO(
@@ -1594,6 +1595,10 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// It was `!recurring` while Today on a repeating task could reset its
     /// schedule. A row that LEFT the segment (`left`) has no controls at all.
     var offersTargetToday: Bool { left == nil }
+
+    /// Whether the widget draws Target today in its OWN column: not on a
+    /// safety-net row, whose clock takes the circle's column (2026-11-02).
+    var showsTargetTodayColumn: Bool { offersTargetToday && !isInSafetyNet }
 }
 
 /// How a row left its segment today, handled (the web's `SegmentLeft`,

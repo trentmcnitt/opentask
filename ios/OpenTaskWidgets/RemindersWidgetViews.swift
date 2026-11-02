@@ -1696,7 +1696,7 @@ enum SegmentRowMetrics {
 
     /// The width a row's label wraps in — the row and the pager use the same.
     static func titleWidth(in width: CGFloat, row: SegmentTaskDTO) -> CGFloat {
-        row.left != nil ? leftTitleWidth(in: width) : titleWidth(in: width, showsTargetToday: row.offersTargetToday)
+        row.left != nil ? leftTitleWidth(in: width) : titleWidth(in: width, showsTargetToday: row.showsTargetTodayColumn)
     }
 }
 
@@ -2003,8 +2003,8 @@ private struct TaskSegmentListView: View {
             DoneDivider(count: count, label: "CONSIDERED")
         case .waiting(let row):
             SegmentTaskRow(
-                task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
-                upcomingSection: row.upcomingSection, left: nil, seenInSafetyNet: row.isSeenInSafetyNet,
+                task: row.task, showsTargetToday: row.showsTargetTodayColumn, segmentHorizon: segment.horizon,
+                upcomingSection: row.upcomingSection, left: nil, inSafetyNet: row.isInSafetyNet,
                 considered: false, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: markerBleed,
@@ -2015,7 +2015,7 @@ private struct TaskSegmentListView: View {
                 task: row.task, showsTargetToday: row.offersTargetToday, segmentHorizon: segment.horizon,
                 upcomingSection: row.upcomingSection, left: row.left,
                 consideredLabel: row.consideredLabelText(now: entry.date),
-                seenInSafetyNet: false,
+                inSafetyNet: false,
                 considered: true, now: entry.date, metaPlacement: layout.metaPlacement,
                 upcomingForm: layout.upcomingForm, lines: layout.lines, height: layout.height,
                 shrinks: layout.shrinks, firstLineHeight: metrics.titleHeight(lines: 1), markerBleed: 0,
@@ -2336,9 +2336,10 @@ private struct SegmentTaskRow: View {
     /// the web's `ConsideredSegmentRow` words — "· done", "· on deck Sat" —
     /// or the title alone). Unused on a waiting row.
     var consideredLabel: String = ""
-    /// A deadlines-page safety-net row seen today: still waiting, its circle
-    /// drawn filled and inert (a tap would change nothing).
-    let seenInSafetyNet: Bool
+    /// A deadlines-page safety-net row (Trent, 2026-11-02): no consider —
+    /// the circle's column is the target clock (tap: target today; a widget
+    /// has no hold, so no Target menu), and done is its only other control.
+    let inSafetyNet: Bool
     let considered: Bool
     let now: Date
     /// Where the small words go (`ReminderRowLayout.metaPlacement`, measured
@@ -2408,12 +2409,16 @@ private struct SegmentTaskRow: View {
                 if considered {
                     marker(Image(systemName: "circle.inset.filled"), color: .secondary)
                         .accessibilityLabel(Text("Considered today: \(spoken)"))
-                } else if seenInSafetyNet {
-                    // Seen in the safety net (the web's seen ring): the
-                    // deadline is close, so it stays on the page, waiting —
-                    // and another tap would change nothing.
-                    marker(Image(systemName: "circle.inset.filled"), color: WidgetTheme.rowMarkColor(task.priority))
-                        .accessibilityLabel(Text("Seen today, the deadline is close, so it stays: \(spoken)"))
+                } else if inSafetyNet {
+                    // The safety net: the target clock in the circle's column
+                    // (the web's `NetTargetLead`); the separate clock column
+                    // is gone (`showsTargetTodayColumn`).
+                    Button(intent: TargetSegmentTodayIntent(taskId: task.id)) {
+                        marker(Image(systemName: "clock"), color: WidgetTheme.rowMarkColor(task.priority))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -markerBleed)
+                    .accessibilityLabel(Text("Target today: \(spoken)"))
                 } else {
                     Button(intent: ConsiderSegmentTaskIntent(taskId: task.id)) {
                         marker(Image(systemName: "circle"), color: WidgetTheme.rowMarkColor(task.priority))

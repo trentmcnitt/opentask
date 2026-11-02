@@ -377,9 +377,9 @@ final class WatchViewModel: ObservableObject {
     /// full reloads, each redrawing the list under the finger. The toolbar
     /// Undo takes a misfire back.
     ///
-    /// On the deadlines page's SAFETY NET (native PR E) a consider marks the
-    /// row seen and it stays waiting (`consideredByTap`); a seen one's circle
-    /// does nothing, so it never gets here.
+    /// A safety-net row has no consider since 2026-11-02 (its tap targets
+    /// today, `targetSegmentTaskToday`), so it never gets here
+    /// (`isConsiderable`).
     func considerSegmentTask(_ task: TaskDTO) {
         guard !pendingSegmentConsiders.contains(task.id), let before = segmentRow(task.id),
               before.isConsiderable
@@ -401,6 +401,26 @@ final class WatchViewModel: ObservableObject {
                 await refreshReminders()
             }
             WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        }
+    }
+
+    /// A SAFETY-NET row's tap (Trent, 2026-11-02): Target today — the one
+    /// way off the page besides done (`POST /api/task-segments/target-today`).
+    /// Instant like a consider: the row LEAVES "· targeted" on the tap, a
+    /// failure reloads it back from the server.
+    func targetSegmentTaskToday(_ task: TaskDTO) {
+        editSegmentRow(task.id) { $0.left == nil ? $0.leaving(.target) : $0 }
+        WatchCache.editSegmentRow(taskId: task.id) { $0.left == nil ? $0.leaving(.target) : $0 }
+        WKInterfaceDevice.current().play(.click)
+        Task {
+            do {
+                try await api.targetSegmentTasksToday(ids: [task.id])
+                noteOwnAction()
+                WidgetCenter.shared.reloadAllTimelines()
+            } catch {
+                WKInterfaceDevice.current().play(.failure)
+                await load()
+            }
         }
     }
 
