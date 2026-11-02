@@ -20,6 +20,7 @@
  */
 import type { ReminderGroup } from '@/hooks/useReminders'
 import type { QuotaPrompt } from '@/lib/quota-prompts'
+import type { PromptIntent } from '@/lib/prompt-intents'
 
 /**
  * Put rows back where they were before a consider: reminders out of the
@@ -103,5 +104,48 @@ export class PinnedUndone {
   }
   keys(): Set<string> {
     return new Set([...this.from.keys()].filter((k): k is string => typeof k === 'string'))
+  }
+}
+
+/**
+ * Considers whose write has ANSWERED but which no applied payload is yet known
+ * to include (2026-11-02, the burst on a started period): each stays drawn
+ * considered until a payload requested after its answer has been applied —
+ * `src/lib/pending-overlay.ts`'s rule, which the task segments follow. Before,
+ * the surface stopped drawing a consider the moment its write answered, so a
+ * refresh REQUESTED before that (one sent at load, say) and landing after it
+ * put the row back as waiting — and the next tap, aimed at the row below, hit
+ * it and sent a second `/done` (a repeating reminder advanced twice for one
+ * tap). Keys are reminder ids (numbers) and prompt keys (strings), with the
+ * prompt's intent.
+ */
+export class SettlingConsiders {
+  private readonly from = new Map<number | string, { from: number; intent: PromptIntent }>()
+
+  /** The write answered: any payload from request `from` on includes it. */
+  add(keys: Iterable<number | string>, intent: PromptIntent, from: number): void {
+    for (const key of keys) this.from.set(key, { from, intent })
+  }
+
+  /** Stop drawing these considered (an undo or a put-back takes them back). */
+  release(keys: Iterable<number | string>): void {
+    for (const key of keys) this.from.delete(key)
+  }
+
+  /** A payload from request `seq` is being applied: it includes every write answered before it. */
+  settle(seq: number): void {
+    for (const [key, entry] of this.from) if (seq >= entry.from) this.from.delete(key)
+  }
+
+  /** The settling reminder ids, for `reconcileInFlight`. */
+  ids(): Set<number> {
+    return new Set([...this.from.keys()].filter((k): k is number => typeof k === 'number'))
+  }
+
+  /** The settling prompt keys and their intents. */
+  prompts(): Map<string, PromptIntent> {
+    const out = new Map<string, PromptIntent>()
+    for (const [key, entry] of this.from) if (typeof key === 'string') out.set(key, entry.intent)
+    return out
   }
 }

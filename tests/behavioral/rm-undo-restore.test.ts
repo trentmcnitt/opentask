@@ -4,7 +4,7 @@
  * until a payload from after the undo lands.
  */
 import { describe, expect, test } from 'vitest'
-import { PinnedUndone, restoreInPlace } from '@/lib/reminder-undo'
+import { PinnedUndone, SettlingConsiders, restoreInPlace } from '@/lib/reminder-undo'
 import type { ReminderGroup } from '@/hooks/useReminders'
 import type { QuotaPrompt } from '@/lib/quota-prompts'
 import type { Task } from '@/types'
@@ -79,5 +79,38 @@ describe('PinnedUndone', () => {
     pinned.release([2])
     expect(pinned.unconfirmed([1, 2])).toEqual([])
     expect(pinned.ids()).toEqual(new Set([1]))
+  })
+})
+
+/**
+ * A consider that ANSWERED stays drawn considered until a payload requested
+ * after the answer is applied (2026-11-02): a refresh sent at load and landing
+ * after a burst of taps put the first considered row back, and the next tap
+ * hit it — a second `/done` for one reminder.
+ */
+describe('SettlingConsiders', () => {
+  test('RU-20: a payload requested before the answer leaves it considered; one after settles it', () => {
+    const settling = new SettlingConsiders()
+    // Request 3 was out when the consider answered: from request 4 on, it is in.
+    settling.add([50, 'q:1'], 'consider', 4)
+    expect(settling.ids()).toEqual(new Set([50]))
+    expect(settling.prompts()).toEqual(new Map([['q:1', 'consider']]))
+    settling.settle(3)
+    expect(settling.ids()).toEqual(new Set([50]))
+    settling.settle(4)
+    expect(settling.ids()).toEqual(new Set())
+    expect(settling.prompts()).toEqual(new Map())
+  })
+
+  test('RU-21: each entry settles on its own mark; release takes one back (undo, put back)', () => {
+    const settling = new SettlingConsiders()
+    settling.add([1], 'consider', 4)
+    settling.add([2, 'q:2'], 'did', 6)
+    settling.settle(5)
+    expect(settling.ids()).toEqual(new Set([2]))
+    expect(settling.prompts()).toEqual(new Map([['q:2', 'did']]))
+    settling.release([2])
+    expect(settling.ids()).toEqual(new Set())
+    expect(settling.prompts()).toEqual(new Map([['q:2', 'did']]))
   })
 })
