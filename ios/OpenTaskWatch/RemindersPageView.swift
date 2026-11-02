@@ -495,8 +495,9 @@ struct TaskSegmentSection: View {
         ForEach(rows) { row in
             SegmentRowView(
                 task: row.task, segmentHorizon: segment.horizon, upcomingSection: row.upcomingSection,
-                seenInSafetyNet: row.isSeenInSafetyNet,
+                inSafetyNet: row.isInSafetyNet,
                 consider: { model.considerSegmentTask(row.task) },
+                targetToday: { model.targetSegmentTaskToday(row.task) },
                 done: { model.completeSegmentTask(row.task) }
             )
         }
@@ -546,6 +547,8 @@ private struct NothingTodayLine: View {
 /// target "Nov 1", the deadline), and the done checkbox INLINE on the right,
 /// like a quota prompt's. A tap on the circle or title considers ("I saw
 /// it", never a completion — the web row's rule); the checkbox completes.
+/// On the deadlines page's SAFETY NET (Trent, 2026-11-02) there is no
+/// consider: the circle is a clock and the tap targets today.
 /// Horizon change and remove-target are not on the watch: they live in the
 /// app (amendment 16 allows a deep link; the watch has no web view).
 struct SegmentRowView: View {
@@ -553,10 +556,11 @@ struct SegmentRowView: View {
     let segmentHorizon: String
     /// An Upcoming row's section: a Tomorrow row's target is its time alone.
     var upcomingSection: UpcomingSection? = nil
-    /// A deadlines-page safety-net row seen today (native PR E): it stays,
-    /// waiting, its circle filled and the tap inert.
-    var seenInSafetyNet = false
+    /// A deadlines-page safety-net row: only a target or done takes it off
+    /// the page, so the circle is a clock and the tap targets today.
+    var inSafetyNet = false
     let consider: () -> Void
+    var targetToday: () -> Void = {}
     let done: () -> Void
 
     private var meta: String? { task.segmentMeta(segmentHorizon: segmentHorizon, upcomingSection: upcomingSection) }
@@ -601,9 +605,9 @@ struct SegmentRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
-            Button(action: consider) {
+            Button(action: inSafetyNet ? targetToday : consider) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: seenInSafetyNet ? "circle.inset.filled" : "circle")
+                    Image(systemName: inSafetyNet ? "clock" : "circle")
                         .foregroundStyle(WatchTheme.accent)
                         .font(.caption)
                         .padding(.top, 3)
@@ -623,10 +627,7 @@ struct SegmentRowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(seenInSafetyNet)
-            .accessibilityLabel(Text(
-                seenInSafetyNet ? "Seen today, the deadline is close, so it stays: \(spoken)" : "Considered: \(spoken)"
-            ))
+            .accessibilityLabel(Text(inSafetyNet ? "Target today: \(spoken)" : "Considered: \(spoken)"))
 
             Button(action: done) {
                 Image(systemName: "square")

@@ -71,21 +71,20 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
         // Morning waits too; Deadlines still wins.
         let segments = strip(["deadlines": [row(1)], "days": [row(2)]])
         XCTAssertEqual(key(periods(morning: 2), segments, at(9)), deadlinesKey)
-        // An unseen SAFETY-NET row counts: it waits until seen.
+        // A SAFETY-NET row counts: only a target or done takes it off.
         let net = strip(["deadlines": [row(1, safetyNet: true)]])
         XCTAssertEqual(key(periods(morning: 2), net, at(9)), deadlinesKey)
     }
 
-    func testASeenSafetyNetRowDoesNotHoldDeadlinesFirst() {
-        // Seen: still waiting (the web's rule), but it no longer counts here.
+    func testASeenSafetyNetRowStillHoldsDeadlinesFirst() {
+        // 2026-11-02: a net row has no consider; a `seen` an older client
+        // left on it draws nothing and changes nothing here.
         let seenRow = row(1, safetyNet: true, seen: true)
         XCTAssertEqual(seenRow.state, .waiting)
+        XCTAssertTrue(seenRow.isInSafetyNet)
+        XCTAssertFalse(seenRow.isConsiderable)
         let segments = strip(["deadlines": [seenRow]])
-        XCTAssertTrue(segments[0].hasWaiting)
-        XCTAssertEqual(key(periods(morning: 2), segments, at(9)), 1, "the waiting Morning, not Deadlines")
-        // One unseen row beside it is enough.
-        let mixed = strip(["deadlines": [seenRow, row(2)]])
-        XCTAssertEqual(key(periods(morning: 2), mixed, at(9)), deadlinesKey)
+        XCTAssertEqual(key(periods(morning: 2), segments, at(9)), deadlinesKey)
     }
 
     func testAnEmptyOrConsideredDeadlinesPageDoesNotCount() {
@@ -98,16 +97,16 @@ final class ReminderDefaultPageTests: WidgetStoreTestCase {
     }
 
     /// The ruling's step 3 lists the queue's kinds without Deadlines: once
-    /// its rows are all seen, it is never the default — even with every
-    /// period done and nothing else waiting (its bar stays purple; the
+    /// its rows are all considered, it is never the default — even with
+    /// every period done and nothing else waiting (its bar stays purple; the
     /// default is the latest opened period, completed — step 5).
-    func testDeadlinesWithOnlySeenRowsIsNotAQueueStep() {
-        let segments = strip(["deadlines": [row(1, safetyNet: true, seen: true)]])
+    func testDeadlinesWithOnlyConsideredRowsIsNotAQueueStep() {
+        let segments = strip(["deadlines": [row(1, .considered)]])
         XCTAssertEqual(key(periods(), segments, at(13)), 2, "Midday, the latest opened, Complete — not Deadlines")
         XCTAssertEqual(key(periods(), segments, at(20)), 3, "Evening, the latest opened — not Deadlines")
         XCTAssertEqual(key(periods(), segments, at(4)), 1, "before Morning opens: Morning — not Deadlines")
         // A later queue segment waiting is the default instead.
-        let withDaily = strip(["deadlines": [row(1, safetyNet: true, seen: true)], "days": [row(2)]])
+        let withDaily = strip(["deadlines": [row(1, .considered)], "days": [row(2)]])
         XCTAssertEqual(key(periods(), withDaily, at(13)), dailyKey)
     }
 

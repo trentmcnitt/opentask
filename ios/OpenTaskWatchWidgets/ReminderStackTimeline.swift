@@ -286,9 +286,10 @@ enum ReminderStackTimeline {
     static func segmentItemKey(_ taskId: Int) -> String { "s:\(taskId)" }
 
     /// A segment's waiting rows as cards, in the server's order (Upcoming's
-    /// Tomorrow rows first, as the server sends them). Not a seen safety-net
-    /// row (native PR E): it stays waiting on the deadlines page, but its ○
-    /// is inert, so it is no card.
+    /// Tomorrow rows first, as the server sends them). Not a safety-net row
+    /// (2026-11-02; a seen one since native PR E): it has no consider, and a
+    /// card's one control is the ○, so it is no card — the deadlines nag and
+    /// the Reminders page carry it.
     static func segmentCards(_ segment: TaskSegmentDTO, urgent: Int) -> [WatchWidgetEntry.ReminderCard] {
         let rows = segment.waitingTasks.filter(\.isConsiderable)
         let keys = rows.map { segmentItemKey($0.id) }

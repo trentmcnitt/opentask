@@ -108,11 +108,12 @@ enum ReminderDefaultPage {
         return clockSlotIndex(in: groups, now: now, day: day)
     }
 
-    /// Step 1's test: a deadlines-page row still waiting that is not a seen
-    /// safety-net row (`SegmentTaskDTO.isSeenInSafetyNet`). An empty page,
-    /// or one whose rows are all considered or seen, doesn't count.
+    /// Step 1's test: a deadlines-page row still waiting. A safety-net row
+    /// counts even if an older client marked it seen (2026-11-02: only a
+    /// target or done takes it off, so it always needs you). An empty page,
+    /// or one whose rows are all considered, doesn't count.
     static func hasUnseenRow(_ segment: TaskSegmentDTO) -> Bool {
-        segment.tasks.contains { $0.state == .waiting && !$0.isSeenInSafetyNet }
+        segment.tasks.contains { $0.state == .waiting }
     }
 
     /// The group the clock is in: the latest slot whose start is at or
