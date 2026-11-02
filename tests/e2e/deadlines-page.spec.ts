@@ -183,28 +183,57 @@ for (const viewport of VIEWPORTS) {
       }
     })
 
-    test('the safety net: seen keeps the row (a ring), and it has no Defer', async ({ page }) => {
+    test("the safety net: the target clock in the circle's place, done alone on the right; no consider", async ({
+      page,
+    }) => {
+      // Trent, 2026-11-02: only a target or done takes a net row off the
+      // page, so the circle is the target clock, a tap on the row does
+      // nothing, and Defer, the decks and the right-hand clock are gone. A
+      // row not yet in the net keeps every control.
       const ids: number[] = []
       try {
         const net = await inNet(page, 'DL net')
-        ids.push(net)
+        const held = await inNet(page, 'DL net held')
+        const later = await onPage(page, 'DL not net')
+        ids.push(net, held, later)
         await page.goto('/reminders')
-        const r = row(section(page), net)
+        const s = section(page)
+        const r = row(s, net)
         await expect(r).toHaveAttribute('data-safety-net', '')
-        await expect(r.locator('[data-defer-lead]')).toHaveCount(0)
-        await expect(r.locator('[data-defer-lead-empty]')).toHaveCount(1)
         // The chip no longer marks the safety net (amber until 2026-10-28): a
         // deadline 20 hours out is today's or tomorrow's.
         await expect(r.locator('[data-deadline-chip]')).toHaveAttribute(
           'data-deadline-chip',
           /^(today|ahead)$/,
         )
-        await r.getByRole('button', { name: /as considered/ }).click()
-        // Still listed, still waiting, now with the seen ring.
-        await expect(r.locator('[data-seen-ring]')).toBeVisible()
+        await expect(r.getByRole('button', { name: /as considered/ })).toHaveCount(0)
+        await expect(r.locator('[data-defer-lead], [data-defer-lead-empty]')).toHaveCount(0)
+        await expect(r.locator('[data-on-deck], [data-deck-tomorrow]')).toHaveCount(0)
+        await expect(r.locator('[data-target-today]')).toHaveCount(1)
+        await expect(r.getByRole('button', { name: /^Done:/ })).toHaveCount(1)
+        // The clock is the row's LEAD: left of the title, where circles sit.
+        const clockBox = (await r.locator('[data-target-today]').boundingBox())!
+        const titleBox = (await r.getByText(/^DL net /).boundingBox())!
+        expect(clockBox.x + clockBox.width).toBeLessThanOrEqual(titleBox.x)
+        // A row not yet in the net keeps its controls.
+        const n = row(s, later)
+        await expect(n).not.toHaveAttribute('data-safety-net', '')
+        await expect(n.getByRole('button', { name: /as considered/ })).toHaveCount(1)
+        await expect(n.locator('[data-on-deck]')).toHaveCount(1)
+        await expect(n.locator('[data-defer-lead]')).toHaveCount(1)
+        // A tap on the row changes nothing: no toast, still waiting, unseen.
+        await r.getByText(/^DL net /).click()
+        await expect(page.locator('[data-sonner-toast]')).toHaveCount(0)
         await expect(r).toHaveAttribute('data-segment-state', 'waiting')
-        await page.reload()
-        await expect(row(section(page), net).locator('[data-seen-ring]')).toBeVisible()
+        expect((await stateOf(page, net)).last_considered_at).toBeNull()
+        // A hold (right-click) opens the Target menu, Custom… among it.
+        await row(s, held).locator('[data-target-today]').click({ button: 'right' })
+        await expect(choice(page, /^Custom/)).toBeVisible()
+        await page.keyboard.press('Escape')
+        // The clock's tap targets today: the row leaves the page.
+        await r.locator('[data-target-today]').click()
+        await expect.poll(async () => (await stateOf(page, net)).target_at).toBeTruthy()
+        await expect(row(section(page), net)).toHaveCount(0)
       } finally {
         await trash(page, ids)
       }
@@ -242,9 +271,14 @@ for (const viewport of VIEWPORTS) {
         await expect(l.locator('[data-deck-day-chip]')).toHaveText(`On deck ${day.toFormat('ccc')}`)
         await expect(l.locator('[data-target-today]')).toHaveAttribute('data-replaces', '')
 
-        // In the safety net a deck for today keeps the row waiting, its chip.
+        // In the safety net a deck for today (no deck button there since
+        // 2026-11-02 — this one is the API's) keeps the row waiting, its chip.
+        const decked = await page.request.post('/api/tasks/deck', {
+          data: { ids: [net], day: await openTaskDay(page) },
+        })
+        expect(decked.ok(), await decked.text()).toBeTruthy()
+        await page.reload()
         const r = row(section(page), net)
-        await r.locator('[data-on-deck]').click()
         await expect(r.locator('[data-deck-day-chip]')).toHaveText('On deck today')
         await expect(r).toHaveAttribute('data-segment-state', 'waiting')
         // Today on the decked row: faded, and a tap asks.
@@ -326,6 +360,42 @@ for (const viewport of VIEWPORTS) {
     })
   })
 }
+
+test.describe('the queue bar in the safety net', () => {
+  test.use({ viewport: { width: 402, height: 874 } })
+
+  test('Consider, Not today and Deck leave net rows out; gone when every pick is in the net', async ({
+    page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const net = await inNet(page, 'DL bar net')
+      const later = await onPage(page, 'DL bar later')
+      ids.push(net, later)
+      await page.goto('/?tasks=deadlines')
+      const card = page.locator('[data-tasks-panel]')
+      await expect(card).toHaveAttribute('data-tasks-page', 'tasks:deadlines')
+      // A 402 capture of a net row beside a not-yet-net row, for the designer.
+      await card.screenshot({ path: '.tmp/screens/net-rows-402.png', animations: 'disabled' })
+      await card.getByRole('button', { name: 'Select', exact: true }).click()
+      const bar = page.locator('[data-queue-selection-bar]')
+      // Only the net row picked: no Consider, Not today or Deck.
+      await row(card, net).locator('[data-pick-box]').click()
+      await expect(bar).toBeVisible()
+      await expect(bar.locator('[data-bar-consider]')).toHaveCount(0)
+      await expect(bar.locator('[data-bar-not-today]')).toHaveCount(0)
+      await expect(bar.locator('[data-bar-deck]')).toHaveCount(0)
+      // Both picked: Consider is back, and acts on the other row alone.
+      await row(card, later).locator('[data-pick-box]').click()
+      await expect(bar.locator('[data-bar-consider]')).toHaveCount(1)
+      await bar.locator('[data-bar-consider]').click()
+      await expect.poll(async () => (await stateOf(page, later)).last_considered_at).toBeTruthy()
+      expect((await stateOf(page, net)).last_considered_at).toBeNull()
+    } finally {
+      await trash(page, ids)
+    }
+  })
+})
 
 test.describe('the faded On deck on a picked target', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
