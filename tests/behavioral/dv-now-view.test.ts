@@ -90,6 +90,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     queued_from_deck_day: null,
     lead_days: null,
     lead_from: null,
+    heads_up: true,
     target_auto: false,
     last_notified_at: null,
     last_critical_alert_at: null,

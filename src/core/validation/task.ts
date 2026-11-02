@@ -366,6 +366,8 @@ export const taskCreateSchema = z
     target_slot_id: targetSlotId.nullable().optional(),
     // The deadlines page (2026-10-22): the lead override; null = the default.
     lead_days: leadDays.nullable().optional(),
+    // Heads up (2026-11-02): false = never in Upcoming. Membership, not timing.
+    heads_up: z.boolean().optional(),
     // Repeat ends (2026-10-22): one or the other; checked in `createTask`.
     repeat_count: repeatCount.optional(),
     repeat_until: repeatUntil.optional(),
@@ -441,6 +443,9 @@ export const taskUpdateSchema = z
     // The deadlines page (2026-10-22): the lead override (series-level on a
     // repeat); null = the default table. Re-derives `lead_from`.
     lead_days: leadDays.nullable().optional(),
+    // Heads up (2026-11-02): false = never in Upcoming (Tomorrow or Later);
+    // per task, so a repeat's holds for every occurrence.
+    heads_up: z.boolean().optional(),
     // Repeat ends (2026-10-22): setting one clears the other; null clears it;
     // `rrule: null` clears both (`collectRepeatEnds`).
     repeat_count: repeatCount.optional(),

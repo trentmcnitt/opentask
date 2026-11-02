@@ -2247,6 +2247,8 @@ export interface UpcomingTaskFields extends TargetFields {
   on_deck_day?: string | null
   /** The lead override (days ahead of the anchor), or null/absent: the default table. */
   lead_days?: number | null
+  /** Heads up (2026-11-02): false = never in Upcoming; absent reads as on. */
+  heads_up?: boolean
 }
 
 /**
@@ -2300,6 +2302,10 @@ function upcomingAnchor(
 
 /**
  * Where the task stands in today's Upcoming, or null when it is not there:
+ * - its HEADS UP is off (2026-11-02, Trent: "I think we just have a switch to
+ *   turn off heads-up and we just leave repeating [ones] on"): a per-task
+ *   switch, so neither section ever lists it — membership only; its target,
+ *   nags and the deadlines page are untouched;
  * - its anchor is today or earlier (over target / on deck), or it has none;
  * - neither of its Upcoming days has come (`upcomingDays`);
  * - in Later, it was seen on or after the Later day (but not today).
@@ -2320,6 +2326,7 @@ export function upcomingState(
   /** The user's day boundary (`localDay`): Upcoming days are OpenTask days. */
   dayStart: string,
 ): UpcomingPlace | null {
+  if (task.heads_up === false) return null
   const today = openTaskLocalDay(now, timezone, dayStart)
   const dayOf = (iso: string) => localDay(iso, timezone, dayStart)
   const anchor = upcomingAnchor(task, timezone, dayOf)

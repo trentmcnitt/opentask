@@ -337,6 +337,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- (days before the deadline's day); NULL = the default table.
   lead_days INTEGER DEFAULT NULL,
   lead_from TEXT DEFAULT NULL,
+  -- HEADS UP (2026-11-02, docs/TASK-MODEL.md § Upcoming): 0 = this task never
+  -- shows in Upcoming (Tomorrow or Later); 1 (the default) = it does. Only
+  -- membership: the target, its nags and the deadlines page are untouched,
+  -- and lead_days (the timing) is separate. Per task, so a repeat's holds for
+  -- every occurrence.
+  heads_up INTEGER NOT NULL DEFAULT 1,
 
   -- Notification tracking
   last_notified_at TEXT,            -- Vestigial (replaced by mod-based boundary detection); kept for existing DB compat

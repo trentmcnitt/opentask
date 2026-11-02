@@ -75,6 +75,7 @@ const TASK_COLUMNS = [
   'queued_from_deck_day',
   'lead_days',
   'lead_from',
+  'heads_up',
   'last_notified_at',
   'last_critical_alert_at',
   'auto_snooze_minutes',
@@ -339,6 +340,7 @@ export interface TaskRow {
   queued_from_deck_day?: string | null
   lead_days?: number | null
   lead_from?: string | null
+  heads_up?: number
   /** Not a column: the owner's rollover time (`taskColumns`), for the attempts read. */
   owner_rollover_time?: string | null
   /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
@@ -458,6 +460,7 @@ function queueFields(
   | 'queued_from_deck_day'
   | 'lead_days'
   | 'lead_from'
+  | 'heads_up'
 > {
   return {
     queue_mark: row.queue_mark === 1,
@@ -469,6 +472,8 @@ function queueFields(
     queued_from_deck_day: row.queued_from_deck_day ?? null,
     lead_days: row.lead_days ?? null,
     lead_from: row.lead_from ?? null,
+    // On unless stored off (a row from before the column reads as on).
+    heads_up: row.heads_up !== 0,
   }
 }
 

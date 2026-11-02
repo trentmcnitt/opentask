@@ -5,6 +5,7 @@ import { ChevronRight, Minus, Plus, Repeat } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/DateTimePicker'
+import { Switch } from '@/components/ui/switch'
 import {
   DEADLINE_WORD,
   HORIZON_WORD,
@@ -90,6 +91,7 @@ export function ThisOneFields({
   lead = null,
   quietUntil,
   deck,
+  headsUp,
   link,
   linkRef,
   since,
@@ -101,6 +103,8 @@ export function ThisOneFields({
   deadline: DeadlineRowProps | null
   /** The deadlines page's lead day and override (`LeadRow`), or null. */
   lead?: LeadRowProps | null
+  /** The Heads up switch (2026-11-02, `HeadsUpRow`), or null (not this task's). */
+  headsUp?: HeadsUpRowProps | null
   /** A one-off's own target: the horizon is not in effect until it goes. */
   quietUntil: string | null
   deck: ReactNode | null
@@ -142,6 +146,12 @@ export function ThisOneFields({
           <>
             <RowLabel>On deck</RowLabel>
             {deck}
+          </>
+        )}
+        {headsUp && (
+          <>
+            <RowLabel>Heads up</RowLabel>
+            <HeadsUpRow {...headsUp} />
           </>
         )}
         {quietUntil && (
@@ -572,3 +582,39 @@ export const RepeatLink = forwardRef<HTMLButtonElement, RepeatLinkProps>(functio
     </button>
   )
 })
+
+// ---------------------------------------------------------------------------
+// Heads up (2026-11-02)
+// ---------------------------------------------------------------------------
+
+export interface HeadsUpRowProps {
+  /** The value shown: the staged one, else the stored `heads_up`. */
+  on: boolean
+  /** Staged (blue, like every staged field here). */
+  dirty: boolean
+  onChange: (on: boolean) => void
+}
+
+/**
+ * HEADS UP (Trent, 2026-11-02: "I think we just have a switch to turn off
+ * heads-up and we just leave repeating [ones] on"): off, the task never shows
+ * in Upcoming — neither Tomorrow nor Later. Its target, nags and the
+ * deadlines page are untouched. A switch, staged with the rest of the panel
+ * and saved by Save (`heads_up`).
+ */
+function HeadsUpRow({ on, dirty, onChange }: HeadsUpRowProps) {
+  return (
+    <span className="flex items-center gap-2">
+      <Switch
+        data-quick-panel-heads-up
+        checked={on}
+        onCheckedChange={onChange}
+        aria-label="Heads up: show this task in Upcoming before its day"
+        className="scale-90"
+      />
+      <span className={cn(dirty ? 'font-medium text-blue-500' : 'text-muted-foreground')}>
+        {on ? 'In Upcoming before its day' : 'Never in Upcoming'}
+      </span>
+    </span>
+  )
+}

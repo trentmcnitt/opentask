@@ -148,12 +148,10 @@ const ALLOWLIST: Record<string, [number, string, string]> = {
     'leads: taskQueueEnabled()',
   ],
   "src/core/undo/apply-fields.ts: 'target_auto',": [
-    1,
-    `the undo/redo column allowlist: ${UNDO}`,
+    2,
+    `the undo/redo column allowlist, and the boolean columns (FLAG_COLUMNS, one per line since heads_up joined it, 2026-11-02): ${UNDO}`,
     'target_auto',
   ],
-  "src/core/undo/apply-fields.ts: const FLAG_COLUMNS = new Set(['deadline_nag_off', 'target_auto', 'queue_mark', 'try_tomorrow'])":
-    [1, `the undo/redo boolean columns: ${UNDO}`, 'target_auto'],
   "src/core/undo/auto-target-fence.ts: 'target_auto',": [
     1,
     "the undo fence's drop list: these columns are written as NULL / 0 in place of a snapshot's automatic target — never 1",

@@ -164,6 +164,7 @@ export function useQueueSelectMode({
           leave()
         }}
         onRemoveTargets={(some) => act(() => actions.removeTargetsMany(some))}
+        onHeadsUp={(some, on) => act(() => actions.headsUpMany(some, on))}
         onSkipUntil={async (some, until) => {
           await actions.skipUntilMany(some, until)
           finished()
@@ -221,6 +222,7 @@ export function QueueSelectionBar({
   onDetails,
   onDelete,
   onRemoveTargets,
+  onHeadsUp,
   onSkipUntil,
   onCancel,
   onHorizon,
@@ -237,6 +239,8 @@ export function QueueSelectionBar({
   onDetails: () => void
   onDelete: () => void
   onRemoveTargets: (ids: number[]) => void
+  /** Heads up (2026-11-02, ⋯ More): the picked tasks' `heads_up`, one request. */
+  onHeadsUp: (ids: number[], on: boolean) => void
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   onCancel: () => void
   onHorizon: (horizon: HorizonValue | null) => void
@@ -268,6 +272,7 @@ export function QueueSelectionBar({
           selectedTasks={selectedTasks}
           timezone={timezone}
           onRemoveTargets={onRemoveTargets}
+          onHeadsUp={onHeadsUp}
           onSkipUntil={onSkipUntil}
         />
       }

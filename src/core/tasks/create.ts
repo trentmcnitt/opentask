@@ -579,8 +579,8 @@ export function createTask(options: CreateTaskOptions): Task {
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
         target_auto, occurrence_at, progress_period_start, on_deck_day, lead_days, lead_from,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        heads_up, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -632,6 +632,8 @@ export function createTask(options: CreateTaskOptions): Task {
         // The deadlines page (2026-10-22): the override and the lead day.
         first.leadDays,
         first.leadFrom,
+        // Heads up (2026-11-02): off only when asked, on an ordinary task.
+        input.heads_up === false && !tracked && !input.is_reminder ? 0 : 1,
         now,
         now,
       )

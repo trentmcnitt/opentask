@@ -185,5 +185,6 @@ function editFields(changes: QuickActionPanelChanges): Record<string, unknown> {
   // The select bar's horizon with several picked (2026-10-30): it was the one
   // editor field a multi-task save dropped.
   if (changes.horizon !== undefined) edit.horizon = changes.horizon
+  if (changes.heads_up !== undefined) edit.heads_up = changes.heads_up
   return edit
 }
