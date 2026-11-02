@@ -14,7 +14,7 @@ import {
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
-import { PinnedUndone, restoreInPlace } from '@/lib/reminder-undo'
+import { PinnedUndone, SettlingConsiders, restoreInPlace } from '@/lib/reminder-undo'
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 import { REMINDERS_URL } from '@/lib/reminders-query'
 import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
@@ -452,6 +452,9 @@ export function useReminders({
   // undo lands (`src/lib/reminder-undo.ts`), and this surface's own considers
   // by the undo entry each wrote — what an `undone_id` names.
   const pinnedRef = useRef<PinnedUndone>(new PinnedUndone())
+  // Considers that answered, drawn until a payload requested after the answer
+  // is applied (`SettlingConsiders`): an older refresh must not bring them back.
+  const settlingRef = useRef<SettlingConsiders>(new SettlingConsiders())
   const ownConsidersRef = useRef<Map<number, OwnConsider>>(new Map())
   /**
    * IDs whose row is still on screen, collapsing. They are still in `groups`,
@@ -503,9 +506,9 @@ export function useReminders({
   const stripPending = (incoming: ReminderGroup[]) =>
     reconcileInFlight(
       incoming,
-      pendingIdsRef.current,
+      new Set([...pendingIdsRef.current, ...settlingRef.current.ids()]),
       new Set([...restoringIdsRef.current, ...pinnedRef.current.ids()]),
-      pendingPromptsRef.current,
+      new Map([...settlingRef.current.prompts(), ...pendingPromptsRef.current]),
       pendingMovesRef.current,
       new Set([...restoringPromptsRef.current, ...pinnedRef.current.keys()]),
     )
@@ -527,6 +530,8 @@ export function useReminders({
       const parsed = parseRemindersPayload(json)
       // Undos confirmed before this request was sent are in it: stop pinning.
       pinnedRef.current.settle(seq)
+      // And considers answered before it.
+      settlingRef.current.settle(seq)
       writeGroups(stripPending(parsed.groups), {
         hasAny: parsed.hasAny,
         notToday: parsed.notToday,
@@ -621,6 +626,7 @@ export function useReminders({
         return next
       })
       pinnedRef.current.pin(all)
+      settlingRef.current.release(all)
       writeGroups(restoreInPlace(groupsRef.current, snapshot, new Set(ids), new Set(keys)))
       // A refresh held behind a row that was collapsing may run now.
       releaseHeldRefresh()
@@ -786,6 +792,9 @@ export function useReminders({
         // held behind it must not be stranded by a failure.
         releaseHeldRefresh()
       } finally {
+        // Answered: drawn considered until a payload requested from now on is
+        // applied — not merely until the next one lands (`SettlingConsiders`).
+        if (settledOk) settlingRef.current.add(all, intent, requestGuard.latest() + 1)
         for (const id of ids) pendingIdsRef.current.delete(id)
         for (const key of keys) pendingPromptsRef.current.delete(key)
         // A refresh after a confirmed completion converges the cache with the
@@ -799,7 +808,15 @@ export function useReminders({
         if (settledOk || keys.length > 0) void refresh()
       }
     },
-    [refresh, commitConsidered, commitPrompts, releaseHeldRefresh, writeGroups, restoreLocally],
+    [
+      refresh,
+      commitConsidered,
+      commitPrompts,
+      releaseHeldRefresh,
+      writeGroups,
+      restoreLocally,
+      requestGuard,
+    ],
   )
 
   /**
@@ -903,8 +920,8 @@ export function useReminders({
   )
 
   const optimisticDeps = { writeGroups, groupsRef, refresh, callbacksRef }
-  const putBack = usePutBack({ ...optimisticDeps, restoringIdsRef })
-  const putBackPrompt = usePutBackPrompt({ ...optimisticDeps, restoringPromptsRef })
+  const putBack = usePutBack({ ...optimisticDeps, restoringIdsRef, settlingRef })
+  const putBackPrompt = usePutBackPrompt({ ...optimisticDeps, restoringPromptsRef, settlingRef })
   const remove = useRemove({ ...optimisticDeps, pendingIdsRef })
 
   const complete = useCallback(
@@ -997,6 +1014,9 @@ interface OptimisticDeps {
   refresh: () => Promise<void>
   callbacksRef: React.MutableRefObject<UseRemindersOptions>
 }
+
+/** A put-back takes its row out of the settling considers (`SettlingConsiders`). */
+type SettlingDep = { settlingRef: React.MutableRefObject<SettlingConsiders> }
 
 /**
  * The request half of `useRemove`, `usePutBack` and `usePutBackPrompt`, once
@@ -1125,13 +1145,15 @@ function useRemove({
  */
 function usePutBack({
   restoringIdsRef,
+  settlingRef,
   ...deps
-}: OptimisticDeps & { restoringIdsRef: React.MutableRefObject<Set<number>> }) {
+}: OptimisticDeps & SettlingDep & { restoringIdsRef: React.MutableRefObject<Set<number>> }) {
   const { writeGroups, groupsRef, refresh, callbacksRef } = deps
   return useCallback(
     async (task: Task) => {
       const id = task.id
       restoringIdsRef.current.add(id)
+      settlingRef.current.release([id])
       const snapshot = groupsRef.current
       writeGroups(
         snapshot.map((g) => {
@@ -1160,7 +1182,7 @@ function usePutBack({
         deps: { writeGroups, groupsRef, refresh, callbacksRef },
       })
     },
-    [writeGroups, groupsRef, refresh, callbacksRef, restoringIdsRef],
+    [writeGroups, groupsRef, refresh, callbacksRef, restoringIdsRef, settlingRef],
   )
 }
 
@@ -1177,14 +1199,16 @@ function usePutBack({
  */
 function usePutBackPrompt({
   restoringPromptsRef,
+  settlingRef,
   ...deps
-}: OptimisticDeps & { restoringPromptsRef: React.MutableRefObject<Set<string>> }) {
+}: OptimisticDeps & SettlingDep & { restoringPromptsRef: React.MutableRefObject<Set<string>> }) {
   const { writeGroups, groupsRef, refresh, callbacksRef } = deps
   return useCallback(
     async (prompt: QuotaPrompt) => {
       const key = prompt.prompt_key
       if (restoringPromptsRef.current.has(key)) return
       restoringPromptsRef.current.add(key)
+      settlingRef.current.release([key])
       const snapshot = groupsRef.current
       writeGroups(applyPromptRestores(snapshot, new Set([key])))
 
@@ -1206,7 +1230,7 @@ function usePutBackPrompt({
         deps: { writeGroups, groupsRef, refresh, callbacksRef },
       })
     },
-    [writeGroups, groupsRef, refresh, callbacksRef, restoringPromptsRef],
+    [writeGroups, groupsRef, refresh, callbacksRef, restoringPromptsRef, settlingRef],
   )
 }
 
