@@ -34,7 +34,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import prettier from 'prettier'
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { nightDay, nightDayWords, nightWeekday, timedWeekday, wordsAgree } from '@/lib/night-day'
@@ -105,6 +105,15 @@ function build(): Cases {
 }
 
 describe('TQ-LN: the native apps share the TS night-label table', () => {
+  // A FIXED CLOCK (2026-11-02): the grid holds 1:00 AM on the fall-back day,
+  // a wall time that happens twice, and luxon resolves it with the machine's
+  // CURRENT offset — so the same grid built after the clocks went back gave
+  // other instants than the committed table (made in daylight time), and the
+  // test failed from Nov 1 on. Built as of a fixed daylight-time moment, the
+  // table is the same whenever it runs.
+  beforeEach(() => vi.setSystemTime(new Date('2026-10-26T17:00:00Z')))
+  afterEach(() => vi.useRealTimers())
+
   test('TQ-LN30: the committed cases are the TS helper’s answers', async () => {
     const live = build()
     if (process.env.LABEL_CASES_WRITE === '1') {

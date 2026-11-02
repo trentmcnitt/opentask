@@ -3,6 +3,7 @@ import {
   expect,
   backdateCreated,
   openTaskDay,
+  serverDayStart,
   uniqueTitle,
   waitForPreferenceSave,
   waitForPrefsLoaded,
@@ -112,12 +113,12 @@ test.describe('Dashboard', () => {
       // Later today on the OpenTask day, whatever the hour: two minutes before
       // the day ends (the next day's start), never past and never tomorrow's.
       const tz = process.env.E2E_TZ || 'America/Chicago'
-      const prefs = (await (await page.request.get('/api/user/preferences')).json()).data as {
-        rollover_time: string
-      }
-      const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${prefs.rollover_time}`, {
-        zone: tz,
-      })
+      const dayEnd = DateTime.fromISO(
+        `${await openTaskDay(page, 1)}T${await serverDayStart(page)}`,
+        {
+          zone: tz,
+        },
+      )
       await make(uniqueTitle('Badge today'), dayEnd.minus({ minutes: 2 }).toUTC().toISO()!)
       await page.goto('/reminders')
       const badge = (filter: string) => page.locator(`aside [data-tasks-badge-filter="${filter}"]`)

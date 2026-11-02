@@ -22,6 +22,7 @@ import {
   expect,
   backdateCreated,
   openTaskDay,
+  serverDayStart,
   openModeMenu,
   pickAllOrder,
   pickMode,
@@ -96,9 +97,9 @@ const idsIn = (scope: Locator) =>
 
 /** A moment later today, before the OpenTask day ends, whatever the hour. */
 async function laterToday(page: Page): Promise<Date> {
-  const { rollover_time } = (await (await page.request.get('/api/user/preferences')).json())
-    .data as { rollover_time: string }
-  const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${rollover_time}`, { zone: TZ })
+  const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${await serverDayStart(page)}`, {
+    zone: TZ,
+  })
   return new Date(Math.min(Date.now() + 40 * 60 * 1000, dayEnd.toMillis() - 2 * 60 * 1000))
 }
 

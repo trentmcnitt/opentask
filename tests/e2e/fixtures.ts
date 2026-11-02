@@ -15,7 +15,7 @@ import {
 } from '@playwright/test'
 import path from 'path'
 import Database from 'better-sqlite3'
-import { addDays, openTaskDayOf } from '@/lib/opentask-day'
+import { addDays, CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
 
 export const TEST_EMAIL = 'test@opentask.local'
 export const TEST_PASSWORD = 'testpass123'
@@ -94,16 +94,18 @@ export function waitForPreferenceSave(page: Page, field: string) {
  * also gets a read-only preview at the top of the dashboard's Inbox or list
  * (`src/lib/just-added.ts`), so a spec that counts titles or reads the top of
  * the list backdates the tasks it made first. The server reads SQLite in WAL mode, so the next
- * fetch sees the write.
+ * fetch sees the write. `daysAgo` (default 1): further back, for a spec on a
+ * pinned clock up to a day behind real now, where a day back from the real
+ * clock can still be the pin's own day (nav-retap-walk.spec.ts).
  */
 export function backdateCreated(
   ids: number[],
-  opts: { inSegments?: boolean; keepHorizon?: boolean } = {},
+  opts: { inSegments?: boolean; keepHorizon?: boolean; daysAgo?: number } = {},
 ): void {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const stmt = db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?) WHERE id = ?`,
     )
     // A task created before today shows in its horizon's task segment
     // (2026-10-10) — a second copy of its title on the dashboard. Unless a
@@ -122,7 +124,7 @@ export function backdateCreated(
              last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day') WHERE id = ?`,
     )
     for (const id of ids) {
-      stmt.run(id)
+      stmt.run(`-${opts.daysAgo ?? 1} day`, id)
       if (!opts.inSegments) hide.run(id)
     }
   } finally {
@@ -408,25 +410,38 @@ export async function expectCancelOnTopLine(
 }
 
 /**
- * The signed-in user's OpenTask day, `n` days on (yyyy-MM-dd), as the server
- * reckons it with the task-queue switch on: the user's resolved day start
- * (`rollover_time`, 3:00 AM by default) read from the server, and the
- * product's own rule (`openTaskDayOf`, docs/TASK-MODEL.md § The OpenTask day).
- * Not the calendar date: between midnight and the day start the OpenTask day
- * is still yesterday's, so a spec expecting the calendar date fails in that
- * window (CI, on UTC, runs in it too). The twin of `openTaskToday` in
- * tests/integration/helpers.ts. Read it where it is used, not when the file
- * loads.
+ * The signed-in user's day, `n` days on (yyyy-MM-dd), as the server and the
+ * page reckon it now: with the task-queue switch on, the OpenTask day from
+ * the user's resolved day start (`rollover_time`, 3:00 AM by default); off,
+ * the calendar day (`dayBoundaryForUser`, `useDayStart`) — both read from the
+ * server, through the product's own rule (`openTaskDayOf`, docs/TASK-MODEL.md
+ * § The OpenTask day). Between midnight and the day start the two differ, so
+ * a spec that reads the wrong one fails only in that window (CI, on UTC, runs
+ * in it: 2026-11-02). The twin of `openTaskToday` in
+ * tests/integration/helpers.ts. Read it where it is used, after setting the
+ * switch, not when the file loads.
  */
 export async function openTaskDay(
   page: Page,
   n = 0,
   timezone = process.env.E2E_TZ || 'America/Chicago',
 ): Promise<string> {
+  return addDays(openTaskDayOf(new Date(), timezone, await serverDayStart(page)), n)
+}
+
+/**
+ * When the signed-in user's day starts (HH:MM), as the server reckons it now:
+ * `rollover_time` with the task-queue switch on, midnight with it off
+ * (`dayBoundaryForUser`). A day ends at the next day's start (`openTaskDay`).
+ */
+export async function serverDayStart(page: Page): Promise<string> {
   const res = await page.request.get('/api/user/preferences')
   expect(res.ok(), await res.text()).toBeTruthy()
-  const { rollover_time } = (await res.json()).data as { rollover_time: string }
-  return addDays(openTaskDayOf(new Date(), timezone, rollover_time), n)
+  const { rollover_time, task_queue } = (await res.json()).data as {
+    rollover_time: string
+    task_queue: boolean
+  }
+  return task_queue ? rollover_time : CALENDAR_DAY_START
 }
 
 /**
