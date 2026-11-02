@@ -172,3 +172,43 @@ test("the main list bar's ⋯ offers it too, and Turn on when it is off", async 
     await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id] } })
   }
 })
+
+test.describe('1280', () => {
+  test.use({ viewport: { width: 1280, height: 860 } })
+
+  test("the main list bar's ⋯ is a menu at desktop width; the details row is the switch", async ({
+    page,
+  }) => {
+    const id = await tomorrowTask(page, 'HU desk')
+    try {
+      await page.goto('/')
+      const row = page.locator(`#task-row-${id}`)
+      await row.getByText(/^HU desk/).click({ modifiers: ['ControlOrMeta'] })
+      const bar = page.locator('[data-selection-sheet]:not([data-queue-selection-bar])')
+      await bar.locator('[data-bar-more]').click()
+      const off = page.getByRole('menuitem', { name: /^Turn off heads-up/ })
+      await expect(off).toBeVisible()
+      await page.screenshot({
+        path: '.tmp/screens/heads-up-more-list-1280.png',
+        animations: 'disabled',
+      })
+      await off.click()
+      await expect.poll(async () => (await stateOf(page, id)).heads_up).toBe(false)
+      // Off: the switch reads so, and the Upcoming lead line is gone.
+      await page.goto(`/?task=${id}&highlight=1`)
+      await row.getByText(/^HU desk/).dblclick()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.locator('[data-quick-panel-heads-up]')).toHaveAttribute(
+        'aria-checked',
+        'false',
+      )
+      await expect(dialog.locator('[data-quick-panel-lead]')).toHaveCount(0)
+      await dialog.screenshot({
+        path: '.tmp/screens/heads-up-toggle-off-1280.png',
+        animations: 'disabled',
+      })
+    } finally {
+      await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id] } })
+    }
+  })
+})
