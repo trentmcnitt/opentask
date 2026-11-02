@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { BellOff, BellRing, Clock3, MoreHorizontal, SkipForward, XCircle } from 'lucide-react'
+import { Clock3, Eye, EyeOff, MoreHorizontal, SkipForward, XCircle } from 'lucide-react'
 import { BarAction } from '@/components/SelectionBarShell'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { DeckMenu } from '@/components/OnDeckButton'
@@ -144,7 +144,7 @@ export function MoreVerb({
           {
             label: `${headsUp.on ? 'Turn on' : 'Turn off'} heads-up${of(headsUp.ids.length)}`,
             option: HEADS_UP,
-            icon: headsUp.on ? <BellRing /> : <BellOff />,
+            icon: headsUp.on ? <Eye /> : <EyeOff />,
           },
         ]
       : []),
