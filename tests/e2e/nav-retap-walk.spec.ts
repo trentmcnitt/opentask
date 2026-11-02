@@ -15,12 +15,47 @@
  * The E2E users are shared, so the reminders and tasks answers are trimmed to
  * this spec's own rows: the walk's stops are then exactly the ones made here.
  * A spacer below the page lets every stop rise to its landing line.
+ *
+ * THE REMINDERS WALK RUNS ON A PINNED CLOCK (2026-11-02): its first stop is a
+ * period that has started, and between midnight and the day's first period
+ * none has — a reminder made "a few minutes ago" then sits in Anytime, and
+ * the walk has no period to land on (CI, on UTC, runs in that window). So
+ * those tests pin the server's clock (POST /api/test/clock, running on) and
+ * the browser's Date (`page.clock.setFixedTime`, timers still running) to the
+ * most recent 10:30 at or before real now — mid-Morning, a period well
+ * started — after stamping the task rollover, and put the real clock back
+ * after (and in the global teardown), as defer-fab-selection.spec.ts does.
  */
 import { DateTime } from 'luxon'
 import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
-import type { Locator, Page } from '@playwright/test'
+import type { APIRequestContext, Locator, Page } from '@playwright/test'
 
 const TEST_TZ = process.env.E2E_TZ || 'America/Chicago'
+
+/** The most recent 10:30 in the user's zone, at or before real now (never ahead: the crons run on it). */
+function midMorning(): DateTime {
+  const now = DateTime.now().setZone(TEST_TZ)
+  const at = now.set({ hour: 10, minute: 30, second: 0, millisecond: 0 })
+  return at > now ? at.minus({ days: 1 }) : at
+}
+
+/** Pin the server's clock (null: the real one). */
+async function setClock(request: APIRequestContext, now: string | null) {
+  const res = await request.post('/api/test/clock', { data: { now } })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
+/** Both clocks on `pin`, the task rollover stamped first (see the file docblock). */
+async function pinClocks(page: Page, pin: DateTime) {
+  const stamp = await page.request.post('/api/test/rollover', { data: {} })
+  expect(stamp.ok(), await stamp.text()).toBeTruthy()
+  await setClock(page.request, pin.toUTC().toISO())
+  await page.clock.setFixedTime(pin.toJSDate())
+}
+
+test.afterAll(async ({ request }) => {
+  await setClock(request, null)
+})
 
 test.use({ viewport: { width: 390, height: 700 } })
 
@@ -30,9 +65,13 @@ async function create(page: Page, data: Record<string, unknown>): Promise<number
   return (await res.json()).data.id as number
 }
 
-/** A moment a few minutes ago, today: a reminder there is in a period that has started. */
-function inStartedSlot(): string {
-  const now = DateTime.now().setZone(TEST_TZ)
+/**
+ * A moment a few minutes before `now`, the same day: a reminder there is in a
+ * period that has started — when `now` is past the day's first period (a
+ * pinned 10:30 is; see the file docblock).
+ */
+function inStartedSlot(at: DateTime = DateTime.now()): string {
+  const now = at.setZone(TEST_TZ)
   const passed = now.minus({ minutes: 5 })
   const safe = passed.hasSame(now, 'day') ? passed : now.startOf('day').plus({ minutes: 1 })
   return safe.toUTC().toISO() as string
@@ -87,13 +126,16 @@ const tab = (page: Page, name: string) =>
 test('Reminders: the period that needs you, then the topmost waiting segment, then the top', async ({
   authenticatedPage: p,
 }) => {
+  const pin = midMorning()
+  await pinClocks(p, pin)
   const reminder = await create(p, {
     title: uniqueTitle('RW reminder'),
     is_reminder: true,
-    due_at: inStartedSlot(),
+    due_at: inStartedSlot(pin),
   })
   const days = await create(p, { title: uniqueTitle('RW days'), horizon: 'days' })
-  backdateCreated([days], { inSegments: true })
+  // Made before the PIN's day (it can be a day behind real now).
+  backdateCreated([days], { inSegments: true, daysAgo: 2 })
   try {
     await onlyThese(p, [reminder, days])
     await p.goto('/reminders')
@@ -114,6 +156,7 @@ test('Reminders: the period that needs you, then the topmost waiting segment, th
   } finally {
     await p.unrouteAll({ behavior: 'ignoreErrors' })
     await p.request.post('/api/tasks/bulk/delete', { data: { ids: [reminder, days] } })
+    await setClock(p.request, null)
   }
 })
 
@@ -251,13 +294,16 @@ test.describe('two columns', () => {
 test('a scroll by hand resets the cycle: the next tap goes to the top, then stop 1', async ({
   authenticatedPage: p,
 }) => {
+  const pin = midMorning()
+  await pinClocks(p, pin)
   const reminder = await create(p, {
     title: uniqueTitle('RW hand reminder'),
     is_reminder: true,
-    due_at: inStartedSlot(),
+    due_at: inStartedSlot(pin),
   })
   const days = await create(p, { title: uniqueTitle('RW hand days'), horizon: 'days' })
-  backdateCreated([days], { inSegments: true })
+  // Made before the PIN's day (it can be a day behind real now).
+  backdateCreated([days], { inSegments: true, daysAgo: 2 })
   try {
     await onlyThese(p, [reminder, days])
     await p.goto('/reminders')
@@ -279,6 +325,7 @@ test('a scroll by hand resets the cycle: the next tap goes to the top, then stop
   } finally {
     await p.unrouteAll({ behavior: 'ignoreErrors' })
     await p.request.post('/api/tasks/bulk/delete', { data: { ids: [reminder, days] } })
+    await setClock(p.request, null)
   }
 })
 

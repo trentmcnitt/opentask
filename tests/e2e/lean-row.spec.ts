@@ -17,7 +17,7 @@
  * needs it) and off after it.
  */
 import { DateTime } from 'luxon'
-import { test, expect, holdUntil, openTaskDay, uniqueTitle } from './fixtures'
+import { test, expect, holdUntil, openTaskDay, serverDayStart, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const HOUR = 60 * 60 * 1000
@@ -102,9 +102,9 @@ function expectTint(bg: string, [r, g, b, a]: [number, number, number, number]) 
  */
 async function laterToday(page: Page): Promise<Date> {
   const tz = process.env.E2E_TZ || 'America/Chicago'
-  const { rollover_time } = (await (await page.request.get('/api/user/preferences')).json())
-    .data as { rollover_time: string }
-  const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${rollover_time}`, { zone: tz })
+  const dayEnd = DateTime.fromISO(`${await openTaskDay(page, 1)}T${await serverDayStart(page)}`, {
+    zone: tz,
+  })
   return new Date(Math.min(Date.now() + 40 * 60 * 1000, dayEnd.toMillis() - 2 * 60 * 1000))
 }
 

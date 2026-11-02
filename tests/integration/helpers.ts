@@ -6,7 +6,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { openTaskDayOf } from '@/lib/opentask-day'
+import { CALENDAR_DAY_START, openTaskDayOf } from '@/lib/opentask-day'
 
 const ENV_FILE = path.join(process.cwd(), 'data', '.test-integration-env.json')
 
@@ -108,20 +108,24 @@ export async function setTaskQueue(enabled: boolean): Promise<void> {
 }
 
 /**
- * User A's OpenTask "today" (yyyy-MM-dd) as the server reckons it with the
- * task-queue switch on: the user's resolved day start (`rollover_time`, 3:00
- * AM by default) read from the server, and the server's own rule
- * (`openTaskDayOf`, docs/TASK-MODEL.md § The OpenTask day). Not the calendar
- * date: between midnight and the day start the OpenTask day is still
- * yesterday's, so a test expecting the calendar date fails in that window
- * (CI, on UTC, hits it too). Read it after `resetTestData()` (which resets
- * the day start) and at the test's start, not when the file loads.
+ * User A's "today" (yyyy-MM-dd) as the server reckons it now: with the
+ * task-queue switch on, the OpenTask day from the user's resolved day start
+ * (`rollover_time`, 3:00 AM by default); off, the calendar day — the
+ * server's `dayBoundaryForUser`, both read from the server, through its own
+ * rule (`openTaskDayOf`, docs/TASK-MODEL.md § The OpenTask day). Between
+ * midnight and the day start the two differ, so a test that reads the wrong
+ * one fails only in that window (CI, on UTC, runs in it: 2026-11-02). Read
+ * it after `resetTestData()` (which resets the day start) and after setting
+ * the switch, at the test's start, not when the file loads.
  */
 export async function openTaskToday(timezone: string): Promise<string> {
   const res = await apiFetch('/api/user/preferences')
   if (!res.ok) throw new Error(`GET /api/user/preferences → ${res.status}`)
-  const { rollover_time } = (await res.json()).data as { rollover_time: string }
-  return openTaskDayOf(new Date(), timezone, rollover_time)
+  const { rollover_time, task_queue } = (await res.json()).data as {
+    rollover_time: string
+    task_queue: boolean
+  }
+  return openTaskDayOf(new Date(), timezone, task_queue ? rollover_time : CALENDAR_DAY_START)
 }
 
 /**

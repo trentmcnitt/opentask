@@ -22,12 +22,22 @@
  */
 import path from 'path'
 import Database from 'better-sqlite3'
+import { DateTime } from 'luxon'
 import { test, expect, openTaskDay, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const TZ = process.env.E2E_TZ || 'America/Chicago'
-const DAY = 24 * 60 * 60 * 1000
-const daysFromNow = (n: number) => new Date(Date.now() + n * DAY).toISOString()
+/**
+ * A local time on the user's day `n` days on: fixed, never the run's time of
+ * day — "now + n days" made the chips read differently at night ("Nov 13
+ * night") and moved a chip's × under the row's centre, where the dashboard
+ * test double-clicks (2026-11-02).
+ */
+async function dayAt(page: Page, n: number, time: string): Promise<string> {
+  return DateTime.fromISO(`${await openTaskDay(page, n)}T${time}`, { zone: TZ })
+    .toUTC()
+    .toISO()!
+}
 
 test.use({ timezoneId: TZ })
 
@@ -73,8 +83,8 @@ interface Made {
 async function makeTasks(page: Page): Promise<Made> {
   const targeted = await create(page, {
     title: uniqueTitle('Meta targeted'),
-    due_at: daysFromNow(9),
-    deadline_at: daysFromNow(12),
+    due_at: await dayAt(page, 9, '10:00'),
+    deadline_at: await dayAt(page, 12, '17:00'),
     horizon: 'days',
   })
   const decked = await create(page, { title: uniqueTitle('Meta decked'), horizon: 'weeks' })
