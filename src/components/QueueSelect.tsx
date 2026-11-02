@@ -55,6 +55,30 @@ export function useQueueSelectEnter(): ((id: number) => void) | null {
 }
 
 /**
+ * CMD- AND SHIFT-CLICK PICK (Trent, 2026-11-02: "anytime you're on the task
+ * queue, Shift-clicking or Command-clicking … should enable select mode and
+ * select that, just like it does on tasks"), the main list's rule
+ * (`useRowPress`):
+ *
+ * - Cmd-click (Ctrl-click off a Mac): with the mode off, it comes on with the
+ *   row picked; on, the row toggles.
+ * - Shift-click: the rows from the last-clicked one (the anchor) to this one,
+ *   in the page on screen (`range`, the waiting rows the card draws, in
+ *   order); with no anchor there, the row alone, as a Cmd-click.
+ *
+ * A selection a modifier started is the hold's (`held`): one action, then
+ * out — the list's rule for anything but Select All. Provided by the card;
+ * null off it.
+ */
+export type QueueModifierPick = (id: number, range: readonly number[] | null) => void
+
+export const QueueSelectModifierContext = createContext<QueueModifierPick | null>(null)
+
+export function useQueueModifierPick(): QueueModifierPick | null {
+  return useContext(QueueSelectModifierContext)
+}
+
+/**
  * Details with several picked: the dashboard's bulk editor (the list's
  * Details sheet). The card asks the dashboard for it with this event (detail:
  * the ids); `DashboardClient` selects them in its list and opens the sheet.
@@ -87,7 +111,9 @@ export function useQueueSelectMode({
    */
   const [held, setHeld] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set())
-  const toggle = useCallback(
+  // The last row picked or unpicked: a Shift-click's range starts here.
+  const [anchor, setAnchor] = useState<number | null>(null)
+  const toggleRow = useCallback(
     (id: number) =>
       setSelected((prev) => {
         const next = new Set(prev)
@@ -102,20 +128,47 @@ export function useQueueSelectMode({
       }),
     [held],
   )
+  const toggle = useCallback(
+    (id: number) => {
+      setAnchor(id)
+      toggleRow(id)
+    },
+    [toggleRow],
+  )
   const clear = useCallback(() => setSelected(new Set()), [])
   const enter = useCallback(
     (id: number) => {
       // A hold inside a mode the Select button started picks the row, nothing more.
       if (!on) setHeld(true)
       setOn(true)
+      setAnchor(id)
       setSelected((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
     },
     [on],
+  )
+  const modifierPick = useCallback<QueueModifierPick>(
+    (id, range) => {
+      const from = range && anchor !== null ? range.indexOf(anchor) : -1
+      const to = range ? range.indexOf(id) : -1
+      if (from === -1 || to === -1) {
+        // Cmd-click, or a Shift-click with no anchor on this page.
+        if (on) toggle(id)
+        else enter(id)
+        return
+      }
+      // The range, added to what is picked; the anchor stays (the list's rule).
+      const span = range!.slice(Math.min(from, to), Math.max(from, to) + 1)
+      if (!on) setHeld(true)
+      setOn(true)
+      setSelected((prev) => new Set([...prev, ...span]))
+    },
+    [anchor, on, toggle, enter],
   )
   const leave = useCallback(() => {
     setOn(false)
     setHeld(false)
     setSelected(new Set())
+    setAnchor(null)
   }, [])
   /** After a verb lands: out for a hold, the picks cleared for the Select button. */
   const finished = held ? leave : clear
@@ -191,6 +244,7 @@ export function useQueueSelectMode({
       setOn(true)
     },
     enter,
+    modifierPick,
     state,
     bar,
   }

@@ -34,6 +34,7 @@ import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 import {
   QueueSelectContext,
   QueueSelectEnterContext,
+  QueueSelectModifierContext,
   QueueSelectToggle,
   useQueueSelectMode,
 } from '@/components/QueueSelect'
@@ -236,16 +237,18 @@ export function DashboardTasksPanel({
         ariaLabel="Today's task segments"
       />
       <QueueSelectEnterContext.Provider value={select.enter}>
-        <QueueSelectContext.Provider value={select.state}>
-          <TaskPageBody
-            segment={segment}
-            actions={actions}
-            timezone={timezone}
-            expanded={expanded}
-            showConsidered={showConsidered}
-            onToggleExpanded={() => setExpanded(!expanded)}
-          />
-        </QueueSelectContext.Provider>
+        <QueueSelectModifierContext.Provider value={select.modifierPick}>
+          <QueueSelectContext.Provider value={select.state}>
+            <TaskPageBody
+              segment={segment}
+              actions={actions}
+              timezone={timezone}
+              expanded={expanded}
+              showConsidered={showConsidered}
+              onToggleExpanded={() => setExpanded(!expanded)}
+            />
+          </QueueSelectContext.Provider>
+        </QueueSelectModifierContext.Provider>
       </QueueSelectEnterContext.Provider>
       {select.bar}
     </section>
