@@ -2668,8 +2668,11 @@ export function targetSetAtOf(task: UpcomingTaskFields): string {
  * RULE UP-MEMBERS: Upcoming holds one-offs with a picked target (relative targets included),
  *   repeats' next occurrences, and future decks (with ?deck=1). It never holds reminders, quotas or
  *   an automatic target. With the deadlines page drawn, it never holds a target-less deadline task.
- * Why: Upcoming is the one exception to "a target makes a task quiet until its date".
- * Ruling: 2026-10-12 spec §2; rule 3 2026-10-25.
+ *   EXCEPTION: a task with heads-up off (`heads_up` false) is never a member — neither Tomorrow
+ *   nor Later; its target, nags and the deadlines page unchanged (checked first in `upcomingState`).
+ * Why: Upcoming is the one exception to "a target makes a task quiet until its date"; heads-up
+ *   off lets a task the user knows about skip that exception too.
+ * Ruling: 2026-10-12 spec §2; rule 3 2026-10-25; heads-up off 2026-11-02 (Trent).
  */
 /**
  * Whether the task belongs in Upcoming at all (whatever today is): a target
@@ -2743,6 +2746,7 @@ export function upcomingState(
   /** The user's day boundary (`localDay`): Upcoming days are OpenTask days. */
   dayStart: string,
 ): UpcomingPlace | null {
+  // Heads-up off: never a member (RULE UP-MEMBERS' exception).
   if (task.heads_up === false) return null
   const today = openTaskLocalDay(now, timezone, dayStart)
   const dayOf = (iso: string) => localDay(iso, timezone, dayStart)

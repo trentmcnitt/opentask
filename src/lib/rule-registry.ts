@@ -347,6 +347,7 @@ export const RULE_REGISTRY = {
     pins: [
       'tests/behavioral/up-upcoming.test.ts#UP-100',
       'tests/behavioral/tm-auto-target.test.ts#TM8-050',
+      'tests/behavioral/up-heads-up.test.ts#UP-HU01',
     ],
   },
   'UP-PLACEMENT': {
