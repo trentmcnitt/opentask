@@ -21,7 +21,7 @@ import { ReplaceConfirm } from '@/components/ReplaceConfirm'
 import { OptionMenu } from '@/components/OptionMenu'
 import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
-import { useQueueSelect, useQueueSelectEnter } from '@/components/QueueSelect'
+import { useQueueModifierPick, useQueueSelect, useQueueSelectEnter } from '@/components/QueueSelect'
 import { requestShowInList, showInListHref } from '@/lib/show-in-list'
 import { fromPortal, useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
@@ -353,7 +353,13 @@ export function TaskSegmentRow({
   // On the queue card a hold enters select mode with this row picked (L1,
   // 2026-10-30, `QueueSelectEnterContext`); elsewhere it opens the bubble.
   const enterSelect = useQueueSelectEnter()
+  // Cmd- and Shift-click pick on the card (2026-11-02, `QueueModifierPick`).
+  const modifierPick = useQueueModifierPick()
   const rowProps = useSegmentRowPress({
+    onModifier:
+      modifierPick && !considered
+        ? (li, shift) => modifierPick(task.id, shift ? pageRange(li) : null)
+        : undefined,
     onPeek: (viaKeyboard) =>
       enterSelect ? enterSelect(task.id) : actions.openPeek(task, viaKeyboard),
     holdSelects: !!enterSelect,
@@ -667,6 +673,21 @@ export const ROW_PEEK_DESCRIPTION =
   'Tap to mark considered. Hold, right-click or press Command-Enter for details.'
 
 /**
+ * A Shift-click's RANGE: the waiting rows of the page on screen, in the order
+ * drawn — the card draws one page (`TaskPageBody`); a row hidden by CSS (past
+ * a narrow cap) is left out.
+ */
+function pageRange(row: HTMLElement): number[] | null {
+  const page = row.closest('[data-tasks-panel]')
+  if (!page) return null
+  return [
+    ...page.querySelectorAll<HTMLElement>('[data-segment-task][data-segment-state="waiting"]'),
+  ]
+    .filter((el) => el.getClientRects().length > 0)
+    .map((el) => Number(el.dataset.segmentTask))
+}
+
+/**
  * The row's own gestures (2026-10-20, when the peek replaced the pencil):
  *
  * - TAP / click: considered (unchanged — the rapid-fire pass).
@@ -692,11 +713,18 @@ export const ROW_PEEK_DESCRIPTION =
 function useSegmentRowPress({
   onPeek,
   onConsider,
+  onModifier,
   enabled,
   considerable = true,
   holdSelects = false,
 }: {
   onPeek: (viaKeyboard: boolean) => void
+  /**
+   * A Cmd/Ctrl- or Shift-click on the row itself (not one of its buttons,
+   * which keep their own clicks): the card's pick (`QueueModifierPick`).
+   * Absent off the card and on a considered row; the click then considers.
+   */
+  onModifier?: (row: HTMLLIElement, shift: boolean) => void
   /** The hold selects the row instead (the queue card): the description says so. */
   holdSelects?: boolean
   onConsider: () => void
@@ -726,6 +754,10 @@ function useSegmentRowPress({
       if (fromPortal(e)) return
       if (press.didFire()) {
         e.preventDefault()
+        return
+      }
+      if (onModifier && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+        onModifier(e.currentTarget, e.shiftKey)
         return
       }
       onConsider()
