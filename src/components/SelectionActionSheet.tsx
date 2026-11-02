@@ -442,6 +442,16 @@ export function SelectionActionSheet({
             // The parent has already toasted why; the selection stays.
             .catch(() => undefined)
         }}
+        // Heads up (2026-11-02, ⋯ More): one save for the selection — the
+        // server keeps a reminder's or a quota's on. The parent toasts, with
+        // Undo; out after it unless Select All started it.
+        onHeadsUp={(_ids, on) =>
+          void onSaveAll({ heads_up: on })
+            .then(() => {
+              if (!sticky) onClear()
+            })
+            .catch(() => undefined)
+        }
         // One action, then out — unless Select All started it (`sticky`,
         // Trent 2026-10-30). The parent toasts, with Undo.
         onHorizon={(horizon) =>
@@ -608,6 +618,7 @@ function ListSelectionBar({
   onDelete,
   onSkipUntil,
   onRemoveTargets,
+  onHeadsUp,
   onHorizon,
   onShowInList,
   onClear,
@@ -622,6 +633,7 @@ function ListSelectionBar({
   onDelete: () => void
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   onRemoveTargets: (ids: number[]) => void
+  onHeadsUp: (ids: number[], on: boolean) => void
   onHorizon: (horizon: HorizonValue | null) => void
   onShowInList: (id: number) => void
   onClear: () => void
@@ -660,6 +672,7 @@ function ListSelectionBar({
             })
           }
           onRemoveTargets={onRemoveTargets}
+          onHeadsUp={onHeadsUp}
         />
       }
     >

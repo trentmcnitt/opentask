@@ -298,6 +298,7 @@ export function useTaskSegments({
   )
   const setHorizon = useSetHorizon(onUndo, refresh, onCompleted)
   const horizonMany = useSetHorizonMany(onUndo, refresh, onCompleted)
+  const headsUpMany = useSetHeadsUpMany(onUndo, refresh, onCompleted)
 
   // Put back (2026-10-11): a considered or deferred row from "Show N
   // considered" waits again — the slots' put-back.
@@ -336,6 +337,7 @@ export function useTaskSegments({
     deferAll,
     setHorizon,
     horizonMany,
+    headsUpMany,
     restore,
     removeTarget,
     remove,
@@ -614,6 +616,38 @@ function useSetHorizonMany(
       try {
         await post('/api/tasks/bulk/edit', { ids, changes: { horizon } })
         const word = horizon ? `Horizon: ${HORIZON_LABELS[horizon]}` : 'Horizon cleared'
+        showToast({
+          message: ids.length === 1 ? word : `${word} · ${nTasks(ids.length)}`,
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted?.()
+      } catch (err) {
+        showToast({ message: err instanceof Error ? err.message : 'Failed', type: 'error' })
+      } finally {
+        void refresh()
+      }
+    },
+    [onUndo, onCompleted, refresh],
+  )
+}
+
+/**
+ * HEADS UP (2026-11-02): the select bar's ⋯ "Turn off heads-up" / "Turn on
+ * heads-up" — every picked task's `heads_up` in ONE request (`bulk/edit`),
+ * one Undo. Off, an Upcoming row leaves the page with the refresh; the
+ * toast's Undo brings it back.
+ */
+function useSetHeadsUpMany(
+  onUndo: () => void,
+  refresh: () => Promise<void>,
+  onCompleted?: () => void,
+) {
+  return useCallback(
+    async (ids: number[], on: boolean) => {
+      try {
+        await post('/api/tasks/bulk/edit', { ids, changes: { heads_up: on } })
+        const word = on ? 'Heads-up on' : 'Heads-up off'
         showToast({
           message: ids.length === 1 ? word : `${word} · ${nTasks(ids.length)}`,
           type: 'success',

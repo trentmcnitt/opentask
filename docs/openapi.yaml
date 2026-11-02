@@ -1678,6 +1678,12 @@ paths:
                 changes:
                   type: object
                   properties:
+                    heads_up:
+                      type: boolean
+                      description: >-
+                        Heads up (2026-11-02): false keeps every task out of Upcoming
+                        (membership, not timing); true puts them back. One undo entry for
+                        the request; ignored on reminders and quotas.
                     priority:
                       type: integer
                       minimum: 0
@@ -6331,6 +6337,14 @@ components:
             the deadlines page — derived on every deadline write and advance, moved by
             `POST /api/task-segments/defer-lead`. Set on an ordinary task with a deadline and no
             relative target (dormant while it has a target); else null. Server-set.
+        heads_up:
+          type: boolean
+          description: >
+            HEADS UP (2026-11-02): false = the task never shows in Upcoming (neither Tomorrow
+            nor Later), on any surface. MEMBERSHIP only — its target, its nags and the
+            deadlines page are untouched. Not the same as `lead_days`, which is the TIMING (how
+            far ahead Upcoming's Later starts). Default true; per task, so a repeat's holds for
+            every occurrence; a reminder or a quota is always true.
         auto_snooze_minutes:
           type: [integer, 'null']
           description: |
@@ -6523,6 +6537,12 @@ components:
             target or deck day (Upcoming's Later day), else the deadline's day (the deadlines
             page). Null = the default table. On a repeat it must be fewer than the days between
             the rule's occurrences (400). Re-derives `lead_from`.
+        heads_up:
+          type: boolean
+          description: >
+            Heads up (2026-11-02): false keeps the task out of Upcoming (Tomorrow and Later);
+            true puts it back. Membership, not timing (`lead_days` is the timing). Ignored on a
+            reminder or a quota (always true). Default true.
         deadline_at:
           type: [string, 'null']
           format: date-time
@@ -6908,6 +6928,12 @@ components:
             target or deck day (Upcoming's Later day), else the deadline's day (the deadlines
             page). Null = the default table. On a repeat it must be fewer than the days between
             the rule's occurrences (400). Re-derives `lead_from`.
+        heads_up:
+          type: boolean
+          description: >
+            Heads up (2026-11-02): false keeps the task out of Upcoming (Tomorrow and Later);
+            true puts it back. Membership, not timing (`lead_days` is the timing). Ignored on a
+            reminder or a quota (always true). Default true.
         allow_past_deadline:
           type: boolean
           deprecated: true

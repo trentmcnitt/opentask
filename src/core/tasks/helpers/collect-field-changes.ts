@@ -331,6 +331,8 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
     now,
     rolloverTime: options.rolloverTime,
   })
+  // Heads up (2026-11-02): an ordinary task's own; a reminder or a quota is on.
+  collectHeadsUp(data, task, input, !willBeReminder && !willBeTracked)
 
   // Whatever date the row still carried, drop it if it is (or is becoming) a quota
   collectQuotaDateClear(data, task, willBeTracked)
@@ -747,6 +749,24 @@ const LEAD_INPUTS = [
   'progress_target',
   'lead_days',
 ]
+
+/**
+ * HEADS UP (2026-11-02, docs/TASK-MODEL.md § Upcoming): whether the task
+ * shows in Upcoming — as sent on an ordinary task, always on for a reminder or
+ * a quota (none of them is ever in Upcoming, and a later change of kind must
+ * not carry an "off" in). A 0/1 column, a boolean in the snapshot.
+ */
+function collectHeadsUp(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  ordinary: boolean,
+): void {
+  const wanted = ordinary ? (input.heads_up ?? task.heads_up) : true
+  if (wanted !== task.heads_up) {
+    trackField(data, 'heads_up', task.heads_up, wanted, undefined, wanted ? 1 : 0)
+  }
+}
 
 /**
  * THE DEADLINES PAGE (2026-10-22; docs/TASK-MODEL.md § The deadlines page):

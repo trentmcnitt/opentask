@@ -261,6 +261,14 @@ export interface Task {
    */
   lead_days: number | null
   lead_from: string | null
+  /**
+   * HEADS UP (2026-11-02, docs/TASK-MODEL.md § Upcoming): false = the task
+   * never shows in Upcoming (Tomorrow or Later). Membership only — the
+   * target, its nags and the deadlines page are untouched; `lead_days` is
+   * the timing. Default true; per task (a repeat's holds for every
+   * occurrence); a reminder or a quota always true.
+   */
+  heads_up: boolean
 
   // Notifications
   last_notified_at: string | null

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Clock3, MoreHorizontal, SkipForward, XCircle } from 'lucide-react'
+import { BellOff, BellRing, Clock3, MoreHorizontal, SkipForward, XCircle } from 'lucide-react'
 import { BarAction } from '@/components/SelectionBarShell'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { DeckMenu } from '@/components/OnDeckButton'
@@ -10,6 +10,7 @@ import { OptionMenu } from '@/components/OptionMenu'
 import { SkipUntilDialog } from '@/components/SkipUntilDialog'
 import { removableTargetIds } from '@/lib/row-corner'
 import { canSkipUntil } from '@/lib/skip-until'
+import { isTracked } from '@/lib/track'
 import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { taskWord } from '@/lib/utils'
 import type { Task } from '@/types'
@@ -88,6 +89,21 @@ export function DeckVerb({
 
 const SKIP = 'skip-until'
 const REMOVE = 'remove-target'
+const HEADS_UP = 'heads-up'
+
+/**
+ * THE ⋯ HEADS UP ITEM (2026-11-02): over the selection's ordinary open tasks
+ * (not a reminder or a quota — they have no heads-up), "Turn off heads-up"
+ * for those with it on while any is; else "Turn on heads-up" for all of them.
+ * Null when the selection has none.
+ */
+function headsUpChoice(tasks: Task[]): { on: boolean; ids: number[] } | null {
+  const ordinary = tasks.filter((t) => !t.done && !t.is_reminder && !isTracked(t))
+  if (ordinary.length === 0) return null
+  const lit = ordinary.filter((t) => t.heads_up !== false)
+  if (lit.length > 0) return { on: false, ids: lit.map((t) => t.id) }
+  return { on: true, ids: ordinary.map((t) => t.id) }
+}
 
 /**
  * More: Skip until… (the selection's repeating tasks) and Remove target (its
@@ -100,17 +116,21 @@ export function MoreVerb({
   timezone,
   onRemoveTargets,
   onSkipUntil,
+  onHeadsUp,
 }: {
   selectedTasks: Task[]
   timezone: string
   /** The selection's one-offs whose target the user picked: their targets go. */
   onRemoveTargets: (ids: number[]) => void
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
+  /** Heads up (2026-11-02): the tasks' `heads_up`, all in one request. */
+  onHeadsUp?: (ids: number[], on: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
   const [skipOpen, setSkipOpen] = useState(false)
   const removable = removableTargetIds(selectedTasks)
   const repeating = onSkipUntil ? selectedTasks.filter(canSkipUntil) : []
+  const headsUp = onHeadsUp ? headsUpChoice(selectedTasks) : null
   const of = (n: number) => (n < selectedTasks.length ? ` (${n})` : '')
   const options = [
     ...(repeating.length > 0
@@ -118,6 +138,15 @@ export function MoreVerb({
       : []),
     ...(removable.length > 0
       ? [{ label: `${REMOVE_TARGET}${of(removable.length)}`, option: REMOVE, icon: <XCircle /> }]
+      : []),
+    ...(headsUp
+      ? [
+          {
+            label: `${headsUp.on ? 'Turn on' : 'Turn off'} heads-up${of(headsUp.ids.length)}`,
+            option: HEADS_UP,
+            icon: headsUp.on ? <BellRing /> : <BellOff />,
+          },
+        ]
       : []),
   ]
   return (
@@ -131,6 +160,7 @@ export function MoreVerb({
           setOpen(false)
           if (option === SKIP) setSkipOpen(true)
           else if (option === REMOVE) onRemoveTargets(removable)
+          else if (option === HEADS_UP && headsUp) onHeadsUp?.(headsUp.ids, headsUp.on)
         }}
       >
         <button

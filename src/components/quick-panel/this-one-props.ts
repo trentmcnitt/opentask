@@ -276,7 +276,9 @@ export function targetValueFor(s: {
  *   target (staged) and a deadline (staged) that has a lead (`leadLine` — not
  *   a repeat with a relative target): when it goes on the deadlines page.
  *
- * Null otherwise (a target today or overdue: not in Upcoming, nothing to say).
+ * Null otherwise (a target today or overdue: not in Upcoming, nothing to say),
+ * and no UPCOMING form with heads-up off, stored or staged (2026-11-02: the
+ * task never shows in Upcoming, so there is no lead to state).
  * `upcomingAnchor`: the STAGED anchor (undefined: the stored one; null: none
  * — a target staged for removal, a queued occurrence); `restamp`: Save will
  * restamp `target_set_at` (a staged target, deck or deadline).
@@ -290,6 +292,8 @@ export function leadRowFor(s: {
   restamp: boolean
   pendingDeadline: string | null | undefined
   pendingLeadDays: number | null | undefined
+  /** Heads up, staged or stored (`heads_up`): off, no Upcoming form. */
+  headsUp: boolean
   timezone: string
   rolloverTime: string | null
   dayStart: string
@@ -311,6 +315,7 @@ export function leadRowFor(s: {
     s.dayStart,
     now,
   )
+  if (upcoming && !s.headsUp) return null
   if (upcoming) {
     const today = openTaskDayOf(now, s.timezone, s.dayStart)
     return {

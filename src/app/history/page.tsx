@@ -530,6 +530,9 @@ function formatEditDetails(
           after_state.lead_days == null ? 'default lead' : `lead ${after_state.lead_days}d`,
         )
         break
+      case 'heads_up':
+        parts.push(after_state.heads_up === false ? 'heads-up off' : 'heads-up on')
+        break
       case 'lead_from':
         if (fields.length <= 2 && typeof after_state.lead_from === 'string') {
           parts.push(`on the deadlines page from ${after_state.lead_from}`)

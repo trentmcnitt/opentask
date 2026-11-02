@@ -84,6 +84,8 @@ const VALID_TASK_COLUMNS = new Set([
   // day, Defer moves it, PATCH sets the override — all in undo snapshots.
   'lead_days',
   'lead_from',
+  // Heads up (2026-11-02): PATCH and bulk edit set it, in undo snapshots.
+  'heads_up',
   // Retired 2026-10-12 but KEPT: undo entries written before then name them,
   // and an unknown field throws (wedging the stack — see `is_tracked`).
   'deadline_nag_off',
@@ -129,7 +131,13 @@ const VALID_TASK_COLUMNS = new Set([
  * 0/1 flag columns the snapshot holds as booleans: the retired nag flag, the
  * automatic target (§8), and the task queue's mark and Try Tomorrow flag.
  */
-const FLAG_COLUMNS = new Set(['deadline_nag_off', 'target_auto', 'queue_mark', 'try_tomorrow'])
+const FLAG_COLUMNS = new Set([
+  'deadline_nag_off',
+  'target_auto',
+  'queue_mark',
+  'try_tomorrow',
+  'heads_up',
+])
 
 /** Task columns holding a JSON object; undo writes them back serialized. */
 const JSON_OBJECT_COLUMNS = new Set(['quota_prompt_config', 'quota_day_state'])

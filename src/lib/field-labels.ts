@@ -49,6 +49,8 @@ export const FIELD_LABELS: Record<string, string> = {
   target_time: 'target',
   // Relative targets (2026-10-24): the period the target's time follows.
   target_slot_id: 'target',
+  // Heads up (2026-11-02): whether the task shows in Upcoming.
+  heads_up: 'heads-up',
 }
 
 /**
@@ -272,6 +274,8 @@ function buildFieldFragment(
   context: EditDescriptionContext,
 ): string | null {
   switch (field) {
+    case 'heads_up':
+      return afterState.heads_up === false ? 'Heads-up off' : 'Heads-up on'
     case 'priority':
       return buildPriorityFragment(beforeState, afterState)
     case 'due_at':

@@ -472,6 +472,9 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'lead_days')) {
     database.exec('ALTER TABLE tasks ADD COLUMN lead_days INTEGER DEFAULT NULL')
   }
+  if (!hasColumn(database, 'tasks', 'heads_up')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN heads_up INTEGER NOT NULL DEFAULT 1')
+  }
   if (!hasColumn(database, 'tasks', 'lead_from')) {
     database.exec('ALTER TABLE tasks ADD COLUMN lead_from TEXT DEFAULT NULL')
   }

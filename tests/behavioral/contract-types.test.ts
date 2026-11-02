@@ -144,6 +144,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   queued_from_deck_day: STR_N,
   lead_days: INT_N,
   lead_from: STR_N,
+  heads_up: BOOL,
   rolled_over_at: STR_N,
   attempts_label: STR_N,
   attempts_offer: STR_N,

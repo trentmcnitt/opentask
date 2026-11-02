@@ -82,7 +82,7 @@ import { isTracked } from '@/lib/track'
 import { GridButton } from '@/components/quick-panel/GridButton'
 import { SinceAge } from '@/components/quick-panel/SinceAge'
 import { NotesInlineSection } from '@/components/quick-panel/NotesInlineSection'
-import { ThisOneFields } from '@/components/quick-panel/ThisOneFields'
+import { ThisOneFields, type HeadsUpRowProps } from '@/components/quick-panel/ThisOneFields'
 import { EveryTimePanel } from '@/components/quick-panel/EveryTimePanel'
 import {
   deadlineRowFor,
@@ -148,6 +148,8 @@ export interface QuickActionPanelChanges {
    * before the deadline; null = the default table. Single-task only.
    */
   lead_days?: number | null
+  /** Heads up (2026-11-02): false = never in Upcoming. Single-task here; bulk via ⋯ More. */
+  heads_up?: boolean
   horizon?: HorizonValue | null
   /** On deck (D2): a yyyy-MM-dd day, or null = off deck. Single-task only. */
   on_deck_day?: string | null
@@ -247,6 +249,7 @@ type DirtyField =
   | 'notes'
   | 'deadline'
   | 'leadDays'
+  | 'headsUp'
   | 'horizon'
   | 'deck'
   | 'relative'
@@ -434,6 +437,8 @@ export function QuickActionPanel({
   const [pendingDeadline, setPendingDeadline] = useState<string | null | undefined>(undefined)
   // The deadlines page's lead override (the Lead row): undefined = no change, null = default.
   const [pendingLeadDays, setPendingLeadDays] = useState<number | null | undefined>(undefined)
+  // Heads up (2026-11-02, the "Heads up" switch): undefined = no change.
+  const [pendingHeadsUp, setPendingHeadsUp] = useState<boolean | undefined>(undefined)
   const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
   // On deck (D2, `OnDeckLine`): undefined = no change, null = off deck, else a day.
   const [pendingDeck, setPendingDeck] = useState<string | null | undefined>(undefined)
@@ -600,6 +605,7 @@ export function QuickActionPanel({
     notes: pendingNotes !== undefined,
     deadline: pendingDeadline !== undefined,
     leadDays: pendingLeadDays !== undefined,
+    headsUp: pendingHeadsUp !== undefined,
     horizon: pendingHorizon !== undefined,
     deck: pendingDeck !== undefined,
     relative: pendingRelative !== null,
@@ -954,6 +960,7 @@ export function QuickActionPanel({
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     if (pendingDeadline !== undefined) changes.deadline_at = pendingDeadline
     if (pendingLeadDays !== undefined) changes.lead_days = pendingLeadDays
+    if (pendingHeadsUp !== undefined) changes.heads_up = pendingHeadsUp
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
     // On deck (D2): unless a target staged after it overrides it — the pick
     // takes the task off deck on the server (`deck-clear.ts`).
@@ -970,6 +977,7 @@ export function QuickActionPanel({
   }, [
     pendingDeadline,
     pendingLeadDays,
+    pendingHeadsUp,
     pendingHorizon,
     pendingDeck,
     pendingRelative,
@@ -1013,6 +1021,7 @@ export function QuickActionPanel({
     setNotesExpanded(false)
     setPendingDeadline(undefined)
     setPendingLeadDays(undefined)
+    setPendingHeadsUp(undefined)
     setPendingHorizon(undefined)
     setPendingDeck(undefined)
     setPendingRelative(null)
@@ -1275,6 +1284,7 @@ export function QuickActionPanel({
       pendingDeadline !== undefined && pendingDeadline !== (effectiveTask?.deadline_at ?? null),
     pendingDeadline,
     pendingLeadDays,
+    headsUp: pendingHeadsUp ?? effectiveTask?.heads_up ?? true,
     timezone,
     rolloverTime,
     dayStart,
@@ -1647,6 +1657,11 @@ export function QuickActionPanel({
             }}
             deadline={deadlineRow}
             lead={leadRow}
+            headsUp={headsUpRow(
+              { single: [isBulkMode, isCreateMode, isReminderLike], task: effectiveTask },
+              pendingHeadsUp,
+              setPendingHeadsUp,
+            )}
             // A one-off with a target the user picked is quiet until its
             // date (spec §1/§8.5, 2026-10-12): its horizon decides nothing
             // until the target is removed, and the rows say so. An automatic
@@ -2289,4 +2304,29 @@ export function QuickActionPanel({
       </AlertDialog>
     </div>
   )
+}
+
+/**
+ * THE HEADS UP SWITCH's props (2026-11-02, `ThisOneFields`): on an ordinary,
+ * open, single task — off keeps it out of Upcoming (`heads_up`). Staged like
+ * every field here: flipping it back to the stored value un-stages it.
+ */
+function headsUpRow(
+  where: {
+    /** Bulk mode, create mode, a reminder or a quota: none has the switch. */
+    single: [boolean, boolean, boolean]
+    task: Task | null | undefined
+  },
+  pending: boolean | undefined,
+  setPending: (value: boolean | undefined) => void,
+): HeadsUpRowProps | null {
+  const { single, task } = where
+  if (single.some(Boolean) || !task || task.done) return null
+  const stored = task.heads_up ?? true
+  const on = pending ?? stored
+  return {
+    on,
+    dirty: pending !== undefined,
+    onChange: (next) => setPending(next === stored ? undefined : next),
+  }
 }
