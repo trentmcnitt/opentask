@@ -123,11 +123,22 @@ export function useQueueSelectMode({
   const deck = useBulkDeck({ onUndo, onFinished: () => void actions.refresh() })
   // The picked rows' tasks, from the card's segments (a row in two lists once).
   const tasks = new Map<number, Task>()
+  // THE SAFETY NET (Trent, 2026-11-02): a deadlines-page row from the day
+  // before its deadline leaves only by a target or done, so Consider, Deck
+  // and Not today leave it out — they act on the other picks (`loose`), and
+  // the bar drops each one when every pick is in the net.
+  const net = new Set<number>()
   for (const segment of actions.segments) {
-    for (const row of segment.rows) if (selected.has(row.task.id)) tasks.set(row.task.id, row.task)
+    for (const row of segment.rows) {
+      if (!selected.has(row.task.id)) continue
+      tasks.set(row.task.id, row.task)
+      if (row.safetyNet) net.add(row.task.id)
+    }
   }
   const picked = [...tasks.values()]
   const ids = picked.map((t) => t.id)
+  const loose = ids.filter((id) => !net.has(id))
+  const anyLoose = loose.length > 0
   const act = (fn: () => unknown) => {
     void fn()
     finished()
@@ -137,11 +148,11 @@ export function useQueueSelectMode({
       <QueueSelectionBar
         selectedTasks={picked}
         timezone={timezone}
-        onConsider={() => act(() => actions.considerMany(ids))}
+        onConsider={anyLoose ? () => act(() => actions.considerMany(loose)) : undefined}
         onDone={() => act(() => actions.doneMany(ids))}
         onTarget={(until) => act(() => actions.targetMany(ids, until))}
-        onNotToday={() => act(() => actions.notTodayMany(ids))}
-        onDeck={(day) => act(() => deck(ids, day))}
+        onNotToday={anyLoose ? () => act(() => actions.notTodayMany(loose)) : undefined}
+        onDeck={anyLoose ? (day) => act(() => deck(loose, day)) : undefined}
         onDetails={() => {
           if (picked.length === 1) actions.openDetails(picked[0])
           else window.dispatchEvent(new CustomEvent(QUEUE_BULK_DETAILS_EVENT, { detail: ids }))
@@ -231,11 +242,12 @@ export function QueueSelectionBar({
 }: {
   selectedTasks: Task[]
   timezone: string
-  onConsider: () => void
+  /** Consider, Not today and Deck: absent when every pick is a safety-net row. */
+  onConsider?: () => void
   onDone: () => void
   onTarget: (until: string) => void
-  onNotToday: () => void
-  onDeck: (day: string | null) => void
+  onNotToday?: () => void
+  onDeck?: (day: string | null) => void
   onDetails: () => void
   onDelete: () => void
   onRemoveTargets: (ids: number[]) => void
@@ -277,11 +289,15 @@ export function QueueSelectionBar({
         />
       }
     >
-      <BarAction icon={<CheckCheck />} label="Consider" onClick={onConsider} data-bar-consider />
+      {onConsider && (
+        <BarAction icon={<CheckCheck />} label="Consider" onClick={onConsider} data-bar-consider />
+      )}
       <BarAction tone="done" icon={<Check />} label="Done" onClick={onDone} />
       <TargetVerb count={count} targets={selectedTasks.map((t) => t.due_at)} onTarget={onTarget} />
-      <BarAction icon={<Forward />} label={NOT_TODAY} onClick={onNotToday} data-bar-not-today />
-      <DeckVerb timezone={timezone} onDeck={onDeck} />
+      {onNotToday && (
+        <BarAction icon={<Forward />} label={NOT_TODAY} onClick={onNotToday} data-bar-not-today />
+      )}
+      {onDeck && <DeckVerb timezone={timezone} onDeck={onDeck} />}
       <BarAction icon={<FileText />} label="Details" onClick={onDetails} data-bar-details />
       <BarAction
         tone="danger"

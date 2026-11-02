@@ -244,7 +244,9 @@ export function useTaskSegments({
     [ops, onUndo, onCompleted, refresh, view, undos],
   )
 
-  // In the safety net a consider marks the row seen and keeps it waiting.
+  // In the safety net a consider marks the row seen and keeps it waiting. No
+  // control here considers a net row any more (2026-11-02: its circle is the
+  // target clock, the bar and "Considered all" leave it out); kept for safety.
   const considered = useCallback(
     (id: number): Overlay => (pageRows.current.get(id)?.safetyNet ? { seen: true } : 'considered'),
     [],
@@ -520,13 +522,13 @@ export function mergePulled(views: SegmentView[]): SegmentView[] {
 }
 
 /**
- * The rows a consider still changes: waiting ones — but not a deadlines-page
- * row its safety net holds that was already seen today (it stays waiting
- * whatever is done to it but a target or done). "Considered all" offers
- * itself, counts and acts on these.
+ * The rows a consider still changes: waiting ones — but never a deadlines-page
+ * row its safety net holds (Trent, 2026-11-02): only a target or done takes it
+ * off the page, so a consider there changed nothing and the screen said
+ * otherwise. "Considered all" offers itself, counts and acts on these.
  */
 export function toConsider(segment: SegmentView): SegmentRow[] {
-  return segment.rows.filter((r) => r.state === 'waiting' && !(r.safetyNet && r.seen))
+  return segment.rows.filter((r) => r.state === 'waiting' && !r.safetyNet)
 }
 
 /** The deadlines page's rows, by id, with whether its safety net holds each. */

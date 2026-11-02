@@ -334,16 +334,20 @@ export function TaskSegmentRow({
 }) {
   const { task } = row
   const considered = row.state === 'considered'
-  // The deadlines page's safety net (2026-10-22): a row already seen today
-  // stays, waiting — another consider would change nothing.
-  const seenInNet = !!row.safetyNet && !!row.seen
+  // THE DEADLINES PAGE'S SAFETY NET (Trent, 2026-11-02): from the day
+  // before the deadline only a target or done takes the row off the page, so
+  // it has no consider at all — its circle is the TARGET clock (a tap targets
+  // today, a hold opens the Target menu), a tap on the row changes nothing,
+  // and its right side is the done square alone. A `seen` the server still
+  // sends (an older client's consider) draws nothing.
+  const inNet = !!row.safetyNet && !considered
   // The queue card's select mode (2026-10-30): a checkbox for the circle, no
   // buttons, and a tap picks the row (`QueueSelect`).
   const pick = useRowPick(task.id, panel && !considered)
   // Aged out (2026-10-29): considering there is Process's keep.
   const aged = segmentHorizon === 'aged_out'
   const consider = () => {
-    if (considered || seenInNet) return
+    if (considered || inNet) return
     void (aged ? actions.keep(task) : actions.consider(task))
   }
   // On the queue card a hold enters select mode with this row picked (L1,
@@ -355,8 +359,8 @@ export function TaskSegmentRow({
     holdSelects: !!enterSelect,
     onConsider: pick ? pick.toggle : consider,
     enabled: !considered,
-    // A seen safety-net row: a tap changes nothing, so it doesn't say "tap".
-    considerable: !seenInNet,
+    // A safety-net row: a tap changes nothing, so it doesn't say "tap".
+    considerable: !inNet,
   })
   const peekOpen = actions.peek?.id === task.id
   // TRY TOMORROW's mark (task queue PR 3; designer 10-19): a left-edge mark,
@@ -392,7 +396,6 @@ export function TaskSegmentRow({
         data-segment-state={row.state}
         data-pulled={row.pulled}
         data-safety-net={row.safetyNet ? '' : undefined}
-        data-seen={row.seen ? '' : undefined}
         tabIndex={considered ? -1 : 0}
         {...rowProps}
         // The SAME geometry as the rows around it (Trent, 2026-10-11: circles and
@@ -410,7 +413,7 @@ export function TaskSegmentRow({
           hiddenWhenNarrow,
           panel,
           considered,
-          seenInNet,
+          inNet,
           pick,
         })}
       >
@@ -425,14 +428,17 @@ export function TaskSegmentRow({
           />
         )}
         <RowLead pick={pick} title={task.title}>
-          <SegmentRowCircle
-            task={task}
-            considered={considered}
-            seenInNet={seenInNet}
-            panel={panel}
-            keeps={aged}
-            onConsider={consider}
-          />
+          {inNet ? (
+            <NetTargetLead task={task} actions={actions} timezone={timezone} panel={panel} />
+          ) : (
+            <SegmentRowCircle
+              task={task}
+              considered={considered}
+              panel={panel}
+              keeps={aged}
+              onConsider={consider}
+            />
+          )}
         </RowLead>
         <div className="min-w-0 flex-1">
           {/* THE TITLE WRAPS AROUND THE BUTTONS (Trent, 2026-10-26, mock "B").
@@ -546,43 +552,63 @@ function SegmentRowPeek({
 }
 
 /**
- * The row's left circle: "considered" (seen, never a completion). On the
- * deadlines page's SAFETY NET (2026-10-22) a seen row keeps waiting — seeing
- * does not silence it — so its circle is a green RING with the check, not the
- * filled considered circle: seen, still on the page, still nagging.
+ * A SAFETY-NET row's lead (Trent, 2026-11-02): the TARGET clock where the
+ * consider circle sits — the circle's own box, so the column still lines up
+ * (2026-10-11), with the done square's taller hit area. A tap targets today,
+ * a hold or right-click opens the Target menu (periods, Custom…) — the row
+ * clock's `TargetTodayButton`, which a net row no longer has on its right.
+ */
+function NetTargetLead({
+  task,
+  actions,
+  timezone,
+  panel,
+}: {
+  task: Task
+  actions: TaskSegmentActions
+  timezone: string
+  panel: boolean
+}) {
+  const dayStart = useDayStart()
+  const replace = segmentReplaces(task, timezone, dayStart)
+  return (
+    <TargetTodayButton
+      task={task}
+      timezone={timezone}
+      onTargetToday={(t) => void actions.targetToday(t)}
+      onTargetAt={(t, at) => void actions.targetAt(t, at)}
+      // A net row on deck (`countedDeadlineRows` keeps one): faded, asks first.
+      replaces={replace?.label ?? null}
+      replaceMessage={replace?.today}
+      face={
+        <Clock3 className={panel ? 'size-[17px]' : 'size-[21px]'} strokeWidth={1.75} aria-hidden />
+      }
+      className={cn(
+        "relative after:absolute after:-inset-x-[4px] after:content-['']",
+        panel ? 'size-[19px] after:-inset-y-[13px]' : 'mt-[3px] size-6 after:-inset-y-[10px]',
+      )}
+    />
+  )
+}
+
+/**
+ * The row's left circle: "considered" (seen, never a completion). A
+ * safety-net row has the target clock instead (`NetTargetLead`).
  */
 function SegmentRowCircle({
   task,
   considered,
-  seenInNet = false,
   panel,
   keeps = false,
   onConsider,
 }: {
   task: Task
   considered: boolean
-  seenInNet?: boolean
   panel: boolean
   /** Aged out: the circle is Process's keep (the horizon stays). */
   keeps?: boolean
   onConsider: () => void
 }) {
-  if (seenInNet) {
-    return (
-      <span
-        role="img"
-        data-seen-ring
-        aria-label={`"${task.title}" seen today — the deadline is close, so it stays`}
-        title="Seen today · the deadline is close: only a target or done takes it off"
-        className={cn(
-          'flex shrink-0 items-center justify-center rounded-full border-2 border-green-600 text-green-700 dark:border-green-500 dark:text-green-400',
-          panel ? 'size-[19px]' : 'mt-[3px] size-6',
-        )}
-      >
-        <Check className={panel ? 'size-3' : 'size-3.5'} strokeWidth={3} />
-      </span>
-    )
-  }
   if (considered) {
     return (
       <span
@@ -627,14 +653,14 @@ function SegmentRowCircle({
   )
 }
 
-/** A seen safety-net row's (a tap changes nothing there). */
+/** A safety-net row's (a tap changes nothing there). */
 export const ROW_PEEK_ONLY_DESCRIPTION =
-  'Seen today; the deadline is close. Hold, right-click or press Command-Enter for details.'
+  'The deadline is close: target it or mark it done. Hold, right-click or press Command-Enter for details.'
 /** The queue card's rows, where a hold selects (L1). */
 const ROW_SELECT_DESCRIPTION =
   'Tap to mark considered. Hold, right-click or press Command-Enter to select.'
 const ROW_SELECT_ONLY_DESCRIPTION =
-  'Seen today; the deadline is close. Hold, right-click or press Command-Enter to select.'
+  'The deadline is close: target it or mark it done. Hold, right-click or press Command-Enter to select.'
 
 /** Read to assistive tech on every waiting row: the peek's ways in. */
 export const ROW_PEEK_DESCRIPTION =
@@ -675,7 +701,7 @@ function useSegmentRowPress({
   holdSelects?: boolean
   onConsider: () => void
   enabled: boolean
-  /** A tap still considers (not a seen safety-net row): the description says so. */
+  /** A tap still considers (not a safety-net row): the description says so. */
   considerable?: boolean
 }) {
   const press = useLongPress({ onLongPress: enabled ? () => onPeek(false) : undefined })
@@ -803,17 +829,26 @@ function TaskSegmentRowActions({
   const queueUi = useQueueUi(segmentHorizon)
   const dayStart = useDayStart()
   const showToday = segmentHorizon !== 'upcoming' || upcomingRowActions(row).today
+  const boxClass = cn(
+    // The hit targets abut; their own padding around each hover box is
+    // the gap (finger or mouse, 2026-10-26).
+    'flex shrink-0 items-center',
+    // Down to the title's first line: by `top`, not a margin, which would
+    // make the float taller than that line (see `CONTROL_HIT`).
+    panel ? '-my-[4px]' : 'relative top-[4px]',
+  )
+  // A SAFETY-NET row (Trent, 2026-11-02): the done square alone — no Defer,
+  // no decks, and its clock is the row's lead (`NetTargetLead`). Done and a
+  // target are the only things that take it off the page.
+  if (row.safetyNet) {
+    return (
+      <div className={boxClass}>
+        <DoneSquare task={task} actions={actions} panel={panel} />
+      </div>
+    )
+  }
   return (
-    <div
-      className={cn(
-        // The hit targets abut; their own padding around each hover box is
-        // the gap (finger or mouse, 2026-10-26).
-        'flex shrink-0 items-center',
-        // Down to the title's first line: by `top`, not a margin, which would
-        // make the float taller than that line (see `CONTROL_HIT`).
-        panel ? '-my-[4px]' : 'relative top-[4px]',
-      )}
-    >
+    <div className={boxClass}>
       {/* On deck TOMORROW first, then On deck (today), then the clock
           (Trent, 2026-10-31; it was today's deck first since 10-21): right
           to left reads soonest to latest, the lean rows' order. Grow and
@@ -887,34 +922,47 @@ function TaskSegmentRowActions({
           iconClassName={panel ? 'size-[19px]' : 'size-[22px]'}
         />
       )}
-      {/* The quota prompt's did-it square (`QuotaPromptRow`), not the
-          stock checkbox: same size, radius, border and no shadow. */}
-      <button
-        type="button"
-        // A hold or right-click here is never the row's peek.
-        data-no-row-press
-        onClick={(e) => {
-          e.stopPropagation()
-          void actions.done(task)
-        }}
-        aria-label={`Done: "${task.title}"`}
-        title="Done"
-        // The square is drawn 22px (19 in a panel) and HIT 44px tall and 8px
-        // wider (the `after:` box): a finger's target without a bigger square.
-        className={cn(
-          "group/done border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 relative flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors after:absolute after:-inset-x-[4px] after:content-['']",
-          panel ? 'size-[19px] after:-inset-y-[13px]' : 'size-[22px] after:-inset-y-[11px]',
-        )}
-      >
-        <Check
-          className={cn(
-            'group-hover/done:text-foreground/50 text-transparent transition-colors',
-            panel ? 'size-[12px]' : 'size-[14px]',
-          )}
-          strokeWidth={3}
-        />
-      </button>
+      <DoneSquare task={task} actions={actions} panel={panel} />
     </div>
+  )
+}
+
+/** The row's done square (the quota prompt's did-it square, `QuotaPromptRow`). */
+function DoneSquare({
+  task,
+  actions,
+  panel,
+}: {
+  task: Task
+  actions: TaskSegmentActions
+  panel: boolean
+}) {
+  return (
+    <button
+      type="button"
+      // A hold or right-click here is never the row's peek.
+      data-no-row-press
+      onClick={(e) => {
+        e.stopPropagation()
+        void actions.done(task)
+      }}
+      aria-label={`Done: "${task.title}"`}
+      title="Done"
+      // The square is drawn 22px (19 in a panel) and HIT 44px tall and 8px
+      // wider (the `after:` box): a finger's target without a bigger square.
+      className={cn(
+        "group/done border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5 relative flex shrink-0 cursor-pointer items-center justify-center rounded-[5px] border-[1.5px] transition-colors after:absolute after:-inset-x-[4px] after:content-['']",
+        panel ? 'size-[19px] after:-inset-y-[13px]' : 'size-[22px] after:-inset-y-[11px]',
+      )}
+    >
+      <Check
+        className={cn(
+          'group-hover/done:text-foreground/50 text-transparent transition-colors',
+          panel ? 'size-[12px]' : 'size-[14px]',
+        )}
+        strokeWidth={3}
+      />
+    </button>
   )
 }
 
@@ -1284,8 +1332,9 @@ export function DeckTomorrowButton({
  * before the deadline (`deferLeadDays`) — and the pick moves THIS instance's
  * lead day there (`actions.deferLead`); the row leaves until then. In the
  * SAFETY NET (from the day before the deadline) there is no Defer — only a
- * target or done takes the row off — and its place stays empty, so the
- * controls line up down the column; likewise when no day is left to pick.
+ * target or done takes the row off — and since 2026-11-02 the row has none of
+ * these controls (`TaskSegmentRowActions`); when no day is left to pick, the
+ * place stays empty, so the controls line up down the column.
  */
 function DeferLeadSlot({
   row,
@@ -2080,13 +2129,13 @@ function segmentRowClass({
   hiddenWhenNarrow,
   panel,
   considered,
-  seenInNet,
+  inNet,
   pick,
 }: {
   hiddenWhenNarrow: boolean
   panel: boolean
   considered: boolean
-  seenInNet: boolean
+  inNet: boolean
   pick: { picked: boolean } | null
 }): string {
   return cn(
@@ -2096,7 +2145,7 @@ function segmentRowClass({
     considered
       ? 'opacity-60'
       : cn(
-          !seenInNet && 'cursor-pointer',
+          !inNet && 'cursor-pointer',
           panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]',
         ),
     pick?.picked && 'bg-blue-500/10 hover:bg-blue-500/15',
