@@ -3,8 +3,8 @@
  * docs/TASK-MODEL.md § On deck; the rules are in src/lib/task-segments.ts).
  *
  * `deckTasks` is `POST /api/tasks/deck`: put tasks on deck for a day (default
- * the calendar today; A2: between midnight and the rollover that is the coming
- * calendar day), or take them off (`day: null`). It is a bulk edit of
+ * today's OpenTask date — "Day starts at" PR 2, 2026-10-24; until then the
+ * calendar today, A2), or take them off (`day: null`). It is a bulk edit of
  * `on_deck_day` — the deck write itself, its checks and "never both" live in
  * `collectFieldChanges` (`prepareDeck`), shared with PATCH and bulk edit — so
  * it gets one undo entry (action `deck`), the activity rows, the sync event,
@@ -61,7 +61,7 @@ export interface DeckTasksOptions {
   userId: number
   timezone: string
   ids: number[]
-  /** yyyy-MM-dd; undefined = the calendar today; null = take off deck. */
+  /** yyyy-MM-dd; undefined = today's OpenTask date; null = take off deck. */
   day?: string | null
   now?: Date
 }
