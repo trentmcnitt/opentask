@@ -25,6 +25,13 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  * fades out (`useRowEdges`), and on open the row scrolls the pressed button —
  * else the default — into the middle, so the one that matters is never off to
  * the side.
+ *
+ * WITH A MOUSE IT WRAPS (Trent, 2026-11-04: "Why can't I scroll left and
+ * right to reveal the different reminder chips? I can't drag with the mouse,
+ * and the scroll wheel doesn't work"): on a fine pointer every period shows,
+ * in as many lines as it takes — nothing to scroll, no fades. A finger (a
+ * coarse pointer) keeps the one sideways-scrolling row. Where it does scroll,
+ * a vertical wheel scrolls it sideways too (`useRowEdges`).
  */
 export function PeriodChipRow({
   slots,
@@ -57,7 +64,7 @@ export function PeriodChipRow({
         data-more-end={edges.end ? '' : undefined}
         ref={ref}
         style={{ maskImage: edgeFade(edges), WebkitMaskImage: edgeFade(edges) }}
-        className="-mx-3 flex gap-1.5 overflow-x-auto overscroll-x-contain px-3 pt-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="-mx-3 flex gap-1.5 overflow-x-auto overscroll-x-contain px-3 pt-2 pb-1 [scrollbar-width:none] pointer-fine:flex-wrap pointer-fine:overflow-x-visible [&::-webkit-scrollbar]:hidden"
       >
         {choices.map((slot) => {
           const on = slot.start_time === value
@@ -102,7 +109,8 @@ function edgeFade({ start, end }: { start: boolean; end: boolean }): string | un
  * scroll and resize; and, each time the list changes (the periods arrive
  * after the picker opens), the pressed button — else the default — scrolled
  * to the middle. The 1px is sub-pixel scroll positions, which can stop a
- * fraction short of the end.
+ * fraction short of the end. A vertical wheel over a row that scrolls moves
+ * it sideways (not passive: it takes the wheel from the page under it).
  */
 function useRowEdges(listKey: string) {
   const ref = useRef<HTMLDivElement>(null)
@@ -119,12 +127,19 @@ function useRowEdges(listKey: string) {
         start: el.scrollLeft > 1,
         end: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
       })
+    const wheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+      e.preventDefault()
+      el.scrollLeft += e.deltaY
+    }
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     el.addEventListener('scroll', measure, { passive: true })
+    el.addEventListener('wheel', wheel, { passive: false })
     return () => {
       observer.disconnect()
       el.removeEventListener('scroll', measure)
+      el.removeEventListener('wheel', wheel)
     }
   }, [listKey])
   return { ref, edges }

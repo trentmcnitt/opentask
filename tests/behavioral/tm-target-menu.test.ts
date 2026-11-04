@@ -41,7 +41,7 @@ function menu(nowIso: string, slots = FIVE) {
 }
 
 describe('T1 target menu', () => {
-  test('TM-T1-1: a Wednesday — six rows in order, the next period first, the rest as buttons in day order', () => {
+  test('TM-T1-1: a Wednesday — six rows in order, the next period first; every period as a button, in day order', () => {
     // Wed Oct 28 2026, 11:00.
     const m = menu('2026-10-28T11:00')
     expect(m.rows.map((r) => r.label)).toEqual([
@@ -66,15 +66,18 @@ describe('T1 target menu', () => {
     expect(byOption.get('tomorrow')).toBe('Thu 2026-10-29 08:30')
     expect(byOption.get('this-weekend')).toBe('Sat 2026-10-31 08:30')
     expect(byOption.get('next-week')).toBe('Mon 2026-11-02 08:30')
-    // The periods: all but Lunchtime, in day order; a passed one goes to tomorrow.
+    // The periods: EVERY one, Lunchtime too (Trent, 2026-11-04: "we need all
+    // the chips listed"), in day order; a passed one goes to tomorrow.
     expect(m.periods.map((p) => `${p.label} ${p.time}`)).toEqual([
       'Early 6:30',
       'Morning 8:30',
+      'Lunchtime 12:00',
       'Dinner 6:00',
       'Bed 8:15',
     ])
     expect(local(m.periods[0].at)).toBe('Thu 2026-10-29 06:30')
-    expect(local(m.periods[2].at)).toBe('Wed 2026-10-28 18:00')
+    expect(local(m.periods[2].at)).toBe('Wed 2026-10-28 12:00')
+    expect(local(m.periods[3].at)).toBe('Wed 2026-10-28 18:00')
     for (const r of m.rows.slice(3)) expect(r.needsDay).toBe(true)
   })
 
@@ -113,11 +116,17 @@ describe('T1 target menu', () => {
     expect(m.rows.find((r) => r.option === 'next-weekend')?.detail).toBe('Sat Nov 7')
   })
 
-  test('TM-T1-5: after the last period the top row is tomorrow’s first, and Bed is a button again', () => {
+  test('TM-T1-5: after the last period the top row is tomorrow’s first; the buttons are every period', () => {
     const m = menu('2026-10-28T21:00')
     expect(m.rows[0].label).toBe('Next period · Early tomorrow 6:30 AM')
     expect(local(m.rows[0].at)).toBe('Thu 2026-10-29 06:30')
-    expect(m.periods.map((p) => p.label)).toEqual(['Morning', 'Lunchtime', 'Dinner', 'Bed'])
+    expect(m.periods.map((p) => p.label)).toEqual([
+      'Early',
+      'Morning',
+      'Lunchtime',
+      'Dinner',
+      'Bed',
+    ])
   })
 
   test('TM-T1-6: late at night the days are OpenTask days — at 1:30 AM Saturday it is still Friday', () => {
@@ -139,7 +148,7 @@ describe('T1 target menu', () => {
     ]
     const m = menu('2026-10-28T11:00', ten)
     expect(m.rows).toHaveLength(6)
-    expect(m.periods).toHaveLength(9)
+    expect(m.periods).toHaveLength(10)
     const none = menu('2026-10-28T11:00', [])
     expect(none.rows.map((r) => r.option)).toEqual([
       '60',
