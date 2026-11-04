@@ -4,7 +4,7 @@
  * closing the task.
  */
 import { test, expect, waitForPreferenceSave, showAllNow } from './fixtures'
-import { request as apiRequest, type Page, type Response } from '@playwright/test'
+import { request as apiRequest, type Page, type Response, type Route } from '@playwright/test'
 
 /**
  * Tasks made by the running test, deleted by the `afterEach` below — and
@@ -1732,5 +1732,53 @@ test.describe('Quotas page — search', () => {
       await expect(count).toHaveCount(0)
       await expect(panel.locator(`[data-track-chip="${walrus}"]`)).toBeVisible()
     })
+  })
+})
+
+test.describe('Undo of a log', () => {
+  /**
+   * Trent, 2026-11-04 (Daily Walks, 2/day): +1 on the chip, Cmd-Z a second
+   * later — the toast said undone, the server was back at 0, the chip stayed
+   * at 1. The chip pinned its answer until the task prop "changed", keyed to
+   * the prop's count: the undo's refetch brought 0, the same 0 it was pinned
+   * against, so the pin held for good. It is keyed to `updated_at` now.
+   *
+   * The ordering is made, not hoped for: the dashboard's task refetches are
+   * held while the +1 and the undo go through (so the prop never shows the
+   * 1 between them), then released — they reach the server after the undo.
+   */
+  test('+1 on a chip, then Cmd-Z: the chip shows 0 again', async ({ authenticatedPage: page }) => {
+    const id = await createTask(page, {
+      title: 'Probe undo walk',
+      progress_target: 2,
+      rrule: 'FREQ=DAILY',
+    })
+    await page.goto('/')
+    const chip = page.getByRole('region', { name: 'Quotas' }).locator(`[data-track-chip="${id}"]`)
+    const count = chip.locator('[data-track-count]')
+    await expect(count).toHaveAttribute('data-count', '0/2')
+
+    const held: Route[] = []
+    const hold = (route: Route) => void held.push(route)
+    await page.route('**/api/tasks?limit=1000', hold)
+
+    const logged = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith(`/api/tasks/${id}/progress`),
+    )
+    await chip.click()
+    await logged
+    await expect(count).toHaveAttribute('data-count', '1/2')
+
+    const undone = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/undo',
+    )
+    await page.keyboard.press('ControlOrMeta+z')
+    expect((await undone).ok()).toBeTruthy()
+
+    await page.unroute('**/api/tasks?limit=1000', hold)
+    for (const route of held.splice(0)) await route.continue()
+    await expect(count).toHaveAttribute('data-count', '0/2')
+    const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
+    expect(task.progress_current).toBe(0)
   })
 })
