@@ -51,14 +51,14 @@ final class QuotaPromptDTOTests: XCTestCase {
         XCTAssertTrue(label.hasPrefix("Read ·"))
     }
 
-    func testHandledDidOnADailyRowRaisesTheCountToItsNumber() {
-        // Row #2 at 0/3: a did-it means "the 2nd one is done" → 2, not 1.
+    func testHandledDidOnADailyRowAddsOne() {
+        // Row #2 at 0/3: one check is one (Trent, 2026-11-04) → 1, never 2.
         let row = prompt(period: "DAILY", current: 0, target: 3, number: 2).handled(did: true)
-        XCTAssertEqual(row.current, 2)
+        XCTAssertEqual(row.current, 1)
         XCTAssertTrue(row.done)
         XCTAssertTrue(row.considered)
-        // Already past it (logged elsewhere): max(current, k), never lower.
-        XCTAssertEqual(prompt(period: "DAILY", current: 3, target: 3, number: 2).handled(did: true).current, 3)
+        // Already past it (logged elsewhere): still one more.
+        XCTAssertEqual(prompt(period: "DAILY", current: 3, target: 3, number: 2).handled(did: true).current, 4)
     }
 
     func testHandledDidOnAnyOtherQuotaAddsOne() {

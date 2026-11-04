@@ -66,11 +66,11 @@ describe('applyPromptIntents', () => {
     expect(afternoon).toMatchObject({ current: 1, considered: false, done: false })
   })
 
-  test('did on the last daily number marks the sibling done too', () => {
+  test('did on the 2nd daily row at 0 is one, and ticks that row only (Trent, 2026-11-04)', () => {
     const out = applyPromptIntents(dailyGroups(), intents([['q:1:2', 'did']]))
-    expect(out[1].prompts[0]).toMatchObject({ current: 2, considered: true, done: true })
-    // The morning row's number (1) is now reached — done, but not considered.
-    expect(out[0].prompts[0]).toMatchObject({ current: 2, considered: false, done: true })
+    expect(out[1].prompts[0]).toMatchObject({ current: 1, considered: true, done: true })
+    // The morning row still waits: one check never covers another row.
+    expect(out[0].prompts[0]).toMatchObject({ current: 1, considered: false, done: false })
   })
 
   test('did on a non-daily quota adds one', () => {

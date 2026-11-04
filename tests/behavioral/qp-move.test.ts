@@ -166,7 +166,7 @@ describe('Quota prompt moves — number keys', () => {
 })
 
 describe('Quota prompt moves — the payload and the move', () => {
-  test('QP-064: every prompt carries its slot_id; a daily row lists the numbers it stands for', () => {
+  test('QP-064: every prompt carries its slot_id; a daily row is one number (rows never merge, 2026-11-04)', () => {
     quota('Water', 'FREQ=DAILY', 7)
     quota('Cook vegetables', 'FREQ=WEEKLY', 5)
     expect(prompts().map((p) => [p.title, p.slot, p.slot_id, p.number, p.numbers])).toEqual([
@@ -174,7 +174,10 @@ describe('Quota prompt moves — the payload and the move', () => {
       ['Water', 'Morning', slotId('Morning'), 1, [1]],
       ['Water', 'Midday', slotId('Midday'), 2, [2]],
       ['Water', 'Afternoon', slotId('Afternoon'), 3, [3]],
-      ['Water', 'Evening', slotId('Evening'), 7, [4, 5, 6, 7]],
+      ['Water', 'Evening', slotId('Evening'), 4, [4]],
+      ['Water', 'Evening', slotId('Evening'), 5, [5]],
+      ['Water', 'Evening', slotId('Evening'), 6, [6]],
+      ['Water', 'Evening', slotId('Evening'), 7, [7]],
     ])
   })
 
@@ -189,26 +192,34 @@ describe('Quota prompt moves — the payload and the move', () => {
     expect(prompts().map((p) => p.slot)).toEqual(['Evening'])
   })
 
-  test("QP-066: moving a daily row moves only that row's numbers; the others stay", () => {
+  test("QP-066: moving a daily row moves only that row's number; the others stay", () => {
     const q = quota('Water', 'FREQ=DAILY', 7)
     const evening = prompts().find((p) => p.slot === 'Evening')!
+    expect(evening.numbers).toEqual([4])
     move(evening, 'Early morning')
     expect(getTaskById(q.id)!.quota_prompt_config).toEqual({
-      numbers: Object.fromEntries(['4', '5', '6', '7'].map((k) => [k, slotId('Early morning')])),
+      numbers: { '4': slotId('Early morning') },
     })
     expect(prompts().map((p) => [p.slot, p.numbers])).toEqual([
-      ['Early morning', [4, 5, 6, 7]],
+      ['Early morning', [4]],
       ['Morning', [1]],
       ['Midday', [2]],
       ['Afternoon', [3]],
+      ['Evening', [5]],
+      ['Evening', [6]],
+      ['Evening', [7]],
     ])
 
-    // Into a period that already holds one of its numbers: one row, both numbers.
+    // Into a period that already holds another number: two rows, never one.
     move(prompts().find((p) => p.slot === 'Midday')!, 'Morning')
     expect(prompts().map((p) => [p.slot, p.numbers, p.prompt_key])).toEqual([
-      ['Early morning', [4, 5, 6, 7], promptKey(q.id, 7, TODAY)],
-      ['Morning', [1, 2], promptKey(q.id, 2, TODAY)],
+      ['Early morning', [4], promptKey(q.id, 4, TODAY)],
+      ['Morning', [1], promptKey(q.id, 1, TODAY)],
+      ['Morning', [2], promptKey(q.id, 2, TODAY)],
       ['Afternoon', [3], promptKey(q.id, 3, TODAY)],
+      ['Evening', [5], promptKey(q.id, 5, TODAY)],
+      ['Evening', [6], promptKey(q.id, 6, TODAY)],
+      ['Evening', [7], promptKey(q.id, 7, TODAY)],
     ])
   })
 
@@ -280,7 +291,7 @@ describe('Quota prompt moves — the optimistic helper', () => {
     expect(moved[1].prompts.map((x) => x.title)).toEqual(['Zen', 'Cook', 'Art'])
   })
 
-  test('QP-069: a daily row merges into its sibling in the target period', () => {
+  test('QP-069: a daily row moved beside its sibling stays its own row — rows never merge (2026-11-04)', () => {
     const one = p({ prompt_key: 'q:1:1:2026-01-15', number: 1, numbers: [1], current: 1 })
     const two = p({
       prompt_key: 'q:1:2:2026-01-15',
@@ -294,9 +305,8 @@ describe('Quota prompt moves — the optimistic helper', () => {
       new Map([[one.prompt_key, 2]]),
     )
     expect(moved[0].prompts).toEqual([])
-    expect(moved[1].prompts).toEqual([
-      { ...two, numbers: [1, 2], number: 2, prompt_key: 'q:1:2:2026-01-15', done: false },
-    ])
+    // Number order within the quota, as the server sends them.
+    expect(moved[1].prompts).toEqual([{ ...one, slot_id: 2 }, two])
   })
 
   test('QP-070: movedPromptConfig merges over the stored config', () => {
@@ -338,14 +348,17 @@ describe("Quota prompt moves — a quota chip's rows", () => {
     ])
   })
 
-  test("QP-074: a large daily target groups by period — exactly the server's prompt rows", () => {
+  test("QP-074: a large daily target's chip groups by period — its numbers are the prompt rows', gathered", () => {
     const task = quota('Water', 'FREQ=DAILY', 7)
     const rows = rowsOf(task.id)
-    expect(rows).toEqual(
-      prompts()
-        .filter((p) => p.task_id === task.id)
-        .map((p) => ({ numbers: p.numbers, slotId: p.slot_id })),
-    )
+    // The chip's period picker groups a large target by period; the prompt
+    // rows themselves never merge (2026-11-04) — one per number, the same
+    // numbers in the same periods.
+    const gathered = new Map<number | null, number[]>()
+    for (const p of prompts().filter((x) => x.task_id === task.id)) {
+      gathered.set(p.slot_id, [...(gathered.get(p.slot_id) ?? []), ...(p.numbers ?? [])])
+    }
+    expect(rows).toEqual([...gathered].map(([slotId, numbers]) => ({ numbers, slotId })))
     expect(rows.map((r) => numbersLabel(r.numbers!, 7))).toEqual([
       '1st of 7',
       '2nd of 7',

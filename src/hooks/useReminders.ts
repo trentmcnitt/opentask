@@ -875,8 +875,8 @@ export function useReminders({
   /** The square checkbox on a quota prompt: did it — progress, and considered. */
   const didPrompt = useCallback(
     (prompt: QuotaPrompt) => {
-      const next =
-        prompt.number !== null ? Math.max(prompt.current, prompt.number) : prompt.current + 1
+      // One check is one (2026-11-04), a daily row's too.
+      const next = prompt.current + 1
       return completeIds(
         [],
         () => `Logged “${prompt.title}” · ${next}/${prompt.target}`,

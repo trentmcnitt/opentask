@@ -9,20 +9,22 @@
  *   key into today's `quota_day_state.considered`. Consider-all (a slot's
  *   "Considered all", a checklist's "Complete all") only ever does this.
  * - DID IT — the square checkbox by the count. Progress, and considered too.
- *   IDEMPOTENT per prompt_key, so a double tap, a retried request or two
- *   clients acting on the same prompt log it once:
- *     daily #k      raises today's count to at least k (never adds past it);
- *     anything else +1, unless this key is already in today's `did` — and
- *                   ONLY then: a +1 logged elsewhere today (the widget, the
- *                   watch) does not block it, so a did-it from a screen loaded
- *                   before that +1 counts again (Trent, 2026-09-25; QPM-010).
+ *   Always +1 (Trent, 2026-11-04: "putting a check mark on the reminder item
+ *   should count as one always… nothing should ever go from zero to two" —
+ *   until then a daily #k raised the count to k), and IDEMPOTENT per
+ *   prompt_key, so a double tap, a retried request or two clients acting on
+ *   the same prompt log it once: +1 unless this key is already in today's
+ *   `did` — and ONLY then: a +1 logged elsewhere today (the widget, the watch)
+ *   does not block it, so a did-it from a screen loaded before that +1 counts
+ *   again (Trent, 2026-09-25; QPM-010). A daily quota's numbers are separate
+ *   rows, so each one's check is its own +1 (QPM-018).
  *
  * - PUT BACK — the filled dashed circle in a "considered"/DONE list
  *   (2026-09-25; before that a handled prompt had no way back but Undo). The
  *   prompt waits for today again: its key leaves `considered` and `did`, and
  *   a did-it's progress is taken back — exactly what that did-it added
- *   (`did_applied`), never a guessed −1. A daily did-it that found the count
- *   already at k added 0, so its put-back takes 0. Any other did-it the lower
+ *   (`did_applied`), never a guessed −1 (a repeat did-it on a key added 0;
+ *   a daily one from before 2026-11-04 may have added 2). Any other did-it the lower
  *   count no longer supports is dropped with it (`brokenDids`).
  *
  * Every action is one transaction and one undo entry — one entry for a whole
@@ -139,17 +141,12 @@ function applyToQuota(
   actions: PlannedAction[],
   today: string,
 ): { current: number; day: QuotaDayState; applied: number } {
-  const daily = isDailyQuota(task)
   let current = task.progress_current ?? 0
   let day = dayStateFor(task.quota_day_state, today)
   let applied = 0
   for (const action of actions) {
     if (action.did) {
-      const delta = daily
-        ? Math.max(0, action.number - current)
-        : day.did.includes(action.key)
-          ? 0
-          : 1
+      const delta = day.did.includes(action.key) ? 0 : 1
       current += delta
       applied += delta
       day = {

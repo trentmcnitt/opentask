@@ -23,9 +23,13 @@
  * - Daily quota, target N: numbers 1..N spread over the day's periods,
  *   starting at the quota's period and clamping at the last one (never
  *   wrapping back to early morning); each number's period can be overridden.
- *   At most ONE row per quota per period: the row stands for the highest
- *   number assigned there (`k`), is done once today's count reaches k, and its
- *   label shows progress ("Piano Scales · 1/2"), never "#1".
+ *   ONE ROW PER NUMBER, and one row is one unit (Trent, 2026-11-04): its
+ *   check logs +1 and ticks that row only; two numbers in one period are two
+ *   rows, never merged. A row is done once checked, or once progress logged
+ *   elsewhere covers it (earliest rows first) — `dailyDoneNumbers`. Its label
+ *   shows progress ("Piano Scales · 1/2"), never "#1". (Until 11-04 a
+ *   period's numbers were one row keyed by the highest, k, whose check raised
+ *   the count to k: Daily Walks' 2nd walk went 0→2.)
  * - Every other quota (weekly, monthly, yearly, daily with INTERVAL > 1):
  *   one prompt a day in its period. Done for today once ANY progress is
  *   logged today from anywhere; gone until the period resets once met.
@@ -67,6 +71,7 @@ import { listTimeSlots } from '@/core/time-slots'
 import { getLabelColor } from '@/lib/label-colors'
 import {
   comparePrompts,
+  dailyDoneNumbers,
   dayStateFor,
   isDailyQuota,
   promptDate,
@@ -197,8 +202,8 @@ export function getQuotaPromptsBySlot(
     }
 
     if (isDailyQuota(task)) {
-      // One row per period, standing for every number assigned there; it is
-      // keyed and judged by the highest of them (`promptPlacements`).
+      // One row per number (`promptPlacements`), done by `dailyDoneNumbers`.
+      const doneNumbers = dailyDoneNumbers(day, current, target)
       for (const row of promptPlacements(task, slots, settings.defaultSlotId)) {
         const key = promptKey(task.id, row.number, date)
         push(row.slotIndex, {
@@ -207,7 +212,7 @@ export function getQuotaPromptsBySlot(
           number: row.number,
           numbers: row.numbers,
           considered: day.considered.includes(key),
-          done: current >= row.number,
+          done: doneNumbers.has(row.number),
         })
       }
       continue

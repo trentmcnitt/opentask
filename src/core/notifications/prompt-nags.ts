@@ -268,7 +268,15 @@ function mayBeDue(
   return false
 }
 
-/** A user's waiting prompts that are pushed by name, in opened real periods. */
+/**
+ * A user's waiting prompts that are pushed by name, in opened real periods.
+ *
+ * One per quota per period: a daily quota's numbers are separate rows since
+ * 2026-11-04, and two of them in one period (the last period's clamp, or a
+ * move) would otherwise push the same name twice. The lowest number waiting
+ * there speaks for them; its Did it ticks that row, and the next one's push
+ * follows on its own schedule.
+ */
 function standingNamedPrompts(
   userId: number,
   timezone: string,
@@ -279,7 +287,13 @@ function standingNamedPrompts(
   for (const [slotId, prompts] of getQuotaPromptsBySlot(userId, timezone, now)) {
     // Anytime (no slot) never opens; a period still ahead has not opened.
     if (slotId === null || !opened.has(slotId)) continue
-    for (const p of prompts) if (promptWaiting(p) && promptGetsNamedPush(p)) out.push(p)
+    const first = new Map<number, QuotaPrompt>()
+    for (const p of prompts) {
+      if (!promptWaiting(p) || !promptGetsNamedPush(p)) continue
+      const seen = first.get(p.task_id)
+      if (!seen || (p.number ?? 0) < (seen.number ?? 0)) first.set(p.task_id, p)
+    }
+    out.push(...first.values())
   }
   return out
 }

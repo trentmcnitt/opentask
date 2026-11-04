@@ -1475,18 +1475,16 @@ enum WidgetStore {
     /// payload (the put-back twin of `confirmPromptAction`) and retire the
     /// tombstone.
     ///
-    /// Every prompt of each returned quota takes the SERVER's count, and a
-    /// daily one is done exactly while that count reaches its number — the
-    /// server's rule, in both directions, since a put-back LOWERS the count.
-    /// The put-back prompt itself is un-considered.
+    /// Every prompt of each returned quota takes the SERVER's count; each
+    /// keeps its own done, and the put-back prompt is un-considered and drawn
+    /// waiting. A put-back takes back exactly its own check (one row, one
+    /// unit, 2026-11-04), so no sibling's done can change.
     ///
-    /// Marks Reminders fetch-required when the cache can't know the answer:
-    /// a once-a-day prompt is done while ANY progress was logged today, which
-    /// only the server knows (a `TaskDTO` carries no day record); and a
-    /// sibling daily row left considered above the new count may have been a
-    /// did-it the lower count no longer supports, which the server has made
-    /// waiting (`brokenDids`) — or a mere consider, which stays. Either way
-    /// the next reload fetches instead of trusting this guess.
+    /// Marks Reminders fetch-required, because whether the put-back row is
+    /// still done only the server knows: a once-a-day prompt is done while ANY
+    /// progress was logged today, and a daily row while the count logged
+    /// beyond the checked rows covers it (a `TaskDTO` carries no day record).
+    /// The next reload fetches instead of trusting this guess.
     static func confirmPromptRestore(_ key: String, tasks: [TaskDTO]) {
         pendingLock.lock()
         let counts = Dictionary(tasks.map { ($0.id, $0.progressCurrent) }, uniquingKeysWith: { _, last in last })
@@ -1498,16 +1496,17 @@ enum WidgetStore {
                     guard let current = counts[prompt.taskId] else {
                         return isTarget ? prompt.putBack() : prompt
                     }
-                    let done: Bool
-                    if let number = prompt.number {
-                        done = current >= number
-                        if !isTarget && prompt.considered && current < number { needsFetch = true }
-                    } else {
-                        done = isTarget ? false : prompt.done
-                        if isTarget { needsFetch = true }
-                    }
+                    // Whether the put-back row is still done is the server's
+                    // to say: a once-a-day prompt is done while anything was
+                    // logged today, and a daily row while the count logged
+                    // beyond the checked rows covers it (`dailyDoneNumbers`,
+                    // 2026-11-04) — neither is in a `TaskDTO`. Drawn waiting,
+                    // and the next reload fetches.
+                    if isTarget { needsFetch = true }
                     return prompt.updated(
-                        current: current, considered: isTarget ? false : prompt.considered, done: done
+                        current: current,
+                        considered: isTarget ? false : prompt.considered,
+                        done: isTarget ? false : prompt.done
                     )
                 })
             }
@@ -1558,12 +1557,12 @@ enum WidgetStore {
     /// (Trent, 2026-09-23: "the reminders started popping back up").
     ///
     /// The acted prompt is marked handled (`handled(did:)`). Then every
-    /// prompt of each returned quota takes the SERVER's count, and a daily
-    /// one is done once that count reaches its number — the server's own rule
-    /// (`getQuotaPromptsBySlot`), which is how a did-it on Piano Scales #1 can
-    /// also finish #2 in another slot without a fetch. Nothing else is
-    /// re-derived: a weekly prompt's "logged today" is only known server-side,
-    /// and the next real fetch replaces this cache wholesale anyway.
+    /// prompt of each returned quota takes the SERVER's count and keeps its
+    /// own done: a did-it is +1 and ticks its own row only (Trent, 2026-11-04
+    /// — until then a did-it on Piano Scales #2 at 0 raised the count to 2 and
+    /// finished #1 too). Nothing else is re-derived: a weekly prompt's "logged
+    /// today" is only known server-side, and the next real fetch replaces this
+    /// cache wholesale anyway.
     static func confirmPromptAction(_ key: String, did: Bool, tasks: [TaskDTO]) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
@@ -1573,9 +1572,7 @@ enum WidgetStore {
             group.replacingPrompts(group.prompts.map { prompt in
                 var p = prompt.promptKey == key && prompt.isWaiting ? prompt.handled(did: did) : prompt
                 if let current = counts[p.taskId] {
-                    p = p.updated(
-                        current: current, done: p.done || (p.number.map { current >= $0 } ?? false)
-                    )
+                    p = p.updated(current: current, done: p.done)
                 }
                 return p
             })

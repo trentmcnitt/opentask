@@ -4,9 +4,10 @@
  * POST /api/quota-prompts/did — the square checkbox on a quota prompt: "did
  * it". Logs progress AND considers the prompt. Body: { keys: [prompt_key, ...] }.
  *
- * Idempotent per key, so a double tap or a retried request logs once:
- * a daily quota's prompt #k raises today's count to at least k; any other
- * quota gets +1 unless that key was already done today. One transaction, one
+ * Idempotent per key, so a double tap or a retried request logs once: +1
+ * unless that key was already done today — a daily quota's row too (Trent,
+ * 2026-11-04: one check is one; until then a daily #k raised today's count to
+ * at least k). One transaction, one
  * undo entry; undo restores the count and brings the prompt back. See
  * src/core/tasks/quota-prompt-actions.ts.
  *

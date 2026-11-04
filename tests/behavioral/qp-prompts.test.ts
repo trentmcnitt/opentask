@@ -171,12 +171,17 @@ describe('Quota prompts — placement', () => {
     ])
   })
 
-  test('QP-013: numbers past the last period clamp there, never wrapping to the morning', () => {
+  test('QP-013: numbers past the last period clamp there, never wrapping to the morning — a row each', () => {
     setUserDefault(slotId('Midday'))
     quota('Water', 'FREQ=DAILY', 7)
+    // Rows never merge (2026-11-04): the five clamped into Evening are five rows.
     expect(prompts().map((p) => [p.slot, p.number])).toEqual([
       ['Midday', 1],
       ['Afternoon', 2],
+      ['Evening', 3],
+      ['Evening', 4],
+      ['Evening', 5],
+      ['Evening', 6],
       ['Evening', 7],
     ])
   })
@@ -184,7 +189,10 @@ describe('Quota prompts — placement', () => {
   test('QP-014: per-number overrides win; an override to a deleted slot moves to the nearest slot', () => {
     const q = quota('Daily Stretch', 'FREQ=DAILY', 2)
     configure(q.id, { numbers: { '1': slotId('Evening'), '2': slotId('Evening') } })
-    expect(prompts().map((p) => [p.slot, p.number])).toEqual([['Evening', 2]])
+    expect(prompts().map((p) => [p.slot, p.number])).toEqual([
+      ['Evening', 1],
+      ['Evening', 2],
+    ])
 
     // #2 alone in Afternoon, and then Afternoon is deleted: the override is
     // repointed to Midday (nearest 16:00), as a boundary reminder would be.
@@ -375,15 +383,27 @@ describe('Quota prompts — actions', () => {
     expect(events).toEqual([{ delta: 1 }])
   })
 
-  test('QP-032: did-it on daily #k raises the count to at least k, never past it', () => {
+  test('QP-032: did-it on a daily row logs +1 and ticks that row only — once per row (Trent, 2026-11-04)', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Daily Stretch', 'FREQ=DAILY', 3)
+    // The 2nd at 0: one, not two — and the 1st still waits.
     act(promptKey(q.id, 2, TODAY), true)
-    expect(getTaskById(q.id)!.progress_current).toBe(2)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(prompts().map((p) => [p.number, p.done])).toEqual([
+      [1, false],
+      [2, true],
+      [3, false],
+    ])
     act(promptKey(q.id, 1, TODAY), true)
     expect(getTaskById(q.id)!.progress_current).toBe(2)
+    // The same row again (a double tap, a retry, a second device): nothing.
     act(promptKey(q.id, 2, TODAY), true)
     expect(getTaskById(q.id)!.progress_current).toBe(2)
+    expect(prompts().map((p) => [p.number, p.done])).toEqual([
+      [1, true],
+      [2, true],
+      [3, false],
+    ])
   })
 
   test('QP-033: undo of a did-it restores the count AND the prompt', () => {
@@ -480,16 +500,26 @@ describe('Quota prompts — batches and refusals', () => {
     expect(getTaskById(q.id)!.progress_current).toBe(1)
   })
 
-  test('QP-039: daily did-it adds only what is missing up to k', () => {
+  test('QP-039: a +1 from a chip ticks the earliest open row; a daily did-it after it adds one, never a gap', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Daily Stretch', 'FREQ=DAILY', 3)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
+    expect(prompts().map((p) => [p.number, p.done])).toEqual([
+      [1, true],
+      [2, false],
+      [3, false],
+    ])
     act(promptKey(q.id, 3, TODAY), true)
-    expect(getTaskById(q.id)!.progress_current).toBe(3)
+    expect(getTaskById(q.id)!.progress_current).toBe(2)
+    expect(prompts().map((p) => [p.number, p.done])).toEqual([
+      [1, true],
+      [2, false],
+      [3, true],
+    ])
     const deltas = getDb()
       .prepare('SELECT delta FROM progress_events WHERE task_id = ? ORDER BY id')
       .all(q.id) as { delta: number }[]
-    expect(deltas.map((d) => d.delta)).toEqual([1, 2])
+    expect(deltas.map((d) => d.delta)).toEqual([1, 1])
   })
 
   test('QP-040: a stale prompt key refuses a mixed bulk commit, reminders included', () => {
