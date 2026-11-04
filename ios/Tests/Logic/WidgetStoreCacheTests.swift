@@ -137,20 +137,21 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
         XCTAssertTrue(WidgetStore.pendingPromptRestores(now: now).isEmpty)
     }
 
-    /// A daily row whose count still reaches it stays done — the server
-    /// takes back only what a did-it added — and the cache says so rather
-    /// than keep drawing the optimistic "waiting".
-    func testConfirmPromptRestoreKeepsADailyRowTheCountStillReaches() throws {
+    /// A put-back daily row draws waiting, and the next pass asks the server:
+    /// whether a count logged elsewhere still covers it (`dailyDoneNumbers`,
+    /// 2026-11-04) is the server's to say, not the count's alone.
+    func testConfirmPromptRestoreDrawsADailyRowWaitingAndAsksTheServer() throws {
         WidgetStore.saveReminders(try groups("reminders-after-did"), taskSegments: [])
+        WidgetStore.markInteraction(now: now)
         let one = Fixtures.promptKey(Fixtures.daily, 1)
         WidgetStore.stagePendingPromptRestore(one, now: now)
         WidgetStore.confirmPromptRestore(one, tasks: [dailyQuota(current: 1)])
         let row = try XCTUnwrap(WidgetStore.loadReminders()).value.groups.flatMap(\.prompts)
             .first { $0.promptKey == one }
-        XCTAssertEqual(row?.done, true)
+        XCTAssertEqual(row?.done, false)
         XCTAssertEqual(row?.considered, false)
-        let drawn = WidgetStore.filterPending(try XCTUnwrap(WidgetStore.loadReminders()).value.groups, now: now)
-        XCTAssertEqual(drawn.flatMap(\.prompts).first { $0.promptKey == one }?.isWaiting, false)
+        XCTAssertEqual(row?.current, 1)
+        XCTAssertFalse(WidgetStore.canRepaintRemindersFromCache(now: now))
     }
 
     /// A once-a-day prompt is done while anything was logged today — only
@@ -164,21 +165,13 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
         XCTAssertFalse(WidgetStore.canRepaintRemindersFromCache(now: now))
     }
 
-    /// Daily rows re-count WITHOUT a fetch when nothing is left in doubt.
-    func testConfirmPromptRestoreOfADailyPromptRepaintsFromCache() throws {
-        WidgetStore.saveReminders(try groups("reminders-after-did"), taskSegments: [])
-        WidgetStore.markInteraction(now: now)
-        WidgetStore.confirmPromptRestore(Fixtures.promptKey(Fixtures.daily, 1), tasks: [dailyQuota(current: 0)])
-        XCTAssertTrue(WidgetStore.canRepaintRemindersFromCache(now: now))
-    }
 
     // MARK: confirmPromptAction
 
-    /// A did-it that the server answered with count 2 finishes BOTH of a
-    /// daily 2/day quota's rows — the sibling in another slot too — without
-    /// a fetch (the server's `getQuotaPromptsBySlot` rule: done once the
-    /// count reaches the row's number).
-    func testConfirmPromptActionRecountsSiblingRows() throws {
+    /// A did-it ticks its own row only (Trent, 2026-11-04: one check is one):
+    /// every row of the quota takes the server's count, but the sibling in
+    /// another slot keeps its own done, whatever that count reaches.
+    func testConfirmPromptActionRecountsSiblingRowsButTicksOnlyItsOwn() throws {
         WidgetStore.saveReminders(try groups(), taskSegments: [])
         WidgetStore.confirmPromptAction(
             Fixtures.promptKey(Fixtures.daily, 1), did: true, tasks: [dailyQuota(current: 2)]
@@ -186,8 +179,7 @@ final class WidgetStoreCacheTests: WidgetStoreTestCase {
         let rows = try XCTUnwrap(WidgetStore.loadReminders()).value.groups.flatMap(\.prompts)
             .filter { $0.taskId == Fixtures.daily }
         XCTAssertEqual(rows.map(\.current), [2, 2])
-        XCTAssertEqual(rows.map(\.done), [true, true])
-        // Only the acted row is considered; the sibling was done elsewhere.
+        XCTAssertEqual(rows.map(\.done), [true, false])
         XCTAssertEqual(rows.map(\.considered), [true, false])
         // Other quotas are left alone.
         let others = try XCTUnwrap(WidgetStore.loadReminders()).value.groups.flatMap(\.prompts)

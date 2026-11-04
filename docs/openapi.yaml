@@ -2112,9 +2112,10 @@ paths:
       tags: [Reminders]
       description: |
         The square checkbox on a quota prompt: logs progress AND considers the
-        prompt. Idempotent per key, so a double tap or a retry logs once: a
-        daily quota's prompt `k` raises today's count to at least `k`; any
-        other quota gets +1 unless that key was already done today. One
+        prompt. Always +1 — a daily quota's row too, one row one unit (since
+        2026-11-04; before, a daily prompt `k` raised the count to at least
+        `k`) — and idempotent per key, so a double tap or a retry logs once:
+        +1 unless that key was already done today. One
         transaction, one undo entry; undo restores the count and the prompt.
         Dispatches `task.progressed` for each quota whose count moved.
 
@@ -5917,7 +5918,7 @@ components:
           type: string
           description: >
             `q:<taskId>:<k>:<date>` — k is the prompt's number for a daily quota
-            (the highest number assigned to this slot), 0 otherwise; date is the
+            (one row per number), 0 otherwise; date is the
             user's local date.
           example: 'q:42:0:2026-09-24'
         task_id:
@@ -5925,17 +5926,20 @@ components:
         number:
           type: [integer, 'null']
           description: >
-            Daily quotas: the row is done once today's count reaches this.
+            Daily quotas: the row's number, 1..N — one row per number, never
+            merged (2026-11-04). Done once checked ("did it", +1), or once
+            progress logged elsewhere covers it, earliest rows first.
             Null for every other quota (one prompt a day).
         numbers:
           type: [array, 'null']
           items:
             type: integer
           description: >
-            Daily quotas: every prompt number this row stands for, ascending
-            (`number` is the last). Moving the row to another period means
-            setting `quota_prompt_config.numbers[k]` for exactly these. Null for
-            every other quota — move those with `quota_prompt_config.slot_id`.
+            Daily quotas: `[number]`, the one number this row stands for (a
+            list from when a period's numbers were one row, until 2026-11-04).
+            Moving the row to another period means setting
+            `quota_prompt_config.numbers[k]` for exactly these. Null for every
+            other quota — move those with `quota_prompt_config.slot_id`.
         slot_id:
           type: [integer, 'null']
           description: The period (time slot id) this row sits in; null in the un-slotted group.

@@ -136,7 +136,9 @@ export function incrementProgress(options: IncrementProgressOptions): IncrementP
     // Logged even when nothing moved: a client offers Undo on its toast for
     // every tap, and an Undo with no entry of its own would undo whatever
     // came before it.
-    const after = { ...task, progress_current: next, quota_day_state: dayState }
+    // `updated_at` too: the answer is the row as written, and the web pins
+    // its count until a refetch at least this new arrives (useTrackProgress).
+    const after = { ...task, progress_current: next, quota_day_state: dayState, updated_at: nowStr }
     const fields = ['progress_current', 'quota_day_state']
     logAction(
       userId,

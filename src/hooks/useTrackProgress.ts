@@ -27,11 +27,18 @@ import type { Task } from '@/types'
  * fine, since the queue lives as long as the page.
  *
  * When the last request settles, the server's answer is pinned until the task
- * prop catches up — keyed to the prop value it was pinned against, so a refetch
- * (sync stream, undo) that brings a *new* value replaces it and a stale one is
- * ignored. That is what stops the count dipping to an older value for a beat
- * between a response and the refetch it triggers. A failed request reverts its
- * own delta and says so.
+ * prop catches up: until the prop is at least as new as the write that
+ * answered (its `updated_at`, which every progress write and every undo
+ * stamps). A refetch requested before the write — older — is ignored; any
+ * refetch from after it (sync stream, undo, another device) replaces the pin,
+ * whatever count it brings. That is what stops the count dipping to an older
+ * value for a beat between a response and the refetch it triggers. A failed
+ * request reverts its own delta and says so.
+ *
+ * The pin used to be keyed to the prop's COUNT as of settling, and a count
+ * can come back to where it was: tap +1 (pinned "1 while the prop says 0"),
+ * Cmd-Z a second later, and the refetch brings 0 — the same 0 — so the chip
+ * kept showing 1 after the undo (Trent, 2026-11-04, Daily Walks).
  *
  * Every log shows a toast with Undo (Trent, 2026-09-05): a slip on a chip is
  * one tap to take back, no gesture to learn. Undo is simply the opposite
@@ -46,23 +53,22 @@ export function useTrackProgress(task: Task): {
   const serverCurrent = task.progress_current ?? 0
   const [inFlight, setInFlight] = useState(0)
   const [local, setLocal] = useState(serverCurrent)
-  const [pinned, setPinned] = useState<{ base: number; value: number } | null>(null)
+  // `asOf`: the answering write's `updated_at`. ISO-8601 UTC strings from one
+  // clock, so they compare as strings.
+  const [pinned, setPinned] = useState<{ asOf: string; value: number } | null>(null)
 
   const displayed =
-    inFlight > 0 ? local : pinned && pinned.base === serverCurrent ? pinned.value : serverCurrent
+    inFlight > 0
+      ? local
+      : pinned && (task.updated_at ?? '') < pinned.asOf
+        ? pinned.value
+        : serverCurrent
   const state = trackState(task, displayed)
   const period = taskPeriodLabel(task)
   // The toast's Undo runs from an older render's `log`; through the ref it
   // still sees the count as it is now, not as it was when the toast was made.
   const displayedRef = useRef(displayed)
   displayedRef.current = displayed
-  // The pin must be keyed to the server value AS OF SETTLING, not as of the
-  // tap. Tap then hold quickly: the +1 settles, the sync refresh brings 1,
-  // then the −1 settles — keyed to the 0 it was tapped against it would not
-  // match the prop (1), the server value would show, and the count would
-  // bounce 0 → 1 → 0 until the next refresh (Trent, 2026-09-05).
-  const serverRef = useRef(serverCurrent)
-  serverRef.current = serverCurrent
   // The tail of this task's request queue. Assigned synchronously inside `log`,
   // before any await, so two taps in the same tick still queue in order.
   const queue = useRef<Promise<void>>(Promise.resolve())
@@ -100,7 +106,10 @@ export function useTrackProgress(task: Task): {
           if (!res.ok) throw new Error('Failed to log progress')
           const json = await res.json()
           const settled = Number(json?.data?.progress_current)
-          if (Number.isFinite(settled)) setPinned({ base: serverRef.current, value: settled })
+          const asOf = json?.data?.updated_at
+          if (Number.isFinite(settled) && typeof asOf === 'string') {
+            setPinned({ asOf, value: settled })
+          }
         } catch {
           setLocal((v) => Math.max(0, v - delta))
           showToast({ message: `Could not log progress on "${task.title}"`, type: 'error' })

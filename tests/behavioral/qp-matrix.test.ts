@@ -131,31 +131,57 @@ describe('Daily N>1 — actions on one number', () => {
     expect(deltas(q.id)).toEqual([])
   })
 
-  test('QPM-002: a −1 after did-it #2 brings #2 back WAITING; did-it #2 again tops up by one', () => {
+  test('QPM-002: a −1 after did-it #2 brings #2 back WAITING; did-it #2 again logs one', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 2)
     const two = promptKey(q.id, 2, TODAY)
     act(two, true)
-    expect(prompts().map((p) => [p.number, p.done])).toEqual([
-      [1, true],
-      [2, true],
+    // One check, one: #2 ticked, #1 still waiting (2026-11-04).
+    expect(prompts().map((p) => [p.number, p.current, p.done])).toEqual([
+      [1, 1, false],
+      [2, 1, true],
     ])
 
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id, delta: -1 })
     const after = prompts()
     expect(after.map((p) => [p.number, p.current, p.done])).toEqual([
-      [1, 1, true],
-      [2, 1, false],
+      [1, 0, false],
+      [2, 0, false],
     ])
-    // Waiting, not just not-done: the count no longer reaches 2, so the
-    // did-it it held goes, and its implied `considered` with it (Trent,
+    // Waiting, not just not-done: the count no longer covers the check, so
+    // the did-it it held goes, and its implied `considered` with it (Trent,
     // 2026-09-25, PR #103; weekly behaves the same, QP-038).
     expect(after[1].considered).toBe(false)
     expect(getTaskById(q.id)!.quota_day_state!.did).toEqual([])
 
     act(two, true)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(deltas(q.id)).toEqual([1, -1, 1])
+  })
+
+  test('QPM-018: one check is one — the 2nd walk checked at 0 logs 1, never 2 (Trent, 2026-11-04)', () => {
+    // Daily Walks' shape: 2 a day, the 1st in the default period, the 2nd
+    // moved to a later one.
+    setUserDefault(slotId('Morning'))
+    const q = quota('Daily walks', 'FREQ=DAILY', 2)
+    configure(q.id, { numbers: { '2': slotId('Afternoon') } })
+    const one = promptKey(q.id, 1, TODAY)
+    const two = promptKey(q.id, 2, TODAY)
+    act(one, false) // the morning walk considered, not done
+    act(two, true)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(deltas(q.id)).toEqual([1])
+    expect(prompts().map((p) => [p.slot, p.number, p.considered, p.done])).toEqual([
+      ['Morning', 1, true, false],
+      ['Afternoon', 2, true, true],
+    ])
+    // The same row again — a double tap, a retry, the watch — adds nothing.
+    act(two, true)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    // The other row is its own one.
+    act(one, true)
     expect(getTaskById(q.id)!.progress_current).toBe(2)
-    expect(deltas(q.id)).toEqual([2, -1, 1])
+    expect(deltas(q.id)).toEqual([1, 1])
   })
 })
 

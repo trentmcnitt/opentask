@@ -1131,16 +1131,11 @@ struct QuotaPromptDTO: Codable, Hashable, Identifiable {
 
     /// A copy marked handled for today — the optimistic render of an action
     /// whose server round trip is still in flight. `did` also marks it done
-    /// and draws the count it will have: a daily prompt's count rises to its
-    /// number, anything else +1 (the server's own `applyToQuota` rule).
+    /// and draws the count it will have: +1, a daily row's too (Trent,
+    /// 2026-11-04: one check is one — until then a daily row #k drew the count
+    /// raised to k; the server's own `applyToQuota` rule).
     func handled(did: Bool) -> QuotaPromptDTO {
-        let newCurrent: Int
-        if did {
-            newCurrent = number.map { max(current, $0) } ?? current + 1
-        } else {
-            newCurrent = current
-        }
-        return updated(current: newCurrent, considered: true, done: done || did)
+        updated(current: did ? current + 1 : current, considered: true, done: done || did)
     }
 
     /// A copy put back — waiting for today again — the optimistic render of

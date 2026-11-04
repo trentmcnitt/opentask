@@ -145,19 +145,19 @@ describe('Put back — consider, weekly and daily did-its', () => {
     expect(prompt(key)).toMatchObject({ considered: false, done: true, current: 1 })
   })
 
-  test('QPR-004: daily #2 did from 0 (raised by 2) — both come off', () => {
+  test('QPR-004: daily #2 did from 0 logs one (2026-11-04) — put back takes that one off', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 2)
     const two = promptKey(q.id, 2, TODAY)
     act(two, true)
-    expect(getTaskById(q.id)!.progress_current).toBe(2)
-    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [two]: 2 })
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [two]: 1 })
 
     restore(two)
     expect(getTaskById(q.id)!.progress_current).toBe(0)
     expect(prompt(two)).toMatchObject({ ...waiting, current: 0 })
     expect(prompt(promptKey(q.id, 1, TODAY))).toMatchObject({ ...waiting, current: 0 })
-    expect(deltas(q.id)).toEqual([2, -2])
+    expect(deltas(q.id)).toEqual([1, -1])
   })
 
   test('QPR-005: daily #2 did when the count was already 1 (raised by 1) — one comes off', () => {
@@ -175,19 +175,20 @@ describe('Put back — consider, weekly and daily did-its', () => {
     expect(deltas(q.id)).toEqual([1, 1, -1])
   })
 
-  test('QPR-006: daily #1 did when the count was already 2 (raised by 0) — nothing comes off', () => {
+  test('QPR-006: daily #1 did after two chip +1s logs a third; put back takes only that one', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 3)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id })
-    incrementProgress({ userId: TEST_USER_ID, taskId: q.id }) // 2/3
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id }) // 2/3: rows 1 and 2 covered
     const one = promptKey(q.id, 1, TODAY)
-    act(one, true)
-    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [one]: 0 })
+    act(one, true) // one check, one more: 3/3
+    expect(getTaskById(q.id)!.progress_current).toBe(3)
+    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [one]: 1 })
 
     restore(one)
     expect(getTaskById(q.id)!.progress_current).toBe(2)
-    expect(deltas(q.id)).toEqual([1, 1])
-    // Un-handled, but the count still reaches #1, so the row stays done.
+    expect(deltas(q.id)).toEqual([1, 1, 1, -1])
+    // Un-handled, but the chips' two still cover the first two rows.
     expect(prompt(one)).toMatchObject({ considered: false, done: true })
     expect(getTaskById(q.id)!.quota_day_state).toMatchObject({ did: [], considered: [] })
   })
@@ -200,23 +201,24 @@ describe('Put back — daily numbers and edge cases', () => {
     const two = promptKey(q.id, 2, TODAY)
     act(two, true)
     act(two, true)
-    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [two]: 2 })
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [two]: 1 })
     restore(two)
     expect(getTaskById(q.id)!.progress_current).toBe(0)
   })
 
-  test('QPR-008: putting back #1 drops a did-it on #2 the lower count no longer supports', () => {
+  test('QPR-008: putting back #1 leaves the check on #2 standing — each row is its own unit', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 2)
     const one = promptKey(q.id, 1, TODAY)
     const two = promptKey(q.id, 2, TODAY)
-    act(one, true) // 1/2, applied 1
-    incrementProgress({ userId: TEST_USER_ID, taskId: q.id }) // 2/2
-    act(two, true) // applied 0
-    restore(one) // 1/2: #2's did-it no longer holds
+    act(one, true) // 1/2
+    act(two, true) // 2/2
+    restore(one) // 1/2
     expect(getTaskById(q.id)!.progress_current).toBe(1)
-    expect(prompt(two)).toMatchObject({ ...waiting, current: 1 })
-    expect(getTaskById(q.id)!.quota_day_state).toMatchObject({ did: [], considered: [] })
+    expect(prompt(one)).toMatchObject({ ...waiting, current: 1 })
+    expect(prompt(two)).toMatchObject({ considered: true, done: true, current: 1 })
+    expect(getTaskById(q.id)!.quota_day_state).toMatchObject({ did: [two], considered: [two] })
   })
 
   test('QPR-009: a key already waiting is a no-op that still logs an entry', () => {
@@ -260,9 +262,9 @@ describe('Put back — daily numbers and edge cases', () => {
     expect(getTaskById(q.id)!.progress_current).toBe(0)
 
     executeUndo(TEST_USER_ID)
-    expect(getTaskById(q.id)!.progress_current).toBe(2)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
     expect(prompt(two)).toMatchObject({ considered: true, done: true })
-    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [two]: 2 })
+    expect(getTaskById(q.id)!.quota_day_state!.did_applied).toEqual({ [two]: 1 })
 
     executeRedo(TEST_USER_ID)
     expect(getTaskById(q.id)!.progress_current).toBe(0)
@@ -299,22 +301,34 @@ describe('Put back — daily numbers and edge cases', () => {
 })
 
 describe('A −1 after a did-it brings the prompt back waiting', () => {
-  test('QPR-020: daily — the −1 that drops the count below #2 takes #2 back to waiting', () => {
+  test('QPR-020: daily — the −1 that drops the count below the checks takes the check back to waiting', () => {
     setUserDefault(slotId('Morning'))
     const q = quota('Glasses of water', 'FREQ=DAILY', 2)
     const two = promptKey(q.id, 2, TODAY)
-    act(two, true) // 2/2
+    act(two, true) // 1/2
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id, delta: -1 })
-    expect(prompt(two)).toMatchObject({ ...waiting, current: 1 })
+    expect(prompt(two)).toMatchObject({ ...waiting, current: 0 })
     expect(getTaskById(q.id)!.quota_day_state).toMatchObject({
       did: [],
       considered: [],
       did_applied: {},
     })
-    // A did-it after it tops up by one.
+    // A did-it after it counts again: one.
     act(two, true)
-    expect(getTaskById(q.id)!.progress_current).toBe(2)
-    expect(deltas(q.id)).toEqual([2, -1, 1])
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(deltas(q.id)).toEqual([1, -1, 1])
+  })
+
+  test('QPR-026: daily — a −1 below two checks takes back the LATEST check, whatever its number', () => {
+    setUserDefault(slotId('Morning'))
+    const q = quota('Glasses of water', 'FREQ=DAILY', 2)
+    const one = promptKey(q.id, 1, TODAY)
+    const two = promptKey(q.id, 2, TODAY)
+    act(two, true) // 1/2
+    act(one, true) // 2/2 — #1 checked last
+    incrementProgress({ userId: TEST_USER_ID, taskId: q.id, delta: -1 }) // 1/2
+    expect(prompt(one)).toMatchObject({ ...waiting, current: 1 })
+    expect(prompt(two)).toMatchObject({ considered: true, done: true, current: 1 })
   })
 
   test('QPR-021: daily — a −1 the did-it still survives changes nothing', () => {
@@ -355,25 +369,25 @@ describe('A −1 after a did-it brings the prompt back waiting', () => {
     act(two, true)
     incrementProgress({ userId: TEST_USER_ID, taskId: q.id, delta: -1 })
     executeUndo(TEST_USER_ID)
-    expect(prompt(two)).toMatchObject({ considered: true, done: true, current: 2 })
+    expect(prompt(two)).toMatchObject({ considered: true, done: true, current: 1 })
   })
 
   test('QPR-025: withLogged is pure — the rule on its own', () => {
     const key = 'q:7:3:2026-01-15'
     const state = {
       date: TODAY,
-      logged: 3,
+      logged: 1,
       did: [key],
       considered: [key],
-      did_applied: { [key]: 3 },
+      did_applied: { [key]: 1 },
     }
-    expect(withLogged(state, TODAY, -1, 2)).toEqual({
+    expect(withLogged(state, TODAY, -1, 0)).toEqual({
       date: TODAY,
-      logged: 2,
+      logged: 0,
       did: [],
       considered: [],
       did_applied: {},
     })
-    expect(withLogged(state, TODAY, 1, 4)).toEqual({ ...state, logged: 4 })
+    expect(withLogged(state, TODAY, 1, 2)).toEqual({ ...state, logged: 2 })
   })
 })

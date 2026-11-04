@@ -312,6 +312,27 @@ describe('QN-P03 a daily quota with prompts in two periods', () => {
   })
 })
 
+describe('QN-P03b two numbers of a daily quota in one period (2026-11-04)', () => {
+  test('two rows, one named push: the lower number speaks for them, the next follows once it is ticked', () => {
+    const q = dailyQuota(3)
+    getDb()
+      .prepare('UPDATE tasks SET quota_prompt_config = ? WHERE id = ?')
+      .run(JSON.stringify({ numbers: { '2': slotId('Early morning') } }), q.id)
+    expect(pendingPromptNags(at(7)).map((n) => n.promptKey)).toEqual([key(q.id, 1)])
+    tick(at(7))
+    vi.setSystemTime(at(7, 10))
+    actOnPrompts({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      actions: [{ key: key(q.id, 1), did: true }],
+    })
+    // #1 ticked by its check (+1 only): #2 now speaks, on its own row's schedule.
+    expect(pendingPromptNags(at(7, 11)).map((n) => [n.promptKey, n.countText])).toEqual([
+      [key(q.id, 2), '1/2 today'],
+    ])
+  })
+})
+
 describe('QN-P04 it stops', () => {
   test('considered: it stops', () => {
     const q = quota(3, {}, 'Morning')

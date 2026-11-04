@@ -20,15 +20,16 @@ export interface QuotaPrompt {
   prompt_key: string
   task_id: number
   /**
-   * Daily quotas: the highest prompt number assigned to this period (`k`);
-   * the row is done once today's count reaches it. `null` for every other
+   * Daily quotas: the row's number (`k`, 1..N) — one row per number since
+   * 2026-11-04 (`promptPlacements`); done once checked, or once progress
+   * logged elsewhere covers it (`dailyDoneNumbers`). `null` for every other
    * quota, which prompts once a day.
    */
   number: number | null
   /**
-   * Daily quotas: EVERY number this row stands for, ascending (`number` is the
-   * last of them) — what moving the row to another period moves, so the
-   * quota's other numbers stay where they are. `null` for every other quota.
+   * Daily quotas: `[number]` — what moving the row to another period moves, so
+   * the quota's other numbers stay where they are (a list from when a period's
+   * numbers were one row, until 2026-11-04). `null` for every other quota.
    */
   numbers: number[] | null
   /** The period this row sits in (`time_slots.id`), `null` = un-slotted. */
@@ -81,7 +82,8 @@ export interface QuotaPrompt {
  * The order of a period's prompts (Trent, 2026-10-26): priority first, Urgent
  * to None, the key the period's reminders sort by (`getRemindersBySlot`), so
  * the whole period reads one way: reminders Urgent→None, then the prompts
- * Urgent→None. Then the title, alphabetically, then the task id.
+ * Urgent→None. Then the title, alphabetically, then the task id, then a
+ * daily quota's number (two of its rows can share a period since 2026-11-04).
  *
  * It is frozen: considering a prompt, a did-it or a count change touches none
  * of the three keys, so acting on one never reorders the rest under the
@@ -92,13 +94,14 @@ export interface QuotaPrompt {
  * server's order.
  */
 export function comparePrompts(
-  a: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'>,
-  b: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'>,
+  a: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'> & { number?: number | null },
+  b: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'> & { number?: number | null },
 ): number {
   return (
     (b.priority ?? 0) - (a.priority ?? 0) ||
     a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
-    a.task_id - b.task_id
+    a.task_id - b.task_id ||
+    (a.number ?? 0) - (b.number ?? 0)
   )
 }
 
@@ -212,8 +215,9 @@ export function normalizeDayState(state: QuotaDayState | null): QuotaDayState | 
  * 2026-09-25 (`did_applied`). A key "did" before then has no record: a
  * once-a-day prompt's did-it always added exactly 1 (it adds nothing only
  * when its key is already in `did`), so that is derived, not guessed; a daily
- * #k added "whatever was missing up to k", which cannot be recovered, so it
- * reads as 0 — putting it back then un-handles the row and leaves the count.
+ * #k then added "whatever was missing up to k" (the rule until 2026-11-04,
+ * when every did-it became +1), which cannot be recovered, so it reads as 0 —
+ * putting it back then un-handles the row and leaves the count.
  */
 export function didApplied(day: QuotaDayState, key: string): number {
   const recorded = day.did_applied[key]
@@ -237,7 +241,10 @@ export function withoutKeys(day: QuotaDayState, keys: Set<string>): QuotaDayStat
  * 2026-09-25, settling PR #92's open question): a −1 that takes back what a
  * "did it" logged brings its prompt back as WAITING, not left handled.
  *
- * - Daily #k: holds while today's count is at least k.
+ * - Daily (key number ≥ 1): each checked row is one unit of today's count
+ *   (2026-11-04), so the checks hold while the count still covers them all.
+ *   Below that, the LATEST checks give way first (`did` is in the order they
+ *   were made) — the most recent tick is the one a −1 takes back.
  * - Every other quota (key number 0): holds while anything is still logged
  *   today — the did-it was that progress.
  *
@@ -246,12 +253,46 @@ export function withoutKeys(day: QuotaDayState, keys: Set<string>): QuotaDayStat
  */
 export function brokenDids(day: QuotaDayState, current: number): Set<string> {
   const broken = new Set<string>()
+  const daily: string[] = []
   for (const key of day.did) {
     const number = parsePromptKey(key)?.number
     if (number === undefined) continue
-    if (number === 0 ? day.logged === 0 : current < number) broken.add(key)
+    if (number === 0) {
+      if (day.logged === 0) broken.add(key)
+    } else daily.push(key)
   }
+  for (const key of daily.slice(Math.max(0, current))) broken.add(key)
   return broken
+}
+
+/**
+ * Which of a daily quota's numbers 1..`target` are done today (Trent,
+ * 2026-11-04: "putting a check mark on the reminder item should count as one
+ * always… nothing should ever go from zero to two"). Each number is its own
+ * row and one unit:
+ *
+ * - a row that was checked ("did it", its key in `did`) is done — that check
+ *   logged its +1, and ticks that row only;
+ * - progress logged anywhere else today — a chip's +1, the widget, the watch
+ *   — ticks the earliest rows still open, one each: the count beyond the
+ *   checked rows (`current` − checks).
+ *
+ * So a check on the 2nd walk at 0 logs one walk: the 2nd row is done, the 1st
+ * still waits. (Until 11-04 a check on #k raised the count to k — 0→2.)
+ */
+export function dailyDoneNumbers(day: QuotaDayState, current: number, target: number): Set<number> {
+  const done = new Set<number>()
+  for (const key of day.did) {
+    const number = parsePromptKey(key)?.number
+    if (number !== undefined && number >= 1 && number <= target) done.add(number)
+  }
+  let spare = Math.max(0, current - done.size)
+  for (let k = 1; k <= target && spare > 0; k++) {
+    if (done.has(k)) continue
+    done.add(k)
+    spare--
+  }
+  return done
 }
 
 /**
@@ -341,9 +382,9 @@ export function assignDailyNumbers(
 export interface PromptPlacement {
   /** Index into the user's slots (sorted by start); -1 = the un-slotted group. */
   slotIndex: number
-  /** The key's `k`: a daily quota's highest number in this period, 0 otherwise. */
+  /** The key's `k`: a daily quota's number (1..N), 0 otherwise. */
   number: number
-  /** Daily: every number this row stands for, ascending; `null` otherwise. */
+  /** Daily: `[number]` — a row stands for its one number; `null` otherwise. */
   numbers: number[] | null
 }
 
@@ -352,8 +393,11 @@ export interface PromptPlacement {
  * `getQuotaPromptsBySlot`, pure, so the named prompt pushes' cheap gate
  * (prompt-nags.ts) reads the same rows from a task row alone.
  *
- * - Daily: one row per period its numbers 1..N sit in (`assignDailyNumbers`),
- *   keyed by the highest number there.
+ * - Daily: one row per number 1..N, in the period it sits in
+ *   (`assignDailyNumbers`). Two numbers in one period are two rows — rows
+ *   never merge (Trent, 2026-11-04: one row is one unit, one check one +1).
+ *   Until then a period's numbers were one row keyed by the highest, whose
+ *   check logged them all.
  * - Every other quota: one row, in its period (`resolvePromptSlot`), k = 0.
  */
 export function promptPlacements(
@@ -372,14 +416,10 @@ export function promptPlacements(
     ]
   }
   const target = Math.max(1, task.progress_target ?? 1)
-  const numbersIn = new Map<number, number[]>()
-  assignDailyNumbers(target, slots, config, userDefault).forEach((slotIndex, i) =>
-    numbersIn.set(slotIndex, [...(numbersIn.get(slotIndex) ?? []), i + 1]),
-  )
-  return [...numbersIn].map(([slotIndex, numbers]) => ({
+  return assignDailyNumbers(target, slots, config, userDefault).map((slotIndex, i) => ({
     slotIndex,
-    number: numbers[numbers.length - 1],
-    numbers,
+    number: i + 1,
+    numbers: [i + 1],
   }))
 }
 
@@ -418,12 +458,12 @@ export interface PromptGroup {
  * Groups with each prompt in `moves` (prompt_key → slot id) shown in its new
  * period — the optimistic half of a move; the server's next payload replaces
  * it. Idempotent: a prompt already in its target (or no longer in the payload
- * under that key, as after a daily merge) is left alone, so re-applying a move
+ * under that key) is left alone, so re-applying a move
  * to a payload that already has it changes nothing.
  *
  * A daily row landing in a period that already holds a row of the same quota
- * MERGES into it, as the server would: one row per quota per period, keyed and
- * judged by its highest number.
+ * sits beside it, as the server puts it: rows never merge (2026-11-04; until
+ * then the two became one row keyed by the higher number).
  */
 export function applyPromptMoves<G extends PromptGroup>(
   groups: G[],
@@ -437,28 +477,8 @@ export function applyPromptMoves<G extends PromptGroup>(
     const toIndex = out.findIndex((g) => g.slot?.id === toSlotId)
     if (fromIndex < 0 || toIndex < 0) continue
     const moving = out[fromIndex].prompts.find((p) => p.prompt_key === key)!
-    const target = out[toIndex].prompts
-    const sibling = target.find((p) => p.task_id === moving.task_id)
-    let prompts: QuotaPrompt[]
-    if (sibling && sibling.numbers && moving.numbers) {
-      const numbers = [...new Set([...sibling.numbers, ...moving.numbers])].sort((a, b) => a - b)
-      const number = numbers[numbers.length - 1]
-      const top = (sibling.number ?? 0) >= (moving.number ?? 0) ? sibling : moving
-      const date = parsePromptKey(top.prompt_key)?.date ?? ''
-      const merged: QuotaPrompt = {
-        ...top,
-        slot_id: toSlotId,
-        numbers,
-        number,
-        prompt_key: promptKey(moving.task_id, number, date),
-        done: top.current >= number,
-      }
-      prompts = target.map((p) => (p === sibling ? merged : p))
-    } else {
-      // Placed by the server's own order, so the next payload doesn't move it.
-      prompts = [...target.filter((p) => p !== sibling), { ...moving, slot_id: toSlotId }]
-      prompts.sort(comparePrompts)
-    }
+    // Placed by the server's own order, so the next payload doesn't move it.
+    const prompts = [...out[toIndex].prompts, { ...moving, slot_id: toSlotId }].sort(comparePrompts)
     out = out.map((g, i) => {
       if (i === fromIndex) return { ...g, prompts: g.prompts.filter((p) => p !== moving) }
       if (i === toIndex) return { ...g, prompts }

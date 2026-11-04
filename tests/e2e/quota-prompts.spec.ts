@@ -1111,3 +1111,38 @@ test.describe('Quota prompts — keyboard', () => {
     await expect(page.locator('[data-e2e-next-row]')).toBeFocused()
   })
 })
+
+test.describe('Quota prompts — one check is one', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  /**
+   * Trent, 2026-11-04 (Daily Walks, 2 a day, the 2nd moved to a later
+   * period): checking the 2nd walk's row at 0 logged 2 — the row stood for
+   * "count up to 2". One check is one: +1, that row ticked, the 1st still
+   * waiting in its own period.
+   */
+  test("a daily quota's 2nd row, checked at 0, logs one — the 1st still waits", async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await userSlots(page)
+    const [first] = slots
+    const last = slots[slots.length - 1]
+    const id = await makeQuota(page, 'E2E prompt walks', 'FREQ=DAILY', 2)
+    await placeIn(page, id, { slot_id: first.id, numbers: { '2': last.id } })
+    await page.goto('/reminders')
+    const one = promptIn(page, first.label, 'E2E prompt walks')
+    const two = promptIn(page, last.label, 'E2E prompt walks')
+    await expect(one).toBeVisible()
+    await expect(two).toBeVisible()
+    await expectCount(two, '0 of 2 today')
+
+    const did = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/did'))
+    await two.locator('[data-prompt-did]').click()
+    expect((await did).ok()).toBeTruthy()
+    await expect(two).toHaveCount(0)
+    expect(await progressOf(page, id)).toBe(1)
+    // The 1st walk is its own row: still waiting, its count one of two.
+    await expect(one.locator('[data-prompt-did]')).toBeVisible()
+    await expectCount(one, '1 of 2 today')
+  })
+})

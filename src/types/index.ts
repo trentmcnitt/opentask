@@ -59,8 +59,9 @@ export interface QuotaDayState {
   considered: string[]
   /**
    * What each key in `did` added to the count (2026-09-25) — so putting the
-   * prompt back takes away exactly that. A daily #k did-it adds only what was
-   * missing up to k, possibly 0, which nothing else records.
+   * prompt back takes away exactly that: 1, or 0 for a repeat on the same key.
+   * (Until 2026-11-04 a daily #k did-it added what was missing up to k —
+   * possibly 0 or 2 — which nothing else records.)
    */
   did_applied: Record<string, number>
 }

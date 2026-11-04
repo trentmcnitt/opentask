@@ -15,6 +15,11 @@ export type PromptIntent = 'consider' | 'did'
  * afternoon's row to 1/2 too. The server's own answer replaces this on the
  * next refresh; this is only what the screen shows until then.
  *
+ * A did-it is +1, always, and ticks its own row only (Trent, 2026-11-04 —
+ * until then a daily row #k raised the count to k and ticked every row the
+ * count reached). A sibling keeps its own done: one check never covers
+ * another row (`dailyDoneNumbers`).
+ *
  * Skips a prompt the payload already shows as considered: a refresh that
  * lands after the server committed but before the request returned must not
  * count the +1 twice.
@@ -30,9 +35,7 @@ export function applyPromptIntents<G extends { prompts: QuotaPrompt[] }>(
     const intent = intents.get(p.prompt_key)
     if (!intent || p.considered) continue
     const current = counts.get(p.task_id) ?? p.current
-    if (intent === 'did') {
-      counts.set(p.task_id, p.number !== null ? Math.max(current, p.number) : current + 1)
-    }
+    if (intent === 'did') counts.set(p.task_id, current + 1)
   }
   return groups.map((g) => {
     if (!g.prompts.some((p) => intents.has(p.prompt_key) || counts.has(p.task_id))) return g
@@ -46,7 +49,7 @@ export function applyPromptIntents<G extends { prompts: QuotaPrompt[] }>(
           ...p,
           current,
           considered: p.considered || acted,
-          done: (acted && intent === 'did') || (p.number !== null ? current >= p.number : p.done),
+          done: (acted && intent === 'did') || p.done,
         }
       }),
     }
