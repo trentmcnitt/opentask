@@ -266,7 +266,7 @@ jobs:
     if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
     env:
       E2E_WEBKIT: '1'
-      WEBKIT_SPECS: tests/e2e/row-title-band.spec.ts
+      WEBKIT_SPECS: tests/e2e/row-title-band.spec.ts tests/e2e/picker-wheel-scroll.spec.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
