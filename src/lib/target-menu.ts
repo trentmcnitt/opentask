@@ -14,10 +14,14 @@
  *                                         ("If it's Friday, just drop this weekend")
  *   Next weekend       Sat <date>        — instead, on a Saturday or Sunday
  *   Next week          Mon <morning>     — hidden on a Sunday, when it would be tomorrow
- *   PERIODS  [Early 6:30] [Morning 8:30] …   every period but the next one (it is
- *                                            the top row), in day order; each goes to
- *                                            that period's next start — today if still
- *                                            ahead, else tomorrow
+ *   PERIODS  [Early 6:30] [Morning 8:30] …   EVERY period, the next one too, in day
+ *                                            order; each goes to that period's next
+ *                                            start — today if still ahead, else
+ *                                            tomorrow. (Until 2026-11-04 the next
+ *                                            period was left out, since the top row
+ *                                            offers it; Trent: "we need all the chips
+ *                                            listed because it ended up being
+ *                                            confusing that it was missing".)
  *
  * The deadline-morning row, Custom… and Remove target are the caller's
  * (`SnoozeMenu`), as before. Days are OpenTask days (`openTaskDayOf`): at 1:30
@@ -154,9 +158,8 @@ export function targetMenu({
     })
   }
 
-  // The periods, in day order, without the one the top row already offers.
-  const periods = starts
-    .filter((s) => s !== next)
+  // Every period, in day order — the next one too (2026-11-04, above).
+  const periods = [...starts]
     .sort((a, b) => a.slot.start_time.localeCompare(b.slot.start_time))
     .map(({ slot, at: start }) => ({
       option: `${SLOT_OPTION_PREFIX}${slot.start_time}`,

@@ -104,7 +104,10 @@ function ChipGroup({
 function Caption({ text }: { text?: string }) {
   if (!text) return null
   return (
-    <span data-option-caption className="text-muted-foreground ml-auto pl-3 text-xs">
+    <span
+      data-option-caption
+      className="text-muted-foreground ml-auto shrink-0 pl-3 text-xs whitespace-nowrap"
+    >
       {text}
     </span>
   )
@@ -238,7 +241,8 @@ export function OptionMenu({
           aria-label={`${title} options`}
           align="end"
           className={cn(
-            'max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-y-auto p-1',
+            // Never sideways (2026-11-04): a long row wraps (`OptionItem`).
+            'max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-x-hidden overflow-y-auto p-1',
             options.some((o) => o.chipGroup) && 'w-[20rem]',
           )}
           // Focus stays where it was: the trigger's own keys still work.
@@ -356,7 +360,8 @@ function OptionDropdown({
       role="menu"
       aria-label={label}
       className={cn(
-        'bg-popover text-popover-foreground fixed z-50 max-w-[22rem] min-w-[200px] overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md',
+        // Never sideways (2026-11-04): a long row wraps (`OptionItem`).
+        'bg-popover text-popover-foreground fixed z-50 max-w-[22rem] min-w-[200px] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md',
         // A chip group wraps across the menu's width: give it one, or the
         // rows' width leaves one chip per line (T1's periods, 2026-10-30).
         options.some((o) => o.chipGroup) && 'w-[20rem]',
@@ -395,7 +400,13 @@ function MenuItems({
   )
 }
 
-/** One desktop menu row. */
+/**
+ * One desktop menu row. Its LABEL WRAPS when the menu is narrower than it
+ * (Trent, 2026-11-04: T1's "Morning of the deadline · Sun 6:30 AM (Default
+ * task time)" ran past the 20rem box, under a sideways scrollbar): a menu as
+ * wide as its rows (`w-auto`, up to 22rem) never wraps a short one; the
+ * caption on the right stays whole.
+ */
 function OptionItem({
   opt,
   isChoice,
@@ -415,12 +426,15 @@ function OptionItem({
         if (isChoice(e)) onSelect(opt.option)
       }}
       className={cn(
-        'hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm whitespace-nowrap transition-colors',
+        'hover:bg-accent active:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
         'disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:flex-shrink-0',
       )}
     >
       {opt.icon}
-      {opt.label} <Caption text={opt.caption} />
+      <span data-option-label className="min-w-0">
+        {opt.label}
+      </span>
+      <Caption text={opt.caption} />
     </button>
   )
 }
