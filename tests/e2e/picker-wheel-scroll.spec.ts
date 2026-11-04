@@ -42,6 +42,28 @@ async function settle(page: Page) {
 const scrollTop = (el: Locator) => el.evaluate((n) => n.scrollTop)
 const overflow = (el: Locator) => el.evaluate((n) => n.scrollHeight - n.clientHeight)
 
+/** Swipe up inside `el` with touch events; true when the touchmove was cancelled. */
+function touchMoveCancelled(el: Element): boolean {
+  const r = el.getBoundingClientRect()
+  const x = r.left + r.width / 2
+  const at = (y: number) => new Touch({ identifier: 1, target: el, clientX: x, clientY: y })
+  const send = (type: string, y: number) => {
+    const touch = at(y)
+    const e = new TouchEvent(type, {
+      touches: [touch],
+      targetTouches: [touch],
+      changedTouches: [touch],
+      bubbles: true,
+      cancelable: true,
+    })
+    el.dispatchEvent(e)
+    return e.defaultPrevented
+  }
+  const start = r.top + r.height * 0.7
+  send('touchstart', start)
+  return send('touchmove', start - 120)
+}
+
 /** The open Target picker (the popover holding Before the deadline). */
 function targetPicker(page: Page) {
   return page.locator('[data-slot="popover-content"]', {
@@ -93,10 +115,9 @@ test('the Target picker in task details scrolls with the mouse wheel', async ({
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true })
-  // The swipe is Chromium's gesture synthesis (CDP); WebKit has none.
-  test.skip(({ browserName }) => browserName !== 'chromium', 'CDP touch gesture: Chromium only')
-
-  test('the Target picker in the details sheet scrolls with a finger', async ({
+  // Desktop WebKit (CI's WebKit project) has no Touch constructor.
+  test.skip(({ browserName }) => browserName === 'webkit', 'no Touch constructor in desktop WebKit')
+  test('the Target picker in the details sheet lets a finger scroll it', async ({
     authenticatedPage: page,
   }) => {
     const id = await deadlineTask(page, 'Drop off the spare keys')
@@ -118,18 +139,13 @@ test.describe('phone', () => {
         expect(await overflow(picker)).toBeGreaterThan(0)
         expect(await scrollTop(picker)).toBe(0)
 
-        // A real touch swipe up inside the picker (Chromium's gesture
-        // synthesis: touchstart, touchmoves, touchend, as a finger sends).
-        const box = (await picker.boundingBox())!
-        const cdp = await page.context().newCDPSession(page)
-        await cdp.send('Input.synthesizeScrollGesture', {
-          x: Math.round(box.x + box.width / 2),
-          y: Math.round(box.y + box.height * 0.7),
-          yDistance: -200,
-          gestureSourceType: 'touch',
-          speed: 800,
-        })
-        await expect.poll(() => scrollTop(picker)).toBeGreaterThan(0)
+        // A finger swipe up inside the picker, as the scroll lock sees it: a
+        // touchstart, then a cancelable touchmove 120px higher. The lock
+        // decides by cancelling the touchmove (that is how it stops a scroll),
+        // so a touchmove left uncancelled is a finger that scrolls. Dispatched
+        // from the page rather than synthesized as a gesture: CI's headless
+        // Linux Chromium never turned the gesture into touch events.
+        expect(await picker.evaluate(touchMoveCancelled)).toBe(false)
       })
     } finally {
       await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id] } })
