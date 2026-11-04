@@ -62,16 +62,13 @@ test.describe('Snooze', () => {
     // Verify menu items
     await expect(menu.getByRole('menuitem', { name: '1 hour' })).toBeVisible()
     await expect(menu.getByRole('menuitem', { name: '2 hours' })).toBeVisible()
-    // The user's time slots are targets too (Trent, 2026-09-22). Whichever
-    // starts next leads the menu as "Next period · Midday 12:00 PM" (#106);
-    // the rest are T1's period buttons, "Midday 12:00" (2026-10-30), so each
-    // slot may appear in either form depending on the hour.
-    const slotItem = (name: string, time: string, short: string) =>
-      menu.getByRole('menuitem', {
-        name: new RegExp(`^(Next period · ${name} (tomorrow )?${time}|${name} ${short})$`),
-      })
-    await expect(slotItem('Midday', '12:00 PM', '12:00')).toBeVisible()
-    await expect(slotItem('Evening', '8:30 PM', '8:30')).toBeVisible()
+    // The user's time slots are targets too (Trent, 2026-09-22): every one
+    // is a period button, "Midday 12:00" (2026-10-30) — since 11-04 the next
+    // period too, which may ALSO lead the menu as "Next period · Evening
+    // 8:30 PM" (#106). Assert the button, which is always there; matching
+    // either form found both when Evening was next.
+    await expect(menu.getByRole('menuitem', { name: 'Midday 12:00', exact: true })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: 'Evening 8:30', exact: true })).toBeVisible()
     // T1's day rows: Tomorrow always, at the morning time, with its weekday.
     await expect(menu.getByRole('menuitem', { name: /^Tomorrow \w{3} 9:00 AM$/ })).toBeVisible()
 

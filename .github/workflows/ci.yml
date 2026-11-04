@@ -168,7 +168,12 @@ jobs:
     # its matrix, and showed the raw expression as its check name. GitHub
     # appends the value itself: "E2E shard (1)", "(2)", "(3)".
     name: E2E shard
-    runs-on: ubuntu-latest
+    # Pinned, as E2E WebKit is: this Playwright release has no Chromium build
+    # for ubuntu-latest (26.04) either. It only ran there off a cached browser
+    # (keyed on package-lock.json): the first lockfile change (#453) had to
+    # install and failed — "Playwright does not support chromium on
+    # ubuntu26.04-x64". Move with the next Playwright upgrade.
+    runs-on: ubuntu-24.04
     needs: [changes]
     if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
     strategy:
@@ -266,7 +271,7 @@ jobs:
     if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
     env:
       E2E_WEBKIT: '1'
-      WEBKIT_SPECS: tests/e2e/row-title-band.spec.ts
+      WEBKIT_SPECS: tests/e2e/row-title-band.spec.ts tests/e2e/picker-wheel-scroll.spec.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
