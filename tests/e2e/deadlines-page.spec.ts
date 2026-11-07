@@ -245,7 +245,7 @@ for (const viewport of VIEWPORTS) {
   test.describe(`at ${viewport.width}: decks and links`, () => {
     test.use({ viewport })
 
-    test('a deck keeps the row on the page; Today on a decked row is faded and asks first', async ({
+    test('a deck keeps the row on the page; Today on a decked row asks first; none in the net', async ({
       page,
     }) => {
       const ids: number[] = []
@@ -271,29 +271,30 @@ for (const viewport of VIEWPORTS) {
         await expect(l.locator('[data-deck-day-chip]')).toHaveText(`On deck ${day.toFormat('ccc')}`)
         await expect(l.locator('[data-target-today]')).toHaveAttribute('data-replaces', '')
 
-        // In the safety net a deck for today (no deck button there since
-        // 2026-11-02 — this one is the API's) keeps the row waiting, its chip.
-        const decked = await page.request.post('/api/tasks/deck', {
-          data: { ids: [net], day: await openTaskDay(page) },
-        })
-        expect(decked.ok(), await decked.text()).toBeTruthy()
-        await page.reload()
-        const r = row(section(page), net)
-        await expect(r.locator('[data-deck-day-chip]')).toHaveText('On deck today')
-        await expect(r).toHaveAttribute('data-segment-state', 'waiting')
         // Today on the decked row: faded, and a tap asks.
-        const today = r.locator('[data-target-today]')
-        await expect(today).toHaveAttribute('data-replaces', '')
+        const today = l.locator('[data-target-today]')
         await today.click()
         const confirm = page.locator('[data-replace-confirm]')
-        await expect(confirm).toContainText('Replaces On deck today')
+        await expect(confirm).toContainText(`Replaces On deck ${day.toFormat('ccc')}`)
         await confirm.locator('[data-replace-cancel]').click()
         await expect(confirm).toHaveCount(0)
-        expect((await stateOf(page, net)).target_at).toBeNull()
+        expect((await stateOf(page, later)).target_at).toBeNull()
         await today.click()
         await page.locator('[data-replace-confirm] [data-replace-ok]').click()
-        await expect.poll(async () => (await stateOf(page, net)).target_at).toBeTruthy()
-        expect((await stateOf(page, net)).on_deck_day).toBeNull()
+        await expect.poll(async () => (await stateOf(page, later)).target_at).toBeTruthy()
+        expect((await stateOf(page, later)).on_deck_day).toBeNull()
+
+        // In the safety net there is no deck at all (2026-11-07): no button
+        // (since 11-02), and the API refuses it, so the row has no deck chip.
+        const refused = await page.request.post('/api/tasks/deck', {
+          data: { ids: [net], day: await openTaskDay(page) },
+        })
+        expect(refused.ok(), await refused.text()).toBeTruthy()
+        expect((await refused.json()).data.refused).toEqual([{ id: net, reason: 'safety_net' }])
+        await page.reload()
+        const r = row(section(page), net)
+        await expect(r).toHaveAttribute('data-segment-state', 'waiting')
+        await expect(r.locator('[data-deck-day-chip]')).toHaveCount(0)
       } finally {
         await trash(page, ids)
       }

@@ -72,7 +72,10 @@ describe('RT-H: a fence that skips a snapshot still heals the link', () => {
       },
     })
     expect(t.due_at).toBe(at('2026-10-26T20:30'))
-    deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day: '2026-10-26' })
+    // Decked for Sun Oct 25, D−2 — never into the deadline's safety net (2026-11-07).
+    expect(
+      deckTasks({ userId: TEST_USER_ID, timezone: tz, ids: [t.id], day: '2026-10-25' }).decked,
+    ).toBe(1)
     setClock('2026-10-25T11:00')
     retime('21:00')
     expect(getTaskById(t.id)).toMatchObject({ due_at: null, target_time: '21:00' })

@@ -59,6 +59,7 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useCollapsedGroups } from '@/hooks/useCollapsedGroups'
 import { useKeyboardNavigation } from '@/hooks/useKeyboardNavigation'
 import { useTimezone } from '@/hooks/useTimezone'
+import { deckClosed } from '@/lib/deck-menu'
 import { Header, type HeaderPillFilter } from '@/components/Header'
 import { FOCUS_QUICK_ADD_EVENT, QUICK_ADD_ACTION, QuickAdd } from '@/components/QuickAdd'
 import { JustAddedCard } from '@/components/JustAddedCard'
@@ -2466,6 +2467,7 @@ function DashboardView({
    *  `TrackColumn`'s own `onTrackRefresh`. */
   onTrackRefresh: () => Promise<void>
 }) {
+  const dayStart = useDayStart()
   // Filters that live inside the collapsible block (§7.3). `activeFilterCount`
   // (from `useFilterState`) is counted rather than just flagged: the count is
   // what the collapsed "Filters · 2" badge shows, and what decides whether the
@@ -2960,7 +2962,14 @@ function DashboardView({
         sticky={selection.sticky}
         onNavigateToDetail={onNavigateToDetail}
         onTarget={(until) => onSnoozeSelected(until)}
-        onDeck={onDeckSelected}
+        // No Deck when no pick can be decked — each in its deadline's safety
+        // net (2026-11-07); a mixed pick decks the rest and the server
+        // refuses the net's ("1 refused (deadline close)").
+        onDeck={
+          selectedTasks.some((t) => !deckClosed(t, timezone, new Date(), dayStart))
+            ? onDeckSelected
+            : undefined
+        }
         projects={projects}
       />
 

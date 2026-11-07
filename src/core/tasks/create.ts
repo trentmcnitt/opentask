@@ -728,7 +728,8 @@ function assertCreateDeck(
   const now = new Date()
   const problem = deckDayProblem(day, ctx.timezone, now, dayBoundaryForUser(userId))
   if (problem) throw new ValidationError(problem)
-  // A1 (2026-10-22): the deck day at most the deadline's OpenTask day.
+  // A1: the deck day at most D−2 — never in the deadline's safety net
+  // (2026-11-07; `deckRefusal`). A task being made is a one-off (above).
   const refusal = deckRefusal(
     { deadline_at: input.deadline_at ?? null },
     day,

@@ -18,16 +18,18 @@
  *
  * Re-deck = hold → Tomorrow (spec rule 7).
  *
- * A DEADLINE TASK (red-team A1): a deck may land only BEFORE the day its
- * automatic target starts reminding (`deckLimit`). That day and the later ones
- * are greyed out, with a caption saying why ("deadline reminds from Tue"); the
- * server refuses them anyway and the toast says why.
+ * A DEADLINE TASK (`deckLimit`): a deck lands at most two days before the
+ * deadline's day — never in its safety net (2026-11-07) — and a row the net
+ * already holds offers no deck at all (`deckClosed`). Later days are greyed
+ * out, with a caption saying why ("deadline Sun"); the server refuses them
+ * anyway and the toast says why.
  */
 import { DateTime } from 'luxon'
 import { QUEUE_TOMORROW, queueMarked } from '@/lib/queue-tomorrow'
 import {
   CHECK_IN_DAY_DEFAULT,
   DECK_DAY_FORMAT,
+  deckMeetsTheNet,
   lastDeferDay,
   openTaskToday,
   repeatingDeadlineDay,
@@ -132,13 +134,18 @@ export function deckMenuDays(
 }
 
 /**
- * A deadline task's deck limit (A1, as the server's `deckRefusal` judges it —
- * the deadlines page, 2026-10-22): any day up to and including the deadline's
- * own OpenTask day ("deadline Fri"; a deadline before the rollover counts as
- * the evening before, `repeatingDeadlineDay`), one-off or repeating, while
- * the deadline is ahead. A passed deadline leaves no day at all (the latest
- * day is yesterday). No deadline: null. The Quick panel passes a STAGED
- * deadline here. (`ctx` is kept for the callers; the deadline alone decides.)
+ * A deadline task's deck limit, as the server's `deckRefusal` judges it:
+ *  - a task the deadlines page can hold (a one-off, a deadline-anchored
+ *    repeat — `deckMeetsTheNet`): up to D−2, never into the safety net
+ *    (Trent, 2026-11-07; until then up to D). Once the net holds it (D−1
+ *    on) no day is left: the latest day is before today (`deckClosed`);
+ *  - any other repeating task: up to and including the deadline's own
+ *    OpenTask day (A1, 2026-10-22; a deadline before the rollover counts as
+ *    the evening before, `repeatingDeadlineDay`).
+ * The caption names the deadline's day ("deadline Fri"). A passed deadline
+ * leaves no day at all (the latest day is yesterday). No deadline: null. The
+ * Quick panel passes a STAGED deadline here. (`ctx` is kept for the callers;
+ * the deadline alone decides.)
  */
 export function deckLimit(
   task: {
@@ -146,6 +153,7 @@ export function deckLimit(
     due_at: string | null
     target_auto?: boolean
     rrule?: string | null
+    repeat_anchor?: string | null
   },
   timezone: string,
   now: Date,
@@ -166,9 +174,41 @@ export function deckLimit(
     { zone: timezone },
   )
   return {
-    latestDay: deadlineDay.toFormat(DECK_DAY_FORMAT),
+    latestDay: deckMeetsTheNet(task)
+      ? lastDeferDay(task.deadline_at, timezone, rolloverTime)
+      : deadlineDay.toFormat(DECK_DAY_FORMAT),
     caption: `deadline ${deadlineDay.toFormat('ccc')}`,
   }
+}
+
+/**
+ * NO DAY LEFT TO DECK ON (Trent, 2026-11-07): the task's deck limit is before
+ * today — a deadline task the safety net holds (D−1 on), or a passed
+ * deadline. Every deck control is left off such a row (the button, On deck
+ * tomorrow, the hold menu, the Quick panel's line, the bar's Deck when every
+ * pick is one); the server refuses it anyway (`deckRefusal`). `rolloverTime`:
+ * the user's day boundary (`useDayStart`).
+ */
+export function deckClosed(
+  task: Parameters<typeof deckLimit>[0],
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): boolean {
+  const limit = deckLimit(task, timezone, now, null, rolloverTime)
+  return !!limit && limit.latestDay < openTaskToday(timezone, now, rolloverTime)
+}
+
+/** Whether a deck for `day` is past the task's limit (On deck tomorrow's own test). */
+export function deckDayClosed(
+  task: Parameters<typeof deckLimit>[0],
+  day: string,
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): boolean {
+  const limit = deckLimit(task, timezone, now, null, rolloverTime)
+  return !!limit && day > limit.latestDay
 }
 
 /**

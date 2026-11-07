@@ -9,6 +9,7 @@ import { dayStartTimeOf } from '@/lib/anchor-times'
 import { migrateDeadlineTargets, type TargetMigrationCounts } from './migrate-deadline-targets'
 import { migrateRepeatAnchors, type RepeatAnchorCounts } from './migrate-repeat-anchor'
 import { migrateDeadlineLeads } from './migrate-deadline-leads'
+import { clearNetDecks } from './migrate-net-decks'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { isServerProcess } from './process-role'
 
@@ -629,6 +630,15 @@ function runDeadlineSteps(database: Database.Database): void {
     const leadCounts = migrateDeadlineLeads(database)
     if (Object.values(leadCounts).some((n) => n > 0)) {
       log.info('db', `deadlines page migration (2026-10-22): ${JSON.stringify(leadCounts)}`)
+    }
+    // Decks into a deadline's safety net, which a deck may no longer land in
+    // (2026-11-07, `migrate-net-decks.ts`).
+    const cleared = clearNetDecks(database)
+    if (cleared.length > 0) {
+      log.info(
+        'db',
+        `cleared ${cleared.length} deck(s) in a deadline's safety net: ${cleared.join(', ')}`,
+      )
     }
   }
 }

@@ -4,8 +4,9 @@
  * (horizon panels, Queued, Upcoming), the dashboard rows and the Quick panel;
  * the filled state and the tap that takes today's deck off (A10); Remove in
  * the hold menu; Now's On deck section; re-deck to Tomorrow from Queued; an
- * Upcoming deck row and Today on it; the A1 refusal toast; Undo; the hover
- * box inside the row; the 375px row with four controls.
+ * Upcoming deck row and Today on it; no deck in a deadline's safety net
+ * (2026-11-07); Undo; the hover box inside the row; the 375px row with four
+ * controls.
  *
  * The queue's own user (`queue@opentask.local`, as tq-queue-panels.spec.ts),
  * with the server's task-queue switch on (decks need it) and off after the
@@ -15,7 +16,7 @@
 import path from 'path'
 import Database from 'better-sqlite3'
 import { DateTime } from 'luxon'
-import { test, expect, openTaskDay, uniqueTitle } from './fixtures'
+import { test, expect, openTaskDay, showAllNow, uniqueTitle } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const QUEUE_USER_ID = 2
@@ -440,21 +441,92 @@ test('a lit On deck tomorrow: a tap takes the task off deck', async ({ page }) =
   }
 })
 
-test('A1: a deadline that has passed refuses On deck with the toast', async ({ page }) => {
+/** 23:59 local on the OpenTask day `n` days from today: a deadline on that day. */
+async function deadlineOn(page: Page, n: number): Promise<string> {
+  return DateTime.fromISO(`${await openTaskDay(page, n)}T23:59`, { zone: TZ })
+    .toUTC()
+    .toISO()!
+}
+
+/**
+ * THE SAFETY NET (Trent, 2026-11-07, #33391): a deadline task the net holds —
+ * D−1 on — offers no deck anywhere, only a target or done; the API refuses
+ * it (the deck endpoint per task, a PATCH with a 400). A passed deadline is
+ * in the net too.
+ */
+test('the safety net: a deadline tomorrow with no target offers no deck — dashboard, deadlines page, API', async ({
+  page,
+}) => {
   const ids: number[] = []
   try {
-    const title = uniqueTitle('OD deadline')
-    // A deadline an hour ago: passed whatever the time of day (the deadlines
-    // page's A1, 2026-10-22: any day up to the deadline's own, while it is ahead).
-    const id = await create(page, { title, deadline_at: daysFromNow(-1 / 24) })
+    const id = await create(page, {
+      title: uniqueTitle('OD net waiver link'),
+      deadline_at: await deadlineOn(page, 1),
+    })
+    const passed = await create(page, {
+      title: uniqueTitle('OD net passed'),
+      deadline_at: daysFromNow(-1 / 24),
+    })
+    ids.push(id, passed)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    for (const rowId of [id, passed]) {
+      const row = dashRow(page, rowId)
+      await row.hover()
+      await expect(row.locator('[data-on-deck]')).toHaveCount(0)
+      await expect(row.locator('[data-deck-tomorrow]')).toHaveCount(0)
+    }
+
+    await page.goto('/reminders')
+    const r = segRow(segment(page, 'deadlines'), id)
+    await expect(r).toBeVisible()
+    await r.hover()
+    await expect(r.locator('[data-on-deck]')).toHaveCount(0)
+    await expect(r.locator('[data-deck-tomorrow]')).toHaveCount(0)
+
+    const res = await page.request.post('/api/tasks/deck', {
+      data: { ids: [id], day: await openTaskDay(page, 1) },
+    })
+    expect(res.ok()).toBeTruthy()
+    expect((await res.json()).data.refused).toEqual([{ id, reason: 'safety_net' }])
+    const patch = await page.request.patch(`/api/tasks/${id}`, {
+      data: { on_deck_day: await openTaskDay(page) },
+    })
+    expect(patch.status()).toBe(400)
+    expect(await deckOf(page, id)).toBeNull()
+  } finally {
+    await trash(page, ids)
+  }
+})
+
+test('a deadline two days out decks only today: On deck tomorrow is gone, the hold menu greys the net', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  try {
+    // Today is D−2, the last day a deck may land on.
+    const id = await create(page, {
+      title: uniqueTitle('OD net two days'),
+      deadline_at: await deadlineOn(page, 2),
+    })
     ids.push(id)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
-    await dashRow(page, id).hover()
-    await dashRow(page, id).locator('[data-on-deck]').click()
-    await expect(toast(page, 'This deadline has passed.')).toBeVisible()
-    expect(await deckOf(page, id)).toBeNull()
-    await expect(dashRow(page, id)).toBeVisible()
+    // Two days out, Now folds it away: show every task.
+    await showAllNow(page)
+    const row = dashRow(page, id)
+    await row.hover()
+    await expect(row.locator('[data-deck-tomorrow]')).toHaveCount(0)
+    await row.locator('[data-on-deck]').click({ button: 'right' })
+    const menu = page.getByRole('menu', { name: 'On deck options' })
+    await expect(menu.getByRole('menuitem', { name: /^Tomorrow/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await page.keyboard.press('Escape')
+    // A deck for today is still fine.
+    await row.locator('[data-on-deck]').click()
+    await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page))
   } finally {
     await trash(page, ids)
   }
@@ -636,28 +708,28 @@ test('panel: a staged deadline and deck save in ONE request; the menu greys from
   }
 })
 
-test('panel: a refused deck saves nothing — the error shows and the panel stays dirty', async ({
+test('panel: a staged deadline that closes deck takes the line, and no deck is sent', async ({
   page,
 }) => {
   const ids: number[] = []
   try {
-    const id = await create(page, { title: uniqueTitle('OD panel refused'), priority: 3 })
+    const id = await create(page, { title: uniqueTitle('OD panel closed'), priority: 3 })
     ids.push(id)
     const dialog = await openPanel(page, id)
-    // Yesterday: a deadline that has passed refuses every deck (A1, 2026-10-22).
-    await stageDeadline(page, dialog, -1)
     await dialog.locator('[data-quick-panel-deck] [data-on-deck]').click()
-    const day = dialog.locator('[data-quick-panel-deck-day]')
-    await expect(day).toHaveText('today')
+    await expect(dialog.locator('[data-quick-panel-deck-day]')).toHaveText('today')
+    // Yesterday: a passed deadline is in its safety net — no deck at all
+    // (2026-11-07): the line goes, and the staged deck with it.
+    await stageDeadline(page, dialog, -1)
+    await expect(dialog.locator('[data-quick-panel-deck]')).toHaveCount(0)
+    const sent = page.waitForRequest(
+      (r) => r.method() === 'PATCH' && r.url().endsWith(`/api/tasks/${id}`),
+    )
     await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(toast(page, /has passed|after this task's deadline/)).toBeVisible()
-    await expect(dialog).toBeVisible()
-    await expect(day).toHaveClass(/text-blue-500/)
-    await expect(dialog.locator('[data-quick-panel-deadline] .text-blue-500')).toBeVisible()
-    const state = await stateOf(page, id)
-    expect(state.on_deck_day).toBeNull()
-    expect(state.deadline_at).toBeNull()
-    await dialog.getByRole('button', { name: 'Reset' }).click()
+    const body = (await sent).postDataJSON() as Record<string, unknown>
+    expect(body).not.toHaveProperty('on_deck_day')
+    expect(body.deadline_at).toBeTruthy()
+    expect(await deckOf(page, id)).toBeNull()
   } finally {
     await trash(page, ids)
   }
@@ -727,7 +799,7 @@ test('panel: On deck after a staged target goes back to the deck', async ({ page
   }
 })
 
-test('the date picker: opens on an allowed day, resets on reopen, refuses a day it can’t take', async ({
+test('the date picker: opens on an allowed day, resets on reopen; no deck on a passed deadline', async ({
   page,
 }) => {
   const ids: number[] = []
@@ -776,16 +848,10 @@ test('the date picker: opens on an allowed day, resets on reopen, refuses a day 
     await picker.locator('[data-deck-date-submit]').click()
     await expect.poll(() => deckOf(page, id)).toBe(await openTaskDay(page, 1))
 
-    // A deadline already reminding: every day greyed, and nothing to put on deck.
+    // A passed deadline is in its safety net: no On deck at all (2026-11-07;
+    // until then its every day was greyed).
     await dashRow(page, nagging).hover()
-    await dashRow(page, nagging).locator('[data-on-deck]').click({ button: 'right' })
-    const menu = page.getByRole('menu', { name: 'On deck options' })
-    const days = menu.locator('[role="menuitem"]:has([data-option-caption])')
-    expect(await days.count()).toBeGreaterThanOrEqual(6)
-    await menu.getByRole('menuitem', { name: 'Pick a date…' }).click()
-    const refused = page.getByRole('dialog', { name: 'On deck for…' })
-    await expect(refused.locator('[data-deck-date-submit]')).toBeDisabled()
-    await page.keyboard.press('Escape')
+    await expect(dashRow(page, nagging).locator('[data-on-deck]')).toHaveCount(0)
   } finally {
     await trash(page, ids)
   }

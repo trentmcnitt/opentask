@@ -28,6 +28,7 @@ vi.mock('@/core/notifications/dismiss', () => ({
 vi.mock('@/core/webhooks/dispatch', () => ({ dispatchWebhookEvent: vi.fn() }))
 
 import { getDb } from '@/core/db'
+import { clearNetDecks } from '@/core/db/migrate-net-decks'
 import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import {
@@ -197,27 +198,41 @@ describe('OD-R: the rules', () => {
     expect(deckIsToday({ on_deck_day: '2026-10-22' }, tz, wed1am, CALENDAR_DAY_START)).toBe(false)
   })
 
-  test('OD-R02: A1 (the deadlines page, 2026-10-22) — a deadline deck up to the deadline day, while it is ahead', () => {
-    // Deadline Fri Oct 30 23:59, now Tue Oct 20: any day up to Fri Oct 30.
+  test('OD-R02: A1 — a deadline deck up to D−2, never into the safety net (2026-11-07), while it is ahead', () => {
+    // Deadline Fri Oct 30 23:59, now Tue Oct 20: any day up to Wed Oct 28 (D−2).
     const t = bare({ deadline_at: at('2026-10-30T23:59') })
     expect(deckRefusal(t, '2026-10-26', ctx, tue10, null)).toBeNull()
-    expect(deckRefusal(t, '2026-10-27', ctx, tue10, null)).toBeNull()
-    // The deadline's own day is allowed: the safety net still holds it.
-    expect(deckRefusal(t, '2026-10-30', ctx, tue10, null)).toBeNull()
+    expect(deckRefusal(t, '2026-10-28', ctx, tue10, null)).toBeNull()
+    // D−1 and the deadline's own day are the safety net's: refused (until
+    // 2026-11-07 a deck on D was allowed — the net held it anyway).
+    expect(deckRefusal(t, '2026-10-29', ctx, tue10, null)).toBe('after_safety_net')
+    expect(deckRefusal(t, '2026-10-30', ctx, tue10, null)).toBe('after_safety_net')
     expect(deckRefusal(t, '2026-10-31', ctx, tue10, null)).toBe('after_auto_target')
-    // Deadline tonight: still ahead, today allowed.
+    // Deadline tomorrow or tonight: the net holds it today — no day at all.
+    expect(
+      deckRefusal(bare({ deadline_at: at('2026-10-21T23:59') }), '2026-10-20', ctx, tue10, null),
+    ).toBe('safety_net')
     expect(
       deckRefusal(bare({ deadline_at: at('2026-10-20T23:59') }), '2026-10-20', ctx, tue10, null),
-    ).toBeNull()
+    ).toBe('safety_net')
     // A passed deadline refuses every day.
     expect(
       deckRefusal(bare({ deadline_at: at('2026-10-19T17:00') }), '2026-10-20', ctx, tue10, null),
     ).toBe('deadline_nagging')
-    // A deadline before the rollover belongs to the evening before (its OpenTask day).
+    // A deadline before the rollover belongs to the evening before (its
+    // OpenTask day, Fri Oct 30): D−2 is Wed Oct 28.
     const early = bare({ deadline_at: at('2026-10-31T01:00') })
     expect(deckRefusal(early, '2026-10-31', ctx, tue10, '06:30')).toBe('after_auto_target')
-    expect(deckRefusal(early, '2026-10-30', ctx, tue10, '06:30')).toBeNull()
+    expect(deckRefusal(early, '2026-10-29', ctx, tue10, '06:30')).toBe('after_safety_net')
+    expect(deckRefusal(early, '2026-10-28', ctx, tue10, '06:30')).toBeNull()
     expect(deckRefusal(bare(), '2027-01-01', ctx, tue10, null)).toBeNull()
+    // A repeating task the deadlines page never holds (target-anchored) keeps
+    // the old limit: up to its deadline's own day.
+    const rep = bare({ deadline_at: at('2026-10-30T23:59'), rrule: 'FREQ=WEEKLY' })
+    expect(deckRefusal(rep, '2026-10-30', ctx, tue10, null)).toBeNull()
+    // A deadline-anchored one can be held by the page: D−2.
+    const anchored = { ...rep, repeat_anchor: 'deadline' as const }
+    expect(deckRefusal(anchored, '2026-10-29', ctx, tue10, null)).toBe('after_safety_net')
   })
 
   test('OD-R03: quiet like a picked target — no segment; Upcoming on heads-up days (B6)', () => {
@@ -577,23 +592,29 @@ describe('OD-B: a pick clears the deck; a deadline write does not', () => {
     expect(task(d.id).due_at).not.toBeNull()
   })
 
-  test('OD-B03: a deck up to the deadline day; on its safety-net days the page holds it, a pick takes the deck off', () => {
+  test('OD-B03: a deck up to D−2, never into the safety net (2026-11-07); a pick takes the deck off', () => {
     // Deadline Fri Oct 23 23:59, decided Sat Oct 17: no target (the deadlines
-    // page, 2026-10-22); a deck for the deadline day itself is allowed, the
-    // day after is refused (A1).
+    // page, 2026-10-22). The day after the deadline is refused (A1), and so
+    // are D and D−1, the safety net's (Trent, 2026-11-07); D−2 is the last.
     setClock('2026-10-17T10:00')
     const t = make({ deadline_at: at('2026-10-23T23:59') })
     expect(task(t.id).due_at).toBeNull()
     expect(deck([t.id], '2026-10-24').refused).toEqual([{ id: t.id, reason: 'after_auto_target' }])
-    expect(deck([t.id], '2026-10-23').decked).toBe(1)
-    // On the deck day — D, inside the safety net — the page holds it, not
-    // the On deck section, and it is never over target.
-    setClock('2026-10-23T10:00')
-    expect(onDeckToday(TEST_USER_ID, tz)).toEqual([])
+    expect(deck([t.id], '2026-10-23').refused).toEqual([{ id: t.id, reason: 'after_safety_net' }])
+    expect(deck([t.id], '2026-10-22').refused).toEqual([{ id: t.id, reason: 'after_safety_net' }])
+    expect(task(t.id).on_deck_day).toBeNull()
+    expect(deck([t.id], '2026-10-21').decked).toBe(1)
+    // On the deck day — D−2, before the net — the On deck section holds it.
+    setClock('2026-10-21T10:00')
+    expect(onDeckToday(TEST_USER_ID, tz).map((x) => x.id)).toEqual([t.id])
     expect(getCurrentlyDueTaskIds(TEST_USER_ID)).toEqual([])
     // A pick (a sweep's move) takes the deck off.
-    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-23T15:00'), source: 'sweep' })
-    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-23T15:00'), on_deck_day: null })
+    bulkSnooze({ ...u, taskIds: [t.id], until: at('2026-10-21T15:00'), source: 'sweep' })
+    expect(task(t.id)).toMatchObject({ due_at: at('2026-10-21T15:00'), on_deck_day: null })
+    // Once the net holds it (D−1 on), no day at all.
+    setClock('2026-10-22T10:00')
+    const late = make({ deadline_at: at('2026-10-23T23:59') })
+    expect(deck([late.id], '2026-10-22').refused).toEqual([{ id: late.id, reason: 'safety_net' }])
   })
 
   test('OD-B04b: a deadline BEFORE the deck day wins: the deck goes', () => {
@@ -606,10 +627,15 @@ describe('OD-B: a pick clears the deck; a deadline write does not', () => {
     // One undo puts the deck and the old (no) deadline back.
     executeUndo(TEST_USER_ID)
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-24', deadline_at: null })
-    // A deadline on the deck day itself keeps it (the safety net still holds it).
+    // A deadline that puts the deck day in its safety net (D or D−1) takes
+    // the deck off too (2026-11-07: a deck never lands in the net); one two
+    // days after the deck day keeps it (D−2).
     const same = decked({}, '2026-10-24')
     updateTask({ ...u, taskId: same.id, input: { deadline_at: at('2026-10-24T23:59') } })
-    expect(task(same.id).on_deck_day).toBe('2026-10-24')
+    expect(task(same.id).on_deck_day).toBeNull()
+    const kept = decked({}, '2026-10-24')
+    updateTask({ ...u, taskId: kept.id, input: { deadline_at: at('2026-10-26T23:59') } })
+    expect(task(kept.id).on_deck_day).toBe('2026-10-24')
     // Moving a deadline in: the same check.
     const v = decked({}, '2026-10-24')
     updateTask({ ...u, taskId: v.id, input: { deadline_at: at('2026-11-20T23:59') } })
@@ -1029,15 +1055,19 @@ describe('OD-W: review fixes (10-20)', () => {
     const t = make({ on_deck_day: '2026-10-22' })
     expect(task(t.id)).toMatchObject({ on_deck_day: '2026-10-22', due_at: null })
     expect(placesOf(t.id)).toEqual([])
-    // A deadline in the same body: A1 against it — up to its own day (Sun Oct 25).
-    const ok = make({ on_deck_day: '2026-10-25', deadline_at: at('2026-10-25T23:59') })
+    // A deadline in the same body: A1 against it — up to D−2 (Fri Oct 23 for
+    // Sun Oct 25), never into its safety net (2026-11-07).
+    const ok = make({ on_deck_day: '2026-10-23', deadline_at: at('2026-10-25T23:59') })
     expect(task(ok.id)).toMatchObject({
-      on_deck_day: '2026-10-25',
+      on_deck_day: '2026-10-23',
       target_auto: false,
       due_at: null,
     })
     expect(() => make({ on_deck_day: '2026-10-26', deadline_at: at('2026-10-25T23:59') })).toThrow(
       /after this task's deadline/,
+    )
+    expect(() => make({ on_deck_day: '2026-10-24', deadline_at: at('2026-10-25T23:59') })).toThrow(
+      /too close to the deadline/,
     )
     expect(() => make({ on_deck_day: '2026-10-19' })).toThrow(/today or later/)
     expect(() =>
@@ -1121,13 +1151,21 @@ describe('OD-D2: the Quick panel’s deck writes (D2 review, 10-20)', () => {
     ).toThrow(ValidationError)
     expect(task(t.id)).toMatchObject({ on_deck_day: null, deadline_at: null, priority: 0 })
     expect(undoCount()).toBe(before)
-    // The deadline's own day is fine.
+    // Nor D (the safety net's, 2026-11-07) — a refusal saves nothing; D−2 is fine.
+    expect(() =>
+      updateTask({
+        ...u,
+        taskId: t.id,
+        input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-25' },
+      }),
+    ).toThrow(/too close to the deadline/)
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, deadline_at: null })
     updateTask({
       ...u,
       taskId: t.id,
-      input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-25' },
+      input: { deadline_at: at('2026-10-25T23:59'), on_deck_day: '2026-10-23' },
     })
-    expect(task(t.id).on_deck_day).toBe('2026-10-25')
+    expect(task(t.id).on_deck_day).toBe('2026-10-23')
     // A target with a deck is still refused.
     expect(() =>
       updateTask({
@@ -1147,5 +1185,56 @@ describe('OD-D2: the Quick panel’s deck writes (D2 review, 10-20)', () => {
     updateTask({ ...u, taskId: t.id, input: { on_deck_day: null } })
     expect(task(t.id)).toMatchObject({ on_deck_day: null, segment_targeted_at: null })
     expect(task(t.id).last_considered_at).toBe(considered)
+  })
+})
+
+/**
+ * NO DECK INTO A SAFETY NET (Trent, 2026-11-07, #33391 "Text the waiver
+ * link"): decks made before the rule that sit on D−1 or D are cleared once,
+ * at server start (`clearNetDecks`, src/core/db/migrate-net-decks.ts).
+ */
+describe('OD-N: decks into a safety net', () => {
+  hooks()
+
+  test('OD-N01: the data step clears decks past D−2 on tasks the page can hold — once, and nothing else', () => {
+    // Now Tue Oct 20. Written straight into the rows: the API refuses them now.
+    const setDeck = (id: number, day: string) =>
+      getDb().prepare('UPDATE tasks SET on_deck_day = ? WHERE id = ?').run(day, id)
+    const into = make({ deadline_at: at('2026-10-21T23:59') }) // net today, decked for D
+    setDeck(into.id, '2026-10-21')
+    const lands = make({ deadline_at: at('2026-10-24T23:59') }) // decked for D−1, Fri
+    setDeck(lands.id, '2026-10-23')
+    const fine = make({ deadline_at: at('2026-10-24T23:59') }) // decked for D−2, Thu
+    setDeck(fine.id, '2026-10-22')
+    const plain = make() // no deadline
+    setDeck(plain.id, '2026-10-21')
+    // A target-anchored repeat with a deadline: the page never holds it.
+    const repeat = make({ rrule: 'FREQ=WEEKLY', deadline_at: at('2026-10-21T23:59') })
+    getDb().prepare("UPDATE tasks SET repeat_anchor = 'target' WHERE id = ?").run(repeat.id)
+    setDeck(repeat.id, '2026-10-21')
+
+    expect(clearNetDecks(getDb()).sort((a, b) => a - b)).toEqual([into.id, lands.id])
+    expect(task(into.id).on_deck_day).toBeNull()
+    expect(task(lands.id).on_deck_day).toBeNull()
+    expect(task(fine.id).on_deck_day).toBe('2026-10-22')
+    expect(task(plain.id).on_deck_day).toBe('2026-10-21')
+    expect(task(repeat.id).on_deck_day).toBe('2026-10-21')
+    // No target set: the page holds them, waiting, as any target-less row in its net.
+    expect(task(into.id).due_at).toBeNull()
+    // Idempotent.
+    expect(clearNetDecks(getDb())).toEqual([])
+  })
+
+  test('OD-N02: a mixed deck decks the rest and counts the net row refused, in the toast', () => {
+    const net = make({ deadline_at: at('2026-10-21T23:59') })
+    const free = make()
+    const r = deck([net.id, free.id], '2026-10-21')
+    expect(r.decked).toBe(1)
+    expect(r.refused).toEqual([{ id: net.id, reason: 'safety_net' }])
+    expect(r.summary).toBe('1 task on deck for tomorrow · 1 refused (deadline close)')
+    // Alone, its own words.
+    expect(deck([net.id], '2026-10-21').summary).toBe(
+      'The deadline is close: only a target or done takes it off the deadlines page.',
+    )
   })
 })

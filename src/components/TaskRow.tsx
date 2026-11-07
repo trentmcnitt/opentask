@@ -42,7 +42,7 @@ import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { DeadlineChip } from '@/components/DeadlineChip'
-import { deckReplaces, offersDeck } from '@/lib/deck-menu'
+import { deckClosed, deckReplaces, offersDeck } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { TimeChip } from '@/components/TimeChip'
 import { formatRRuleCompact } from '@/lib/format-rrule'
@@ -360,7 +360,14 @@ export function TaskRow({
   const showToday = !isSelectionMode && !!onTargetAt && offersTargetToday(task)
   // On deck (spec rule 8) beside Today — the queue switch on, the same rows
   // as Today plus any task already on deck (its active button takes it off).
-  const showDeck = !isSelectionMode && !!onDeck && queue.loaded && queue.enabled && offersDeck(task)
+  // None once its deadline's safety net holds it (2026-11-07, `deckClosed`).
+  const showDeck =
+    !isSelectionMode &&
+    !!onDeck &&
+    queue.loaded &&
+    queue.enabled &&
+    offersDeck(task) &&
+    !deckClosed(task, timezone, new Date(), dayStart)
   const cornerPresent = corner.dot || corner.attempts >= 1 || corner.priority !== null
   // Filter ai-to-process from visible label count (animation conveys that state)
   const visibleLabelCount = task.labels.filter((l) => l !== 'ai-to-process').length

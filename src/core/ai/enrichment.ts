@@ -3012,6 +3012,7 @@ function collectEnrichmentTarget(
     dueAt: resolved.dueAt,
     auto: resolved.auto,
     rrule: rrule ?? null,
+    repeatAnchor: task.repeat_anchor,
     isReminder: task.is_reminder,
     isTracked: opts.tracked,
     // A deadline it found that reminds on or before the deck day wins (A1).
