@@ -15,7 +15,13 @@ import { readFileSync } from 'fs'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
 import { forgetBadgeSent, recordBadgeSent } from '@/core/notifications/badge-state'
-import { OVERDUE_SUMMARY_COLLAPSE_ID, taskCollapseId } from '@/core/notifications/format'
+import {
+  OVERDUE_SUMMARY_COLLAPSE_ID,
+  periodPushLabel,
+  reminderPushLabel,
+  taskCollapseId,
+  type PushIcon,
+} from '@/core/notifications/format'
 import { NOTHING_SENT, type DeliveryResult } from '@/core/notifications/delivery-result'
 
 const APNS_KEY_ID = process.env.APNS_KEY_ID || ''
@@ -183,6 +189,8 @@ function deliveryOf(outcome: DeviceSendOutcome): DeliveryResult {
 
 export interface ApnsPushPayload {
   title: string
+  /** The label line, "Task · High · 2h over target" (`taskPushLabel`; the icon is `task`). */
+  subtitle?: string
   body: string
   taskId: number
   dueAt: string
@@ -226,6 +234,21 @@ export function threadIdForPriority(priority: number): string {
 }
 
 /**
+ * The alert of a push that wears its kind's icon (2026-11-07, format.ts §
+ * THE KIND'S ICON AND LABEL LINE): the label line as `subtitle`, and
+ * `mutable-content` so a native build with the service extension can put the
+ * kind's avatar on it. The caller adds `icon` to `data`. Only the five kinds
+ * pass through here; every other push keeps the plain app icon.
+ */
+function iconed(
+  title: string,
+  body: string,
+  subtitle?: string,
+): { alert: { title: string; subtitle?: string; body: string }; mutableContent: true } {
+  return { alert: subtitle ? { title, subtitle, body } : { title, body }, mutableContent: true }
+}
+
+/**
  * Send a push notification to all APNs devices for a user.
  * Cleans up stale device tokens automatically.
  */
@@ -245,7 +268,7 @@ export async function sendApnsNotification(
     userId,
     (device) =>
       new Notification(device.device_token, {
-        alert: { title: payload.title, body: payload.body },
+        ...iconed(payload.title, payload.body, payload.subtitle),
         topic: device.bundle_id,
         category: 'TASK_REMINDER',
         // §4.2: urgent gets its own visible stack so it can't be lost among
@@ -259,6 +282,7 @@ export async function sendApnsNotification(
           dueAt: payload.dueAt,
           priority: payload.priority,
           overdueCount: payload.overdueCount,
+          icon: 'task' satisfies PushIcon,
         },
         aps: {
           'interruption-level': payload.interruptionLevel,
@@ -419,7 +443,7 @@ export function buildSlotReminderNotification(
     (payload.body ?? withDeckCount(slotWaitingBody(payload.count, prompts), decks)) +
     (payload.suffix ?? '')
   return new Notification(deviceToken, {
-    alert: { title: payload.slotLabel, body },
+    ...iconed(payload.slotLabel, body, periodPushLabel(payload.slotLabel, payload.count + prompts)),
     topic,
     category: 'SLOT_REMINDER',
     threadId: NOTIFICATION_THREADS.reminders,
@@ -430,6 +454,7 @@ export function buildSlotReminderNotification(
       reminder_count: payload.count + prompts,
       prompt_count: prompts,
       deck_count: decks,
+      icon: 'period' satisfies PushIcon,
     },
     aps: {
       // Reminders carry no debt (§6) — they must never interrupt like an
@@ -472,6 +497,8 @@ export interface ApnsReminderNagPayload {
   title: string
   /** "Morning · High reminder", plus the tick lead's suffix. */
   body: string
+  /** Its period's name: the label line, "Reminder · Morning" (`reminderPushLabel`). */
+  slotLabel?: string
   /** The OpenTask date (yyyy-MM-dd) it was waiting on: the Considered button sends it back as `day`. */
   reminderDay: string
   /** High and Urgent sound (`sound: default`); Medium never does. */
@@ -508,13 +535,21 @@ export function buildReminderNagNotification(
   payload: ApnsReminderNagPayload,
 ): Notification {
   return new Notification(deviceToken, {
-    alert: { title: payload.title, body: payload.body },
+    ...iconed(
+      payload.title,
+      payload.body,
+      payload.slotLabel ? reminderPushLabel(payload.slotLabel) : undefined,
+    ),
     topic,
     category: REMINDER_NAG_CATEGORY,
     threadId: NOTIFICATION_THREADS.reminders,
     collapseId: reminderCollapseId(payload.taskId),
     sound: payload.sound && !payload.passive ? 'default' : undefined,
-    data: { taskId: payload.taskId, reminder_day: payload.reminderDay },
+    data: {
+      taskId: payload.taskId,
+      reminder_day: payload.reminderDay,
+      icon: 'reminder' satisfies PushIcon,
+    },
     aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
   })
 }
@@ -554,6 +589,8 @@ export interface ApnsPromptNagPayload {
   title: string
   /** "Morning · 1/3 this week", plus the tick lead's suffix. */
   body: string
+  /** The label line, "Quota · Health · 1 of 3 this week" (`quotaPushLabel`). */
+  subtitle?: string
   /** High and Urgent sound (`sound: default`); Medium never does. */
   sound: boolean
   /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`, no sound. */
@@ -588,13 +625,17 @@ export function buildPromptNagNotification(
   payload: ApnsPromptNagPayload,
 ): Notification {
   return new Notification(deviceToken, {
-    alert: { title: payload.title, body: payload.body },
+    ...iconed(payload.title, payload.body, payload.subtitle),
     topic,
     category: PROMPT_NAG_CATEGORY,
     threadId: NOTIFICATION_THREADS.reminders,
     collapseId: promptCollapseId(payload.promptKey),
     sound: payload.sound && !payload.passive ? 'default' : undefined,
-    data: { taskId: payload.taskId, prompt_key: payload.promptKey },
+    data: {
+      taskId: payload.taskId,
+      prompt_key: payload.promptKey,
+      icon: 'quota' satisfies PushIcon,
+    },
     aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
   })
 }
@@ -884,6 +925,8 @@ export const DEADLINES_NAG_KIND = 'deadlines'
 export interface DeadlinesNagPayload {
   title: string
   body: string
+  /** The label line, "Deadline · due Sun" (`deadlinePushLabel`). */
+  subtitle?: string
   /** Another push leads this minute's tick (tick.ts): `interruption-level: passive`. */
   passive?: boolean
 }
@@ -905,12 +948,12 @@ export function buildDeadlinesNagNotification(
   payload: DeadlinesNagPayload,
 ): Notification {
   return new Notification(deviceToken, {
-    alert: { title: payload.title, body: payload.body },
+    ...iconed(payload.title, payload.body, payload.subtitle),
     topic,
     threadId: NOTIFICATION_THREADS.tasks,
     collapseId: DEADLINES_NAG_COLLAPSE_ID,
     priority: Priority.immediate,
-    data: { kind: DEADLINES_NAG_KIND },
+    data: { kind: DEADLINES_NAG_KIND, icon: 'deadline' satisfies PushIcon },
     aps: { 'interruption-level': payload.passive ? 'passive' : 'active' },
   })
 }

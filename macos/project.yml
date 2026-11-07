@@ -55,9 +55,17 @@ targets:
         # weaken ATS for any remote host.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # The notification icons (2026-11-07): the service extension shows the
+        # five push kinds as communication notifications, which needs the app
+        # to declare the intent it builds (OpenTaskMacNotificationService).
+        NSUserActivityTypes:
+          - INSendMessageIntent
     entitlements:
       path: OpenTaskMac/OpenTaskMac.entitlements
       properties:
+        # Communication notifications (2026-11-07, the push kinds' icons).
+        # Keep OpenTaskMac-Push.entitlements in step.
+        com.apple.developer.usernotifications.communication: true
         # Sandboxed on purpose: an unsandboxed macOS app extension is a
         # plausible silent non-load, and a notification content extension may
         # follow. network.client is what lets a sandboxed app reach the server
@@ -119,6 +127,7 @@ targets:
         # in the log (see MacAppDelegate.didFailToRegisterForRemoteNotifications).
     dependencies:
       - target: OpenTaskMacWidgets
+      - target: OpenTaskMacNotificationService
     settings:
       base:
         # The SAME bundle ID as the iPhone app (2026-09-23). With its own
@@ -227,6 +236,31 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskMacWidgets/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+
+  # The notification icons (Trent, 2026-11-07): the iPhone's Notification
+  # Service Extension, reused by path — the five push kinds as communication
+  # notifications, each with its kind's avatar (Avatars/*.png ride along as
+  # resources). Same bundle ID as the iPhone's, as the app and widgets share
+  # theirs. Sandboxed, as every macOS app extension must be.
+  OpenTaskMacNotificationService:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: ../ios/OpenTaskNotificationService
+        excludes:
+          - Info.plist
+    dependencies:
+      - sdk: Intents.framework
+    entitlements:
+      path: OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification-service
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: ../ios/OpenTaskNotificationService/Info.plist
         GENERATE_INFOPLIST_FILE: false
 
   # Unit tests for the native clients' pure logic (testing pass WP5,

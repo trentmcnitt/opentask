@@ -24,6 +24,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIBackgroundModes:
         - remote-notification
+        NSUserActivityTypes:
+        - INSendMessageIntent
         UILaunchScreen:
           UILaunchScreen: {}
         UISupportedInterfaceOrientations:
@@ -58,12 +60,14 @@ targets:
       properties:
         aps-environment: development
         com.apple.developer.usernotifications.critical-alerts: true
+        com.apple.developer.usernotifications.communication: true
         com.apple.security.application-groups:
         - group.io.mcnitt.opentask
         com.apple.developer.associated-domains:
         - webcredentials:opentask.mcnitt.io
     dependencies:
     - target: OpenTaskNotification
+    - target: OpenTaskNotificationService
     - target: OpenTaskWidgets
     settings:
       base:
@@ -92,6 +96,21 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskNotification/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+  OpenTaskNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+    - path: OpenTaskNotificationService
+      excludes:
+      - Info.plist
+    dependencies:
+    - sdk: Intents.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification-service
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: OpenTaskNotificationService/Info.plist
         GENERATE_INFOPLIST_FILE: false
   OpenTaskWidgets:
     type: app-extension

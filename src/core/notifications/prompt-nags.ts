@@ -82,15 +82,16 @@ import {
   promptEnabled,
   promptKey,
   promptPlacements,
+  promptSpokenCount,
   promptWaiting,
   type QuotaPrompt,
 } from '@/lib/quota-prompts'
-import { isTracked } from '@/lib/track'
+import { isTracked, quotaLabelOf } from '@/lib/track'
 import { listTimeSlots } from '@/core/time-slots'
 import { getQuotaPromptsBySlot, quotaPromptsEnabledGlobally } from '@/core/tasks/quota-prompts'
 import { parseJsonColumn } from '@/core/tasks/read'
 import { dayBoundaryForUser } from '@/core/tasks/rollover-time'
-import { APP_URL } from '@/core/notifications/format'
+import { APP_URL, quotaPushLabel } from '@/core/notifications/format'
 import { dismissPromptNotifications } from '@/core/notifications/dismiss'
 import { isApnsConfigured, promptCollapseId, sendApnsPromptNag } from '@/core/notifications/apns'
 import { isWebPushConfigured, sendPushNotification } from '@/core/notifications/web-push'
@@ -138,6 +139,8 @@ export interface PendingPromptNag {
   slotLabel: string
   /** "1/3 this week" (`promptCountText`, the prompt row's own words). */
   countText: string
+  /** The APNs label line, "Quota · Health · 1 of 3 this week" (`quotaPushLabel`, 2026-11-07). */
+  label: string
   /** The slot nag's rung for its quota's priority (minutes). */
   intervalMinutes: number
   /** The user's zone, whose clock marks the repeats land on. */
@@ -172,6 +175,8 @@ interface NamedPromptCandidate {
   is_tracked: number
   quota_prompt_config: string | null
   quota_day_state: string | null
+  /** The task's labels (JSON): the quota's own label names the label line. */
+  labels: string | null
 }
 
 /**
@@ -184,7 +189,7 @@ function namedPromptCandidates(userId: number): NamedPromptCandidate[] {
   return getDb()
     .prepare(
       `SELECT id, title, short_title, priority, rrule, progress_target, is_tracked,
-              quota_prompt_config, quota_day_state
+              quota_prompt_config, quota_day_state, labels
        FROM tasks
        WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
          AND (is_tracked = 1 OR progress_target > 1)
@@ -343,6 +348,10 @@ export function pendingPromptNags(
         priority,
         slotLabel: labels.get(p.slot_id) ?? '',
         countText: promptCountText(p),
+        label: quotaPushLabel(
+          quotaLabelOf({ labels: parseJsonColumn<string[]>(candidate?.labels ?? null) ?? [] }),
+          promptSpokenCount(p),
+        ),
         intervalMinutes: interval,
         timezone: user.timezone,
       })
@@ -392,6 +401,7 @@ async function sendPromptNag(
         taskId: nag.taskId,
         promptKey: nag.promptKey,
         title: nag.title,
+        subtitle: nag.label,
         body,
         sound: promptSounds(nag.priority),
         passive: delivery.passive,

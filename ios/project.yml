@@ -30,6 +30,11 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIBackgroundModes:
           - remote-notification
+        # The notification icons (2026-11-07): the service extension shows the
+        # five push kinds as communication notifications, which needs the app
+        # to declare the intent it builds (OpenTaskNotificationService).
+        NSUserActivityTypes:
+          - INSendMessageIntent
         UILaunchScreen:
           UILaunchScreen: {}
         UISupportedInterfaceOrientations:
@@ -72,12 +77,14 @@ targets:
       properties:
         aps-environment: development
         com.apple.developer.usernotifications.critical-alerts: true
+        com.apple.developer.usernotifications.communication: true
         com.apple.security.application-groups:
           - group.io.mcnitt.opentask
         com.apple.developer.associated-domains:
           - webcredentials:opentask.mcnitt.io
     dependencies:
       - target: OpenTaskNotification
+      - target: OpenTaskNotificationService
       - target: OpenTaskWidgets
       - target: OpenTaskWatch
     settings:
@@ -108,6 +115,27 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskNotification/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+
+  # The notification icons (Trent, 2026-11-07): a Notification Service
+  # Extension that shows the five push kinds the server marks with `kind`
+  # (quota, reminder, period, task, deadline) as communication notifications,
+  # each kind's avatar in the app icon's place. Avatars are bundled PNGs
+  # (ios/scripts/render-notification-avatars.mjs). See NotificationKind.swift.
+  OpenTaskNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: OpenTaskNotificationService
+        excludes:
+          - Info.plist
+    dependencies:
+      - sdk: Intents.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification-service
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: OpenTaskNotificationService/Info.plist
         GENERATE_INFOPLIST_FILE: false
 
   OpenTaskWidgets:

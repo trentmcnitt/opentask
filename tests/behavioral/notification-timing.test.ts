@@ -470,7 +470,9 @@ describe('checkOverdueTasks', () => {
     expect(sendApnsNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
       expect.objectContaining({
-        title: 'URGENT: Urgent task',
+        // No prefix on APNs since 2026-11-07: the label line says it.
+        title: 'Urgent task',
+        subtitle: 'Task · Urgent · 5m over target',
         interruptionLevel: 'critical',
         criticalAlertVolume: 1.0,
       }),
@@ -488,7 +490,8 @@ describe('checkOverdueTasks', () => {
     expect(sendApnsNotification).toHaveBeenCalledWith(
       TEST_USER_ID,
       expect.objectContaining({
-        title: 'HIGH: High task',
+        title: 'High task',
+        subtitle: 'Task · High · 15m over target',
         interruptionLevel: 'active',
       }),
     )

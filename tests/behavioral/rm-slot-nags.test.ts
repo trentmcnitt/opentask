@@ -275,16 +275,23 @@ describe('Unfinished-slot nag — what it sends', () => {
     })
     expect(open.buildApnsOptions()).toEqual({
       aps: {
-        alert: { title: 'Morning', body: '3 reminders · 1 quota waiting' },
+        alert: {
+          title: 'Morning',
+          // The label line beside the period icon (2026-11-07).
+          subtitle: 'Period · Morning · 4 items',
+          body: '3 reminders · 1 quota waiting',
+        },
         category: 'SLOT_REMINDER',
         'thread-id': 'ot-reminders',
         'interruption-level': 'active',
+        'mutable-content': 1,
       },
       slot_id: 7,
       slot_label: 'Morning',
       reminder_count: 4,
       prompt_count: 1,
       deck_count: 0,
+      icon: 'period',
     })
     expect(open.options.collapseId).toBe('slot-7')
 
@@ -298,10 +305,15 @@ describe('Unfinished-slot nag — what it sends', () => {
     const { aps, ...data } = nag.buildApnsOptions() as { aps: Record<string, unknown> }
     expect(aps).not.toHaveProperty('sound')
     expect(aps).toEqual({
-      alert: { title: 'Morning', body: '3 reminders · 1 quota waiting, and 1 earlier slot' },
+      alert: {
+        title: 'Morning',
+        subtitle: 'Period · Morning · 4 items',
+        body: '3 reminders · 1 quota waiting, and 1 earlier slot',
+      },
       category: 'SLOT_REMINDER',
       'thread-id': 'ot-reminders',
       'interruption-level': 'active',
+      'mutable-content': 1,
     })
     expect(data).toEqual({
       slot_id: 7,
@@ -309,6 +321,7 @@ describe('Unfinished-slot nag — what it sends', () => {
       reminder_count: 4,
       prompt_count: 1,
       deck_count: 0,
+      icon: 'period',
     })
     expect(nag.options.collapseId).toBe('slot-7')
   })

@@ -69,7 +69,7 @@
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
-import { APP_URL } from '@/core/notifications/format'
+import { APP_URL, deadlinePushLabel } from '@/core/notifications/format'
 import { nagIntervalMinutes, userNagTiers, type NagTiers } from './nag-ladder'
 import { claimNagSend, nagPace, nagSendDue } from './nag-sends'
 import { runTick, type Channels, type Delivery, type SourcePlan, type TickSource } from './tick'
@@ -118,6 +118,12 @@ export function deadlineNagRungs(rows: SegmentTask[], tiers: NagTiers): number[]
 export interface DeadlineNagContent {
   title: string
   body: string
+  /**
+   * The APNs label line (2026-11-07, `deadlinePushLabel`): "Deadline · due
+   * Sun", or in the safety net "Deadline · due tomorrow" / "due today" /
+   * "passed". Web Push has none.
+   */
+  subtitle: string
 }
 
 type NetWord = 'passed' | 'today' | 'tomorrow'
@@ -163,13 +169,19 @@ export function deadlineNagContent(
     const n = net.filter((w) => w === word).length
     const more = rows.length - n
     const head = `${n === 1 ? 'Deadline' : 'Deadlines'} ${word}: ${n} unplanned`
-    return { title: 'Deadlines', body: more > 0 ? `${head} · ${more} more to plan` : head }
+    return {
+      title: 'Deadlines',
+      body: more > 0 ? `${head} · ${more} more to plan` : head,
+      subtitle: word === 'passed' ? 'Deadline · passed' : deadlinePushLabel(word),
+    }
   }
   const nearest = days.reduce((a, b) => (b < a ? b : a))
   const count = rows.length === 1 ? '1 deadline' : `${rows.length} deadlines`
+  const nearestName = dayName(nearest, today, timezone)
   return {
     title: 'Deadlines',
-    body: `${count} to plan · nearest ${dayName(nearest, today, timezone)}`,
+    body: `${count} to plan · nearest ${nearestName}`,
+    subtitle: deadlinePushLabel(nearestName),
   }
 }
 
@@ -280,7 +292,9 @@ async function sendDeadlinesNag(
       sendPushNotification(
         userId,
         {
-          ...content,
+          // No label line on the web (APNs only).
+          title: content.title,
+          body: content.body,
           data: { url: `${APP_URL}${DEADLINES_PAGE_PATH}` },
           tag: DEADLINES_NAG_COLLAPSE_ID,
           silent: true,

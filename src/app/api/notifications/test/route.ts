@@ -31,7 +31,12 @@ import { createTask } from '@/core/tasks'
 import { getDb } from '@/core/db'
 import { URGENT_PRIORITY } from '@/lib/priority'
 import { withLogging } from '@/lib/with-logging'
-import { APP_URL, interruptionLevelFor, notificationTitlePrefix } from '@/core/notifications/format'
+import {
+  APP_URL,
+  interruptionLevelFor,
+  notificationTitlePrefix,
+  taskPushLabel,
+} from '@/core/notifications/format'
 
 const VALID_TYPES = ['individual', 'high', 'bulk', 'urgent', 'critical'] as const
 type TestType = (typeof VALID_TYPES)[number]
@@ -126,7 +131,9 @@ export const POST = withLogging(async function POST(request: NextRequest) {
         if (apnsEnabled) {
           sends.push(
             sendApnsNotification(userId, {
-              title,
+              // As a real overdue push: no prefix, the label line instead (format.ts).
+              title: task.title,
+              subtitle: taskPushLabel(priority, task.due_at!, new Date()),
               body: 'Test notification',
               taskId,
               dueAt: task.due_at!,
