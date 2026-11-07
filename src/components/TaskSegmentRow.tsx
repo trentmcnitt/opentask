@@ -12,6 +12,8 @@ import { DECK_LIT, DeckMenu, OnDeckButton } from '@/components/OnDeckButton'
 import {
   deckReplaces,
   segmentReplaces,
+  deckClosed,
+  deckDayClosed,
   deckTomorrowIfKnown,
   deferLeadDays,
   offersDeck,
@@ -1029,7 +1031,11 @@ function SegmentDeckSlot({
   // the row's controls line up down the column. (Since 2026-10-22 every task
   // row has it; a picked target makes it faded — `replaces`.)
   const replace = segmentReplaces(row.task, timezone, dayStart)
-  if (!offersDeck(row.task)) return <DeckSlotSpacer panel={panel} empty />
+  // No deck once the deadline's safety net holds the task (2026-11-07):
+  // a picked target with its deadline that close included (a deck drops it).
+  if (!offersDeck(row.task) || deckClosed(row.task, timezone, new Date(), dayStart)) {
+    return <DeckSlotSpacer panel={panel} empty />
+  }
   return (
     <OnDeckButton
       task={row.task}
@@ -1210,6 +1216,25 @@ function DeckTomorrowSlot({
 }
 
 /**
+ * On deck tomorrow's day and state: `tomorrow` (null until the browser knows
+ * the day start — `deckTomorrowIfKnown`: midnight's tomorrow can be a day
+ * late), `lit` (on deck for tomorrow — On deck's own active state, its filled
+ * icon and teal, `DECK_LIT`, on the button that names the day; a tap then
+ * takes it off deck, Trent 2026-10-27) and `closed`: tomorrow is past the
+ * task's limit — D−1 or later of a deadline the safety net will hold
+ * (2026-11-07, `deckDayClosed`) — so there is no button, its place kept.
+ */
+function useDeckTomorrow(task: Task, timezone: string) {
+  const dayStart = useDayStart()
+  const dayKnown = useDayStartKnown()
+  const now = new Date()
+  const tomorrow = deckTomorrowIfKnown(timezone, now, dayStart, dayKnown)
+  const lit = tomorrow !== null && task.on_deck_day === tomorrow
+  const closed = !lit && tomorrow !== null && deckDayClosed(task, tomorrow, timezone, now, dayStart)
+  return { tomorrow, lit, closed }
+}
+
+/**
  * On deck tomorrow: a tap decks the task for tomorrow (lit, a tap takes it
  * off); a hold or right-click picks a day. Exported for the dashboard-modes
  * prototype's lean row, which passes the dashboard's own deck action.
@@ -1238,15 +1263,7 @@ export function DeckTomorrowButton({
   replaceMessage?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const dayStart = useDayStart()
-  // Until the browser knows the day start, the tap commits no day
-  // (`deckTomorrowIfKnown`): midnight's tomorrow can be a day late.
-  const dayKnown = useDayStartKnown()
-  const tomorrow = deckTomorrowIfKnown(timezone, new Date(), dayStart, dayKnown)
-  // LIT (2026-10-27, Trent): on deck for tomorrow — On deck's own active
-  // state, its filled icon and teal (`DECK_LIT`), on the button that names
-  // the day. A tap then takes it off deck, as a lit On deck does (one rule).
-  const lit = tomorrow !== null && task.on_deck_day === tomorrow
+  const { tomorrow, lit, closed } = useDeckTomorrow(task, timezone)
   // What this would replace (plan §5): faded, and it asks first. A LIT button
   // replaces nothing: its tap takes the deck off.
   const replaces = lit
@@ -1269,6 +1286,7 @@ export function DeckTomorrowButton({
     // The tap takes the row off its list (see `TargetTodayButton`).
     tapOn: 'click',
   })
+  if (closed) return <span aria-hidden data-deck-tomorrow-empty className={className ?? SLOT_HIT} />
   const button = (
     <button
       type="button"

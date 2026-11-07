@@ -576,8 +576,9 @@ function oneOffRelative(
  *  - a task that can't be on deck: done, a reminder, a quota (rule 6) —
  *    asked of the RESULTING row;
  *  - a day that is not a date, or before the calendar today;
- *  - a deadline task whose automatic target has arrived, or a day after it
- *    (A1, `deckRefusal`).
+ *  - a deadline task whose deadline has passed, or a day after it (A1), or —
+ *    one the deadlines page can hold — a day in its safety net, or any day
+ *    once the net holds it (2026-11-07; `deckRefusal`).
  *
  * Rule 1, "never both": a PICKED target is dropped (`due_at: null`), which
  * `resolveTargetInput` turns into the deadline's automatic target when the
@@ -628,8 +629,12 @@ function prepareDeck(
   if (problem) throw new ValidationError(problem)
   // A1 (2026-10-22) against the RESULTING deadline: the deck day at most its
   // OpenTask day, while it is ahead.
+  // (2026-11-07) its kind too: a task the deadlines page can hold is decked at
+  // most on D−2, never into the safety net.
   const judged = {
     deadline_at: input.deadline_at !== undefined ? input.deadline_at : task.deadline_at,
+    rrule: task.rrule,
+    repeat_anchor: task.repeat_anchor,
   }
   const refusal = deckRefusal(judged, day, opts.ctx, opts.now, deckRolloverTime(task))
   if (refusal) {
@@ -683,6 +688,7 @@ function collectDeckChange(
   collectDeckClear(data, task, {
     dueAt: data.afterState.due_at !== undefined ? data.afterState.due_at : task.due_at,
     rrule: input.rrule !== undefined ? input.rrule : task.rrule,
+    repeatAnchor: input.repeat_anchor !== undefined ? input.repeat_anchor : task.repeat_anchor,
     ...kind,
     deadline: {
       at: input.deadline_at !== undefined ? input.deadline_at : task.deadline_at,

@@ -5,7 +5,7 @@ import { HorizonPicker } from '@/components/HorizonDot'
 import { REMOVE_TARGET } from '@/lib/task-model-words'
 import { queueMarked } from '@/lib/queue-tomorrow'
 import { OnDeckLine } from '@/components/quick-panel/OnDeckLine'
-import { deckLimit } from '@/lib/deck-menu'
+import { deckClosed, deckLimit } from '@/lib/deck-menu'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Timer,
@@ -703,13 +703,25 @@ export function QuickActionPanel({
   // repeating task shows the row too (2026-10-20: the deck is for its current
   // occurrence). A schedule change is every-time mode's, never staged with a
   // deck (RT-4): the way in is disabled while a deck is staged.
+  //
+  // Not once the deadline's safety net holds the task (Trent, 2026-11-07,
+  // `deckClosed`) — judged against a STAGED deadline too: only a target or
+  // done takes it off the deadlines page, and a deck would be refused.
   const showDeckLine =
     queueEnabled &&
     !isBulkMode &&
     !isCreateMode &&
     !isReminderLike &&
     !!effectiveTask &&
-    !effectiveTask.done
+    !effectiveTask.done &&
+    !deckClosed(
+      pendingDeadline !== undefined
+        ? { ...effectiveTask, deadline_at: pendingDeadline }
+        : effectiveTask,
+      timezone,
+      new Date(),
+      rolloverTime,
+    )
   // A deck staged while the row is shown, then hidden (the Reminder toggle
   // staged after it): the deck goes too — never sent for a task that can't be
   // on deck (adjusted during render, not in an effect).
@@ -743,7 +755,12 @@ export function QuickActionPanel({
   const stagedDeckLimit =
     pendingDeadline !== undefined && effectiveTask
       ? deckLimit(
-          { deadline_at: pendingDeadline, due_at: null, rrule: effectiveTask.rrule },
+          {
+            deadline_at: pendingDeadline,
+            due_at: null,
+            rrule: effectiveTask.rrule,
+            repeat_anchor: effectiveTask.repeat_anchor,
+          },
           timezone,
           new Date(),
           null,

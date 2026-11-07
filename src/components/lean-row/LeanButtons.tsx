@@ -34,7 +34,7 @@
  * title.
  */
 import { Clock3 } from 'lucide-react'
-import { useTaskQueue } from '@/components/PreferencesProvider'
+import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { TargetTodayButton } from '@/components/TargetMenu'
@@ -42,7 +42,7 @@ import type { TaskRowProps } from '@/components/TaskRow'
 import { DeckTomorrowButton } from '@/components/TaskSegmentRow'
 import { useDeferPress } from '@/hooks/useDeferPress'
 import { useTimezone } from '@/hooks/useTimezone'
-import { deckReplaces, offersDeck } from '@/lib/deck-menu'
+import { deckClosed, deckReplaces, offersDeck } from '@/lib/deck-menu'
 import { clockTap } from '@/lib/lean-clock'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
@@ -77,7 +77,15 @@ export function LeanButtons({
 }) {
   const timezone = useTimezone()
   const queue = useTaskQueue()
-  const showDeck = !!onDeck && queue.loaded && queue.enabled && offersDeck(task)
+  const dayStart = useDayStart()
+  // No deck once its deadline's safety net holds it (Trent, 2026-11-07,
+  // `deckClosed`): only a target (the clock) or done takes it off the page.
+  const showDeck =
+    !!onDeck &&
+    queue.loaded &&
+    queue.enabled &&
+    offersDeck(task) &&
+    !deckClosed(task, timezone, new Date(), dayStart)
   const decked = showDeck && !!task.on_deck_day
   const deck = (t: Task, day: string | null | undefined) => onDeck?.(t, day)
   return (

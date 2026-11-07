@@ -18,10 +18,10 @@
  * refused outright (`prepareDeck`).
  *
  * What does NOT clear it: a deadline added or changed — the task it leaves has
- * no target (the deadlines page, 2026-10-22: its safety net holds it, deck or
- * not) — UNLESS that deadline has passed or now falls BEFORE the deck's day
- * (A1, `deckRefusal`): then the deadline wins and the deck goes in the same
- * write. (With the switch off there are no decks at all.) That is why this can't ride on
+ * no target (the deadlines page, 2026-10-22) — UNLESS that deadline has
+ * passed, now falls BEFORE the deck's day (A1), or puts the deck day in its
+ * safety net (D−1 or later, 2026-11-07; `deckRefusal`): then the deadline wins
+ * and the deck goes in the same write. (With the switch off there are no decks at all.) That is why this can't ride on
  * `stampTargetSet` (target-set.ts), which fires on ANY `due_at` or
  * `deadline_at` write, automatic targets included.
  *
@@ -54,6 +54,12 @@ export interface DeckClearAfter {
   auto: boolean
   /** The rule the write leaves (a repeating deck is judged by its deadline's day, A1). */
   rrule: string | null
+  /**
+   * The anchor the write leaves: a deadline-anchored repeat is one the
+   * deadlines page can hold, so its deck may not sit in the safety net
+   * (2026-11-07, `deckRefusal`). Omitted: target-anchored.
+   */
+  repeatAnchor?: string | null
   isReminder: boolean
   isTracked: boolean
   /**
@@ -89,6 +95,7 @@ function deadlineOutranksDeck(day: string, after: DeckClearAfter): boolean {
     deadline_at: d.at,
     target_auto: after.auto,
     rrule: after.rrule,
+    repeat_anchor: after.repeatAnchor ?? null,
   }
   return deckRefusal(left, day, d.ctx, d.now, d.rolloverTime ?? null) !== null
 }

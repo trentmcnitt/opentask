@@ -1244,10 +1244,12 @@ paths:
         once); done or skip completes that occurrence; at the rollover an undone repeating deck
         gets its target back and the repeating rules apply (a daily rolls to that day's
         occurrence with a skip, a longer rule waits in the queue with `queued_from_deck_day`).
-        A deadline task can be decked only while its automatic target is still ahead and only
-        on a day BEFORE that target's day — a repeating one while its deadline is ahead and on
-        a day before the deadline's own day — otherwise it is refused per task
-        (`deadline_nagging`, `after_auto_target`). Decking takes a task out of the task queue, stamps
+        A deadline task is decked only while its deadline is ahead: one the deadlines page can
+        hold (a one-off, a deadline-anchored repeat) for a day up to D−2 — never into its safety
+        net (2026-11-07) — any other repeating one up to its deadline's own day. Otherwise it is
+        refused per task: `deadline_nagging` (passed), `after_auto_target` (after D),
+        `safety_net` (the net holds it today, D−1 on), `after_safety_net` (the day is D−1 or
+        later). A PATCH of `on_deck_day` refuses the same with a 400. Decking takes a task out of the task queue, stamps
         `target_set_at` (the Upcoming heads-up anchor; only when the day changes),
         `last_considered_at` and `segment_targeted_at`, and cancels a pending AI enrichment. A deck never nags (no over target, no badge, no Snooze-all); a
         future deck shows in Upcoming on its heads-up days (`GET /api/reminders?deck=1`); at the
@@ -1306,7 +1308,8 @@ paths:
                             id: { type: integer }
                             reason:
                               type: string
-                              enum: [deadline_nagging, after_auto_target]
+                              enum:
+                                [deadline_nagging, after_auto_target, safety_net, after_safety_net]
                       summary:
                         type: string
                         description: One line for a toast ("3 tasks on deck for tomorrow · 1 repeating skipped").

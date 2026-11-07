@@ -2497,7 +2497,11 @@ export function upcomingRowActions(row: {
 export const DECK_DAY_FORMAT = 'yyyy-MM-dd'
 
 /** Why a deck write is refused for one task (the response's `refused[].reason`). */
-export type DeckRefusal = 'deadline_nagging' | 'after_auto_target'
+export type DeckRefusal =
+  | 'deadline_nagging'
+  | 'after_auto_target'
+  | 'safety_net'
+  | 'after_safety_net'
 
 /** Why a task cannot be decked at all (the endpoint skips and counts it). */
 export type DeckSkip = 'recurring' | 'reminder' | 'quota' | 'done' | 'trashed'
@@ -2581,14 +2585,24 @@ export function deckSkip(task: {
  *    "This deadline has passed";
  *  - `after_auto_target` (the enum, kept): the day is after D — "That day is
  *    after this task's deadline".
- * A deck on D itself is allowed: a target-less deadline task's safety net
- * (from D−1) still holds it on the deadlines page, deck or not. No deadline:
- * never refused. Decks exist only with the task-queue switch on, so this is
- * the only rule there is. `rolloverTime` (the owner's, `deckRolloverTime`)
- * makes D the OpenTask day; without one, the calendar day.
+ *
+ * THE SAFETY NET (Trent, 2026-11-07: "Why did it even let me put it on deck
+ * for tomorrow if it must be targeted?"): a task the deadlines page can hold
+ * — a one-off, or a deadline-anchored repeat — is never decked INTO the net.
+ * A deck drops a picked target (rule 1), so after it the page would hold the
+ * task from D−1 whatever the deck said, and the deck would count for nothing.
+ *  - `safety_net`: the net holds it today (D−1 on) — no deck at all; only a
+ *    target or done takes it off the page (the 11-04 Due-page ruling);
+ *  - `after_safety_net`: the day is D−1 or later — a deck lands at most on
+ *    D−2, the deadlines page's own Defer limit (`lastDeferDay`).
+ * Until 2026-11-07 a deck on D itself was allowed. Any other repeating task
+ * (the page never holds it) keeps the rule above. No deadline: never refused.
+ * Decks exist only with the task-queue switch on, so this is the only rule
+ * there is. `rolloverTime` (the owner's, `deckRolloverTime`) makes D the
+ * OpenTask day; without one, the calendar day.
  */
 export function deckRefusal(
-  task: Pick<TargetFields, 'deadline_at'>,
+  task: Pick<TargetFields, 'deadline_at' | 'rrule'> & { repeat_anchor?: string | null },
   day: string,
   ctx: TargetContext,
   now: Date,
@@ -2597,7 +2611,25 @@ export function deckRefusal(
   if (!task.deadline_at) return null
   if (Date.parse(task.deadline_at) <= now.getTime()) return 'deadline_nagging'
   const deadlineDay = repeatingDeadlineDay(task.deadline_at, ctx.timezone, rolloverTime)
-  return day > deadlineDay ? 'after_auto_target' : null
+  if (day > deadlineDay) return 'after_auto_target'
+  if (!deckMeetsTheNet(task)) return null
+  if (inSafetyNet(task.deadline_at, ctx.timezone, now, rolloverTime)) return 'safety_net'
+  return day > lastDeferDay(task.deadline_at, ctx.timezone, rolloverTime)
+    ? 'after_safety_net'
+    : null
+}
+
+/**
+ * Whether a deck on this deadline task could land in its safety net: a task
+ * the deadlines page can hold once decked (a deck takes its target) — a
+ * one-off, or a deadline-anchored repeat (`deckKeepsPageRow`'s test).
+ */
+export function deckMeetsTheNet(task: {
+  deadline_at?: string | null
+  rrule?: string | null
+  repeat_anchor?: string | null
+}): boolean {
+  return !!task.deadline_at && (!task.rrule || task.repeat_anchor === 'deadline')
 }
 
 /**
@@ -2621,6 +2653,8 @@ export function repeatingDeadlineDay(
 export const DECK_REFUSAL_MESSAGES: Record<DeckRefusal, string> = {
   deadline_nagging: 'This deadline has passed.',
   after_auto_target: "That day is after this task's deadline.",
+  safety_net: 'The deadline is close: only a target or done takes it off the deadlines page.',
+  after_safety_net: 'That day is too close to the deadline: deck it at most two days before.',
 }
 
 /**

@@ -10,6 +10,8 @@ import { CALENDAR_DAY_START } from '@/lib/opentask-day'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import {
+  deckClosed,
+  deckDayClosed,
   deckLimit,
   deckMenuDays,
   deckReplaces,
@@ -194,19 +196,30 @@ describe('OD-UI-01: the hold menu days', () => {
     expect(days.find((d) => d.day === '2026-01-18')?.caption).toBeUndefined()
   })
 
-  test('the limit: up to the deadline day (the deadlines page, 2026-10-22), stored or staged', () => {
+  test('the limit: up to D−2, never into the safety net (2026-11-07), stored or staged', () => {
     const ctx = { timezone: TZ, morningTime: '08:30' }
-    // Deadline Tue Jan 20 17:00 → the latest is Tue Jan 20 itself.
+    // Deadline Tue Jan 20 17:00 → the latest is Sun Jan 18 (D−2).
     expect(deckLimit({ deadline_at: local(5, 17), due_at: null }, TZ, NOW, null, null)).toEqual({
-      latestDay: '2026-01-20',
+      latestDay: '2026-01-18',
       caption: 'deadline Tue',
     })
-    // A staged deadline (the Quick panel): the same, Tue Jan 27.
+    // A staged deadline (the Quick panel): the same, Sun Jan 25 for Tue Jan 27.
     const staged = { deadline_at: local(12, 23), due_at: null }
     expect(deckLimit(staged, TZ, NOW, ctx, null)).toEqual({
-      latestDay: '2026-01-27',
+      latestDay: '2026-01-25',
       caption: 'deadline Tue',
     })
+    // A target-anchored repeat (the deadlines page never holds it): its
+    // deadline's own day, as before.
+    expect(
+      deckLimit(
+        { deadline_at: local(5, 17), due_at: null, rrule: 'FREQ=WEEKLY' },
+        TZ,
+        NOW,
+        null,
+        null,
+      ),
+    ).toMatchObject({ latestDay: '2026-01-20' })
     // A passed deadline: no day left (the latest is yesterday).
     expect(deckLimit({ deadline_at: local(-1, 17), due_at: null }, TZ, NOW, null, null)).toEqual({
       latestDay: '2026-01-14',
@@ -431,5 +444,30 @@ describe('OD-UI-05: the Quick panel save', () => {
     const result = await saveTaskChanges(1, { on_deck_day: '2026-01-16', deadline_at: deadline })
     expect(bodies).toEqual([{ on_deck_day: '2026-01-16', deadline_at: deadline }])
     expect(result.description).toBe('d1')
+  })
+})
+
+/** No deck once the safety net holds the task, nor a day inside it (Trent, 2026-11-07). */
+describe('OD-UI-N: deck controls and the safety net', () => {
+  // NOW is Thu Jan 15 10:00; the day starts at 03:00.
+  const DAY = '03:00'
+  test('deckClosed: a deadline tomorrow (D−1 today) or passed leaves no day; D−2 today still decks', () => {
+    const tomorrow = { deadline_at: local(1, 17), due_at: null }
+    expect(deckClosed(tomorrow, TZ, NOW, DAY)).toBe(true)
+    // A picked target with that deadline: a deck would drop it — closed too.
+    expect(deckClosed({ ...tomorrow, due_at: local(1, 9) }, TZ, NOW, DAY)).toBe(true)
+    expect(deckClosed({ deadline_at: local(-1, 17), due_at: null }, TZ, NOW, DAY)).toBe(true)
+    // Sat Jan 17: today is D−2, the last day.
+    const sat = { deadline_at: local(2, 17), due_at: null }
+    expect(deckClosed(sat, TZ, NOW, DAY)).toBe(false)
+    expect(deckDayClosed(sat, '2026-01-15', TZ, NOW, DAY)).toBe(false)
+    // …and On deck tomorrow would land on D−1: gone.
+    expect(deckDayClosed(sat, '2026-01-16', TZ, NOW, DAY)).toBe(true)
+    // No deadline, and a target-anchored repeat (the page never holds it): open.
+    expect(deckClosed({ deadline_at: null, due_at: null }, TZ, NOW, DAY)).toBe(false)
+    expect(deckClosed({ ...tomorrow, rrule: 'FREQ=WEEKLY' }, TZ, NOW, DAY)).toBe(false)
+    expect(
+      deckClosed({ ...tomorrow, rrule: 'FREQ=WEEKLY', repeat_anchor: 'deadline' }, TZ, NOW, DAY),
+    ).toBe(true)
   })
 })
