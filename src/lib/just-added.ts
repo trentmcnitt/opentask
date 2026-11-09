@@ -37,8 +37,11 @@
  * looking next to the real row; the card (mockup A of three, 2026-09-28)
  * replaced that.
  *
- * Population: the dashboard's unfiltered open tasks (reminders and quotas are
- * not dashboard tasks), NOT the filter-chip result and not Now's folds — a
+ * Population: every open task the dashboard has — reminders and quotas too
+ * since 2026-11-09 (Trent: a reminder or quota just added from anywhere shows
+ * here the way a task does; they are not dashboard rows, so a tap opens its
+ * details, `/tasks/<id>`, and the entry says where it went —
+ * `justAddedWhere`) — NOT the filter-chip result and not Now's folds — a
  * brand-new task hidden by a filter or behind a project's "+ N more" is
  * exactly the "did it land?" case. Hidden while searching (the results are the
  * question then).
@@ -49,6 +52,9 @@
  */
 import { openTaskLocalDay } from '@/lib/opentask-day'
 import { parseDeckDay } from '@/lib/task-segments'
+import { formatRRuleCompact } from '@/lib/format-rrule'
+import { assignSlot, type TimeSlot } from '@/lib/time-slot-assign'
+import { isTracked, quotaPeriodOf } from '@/lib/track'
 import type { Task } from '@/types'
 
 /** 10 until 2026-10-12, when Trent widened it. The enrichment-success push
@@ -235,4 +241,58 @@ export function deckTagLabel(
   if (deck <= today) return 'On deck'
   if (+deck === +today.plus({ days: 1 })) return 'On deck tomorrow'
   return `On deck ${deck.toFormat('LLL d')}`
+}
+
+/** What an entry is: a reminder or a quota (not a dashboard row) or a task. */
+export function justAddedItemKind(
+  task: Pick<Task, 'is_reminder' | 'progress_target' | 'is_tracked'>,
+): 'reminder' | 'quota' | 'task' {
+  if (isTracked(task)) return 'quota'
+  return task.is_reminder ? 'reminder' : 'task'
+}
+
+const QUOTA_UNIT = { DAILY: 'day', WEEKLY: 'week', MONTHLY: 'month', YEARLY: 'year' } as const
+
+/**
+ * Where a reminder or quota went, once the AI has filled it in (Trent,
+ * 2026-11-09): a reminder's period and rhythm — "Evening · Daily",
+ * "Morning · Mon, Wed" — and a quota's count and period, with the period it
+ * reminds in when it names one — "2 a week · Evening", "3 every 2 weeks".
+ * Null for a task (its own details are its target and priority).
+ */
+export function justAddedWhere(
+  task: Pick<
+    Task,
+    | 'is_reminder'
+    | 'progress_target'
+    | 'is_tracked'
+    | 'rrule'
+    | 'anchor_time'
+    | 'due_at'
+    | 'quota_prompt_config'
+  >,
+  slots: TimeSlot[],
+  timezone: string,
+): string | null {
+  const kind = justAddedItemKind(task)
+  if (kind === 'reminder') {
+    const slot = assignSlot(task, slots, timezone)
+    // The rhythm without its clock time: the period already says when.
+    const rhythm = task.rrule
+      ? formatRRuleCompact(task.rrule.replace(/;?BY(HOUR|MINUTE|SECOND)=[^;]*/g, ''))
+      : null
+    return [slot?.label ?? 'Anytime', rhythm].filter(Boolean).join(' · ')
+  }
+  if (kind === 'quota') {
+    const period = quotaPeriodOf(task.rrule)
+    const count = period
+      ? period.interval === 1
+        ? `${task.progress_target} a ${QUOTA_UNIT[period.freq]}`
+        : `${task.progress_target} every ${period.interval} ${QUOTA_UNIT[period.freq]}s`
+      : `${task.progress_target}`
+    const slotId = task.quota_prompt_config?.slot_id
+    const slot = slotId != null ? slots.find((s) => s.id === slotId) : undefined
+    return [count, slot?.label].filter(Boolean).join(' · ')
+  }
+  return null
 }

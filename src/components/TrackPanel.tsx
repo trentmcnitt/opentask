@@ -1529,6 +1529,24 @@ function chipLineEnd(title: HTMLElement): { right: number; resizeTarget: Element
  * The count is segments after the title (`QuotaSegments`). Long titles wrap
  * inside the chip, never ellipsise.
  */
+/**
+ * The AI is still filling the quota in (one added by quick add, a Shortcut or
+ * the API, `src/core/ai/quota-enrichment.ts`): the reminder row's pulse, on
+ * the chip's border (Trent, 2026-11-09: the same AI-working mark wherever a
+ * quota shows; the Just now card says it in words). Not while the chip is
+ * flashing or fading out: those animations own the chip then.
+ */
+function chipAiState(
+  task: Pick<Task, 'labels'>,
+  highlighted: boolean,
+  leaving: boolean,
+): { className: string | undefined; dataState: 'processing' | undefined } {
+  if (highlighted || leaving || !task.labels.includes('ai-to-process')) {
+    return { className: undefined, dataState: undefined }
+  }
+  return { className: 'animate-ai-processing', dataState: 'processing' }
+}
+
 function TrackChip({
   task,
   color,
@@ -1584,6 +1602,7 @@ function TrackChip({
     },
   })
   const countText = `${state.current} of ${state.target}${period ? ` ${period}` : ''}`
+  const ai = chipAiState(task, highlighted, leaving)
   // Settings → Priority Display, the task rows' own rule (2026-10-26). A chip
   // has no done circle, so "Color checkbox" has nothing to colour here.
   const pri = usePriorityRowStyles(task.priority)
@@ -1644,6 +1663,7 @@ function TrackChip({
             void log(e.shiftKey ? -1 : 1)
           }}
           data-track-chip-selected={selected ? '' : undefined}
+          data-ai-state={ai.dataState}
           // The count is IN the accessible name, not beside it. `aria-label`
           // replaces a button's contents wholesale, so the count on screen and
           // any sr-only run inside are never announced — and in the folded
@@ -1678,6 +1698,7 @@ function TrackChip({
             // Selected: the Reminders row's ring and fill, on the chip.
             selected && 'ring-ring bg-accent ring-2',
             highlighted && 'animate-row-highlight',
+            ai.className,
           )}
         >
           {/* No progress fill behind the chip since 2026-10-13: the segments

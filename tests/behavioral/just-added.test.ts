@@ -15,12 +15,14 @@ import {
   isJustAdded,
   justAddedEntryKey,
   justAddedEvent,
+  justAddedItemKind,
   justAddedTag,
+  justAddedWhere,
   nextJustAddedExpiry,
   nextJustAddedTick,
   selectJustAddedEntries,
 } from '@/lib/just-added'
-import type { Task } from '@/types'
+import type { QuotaPromptConfig, Task } from '@/types'
 
 // Jan 15, 2026 at 10am Chicago.
 const NOW = new Date('2026-01-15T16:00:00Z').getTime()
@@ -351,5 +353,57 @@ describe('formatJustAddedAge', () => {
     )
     // Skew: a created_at ahead of this clock is "just now", never negative.
     expect(formatJustAddedAge(makeTask({ id: 1, created_at: ago(-5000) }), NOW)).toBe('just now')
+  })
+})
+
+describe('reminders and quotas (2026-11-09): their kind and where they went', () => {
+  const slots = [
+    { id: 1, label: 'Morning', start_time: '07:00' },
+    { id: 2, label: 'Evening', start_time: '18:00' },
+  ] as unknown as import('@/lib/time-slot-assign').TimeSlot[]
+  const base = {
+    is_reminder: false,
+    progress_target: 1,
+    is_tracked: false,
+    rrule: null,
+    anchor_time: null,
+    due_at: null,
+    quota_prompt_config: null as QuotaPromptConfig | null,
+  }
+  test('the kind', () => {
+    expect(justAddedItemKind({ ...base, is_reminder: true })).toBe('reminder')
+    expect(justAddedItemKind({ ...base, is_tracked: true })).toBe('quota')
+    expect(justAddedItemKind({ ...base, progress_target: 3 })).toBe('quota')
+    expect(justAddedItemKind(base)).toBe('task')
+  })
+  test('a reminder: its period and its rhythm without the clock time', () => {
+    const r = {
+      ...base,
+      is_reminder: true,
+      rrule: 'FREQ=DAILY;BYHOUR=19;BYMINUTE=0',
+      anchor_time: '19:00',
+    }
+    expect(justAddedWhere(r, slots, 'America/Chicago')).toBe('Evening · Daily')
+    // Before every period: Anytime.
+    expect(justAddedWhere({ ...r, anchor_time: '05:00' }, slots, 'America/Chicago')).toBe(
+      'Anytime · Daily',
+    )
+  })
+  test('a quota: its count and period, and the period it reminds in when it names one', () => {
+    const q = { ...base, is_tracked: true, progress_target: 2, rrule: 'FREQ=WEEKLY' }
+    expect(justAddedWhere(q, slots, 'America/Chicago')).toBe('2 a week')
+    expect(
+      justAddedWhere({ ...q, quota_prompt_config: { slot_id: 2 } }, slots, 'America/Chicago'),
+    ).toBe('2 a week · Evening')
+    expect(
+      justAddedWhere(
+        { ...q, rrule: 'FREQ=WEEKLY;INTERVAL=2', progress_target: 3 },
+        slots,
+        'America/Chicago',
+      ),
+    ).toBe('3 every 2 weeks')
+  })
+  test('a task: none (its own details are its target and priority)', () => {
+    expect(justAddedWhere(base, slots, 'America/Chicago')).toBeNull()
   })
 })
