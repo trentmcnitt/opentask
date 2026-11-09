@@ -297,7 +297,10 @@ jobs:
         run: npx playwright install webkit
       - name: Install Playwright OS dependencies
         run: npx playwright install-deps webkit
-      - run: npm run test:e2e -- $WEBKIT_SPECS --project=webkit
+      # A failed FIRST attempt keeps its trace too (the config's default is
+      # the retry's only): picker-wheel-scroll timed out once in WebKit with
+      # no trace of where (2026-11-09), and its retry passed.
+      - run: npm run test:e2e -- $WEBKIT_SPECS --project=webkit --trace=retain-on-failure
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
