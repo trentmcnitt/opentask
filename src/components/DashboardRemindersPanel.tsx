@@ -35,6 +35,13 @@ import { saveReminderDetail } from '@/lib/save-reminder-detail'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 import { retapOrder } from '@/lib/retap-walk'
+import {
+  liftFirst,
+  liftPageIndex,
+  liftedId,
+  resolvePromptKey,
+  type PanelLift,
+} from '@/lib/panel-lift'
 
 /**
  * The dashboard's Reminders panel (approved mockup:
@@ -182,6 +189,10 @@ interface DashboardRemindersPanelProps {
   refreshRef: React.MutableRefObject<(() => void) | null>
   timeSlots: TimeSlot[]
   timezone: string
+  /** A notification tap's lift (`src/lib/panel-lift.ts`); `seq` makes a second tap a new one. */
+  lift?: { value: PanelLift; seq: number } | null
+  /** Called once the lift is applied (`usePanelLiftLink`'s `consume`). */
+  onLiftApplied?: (seq: number) => void
 }
 
 export function DashboardRemindersPanel({
@@ -190,6 +201,8 @@ export function DashboardRemindersPanel({
   refreshRef,
   timeSlots,
   timezone,
+  lift = null,
+  onLiftApplied,
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const dayStart = useDayStart()
@@ -204,6 +217,9 @@ export function DashboardRemindersPanel({
     onCompleted,
   })
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
+  // A notification tap's row (src/lib/panel-lift.ts): first in its period
+  // while it waits, and flashed once.
+  const liftState = usePanelLift(lift, onLiftApplied)
   // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
   // No leaving animation here, like the reminder rows (see the docblock).
   const { considerPrompt, didPrompt, movePrompt } = reminders
@@ -215,6 +231,8 @@ export function DashboardRemindersPanel({
     onUndo,
     onCompleted,
     variant: 'panel',
+    highlightKey: typeof liftState.flashId === 'string' ? liftState.flashId : null,
+    onHighlightDone: liftState.clearFlash,
   })
   // Which row's read-only bubble is open, if any. One id rather than a flag
   // per row: only ever one bubble at a time, the same way `TrackPanel` holds
@@ -242,6 +260,8 @@ export function DashboardRemindersPanel({
   // with every page a slot is `slotAfterFinishing`).
   const naturalSlot = pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0
   const pager = usePanelPager(pages, pages.length, naturalSlot)
+  liftState.apply({ hydrated: reminders.hydrated, pages, pager })
+  const { lifted, flashId } = liftState
   // A stop of the Dashboard tab's re-tap walk while a period that has come
   // round still waits — the pager's own order (`retapOrder`).
   const needsYou =
@@ -328,6 +348,7 @@ export function DashboardRemindersPanel({
 
         <SlotPageBody
           group={page.group}
+          lifted={lifted}
           label={page.label}
           expanded={expanded}
           showConsidered={showConsidered}
@@ -339,6 +360,8 @@ export function DashboardRemindersPanel({
               label={page.label}
               peekId={peekId}
               setPeekId={setPeekId}
+              flashId={flashId}
+              onFlashDone={liftState.clearFlash}
               onComplete={(reminder) => void complete(reminder)}
               onRemove={(task) => void remove([task])}
               onOpenEditor={editor.open}
@@ -365,6 +388,7 @@ export function DashboardRemindersPanel({
  */
 function SlotPageBody({
   group,
+  lifted,
   label,
   expanded,
   showConsidered,
@@ -374,6 +398,8 @@ function SlotPageBody({
   onPutBackPrompt,
 }: {
   group: ReminderGroup
+  /** A notification tap's row: drawn first while it waits (`liftFirst`). */
+  lifted: number | string | null
   label: string
   expanded: boolean
   showConsidered: boolean
@@ -382,7 +408,7 @@ function SlotPageBody({
   onPutBack: (task: Task) => void
   onPutBackPrompt: (prompt: QuotaPrompt) => void
 }) {
-  const rows = slotRows(group)
+  const rows = liftFirst(slotRows(group), lifted)
   const count = rows.length
   // WHICH ROWS ARE ON SCREEN IS DECIDED IN CSS, NOT HERE.
   //
@@ -448,6 +474,8 @@ function PanelRowList({
   label,
   peekId,
   setPeekId,
+  flashId,
+  onFlashDone,
   onComplete,
   onRemove,
   onOpenEditor,
@@ -460,6 +488,9 @@ function PanelRowList({
   label: string
   peekId: number | null
   setPeekId: (id: number | null) => void
+  /** The reminder a notification tap flashes (a prompt's flash is `usePromptRows`'). */
+  flashId: number | string | null
+  onFlashDone: () => void
   onComplete: (reminder: Task) => void
   onRemove: (reminder: Task) => void
   onOpenEditor: (reminder: Task) => void
@@ -479,6 +510,8 @@ function PanelRowList({
             key={reminder.id}
             reminder={reminder}
             hiddenWhenNarrow={hiddenWhenNarrow}
+            highlighted={flashId === reminder.id}
+            onHighlightDone={onFlashDone}
             onComplete={() => onComplete(reminder)}
             onPeek={() => setPeekId(reminder.id)}
             peekOpen={peekId === reminder.id}
@@ -521,6 +554,8 @@ function PanelRowList({
 function PanelRow({
   reminder,
   hiddenWhenNarrow = false,
+  highlighted = false,
+  onHighlightDone,
   onComplete,
   onPeek,
   peekOpen,
@@ -533,6 +568,9 @@ function PanelRow({
   reminder: Task
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
+  /** A notification tap's row: flashes once (`.animate-row-highlight`). */
+  highlighted?: boolean
+  onHighlightDone?: () => void
   onComplete: () => void
   /** A hold opens the row's own read-only bubble — NOT the editor. Open, in
    *  there, is what reaches the editor (Trent, 2026-09-21). */
@@ -571,10 +609,16 @@ function PanelRow({
           it is not counted twice. The circle stays the keyboard's way in. */}
       <li
         data-reminder-id={reminder.id}
+        data-reminder-highlight={highlighted ? '' : undefined}
         className={cn(
           'hover:bg-foreground/5 relative cursor-pointer items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5 transition-colors select-none',
           hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
+          highlighted && 'animate-row-highlight',
         )}
+        onAnimationEnd={(e) => {
+          // The flash has played: spend it, so a re-render can't replay it.
+          if (highlighted && e.target === e.currentTarget) onHighlightDone?.()
+        }}
         onClick={(e) => {
           if (press.didFire()) {
             e.preventDefault()
@@ -694,4 +738,83 @@ function ConsideredList({
       ))}
     </ul>
   )
+}
+
+/** Whether a group still has this row waiting: a reminder's id or a waiting prompt's key. */
+function isWaitingIn(group: ReminderGroup, id: number | string): boolean {
+  if (typeof id === 'number') return group.reminders.some((r) => r.id === id)
+  return group.prompts.some((p) => p.prompt_key === id && promptWaiting(p))
+}
+
+/**
+ * A notification tap's lift (src/lib/panel-lift.ts), applied once the card's
+ * data is in: page to its period, and (a reminder or a prompt) lift and flash
+ * its row. Each tap is applied once (`seq`), so a refresh can't page the card
+ * back after the user paged away. A row that no longer waits (handled since
+ * the push) still pages to its period when the period holds it handled, with
+ * nothing lifted. Returns the lifted row's id (a reminder id or a prompt key).
+ * Applied during render, not in an effect, so the card never paints the
+ * natural page first and then jumps.
+ *
+ * The lift ends when its row stops waiting (considered, done, deleted): it is
+ * back in its own place, and an Undo that brings it back doesn't lift it
+ * again. Adjusted during render, as `usePanelPager` moves its page, so the
+ * row never paints first after it has gone.
+ */
+function usePanelLift(
+  lift: { value: PanelLift; seq: number } | null,
+  onApplied?: (seq: number) => void,
+) {
+  const [lifted, setLifted] = useState<number | string | null>(null)
+  const [flashId, setFlashId] = useState<number | string | null>(null)
+  const [appliedSeq, setAppliedSeq] = useState<number | null>(null)
+  // Tell the link it's spent (a module store: not during render).
+  useEffect(() => {
+    if (appliedSeq !== null) onApplied?.(appliedSeq)
+  }, [appliedSeq, onApplied])
+  /** Called during render, once the card's pages and pager are known. */
+  const apply = ({
+    hydrated,
+    pages,
+    pager,
+  }: {
+    hydrated: boolean
+    pages: SlotPage[]
+    pager: { goTo: (index: number) => void } | null
+  }) => {
+    if (lifted !== null && hydrated && !pages.some((p) => isWaitingIn(p.group, lifted))) {
+      setLifted(null)
+    }
+    if (!lift || !hydrated || !pager || appliedSeq === lift.seq) return
+    setAppliedSeq(lift.seq)
+    // A prompt key from another day names today's row (`resolvePromptKey`).
+    const value: PanelLift =
+      lift.value.kind === 'prompt'
+        ? {
+            kind: 'prompt',
+            key:
+              resolvePromptKey(
+                pages.map((p) => p.group),
+                lift.value.key,
+                promptWaiting,
+              ) ?? lift.value.key,
+          }
+        : lift.value
+    const at = liftPageIndex(pages, value, promptWaiting)
+    const id = liftedId(value)
+    if (at >= 0) {
+      pager.goTo(at)
+      setLifted(id)
+      setFlashId(id)
+      return
+    }
+    // Handled since the push: its period, nothing lifted.
+    const handledAt = pages.findIndex((p) =>
+      typeof id === 'number'
+        ? p.group.consideredItems.some((r) => r.id === id)
+        : p.group.prompts.some((x) => x.prompt_key === id),
+    )
+    if (id !== null && handledAt >= 0) pager.goTo(handledAt)
+  }
+  return { apply, lifted, flashId, clearFlash: () => setFlashId(null) }
 }

@@ -276,7 +276,7 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     postLocalErrorNotification(NotificationActionRunner.staleDidMessage)
                 case .slotCompleted(let affected):
                     playHaptic(affected > 0 ? .click : .failure)
-                case .ignored, .missingTaskId, .openDashboard, .openTask, .openDeadlines, .openPrompt:
+                case .ignored, .missingTaskId, .openDashboard, .openSlot, .openTask, .openDeadlines, .openPrompt:
                     break
                 }
             } catch {

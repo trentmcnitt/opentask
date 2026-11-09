@@ -380,8 +380,7 @@ test.describe('?filter=overdue deep link', () => {
 
 /**
  * `?task=<id>` has two shapes sharing one URL: the widget's deep link adds
- * `&highlight=1` and brings the row into view without opening it (mirrors
- * `/reminders?reminder=<id>`); the bare param — a notification tap, native or
+ * `&highlight=1` and brings the row into view without opening it; the bare param — a notification tap, native or
  * Web Push — brings it into view AND selects it, still opening nothing
  * (Trent, 2026-09-29; it used to open the quick panel). See
  * `DashboardClient.tsx`'s `?task=` effect and `src/lib/task-link.ts`.
@@ -573,11 +572,13 @@ test.describe('?task=<id> deep link', () => {
     await expect(page.getByText('That task no longer exists')).toBeVisible()
   })
 
-  test('a notification tap on a reminder selects it on the Reminders surface', async ({
+  test('a notification tap on a reminder lifts it in the dashboard’s Reminders card', async ({
     authenticatedPage: page,
   }) => {
-    // The "AI finished" push fires for a new reminder too, and it links to
-    // the same `/?task=<id>`; a reminder is never a dashboard row (§6).
+    // The "AI finished" push and the named reminder push link to the same
+    // `/?task=<id>`; a reminder is never a dashboard row (§6), so it is lifted
+    // to the top of its period in the Reminders card (2026-11-09; it used to
+    // go to the Reminders tab). notification-taps.spec.ts has the rest.
     await page.setViewportSize({ width: 1280, height: 800 })
     const res = await page.request.post('/api/tasks', {
       data: {
@@ -591,9 +592,9 @@ test.describe('?task=<id> deep link', () => {
     const id = (await res.json()).data.id as number
     try {
       await page.goto(`/?task=${id}`)
-      await expect(page).toHaveURL('/reminders')
-      const row = page.locator(`li[data-reminder-id="${id}"]`)
-      await expect(row).toHaveAttribute('aria-selected', 'true')
+      await expect(page).toHaveURL('/')
+      const row = page.locator(`[data-reminders-panel] li[data-reminder-id="${id}"]`)
+      await expect(row).toHaveAttribute('data-reminder-highlight', '')
       await expect(row).toBeInViewport()
       await expect(page.getByRole('dialog')).toHaveCount(0)
     } finally {

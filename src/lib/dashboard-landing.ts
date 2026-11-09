@@ -37,6 +37,7 @@
  *   top", not a race.
  */
 import { scrollSectionIntoView } from '@/lib/scroll-row-into-view'
+import { LIFT_PARAMS } from '@/lib/panel-lift'
 
 const ANCHOR = '[data-task-list-landing]'
 
@@ -129,14 +130,22 @@ function deepLinked(): boolean {
  * background, 2×2 and Lock Screen taps load `/?focus=reminders`
  * (`DeepLinkRouter.remindersCardPath`), and the first visit lands on the
  * Reminders card instead of the tasks — whatever page the widget showed (the
- * task queue's too: always the Reminders card, the simplest). Item taps keep
- * the Reminders tab. On a phone; a desktop shows the card at the top as it is.
+ * task queue's too: always the Reminders card, the simplest). On a phone; a
+ * desktop shows the card at the top as it is.
+ *
+ * A NOTIFICATION TAP'S LIFT lands there too (2026-11-09, src/lib/panel-lift.ts):
+ * `?reminder=`, `?prompt=` and `?slot=` page the card and lift the row, so the
+ * card is the place to be. (`?task=` for a reminder scrolls to the card
+ * itself — the landing can't know the task is one.)
  */
 const FOCUS_PARAM = 'focus'
 function focusedCard(): 'reminders' | null {
-  const ask = (search: string) => new URLSearchParams(search).get(FOCUS_PARAM)
-  const asked = ask(window.location.search) ?? (launch?.path === '/' ? ask(launch.search) : null)
-  return asked === 'reminders' ? 'reminders' : null
+  const ask = (search: string) => {
+    const params = new URLSearchParams(search)
+    return params.get(FOCUS_PARAM) === 'reminders' || LIFT_PARAMS.some((key) => params.has(key))
+  }
+  const asked = ask(window.location.search) || (launch?.path === '/' && ask(launch.search))
+  return asked ? 'reminders' : null
 }
 
 /** The drawn Reminders card's scroll position on its landing line (`scroll-below-header`). */
@@ -149,6 +158,19 @@ function remindersScrollY(): number | null {
   const at = card.getBoundingClientRect().top + window.scrollY - landing
   const max = document.documentElement.scrollHeight - window.innerHeight
   return Math.max(0, Math.min(at, max))
+}
+
+/**
+ * Bring the Reminders card under the top bar, on a phone (a notification
+ * tap's reminder, `?task=`, src/lib/panel-lift.ts). A desktop shows the card
+ * at the top as it is.
+ */
+export function scrollToRemindersCard(): void {
+  if (!dashboardPhoneLayout()) return
+  const card = [...document.querySelectorAll<HTMLElement>('[data-reminders-panel]')].find(
+    (el) => el.getClientRects().length > 0,
+  )
+  scrollSectionIntoView(card ?? null)
 }
 
 /**

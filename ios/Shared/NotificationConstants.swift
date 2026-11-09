@@ -259,7 +259,7 @@ extension NotificationActionRunner {
         switch outcome {
         case .slotCompleted(let affected) where affected > 0:
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
-        case .openDashboard where isSlot:
+        case .openDashboard where isSlot, .openSlot:
             center.removeDeliveredNotifications(withIdentifiers: ownBanner)
         case .openDashboard, .openTask, .openDeadlines, .openPrompt:
             center.removeAllDeliveredNotifications()

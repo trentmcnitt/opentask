@@ -355,7 +355,12 @@ async function sendReminderWebPush(
   return sendPushNotification(nag.userId, {
     title: nag.title,
     body,
-    data: { url: `${APP_URL}/reminders`, taskId: nag.taskId, reminder_day: nag.reminderDay },
+    // The dashboard, which lifts the reminder in its Reminders card (src/lib/panel-lift.ts).
+    data: {
+      url: `${APP_URL}/?task=${nag.taskId}`,
+      taskId: nag.taskId,
+      reminder_day: nag.reminderDay,
+    },
     tag: reminderCollapseId(nag.taskId),
     actions: [{ ...CONSIDERED_ACTION }],
     ...(sounds ? { renotify: true } : { silent: true }),

@@ -16,7 +16,8 @@
  * 1. `missing`: not in the open-task list — done, deleted, someone else's, or
  *    never existed. The caller says so in a toast.
  * 2. `quota` / `reminder`: not a dashboard row at all (§5, §6). The caller
- *    sends it to its own surface (`/quotas?quota=`, `/reminders?reminder=`).
+ *    sends it to its own surface: a quota to `/quotas?quota=`, a reminder to
+ *    the dashboard's Reminders card, lifted (src/lib/panel-lift.ts).
  * 3. `show`: the row is in a group of the list as drawn. The caller unfolds
  *    the group — and its Now fold, when the row is behind one — flashes and
  *    scrolls to the row, and selects it.

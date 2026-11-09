@@ -51,7 +51,7 @@ enum ReminderNagKey {
 enum QuotaNagKey {
     /// The prompt's key (`q:<taskId>:<k>:<OpenTask date>`): what its buttons
     /// send to `POST /api/quota-prompts/consider` and `/did`, what a body tap
-    /// opens (`/reminders?prompt=<key>`). A daily quota's prompts in two
+    /// opens (`/?prompt=<key>`, `DeepLinkRouter.notificationPromptPath`). A daily quota's prompts in two
     /// periods share one `taskId`, never a key.
     static let promptKey = "prompt_key"
     /// The `dismiss` push's list of prompt keys (`dismissPromptNotifications`,

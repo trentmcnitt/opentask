@@ -129,6 +129,9 @@ import { useSyncStream } from '@/hooks/useSyncStream'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import { NAV_FILTER_EVENT, type NavFilter } from '@/lib/nav-filter'
+import type { PanelLift } from '@/lib/panel-lift'
+import { usePanelLiftLink } from '@/hooks/usePanelLiftLink'
+import { scrollToRemindersCard } from '@/lib/dashboard-landing'
 import {
   activePending,
   addPending,
@@ -489,6 +492,11 @@ function HomeContent({
   // completed reminder (or a completion arriving over the sync stream) would
   // leave the panel showing stale data until a hard reload.
   const remindersRefreshRef = useRef<(() => void) | null>(null)
+  // A notification tap's lift for the Reminders card (src/lib/panel-lift.ts):
+  // `?reminder=`, `?prompt=`, `?slot=`, and `?task=` when the task is a
+  // reminder. Held outside this component until the card applies it
+  // (`usePanelLiftLink`: a fresh load can remount the dashboard).
+  const { lift: panelLift, liftPanel, consume: consumeLift } = usePanelLiftLink(searchParams)
   const refreshAll = useCallback(async () => {
     await fetchTasks()
     refreshProjects()
@@ -1240,7 +1248,7 @@ function HomeContent({
    *   about. Opens nothing (Trent, 2026-09-29; it used to open the quick
    *   panel). If a search or filter hides the task, that is undone first,
    *   and a row behind Now's fold has its fold opened — see `resolveTaskLink`
-   *   (`src/lib/task-link.ts`) for the steps. A reminder goes to `/reminders?reminder=<id>&select=1`, a quota to
+   *   (`src/lib/task-link.ts`) for the steps. A reminder is lifted in the Reminders card (src/lib/panel-lift.ts), a quota goes to
    *   `/quotas?quota=<id>`; a task that is done, deleted or gone gets a toast.
    * - `?task=<id>&highlight=1`: the widget's deep link
    *   (`WidgetLink.task`/`OpenTaskApp.handleWidgetLink`). Brings the row into
@@ -1369,9 +1377,15 @@ function HomeContent({
         // tap on the same notification would deselect the row.
         selection.selectAll([step.task.id])
         break
-      case 'reminder':
-        router.push(`/reminders?reminder=${step.task.id}&select=1`)
+      case 'reminder': {
+        // Lifted in the Reminders card, not the Reminders tab (2026-11-09,
+        // src/lib/panel-lift.ts). On a phone the card is above the list:
+        // bring it under the top bar (`?task=` is a deep link, so the
+        // landing leaves the page where it is).
+        liftPanel({ kind: 'reminder', id: step.task.id })
+        scrollToRemindersCard()
         break
+      }
       case 'quota':
         router.push(`/quotas?quota=${step.task.id}`)
         break
@@ -1398,6 +1412,7 @@ function HomeContent({
     selection,
     clearListNarrowing,
     showInList,
+    liftPanel,
   ])
 
   // Just now (`src/lib/just-added.ts`): each task created — or targeted from
@@ -1893,6 +1908,8 @@ function HomeContent({
         }}
         searchFocusRef={searchFocusRef}
         remindersRefreshRef={remindersRefreshRef}
+        panelLift={panelLift}
+        onPanelLiftApplied={consumeLift}
       />
     </>
   )
@@ -2080,6 +2097,8 @@ function TrackColumn({
   onTrackCompleted,
   onTrackRefresh,
   remindersRefreshRef,
+  panelLift,
+  onPanelLiftApplied,
   timeSlots,
   timezone,
 }: {
@@ -2099,6 +2118,8 @@ function TrackColumn({
    *  create or delete through its modal needs an explicit way to refresh it. */
   onTrackRefresh: () => Promise<void>
   remindersRefreshRef: React.MutableRefObject<(() => void) | null>
+  panelLift: { value: PanelLift; seq: number } | null
+  onPanelLiftApplied: (seq: number) => void
   timeSlots: TimeSlot[]
   timezone: string
 }) {
@@ -2121,6 +2142,8 @@ function TrackColumn({
             refreshRef={remindersRefreshRef}
             timeSlots={timeSlots}
             timezone={timezone}
+            lift={panelLift}
+            onLiftApplied={onPanelLiftApplied}
           />
           <TrackPanel
             tasks={quotaSource}
@@ -2293,6 +2316,8 @@ function DashboardView({
   onQuickTakeViewTask,
   searchFocusRef,
   remindersRefreshRef,
+  panelLift,
+  onPanelLiftApplied,
   onTrackRefresh,
 }: {
   tasks: Task[]
@@ -2462,6 +2487,9 @@ function DashboardView({
   /** Threaded to `TrackColumn` → `DashboardRemindersPanel` — see the block
    * comment on `remindersRefreshRef` in `HomeContent`. */
   remindersRefreshRef: React.MutableRefObject<(() => void) | null>
+  /** A notification tap's lift for the Reminders card (src/lib/panel-lift.ts). */
+  panelLift: { value: PanelLift; seq: number } | null
+  onPanelLiftApplied: (seq: number) => void
   /** Threaded to `TrackColumn` → `TrackPanel`'s chip-opened editor, which has
    *  no fetch of its own to refresh after a save/create/delete — see
    *  `TrackColumn`'s own `onTrackRefresh`. */
@@ -2891,6 +2919,8 @@ function DashboardView({
           onTrackCompleted={actions.bumpUndoCount}
           onTrackRefresh={onTrackRefresh}
           remindersRefreshRef={remindersRefreshRef}
+          panelLift={panelLift}
+          onPanelLiftApplied={onPanelLiftApplied}
           timeSlots={timeSlots}
           timezone={timezone}
         />

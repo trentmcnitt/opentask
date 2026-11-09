@@ -301,7 +301,7 @@ Tapping any task notification — overdue, "AI finished", "AI failed to process"
 - A folded group is unfolded and a "Show all" cap lifted.
 - A search, filter chip or AI chip that hides the task is cleared, and only then.
 - If the view leaves it out (Today keeps only what is due by the end of today), the page shows All for that visit, without saving it as the view preference.
-- A reminder goes to `/reminders?reminder=<id>&select=1` (selected there too), a quota to `/quotas?quota=<id>`.
+- A reminder is lifted to the top of its period in the dashboard's Reminders card and flashed (2026-11-09, `src/lib/panel-lift.ts`; it went to `/reminders?reminder=<id>&select=1` before), a quota to `/quotas?quota=<id>`.
 - A task that is done, in the trash, or gone gets a toast saying which.
 
 The URL stayed the bare `/?task=<id>` on purpose: every producer of it is a notification, and the installed app builds already load exactly that, so the change needed only a server deploy. The widget's task link is `/?task=<id>&highlight=1`: it flashes the row and selects nothing.

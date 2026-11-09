@@ -191,11 +191,16 @@ final class NotificationActionRunnerTests: XCTestCase {
         XCTAssertEqual(outcome, .slotCompleted(affected: 0))
     }
 
-    func testSlotBodyTapOpensTheDashboardAndOtherButtonsDoNothing() async throws {
+    /// A period push opens the dashboard paged to its period (`/?slot=<id>`,
+    /// 2026-11-09); one without a slot id, the dashboard as it opens.
+    func testSlotBodyTapOpensItsPeriodAndOtherButtonsDoNothing() async throws {
         let body = try await run(slot, .bodyTap, userInfo: [SlotReminderKey.slotId: 7])
+        let noId = try await run(slot, .bodyTap)
         let checked = try await run(slot, .button(NotificationAction.completeChecked))
         let sweep = try await run(slot, .button(NotificationAction.snoozeAll1hr))
-        XCTAssertEqual(body, .openDashboard)
+        XCTAssertEqual(body, .openSlot(slotId: 7))
+        XCTAssertEqual(DeepLinkRouter.notificationSlotPath(slotId: 7), "/?slot=7")
+        XCTAssertEqual(noId, .openDashboard)
         XCTAssertEqual(checked, .ignored)
         XCTAssertEqual(sweep, .ignored)
         XCTAssertEqual(api.calls, [])
@@ -479,7 +484,8 @@ final class NotificationActionRunnerTests: XCTestCase {
         XCTAssertEqual(outcome, .openPrompt(promptKey: promptKey))
         XCTAssertEqual(api.calls, [])
         guard case .openPrompt(let key) = outcome else { return XCTFail("not openPrompt") }
-        XCTAssertEqual(PromptDeepLink.webPath(promptKey: key), "/reminders?prompt=q:42:1:2026-01-15")
+        // The dashboard, which lifts the prompt in its Reminders card (2026-11-09).
+        XCTAssertEqual(DeepLinkRouter.notificationPromptPath(promptKey: key), "/?prompt=q:42:1:2026-01-15")
     }
 
     /// Without a key, a body tap opens the quota by its id, as an older build would.

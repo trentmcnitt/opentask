@@ -19,7 +19,6 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
-import { usePromptDeepLink } from '@/hooks/useRemindersDeepLinks'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
 import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
@@ -181,7 +180,7 @@ export function RemindersView({
   const router = useRouter()
   // Reminder ids and quota prompt keys (strings — see `QuotaPromptRow`).
   const selection = useSelectionMode<number | string>()
-  const { selectedIds, clear, selectAll } = selection
+  const { selectedIds, clear } = selection
 
   // Searching narrows what is rendered; it deliberately does NOT touch which
   // slots the user has open. Both `defaultOpenKey` and `useSlotDisclosure`
@@ -314,17 +313,18 @@ export function RemindersView({
   const { isOpen, toggleOpen, expandedKeys, setOpen, setExpanded } = useSlotDisclosure()
 
   /**
-   * `?reminder=<id>` — the deep link the iOS widget opens.
+   * `?row=<id>` — a reminder's Show in list (`reminderInListHref`,
+   * src/lib/show-in-list.ts): the row in its period, brought on screen and
+   * flashed once; nothing is opened.
    *
-   * The row is brought on screen and flashed once; nothing is opened. The
-   * widget's user tapped a thought to SEE it, and an editor over the top of the
-   * surface would hide the five thoughts around it that are the reason they
-   * looked. (The dashboard's widget-tapped `?task=<id>&highlight=1` does the
-   * same thing for tasks — see `DashboardClient.tsx`'s `?task=` effect. The
-   * bare `?task=<id>` is a notification tap: it also selects the row, and for
-   * a reminder it forwards here with `&select=1`, handled below.) A quota
-   * PROMPT row's link is `?prompt=<key>` — `usePromptDeepLink` (`useRemindersDeepLinks.ts`), the
-   * same move keyed by `prompt_key`.
+   * It was `?reminder=<id>` until 2026-11-09, which the Reminders widget's rows
+   * and notification taps also used. Those land on the dashboard now: the
+   * server redirects `/reminders?reminder=` (and `?prompt=`) there
+   * (`next.config.ts`), and the Reminders card lifts the row
+   * (src/lib/panel-lift.ts). This tab is for admin work; only Show in list,
+   * which asks for the row's place here, still comes. (A quota prompt's Show
+   * in list goes to the Quotas tab; its `?prompt=` link, which used to land
+   * here, moved to the dashboard with its stale-key rule — `resolvePromptKey`.)
    *
    * The id is looked up once the fetch has resolved. Found or not, that answer
    * is definitive — unlike the dashboard's list, an empty payload here is a
@@ -352,7 +352,7 @@ export function RemindersView({
     // which the hook does not observe anyway, and reading window.location keeps
     // this component out of a Suspense boundary it otherwise would need.
     const params = new URLSearchParams(window.location.search)
-    const raw = params.get('reminder')
+    const raw = params.get('row')
     if (!raw) {
       deepLinkDone.current = true
       return
@@ -369,25 +369,20 @@ export function RemindersView({
       setOpen(key, true)
       setExpanded(key, true)
       setHighlightId(id)
-      // `&select=1`: a NOTIFICATION tap on a reminder (the dashboard's
-      // `?task=` effect forwards one here — the "AI finished" push for a new
-      // reminder). As on the dashboard, a notification tap also selects the
-      // row, so the action bar is up for it; the widget's link doesn't.
-      if (params.get('select') === '1') selectAll([id])
     } else if (!Number.isNaN(id) && notToday.some((t) => t.id === id)) {
       setOpenNotToday(true)
       setHighlightId(id)
     }
     window.history.replaceState(window.history.state, '', window.location.pathname)
-  }, [hydrated, error, groups, notToday, setOpen, setExpanded, selectAll])
+  }, [hydrated, error, groups, notToday, setOpen, setExpanded])
 
   // NO SCROLL ON LOAD (Trent, 2026-09-22). The surface used to scroll to the
   // slot the day was in, so the afternoon did not open on breakfast — but at
   // night that is the last slot, and he read the jump to the bottom as a bug:
   // "when I tap on Reminders, it scrolls me to the bottom." Offered the
   // earliest unfinished slot as the landing instead, he chose the top, always.
-  // A `?reminder=<id>` deep link still brings its row into view (the row's own
-  // `scrollRowIntoView` ref).
+  // A `?row=<id>` link (Show in list) still brings its row into view (the
+  // row's own `scrollRowIntoView` ref).
 
   /**
    * `?slot=<slotId>` — the widget's per-slot header deep link (a Time Slot's
@@ -478,15 +473,6 @@ export function RemindersView({
     )
   }, [hydrated, error, visibleGroups, goToSlot])
 
-  const { highlightPromptKey, clearPromptHighlight } = usePromptDeepLink({
-    hydrated,
-    error,
-    groups,
-    setOpen,
-    setExpanded,
-    goToSlot,
-  })
-
   const { orderedIds, selectedTasks, selectedPrompts } = useRenderedSelection({
     searching,
     // In the order the slot cards are DRAWN (started, then later — which puts
@@ -529,8 +515,6 @@ export function RemindersView({
     onUndo,
     onCompleted,
     refresh,
-    highlightKey: highlightPromptKey,
-    onHighlightDone: clearPromptHighlight,
   })
   // Both sweep buttons confirm first (Trent, 2026-09-05); single and selected
   // considerations do not.
