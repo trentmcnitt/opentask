@@ -83,6 +83,9 @@ function expectNoTools(options: ToolOptions): void {
       'Task',
       'Workflow',
       'CronCreate',
+      'EnterWorktree',
+      'ExitWorktree',
+      'DesignSync',
     ]),
   )
   expect(options.mcpServers).toEqual({})

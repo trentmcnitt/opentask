@@ -47,10 +47,10 @@ export function fixedThinkingBudget(budgetTokens: number): ThinkingConfig {
  * `StructuredOutput`) or plain text.
  *
  * - `disallowedTools` removes, by name, every tool that can run a command,
- *   touch a file, reach the network, read local data, start agents or
- *   schedule work. What is left on CLI 2.1.302–2.1.319: StructuredOutput,
- *   ToolSearch, ListAgents, ReportFindings, DesignSync, EnterWorktree,
- *   ExitWorktree.
+ *   touch a file or git, reach the network or an outside service, read
+ *   local data, start agents or schedule work. What is left on CLI
+ *   2.1.302–2.1.319: StructuredOutput, ToolSearch, ListAgents,
+ *   ReportFindings.
  * - `permissionMode: 'dontAsk'` denies every call that needs permission —
  *   nothing is pre-approved — so a tool a future CLI adds that can act is
  *   refused even before it is named here. It replaces `bypassPermissions`,
@@ -63,7 +63,7 @@ export function fixedThinkingBudget(budgetTokens: number): ThinkingConfig {
  * tool but StructuredOutput disallowed — Sonnet 5.5 refuses the enrichment
  * slot's warmup every time ("Sonnet 5.5's safeguards flagged this
  * message"), on CLI 2.1.302, 2.1.310 and 2.1.319 alike; Haiku doesn't. The
- * set above passed every time, on prod's CLI and locally. A change here must
+ * set above (four tools left) passed every time, on prod's CLI and locally. A change here must
  * be verified with the real warmup on Sonnet (the quality harness doesn't
  * go through these options), and on prod before it's called done.
  *
@@ -80,6 +80,9 @@ export const DENIED_TOOLS = [
   'Edit',
   'MultiEdit',
   'NotebookEdit',
+  // Git worktrees on disk
+  'EnterWorktree',
+  'ExitWorktree',
   // Reading local data (an injected title could copy a secret into a field)
   'Read',
   'Glob',
@@ -90,6 +93,7 @@ export const DENIED_TOOLS = [
   'RemoteTrigger',
   'PushNotification',
   'SendMessage',
+  'DesignSync',
   // Agents, skills, workflows and scheduled work
   'Task',
   'Agent',

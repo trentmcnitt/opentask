@@ -105,11 +105,11 @@ All three providers share the same `AIQueryResult` interface, so callers never n
 
 **SDK mode runs with no usable tools (2026-11-09).** The model reads untrusted text: titles from inbound email, shared content and Shortcut input. Every SDK query, cold or warm, passes `NO_TOOLS` (`sdk-options.ts`):
 
-- `disallowedTools`: every tool that can run a command, touch a file, reach the network, read local data, start agents or schedule work, by name (Bash, Monitor, Write, Edit, Read, WebFetch, WebSearch, RemoteTrigger, SendMessage, Task, Workflow, the Cron tools and the rest);
+- `disallowedTools`: every tool that can run a command, touch a file or git, reach the network or an outside service, read local data, start agents or schedule work, by name (Bash, Monitor, Write, Edit, EnterWorktree, Read, WebFetch, WebSearch, RemoteTrigger, SendMessage, DesignSync, Task, Workflow, the Cron tools and the rest);
 - `permissionMode: 'dontAsk'`: nothing is pre-approved, so any call that needs permission is denied, even from a tool a future CLI adds;
 - no MCP servers (`mcpServers: {}`, `strictMcpConfig`).
 
-What is left is harmless: `StructuredOutput` (how a schema answer comes back), `ToolSearch`, `ListAgents`, `ReportFindings`, `DesignSync`, `EnterWorktree`, `ExitWorktree`. Until then the CLI ran with all its tools under `bypassPermissions`, so a task title could talk the model into running a shell command on the server.
+What is left is harmless: `StructuredOutput` (how a schema answer comes back), `ToolSearch`, `ListAgents`, `ReportFindings`. Until then the CLI ran with all its tools under `bypassPermissions`, so a task title could talk the model into running a shell command on the server.
 
 **Not `tools: []`.** The first version emptied the tool set (#459). Sonnet 5.5 then refused the enrichment warmup every time ("safeguards flagged this message"), on CLI 2.1.302, 2.1.310 and 2.1.319 alike, so it was reverted (#460). Any change to these options must be checked with the real warmup on Sonnet, and on prod: the quality harness doesn't go through them. `tests/behavioral/ai-sdk-no-tools.test.ts` pins the options for the cold query and both warm slots.
 
