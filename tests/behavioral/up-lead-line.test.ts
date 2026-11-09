@@ -5,7 +5,7 @@
  * staged, and `upcomingLeadWords` says it in Trent's words. Every date is a
  * local day in America/Chicago; the anchor's days are OpenTask days.
  */
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import {
   upcomingLeadLine,
@@ -193,6 +193,15 @@ describe('stagedUpcomingAnchor — what Save would leave the task anchored on', 
     relative: null,
     derived: null,
   }
+  // The cap applies only while the deadline is ahead (`capsAt` reads the
+  // clock), so the clock is pinned before the 11-07 deadline below. Unpinned,
+  // the test passed until that deadline went by (2026-11-07) and failed after.
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-11-01T15:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
   test('UP-138: deck, then removal, then a fixed target (capped at the deadline), relative, derived', () => {
     expect(stagedUpcomingAnchor(base)).toBeUndefined()
     expect(stagedUpcomingAnchor({ ...base, deck: '2026-10-24', fixed: 'x' })).toEqual({
