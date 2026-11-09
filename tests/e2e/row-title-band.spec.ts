@@ -32,7 +32,7 @@
  * and dark. Screenshots go to `.tmp/row-title-band/` (`ROW_BAND_SHOTS` moves them).
  */
 import { DateTime } from 'luxon'
-import { test, expect, backdateCreated, uniqueTitle } from './fixtures'
+import { test, expect, backdateCreated, uniqueTitle, withPreferences } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -176,115 +176,123 @@ test.describe('Row title band · phone', () => {
     backdateCreated(ids, { keepHorizon: true })
 
     try {
-      const group = await gotoGroup(page)
-      const row = (id: number) => page.locator(`#task-row-${id}`)
-      for (const id of ids) await expect(row(id)).toBeVisible()
+      // Now's project groups, set here rather than inherited: the test user
+      // is shared, and a spec that timed out could leave another view saved.
+      await withPreferences(page, { default_grouping: 'project' }, async () => {
+        const group = await gotoGroup(page)
+        const row = (id: number) => page.locator(`#task-row-${id}`)
+        for (const id of ids) await expect(row(id)).toBeVisible()
 
-      // The shapes are what they say.
-      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
-      await expect(row(titleOnly.dot).locator('[data-horizon-dot]')).toHaveAttribute(
-        'data-horizon-dot',
-        'days',
-      )
-      await expect(row(titleOnly.unset).locator('[data-horizon-dot]')).toBeVisible()
-      await expect(row(titleOnly.dotHigh).locator('[data-priority-tab]')).toBeVisible()
-      await expect(row(withMeta.plain).locator('[data-row-corner]')).toHaveCount(0)
-      await expect(row(withMeta.high).locator('[data-horizon-dot]')).toHaveCount(0)
-      await expect(row(withMeta.high).locator('[data-priority-tab]')).toBeVisible()
-      await expect(row(withMeta.dot).locator('[data-horizon-dot]')).toBeVisible()
-      await expect(row(withMeta.unset).locator('[data-horizon-dot]')).toBeVisible()
-      for (const id of Object.values(titleOnly)) {
-        await expect(row(id).locator('[data-target-time]')).toHaveCount(0)
-      }
-
-      for (const size of SIZES) {
-        await page.evaluate((root) => (document.documentElement.style.fontSize = root), size.root)
-        const geo = async (id: number) => geometry(row(id))
-        // First, and the checks below are soft, so a failing run still
-        // leaves every size's pictures and every row's numbers.
-        for (const theme of ['light', 'dark'] as const) {
-          await page.emulateMedia({ colorScheme: theme })
-          await expect(page.locator('html')).toHaveClass(theme === 'dark' ? /dark/ : /^(?!.*dark)/)
-          await group.screenshot({
-            path: `${SHOTS}/${test.info().project.name}-${size.name}-${theme}.png`,
-            animations: 'disabled',
-          })
+        // The shapes are what they say.
+        expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
+        await expect(row(titleOnly.dot).locator('[data-horizon-dot]')).toHaveAttribute(
+          'data-horizon-dot',
+          'days',
+        )
+        await expect(row(titleOnly.unset).locator('[data-horizon-dot]')).toBeVisible()
+        await expect(row(titleOnly.dotHigh).locator('[data-priority-tab]')).toBeVisible()
+        await expect(row(withMeta.plain).locator('[data-row-corner]')).toHaveCount(0)
+        await expect(row(withMeta.high).locator('[data-horizon-dot]')).toHaveCount(0)
+        await expect(row(withMeta.high).locator('[data-priority-tab]')).toBeVisible()
+        await expect(row(withMeta.dot).locator('[data-horizon-dot]')).toBeVisible()
+        await expect(row(withMeta.unset).locator('[data-horizon-dot]')).toBeVisible()
+        for (const id of Object.values(titleOnly)) {
+          await expect(row(id).locator('[data-target-time]')).toHaveCount(0)
         }
-        await page.emulateMedia({ colorScheme: 'light' })
-        const ref = await geo(withMeta.plain)
 
-        // No band: the title's first line starts at the top of its clamp box
-        // in every row, as in the row with no corner at all.
-        for (const id of ids) {
-          const g = await geo(id)
-          expect
-            .soft(
-              Math.abs(g.textInClamp - ref.textInClamp),
-              `${size.name}: row ${id} ${JSON.stringify(g)}`,
+        for (const size of SIZES) {
+          await page.evaluate((root) => (document.documentElement.style.fontSize = root), size.root)
+          const geo = async (id: number) => geometry(row(id))
+          // First, and the checks below are soft, so a failing run still
+          // leaves every size's pictures and every row's numbers.
+          for (const theme of ['light', 'dark'] as const) {
+            await page.emulateMedia({ colorScheme: theme })
+            await expect(page.locator('html')).toHaveClass(
+              theme === 'dark' ? /dark/ : /^(?!.*dark)/,
             )
-            .toBeLessThanOrEqual(SUBPIXEL)
-        }
-
-        // Title only, one line: the line is centred on the done circle.
-        for (const [name, id] of Object.entries(titleOnly)) {
-          const g = await geo(id)
-          expect.soft(g.lines, `${size.name}: ${name} is one line`).toBe(1)
-          expect.soft(g.metaHeight, `${size.name}: ${name} has no meta line`).toBe(0)
-          expect
-            .soft(Math.abs(g.lineVsCircle), `${size.name}: ${name} ${JSON.stringify(g)}`)
-            .toBeLessThanOrEqual(SUBPIXEL)
-        }
-
-        // One meta line each: the title sits at the same height in the row
-        // whichever tab — or none — the row has.
-        for (const [name, id] of Object.entries(withMeta)) {
-          const g = await geo(id)
-          const shape = `${size.name}: ${name} ${JSON.stringify(g)} vs plain ${JSON.stringify(ref)}`
-          expect.soft(g.lines, shape).toBe(1)
-          expect.soft(Math.abs(g.metaHeight - ref.metaHeight), shape).toBeLessThanOrEqual(SUBPIXEL)
-          expect.soft(Math.abs(g.textInRow - ref.textInRow), shape).toBeLessThanOrEqual(SUBPIXEL)
-          expect.soft(Math.abs(g.rowHeight - ref.rowHeight), shape).toBeLessThanOrEqual(SUBPIXEL)
-        }
-
-        // The long title: clamped at three lines, its text clear of the
-        // corner tabs, and no band above it either.
-        const clamp = await row(long).evaluate((el) => {
-          const link = el.querySelector('a[href^="/tasks/"]')!
-          const corner = el.querySelector('[data-row-corner]')!.getBoundingClientRect()
-          const l = link.getBoundingClientRect()
-          // The text's own line boxes — not the float spacer's, which sits
-          // under the corner on purpose.
-          const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT)
-          let text: Node | null = walker.nextNode()
-          while (text && !text.textContent?.trim()) text = walker.nextNode()
-          const range = document.createRange()
-          range.selectNodeContents(text!)
-          const visible = [...range.getClientRects()].filter(
-            (r) => r.width > 0 && r.top < l.bottom && r.bottom > l.top,
-          )
-          return {
-            // Lines shown whole (their text inside the clamp box's bottom).
-            lines: new Set(
-              visible.filter((r) => r.bottom <= l.bottom).map((r) => Math.round(r.top)),
-            ).size,
-            clamped: link.scrollHeight > link.clientHeight,
-            underCorner: visible.some(
-              (r) =>
-                r.right > corner.left &&
-                r.left < corner.right &&
-                r.top < corner.bottom &&
-                r.bottom > corner.top,
-            ),
+            await group.screenshot({
+              path: `${SHOTS}/${test.info().project.name}-${size.name}-${theme}.png`,
+              animations: 'disabled',
+            })
           }
-        })
-        expect.soft(clamp.clamped, `${size.name}: long ${JSON.stringify(clamp)}`).toBe(true)
-        expect.soft(clamp.lines, `${size.name}: long ${JSON.stringify(clamp)}`).toBe(3)
-        expect.soft(clamp.underCorner, `${size.name}: long ${JSON.stringify(clamp)}`).toBe(false)
-        const longGeo = await geo(long)
-        expect
-          .soft(Math.abs(longGeo.textInClamp - ref.textInClamp), `${size.name}: long`)
-          .toBeLessThanOrEqual(SUBPIXEL)
-      }
+          await page.emulateMedia({ colorScheme: 'light' })
+          const ref = await geo(withMeta.plain)
+
+          // No band: the title's first line starts at the top of its clamp box
+          // in every row, as in the row with no corner at all.
+          for (const id of ids) {
+            const g = await geo(id)
+            expect
+              .soft(
+                Math.abs(g.textInClamp - ref.textInClamp),
+                `${size.name}: row ${id} ${JSON.stringify(g)}`,
+              )
+              .toBeLessThanOrEqual(SUBPIXEL)
+          }
+
+          // Title only, one line: the line is centred on the done circle.
+          for (const [name, id] of Object.entries(titleOnly)) {
+            const g = await geo(id)
+            expect.soft(g.lines, `${size.name}: ${name} is one line`).toBe(1)
+            expect.soft(g.metaHeight, `${size.name}: ${name} has no meta line`).toBe(0)
+            expect
+              .soft(Math.abs(g.lineVsCircle), `${size.name}: ${name} ${JSON.stringify(g)}`)
+              .toBeLessThanOrEqual(SUBPIXEL)
+          }
+
+          // One meta line each: the title sits at the same height in the row
+          // whichever tab — or none — the row has.
+          for (const [name, id] of Object.entries(withMeta)) {
+            const g = await geo(id)
+            const shape = `${size.name}: ${name} ${JSON.stringify(g)} vs plain ${JSON.stringify(ref)}`
+            expect.soft(g.lines, shape).toBe(1)
+            expect
+              .soft(Math.abs(g.metaHeight - ref.metaHeight), shape)
+              .toBeLessThanOrEqual(SUBPIXEL)
+            expect.soft(Math.abs(g.textInRow - ref.textInRow), shape).toBeLessThanOrEqual(SUBPIXEL)
+            expect.soft(Math.abs(g.rowHeight - ref.rowHeight), shape).toBeLessThanOrEqual(SUBPIXEL)
+          }
+
+          // The long title: clamped at three lines, its text clear of the
+          // corner tabs, and no band above it either.
+          const clamp = await row(long).evaluate((el) => {
+            const link = el.querySelector('a[href^="/tasks/"]')!
+            const corner = el.querySelector('[data-row-corner]')!.getBoundingClientRect()
+            const l = link.getBoundingClientRect()
+            // The text's own line boxes — not the float spacer's, which sits
+            // under the corner on purpose.
+            const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT)
+            let text: Node | null = walker.nextNode()
+            while (text && !text.textContent?.trim()) text = walker.nextNode()
+            const range = document.createRange()
+            range.selectNodeContents(text!)
+            const visible = [...range.getClientRects()].filter(
+              (r) => r.width > 0 && r.top < l.bottom && r.bottom > l.top,
+            )
+            return {
+              // Lines shown whole (their text inside the clamp box's bottom).
+              lines: new Set(
+                visible.filter((r) => r.bottom <= l.bottom).map((r) => Math.round(r.top)),
+              ).size,
+              clamped: link.scrollHeight > link.clientHeight,
+              underCorner: visible.some(
+                (r) =>
+                  r.right > corner.left &&
+                  r.left < corner.right &&
+                  r.top < corner.bottom &&
+                  r.bottom > corner.top,
+              ),
+            }
+          })
+          expect.soft(clamp.clamped, `${size.name}: long ${JSON.stringify(clamp)}`).toBe(true)
+          expect.soft(clamp.lines, `${size.name}: long ${JSON.stringify(clamp)}`).toBe(3)
+          expect.soft(clamp.underCorner, `${size.name}: long ${JSON.stringify(clamp)}`).toBe(false)
+          const longGeo = await geo(long)
+          expect
+            .soft(Math.abs(longGeo.textInClamp - ref.textInClamp), `${size.name}: long`)
+            .toBeLessThanOrEqual(SUBPIXEL)
+        }
+      })
     } finally {
       await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
       await page.request.delete(`/api/projects/${project.id}`)

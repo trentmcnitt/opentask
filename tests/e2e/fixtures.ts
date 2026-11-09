@@ -21,7 +21,29 @@ export const TEST_EMAIL = 'test@opentask.local'
 export const TEST_PASSWORD = 'testpass123'
 
 /* eslint-disable react-hooks/rules-of-hooks -- Playwright fixtures use `use` which is not a React hook */
-export const test = base.extend<{ authenticatedPage: Page }>({
+/**
+ * What `withPreferences` still has to put back (2026-11-09). Its `finally`
+ * restores them, but a test that TIMES OUT can't: Playwright tears its request
+ * context down, so the restoring PATCH fails ("apiRequestContext.patch: Test
+ * timeout exceeded") and the test user keeps the test's preferences. The next
+ * spec then ran on them — picker-wheel-scroll timed out in CI's WebKit job and
+ * left `default_grouping: 'unified'`, and row-title-band, which needs Now's
+ * project groups, failed on a flat list. `restorePreferences` (an automatic
+ * fixture, whose teardown runs after a timeout too, on time of its own) puts
+ * back whatever is left here.
+ */
+let prefsToRestore: Record<string, unknown> | null = null
+
+export const test = base.extend<{ authenticatedPage: Page; restorePreferences: void }>({
+  restorePreferences: [
+    async ({ page }, use) => {
+      await use()
+      const pending = prefsToRestore
+      prefsToRestore = null
+      if (pending) await page.request.patch('/api/user/preferences', { data: pending })
+    },
+    { auto: true },
+  ],
   authenticatedPage: async ({ page }, use) => {
     // Navigate to login page
     await page.goto('/login')
@@ -339,10 +361,15 @@ export async function withPreferences(
   const before = Object.fromEntries(Object.keys(prefs).map((k) => [k, current[k] ?? null]))
   const written = await page.request.patch('/api/user/preferences', { data: prefs })
   if (!written.ok()) throw new Error(`PATCH preferences: ${written.status()}`)
+  // The safety net for a timeout (`prefsToRestore`). An outer call's values
+  // win: they are what the user had before the test.
+  prefsToRestore = { ...before, ...prefsToRestore }
   try {
     await run()
   } finally {
     await page.request.patch('/api/user/preferences', { data: before })
+    const left = Object.entries(prefsToRestore ?? {}).filter(([k, v]) => before[k] !== v)
+    prefsToRestore = left.length > 0 ? Object.fromEntries(left) : null
   }
 }
 
