@@ -103,6 +103,15 @@ All three providers share the same `AIQueryResult` interface, so callers never n
 
 **SDK mode requires an installed, logged-in Claude Code, version 2.1.101 or newer.** OpenTask never runs the CLI bundled inside the Agent SDK package. Running in Docker, or anywhere without Claude Code? Use an API provider (`OPENTASK_AI_PROVIDER=anthropic` or `openai`); those never look for the CLI. See [Which Claude Code CLI runs](#which-claude-code-cli-runs).
 
+**SDK mode runs with no tools (2026-11-09).** The model reads untrusted text: titles from inbound email, shared content and Shortcut input. Every SDK query, cold or warm, passes `NO_TOOLS` (`sdk-options.ts`):
+
+- `tools: []`: no built-in tools at all;
+- `disallowedTools`: Bash, Write, Edit, WebFetch, WebSearch, Read and the rest, named again;
+- `permissionMode: 'dontAsk'`: nothing is pre-approved, so anything else is denied;
+- no MCP servers (`mcpServers: {}`, `strictMcpConfig`).
+
+The CLI then offers the model only its own `StructuredOutput`, which is how a schema answer comes back. Until then the CLI ran with all its tools under `bypassPermissions`, so a task title could talk the model into running a shell command on the server. Nothing OpenTask asks the model for needs a tool. `tests/behavioral/ai-sdk-no-tools.test.ts` pins it for the cold query and both warm slots.
+
 ### AI query dispatcher
 
 `aiQuery()` in `sdk.ts` is the central dispatch point for all AI queries. Based on the `provider` option (or server default), it routes to:
