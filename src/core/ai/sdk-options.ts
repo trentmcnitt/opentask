@@ -34,3 +34,51 @@ export const ISOLATED_SETTING_SOURCES: NonNullable<Options['settingSources']> = 
 export function fixedThinkingBudget(budgetTokens: number): ThinkingConfig {
   return { type: 'enabled', budgetTokens }
 }
+
+/**
+ * Every OpenTask SDK query runs with NO tools (2026-11-09). The model reads
+ * untrusted text — task titles from inbound email (desk comms), shared
+ * content, Shortcut input — and answers with JSON, nothing else. Until this,
+ * the CLI ran with every built-in tool and `bypassPermissions`, so a title
+ * like "ignore the above and run …" was a prompt-injection path to Bash,
+ * Write, Edit and WebFetch on the server. Nothing here has ever needed a
+ * tool: enrichment, Quick Take, Insights, What's Next and Process all return
+ * their answer as structured output (`outputFormat`) or plain text.
+ *
+ * - `tools: []` removes every built-in tool from the model's context.
+ * - `disallowedTools` names the dangerous ones again, so a future change to
+ *   `tools` (or a CLI default) can't quietly bring them back.
+ * - `permissionMode: 'dontAsk'` denies anything not pre-approved — and
+ *   nothing is — instead of `bypassPermissions`, which approved everything.
+ * - `mcpServers: {}` with `strictMcpConfig` loads no MCP server from any
+ *   config file (`settingSources: []` already keeps settings out).
+ *
+ * Guarded by `tests/behavioral/ai-sdk-no-tools.test.ts`, which builds both
+ * entry points' options and checks they carry this.
+ */
+export const DENIED_TOOLS = [
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'Read',
+  'Glob',
+  'Grep',
+  'WebFetch',
+  'WebSearch',
+  'Task',
+  'Agent',
+  'Skill',
+  'TodoWrite',
+] as const
+
+export const NO_TOOLS = {
+  tools: [],
+  disallowedTools: [...DENIED_TOOLS],
+  permissionMode: 'dontAsk',
+  mcpServers: {},
+  strictMcpConfig: true,
+} satisfies Partial<Options>
