@@ -308,6 +308,8 @@ describe('DN-005 the sender', () => {
     expect(sendApnsDeadlinesNag).toHaveBeenCalledWith(TEST_USER_ID, {
       title: 'Deadlines',
       body: 'Deadline tomorrow: 1 unplanned',
+      // The label line beside the deadline icon (2026-11-07).
+      subtitle: 'Deadline · due tomorrow',
       // Alone in its tick: not passive (tick.ts).
       passive: false,
     })
@@ -373,8 +375,11 @@ describe('DN-005 the sender', () => {
         alert: { title: 'Deadlines', body: '2 deadlines to plan · nearest Fri' },
         'thread-id': 'ot-tasks',
         'interruption-level': 'active',
+        // The deadline icon (2026-11-07): the native service extension's cue.
+        'mutable-content': 1,
       },
       kind: 'deadlines',
+      icon: 'deadline',
     })
     expect(DEADLINES_PAGE_PATH).toBe('/?tasks=deadlines')
   })

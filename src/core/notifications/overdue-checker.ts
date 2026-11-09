@@ -52,6 +52,7 @@ import {
   OVERDUE_SUMMARY_COLLAPSE_ID,
   interruptionLevelFor,
   notificationTitlePrefix,
+  taskPushLabel,
   taskCollapseId,
 } from '@/core/notifications/format'
 import { nagIntervalMinutes } from '@/core/notifications/nag-ladder'
@@ -253,9 +254,13 @@ async function sendIndividualApns(
   overdueCount: number,
   badgeCount: number,
   delivery: Delivery,
+  now: Date,
 ): Promise<DeliveryResult> {
   return sendApnsNotification(task.user_id, {
-    title: `${notificationTitlePrefix(task.priority)}${task.title}`,
+    // No "HIGH: " prefix on APNs: the label line says the priority, beside the
+    // task icon (format.ts § THE KIND'S ICON AND LABEL LINE). Web Push keeps it.
+    title: task.title,
+    subtitle: taskPushLabel(task.priority, task.effective_due_at, now),
     body: `${OVERDUE_WORD} task${delivery.suffix ?? ''}`,
     taskId: task.id,
     // The occurrence being notified about, not the stored due_at (§4.6) — for
@@ -283,6 +288,7 @@ function bucketSends(
   userId: number,
   counts: UserCounts,
   channels: Channels,
+  now: Date,
 ): TickSend[] {
   const sends: TickSend[] = bucket.individual.map((task) => ({
     userId,
@@ -294,7 +300,7 @@ function bucketSends(
       const sends: Promise<DeliveryResult>[] = []
       if (channels.webPush) sends.push(sendIndividualWebPush(task, delivery))
       if (channels.apns) {
-        sends.push(sendIndividualApns(task, counts.overdueCount, counts.badgeCount, delivery))
+        sends.push(sendIndividualApns(task, counts.overdueCount, counts.badgeCount, delivery, now))
       }
       return mergeSettled(await Promise.allSettled(sends))
     },
@@ -476,7 +482,7 @@ export function planOverdueSends(now: Date, channels: Channels): SourcePlan {
       badgeCount: overdueCounts.get(userId) ?? 0,
     }
     for (const bucket of [regular, high, urgent]) {
-      sends.push(...bucketSends(bucket, userId, counts, channels))
+      sends.push(...bucketSends(bucket, userId, counts, channels, now))
     }
   }
 

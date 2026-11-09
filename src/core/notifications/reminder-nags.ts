@@ -377,6 +377,7 @@ async function sendReminderNag(
         taskId: nag.taskId,
         title: nag.title,
         body,
+        slotLabel: nag.slotLabel,
         reminderDay: nag.reminderDay,
         sound: reminderSounds(nag.priority),
         passive: delivery.passive,

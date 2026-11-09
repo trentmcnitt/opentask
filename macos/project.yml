@@ -55,9 +55,17 @@ targets:
         # weaken ATS for any remote host.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # The notification icons (2026-11-07): the service extension shows the
+        # five push kinds as communication notifications, which needs the app
+        # to declare the intent it builds (OpenTaskMacNotificationService).
+        NSUserActivityTypes:
+          - INSendMessageIntent
     entitlements:
       path: OpenTaskMac/OpenTaskMac.entitlements
       properties:
+        # Communication notifications (2026-11-07, the push kinds' icons).
+        # Keep OpenTaskMac-Push.entitlements in step.
+        com.apple.developer.usernotifications.communication: true
         # Sandboxed on purpose: an unsandboxed macOS app extension is a
         # plausible silent non-load, and a notification content extension may
         # follow. network.client is what lets a sandboxed app reach the server
@@ -112,13 +120,14 @@ targets:
         # split is kept because XcodeGen still needs one entitlements file it
         # owns and one hand-written variant for CODE_SIGN_ENTITLEMENTS overrides.
         #
-        #   xcodebuild ... CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements \
+        #   xcodebuild ... 'CODE_SIGN_ENTITLEMENTS=$(OPENTASK_PUSH_ENTITLEMENTS)' \
         #     -allowProvisioningUpdates
         #
         # Without it the app runs normally and APNs registration fails loudly
         # in the log (see MacAppDelegate.didFailToRegisterForRemoteNotifications).
     dependencies:
       - target: OpenTaskMacWidgets
+      - target: OpenTaskMacNotificationService
     settings:
       base:
         # The SAME bundle ID as the iPhone app (2026-09-23). With its own
@@ -130,6 +139,15 @@ targets:
         # The App Group (team-prefixed on macOS) and Keychain group are
         # unchanged, so signed-in state and cached widget data carry over.
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask
+        # The file each target is signed with in a PUSH build (2026-11-09).
+        # A push build passes CODE_SIGN_ENTITLEMENTS='$(OPENTASK_PUSH_ENTITLEMENTS)'
+        # (macos/scripts/install-mac.sh): a command-line setting is
+        # scheme-wide, so a plain path there signed EVERY target with the
+        # app's file; the reference expands per target instead. The app
+        # swaps in its Push file; the widgets and the notification service
+        # extension name their own (XcodeGen writes CODE_SIGN_ENTITLEMENTS
+        # from `entitlements.path`, so it cannot be a variable itself).
+        OPENTASK_PUSH_ENTITLEMENTS: OpenTaskMac/OpenTaskMac-Push.entitlements
         # `PRODUCT_NAME` (defaults to the target name, "OpenTaskMac") is what
         # actually names the .app FILE — Finder, Spotlight and Launchpad show
         # the file name, not `CFBundleDisplayName` (already "OpenTask" above).
@@ -225,8 +243,37 @@ targets:
       base:
         # The iPhone widget extension's ID, for the same reason as the app's.
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.widgets
+        # Its own file in a push build (OpenTaskMac's settings say why).
+        OPENTASK_PUSH_ENTITLEMENTS: OpenTaskMacWidgets/OpenTaskMacWidgets.entitlements
         SWIFT_VERSION: '5.9'
         INFOPLIST_FILE: OpenTaskMacWidgets/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+
+  # The notification icons (Trent, 2026-11-07): the iPhone's Notification
+  # Service Extension, reused by path — the five push kinds as communication
+  # notifications, each with its kind's avatar (Avatars/*.png ride along as
+  # resources). Same bundle ID as the iPhone's, as the app and widgets share
+  # theirs. Sandboxed, as every macOS app extension must be.
+  OpenTaskMacNotificationService:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: ../ios/OpenTaskNotificationService
+        excludes:
+          - Info.plist
+    dependencies:
+      - sdk: Intents.framework
+    entitlements:
+      path: OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification-service
+        # Its own file in a push build too (OpenTaskMac's settings say why).
+        OPENTASK_PUSH_ENTITLEMENTS: OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements
+        SWIFT_VERSION: '5.9'
+        INFOPLIST_FILE: ../ios/OpenTaskNotificationService/Info.plist
         GENERATE_INFOPLIST_FILE: false
 
   # Unit tests for the native clients' pure logic (testing pass WP5,

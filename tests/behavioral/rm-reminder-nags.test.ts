@@ -339,6 +339,8 @@ describe('RR-05 the lead order', () => {
       taskId: r.id,
       title: 'Synthetic reminder',
       body: 'Morning · High reminder · 1 more waiting',
+      // Its period names the label line beside the reminder icon (2026-11-07).
+      slotLabel: 'Morning',
       reminderDay: '2026-01-15',
       sound: true,
       passive: false,
@@ -402,7 +404,7 @@ describe('RR-06 the payloads', () => {
     expect(json.aps).not.toHaveProperty('badge')
     const { aps, ...data } = json
     expect(aps).toBeDefined()
-    expect(data).toEqual({ taskId: 41, reminder_day: '2026-01-15' })
+    expect(data).toEqual({ taskId: 41, reminder_day: '2026-01-15', icon: 'reminder' })
     expect(n.options.collapseId).toBe('reminder-41')
   })
 

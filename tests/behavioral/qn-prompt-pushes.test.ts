@@ -463,6 +463,8 @@ describe('QN-P06 the lead order: prompts rank with reminders of their priority',
       taskId: q.id,
       promptKey: key(q.id),
       title: 'Synthetic quota',
+      // The label line beside the quota icon (2026-11-07); no label, so none named.
+      subtitle: 'Quota · 0 of 3 this week',
       body: 'Early morning · 0/3 this week · 1 more waiting',
       sound: true,
       passive: false,
@@ -584,7 +586,7 @@ describe('QN-P08 the body text and the payloads', () => {
     expect(json.aps).not.toHaveProperty('badge')
     const { aps, ...data } = json
     expect(aps).toBeDefined()
-    expect(data).toEqual({ taskId: 41, prompt_key: 'q:41:0:2026-01-15' })
+    expect(data).toEqual({ taskId: 41, prompt_key: 'q:41:0:2026-01-15', icon: 'quota' })
     expect(n.options.collapseId).toBe('prompt-q:41:0:2026-01-15')
   })
 

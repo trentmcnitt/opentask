@@ -119,6 +119,17 @@ export function promptCountText(
   return `${prompt.current}/${prompt.target}${period ? ` ${period}` : ''}`
 }
 
+/**
+ * "3 of 5 this week" — `promptCountText` as words, for the named prompt
+ * push's label line ("Quota · Health · 3 of 5 this week", 2026-11-07).
+ */
+export function promptSpokenCount(
+  prompt: Pick<QuotaPrompt, 'current' | 'target' | 'period' | 'period_label'>,
+): string {
+  const period = prompt.period_label ?? freqLabel(prompt.period)
+  return `${prompt.current} of ${prompt.target}${period ? ` ${period}` : ''}`
+}
+
 /** Is a prompt still waiting for today? */
 export function promptWaiting(prompt: Pick<QuotaPrompt, 'considered' | 'done'>): boolean {
   return !prompt.considered && !prompt.done
