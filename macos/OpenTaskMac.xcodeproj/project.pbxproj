@@ -1485,6 +1485,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
+				OPENTASK_PUSH_ENTITLEMENTS = OpenTaskMacWidgets/OpenTaskMacWidgets.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.widgets;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
@@ -1520,6 +1521,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
+				OPENTASK_PUSH_ENTITLEMENTS = OpenTaskMacWidgets/OpenTaskMacWidgets.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask.widgets;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
@@ -1538,6 +1540,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OPENTASK_PUSH_ENTITLEMENTS = "OpenTaskMac/OpenTaskMac-Push.entitlements";
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask;
 				PRODUCT_MODULE_NAME = OpenTaskMac;
 				PRODUCT_NAME = OpenTask;
@@ -1659,6 +1662,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
+				OPENTASK_PUSH_ENTITLEMENTS = OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.mcnitt.opentask.notification-service";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
@@ -1755,6 +1759,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OPENTASK_PUSH_ENTITLEMENTS = "OpenTaskMac/OpenTaskMac-Push.entitlements";
 				PRODUCT_BUNDLE_IDENTIFIER = io.mcnitt.opentask;
 				PRODUCT_MODULE_NAME = OpenTaskMac;
 				PRODUCT_NAME = OpenTask;
@@ -1774,6 +1779,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
+				OPENTASK_PUSH_ENTITLEMENTS = OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = "io.mcnitt.opentask.notification-service";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;

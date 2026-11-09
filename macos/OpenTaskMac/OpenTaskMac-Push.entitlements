@@ -12,7 +12,11 @@
     xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
       -configuration Debug -destination 'generic/platform=macOS' \
       -derivedDataPath build -allowProvisioningUpdates \
-      CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements build
+      'CODE_SIGN_ENTITLEMENTS=$(OPENTASK_PUSH_ENTITLEMENTS)' build
+
+  The reference resolves per target to this file for the app and to each
+  extension's own file (project.yml; a plain path here would sign every
+  target with this file — macos/README.md).
 
   Keep the two files in sync: every key added to the spec belongs here too.
 -->

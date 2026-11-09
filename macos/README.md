@@ -56,10 +56,11 @@ silently got no push for hours (the default `OpenTaskMac.entitlements` has no
 override, and checks with `codesign -d --entitlements -` that both the app
 and `OpenTaskMacWidgets.appex` carry `com.apple.developer.aps-environment`:
 on the build product before replacing anything, and on the installed copy
-after. Either check failing exits non-zero with a banner. It also stops if
-`OpenTaskMac-Push.entitlements` and `OpenTaskMacWidgets.entitlements` ever
-grant different things, since the override is scheme-wide (below) and would
-sign the widgets with the app's file.
+after. Either check failing exits non-zero with a banner. It also checks
+`OpenTaskMacNotificationService.appex` (the push kinds' icons, 2026-11-07):
+signed, sandboxed, NOT signed with the app's push file, and the app carrying
+`com.apple.developer.usernotifications.communication`. The override is a
+per-target reference (below), so each target is signed with its own file.
 
 In between it quits the running app (bundle id `io.mcnitt.opentask`, confirmed
 by the installed path, since the iPhone app shares the id), replaces the
@@ -90,7 +91,7 @@ list `keychain-access-groups` explicitly too).
 xcodebuild -project OpenTaskMac.xcodeproj -scheme OpenTaskMac \
   -configuration Debug -destination 'generic/platform=macOS' \
   -derivedDataPath build -allowProvisioningUpdates \
-  CODE_SIGN_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements build
+  'CODE_SIGN_ENTITLEMENTS=$(OPENTASK_PUSH_ENTITLEMENTS)' build
 ```
 
 `OpenTaskMac.entitlements` (sandbox + network client + App Group +
@@ -102,16 +103,18 @@ keep the two in sync. Both now build and run successfully — verified directly
 Keychain grants, since only `aps-environment` genuinely needs the Push
 variant.
 
-**One thing to know about that `CODE_SIGN_ENTITLEMENTS=...` build command**:
-it is a _scheme-wide_ xcodebuild override, so it also signs
-`OpenTaskMacWidgets` with the app's Push entitlements — the widget extension
-picks up `aps-environment` it has no use for (harmless: it never registers
-for push) and `-allowProvisioningUpdates` will have enabled Push
-Notifications on the App ID `io.mcnitt.opentask.mac.widgets` in the
-Developer Portal as a side effect. Worth knowing before assuming an
-entitlement only added to `OpenTaskMacWidgets`'s own `project.yml` block
-reaches a Push build — it doesn't; `OpenTaskMac-Push.entitlements` is
-hand-written per-target, not per-scheme.
+**Why the override is a reference, not a path (2026-11-09)**: a
+command-line build setting is _scheme-wide_. Until 11-09 the override was
+the plain path `OpenTaskMac/OpenTaskMac-Push.entitlements`, which signed
+EVERY target with the app's file: harmless for the widgets only while their
+file matched it (the script compared the two), and wrong for the
+notification service extension, which is sandbox-only. Now each target sets
+`OPENTASK_PUSH_ENTITLEMENTS` to its own file in `project.yml` (the app to
+its Push file, the widgets and the service extension to theirs), and
+xcodebuild resolves the single-quoted reference per target. A new signed
+target in the scheme needs the setting too, or a push build signs it with
+no entitlements. (`CODE_SIGN_ENTITLEMENTS` itself cannot be the variable:
+XcodeGen writes it from each target's `entitlements.path`.)
 
 The two keychains (legacy vs. data protection) do not share items — a
 profile arriving after a legacy-keychain launch means the first launch after

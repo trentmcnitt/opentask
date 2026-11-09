@@ -18,12 +18,12 @@
 # entitlements twice: on the build product before anything is replaced (a bad
 # build never overwrites a working install), and on the installed copy after.
 #
-# The CODE_SIGN_ENTITLEMENTS override is scheme-wide: it signs the widget
-# extension (OpenTaskMacWidgets) with the app's Push file too (macos/README.md).
-# That is harmless only while the two files grant the same thing, which they
-# do today (sandbox, network client, App Group, keychain group, push). The
-# script checks that before building and stops if they ever differ, since the
-# override would then silently strip a widget-only key.
+# A command-line build setting is scheme-wide, so the override is a REFERENCE,
+# CODE_SIGN_ENTITLEMENTS='$(OPENTASK_PUSH_ENTITLEMENTS)', that each target
+# resolves to its own file (macos/project.yml, 2026-11-09): the app to its
+# Push file, the widgets and the notification service extension to theirs.
+# Until then a plain path signed every target with the app's file, which was
+# safe only while the widgets' file matched it (the script compared the two).
 #
 # --no-push builds WITHOUT the override, into "<derived-data>-nopush", and
 # runs the same check on it. It exists to show the check failing; it never
@@ -77,8 +77,49 @@ INSTALLED="$HOME/Applications/OpenTask.app"
 APP_EXE="$INSTALLED/Contents/MacOS/OpenTask"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 PUSH_ENTITLEMENTS=OpenTaskMac/OpenTaskMac-Push.entitlements
-WIDGET_ENTITLEMENTS=OpenTaskMacWidgets/OpenTaskMacWidgets.entitlements
 COMMIT=$(commit_of "$REPO")
+
+# check_service_ext <app>: the notification service extension (the push
+# kinds' icons, 2026-11-07) must be there, signed, sandboxed and signed with
+# its OWN file — no push entitlement, which only the scheme-wide override of
+# old would have given it — and the app must carry the communication
+# entitlement the extension's avatars need.
+check_service_ext() {
+  local app="$1" ext="$1/Contents/PlugIns/OpenTaskMacNotificationService.appex" ents
+  if [ ! -d "$ext" ]; then
+    echo "  MISSING  OpenTaskMacNotificationService.appex: $ext"
+    CHECK_FAILURES=$((CHECK_FAILURES + 1))
+    return 0
+  fi
+  if ! codesign --verify --strict "$ext" 2>/dev/null; then
+    echo "  BAD SIG  OpenTaskMacNotificationService.appex: codesign --verify failed"
+    CHECK_FAILURES=$((CHECK_FAILURES + 1))
+    return 0
+  fi
+  ents=$(codesign -d --entitlements - --xml "$ext" 2>/dev/null || true)
+  case "$ents" in
+    *aps-environment*)
+      echo "  WRONG    OpenTaskMacNotificationService.appex: signed with the app's push file"
+      CHECK_FAILURES=$((CHECK_FAILURES + 1))
+      return 0
+      ;;
+    *app-sandbox*) ;;
+    *)
+      echo "  NO SANDBOX OpenTaskMacNotificationService.appex: macOS will not load it"
+      CHECK_FAILURES=$((CHECK_FAILURES + 1))
+      return 0
+      ;;
+  esac
+  case "$(codesign -d --entitlements - --xml "$app" 2>/dev/null || true)" in
+    *usernotifications.communication*)
+      echo "  ok       OpenTaskMacNotificationService.appex: signed, sandboxed; the app has communication notifications"
+      ;;
+    *)
+      echo "  NO COMM  OpenTask.app: no communication-notifications entitlement (the icons will not show)"
+      CHECK_FAILURES=$((CHECK_FAILURES + 1))
+      ;;
+  esac
+}
 
 echo "== OpenTask Mac install: commit $COMMIT"
 echo "   derived data: $DD"
@@ -86,14 +127,6 @@ echo "   derived data: $DD"
 
 cd "$MACOS_DIR"
 
-# The scheme-wide override is only safe while the two files match (see top).
-if [ "$(plutil -p "$PUSH_ENTITLEMENTS")" != "$(plutil -p "$WIDGET_ENTITLEMENTS")" ]; then
-  loud "macos/$PUSH_ENTITLEMENTS and macos/$WIDGET_ENTITLEMENTS differ." \
-    "CODE_SIGN_ENTITLEMENTS is scheme-wide, so the widget extension would be signed" \
-    "with the app's file and lose whatever only its own file grants." \
-    "Make the two files grant the same entitlements, or scope the override to the app target."
-  exit 1
-fi
 
 echo "== xcodegen generate"
 xcodegen generate --quiet
@@ -102,7 +135,8 @@ xcodegen generate --quiet
 # default OpenTaskMac.entitlements, exactly as the 10-26 builds did.
 OVERRIDE=()
 if [ "$NO_PUSH" = 0 ]; then
-  OVERRIDE=("CODE_SIGN_ENTITLEMENTS=$PUSH_ENTITLEMENTS")
+  # Escaped, not expanded: xcodebuild resolves the reference per target (see top).
+  OVERRIDE=("CODE_SIGN_ENTITLEMENTS=\$(OPENTASK_PUSH_ENTITLEMENTS)")
 fi
 
 echo "== xcodebuild Release ${OVERRIDE[*]+"${OVERRIDE[*]}"}"
@@ -126,6 +160,7 @@ echo "== Checking the build product's signed entitlements"
 CHECK_FAILURES=0
 check_aps "OpenTask.app ($APP_ID)" "$PRODUCT"
 check_aps "$APPEX_NAME ($WIDGET_ID)" "$PRODUCT/Contents/PlugIns/$APPEX_NAME"
+check_service_ext "$PRODUCT"
 
 if [ "$CHECK_FAILURES" -gt 0 ] || [ "$NO_PUSH" = 1 ]; then
   # Every xcodebuild registers its product with LaunchServices; a stray claim
@@ -136,7 +171,7 @@ if [ "$CHECK_FAILURES" -gt 0 ]; then
   loud "THE MAC BUILD CANNOT RECEIVE PUSH: $CHECK_FAILURES bundle(s) failed the check above." \
     "Nothing was installed; ~/Applications/OpenTask.app is untouched." \
     "Build: $PRODUCT" \
-    "Builds must be signed with CODE_SIGN_ENTITLEMENTS=$PUSH_ENTITLEMENTS."
+    "Builds must be signed with $PUSH_ENTITLEMENTS (CODE_SIGN_ENTITLEMENTS='\$(OPENTASK_PUSH_ENTITLEMENTS)')."
   exit 1
 fi
 if [ "$NO_PUSH" = 1 ]; then
@@ -204,10 +239,11 @@ echo "== Checking the INSTALLED copy's signed entitlements"
 CHECK_FAILURES=0
 check_aps "OpenTask.app ($APP_ID)" "$INSTALLED"
 check_aps "$APPEX_NAME ($WIDGET_ID)" "$INSTALLED/Contents/PlugIns/$APPEX_NAME"
+check_service_ext "$INSTALLED"
 if [ "$CHECK_FAILURES" -gt 0 ]; then
   loud "THE INSTALLED MAC APP CANNOT RECEIVE PUSH: $CHECK_FAILURES bundle(s) failed the check above." \
     "Installed: $INSTALLED (commit $COMMIT)" \
-    "Rebuild with CODE_SIGN_ENTITLEMENTS=$PUSH_ENTITLEMENTS and reinstall."
+    "Rebuild with $PUSH_ENTITLEMENTS (this script does) and reinstall."
   exit 1
 fi
 
