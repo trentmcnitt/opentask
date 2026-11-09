@@ -305,3 +305,89 @@ test.describe('Just added: age-out', () => {
     await expect(toggle.getByRole('button')).toHaveText(['Now', 'Newest'])
   })
 })
+
+/**
+ * REMINDERS AND QUOTAS (Trent, 2026-11-09): one just added from anywhere is
+ * listed like a task — its kind's mark and word in place of a project,
+ * "AI is filling in details…" while enrichment runs, then where it went —
+ * and a tap opens its details (`/tasks/<id>`). A quota's chip pulses while
+ * the AI fills it in. Periods are read from `/api/time-slots`, so the
+ * expected words follow whatever the seeded user has.
+ */
+test.describe('Just now: reminders and quotas', () => {
+  async function firstSlot(page: Page): Promise<{ id: number; label: string; start_time: string }> {
+    const res = await page.request.get('/api/time-slots')
+    const slots = (await res.json()).data.time_slots as {
+      id: number
+      label: string
+      start_time: string
+    }[]
+    return [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time))[0]
+  }
+
+  test('a reminder is listed with its period, and a tap opens its details', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const slot = await firstSlot(page)
+      const [h, m] = slot.start_time.split(':').map(Number)
+      const id = await post(page, '/api/tasks', {
+        title: uniqueTitle('Just now reminder'),
+        is_reminder: true,
+        rrule: `FREQ=DAILY;BYHOUR=${h};BYMINUTE=${m}`,
+      })
+      ids.push(id)
+      await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
+      await expect(entry(page, id)).toHaveAttribute('data-just-added-item', 'reminder')
+      await expect(entry(page, id)).toContainText(`${slot.label} · Daily`)
+      await expect(entry(page, id)).toContainText('Reminder')
+      await entry(page, id).click()
+      await page.waitForURL(`/tasks/${id}`)
+    } finally {
+      await cleanup(page, ids, null)
+    }
+  })
+
+  test('a quota is listed with its count; while enriched it says so and its chip pulses', async ({
+    authenticatedPage: page,
+  }) => {
+    const ids: number[] = []
+    try {
+      const id = await post(page, '/api/tasks', {
+        title: uniqueTitle('Just now quota'),
+        is_tracked: true,
+        progress_target: 2,
+        rrule: 'FREQ=WEEKLY',
+      })
+      ids.push(id)
+      await waitForPrefsLoaded(page, () => page.goto('/'), entry(page, id))
+      await expect(entry(page, id)).toHaveAttribute('data-just-added-item', 'quota')
+      await expect(entry(page, id)).toContainText('2 a week')
+      await expect(page.locator(`[data-track-chip="${id}"]`)).not.toHaveAttribute(
+        'data-ai-state',
+        'processing',
+      )
+
+      // What a quick add or a Shortcut leaves while the AI works on it.
+      const working = await post(page, '/api/tasks', {
+        title: uniqueTitle('Just now quota working'),
+        is_tracked: true,
+        progress_target: 3,
+        rrule: 'FREQ=WEEKLY',
+        labels: ['ai-to-process'],
+      })
+      ids.push(working)
+      await page.reload()
+      await expect(entry(page, working)).toContainText('AI is filling in details')
+      await expect(page.locator(`[data-track-chip="${working}"]`)).toHaveAttribute(
+        'data-ai-state',
+        'processing',
+      )
+      await entry(page, id).click()
+      await page.waitForURL(`/tasks/${id}`)
+    } finally {
+      await cleanup(page, ids, null)
+    }
+  })
+})

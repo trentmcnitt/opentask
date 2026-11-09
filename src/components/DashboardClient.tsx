@@ -1422,8 +1422,10 @@ function HomeContent({
   // minute and age-out, so entries count up and leave without a reload. The
   // card is not part of the list: nothing here (keyboard order, counts,
   // Select All) sees it.
-  const justAddedNow = useJustAddedClock(visibleTasks)
-  const justAddedSource = searchQuery ? null : visibleTasks
+  // Reminders and quotas too (2026-11-09): `tasks`, not `visibleTasks` — the
+  // card lists one just added, and opens its details (JustAddedCard).
+  const justAddedNow = useJustAddedClock(tasks)
+  const justAddedSource = searchQuery ? null : tasks
 
   // Shutting a fold deselects the rows it hides, as collapsing a group does.
   const handleToggleFold = useCallback(
@@ -2790,6 +2792,7 @@ function DashboardView({
             projects={projects}
             now={justAddedNow}
             timezone={timezone}
+            timeSlots={timeSlots}
             onShow={(task) => revealTaskRef.current?.(task)}
             onClear={() =>
               setClearedJustAdded(

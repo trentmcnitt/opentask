@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, Folder, Sparkles } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronDown, Folder, Gauge, Lightbulb, Sparkles } from 'lucide-react'
 import { OnDeckIcon } from '@/components/icons/OnDeckIcon'
 import { cn } from '@/lib/utils'
 import { LABEL_COLORS } from '@/lib/label-colors'
@@ -12,8 +13,11 @@ import {
   formatJustAddedLabel,
   isDeckUpdate,
   justAddedEntryKey,
+  justAddedItemKind,
+  justAddedWhere,
   type JustAddedEntry,
 } from '@/lib/just-added'
+import type { TimeSlot } from '@/lib/time-slot-assign'
 import { SLOT_FOOTER_TOGGLE_CLASS } from '@/components/reminders/ReminderSlotGroup'
 import type { Project, Task } from '@/types'
 import { useDayStart } from '@/components/PreferencesProvider'
@@ -25,7 +29,10 @@ interface JustAddedCardProps {
   /** The just-added clock (`useJustAddedClock`). */
   now: number
   timezone: string
-  /** Bring the task's real row on screen and flash it (or open it). */
+  /** The user's periods: where a reminder or quota went (`justAddedWhere`). */
+  timeSlots: TimeSlot[]
+  /** Bring the task's real row on screen and flash it (or open it). A
+   *  reminder or quota opens its details instead (not a dashboard row). */
   onShow: (task: Task) => void
   /** Hide the tasks currently listed. */
   onClear: () => void
@@ -50,6 +57,15 @@ interface JustAddedCardProps {
  * Entries are not check-offs (a project-coloured dot, not a checkbox): the
  * card only points at tasks. "Clear" hides what is listed now; a task added
  * (or re-targeted) after that shows again.
+ *
+ * REMINDERS AND QUOTAS TOO (Trent, 2026-11-09): one added from anywhere (the
+ * Reminders or Quotas form, the API, a Shortcut) is listed like a task, with
+ * "AI is filling in details…" while enrichment runs. It wears its kind's
+ * mark (the notification icons' lightbulb and gauge) where a task has its
+ * project's dot, its kind where a task names its project, and once enriched
+ * says where it went (`justAddedWhere`: "Evening · Daily", "2 a week ·
+ * Evening"). It is not a dashboard row, so a tap opens its details
+ * (`/tasks/<id>`, the route a quota's `?task=` already takes).
  *
  * DECK UPDATES FOLD (Trent, 2026-10-22): entries that only say a task went on
  * deck (`isDeckUpdate`) sit behind "Show N on deck updates" / "Show less",
@@ -78,6 +94,7 @@ export function JustAddedCard({
   projects,
   now,
   timezone,
+  timeSlots,
   onShow,
   onClear,
 }: JustAddedCardProps) {
@@ -95,6 +112,7 @@ export function JustAddedCard({
         project={projects.find((p) => p.id === entry.task.project_id)}
         now={now}
         timezone={timezone}
+        timeSlots={timeSlots}
         onShow={() => onShow(entry.task)}
       />
     </li>
@@ -182,39 +200,59 @@ function JustAddedRow({
   project,
   now,
   timezone,
+  timeSlots,
   onShow,
 }: {
   entry: JustAddedEntry
   project: Project | undefined
   now: number
   timezone: string
+  timeSlots: TimeSlot[]
   onShow: () => void
 }) {
   const { task } = entry
+  const router = useRouter()
   const dayStart = useDayStart()
-  const color = project?.color ? LABEL_COLORS[project.color] : null
+  const item = justAddedItemKind(task)
+  const mark = item === 'task' ? null : ITEM_MARKS[item]
+  const color = !mark && project?.color ? LABEL_COLORS[project.color] : null
   const enriching = task.labels.includes('ai-to-process')
-  const details = entryDetails(task, timezone, dayStart)
+  const details = mark
+    ? justAddedWhere(task, timeSlots, timezone)
+    : entryDetails(task, timezone, dayStart)
   // "Added 2m ago" / "Targeted 2m ago": which event put it here, and when.
   const age = formatJustAddedLabel(entry, now)
-  const projectName = project?.name ?? 'Inbox'
+  // A reminder or quota names its kind where a task names its project.
+  const placeName = mark ? mark.word : (project?.name ?? 'Inbox')
 
   return (
     <button
       type="button"
-      onClick={onShow}
+      onClick={mark ? () => router.push(`/tasks/${task.id}`) : onShow}
       data-just-added-entry={task.id}
       data-just-added-kind={entry.kind}
-      aria-label={`${task.title} — ${age.toLowerCase()}, in ${projectName}. Show it in the list.`}
+      data-just-added-item={item}
+      aria-label={
+        mark
+          ? `${task.title} — ${mark.word.toLowerCase()}, ${age.toLowerCase()}. Open its details.`
+          : `${task.title} — ${age.toLowerCase()}, in ${placeName}. Show it in the list.`
+      }
       className="hover:bg-background flex w-full items-start gap-3 rounded-lg px-1.5 py-2 text-left transition-colors sm:items-center sm:px-2"
     >
-      <span
-        aria-hidden
-        className={cn(
-          'mt-[7px] size-2.5 shrink-0 rounded-full sm:mt-0',
-          color ? color.dot : 'bg-muted-foreground/40',
-        )}
-      />
+      {mark ? (
+        <mark.Icon
+          aria-hidden
+          className={cn('-mx-0.5 mt-[3px] size-3.5 shrink-0 sm:mt-0', mark.color)}
+        />
+      ) : (
+        <span
+          aria-hidden
+          className={cn(
+            'mt-[7px] size-2.5 shrink-0 rounded-full sm:mt-0',
+            color ? color.dot : 'bg-muted-foreground/40',
+          )}
+        />
+      )}
       <span className="min-w-0 flex-1">
         {/* `break-words`: an unbroken URL in a title wraps instead of
             running past the card's edge. */}
@@ -229,8 +267,13 @@ function JustAddedRow({
         )}
         {/* Phone: project and age under the title. */}
         <span className="block text-xs sm:hidden">
-          <span className={cn('font-medium', color ? color.text : 'text-muted-foreground')}>
-            {projectName}
+          <span
+            className={cn(
+              'font-medium',
+              mark ? mark.color : color ? color.text : 'text-muted-foreground',
+            )}
+          >
+            {placeName}
           </span>
           <span className="text-muted-foreground"> · {age}</span>
         </span>
@@ -239,11 +282,19 @@ function JustAddedRow({
       <span
         className={cn(
           'hidden shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium sm:inline-flex',
-          color ? cn(color.text, color.border) : 'text-muted-foreground border-border',
+          mark
+            ? cn(mark.color, 'border-border')
+            : color
+              ? cn(color.text, color.border)
+              : 'text-muted-foreground border-border',
         )}
       >
-        <Folder className="size-3" aria-hidden />
-        {projectName}
+        {mark ? (
+          <mark.Icon className="size-3" aria-hidden />
+        ) : (
+          <Folder className="size-3" aria-hidden />
+        )}
+        {placeName}
       </span>
       {/* Wide enough for "Targeted 14m ago", so the column lines up. */}
       <span className="text-muted-foreground hidden w-28 shrink-0 text-right text-xs sm:inline">
@@ -252,6 +303,12 @@ function JustAddedRow({
     </button>
   )
 }
+
+/** A reminder's and a quota's mark: the notification icons' kinds (2026-11-07). */
+const ITEM_MARKS = {
+  reminder: { Icon: Lightbulb, word: 'Reminder', color: 'text-badge-reminders' },
+  quota: { Icon: Gauge, word: 'Quota', color: 'text-indigo-600 dark:text-indigo-400' },
+} as const
 
 /** "Tomorrow 9:00 AM · High" — what the AI (or the title) set; null when nothing. */
 function entryDetails(task: Task, timezone: string, dayStart: string): string | null {
