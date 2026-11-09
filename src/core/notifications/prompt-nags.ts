@@ -376,7 +376,8 @@ async function sendPromptWebPush(
     title: nag.title,
     body,
     data: {
-      url: `${APP_URL}/reminders?prompt=${encodeURIComponent(nag.promptKey)}`,
+      // The dashboard, which lifts the prompt in its Reminders card (src/lib/panel-lift.ts).
+      url: `${APP_URL}/?prompt=${encodeURIComponent(nag.promptKey)}`,
       taskId: nag.taskId,
       prompt_key: nag.promptKey,
     },

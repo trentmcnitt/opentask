@@ -17,8 +17,9 @@ enum DeepLinkRouter {
     /// `WebViewManager.navigateToTask`): the bare `/?task=<id>`, the same URL
     /// the server's Web Push notifications carry (`overdue-checker.ts`,
     /// `enrichment-notify.ts`). The dashboard brings that task's row into view
-    /// and selects it — no editor, no sheet; a reminder goes on to
-    /// `/reminders?reminder=<id>`, and a task that is done or gone gets a toast.
+    /// and selects it — no editor, no sheet; a reminder is lifted to the top
+    /// of its period in the Reminders card (2026-11-09), and a task that is
+    /// done or gone gets a toast.
     ///
     /// Kept bare rather than flagged (`&select=1`) so the builds already
     /// installed, which load exactly this URL, got the new behavior from the
@@ -33,6 +34,26 @@ enum DeepLinkRouter {
     /// nag's Web Push carries. A server without the page (or a day it has no
     /// rows) lands on the dashboard as it would open anyway.
     static let notificationDeadlinesPath = "/?tasks=deadlines"
+
+    /// The web path a period (slot) notification's body tap loads (phone and
+    /// Mac, 2026-11-09): the dashboard with its Reminders card paged to that
+    /// period (`?slot=`, src/lib/panel-lift.ts). An older server ignores the
+    /// param and shows the dashboard as it opens.
+    static func notificationSlotPath(slotId: Int) -> String {
+        "/?slot=\(slotId)"
+    }
+
+    /// The web path a named quota-prompt notification's body tap loads (phone
+    /// and Mac, 2026-11-09): the dashboard, whose Reminders card lifts that
+    /// prompt to the top of its period (`?prompt=`). It was
+    /// `/reminders?prompt=<key>` (`PromptDeepLink.webPath`, still the
+    /// widget's), which the server now redirects here too.
+    static func notificationPromptPath(promptKey: String) -> String {
+        var components = URLComponents()
+        components.path = "/"
+        components.queryItems = [URLQueryItem(name: "prompt", value: promptKey)]
+        return components.string ?? "/"
+    }
 
     /// The Reminders widget's general tap (2026-10-31): the dashboard with
     /// its Reminders card under the top bar (`?focus=reminders`,
@@ -58,8 +79,9 @@ enum DeepLinkRouter {
             if let id = lastId { return "/?task=\(id)&highlight=1" }
             return "/"
         case "reminder":
-            // A reminder opens ON the Reminders surface, and opens nothing:
-            // `?reminder=<id>` brings that row into view and highlights it.
+            // A reminder opens nothing: `?reminder=<id>`, which the server
+            // redirects to the dashboard (2026-11-09), where the Reminders card
+            // lifts the row and flashes it (src/lib/panel-lift.ts).
             // Tapping a reminder means "show me that one" — routing it through
             // `task` instead put it on the dashboard with an editor open, which
             // is the wrong tab and more than was asked for.

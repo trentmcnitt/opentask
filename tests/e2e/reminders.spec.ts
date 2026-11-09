@@ -614,12 +614,14 @@ test.describe('Reminders surface', () => {
     }
   })
 
-  test('?reminder=<id> brings that thought on screen without opening it', async ({
+  test('?row=<id> (Show in list) brings that thought on screen without opening it', async ({
     authenticatedPage: page,
   }) => {
-    // The iOS widget's deep link. Two shapes: one in a slot, and one with no
-    // occurrence today, which lives behind the "Not today" fold and so proves
-    // the link opens whatever is hiding it.
+    // Show in list's link (`?row=<id>`, `reminderInListHref`; it was the
+    // widget's `?reminder=<id>`, which goes to the dashboard since
+    // 2026-11-09). Two shapes: one in a slot, and one with no occurrence
+    // today, which lives behind the "Not today" fold and so proves the link
+    // opens whatever is hiding it.
     await page.setViewportSize({ width: 1280, height: 800 })
     const RRULE_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
     const today = DateTime.now().setZone(TEST_TZ).weekday - 1
@@ -637,7 +639,7 @@ test.describe('Reminders surface', () => {
     ]
 
     try {
-      await page.goto(`/reminders?reminder=${ids[0]}`)
+      await page.goto(`/reminders?row=${ids[0]}`)
       const linked = page.locator(`li[data-reminder-id="${ids[0]}"]`)
       await expect(linked).toHaveAttribute('data-reminder-highlight', '')
       await expect(linked).toBeInViewport()
@@ -646,7 +648,7 @@ test.describe('Reminders surface', () => {
       // The param is spent, so a reload does not flash the same row again.
       await expect(page).toHaveURL('/reminders')
 
-      await page.goto(`/reminders?reminder=${ids[1]}`)
+      await page.goto(`/reminders?row=${ids[1]}`)
       const folded = page.locator(`li[data-not-today-id="${ids[1]}"]`)
       await expect(folded).toHaveAttribute('data-reminder-highlight', '')
       await expect(folded).toBeInViewport()

@@ -22,6 +22,23 @@ const nextConfig: NextConfig = {
    */
   outputFileTracingRoot: __dirname,
   reactCompiler: true,
+  /**
+   * NOTIFICATION TAPS LAND ON THE DASHBOARD (2026-11-09, src/lib/panel-lift.ts).
+   * `/reminders?prompt=<key>` and `/reminders?reminder=<id>` used to highlight
+   * a row on the Reminders tab. App builds from before then load the first
+   * for a quota push; the Reminders widget's rows load both. The server sends
+   * them to the dashboard, where the Reminders card lifts the row: Next passes
+   * the query through, so `/reminders?prompt=X` arrives as `/?prompt=X`.
+   * `?slot=` (the widget's period header) still opens the Reminders tab.
+   */
+  async redirects() {
+    return ['prompt', 'reminder'].map((key) => ({
+      source: '/reminders',
+      has: [{ type: 'query' as const, key }],
+      destination: '/',
+      permanent: false,
+    }))
+  },
   async headers() {
     return [
       {

@@ -18,7 +18,8 @@
  *   /reminders) → its chip on the Quotas tab (`/quotas?quota=<id>`, the
  *   widget's deep link: unfolds its cluster, scrolls, flashes);
  * - a reminder (the dashboard Reminders card's bubble) → its row in its
- *   period on the Reminders tab (`/reminders?reminder=<id>`, the same).
+ *   period on the Reminders tab (`/reminders?row=<id>`, the same; it was
+ *   `?reminder=`, which is redirected to the dashboard since 2026-11-09).
  * A bubble already on the item's own page has none (the Quotas tab's and the
  * dashboard Quotas section's chip bubbles: the chip is right there).
  */
@@ -48,5 +49,5 @@ export function quotaInListHref(quotaId: number): string {
 
 /** A reminder's row in its period on the Reminders tab, scrolled to and flashed (`RemindersView`). */
 export function reminderInListHref(reminderId: number): string {
-  return `/reminders?reminder=${reminderId}`
+  return `/reminders?row=${reminderId}`
 }

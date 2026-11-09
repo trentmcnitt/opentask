@@ -620,9 +620,7 @@ describe('QN-P08 the body text and the payloads', () => {
         title: 'Synthetic quota',
         body: 'Early morning · 0/3 this week',
         data: {
-          url: expect.stringMatching(
-            new RegExp(`/reminders\\?prompt=${encodeURIComponent(key(q.id))}$`),
-          ),
+          url: expect.stringMatching(new RegExp(`/\\?prompt=${encodeURIComponent(key(q.id))}$`)),
           taskId: q.id,
           prompt_key: key(q.id),
         },

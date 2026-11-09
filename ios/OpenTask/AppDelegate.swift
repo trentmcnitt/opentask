@@ -317,13 +317,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 outcome = result
                 switch result {
                 case .openDashboard:
-                    // Still the dashboard for a slot push, not /reminders: a
-                    // slot push can arrive on a build older than the web
-                    // /reminders route, and the dashboard is never a 404.
-                    // (`opentask://reminders` from a widget does go to
-                    // /reminders — the widget and the app ship together, a
-                    // push does not.)
                     WebViewManager.shared.navigate(path: "/")
+                case .openSlot(let slotId):
+                    // A period push: the dashboard, its Reminders card paged
+                    // to that period (2026-11-09, src/lib/panel-lift.ts).
+                    WebViewManager.shared.navigate(path: DeepLinkRouter.notificationSlotPath(slotId: slotId))
                 case .openTask(let taskId):
                     // /?task=<id>: DashboardClient brings the row into view
                     // and selects it (no editor).
@@ -332,9 +330,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     // The deadlines nag: the Tasks card on the deadlines page.
                     WebViewManager.shared.navigate(path: DeepLinkRouter.notificationDeadlinesPath)
                 case .openPrompt(let promptKey):
-                    // A quota-prompt push: its row on /reminders, the same
-                    // path the Reminders widget's prompt link resolves to.
-                    WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
+                    // A quota-prompt push: the dashboard, the prompt lifted
+                    // to the top of its period in the Reminders card.
+                    WebViewManager.shared.navigate(path: DeepLinkRouter.notificationPromptPath(promptKey: promptKey))
                 case .promptDid:
                     // The app can't write the widget cache (WidgetStore lives
                     // in the widget extension), so ask WidgetKit to rebuild

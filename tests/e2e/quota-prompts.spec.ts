@@ -988,10 +988,11 @@ test.describe('Quota prompts — put back', () => {
 
 /**
  * The Reminders widget's deep link for a prompt row (2026-09-27):
- * `opentask://reminders/prompt/<key>` → `/reminders?prompt=<key>`. It opens
- * the Reminders surface — where the prompt was tapped — not Quotas, and
- * brings that exact row (by `prompt_key`) on screen, flashed once, nothing
- * opened: `?reminder=<id>`'s behavior for a prompt.
+ * `opentask://reminders/prompt/<key>` → `/reminders?prompt=<key>`, which is
+ * also what a quota push opened before 2026-11-09. Since then the server
+ * redirects it to the dashboard, whose Reminders card lifts that exact row
+ * (by `prompt_key`) to the top of its period, flashed once, nothing opened
+ * (src/lib/panel-lift.ts; notification-taps.spec.ts has the push's own link).
  *
  * Time-agnostic: prompts render in every period whatever the hour, and every
  * key is read from `GET /api/reminders` at run time; the stale-key case derives
@@ -1036,26 +1037,25 @@ test.describe('Quota prompts — widget deep link', () => {
     }
   }
 
-  test('?prompt=<key> brings that exact row on screen on Reminders, not its sibling', async ({
+  test('?prompt=<key> lifts that exact row in the dashboard’s card, not its sibling', async ({
     authenticatedPage: page,
   }) => {
     const { id, one, two } = await twoRowQuota(page, 'E2E linked daily')
     // Two rows of ONE quota (one task id): the key is what tells them apart.
     expect(one).not.toBe(two)
-    const rowOne = page.locator(`li[data-prompt-key="${one}"]`)
-    const rowTwo = page.locator(`li[data-prompt-key="${two}"]`)
-
-    // Unlinked, the second row starts off screen: the link is what moves it.
-    await page.goto('/reminders')
-    await expect(rowTwo).toHaveCount(1)
-    await expect(rowTwo).not.toBeInViewport()
+    const card = page.locator('[data-reminders-panel]')
+    const rowTwo = card.locator(`li[data-prompt-key="${two}"]`)
 
     await page.goto(`/reminders?prompt=${encodeURIComponent(two)}`)
+    // Its period, the row first and flashed; the sibling's period isn't shown.
     await expect(rowTwo).toHaveAttribute('data-prompt-highlight', '')
-    await expect(rowTwo).toBeInViewport()
-    await expect(rowOne).not.toHaveAttribute('data-prompt-highlight', '')
+    await expect(card.locator('ul').first().locator('> li').first()).toHaveAttribute(
+      'data-prompt-key',
+      two,
+    )
+    await expect(card.locator(`li[data-prompt-key="${one}"]`)).toHaveCount(0)
     // The param is spent, so a reload does not flash the row again.
-    await expect(page).toHaveURL(/\/reminders$/)
+    await expect(page).toHaveURL('/')
     // A link is a place to look: no bubble, no editor, nothing logged.
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(page.locator('[data-track-popover]')).toHaveCount(0)
@@ -1075,10 +1075,10 @@ test.describe('Quota prompts — widget deep link', () => {
     const stale = `q:${taskId}:${number}:${dayBefore}`
 
     await page.goto(`/reminders?prompt=${encodeURIComponent(stale)}`)
-    const row = page.locator(`li[data-prompt-key="${two}"]`)
+    const row = page.locator(`[data-reminders-panel] li[data-prompt-key="${two}"]`)
     await expect(row).toHaveAttribute('data-prompt-highlight', '')
     await expect(row).toBeInViewport()
-    await expect(page).toHaveURL(/\/reminders$/)
+    await expect(page).toHaveURL('/')
   })
 })
 

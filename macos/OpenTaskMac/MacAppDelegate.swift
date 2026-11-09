@@ -263,18 +263,20 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 outcome = result
                 switch result {
                 case .openDashboard:
-                    // The dashboard, not /reminders, for a slot push too: it
-                    // can arrive on a build older than the web /reminders
-                    // route, and the dashboard is never a 404.
                     await WebViewManager.shared.navigate(path: "/")
+                case .openSlot(let slotId):
+                    // A period push: the dashboard, its Reminders card paged
+                    // to that period (2026-11-09, src/lib/panel-lift.ts).
+                    await WebViewManager.shared.navigate(path: DeepLinkRouter.notificationSlotPath(slotId: slotId))
                 case .openTask(let taskId):
                     await WebViewManager.shared.navigateToTask(taskId)
                 case .openDeadlines:
                     // The deadlines nag: the Tasks card on the deadlines page.
                     await WebViewManager.shared.navigate(path: DeepLinkRouter.notificationDeadlinesPath)
                 case .openPrompt(let promptKey):
-                    // A quota-prompt push: its row on /reminders.
-                    await WebViewManager.shared.navigate(path: PromptDeepLink.webPath(promptKey: promptKey))
+                    // A quota-prompt push: the dashboard, the prompt lifted
+                    // to the top of its period in the Reminders card.
+                    await WebViewManager.shared.navigate(path: DeepLinkRouter.notificationPromptPath(promptKey: promptKey))
                 case .promptDid:
                     // The desktop widgets show the count: rebuild them from
                     // the server (the app has no WidgetStore to write through;

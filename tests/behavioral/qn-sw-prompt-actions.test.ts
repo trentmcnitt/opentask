@@ -54,7 +54,7 @@ function loadWorker(fetchImpl: (url: string, init: RequestInit) => Promise<unkno
 }
 
 const KEY = 'q:41:0:2026-01-15'
-const URL_TO_ROW = `https://tasks.example/reminders?prompt=${encodeURIComponent(KEY)}`
+const URL_TO_ROW = `https://tasks.example/?prompt=${encodeURIComponent(KEY)}`
 
 function click(listeners: Record<string, Listener>, action: string, data?: unknown) {
   let pending: Promise<unknown> = Promise.resolve()

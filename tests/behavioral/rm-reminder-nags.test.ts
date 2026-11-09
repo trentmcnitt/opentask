@@ -441,7 +441,8 @@ describe('RR-06 the payloads', () => {
         title: 'Synthetic reminder',
         body: 'Morning · High reminder',
         data: {
-          url: expect.stringMatching(/\/reminders$/),
+          // The dashboard, which lifts the reminder (src/lib/panel-lift.ts).
+          url: expect.stringMatching(new RegExp(`/\\?task=${r.id}$`)),
           taskId: r.id,
           reminder_day: '2026-01-15',
         },

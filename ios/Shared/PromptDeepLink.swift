@@ -16,8 +16,9 @@ import Foundation
 /// mirroring `reminders/slot/<id>`, so an app build that predates this link
 /// still lands on the Reminders surface (unscoped) rather than the dashboard,
 /// and the watch's `WatchPage(url:)` reads it as Reminders unchanged. The app
-/// resolves it to `/reminders?prompt=<key>` (`RemindersView.tsx`'s deep-link
-/// effect brings the row into view and flashes it).
+/// resolves it to `/reminders?prompt=<key>`, which the server redirects to the
+/// dashboard since 2026-11-09: the Reminders card lifts the row to the top of
+/// its period and flashes it (src/lib/panel-lift.ts).
 ///
 /// Foundation only, in Shared/: the widget builds the URL, the iOS and macOS
 /// apps resolve it, and `OpenTaskLogicTests` pins both directions.

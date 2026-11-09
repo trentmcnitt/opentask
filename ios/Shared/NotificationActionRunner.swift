@@ -103,13 +103,16 @@ enum NotificationActionRunner {
         /// `staleDidMessage`.
         case promptDidStale(promptKey: String)
         /// Body tap on a named quota-prompt push: the phone and Mac load
-        /// `PromptDeepLink.webPath(promptKey:)` (`/reminders?prompt=<key>`),
-        /// which brings that prompt's row into view on /reminders.
+        /// `DeepLinkRouter.notificationPromptPath` (`/?prompt=<key>`), the
+        /// dashboard, whose Reminders card lifts that prompt to the top of its
+        /// period (2026-11-09, src/lib/panel-lift.ts).
         case openPrompt(promptKey: String)
-        /// Body tap on a summary or slot notification: open the dashboard.
-        /// (Not /reminders for a slot: a slot push can arrive on a build
-        /// older than the web /reminders route, and the dashboard is never a
-        /// 404.)
+        /// Body tap on a slot (period) notification: the phone and Mac load
+        /// `DeepLinkRouter.notificationSlotPath` (`/?slot=<id>`), the dashboard
+        /// with its Reminders card paged to that period (2026-11-09).
+        case openSlot(slotId: Int)
+        /// Body tap on a summary notification, or a slot one without a slot
+        /// id: open the dashboard.
         case openDashboard
         /// Body tap on a task notification: show that task — the phone and Mac
         /// load `DeepLinkRouter.notificationTaskPath`, which brings its row into
@@ -157,6 +160,7 @@ enum NotificationActionRunner {
         case NotificationCategory.slotReminder:
             switch action {
             case .bodyTap:
+                if let slotId = userInfo[SlotReminderKey.slotId] as? Int { return .openSlot(slotId: slotId) }
                 return .openDashboard
             case .button(NotificationAction.completeAll):
                 let slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
