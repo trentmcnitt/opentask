@@ -35,7 +35,7 @@ import {
   resolveFeatureProvider,
   type FeatureProviderConfig,
 } from './models'
-import { ISOLATED_SETTING_SOURCES, fixedThinkingBudget } from './sdk-options'
+import { ISOLATED_SETTING_SOURCES, NO_TOOLS, fixedThinkingBudget } from './sdk-options'
 import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 
 let aiEnabled: boolean | null = null
@@ -290,13 +290,13 @@ async function sdkQuery(options: AIQueryOptions): Promise<AIQueryResult> {
       const cliPath = getClaudeCliPath()
 
       // Build query options using the SDK's Options type.
-      // bypassPermissions requires allowDangerouslySkipPermissions safety flag.
-      // persistSession=false avoids writing enrichment sessions to ~/.claude/.
+      // No tools, nothing approved: the model reads untrusted text
+      // (NO_TOOLS, sdk-options.ts). persistSession=false avoids writing
+      // enrichment sessions to ~/.claude/.
       const queryOptions: Options = {
         model: resolvedModel,
         maxTurns,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        ...NO_TOOLS,
         persistSession: false,
         settingSources: ISOLATED_SETTING_SOURCES,
         // Clear NODE_OPTIONS to prevent debugger bootloaders (VS Code, etc.)
