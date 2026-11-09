@@ -273,7 +273,8 @@ targets:
         # Its own file in a push build too (OpenTaskMac's settings say why).
         OPENTASK_PUSH_ENTITLEMENTS: OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements
         SWIFT_VERSION: '5.9'
-        INFOPLIST_FILE: ../ios/OpenTaskNotificationService/Info.plist
+        # Its own Info.plist: the iOS one plus NSExtension.Subsystems (see the file).
+        INFOPLIST_FILE: OpenTaskMacNotificationService/Info.plist
         GENERATE_INFOPLIST_FILE: false
 
   # Unit tests for the native clients' pure logic (testing pass WP5,

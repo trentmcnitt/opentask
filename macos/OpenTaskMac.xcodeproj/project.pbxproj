@@ -1656,7 +1656,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../ios/OpenTaskNotificationService/Info.plist;
+				INFOPLIST_FILE = OpenTaskMacNotificationService/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1773,7 +1773,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenTaskMacNotificationService/OpenTaskMacNotificationService.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../ios/OpenTaskNotificationService/Info.plist;
+				INFOPLIST_FILE = OpenTaskMacNotificationService/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
