@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleDisplayName</key>
+	<string>OpenTask Notification Icons</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.usernotifications.service</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).NotificationService</string>
+		<!--
+		  The Mac's own copy of ios/OpenTaskNotificationService/Info.plist, for
+		  this one key (2026-11-09). Without it PlugInKit tries the UIKit
+		  subsystem, which refuses on macOS; the host's "begin using" request is
+		  then never answered, and usernoted kills the extension after 2 s
+		  ("Extension will be killed due to sluggish startup"), showing every
+		  push undecorated. Apple's own Mac service extensions (Numbers,
+		  Keynote) declare it. iOS's copy must not.
+		-->
+		<key>Subsystems</key>
+		<array>
+			<string>NSExtensionService_Subsystem</string>
+		</array>
+	</dict>
+</dict>
+</plist>
