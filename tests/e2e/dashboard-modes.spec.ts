@@ -584,3 +584,48 @@ test.describe('Today · not-yet rows dim', () => {
     }
   })
 })
+
+/**
+ * A SEARCH IGNORES THE MODE (Trent, 2026-11-10: Today said "1 result" and
+ * showed nothing — the hit wasn't one of Today's): with text in the box the
+ * list is every hit, the count is the rows shown, the pill is away; clearing
+ * the search draws the mode again.
+ */
+test.describe('Today · a search looks at everything', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('a hit outside Today is listed and counted; clearing returns to Today', async ({
+    authenticatedPage: page,
+  }) => {
+    const word = `zqneedle${Date.now()}`
+    const ids = {
+      today: await create(page, {
+        title: `${word} over target`,
+        due_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+      }),
+      elsewhere: await create(page, { title: `${word} undated`, horizon: 'weeks' }),
+    }
+    try {
+      await open(page, 'today')
+      await expect(rowIn(section(page, 'today'), ids.today)).toBeVisible()
+      await expect(page.locator(`[data-lean-row="${ids.elsewhere}"]`)).toHaveCount(0)
+      await expect(page.locator('[data-mode-dock]')).toBeVisible()
+
+      const search = page.getByRole('textbox', { name: 'Search tasks' })
+      await search.fill(word)
+      await expect(page.getByText(`2 results for “${word}”`)).toBeVisible()
+      await expect(page.locator(`[data-lean-row="${ids.today}"]`)).toBeVisible()
+      await expect(page.locator(`[data-lean-row="${ids.elsewhere}"]`)).toBeVisible()
+      // No sections while searching, and no pill naming a view that isn't shown.
+      await expect(page.locator('section[data-mode-section]')).toHaveCount(0)
+      await expect(page.locator('[data-mode-dock]')).toHaveCount(0)
+
+      await page.getByRole('button', { name: /clear search/i }).click()
+      await expect(rowIn(section(page, 'today'), ids.today)).toBeVisible()
+      await expect(page.locator(`[data-lean-row="${ids.elsewhere}"]`)).toHaveCount(0)
+      await expect(page.locator('[data-mode-dock]')).toBeVisible()
+    } finally {
+      await cleanUp(page, Object.values(ids))
+    }
+  })
+})
