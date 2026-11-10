@@ -61,6 +61,7 @@
 		24AABF3C42A5A81F8F73C81F /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B46ABD580807D58325D969 /* TaskDayProgress.swift */; };
 		25A22F2B7A429A5B77F9867A /* TasksTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0431240DA3532D2272FDFAC /* TasksTimeline.swift */; };
 		28474208C6B76704F2916092 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */; };
+		28A130D7D7F01FEAB306E1E6 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */; };
 		28D7F304DA6B24F6783F1CB3 /* period.png in Resources */ = {isa = PBXBuildFile; fileRef = B9EC178D0039DDDD9F278897 /* period.png */; };
 		2A1060F16DCD1A1E9F3F0405 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF69531FE48B319A9AD5A85 /* ServerURL.swift */; };
 		2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
@@ -83,6 +84,7 @@
 		34B70C4530803D25110BE465 /* RemindersWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F070FBA4B04FE941D838C58 /* RemindersWidget.swift */; };
 		34C7A1CF0354769D3BED88D4 /* LeanRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C5AEAF4299587ADBC63AB07 /* LeanRow.swift */; };
 		34EEA76166D64CACDB558593 /* NotificationActionRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B81BC442517CEF9C27927AF /* NotificationActionRunnerTests.swift */; };
+		35C6110062B74EE1211CA251 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */; };
 		36DAA2D06FED9F72670F5343 /* PendingLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEF2491B3B8C5BB19401933 /* PendingLockTests.swift */; };
 		36E7154968310ED5F141E3E4 /* WidgetOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C01DDBEE9460F29FCD1B3F5 /* WidgetOutbox.swift */; };
 		3783589455416899AAD84D14 /* WatchWidgetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581F215131E6EB3EB5CBA0E2 /* WatchWidgetState.swift */; };
@@ -179,6 +181,7 @@
 		770EF3B5D76EE47517B10CFF /* QuotaRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EBB1F0D8B23725D4EB9DC21 /* QuotaRulesTests.swift */; };
 		78524F1E514DC0A9797AC86C /* OpenTaskDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0416FE5790E90F7D67FF1112 /* OpenTaskDay.swift */; };
 		78931D4AFF9A62A3E49A51AA /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
+		79F6FEAA3FF170C8D30F882F /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */; };
 		7CC1249ED4A76AB54DCD865B /* PadPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9DBFA5C3F04DA1B616E7D4 /* PadPresetStore.swift */; };
 		7F1C5CD3DCB9525D70CCCBA4 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF69531FE48B319A9AD5A85 /* ServerURL.swift */; };
 		7F708353B1540BED9E328245 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BEA167B70531B2904292843 /* SweepDismissal.swift */; };
@@ -242,10 +245,12 @@
 		B252D549BA90D16F4EB3184A /* WidgetRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903ACB0C682D367B55AA9A1E /* WidgetRenderTests.swift */; };
 		B302F4DC907D17535F4F600E /* reminders-deck.json in Resources */ = {isa = PBXBuildFile; fileRef = C96B2E041EAF0E38730453F4 /* reminders-deck.json */; };
 		B33E4A29D8A2EB85702448E6 /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77660CA27D2B28508DE93F7A /* QuotaCount.swift */; };
+		B3DB40CBDF1766FF97790846 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */; };
 		B52912B70847963A140477AE /* TaskDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B46ABD580807D58325D969 /* TaskDayProgress.swift */; };
 		B52C7BAC45B80C91ADDAFF1D /* ServerURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F8A73C48D197AA6F7D2CF1A /* ServerURLTests.swift */; };
 		B58C73D0FF5FB19FA7B9F7E2 /* PageAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48C1737B0497AEDC038E7868 /* PageAnchor.swift */; };
 		B631C0923839CAAB69653444 /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5AD2085E636FB318922CE9AA /* Intents.framework */; };
+		B67D46CA78687C1257FB52D0 /* notifications-stale.json in Resources */ = {isa = PBXBuildFile; fileRef = CA6B897C53879FC8D116C9BA /* notifications-stale.json */; };
 		B75C43B87ED7288B98BD9578 /* QuotaCountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13865C4D7DA320D5CAA82CE /* QuotaCountTests.swift */; };
 		B7A6C49AEC224FA14079678E /* TasksWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */; };
 		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
@@ -312,6 +317,7 @@
 		E537B4BB5A25471DB3077CEB /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E8557A45EA6669C5FDB4B7 /* QuotaPeriodBounds.swift */; };
 		E69526176D4B469274A11414 /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E976BDF1943E2A6E03E1BAC /* DayStartStore.swift */; };
 		E6E64AEA329C11806176E44D /* MenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38BA76FEFE40A03A2F3E709E /* MenuActions.swift */; };
+		E6F731EDFBEEBBFEC987A44C /* BannerReconcileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E35956F18F05543B47DAB6 /* BannerReconcileTests.swift */; };
 		E70B7F2FC23A38454742DD3C /* RowCorner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66322EE9B0CF0A477B85DE55 /* RowCorner.swift */; };
 		E85DD075F709E632090886FC /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BE26DEC5BFD175EB325C40 /* ReminderDayProgress.swift */; };
 		E96A95A44A30F64C80592FB7 /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
@@ -411,6 +417,7 @@
 		26D82069C489AB70ADFFC141 /* ProgressSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressSource.swift; sourceTree = "<group>"; };
 		2B3D005A333CC598AAC3F3B8 /* WidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
 		2BFC62E0F89CD20210B0D6D0 /* DayStartSurfacesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayStartSurfacesTests.swift; sourceTree = "<group>"; };
+		2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannerReconcile.swift; sourceTree = "<group>"; };
 		2EA0557D2E026571049F1EF2 /* TrackWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackWidgetViews.swift; sourceTree = "<group>"; };
 		2ECA6CCCF272F71BA472679A /* QuotaSegmentsPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSegmentsPreviews.swift; sourceTree = "<group>"; };
 		318AC11362E9FEC5D2350FE6 /* QuotaRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaRules.swift; sourceTree = "<group>"; };
@@ -531,6 +538,7 @@
 		C92C74F59E9D3BDE167E4172 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C93991B196F33DC054AF3D3C /* Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fixtures.swift; sourceTree = "<group>"; };
 		C96B2E041EAF0E38730453F4 /* reminders-deck.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-deck.json"; sourceTree = "<group>"; };
+		CA6B897C53879FC8D116C9BA /* notifications-stale.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "notifications-stale.json"; sourceTree = "<group>"; };
 		CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-restore.json"; sourceTree = "<group>"; };
 		CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		CF865E3EF02E02F147369E30 /* TargetAgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAgeTests.swift; sourceTree = "<group>"; };
@@ -541,6 +549,7 @@
 		D48B4A75163FF407F49D160B /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		DA65E403BA6A23E8DEF11082 /* WebViewHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewHost.swift; sourceTree = "<group>"; };
 		E06CA39C19D4AF5FADD8BA98 /* RecurrenceSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceSummary.swift; sourceTree = "<group>"; };
+		E2E35956F18F05543B47DAB6 /* BannerReconcileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannerReconcileTests.swift; sourceTree = "<group>"; };
 		E3290E5D7B8A509F3BA310ED /* task-badges.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-badges.json"; sourceTree = "<group>"; };
 		E640E12BDB31D73C95C23791 /* opentask-day-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "opentask-day-cases.json"; sourceTree = "<group>"; };
 		E67F4801FB535177364242D4 /* NightDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightDayTests.swift; sourceTree = "<group>"; };
@@ -597,6 +606,7 @@
 				F781F8F4FFD0805CBC5D5068 /* completions.json */,
 				A78C64FF75ACBAAD8C4818F1 /* notification-action-considered.json */,
 				9B67D1CA5EAEFEF18E424B05 /* notification-action-not-waiting.json */,
+				CA6B897C53879FC8D116C9BA /* notifications-stale.json */,
 				C0E1F368B295526DF984B646 /* quota-prompts-consider.json */,
 				7925C2F94E9B86831E1DFCD6 /* quota-prompts-did.json */,
 				CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */,
@@ -639,6 +649,7 @@
 			children = (
 				456B0402D3211FEEE9D56F67 /* APIClient.swift */,
 				243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */,
+				2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */,
 				C605F50E331B33C23631EE81 /* DateHelpers.swift */,
 				3E976BDF1943E2A6E03E1BAC /* DayStartStore.swift */,
 				26AD825E02510A2E981723EE /* DeepLinkRouter.swift */,
@@ -734,6 +745,7 @@
 			isa = PBXGroup;
 			children = (
 				8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */,
+				E2E35956F18F05543B47DAB6 /* BannerReconcileTests.swift */,
 				4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */,
 				12CA12A04B151CFF15398C18 /* DayStartStoreTests.swift */,
 				2BFC62E0F89CD20210B0D6D0 /* DayStartSurfacesTests.swift */,
@@ -1075,6 +1087,7 @@
 				D81D43ABF6A9AD188B24DBE4 /* label-cases.json in Resources */,
 				306BDBFCBA2736BBE3ECA5FB /* notification-action-considered.json in Resources */,
 				9A5ED35FB511A89EE8333FA9 /* notification-action-not-waiting.json in Resources */,
+				B67D46CA78687C1257FB52D0 /* notifications-stale.json in Resources */,
 				4FA1D7F2B99CCB19DC1A2CA4 /* opentask-day-cases.json in Resources */,
 				73359B56C7D19F2A358AEC85 /* quota-prompts-consider.json in Resources */,
 				CEE9195BA01E697807305A73 /* quota-prompts-did.json in Resources */,
@@ -1149,6 +1162,7 @@
 				CC88FF8A161D084268B43BEE /* APIClient.swift in Sources */,
 				BD4DBE20DC068A1E10334D0F /* AppConfig.swift in Sources */,
 				28474208C6B76704F2916092 /* ApsEnvironment.swift in Sources */,
+				B3DB40CBDF1766FF97790846 /* BannerReconcile.swift in Sources */,
 				5C5D2DC3DFC8320A56B7E201 /* ContentView.swift in Sources */,
 				46CD72C3DB9ACAA0FA4228A1 /* DateHelpers.swift in Sources */,
 				4D6581981B52544AE311F240 /* DayStartStore.swift in Sources */,
@@ -1231,6 +1245,7 @@
 				BA1AE60805F4D1809E194172 /* APIClient.swift in Sources */,
 				4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */,
 				C32613CD16537759B94E8923 /* ApsEnvironment.swift in Sources */,
+				28A130D7D7F01FEAB306E1E6 /* BannerReconcile.swift in Sources */,
 				D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */,
 				DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */,
 				5DE54EDC36485E64DEACF85E /* DayStartStore.swift in Sources */,
@@ -1302,6 +1317,8 @@
 				4ABEC9743D9F16FBA470924F /* APIClient.swift in Sources */,
 				AB6C1D0E0A52F8A15B1C00F3 /* ApsEnvironment.swift in Sources */,
 				5F6F249B5F70259FA9A01A58 /* ApsEnvironmentTests.swift in Sources */,
+				79F6FEAA3FF170C8D30F882F /* BannerReconcile.swift in Sources */,
+				E6F731EDFBEEBBFEC987A44C /* BannerReconcileTests.swift in Sources */,
 				2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */,
 				909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */,
 				E69526176D4B469274A11414 /* DayStartStore.swift in Sources */,
@@ -1396,6 +1413,7 @@
 			files = (
 				21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */,
 				D5E5DBDF3011374CF3EA036F /* ApsEnvironment.swift in Sources */,
+				35C6110062B74EE1211CA251 /* BannerReconcile.swift in Sources */,
 				2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */,
 				D52800982EC66DCDA572D8B2 /* DayStartStore.swift in Sources */,
 				FA7BA42783C7FA87612704DB /* DeepLinkRouter.swift in Sources */,

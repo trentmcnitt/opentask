@@ -47,6 +47,24 @@ Task becomes overdue
 
 When a task is deferred, completed, skipped, deleted or has its date moved, from any device, the web UI or the API, `dismissNotificationsForTasks()` sends dismiss signals to both Web Push and APNs. The core mutation makes the call (`markDone`, `updateTask`, `bulkSnooze`, …), not the route, so every caller gets it; the header of `src/core/notifications/dismiss.ts` lists them. On iOS, APNs sends a silent push (`content-available: 1`) with `type: "dismiss"` and `taskIds`. The app's `didReceiveRemoteNotification` handler removes matching delivered notifications.
 
+**One APNs dismiss per user per 3 seconds** (2026-11-10, `apns-dismiss-batch.ts`). iOS budgets silent pushes to a few an hour per app and keeps only the newest pending one. On 11-10, twenty considers in ten seconds sent twenty dismisses, at most one arrived, and the other banners stayed on the lock screen. So the APNs dismisses a user's mutations ask for within a fixed 3-second window, counted from the first, go out as ONE push carrying the union of task ids and prompt keys. Web Push stays immediate, since it isn't budgeted. A `dismiss-all` drops a pending batch.
+
+**The reconcile** (2026-11-10, `src/core/notifications/stale.ts`, `POST /api/notifications/stale`). A dismiss still names only some tasks, and it may never arrive. So a current native build (iPhone, Mac, Watch; `reconcileDeliveredBanners`, `ios/Shared/BannerReconcile.swift`) does two things after every `dismiss` push, and when the app goes to the background:
+
+1. It removes the named banners as before.
+2. It sends what every delivered banner carries (`taskId`, `prompt_key`, `icon`, `kind`, `slot_id`) to the server and removes the ones the server answers as stale.
+
+So one push that gets through cleans every stale banner, however and wherever it was handled. The server's rules are each push's own "does it still stand" test:
+
+- a named reminder: `namedPushStands`;
+- a prompt: today's standing keys;
+- a period push: its period has opened and still holds something it counts. A count that only dropped leaves the banner; the next nag rewrites it;
+- the deadlines nag: a row still keeps it going, `deadlineRowsWaiting`;
+- an overdue task: still currently due;
+- a `taskId` with no icon (AI finished): the task is still open.
+
+Anything else (summary, sweep result, deadline cap) is never stale. A task-segment consider, Not today and the deadlines page's Defer now send a dismiss too, so handling the page's last row reaches the devices. Foreground isn't a reconcile point: the iPhone and the Mac already clear all their banners when they come forward.
+
 ### Notification coalescing
 
 APNs notifications include `collapseId: "task-{id}"` (the overflow summary: `overdue-summary`). iOS replaces (not stacks) notifications for the same task across cooldown cycles. Since 2026-10-22 (nag-map fix #6) the overdue Web Push carries the same string as its `tag`, so the browser replaces too instead of stacking a banner per repeat, with `renotify: true` so the replacement still alerts (a tagged replacement is otherwise shown silently). `public/sw.js` passes `renotify` only with a tag and never with `silent` — the browser throws a TypeError for either. Every other push already had a tag equal to its collapse id.

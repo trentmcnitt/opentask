@@ -201,6 +201,21 @@ function hasDeadlineCandidate(userId: number): boolean {
     .get(userId)
 }
 
+/**
+ * How many rows keep the deadlines nag going right now (`countedDeadlineRows`
+ * of the page as the nag builds it) — 0 with the task queue off, or with no
+ * target-less deadline task. The banner reconcile (stale.ts) asks it: with
+ * none, a delivered deadlines banner is stale.
+ */
+export function deadlineRowsWaiting(userId: number, timezone: string, now: Date): number {
+  if (!taskQueueEnabled() || !hasDeadlineCandidate(userId)) return 0
+  const page =
+    getTaskSegments(userId, timezone, now, { queuePanels: true, deadlineRows: true }).find(
+      (s) => s.horizon === 'deadlines',
+    )?.tasks ?? []
+  return countedDeadlineRows(page).length
+}
+
 /** The shortest interval any page row could set for these tiers (the safety net's rungs). */
 export function fastestDeadlineInterval(tiers: NagTiers): number {
   const rungs = [0, 1, 2, 3, 4].map((p) =>

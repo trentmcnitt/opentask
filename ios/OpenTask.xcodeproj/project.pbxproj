@@ -15,12 +15,14 @@
 		029411004C797D95E55FEF91 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214D7F74FAF79F1D94BCD4B8 /* WebView.swift */; };
 		02DCBE7803EAD9E08B629885 /* DayStartStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */; };
 		03EA0EED0718664A1BF29E0B /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91C682ED4122397787BE5C5 /* PromptDeepLink.swift */; };
+		04A7CE1F17B4907467D180E2 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
 		04D5F48AF04D4A2DECBE8251 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		04EB75DE765103068FEE008B /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF5053BC25A3EE4EAAD51FC /* QuotaPeriodBounds.swift */; };
 		05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */; };
 		0783B3FA74952A5E472B3439 /* LeanRowViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DCE8C4D86F1FF4B753EBB89 /* LeanRowViews.swift */; };
 		0A155E4978B3662FFF375686 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
 		0C322152C7EE3BA45D574410 /* OpenTaskDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FA710A65047564F35B53D2 /* OpenTaskDay.swift */; };
+		0DCC136807BE357B328D49FD /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
 		0F129206B451CDAC5870115C /* OpenTaskDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FA710A65047564F35B53D2 /* OpenTaskDay.swift */; };
 		10DC84D1FB60BBEA3F354C6E /* SnoozeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */; };
 		11260524194F5CFC3AC48FC5 /* WidgetPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DFC9734B17BD64A979BFC41 /* WidgetPushRegistration.swift */; };
@@ -153,6 +155,7 @@
 		74F89484C1A845E89C760DD7 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
 		76D83632FD8B18895F9E99E7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */; };
 		76EA5A4B242F069CB8E9D904 /* QuotaSegmentsPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */; };
+		77C148C8686BE394E4983BB8 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
 		7BFB8809C693F7820EAEC0D8 /* UndoScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64863DD395DDFC0117B667D3 /* UndoScope.swift */; };
 		7D875014177D998BA2E32866 /* ProgressSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 232562C1B05EE04ACD36161F /* ProgressSource.swift */; };
 		7E990EAB911ACAF5346E298D /* LeanRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C47298DA98651C102D86D1 /* LeanRow.swift */; };
@@ -189,6 +192,7 @@
 		9E082BD5767145630DCA9F96 /* reminder.png in Resources */ = {isa = PBXBuildFile; fileRef = CE35FEC5F89E1EA96180DAAC /* reminder.png */; };
 		9E64972476197349C6B8531B /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8814A68EB77D7A79413494F9 /* SweepDismissal.swift */; };
 		A0AECB58A4E40B508AEB983F /* RowCorner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E682262161055A496C984E98 /* RowCorner.swift */; };
+		A0D8E72DCD09ED14EA2128CE /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
 		A1C2750A5F7969A7312D08AE /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED94027914BC15E39E2469B /* SweepSummary.swift */; };
 		A1CAEE62ADF02B412938170F /* WidgetOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E25F7569216C1C32AADD88F /* WidgetOutbox.swift */; };
 		A231254B608FF76A8A111F44 /* RowCorner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E682262161055A496C984E98 /* RowCorner.swift */; };
@@ -281,6 +285,7 @@
 		F9D1F47F9930F04DA2B80E18 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B5F413C3A06EF7B3DEFE9AB1 /* Assets.xcassets */; };
 		FAB2788D1C7090627B23C655 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
 		FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */; };
+		FB21C5419FBD38196DD6BDD0 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
 		FB223AE8C59925AFD2D48155 /* task.png in Resources */ = {isa = PBXBuildFile; fileRef = 80FBAF31A542AC7FDCEC92E0 /* task.png */; };
 		FB7A654DBF27BE1F27819750 /* WatchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796964A2DD4C8A80D223996C /* WatchViewModel.swift */; };
 		FBB91BA91EEE6C115AF05C05 /* WebViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56DAD630482D315A1F294B8F /* WebViewManager.swift */; };
@@ -398,6 +403,7 @@
 		56DAD630482D315A1F294B8F /* WebViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewManager.swift; sourceTree = "<group>"; };
 		58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSegmentsPreviews.swift; sourceTree = "<group>"; };
 		5E25F7569216C1C32AADD88F /* WidgetOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetOutbox.swift; sourceTree = "<group>"; };
+		5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannerReconcile.swift; sourceTree = "<group>"; };
 		6014FAABE0C945E0B82A726F /* OpenTaskWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OpenTaskWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		613B60F9999A8718BB9EA210 /* QuickActionSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionSceneDelegate.swift; sourceTree = "<group>"; };
 		61BDD6279D23873E3415B90A /* WatchQuotaLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchQuotaLogic.swift; sourceTree = "<group>"; };
@@ -665,6 +671,7 @@
 			children = (
 				65AA422DED4654FD15D0C535 /* APIClient.swift */,
 				40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */,
+				5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */,
 				D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */,
 				C238B85CDD8CDFBB5A4B618B /* DayStartStore.swift */,
 				681D51174EAD79A32CBE0411 /* DeepLinkRouter.swift */,
@@ -952,6 +959,7 @@
 				BA800074867155F9D688713D /* AppConfig.swift in Sources */,
 				BC06179715F5A71D37A6C991 /* AppDelegate.swift in Sources */,
 				6A018F73275ACE3FF6F8C162 /* ApsEnvironment.swift in Sources */,
+				04A7CE1F17B4907467D180E2 /* BannerReconcile.swift in Sources */,
 				94220B779E8200B698FED4D1 /* ContentView.swift in Sources */,
 				51E6296F83B4E9B84CA333C3 /* DateHelpers.swift in Sources */,
 				3ED9F0A8414F14F81B62EB78 /* DayStartStore.swift in Sources */,
@@ -1015,6 +1023,7 @@
 			files = (
 				47A6D6459C1F8D895C6099D7 /* APIClient.swift in Sources */,
 				04D5F48AF04D4A2DECBE8251 /* ApsEnvironment.swift in Sources */,
+				FB21C5419FBD38196DD6BDD0 /* BannerReconcile.swift in Sources */,
 				C60DB58FC123FB9A62331E11 /* BulkSnoozeSheetView.swift in Sources */,
 				63FB0E869F13B68E3B6A082B /* DateHelpers.swift in Sources */,
 				B5BAB819BDA5EF868500277C /* DayStartStore.swift in Sources */,
@@ -1078,6 +1087,7 @@
 			files = (
 				ECB0FD5F24B460DCF051564A /* APIClient.swift in Sources */,
 				896C7265B3976900820FF4C1 /* ApsEnvironment.swift in Sources */,
+				A0D8E72DCD09ED14EA2128CE /* BannerReconcile.swift in Sources */,
 				EACE06C9E8EB63FF815818AD /* DateHelpers.swift in Sources */,
 				AED0DB03C5DAC29C5C08BCFA /* DayStartStore.swift in Sources */,
 				1193D251741F3BE8F46CAF04 /* DeepLinkRouter.swift in Sources */,
@@ -1145,6 +1155,7 @@
 			files = (
 				6473CD834F2E5C74E11E82BD /* APIClient.swift in Sources */,
 				3B38D9F33860B8973B5F4624 /* ApsEnvironment.swift in Sources */,
+				77C148C8686BE394E4983BB8 /* BannerReconcile.swift in Sources */,
 				D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */,
 				330C94030E730302AEAF8A60 /* DayStartStore.swift in Sources */,
 				FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */,
@@ -1194,6 +1205,7 @@
 			files = (
 				AB8D0452DEB7878EACF33CFE /* APIClient.swift in Sources */,
 				AD56C73ABE6D862EFD583906 /* ApsEnvironment.swift in Sources */,
+				0DCC136807BE357B328D49FD /* BannerReconcile.swift in Sources */,
 				5481CB0C47BEEEA103C88576 /* DateHelpers.swift in Sources */,
 				02DCBE7803EAD9E08B629885 /* DayStartStore.swift in Sources */,
 				F347EBEE087F2C516D1A9D31 /* DeepLinkRouter.swift in Sources */,

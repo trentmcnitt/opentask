@@ -30,6 +30,8 @@ struct OpenTaskApp: App {
             // widget push arriving.
             if phase == .background {
                 WidgetCenter.shared.reloadAllTimelines()
+                // Banners handled in the app are stale now (BannerReconcile).
+                appDelegate.reconcileBannersOnBackground()
             }
             if phase == .active {
                 // Tell the page to refresh (and re-open its sync stream if it

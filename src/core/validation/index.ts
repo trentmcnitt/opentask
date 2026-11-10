@@ -90,3 +90,7 @@ export {
 } from './quota-prompt'
 
 export type { PromptKeysInput, BulkCompleteInput } from './quota-prompt'
+
+// The banner reconcile (2026-11-10)
+export { staleBannersSchema, validateStaleBanners } from './notification'
+export type { StaleBannersInput } from './notification'
