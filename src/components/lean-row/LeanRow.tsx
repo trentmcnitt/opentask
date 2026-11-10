@@ -155,11 +155,12 @@ function titleWeight(state: LeanRowState | null): string {
 
 /**
  * NOT YET (Trent, 2026-11-10, mockup 3 of `.tmp/dim-rows/`: "60%, and on
- * deck stays full strength"): in Today mode's TODAY section, a row whose time
- * has not come — a target later today, or the deadline's safety net with no
- * target — is drawn at 60%, the whole row (title, meta, chips, done square,
- * buttons). Over target (blue) and a passed deadline (red) stay full, and so
- * does On deck: only the TODAY section asks (`notYetSection`). The list's
+ * deck stays full strength"): in Today mode's TODAY section, a row whose
+ * picked target is later today is drawn at 60%, the whole row (title, meta,
+ * chips, done square, buttons). Over target (blue), a passed deadline (red),
+ * the deadline net (no target to wait for: the row that wants a decision now,
+ * 2026-11-10) and On deck stay full: the list decides (`notYet`,
+ * `isNotYetRow` in `TaskList`). The list's
  * clock (`useDashboardNow`) ticks when a target passes, so a row brightens
  * on its own, with no reload.
  *
@@ -172,12 +173,12 @@ const NOT_YET =
 
 /** Whether the row is a not-yet one, and the dim it wears right now (none while acted on). */
 function notYetLook(
-  notYetSection: boolean | undefined,
+  notYetRow: boolean | undefined,
   state: LeanRowState | null,
   isOverdue: boolean,
   actedOn: { isSelectionMode: boolean; isKeyboardFocused: boolean; highlighted?: boolean },
 ): { attrs: { 'data-not-yet'?: '' }; dimClass: string | undefined } {
-  const notYet = !!notYetSection && !isOverdue && state !== 'passed'
+  const notYet = !!notYetRow && !isOverdue && state !== 'passed'
   const shown = actedOn.isSelectionMode || actedOn.isKeyboardFocused || !!actedOn.highlighted
   return {
     attrs: notYet ? { 'data-not-yet': '' } : {},
@@ -215,7 +216,7 @@ export function LeanRow({
   onHighlightDone,
   timeSlots = NO_SLOTS,
   horizonLook = false,
-  notYetSection,
+  notYet: notYetAsked,
 }: TaskRowProps) {
   const { pointer, handleClick } = useRowPress({
     isSelectionMode,
@@ -242,7 +243,7 @@ export function LeanRow({
     dayStart,
     hour ? new Date(hour) : new Date(),
   )
-  const notYetRow = notYetLook(notYetSection, state, isOverdue, {
+  const notYetRow = notYetLook(notYetAsked, state, isOverdue, {
     isSelectionMode,
     isKeyboardFocused,
     highlighted,

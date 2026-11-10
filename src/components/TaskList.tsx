@@ -10,6 +10,8 @@ import { LeanRow } from './lean-row/LeanRow'
 import { CompactRow } from './lean-row/CompactRow'
 import { nextStepSize } from '@/lib/modes/select'
 import { TODAY } from '@/lib/modes/sections'
+import { isInDeadlineNet, isTargetedLaterToday } from '@/lib/modes/predicates'
+import type { ModeContext } from '@/lib/modes/types'
 import { createdBucket, type CreatedBucket } from '@/lib/created-bucket'
 import { AGE_STEP_CLASS } from '@/components/modes/age-step'
 import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
@@ -566,7 +568,7 @@ export function TaskList({
           dayControlsOnTouch={inDeck}
           highlighted={[highlightTaskId, flashTaskId].includes(task.id)}
           onHighlightDone={() => handleHighlightDone(task.id)}
-          notYetSection={isTodaySection(group)}
+          notYet={isNotYetRow(group, task, { now, timezone, dayStart })}
         />
       </SwipeableRow>
     )
@@ -825,9 +827,16 @@ function isCompact(group: SortedTaskGroup): boolean {
   return group.section?.rows === 'compact'
 }
 
-/** Whether a group is Today mode's TODAY section, whose not-yet rows dim (`LeanRow`). */
-function isTodaySection(group: SortedTaskGroup): boolean {
-  return group.section?.id === TODAY.id
+/**
+ * A not-yet row (`LeanRow` dims it): in Today mode's TODAY section, its
+ * picked target still ahead today. The deadline net stays full (2026-11-10):
+ * a net row has no target to wait for — it is the row that wants a decision
+ * now. `now` is the dashboard's clock, which ticks when a target passes.
+ */
+function isNotYetRow(group: SortedTaskGroup, task: Task, ctx: ModeContext): boolean {
+  return (
+    group.section?.id === TODAY.id && isTargetedLaterToday(task, ctx) && !isInDeadlineNet(task, ctx)
+  )
 }
 
 /**
