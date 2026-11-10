@@ -135,6 +135,8 @@ export interface SegmentRow {
    * Pulled view's rows; the row acts as its own kind.
    */
   pulled?: PulledSection
+  /** New's rows (2026-11-10, `src/lib/new-tasks.ts` N5): back from yesterday's Not today. */
+  carried?: boolean
 }
 
 export type PulledSection = 'today' | 'earlier'
@@ -474,6 +476,7 @@ function segmentViews(
           ...(t.safety_net ? { safetyNet: true } : {}),
           ...(obj?.seen || t.seen ? { seen: true } : {}),
           ...(seg.horizon === 'upcoming' ? { section: t.upcoming_section ?? 'later' } : {}),
+          ...(t.carried_over ? { carried: true } : {}),
         }
       })
       .filter((r): r is SegmentRow => r.state !== 'gone')

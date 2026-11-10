@@ -73,6 +73,7 @@ import {
   growStep,
   type AgedOutGroup,
 } from '@/lib/aged-out'
+import { CARRIED_OVER_TITLE, NEW_PAGE_TITLE } from '@/lib/new-tasks'
 import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -175,6 +176,7 @@ export function segmentTitle(kind: SegmentKind): string {
   if (isQueueKind(kind)) return QUEUE_PANEL_TITLES[kind]
   if (kind === 'deadlines') return DEADLINES_PAGE_TITLE
   if (kind === 'aged_out') return AGED_OUT_TITLE
+  if (kind === 'new') return NEW_PAGE_TITLE
   return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
 }
 
@@ -1756,6 +1758,41 @@ export function PulledSectionHeading({
     <SectionPill
       data={{ 'data-pulled-section': section }}
       label={PULLED_SECTION_WORDS[section]}
+      count={count}
+      panel={panel}
+      hiddenWhenNarrow={hiddenWhenNarrow}
+    />
+  )
+}
+
+/**
+ * NEW's "Carried over" line (2026-11-10, `src/lib/new-tasks.ts` N5): before
+ * the first row back from yesterday's Not today — the fresh ones come first
+ * (the server's order) and have no heading; the line shows only when a
+ * carried row does. Its count is the carried rows'.
+ */
+export function carriedLineBefore(
+  rows: readonly SegmentRow[],
+  index: number,
+): { count: number } | null {
+  if (!rows[index].carried) return null
+  if (index > 0 && rows[index - 1].carried) return null
+  return { count: rows.filter((r) => r.carried).length }
+}
+
+export function CarriedOverLine({
+  count,
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  count: number
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <SectionPill
+      data={{ 'data-carried-over': '' }}
+      label={CARRIED_OVER_TITLE}
       count={count}
       panel={panel}
       hiddenWhenNarrow={hiddenWhenNarrow}

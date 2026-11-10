@@ -85,16 +85,17 @@ async function trash(page: Page, ids: number[]) {
 }
 
 /**
- * A `days` one-off made the day before the pin (26 hours back, as an
+ * A `days` one-off made two days before the pin (50 hours back, as an
  * explicit instant: SQLite's own 'now' is the real clock, not the pinned
- * one), so it waits in the pinned day's Days segment.
+ * one), so it waits in the pinned day's Days segment — one made the day
+ * before is on New (2026-11-10, src/lib/new-tasks.ts).
  */
 async function daysTask(page: Page, title: string): Promise<number> {
   const id = await create(page, { title, horizon: 'days' })
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(
-      PIN.minus({ hours: 26 }).toUTC().toISO(),
+      PIN.minus({ hours: 50 }).toUTC().toISO(),
       id,
     )
   } finally {

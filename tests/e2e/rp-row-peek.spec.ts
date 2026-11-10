@@ -58,11 +58,11 @@ function sql(statement: string, ...args: unknown[]) {
   }
 }
 
-/** A `days` one-off made yesterday: it waits in today's Days segment at any hour. */
+/** A `days` one-off made two days ago (yesterday's are on New): it waits in today's Days segment at any hour. */
 async function daysTask(page: Page, title: string, extra: Record<string, unknown> = {}) {
   const id = await create(page, { title, horizon: 'days', ...extra })
   sql(
-    `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+    `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     id,
   )
   return id

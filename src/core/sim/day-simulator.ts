@@ -126,12 +126,30 @@ export interface SimOptions {
   rollover?: boolean | { late?: Record<string, string> }
   /** Called after each day is recorded (the CLI prints as it goes). */
   onDay?: (day: SimDay) => void
+  /**
+   * Draw New (2026-11-10, `src/lib/new-tasks.ts`), as the web does: the
+   * day after a one-off is written it is on `new`, not its horizon segment.
+   * Off by default, so the golden timelines (written before New) stand; the
+   * CLI turns it on.
+   */
+  newRows?: boolean
+}
+
+/** The segments a tick reads: everything the web draws (New only when asked). */
+function segmentOptions(newRows: boolean) {
+  return { queuePanels: true, deckRows: true, deadlineRows: true, newRows }
 }
 
 const ORDER: Place[] = ['done', 'over']
 
 /** Read one tick: every task's place and badges. */
-export function readTick(userId: number, timezone: string, ids: number[], now: Date): SimTaskDay[] {
+export function readTick(
+  userId: number,
+  timezone: string,
+  ids: number[],
+  now: Date,
+  newRows = false,
+): SimTaskDay[] {
   const segment = new Map<
     number,
     {
@@ -142,11 +160,7 @@ export function readTick(userId: number, timezone: string, ids: number[], now: D
       section?: UpcomingSection
     }[]
   >()
-  for (const seg of getTaskSegments(userId, timezone, now, {
-    queuePanels: true,
-    deckRows: true,
-    deadlineRows: true,
-  })) {
+  for (const seg of getTaskSegments(userId, timezone, now, segmentOptions(newRows))) {
     for (const row of seg.tasks) {
       const list = segment.get(row.task.id) ?? []
       list.push({
@@ -257,13 +271,10 @@ function applyPolicy(
   timezone: string,
   now: Date,
   ids: number[],
+  newRows: boolean,
 ): void {
   if (policy.includes('tap')) {
-    const waiting = getTaskSegments(userId, timezone, now, {
-      queuePanels: true,
-      deckRows: true,
-      deadlineRows: true,
-    })
+    const waiting = getTaskSegments(userId, timezone, now, segmentOptions(newRows))
       .flatMap((s) => s.tasks)
       .filter((r) => r.state === 'waiting' && ids.includes(r.task.id))
       .map((r) => r.task.id)
@@ -280,12 +291,8 @@ function applyPolicy(
 }
 
 /** The user's open, ordinary task ids (no reminders or quotas): the CLI's default report set. */
-function defaultIds(userId: number, now: Date, timezone: string): number[] {
-  return getTaskSegments(userId, timezone, now, {
-    queuePanels: true,
-    deckRows: true,
-    deadlineRows: true,
-  })
+function defaultIds(userId: number, now: Date, timezone: string, newRows: boolean): number[] {
+  return getTaskSegments(userId, timezone, now, segmentOptions(newRows))
     .flatMap((s) => s.tasks.map((r) => r.task.id))
     .concat(getCurrentlyDueTaskIds(userId, now))
     .concat(onDeckToday(userId, timezone, now).map((t) => t.id))
@@ -359,9 +366,11 @@ export function simulateDays(opts: SimOptions): SimDay[] {
       runEventsUntil(tick.toMillis())
       const now = tick.toJSDate()
       opts.setClock(now)
-      const ids = opts.taskIds?.() ?? [...new Set(defaultIds(userId, now, timezone))]
-      if (+tick === +record) recorded = recordDay(day, readTick(userId, timezone, ids, now))
-      applyPolicy(policy, userId, timezone, now, ids)
+      const newRows = opts.newRows === true
+      const ids = opts.taskIds?.() ?? [...new Set(defaultIds(userId, now, timezone, newRows))]
+      if (+tick === +record)
+        recorded = recordDay(day, readTick(userId, timezone, ids, now, newRows))
+      applyPolicy(policy, userId, timezone, now, ids, newRows)
     }
     rollUntil(null)
     out.push(recorded!)

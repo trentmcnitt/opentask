@@ -2805,6 +2805,16 @@ paths:
             `task_segments`). Honoured only on a build with `NEXT_PUBLIC_AGED_OUT=1` (dev); the
             web there sends it, beside `REMINDERS_URL`, which the native apps share. Omitted:
             nothing changes.
+        - name: new
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1']
+          description: >
+            `1` (2026-11-10): this client draws the `new` segment, yesterday's new
+            one-offs (see `task_segments`). The web sends it beside `REMINDERS_URL`, which
+            the native apps share. Omitted: those tasks stay in their horizon segments.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -2856,6 +2866,15 @@ paths:
                           Later day) came round shows daily until it is.
                           TOP-LEVEL, never inside `groups`; never counted in
                           `total`, the nav badge or the slot notifications.
+
+                          NEW (2026-11-10; only with `?new=1`): `horizon:
+                          "new"`, after `upcoming` — open one-offs with no
+                          picked target, deck or deadline, created during the
+                          previous OpenTask day; one pass (untouched, the next
+                          rollover drops them to their horizon). A row back
+                          from yesterday's Not today carries `carried_over:
+                          true` and comes after the fresh ones. A task on New
+                          is in no horizon segment that day.
 
                           AGED OUT (2026-10-29, first pass; only on a build
                           with `NEXT_PUBLIC_AGED_OUT=1` AND `?aged=1` on the

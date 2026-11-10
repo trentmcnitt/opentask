@@ -54,6 +54,11 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // a build with the segment (`NEXT_PUBLIC_AGED_OUT=1`, dev): it is not in
     // `REMINDERS_URL`, the question the native apps share.
     const agedOut = AGED_OUT_ENABLED && request.nextUrl.searchParams.get('aged') === '1'
+    // `?new=1` (New, 2026-11-10 — src/lib/new-tasks.ts): this client draws the
+    // `new` segment, yesterday's new one-offs. The web sends it; it is not in
+    // `REMINDERS_URL`, the question the native apps mirror, so a native build
+    // keeps those tasks in their horizon segments as before.
+    const newRows = request.nextUrl.searchParams.get('new') === '1'
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)
     const promptsBySlot = getQuotaPromptsBySlot(user.id, user.timezone, now)
@@ -111,9 +116,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         deadlineRows,
         fill,
         agedOut,
+        newRows,
       }).map((seg) => ({
         horizon: seg.horizon,
-        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen, section }) => ({
+        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen, section, carried }) => ({
           ...formatTaskResponse(task, user.timezone),
           segment_state: state,
           // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
@@ -137,6 +143,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
           // kinds: a shipped native build lists both sections' rows as one
           // Upcoming page and ignores the key.
           ...(seg.horizon === 'upcoming' ? { upcoming_section: section ?? 'later' } : {}),
+          // New's rows (`?new=1` only, 2026-11-10): `carried_over` — back from
+          // yesterday's Not today, drawn under "Carried over" after the fresh ones.
+          ...(seg.horizon === 'new' ? { carried_over: !!carried } : {}),
         })),
         waiting: seg.waiting,
         considered: seg.considered,

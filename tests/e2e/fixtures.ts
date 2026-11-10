@@ -116,9 +116,12 @@ export function waitForPreferenceSave(page: Page, field: string) {
  * also gets a read-only preview at the top of the dashboard's Inbox or list
  * (`src/lib/just-added.ts`), so a spec that counts titles or reads the top of
  * the list backdates the tasks it made first. The server reads SQLite in WAL mode, so the next
- * fetch sees the write. `daysAgo` (default 1): further back, for a spec on a
- * pinned clock up to a day behind real now, where a day back from the real
- * clock can still be the pin's own day (nav-retap-walk.spec.ts).
+ * fetch sees the write. `daysAgo` (default 1; 2 with `inSegments`): further
+ * back, for a spec on a pinned clock up to a day behind real now, where a day
+ * back from the real clock can still be the pin's own day
+ * (nav-retap-walk.spec.ts). `inSegments` goes back TWO days since New
+ * (2026-11-10, src/lib/new-tasks.ts): a task made yesterday is on the New
+ * page, not its horizon segment.
  */
 export function backdateCreated(
   ids: number[],
@@ -146,7 +149,7 @@ export function backdateCreated(
              last_considered_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 day') WHERE id = ?`,
     )
     for (const id of ids) {
-      stmt.run(`-${opts.daysAgo ?? 1} day`, id)
+      stmt.run(`-${opts.daysAgo ?? (opts.inSegments ? 2 : 1)} day`, id)
       if (!opts.inSegments) hide.run(id)
     }
   } finally {

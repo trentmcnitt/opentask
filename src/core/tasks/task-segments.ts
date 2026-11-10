@@ -96,6 +96,7 @@ import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { agedOutState, compareAgedOut, growStep } from '@/lib/aged-out'
+import { newTaskPlace } from '@/lib/new-tasks'
 
 export interface SegmentTask {
   task: Task
@@ -115,6 +116,11 @@ export interface SegmentTask {
    * as a considered row, saying how it left. Only with `handledRows`.
    */
   left?: SegmentLeft
+  /**
+   * New rows only (2026-11-10, `src/lib/new-tasks.ts` N5): back from
+   * yesterday's Not today — drawn under "Carried over", after the fresh ones.
+   */
+  carried?: boolean
 }
 
 export { SEGMENT_ORDER, type SegmentKind }
@@ -222,8 +228,16 @@ export function getTaskSegments(
     deadlineRows = false,
     fill = false,
     agedOut,
+    newRows,
   }: {
     queuePanels?: boolean
+    /**
+     * NEW (2026-11-10, `src/lib/new-tasks.ts`): the caller draws the `new`
+     * segment (`GET /api/reminders?new=1`, the web). Yesterday's new one-offs
+     * are then there and in no horizon segment that day (N2). Without it
+     * nothing changes — a native build, the day simulator unless asked.
+     */
+    newRows?: boolean
     /**
      * AGED OUT (2026-10-29, first pass, `src/lib/aged-out.ts`): the caller
      * draws the `aged_out` segment (`GET /api/reminders?aged=1`, the web on a
@@ -307,12 +321,20 @@ export function getTaskSegments(
     }
     return placeDeadline(task)
   }
+  // New before the horizons (and Aged out): one place at a time (N2).
+  const placeNew = (task: Task): boolean => {
+    const fresh = newRows ? newTaskPlace(task, timezone, now, dayStart) : null
+    if (fresh) add('new', { task, state: fresh.state, carried: fresh.carried })
+    return fresh !== null
+  }
   // Aged out before the horizons: never also in its horizon segment that day.
   const placeAged = (task: Task): boolean => {
     const aged = agedOut ? agedOutState(task, timezone, now, dayStart, checkInDay) : null
     if (aged) add('aged_out', { task, state: aged })
     return aged !== null
   }
+  // New, then Aged out: either takes a task out of the horizons that day.
+  const placeAside = (task: Task): boolean => placeNew(task) || placeAged(task)
   for (const task of eligibleTasks(userId)) {
     if (placeFirst(task)) continue
     // ON DECK (B6): quiet like a picked target — in no horizon segment; a
@@ -326,7 +348,7 @@ export function getTaskSegments(
       addUpcoming(task)
       continue
     }
-    if (placeAged(task)) continue
+    if (placeAside(task)) continue
     const placed = segmentState(task, timezone, now, dayStart, checkInDay)
     if (placed) add(placed.horizon, { task, state: placed.state })
   }
@@ -370,6 +392,7 @@ export function getTaskSegments(
     addLeftRows(userId, timezone, now, byKind, {
       queuePanels,
       deadlines: deadlineRows && taskQueueEnabled(),
+      newRows: newRows === true,
     })
   }
   const queueOn = taskQueueEnabled()
@@ -379,21 +402,41 @@ export function getTaskSegments(
     if (kind === 'deadlines') return queueOn && deadlineRows
     if (isQueueKind(kind)) return queueOn && queuePanels
     if (kind === 'aged_out') return agedOut === true
+    if (kind === 'new') return newRows === true
     return true
   }
   return SEGMENT_ORDER.filter(shown).map((kind) => {
     const tasks = byKind.get(kind) ?? []
-    if (kind === 'queue_today' || kind === 'queue_previous') {
-      tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
-    } else if (kind === 'deadlines') {
-      tasks.sort((a, b) => compareDeadlineRows(a.task, b.task))
-    } else if (kind === 'aged_out') {
-      tasks.sort((a, b) => compareAgedOut(a.task, b.task))
-    } else if (kind !== 'upcoming') {
-      tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
-    }
+    sortSegmentRows(kind, tasks, deckMoment)
     return segmentOf(kind, tasks)
   })
+}
+
+/** Each segment's own row order, in place. */
+function sortSegmentRows(
+  kind: SegmentKind,
+  tasks: SegmentTask[],
+  deckMoment: ReturnType<typeof deckMomentFor>,
+): void {
+  if (kind === 'queue_today' || kind === 'queue_previous') {
+    tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
+  } else if (kind === 'deadlines') {
+    tasks.sort((a, b) => compareDeadlineRows(a.task, b.task))
+  } else if (kind === 'aged_out') {
+    tasks.sort((a, b) => compareAgedOut(a.task, b.task))
+  } else if (kind === 'new') {
+    // The fresh ones, then "Carried over" (N5); each by priority, then
+    // newest first — written yesterday, the latest is the freshest in mind.
+    tasks.sort(
+      (a, b) =>
+        Number(!!a.carried) - Number(!!b.carried) ||
+        b.task.priority - a.task.priority ||
+        Date.parse(b.task.created_at) - Date.parse(a.task.created_at) ||
+        a.task.id - b.task.id,
+    )
+  } else if (kind !== 'upcoming') {
+    tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
+  }
 }
 
 /** Upcoming's section order: Tomorrow, then Later. */
@@ -419,7 +462,7 @@ function addLeftRows(
    * What the caller draws: the queue's panels (`queuePanels`), the deadlines
    * page (`deadlineRows`, switch on) — never a left row of a kind it can't.
    */
-  shown: { queuePanels: boolean; deadlines: boolean },
+  shown: { queuePanels: boolean; deadlines: boolean; newRows: boolean },
 ): void {
   // Never add a queue panel of left rows that would not otherwise be drawn.
   const queueShown = shown.queuePanels && taskQueueEnabled()
@@ -432,6 +475,9 @@ function addLeftRows(
   for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
     if (isQueueKind(kind) && !queueShown) continue
     if (kind === 'deadlines' && !shown.deadlines) continue
+    // New (2026-11-10): only for a caller that draws it — never an unknown
+    // kind to a native build.
+    if (kind === 'new' && !shown.newRows) continue
     const list = byKind.get(kind) ?? []
     for (const { task, left, section } of rows) {
       list.push({ task, state: 'considered', left, ...(section ? { section } : {}) })

@@ -78,9 +78,10 @@ export type QueueKind = (typeof QUEUE_KINDS)[number]
  * DEADLINES page (2026-10-22, `deadlinePlace` below), or AGED OUT (2026-10-29,
  * `src/lib/aged-out.ts`, only for a caller that asks). In the API,
  * `horizon: "upcoming"` / `"queue_today"` / `"queue_previous"` / `"deadlines"` /
- * `"aged_out"`.
+ * `"aged_out"`, or NEW (2026-11-10, `src/lib/new-tasks.ts`, only for a caller
+ * that asks): `"new"`.
  */
-export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out'
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out' | 'new'
 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
@@ -129,6 +130,9 @@ export function segmentCounts(segment: {
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'deadlines',
   'upcoming',
+  // New (2026-11-10, `src/lib/new-tasks.ts`): yesterday's new one-offs, a
+  // one-off pass — after Heads up, before Pulled. Only for a caller that asks.
+  'new',
   'queue_today',
   'queue_previous',
   'days',

@@ -18,6 +18,7 @@ import { PinnedUndone, SettlingConsiders, restoreInPlace } from '@/lib/reminder-
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 import { REMINDERS_URL } from '@/lib/reminders-query'
 import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
+import { NEW_ROWS_QUERY } from '@/lib/new-tasks'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -198,10 +199,11 @@ export { REMINDERS_URL }
 
 /**
  * What THIS client fetches: `REMINDERS_URL`, plus Aged out's `&aged=1` on a
- * build with that segment (prod and dev — `src/lib/aged-out.ts`).
+ * build with that segment (prod and dev — `src/lib/aged-out.ts`), and New's
+ * `&new=1` (2026-11-10, `src/lib/new-tasks.ts`).
  * Kept out of `REMINDERS_URL` itself, which the native apps mirror exactly.
  */
-const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '')
+const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '') + NEW_ROWS_QUERY
 
 export interface ReminderCreateInput {
   title: string
@@ -249,7 +251,8 @@ export interface TaskSegmentPayload {
    *  deadline seeing the row does not silence it — it stays `waiting`, `seen` says it was seen
    *  this OpenTask day.
    *  `upcoming_section` (Upcoming rows only, 2026-10-25): 'tomorrow' (the day before the
-   *  anchor) or 'later' — Tomorrow's rows first. Read by the sections (PR B). */
+   *  anchor) or 'later' — Tomorrow's rows first. Read by the sections (PR B).
+   *  `carried_over` (New's rows only, `?new=1`, 2026-11-10): back from yesterday's Not today. */
   tasks: (Task & {
     segment_state: SegmentState
     recurring?: boolean
@@ -257,6 +260,7 @@ export interface TaskSegmentPayload {
     safety_net?: boolean
     seen?: boolean
     upcoming_section?: UpcomingSection
+    carried_over?: boolean
   })[]
   waiting: number
   considered: number

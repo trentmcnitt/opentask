@@ -68,7 +68,7 @@ function sql(statement: string, ...args: unknown[]) {
 /** Made yesterday: a horizon segment lists a task from the day after it was made. */
 const madeYesterday = (id: number) =>
   sql(
-    `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+    `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     id,
   )
 

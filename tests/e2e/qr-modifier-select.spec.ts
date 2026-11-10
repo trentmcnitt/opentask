@@ -32,7 +32,7 @@ async function stateOf(page: Page, id: number): Promise<Record<string, unknown>>
   return (await (await page.request.get(`/api/tasks/${id}`)).json()).data
 }
 
-/** `days` one-offs made yesterday: they wait in today's Days segment at any hour. */
+/** `days` one-offs made two days ago (yesterday's are on New): they wait in today's Days segment at any hour. */
 async function daysTasks(page: Page, n: number): Promise<number[]> {
   const ids: number[] = []
   for (let i = 0; i < n; i++) {
@@ -44,7 +44,7 @@ async function daysTasks(page: Page, n: number): Promise<number[]> {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const stmt = db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     )
     for (const id of ids) stmt.run(id)
   } finally {

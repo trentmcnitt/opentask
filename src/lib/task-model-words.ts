@@ -88,10 +88,11 @@ export const SEGMENT_STRIP_WORDS: Record<SegmentKind, { long: string; short: str
   months: { long: 'Months', short: 'Months' },
   eventually: { long: 'Eventually', short: 'Eventually' },
   aged_out: { long: 'Aged', short: 'Aged' },
+  new: { long: 'New', short: 'New' },
 }
 
 /** The strip's groups and their words; Aged out stands alone, wordless (`SEGMENT_ORDER`). */
-export type StripGroup = 'dated' | 'pulled' | 'horizon' | 'aged'
+export type StripGroup = 'dated' | 'new' | 'pulled' | 'horizon' | 'aged'
 export const SEGMENT_STRIP_GROUP: Record<SegmentKind, StripGroup> = {
   deadlines: 'dated',
   upcoming: 'dated',
@@ -102,9 +103,12 @@ export const SEGMENT_STRIP_GROUP: Record<SegmentKind, StripGroup> = {
   months: 'horizon',
   eventually: 'horizon',
   aged_out: 'aged',
+  // New (2026-11-10) stands alone between Dated and Pulled; its word is its own.
+  new: 'new',
 }
 export const STRIP_GROUP_WORDS: Record<StripGroup, string> = {
   dated: 'Dated',
+  new: '',
   pulled: 'Pulled',
   horizon: 'Horizon',
   aged: '',

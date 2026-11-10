@@ -69,7 +69,7 @@ function withDb(fn: (db: Database.Database) => void) {
 function madeYesterday(ids: number[]) {
   withDb((db) => {
     const stmt = db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     )
     for (const id of ids) stmt.run(id)
   })
