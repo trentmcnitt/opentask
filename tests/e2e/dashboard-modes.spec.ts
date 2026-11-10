@@ -21,6 +21,7 @@ import {
   test,
   expect,
   backdateCreated,
+  cmdClickRow,
   openTaskDay,
   serverDayStart,
   openModeMenu,
@@ -509,6 +510,75 @@ test.describe('Scan · plain squares, the horizon dot', () => {
       expect(await r('horizon-unset', made.unset).getAttribute('fill')).toBe('currentColor')
     } finally {
       await cleanUp(page, Object.values(made))
+    }
+  })
+})
+
+/**
+ * NOT YET (Trent, 2026-11-10, "number 3: 60%. and on deck stays full
+ * strength"): Today's rows whose time has not come draw at 60%; over target,
+ * Late and On deck stay full; a row brightens when its target passes, with no
+ * reload; select mode shows every row full.
+ */
+test.describe('Today · not-yet rows dim', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('later today and the deadline net at 60%; over target, Late and On deck full; brightens when its target passes', async ({
+    authenticatedPage: page,
+  }) => {
+    const now = Date.now()
+    const soonAt = await laterToday(page)
+    const ids = {
+      soon: await create(page, { title: uniqueTitle('NY soon'), due_at: soonAt.toISOString() }),
+      net: await create(page, {
+        title: uniqueTitle('NY net'),
+        deadline_at: DateTime.fromISO(`${await openTaskDay(page, 1)}T17:00`, { zone: TZ })
+          .toUTC()
+          .toISO(),
+      }),
+      over: await create(page, {
+        title: uniqueTitle('NY over'),
+        due_at: new Date(now - 2 * HOUR).toISOString(),
+      }),
+      late: await create(page, {
+        title: uniqueTitle('NY late'),
+        deadline_at: new Date(now - HOUR).toISOString(),
+      }),
+      deck: await create(page, { title: uniqueTitle('NY deck'), horizon: 'days' }),
+    }
+    try {
+      const deck = await page.request.patch(`/api/tasks/${ids.deck}`, {
+        data: { on_deck_day: await openTaskDay(page) },
+      })
+      expect(deck.ok(), await deck.text()).toBeTruthy()
+      // The browser's clock, so the target can be made to pass.
+      await page.clock.install({ time: new Date(now) })
+      await open(page, 'today')
+
+      const today = section(page, 'today')
+      await expect(rowIn(today, ids.soon)).toHaveCSS('opacity', '0.6')
+      await expect(rowIn(today, ids.soon)).toHaveAttribute('data-not-yet', '')
+      await expect(rowIn(today, ids.net)).toHaveCSS('opacity', '0.6')
+      await expect(rowIn(today, ids.over)).toHaveCSS('opacity', '1')
+      await expect(rowIn(today, ids.over)).not.toHaveAttribute('data-not-yet')
+      await expect(rowIn(section(page, 'late'), ids.late)).toHaveCSS('opacity', '1')
+      await expect(page.locator(`[data-lean-row="${ids.deck}"]`)).toHaveCSS('opacity', '1')
+
+      // Select mode: every row at full strength.
+      await cmdClickRow(rowIn(today, ids.over))
+      await expect(page.locator('[data-selection-sheet]')).toBeVisible()
+      await expect(rowIn(today, ids.soon)).toHaveCSS('opacity', '1')
+      await page.keyboard.press('Escape')
+      await expect(page.locator('[data-selection-sheet]')).toHaveCount(0)
+      await page.mouse.move(0, 0)
+      await expect(rowIn(today, ids.soon)).toHaveCSS('opacity', '0.6')
+
+      // Its target passes: it brightens in place (over target, blue).
+      await page.clock.fastForward(soonAt.getTime() - now + 60_000)
+      await expect(rowIn(today, ids.soon)).toHaveAttribute('data-row-state', 'over')
+      await expect(rowIn(today, ids.soon)).toHaveCSS('opacity', '1')
+    } finally {
+      await cleanUp(page, Object.values(ids))
     }
   })
 })

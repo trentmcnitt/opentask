@@ -9,6 +9,7 @@ import { SwipeableRow } from './SwipeableRow'
 import { LeanRow } from './lean-row/LeanRow'
 import { CompactRow } from './lean-row/CompactRow'
 import { nextStepSize } from '@/lib/modes/select'
+import { TODAY } from '@/lib/modes/sections'
 import { createdBucket, type CreatedBucket } from '@/lib/created-bucket'
 import { AGE_STEP_CLASS } from '@/components/modes/age-step'
 import { useTaskRowStyle } from '@/hooks/useTaskRowStyle'
@@ -565,6 +566,7 @@ export function TaskList({
           dayControlsOnTouch={inDeck}
           highlighted={[highlightTaskId, flashTaskId].includes(task.id)}
           onHighlightDone={() => handleHighlightDone(task.id)}
+          notYetSection={isTodaySection(group)}
         />
       </SwipeableRow>
     )
@@ -821,6 +823,11 @@ function headingAttrs(group: SortedTaskGroup): { 'data-section-heading'?: '' } {
 /** Whether a group draws compact rows (On deck in the Today mode). */
 function isCompact(group: SortedTaskGroup): boolean {
   return group.section?.rows === 'compact'
+}
+
+/** Whether a group is Today mode's TODAY section, whose not-yet rows dim (`LeanRow`). */
+function isTodaySection(group: SortedTaskGroup): boolean {
+  return group.section?.id === TODAY.id
 }
 
 /**
