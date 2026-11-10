@@ -1183,8 +1183,15 @@ function HomeContent({
   // A sectioned mode's sections, each with its rows SHOWN ("Show 5 more"
   // adds to a section's `sectionExtra`): they ARE the visual order then, so
   // the keyboard, shift-click ranges and Cmd+C follow them as drawn. The
-  // project chips, search and filters narrow `tasks_` first, in every mode.
-  const modeSections = dashMode.mode ? MODES[dashMode.mode].sections : null
+  // project chips and filters narrow `tasks_` first, in every mode.
+  //
+  // A SEARCH IGNORES THE MODE (Trent, 2026-11-10: "It should, by default,
+  // search everything… nobody has enough things in Today that they have to
+  // search for it"): with text in the search box the list is the dashboard's
+  // own list (All) over every hit — no sections — so a match outside Today
+  // is still a row, each with its own chips. The mode itself is untouched:
+  // clearing the search draws it again.
+  const modeSections = dashMode.mode && !searchQuery ? MODES[dashMode.mode].sections : null
   const [sectionExtra, setSectionExtra] = useState<Record<string, number>>({})
   const modeViews = useMemo(
     () =>
@@ -1777,7 +1784,9 @@ function HomeContent({
         timeSlots={timeSlots}
         searchQuery={searchQuery}
         searchHits={searchResults}
-        searchResultCount={visibleSearchResults.length}
+        // The rows the list holds — what "N results" counts (a hit the
+        // project chips or a filter hide is not a result shown).
+        searchResultCount={shownTaskCount}
         shownTaskCount={shownTaskCount}
         sweepOverdueCount={sweepOverdueCount}
         selection={selection}
@@ -2972,7 +2981,9 @@ function DashboardView({
 
       {/* The view pill (P1): the view, Scan's sort or All's order, and the
           menu that changes them — out of the way of any select bar. */}
-      {modes.mode && !selectionBarUp && (
+      {/* Hidden while searching: the list is every hit then, whatever the
+          mode (see `modeSections`), so the pill would name the wrong view. */}
+      {modes.mode && !selectionBarUp && !searchQuery && (
         <ModeDock
           mode={modes.mode}
           onMode={modes.setMode}
