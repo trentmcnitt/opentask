@@ -516,14 +516,14 @@ test.describe('Scan · plain squares, the horizon dot', () => {
 
 /**
  * NOT YET (Trent, 2026-11-10, "number 3: 60%. and on deck stays full
- * strength"): Today's rows whose time has not come draw at 60%; over target,
- * Late and On deck stay full; a row brightens when its target passes, with no
+ * strength"): Today's rows with a target later today draw at 60%; over
+ * target, Late, the deadline net and On deck stay full; a row brightens when its target passes, with no
  * reload; select mode shows every row full.
  */
 test.describe('Today · not-yet rows dim', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test('later today and the deadline net at 60%; over target, Late and On deck full; brightens when its target passes', async ({
+  test('later today at 60%; over target, Late, the deadline net and On deck full; brightens when its target passes', async ({
     authenticatedPage: page,
   }) => {
     const now = Date.now()
@@ -558,7 +558,9 @@ test.describe('Today · not-yet rows dim', () => {
       const today = section(page, 'today')
       await expect(rowIn(today, ids.soon)).toHaveCSS('opacity', '0.6')
       await expect(rowIn(today, ids.soon)).toHaveAttribute('data-not-yet', '')
-      await expect(rowIn(today, ids.net)).toHaveCSS('opacity', '0.6')
+      // The deadline net: no target to wait for — full.
+      await expect(rowIn(today, ids.net)).toHaveCSS('opacity', '1')
+      await expect(rowIn(today, ids.net)).not.toHaveAttribute('data-not-yet')
       await expect(rowIn(today, ids.over)).toHaveCSS('opacity', '1')
       await expect(rowIn(today, ids.over)).not.toHaveAttribute('data-not-yet')
       await expect(rowIn(section(page, 'late'), ids.late)).toHaveCSS('opacity', '1')
