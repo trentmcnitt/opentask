@@ -15,6 +15,12 @@ interface TaskDetailProps {
   /** Skip until (task queue PR 4), offered in the panel's More menu for a repeating task. */
   onSkipUntil?: (until: string | null) => Promise<void>
   /**
+   * The panel's Cancel, after it has dropped the staged edits. On the page it
+   * leaves (where the back arrow leads); without it Cancel only reset the
+   * panel, which looks like nothing happened (Trent, 2026-11-10).
+   */
+  onCancel?: () => void
+  /**
    * Whether the editor holds unsaved edits, as the host last heard through
    * `onDirtyChange`. The host owns the dirty state (it also guards navigation
    * with it); this only paints the stripe. The card wraps the editor alone,
@@ -44,6 +50,7 @@ export function TaskDetail({
   onDelete,
   onMarkDone,
   onSkipUntil,
+  onCancel,
   dirty,
   onDirtyChange,
   saveRef,
@@ -71,6 +78,7 @@ export function TaskDetail({
             onDelete={onDelete}
             onMarkDone={onMarkDone}
             onSkipUntil={onSkipUntil}
+            onCancel={onCancel}
             onDirtyChange={onDirtyChange}
             saveRef={saveRef}
             annotation={annotation}
