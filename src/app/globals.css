@@ -78,7 +78,9 @@
   --segment-title-queue_previous: #0a6670;
   --segment-title-deadlines: var(--deadlines);
   --segment-title-aged_out: #4d6b67;
-  --segment-title-new: var(--row-highlight-ring);
+  /* Light title: blue-600, the target chip's blue, so the small uppercase
+     title clears 4.5:1 (design review, 11-10); dark keeps the fill. */
+  --segment-title-new: var(--color-blue-600);
   /* A lit deck button (`DECK_LIT`, 2026-10-28, Trent's "T2"): the queue's
      teal drained toward slate, quieter on the dashboard — its own token, so
      the "Today's pulls" title keeps its teal. 6.8:1 on the card. */
