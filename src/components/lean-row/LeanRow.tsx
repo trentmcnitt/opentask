@@ -153,6 +153,38 @@ function titleWeight(state: LeanRowState | null): string {
   return state === 'over' || state === 'passed' ? 'font-semibold' : 'font-medium'
 }
 
+/**
+ * NOT YET (Trent, 2026-11-10, mockup 3 of `.tmp/dim-rows/`: "60%, and on
+ * deck stays full strength"): in Today mode's TODAY section, a row whose time
+ * has not come — a target later today, or the deadline's safety net with no
+ * target — is drawn at 60%, the whole row (title, meta, chips, done square,
+ * buttons). Over target (blue) and a passed deadline (red) stay full, and so
+ * does On deck: only the TODAY section asks (`notYetSection`). The list's
+ * clock (`useDashboardNow`) ticks when a target passes, so a row brightens
+ * on its own, with no reload.
+ *
+ * Never dim where it would read as disabled: hover, a focused control inside
+ * (`focus-within`), keyboard focus, select mode, the deep link's flash and a
+ * swipe all show the row at full strength.
+ */
+const NOT_YET =
+  'opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100 group-data-swiping/swipe:opacity-100'
+
+/** Whether the row is a not-yet one, and the dim it wears right now (none while acted on). */
+function notYetLook(
+  notYetSection: boolean | undefined,
+  state: LeanRowState | null,
+  isOverdue: boolean,
+  actedOn: { isSelectionMode: boolean; isKeyboardFocused: boolean; highlighted?: boolean },
+): { attrs: { 'data-not-yet'?: '' }; dimClass: string | undefined } {
+  const notYet = !!notYetSection && !isOverdue && state !== 'passed'
+  const shown = actedOn.isSelectionMode || actedOn.isKeyboardFocused || !!actedOn.highlighted
+  return {
+    attrs: notYet ? { 'data-not-yet': '' } : {},
+    dimClass: notYet && !shown ? NOT_YET : undefined,
+  }
+}
+
 /** One stable empty list, so a row without periods keeps its defer callback's identity. */
 const NO_SLOTS: NonNullable<TaskRowProps['timeSlots']> = []
 
@@ -183,6 +215,7 @@ export function LeanRow({
   onHighlightDone,
   timeSlots = NO_SLOTS,
   horizonLook = false,
+  notYetSection,
 }: TaskRowProps) {
   const { pointer, handleClick } = useRowPress({
     isSelectionMode,
@@ -209,6 +242,11 @@ export function LeanRow({
     dayStart,
     hour ? new Date(hour) : new Date(),
   )
+  const notYetRow = notYetLook(notYetSection, state, isOverdue, {
+    isSelectionMode,
+    isKeyboardFocused,
+    highlighted,
+  })
 
   return (
     <div
@@ -220,6 +258,7 @@ export function LeanRow({
       data-lean-row={task.id}
       data-row-state={state ?? undefined}
       {...stateFlags(state, isOverdue)}
+      {...notYetRow.attrs}
       {...highlightProps}
       onClick={handleClick}
       onMouseEnter={onFocus}
@@ -243,6 +282,7 @@ export function LeanRow({
         // on the moving layer it rode along with the row (Trent, 2026-10-29).
         'group-data-swiping/swipe:ring-0',
         tintClass(state, isOverdue),
+        notYetRow.dimClass,
         isAiProcessing && !highlighted && 'animate-ai-processing',
         highlightClass,
       )}

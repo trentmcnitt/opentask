@@ -182,6 +182,11 @@ export interface TaskRowProps {
   highlighted?: boolean
   /** The deep link's flash has played; it must not play again on a remount. */
   onHighlightDone?: () => void
+  /**
+   * A row of Today mode's TODAY section (the lean row only): drawn at 60%
+   * while its target is still ahead — see `LeanRow`'s `NOT_YET`.
+   */
+  notYetSection?: boolean
 }
 
 /** Signal icon + color mapping for AI insights indicators */
