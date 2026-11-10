@@ -36,12 +36,12 @@ import {
   dismissAllWebPushNotifications,
 } from '@/core/notifications/web-push'
 import {
-  dismissApnsNotifications,
   dismissAllApnsNotifications,
   sendApnsBadgeUpdate,
   isApnsConfigured,
 } from '@/core/notifications/apns'
 import { log } from '@/lib/logger'
+import { dropApnsDismiss, queueApnsDismiss } from '@/core/notifications/apns-dismiss-batch'
 import { countCurrentlyDue } from '@/core/tasks/currently-due'
 
 /** Count overdue tasks for a user — shared by badge updates and notification logic. */
@@ -96,9 +96,8 @@ export function dismissNotificationsForTasks(
   dismissTaskNotifications(userId, taskIds)
     .then(() => log.info('notifications', `Web Push dismiss sent for tasks [${taskIds.join(',')}]`))
     .catch((err) => log.error('notifications', 'Web Push dismiss error:', err))
-  dismissApnsNotifications(userId, taskIds)
-    .then(() => log.info('notifications', `APNs dismiss sent for tasks [${taskIds.join(',')}]`))
-    .catch((err) => log.error('notifications', 'APNs dismiss error:', err))
+  // APNs: gathered per user into one silent push (apns-dismiss-batch.ts).
+  if (isApnsConfigured()) queueApnsDismiss(userId, taskIds)
 
   syncBadgeCount(userId, knownOverdueCount)
 }
@@ -124,9 +123,7 @@ export function dismissPromptNotifications(userId: number, promptKeys: string[])
   dismissTaskNotifications(userId, taskIds, promptKeys).catch((err) =>
     log.error('notifications', 'Web Push prompt dismiss error:', err),
   )
-  dismissApnsNotifications(userId, taskIds, promptKeys).catch((err) =>
-    log.error('notifications', 'APNs prompt dismiss error:', err),
-  )
+  if (isApnsConfigured()) queueApnsDismiss(userId, taskIds, promptKeys)
 }
 
 /**
@@ -139,6 +136,7 @@ export function dismissAllNotifications(userId: number): void {
   dismissAllWebPushNotifications(userId)
     .then(() => log.info('notifications', `Web Push dismiss-all sent for user ${userId}`))
     .catch((err) => log.error('notifications', 'Web Push dismiss-all error:', err))
+  dropApnsDismiss(userId)
   dismissAllApnsNotifications(userId)
     .then(() => log.info('notifications', `APNs dismiss-all sent for user ${userId}`))
     .catch((err) => log.error('notifications', 'APNs dismiss-all error:', err))

@@ -159,6 +159,10 @@
  *     step 19's left deferred row (`handled`); the seen safety-net row; step
  *     16's deck row; step 15's Try Tomorrow row)
  *
+ * 26. The banner reconcile (2026-11-10): a device's delivered banners asked about
+ *     POST /api/notifications/stale             → notifications-stale.json
+ *     (a banner for a task not the user's is stale; one about no task never is)
+ *
  * Every captured mutation carries `undo_id` (2026-10-26), and undo-status
  * `newest_undoable_id` / `next_redoable_id`: undo-entry placeholders, like
  * `latest_id`, numbered 901.. in the order the fixtures are checked.
@@ -1174,6 +1178,22 @@ describe('contract fixtures (native clients)', () => {
     }
   })
 
+  // 26. The banner reconcile (2026-11-10): what a device sends after a
+  //     `dismiss` push — a banner for a task that isn't the user's (stale), an
+  //     overdue summary with no task (never stale).
+  beforeAll(async () => {
+    captured['notifications-stale'] = await call('/api/notifications/stale', {
+      banners: [
+        { id: 'task-999999901', task_id: 999999901, icon: 'task' },
+        { id: 'overdue-summary' },
+      ],
+    })
+  })
+
+  test('the reconcile: a gone task is stale, a banner about no task never is', () => {
+    expect(captured['notifications-stale']).toEqual({ data: { stale: ['task-999999901'] } })
+  })
+
   test('the native question: every kind in order, left rows, the seen safety net, deck and Try Tomorrow', () => {
     type Row = {
       id: number
@@ -1408,6 +1428,7 @@ describe('contract fixtures (native clients)', () => {
     'undo-by-id',
     'reminders-query',
     'reminders-native',
+    'notifications-stale',
   ]
 
   for (const name of names) {

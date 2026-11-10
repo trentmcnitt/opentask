@@ -5192,6 +5192,67 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/notifications/stale:
+    post:
+      summary: Which delivered banners no longer stand (the banner reconcile)
+      operationId: staleNotifications
+      description: |
+        The native apps send what each delivered banner carries; the answer is
+        the identifiers that no longer stand, which the app removes. Asked after
+        every `dismiss` silent push and when the app goes to the background.
+        Rules: a named reminder stands while it waits today; a prompt while its
+        key is today's and waiting; a period push while its period has opened
+        and holds something it counts; the deadlines nag while a page row keeps
+        it going; an overdue task while it is still due; a task id with no icon
+        while the task is open. Anything else is never stale. Read-only.
+      tags: [Notifications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [banners]
+              properties:
+                banners:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: { type: string, description: The notification request identifier }
+                      task_id: { type: integer, nullable: true }
+                      prompt_key: { type: string, nullable: true }
+                      icon:
+                        {
+                          type: string,
+                          nullable: true,
+                          description: 'task, reminder, quota, period or deadline',
+                        }
+                      kind:
+                        {
+                          type: string,
+                          nullable: true,
+                          description: 'deadlines for the deadlines-page nag',
+                        }
+                      slot_id: { type: integer, nullable: true }
+      responses:
+        '200':
+          description: The stale identifiers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      stale:
+                        type: array
+                        items: { type: string }
+        '400': { description: Invalid body }
+        '401': { description: Not authenticated }
   /api/notifications/dismiss-all:
     post:
       summary: Dismiss all notifications

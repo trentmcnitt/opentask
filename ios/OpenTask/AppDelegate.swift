@@ -177,6 +177,26 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    /// Going to the background: reconcile the banners delivered while the
+    /// app was in front (`BannerReconcile`) — handled in the app, they are
+    /// stale now, and no silent push may come to say so. Coming forward
+    /// already cleared every older one. A background task keeps the request
+    /// alive past the suspension. Called from `OpenTaskApp`'s scenePhase
+    /// `.background` (the SwiftUI lifecycle's signal; not the UIKit callback,
+    /// which a scene-based app may not get).
+    func reconcileBannersOnBackground() {
+        let application = UIApplication.shared
+        var task = UIBackgroundTaskIdentifier.invalid
+        task = application.beginBackgroundTask(withName: "BannerReconcile") {
+            application.endBackgroundTask(task)
+            task = .invalid
+        }
+        Task {
+            await reconcileDeliveredBanners()
+            if task != .invalid { application.endBackgroundTask(task) }
+        }
+    }
+
     // MARK: - Notification Permission
 
     private func requestNotificationPermission(_ application: UIApplication) {
@@ -264,12 +284,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        // Dismiss specific tasks (and, when listed, specific quota prompts)
-        guard type == "dismiss",
-              let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
+        // Dismiss specific tasks (and, when listed, specific quota prompts),
+        // then reconcile every other delivered banner with the server
+        // (`BannerReconcile`): iOS lets only some silent pushes through, so
+        // the one that arrives cleans up for the ones that didn't.
+        guard type == "dismiss" else {
             completionHandler(.noData)
             return
         }
+        let taskIds = userInfo["taskIds"] as? [Int] ?? []
         let promptKeys = userInfo[QuotaNagKey.dismissPromptKeys] as? [String]
 
         Task {
@@ -277,7 +300,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             if removed > 0 {
                 print("[OpenTask] Dismissed \(removed) notifications for tasks \(taskIds)")
             }
-            completionHandler(removed == 0 ? .noData : .newData)
+            let reconciled = await reconcileDeliveredBanners()
+            completionHandler(removed + reconciled == 0 ? .noData : .newData)
         }
     }
 

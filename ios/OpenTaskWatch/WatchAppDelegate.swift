@@ -171,12 +171,13 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             return
         }
 
-        // Dismiss specific tasks
-        guard type == "dismiss",
-              let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else {
+        // Dismiss specific tasks, then reconcile every other delivered banner
+        // with the server (`BannerReconcile`, the phone's rule).
+        guard type == "dismiss" else {
             completionHandler(.noData)
             return
         }
+        let taskIds = userInfo["taskIds"] as? [Int] ?? []
         // With `promptKeys`, a quota-prompt banner closes only by its key.
         let promptKeys = userInfo[QuotaNagKey.dismissPromptKeys] as? [String]
 
@@ -185,7 +186,8 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
             if removed > 0 {
                 print("[OpenTaskWatch] Dismissed \(removed) notifications for tasks \(taskIds)")
             }
-            completionHandler(removed == 0 ? .noData : .newData)
+            let reconciled = await reconcileDeliveredBanners()
+            completionHandler(removed + reconciled == 0 ? .noData : .newData)
         }
     }
 

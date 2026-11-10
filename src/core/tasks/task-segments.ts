@@ -52,6 +52,7 @@ import { getDb, withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { AppError, ValidationError } from '@/core/errors'
 import { emitSyncEvent } from '@/lib/sync-events'
+import { dismissNotificationsForTasks } from '@/core/notifications/dismiss'
 import { listTimeSlots } from '@/core/time-slots'
 import { getAnchorTimes } from '@/core/users/anchor-times'
 import { targetTodayTimeFor } from '@/lib/snooze'
@@ -562,6 +563,15 @@ function stampTasks(
     logAction(userId, 'task_segment', description, [...fieldsAll], snapshots)
   })
   emitSyncEvent(userId)
+  // A consider or a Not today can leave a banner stale with no banner of its
+  // own: the deadlines nag's, once the page's last row is handled. The
+  // dismiss push makes a current native build reconcile every delivered
+  // banner (`src/core/notifications/stale.ts`); the ids themselves rarely
+  // match one.
+  dismissNotificationsForTasks(
+    userId,
+    tasks.map((t) => t.id),
+  )
   return tasks.length
 }
 
@@ -670,6 +680,11 @@ export function deferLeads(
       )
     })
     emitSyncEvent(userId)
+    // The deadlines banner may be stale now (see `stampTasks`).
+    dismissNotificationsForTasks(
+      userId,
+      moving.map((t) => t.id),
+    )
     for (const task of moving) {
       dispatchWebhookEvent(userId, 'task.updated', {
         task: formatTaskResponse({ ...task, lead_from: target, target_set_at: stamp }, timezone),

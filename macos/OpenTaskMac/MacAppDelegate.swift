@@ -95,6 +95,9 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
     /// timeline or a widget push (Trent, 2026-09-23).
     func applicationWillResignActive(_ notification: Notification) {
         WidgetCenter.shared.reloadAllTimelines()
+        // Banners delivered while the window was in front and handled there
+        // are stale now (`BannerReconcile`; coming forward cleared the rest).
+        Task { await reconcileDeliveredBanners() }
         // Same reason for the menu bar item's list.
         Task { @MainActor in await MenuBarModel.shared.refresh() }
     }
@@ -214,7 +217,7 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
             print("[OpenTask] Dismiss-all: cleared all delivered notifications")
 
         case "dismiss":
-            guard let taskIds = userInfo["taskIds"] as? [Int], !taskIds.isEmpty else { return }
+            let taskIds = userInfo["taskIds"] as? [Int] ?? []
             // With `promptKeys`, a quota-prompt banner closes only by its key.
             let promptKeys = userInfo[QuotaNagKey.dismissPromptKeys] as? [String]
             Task {
@@ -222,6 +225,8 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
                 if removed > 0 {
                     print("[OpenTask] Dismissed \(removed) notifications for tasks \(taskIds)")
                 }
+                // Then every other delivered banner (`BannerReconcile`).
+                await reconcileDeliveredBanners()
             }
 
         default:

@@ -959,6 +959,15 @@ final class APIClient {
         try await post(path: "/api/notifications/dismiss-all", body: [:])
     }
 
+    /// The banner reconcile (2026-11-10, `BannerReconcile`): the identifiers
+    /// of these delivered banners that no longer stand —
+    /// `POST /api/notifications/stale`.
+    func staleBanners(_ banners: [[String: Any]]) async throws -> [String] {
+        struct Page: Decodable { let stale: [String] }
+        let data = try await post(path: "/api/notifications/stale", body: ["banners": banners])
+        return try JSONDecoder().decode(APIEnvelope<Page>.self, from: data).data.stale
+    }
+
     // MARK: - Preferences (for setup validation)
 
     /// Validate the server connection by fetching user preferences.

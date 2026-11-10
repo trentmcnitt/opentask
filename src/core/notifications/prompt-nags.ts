@@ -501,10 +501,7 @@ export function promptPushEndCheck(
     (key) => ids === null || ids.has(promptTaskId(key)),
   )
   if (sent.length === 0) return none
-  const standing = (at: Date) => {
-    const { opened } = openedPeriods(userId, user.timezone, at)
-    return new Set(standingNamedPrompts(userId, user.timezone, at, opened).map((p) => p.prompt_key))
-  }
+  const standing = (at: Date) => standingPromptKeys(userId, user.timezone, at)
   const before = standing(now)
   const stood = sent.filter((key) => before.has(key))
   if (stood.length === 0) return none
@@ -512,6 +509,17 @@ export function promptPushEndCheck(
     const after = standing(new Date())
     return stood.filter((key) => !after.has(key))
   }
+}
+
+/**
+ * The prompt keys whose named push STANDS at `now`: waiting, Medium+, in a
+ * period that has opened, the lowest number of its quota there. Shared with
+ * the banner reconcile (stale.ts): a delivered prompt banner whose key is not
+ * in here is stale — another day's key never is.
+ */
+export function standingPromptKeys(userId: number, timezone: string, now: Date): Set<string> {
+  const { opened } = openedPeriods(userId, timezone, now)
+  return new Set(standingNamedPrompts(userId, timezone, now, opened).map((p) => p.prompt_key))
 }
 
 /**
