@@ -123,6 +123,17 @@ export default function TaskDetailPage() {
     }
   }, [requestNavigation, router])
 
+  // The task editor's Cancel: the panel has already dropped its staged edits
+  // (Cancel is the discard), so leave the way the back arrow does without
+  // asking — the guard's dirty flag may not have heard the reset yet, so it is
+  // cleared here rather than consulted. A deep link or a push has no page to
+  // go back to; the back arrow's destination (the dashboard for a task) is the
+  // same either way (Trent, 2026-11-10: Cancel on this page did nothing).
+  const handleCancel = useCallback(() => {
+    setDirty(false)
+    router.push(homeRef.current)
+  }, [setDirty, router])
+
   const handleConfirmLeave = useCallback(() => {
     const href = pendingNavigation ?? homeRef.current
     clearPendingNavigation()
@@ -414,6 +425,7 @@ export default function TaskDetailPage() {
               onDelete={handleDelete}
               onMarkDone={actions.handleDone}
               onSkipUntil={handleSkipUntil}
+              onCancel={handleCancel}
               dirty={panelDirty}
               onDirtyChange={handleDirtyChange}
               saveRef={saveRef}

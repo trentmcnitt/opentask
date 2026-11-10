@@ -1,5 +1,13 @@
 import type { Page } from '@playwright/test'
-import { test, expect, showAllNow } from './fixtures'
+import {
+  test,
+  expect,
+  cmdClickRow,
+  showAllNow,
+  uniqueTitle,
+  waitForPrefsLoaded,
+  withPreferences,
+} from './fixtures'
 
 async function createTask(
   page: Page,
@@ -244,6 +252,78 @@ test.describe('Task detail: every time', () => {
       expect(await taskField(page, id, 'rrule')).toBe(
         'FREQ=WEEKLY;BYDAY=FR,SA,SU;BYHOUR=16;BYMINUTE=0',
       )
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+})
+
+/**
+ * The page's Cancel (Trent, 2026-11-10: "Cancel does nothing right now"). It
+ * drops the staged edits and leaves the way the back arrow does — the
+ * dashboard for a task, whether the page was reached from the dashboard's
+ * select bar or straight from a link or a push. Reset and Save stay.
+ */
+test.describe('Task detail: Cancel leaves', () => {
+  const sheet = (page: Page) => page.locator('[data-selection-sheet]')
+
+  test('select → Details → Cancel drops the edit and lands on the dashboard', async ({
+    authenticatedPage: page,
+  }) => {
+    const title = uniqueTitle('Cancel from details')
+    const id = await createTask(page, title, { priority: 1 })
+    try {
+      await withPreferences(page, { default_grouping: 'unified' }, async () => {
+        const row = page.locator(`#task-row-${id}`)
+        await waitForPrefsLoaded(page, () => page.goto('/'), row)
+        await cmdClickRow(row)
+        await sheet(page).getByRole('button', { name: 'Details' }).click()
+        await page.waitForURL(`/tasks/${id}`)
+
+        await stageTitle(page, title, `${title} (edited)`)
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+        // No "unsaved changes" question: Cancel is the discard.
+        await page.waitForURL('/')
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        await expect(row).toBeVisible()
+        expect(await taskTitle(page, id)).toBe(title)
+      })
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
+  test('opened straight from a link, Cancel lands on the dashboard', async ({
+    authenticatedPage: page,
+  }) => {
+    const title = uniqueTitle('Cancel from a link')
+    const id = await createTask(page, title)
+    try {
+      await page.goto(`/tasks/${id}`)
+      await expect(page.getByText(title, { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await page.waitForURL('/')
+    } finally {
+      await page.request.delete(`/api/tasks/${id}`)
+    }
+  })
+
+  test('Reset and Save stay on the page', async ({ authenticatedPage: page }) => {
+    const title = uniqueTitle('Reset and save stay')
+    const id = await createTask(page, title)
+    try {
+      await page.goto(`/tasks/${id}`)
+      await stageTitle(page, title, `${title} (reset)`)
+      await page.getByRole('button', { name: 'Reset', exact: true }).click()
+      await expect(page.getByText(title, { exact: true })).toBeVisible()
+      expect(new URL(page.url()).pathname).toBe(`/tasks/${id}`)
+
+      await stageTitle(page, title, `${title} (saved)`)
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect.poll(() => taskTitle(page, id)).toBe(`${title} (saved)`)
+      expect(new URL(page.url()).pathname).toBe(`/tasks/${id}`)
+      await expect(page.getByText(`${title} (saved)`, { exact: true })).toBeVisible()
     } finally {
       await page.request.delete(`/api/tasks/${id}`)
     }
