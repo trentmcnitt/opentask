@@ -197,7 +197,7 @@ test("task-segment rows: the row buttons' hover boxes stay inside the row", asyn
     })
     ids.push(queued, days, upcoming)
     sql(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
       days,
     )
     sql('UPDATE tasks SET target_set_at = ? WHERE id = ?', daysFromNow(-10), upcoming)

@@ -586,6 +586,22 @@ Taking a one-off off deck stamps nothing and changes nothing else: it goes back 
 
 Tests: `tests/behavioral/ag-aged-out.test.ts`.
 
+## New
+
+**2026-11-10 (the design session's call; Trent: "Whatever you think is best").** A one-off pass for the day after a task is written, on the task queue's **New** page. On prod, 40% of one-offs are done the day they're written, 10% the next day, and 23% in days 2–6, so the day after is when a fresh task most needs a look. `src/lib/new-tasks.ts` holds the rules (`RULE N1`–`N6`); `getTaskSegments(…, { newRows })` places the rows. Only for a caller that asks (`GET /api/reminders?new=1`, which the web adds beside `REMINDERS_URL`; `NEW_ROWS_QUERY`). The native apps' shared question is unchanged, so a native build keeps these tasks in their horizon segments, as before.
+
+- **Members (N1):** open one-offs (not reminders, quotas or repeats), with no picked target, no deck and no deadline, created during the previous OpenTask day (rollover to rollover). AI- and desk-created tasks count. A task with a consider stamp on any day other than today has been seen and isn't on its pass.
+- **Placement:** after Heads up, before Pulled (`SEGMENT_ORDER`); its own strip group; hidden when empty, like every segment.
+- **One place at a time (N2):** on its New day a task is in no horizon segment. New is placed before the horizons and Aged out.
+- **One pass, not a backlog (N3):** untouched by the next rollover, a task drops out of New into its horizon's rhythm. This deliberately differs from the other segments' carry-over.
+- **Consider (N4):** the task leaves New's waiting rows, listed today as handled. The shared `last_considered_at` counts as seen for its horizon too: a Weeks task waits for the next check-in day, and a Days task comes round tomorrow.
+- **Not today (N5):** the task comes back the next day, once, under a "Carried over" line below the fresh rows (`carried_over: true` on the row; the line shows only with a carried row). Deferred again, it goes to its horizon's rhythm the day after.
+- **Leaves (N6):** done, a target, a deck or a deadline.
+- **Rows** are flat, with no horizon subheadings. Each shows its horizon as elsewhere (the horizon dot, with the task queue on). The order is fresh first, then carried; within each, priority, then newest first.
+- **The day simulator / CLI:** `simulateDays({ newRows })`. The CLI (`scripts/simulate-days.ts`) turns it on and prints a `new` count and the `new:` ids. The golden suite runs without it: its timelines predate New.
+
+Tests: `tests/behavioral/nw-new-page.test.ts`, `tests/e2e/new-page.spec.ts`.
+
 ## The deadlines page
 
 **2026-10-22** (plan `plan-deadlines-page-1022.md`, APPROVED 10-22; PR A — the server model; the nag is PR B, the web UI PR C, enrichment PR D, native PR E). **With the task-queue switch on only** (`OPENTASK_TASK_QUEUE`, plan A1): the page, its nag and its migration all ride it. Off, the [automatic target](#deadline) is written as before.

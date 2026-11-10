@@ -55,10 +55,14 @@ async function trash(page: Page, ids: number[]) {
 
 /** Backdate `target_set_at` (the API stamps now) straight in the E2E database. */
 /** Made yesterday: a Days one-off then waits in today's Days segment at any hour. */
+/**
+ * Made before yesterday, so a Days task waits on today's Days segment (one
+ * made yesterday is on New since 2026-11-10, src/lib/new-tasks.ts).
+ */
 function createdYesterday(id: number) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
-    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(fromNow(-DAY), id)
+    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(fromNow(-2 * DAY), id)
   } finally {
     db.close()
   }

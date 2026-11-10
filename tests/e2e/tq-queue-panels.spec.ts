@@ -396,7 +396,7 @@ test('the peek bubble on a queue row and on a horizon row opens the Quick panel'
     await strip(page, { today: [queued] })
     // A days task made before today waits in today's Days segment.
     sql(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
       plain,
     )
 

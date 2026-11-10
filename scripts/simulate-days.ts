@@ -140,7 +140,7 @@ function installClock(): (d: Date) => void {
   }
 }
 
-const SEGMENTS = ['days', 'upcoming', 'weeks', 'months', 'eventually'] as const
+const SEGMENTS = ['new', 'days', 'upcoming', 'weeks', 'months', 'eventually'] as const
 
 function printDay(day: SimDay, titles: Map<number, string> | null): void {
   const c = (k: string) => String(day.counts[k] ?? 0).padStart(3)
@@ -149,7 +149,7 @@ function printDay(day: SimDay, titles: Map<number, string> | null): void {
     SEGMENTS.map((s) => `${s} ${c(s)}`).join('  ') +
     `  | over ${c('over')}  3×+ ${c('offers')}  queued ${c('queued')}  deck ${c('deck')}`
   console.log(head)
-  for (const kind of ['upcoming', 'over'] as const) {
+  for (const kind of ['new', 'upcoming', 'over'] as const) {
     const ids = day.tasks.filter((t) => t.places.includes(kind)).map((t) => t.id)
     if (ids.length === 0) continue
     const list = titles
@@ -207,6 +207,8 @@ async function main() {
       hourly: args.hourly,
       policy: args.policy,
       rollover: args.rollover,
+      // New (2026-11-10): the web draws it, so the CLI's segments do too.
+      newRows: true,
       setClock,
       onDay: args.json ? undefined : (day) => printDay(day, titles),
     })

@@ -134,8 +134,9 @@ test('Reminders: the period that needs you, then the topmost waiting segment, th
     due_at: inStartedSlot(pin),
   })
   const days = await create(p, { title: uniqueTitle('RW days'), horizon: 'days' })
-  // Made before the PIN's day (it can be a day behind real now).
-  backdateCreated([days], { inSegments: true, daysAgo: 2 })
+  // Made before the PIN's day (it can be a day behind real now), and before
+  // the day before it (a task made the day before is on New).
+  backdateCreated([days], { inSegments: true, daysAgo: 3 })
   try {
     await onlyThese(p, [reminder, days])
     await p.goto('/reminders')
@@ -303,7 +304,7 @@ test('a scroll by hand resets the cycle: the next tap goes to the top, then stop
   })
   const days = await create(p, { title: uniqueTitle('RW hand days'), horizon: 'days' })
   // Made before the PIN's day (it can be a day behind real now).
-  backdateCreated([days], { inSegments: true, daysAgo: 2 })
+  backdateCreated([days], { inSegments: true, daysAgo: 3 })
   try {
     await onlyThese(p, [reminder, days])
     await p.goto('/reminders')

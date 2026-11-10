@@ -57,13 +57,21 @@ describe('TM-FILL: every segment, every day', () => {
 
   test('TM-FILL01: switch on, a caller that draws everything: all of SEGMENT_ORDER, deadlines first', () => {
     vi.stubEnv('OPENTASK_TASK_QUEUE', '1')
-    // Aged out (2026-10-29) only for a caller that asks (the dev web): every kind.
-    const segs = segments({ queuePanels: true, deadlineRows: true, fill: true, agedOut: true })
+    // Aged out (2026-10-29) and New (2026-11-10) only for a caller that asks: every kind.
+    const segs = segments({
+      queuePanels: true,
+      deadlineRows: true,
+      fill: true,
+      agedOut: true,
+      newRows: true,
+    })
     expect(segs.map((s) => s.horizon)).toEqual([...SEGMENT_ORDER])
     expect(segs.at(-1)?.horizon).toBe('aged_out')
     expect(segs[0].horizon).toBe('deadlines')
     for (const seg of segs) {
-      if (seg.horizon === 'days') {
+      // Made the day before NOW, the Days one-off is on New (one place at a
+      // time, src/lib/new-tasks.ts N2), not on Days.
+      if (seg.horizon === 'new') {
         expect(seg.tasks.map((t) => t.task.id)).toEqual([dailyId])
         expect(seg.waiting).toBe(1)
       } else {

@@ -27,7 +27,7 @@ async function trash(page: Page, ids: number[]) {
   if (ids.length) await page.request.post('/api/tasks/bulk/delete', { data: { ids } })
 }
 
-/** `days` one-offs made yesterday (they wait in today's Days segment), with optional notes. */
+/** `days` one-offs made two days ago (yesterday's are on New) (they wait in today's Days segment), with optional notes. */
 async function daysTask(page: Page, title: string, notes?: string): Promise<number> {
   const res = await page.request.post('/api/tasks', {
     data: { title: uniqueTitle(title), horizon: 'days', ...(notes ? { notes } : {}) },
@@ -36,7 +36,7 @@ async function daysTask(page: Page, title: string, notes?: string): Promise<numb
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day') WHERE id = ?`,
+      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     ).run(id)
   } finally {
     db.close()
