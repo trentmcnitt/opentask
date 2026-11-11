@@ -35,6 +35,13 @@ export interface SectionDef {
   match: (task: Task, ctx: ModeContext) => boolean
   order: (a: Task, b: Task, ctx: ModeContext) => number
   /**
+   * Keys that come BEFORE whatever order is in effect — the section's own or
+   * the sort pill's (2026-11-11, Today mode: priority leads in every section,
+   * Today's two blocks ahead of it). The pill then orders rows within a lead
+   * tie; it never undoes the lead.
+   */
+  lead?: (a: Task, b: Task, ctx: ModeContext) => number
+  /**
    * May the mode's sort (the sort pill) re-order this section? false for a
    * section whose identity IS its order (Newest, Coming up, Today): re-sorting
    * it would undo what it is — unless "Sort every section" is on.

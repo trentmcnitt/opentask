@@ -8,6 +8,7 @@
  * up, Today — keeps its own, unless "Sort every section" is on
  * (`ModeSort.everywhere`).
  */
+import { byPriorityRank } from '@/lib/priority'
 import { HORIZON_ORDER, UNSET_HORIZON } from '@/lib/task-segments'
 import type { Task } from '@/types'
 import { byNewestCreated, hasPickedTarget, newestFirst, soonestFirst } from './predicates'
@@ -59,7 +60,7 @@ export const SORTS: Readonly<Record<SortId, SortDef>> = {
   priority: {
     id: 'priority',
     label: 'Priority',
-    order: (a, b) => b.priority - a.priority || newestFirst(a.created_at, b.created_at),
+    order: (a, b) => byPriorityRank(a, b) || newestFirst(a.created_at, b.created_at),
   },
   horizon: {
     id: 'horizon',

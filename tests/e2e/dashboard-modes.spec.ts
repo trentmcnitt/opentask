@@ -520,6 +520,79 @@ test.describe('Scan · plain squares, the horizon dot', () => {
  * target, Late, the deadline net and On deck stay full; a row brightens when its target passes, with no
  * reload; select mode shows every row full.
  */
+/**
+ * PRIORITY LEADS (Trent, 2026-11-11): every Today section by priority —
+ * Urgent, High, Medium, unset, Low (unset just below Medium) — On deck under
+ * the default pill too; Medium says "Med" on the meta line, as Low says "Low",
+ * in the same grey; unset says nothing.
+ */
+test.describe('Today · by priority, and the Med word', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('over target and On deck by priority, unset above Low; Med and Low words alike', async ({
+    authenticatedPage: page,
+  }) => {
+    const now = Date.now()
+    // Made Low first, with the earliest target and the oldest creation: the
+    // time order and the Newest pill would both put them the other way.
+    const order = [1, 0, 2, 3, 4]
+    const over: Record<number, number> = {}
+    for (const [i, priority] of order.entries())
+      over[priority] = await create(page, {
+        title: uniqueTitle(`PR over p${priority}`),
+        priority,
+        due_at: new Date(now - (10 - i) * HOUR).toISOString(),
+      })
+    const deck: Record<number, number> = {}
+    for (const priority of [2, 0, 1])
+      deck[priority] = await create(page, {
+        title: uniqueTitle(`PR deck p${priority}`),
+        priority,
+        horizon: 'days',
+      })
+    const all = [...Object.values(over), ...Object.values(deck)]
+    try {
+      const day = await openTaskDay(page)
+      for (const id of Object.values(deck)) {
+        const res = await page.request.patch(`/api/tasks/${id}`, { data: { on_deck_day: day } })
+        expect(res.ok(), await res.text()).toBeTruthy()
+      }
+      await open(page, 'today')
+      const today = section(page, 'today')
+      await expect(rowIn(today, over[4])).toBeVisible()
+      expect(await idsIn(today)).toEqual([4, 3, 2, 0, 1].map((p) => over[p]))
+      const onDeck = section(page, 'on-deck')
+      await expect(rowIn(onDeck, deck[2])).toBeVisible()
+      expect(await idsIn(onDeck)).toEqual([2, 0, 1].map((p) => deck[p]))
+
+      // The words: Med on Medium, Low on Low, nothing on unset — one grey.
+      const med = rowIn(today, over[2]).locator('[data-lean-med]')
+      const low = rowIn(today, over[1]).locator('[data-lean-low]')
+      await expect(med).toHaveText('Med')
+      await expect(low).toHaveText('Low')
+      await expect(rowIn(today, over[0]).locator('[data-lean-med], [data-lean-low]')).toHaveCount(0)
+      await expect(rowIn(today, over[3]).locator('[data-lean-med]')).toHaveCount(0)
+      const look = (l: Locator) =>
+        l.evaluate((el) => {
+          const c = getComputedStyle(el)
+          return [c.color, c.fontWeight, c.fontSize]
+        })
+      expect(await look(med)).toEqual(await look(low))
+      // Low's title is no lighter than unset's (no weight or opacity change).
+      const title = (id: number) =>
+        rowIn(today, id)
+          .locator('[data-lean-title]')
+          .evaluate((el) => {
+            const c = getComputedStyle(el)
+            return [c.color, c.fontWeight, c.opacity]
+          })
+      expect(await title(over[1])).toEqual(await title(over[0]))
+    } finally {
+      await cleanUp(page, all)
+    }
+  })
+})
+
 test.describe('Today · not-yet rows dim', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 

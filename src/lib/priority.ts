@@ -86,3 +86,27 @@ export function getPriorityBadgeClasses(
   }
   return `bg-muted/40 border ${colors.border} hover:opacity-80`
 }
+
+/**
+ * THE PRIORITY ORDER for a list (Trent, 2026-11-11): Urgent, High, Medium,
+ * unset, Low. Unset sits just below Medium, not below Low — a task nobody
+ * set "is medium priority" for all intents and purposes — so the raw value
+ * (0 = unset, 1 = Low) is never the order. Lower rank sorts first.
+ *
+ * Every priority-first order shares it: the Today mode's sections
+ * (`src/lib/modes/sections.ts`), the sort pill's Priority, and the Reminders
+ * panel's slots (`getRemindersBySlot`).
+ */
+const PRIORITY_RANK: Readonly<Record<number, number>> = { 4: 0, 3: 1, 2: 2, 0: 3, 1: 4 }
+
+export function priorityRank(priority: number | null | undefined): number {
+  return PRIORITY_RANK[priority ?? 0] ?? PRIORITY_RANK[0]
+}
+
+/** Comparator: Urgent, High, Medium, unset, Low; 0 on a tie (the caller's next key decides). */
+export function byPriorityRank(
+  a: { priority?: number | null },
+  b: { priority?: number | null },
+): number {
+  return priorityRank(a.priority) - priorityRank(b.priority)
+}
