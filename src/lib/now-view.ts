@@ -56,6 +56,7 @@
  * select-all takes only the rows on screen. A notification or Just now tap on
  * a folded row opens its fold first.
  */
+import { byPriorityRank } from '@/lib/priority'
 import type { Task } from '@/types'
 import { isOverdue } from '@/lib/task-counts'
 import {
@@ -162,7 +163,10 @@ export function inDeckSection(task: Task, timezone: string, now: Date, opts: Now
   return true
 }
 
-/** The On deck section's order: priority, highest first, then id (A13). */
+/**
+ * The On deck section's order: priority, highest first (unset just below
+ * Medium, `byPriorityRank`, 2026-11-11), then id (A13).
+ */
 export function deckSectionOrder(a: Task, b: Task): number {
-  return (b.priority ?? 0) - (a.priority ?? 0) || a.id - b.id
+  return byPriorityRank(a, b) || a.id - b.id
 }

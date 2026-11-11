@@ -584,7 +584,9 @@ describe('consolidation caps', () => {
     expect(summaryCall[1]).toContain('2 more')
   })
 
-  test('Regular bucket prioritizes P2 over P1 over P0 for individual slots', async () => {
+  // The one priority order (2026-11-11, `byPriorityRank`): Medium, then
+  // unset (P0), then Low (P1) — unset is just below Medium, never below Low.
+  test('Regular bucket prioritizes Medium, then unset, then Low for individual slots', async () => {
     // 6 tasks: 2 P0, 2 P1, 2 P2. Only 4 get individual. P2 should get slots first.
     insertTask(1, 'P0-A', '2026-01-15T10:00:00.000Z', 0)
     insertTask(2, 'P0-B', '2026-01-15T10:00:00.000Z', 0)
@@ -602,11 +604,11 @@ describe('consolidation caps', () => {
     // First 4 individual calls should be the highest priority tasks
     const individualCalls = vi.mocked(sendPushNotification).mock.calls.slice(0, 4)
     const titles = individualCalls.map((c) => c[1].title)
-    // P2 tasks come first (priority DESC), then P1
+    // Medium (P2) first, then unset (P0); Low (P1) is left to the summary
     expect(titles[0]).toBe('P2-A')
     expect(titles[1]).toBe('P2-B')
-    expect(titles[2]).toBe('P1-A')
-    expect(titles[3]).toBe('P1-B')
+    expect(titles[2]).toBe('P0-A')
+    expect(titles[3]).toBe('P0-B')
   })
 
   test('High bucket (P3): 5 individual + 1 summary when > 5 tasks', async () => {

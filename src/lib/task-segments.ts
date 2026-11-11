@@ -41,6 +41,7 @@
  * not considered shows again the next day until it is".
  */
 
+import { byPriorityRank } from '@/lib/priority'
 import { DateTime } from 'luxon'
 import { computeNextOccurrence, ruleTimeOfDay } from '@/core/recurrence/compute-next'
 import { formatAnchorTime } from '@/core/recurrence/timezone'
@@ -1022,7 +1023,8 @@ export function compareQueueRows(
    */
   deckMoment: (day: string) => number = (day) => Date.parse(`${day}T00:00:00Z`),
 ): number {
-  if (a.priority !== b.priority) return b.priority - a.priority
+  const pri = byPriorityRank(a, b)
+  if (pri !== 0) return pri
   const key = (r: QueueSortFields) => {
     if (r.queued_from_due_at) return Date.parse(r.queued_from_due_at)
     return r.queued_from_deck_day ? deckMoment(r.queued_from_deck_day) : Infinity
@@ -2091,14 +2093,16 @@ function derivedLeadDay(
 }
 
 /**
- * The page's order (A4, APPROVED 10-22): priority, highest first; then the
+ * The page's order (A4, APPROVED 10-22): priority, highest first (unset just
+ * below Medium, `byPriorityRank`, 2026-11-11); then the
  * NEAREST deadline; then id.
  */
 export function compareDeadlineRows(
   a: { id: number; priority: number; deadline_at: string | null },
   b: { id: number; priority: number; deadline_at: string | null },
 ): number {
-  if (a.priority !== b.priority) return b.priority - a.priority
+  const pri = byPriorityRank(a, b)
+  if (pri !== 0) return pri
   const da = a.deadline_at ? Date.parse(a.deadline_at) : Infinity
   const db = b.deadline_at ? Date.parse(b.deadline_at) : Infinity
   if (da !== db) return da < db ? -1 : 1

@@ -33,6 +33,7 @@
  * - P0-P2: user.auto_snooze_minutes (default 30 min)
  */
 
+import { byPriorityRank } from '@/lib/priority'
 import { OVERDUE_WORD, OVERDUE_LOWER } from '@/lib/task-model-words'
 import { getDb } from '@/core/db'
 import { log } from '@/lib/logger'
@@ -430,10 +431,11 @@ function overdueTasksAt(now: Date): OverdueTask[] {
     .all(now.toISOString()) as OverdueTask[]
 
   // A deadline's target is stored (§8, 2026-10-12: `target_auto`), so
-  // `due_at` is the target for every row — no read-time swap. Priority,
-  // then due order (the SQL already orders them; kept explicit for nulls).
+  // `due_at` is the target for every row — no read-time swap. Priority
+  // (`byPriorityRank`: unset just below Medium, never below Low), then due
+  // order (the SQL already orders them; kept explicit for nulls).
   const targeted = [...candidates].sort(
-    (a, b) => b.priority - a.priority || (a.due_at ?? '￿').localeCompare(b.due_at ?? '￿'),
+    (a, b) => byPriorityRank(a, b) || (a.due_at ?? '￿').localeCompare(b.due_at ?? '￿'),
   )
   // Each owner's day boundary, read once per owner: the no-target fallback's
   // "today" is their OpenTask day.

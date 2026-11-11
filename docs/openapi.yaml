@@ -2905,8 +2905,8 @@ paths:
                           leaves the queue once that has arrived). A task in
                           a queue panel is in no other segment, Upcoming
                           included. Rows are sorted by priority (highest
-                          first), then the older `queued_from_due_at`, then
-                          id. `try_tomorrow` marks a row Try Tomorrow put
+                          first; unset just below Medium, never below Low),
+                          then the older `queued_from_due_at`, then id. `try_tomorrow` marks a row Try Tomorrow put
                           there; the rollover clears it once the row is in
                           `queue_previous`. Considering a queued one-off
                           (`/api/task-segments/consider`) takes it out of the

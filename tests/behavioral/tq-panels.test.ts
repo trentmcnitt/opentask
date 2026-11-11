@@ -298,7 +298,9 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     expect(task(s.id).queued_at).not.toBeNull()
   })
 
-  test('TQ-P10: sorted by priority, then the older remembered target, then id', () => {
+  // Priority in the one order (2026-11-11, `byPriorityRank`): unset sits
+  // just below Medium, never below Low.
+  test('TQ-P10: sorted by priority (unset above Low), then the older remembered target, then id', () => {
     const low = makeAt('2026-10-19T09:00', {
       title: 'Low',
       priority: 1,
@@ -324,7 +326,7 @@ describe('TQ-P: the queue panels — retargets, order, the switch', () => {
     const panel = getTaskSegments(TEST_USER_ID, tz, new Date(at('2026-10-20T07:00')), {
       queuePanels: true,
     }).find((s) => s.horizon === 'queue_today')!
-    expect(panel.tasks.map((r) => r.task.id)).toEqual([medOld.id, medNew.id, low.id, none.id])
+    expect(panel.tasks.map((r) => r.task.id)).toEqual([medOld.id, medNew.id, none.id, low.id])
     // A row with no remembered target sorts after one with, at equal priority.
     const base = { priority: 2 }
     expect(

@@ -6,6 +6,7 @@
  * prompts (`src/core/tasks/quota-prompts.ts`); this file holds what both sides
  * need to agree on: a prompt's identity, and how a day's record reads.
  */
+import { byPriorityRank } from '@/lib/priority'
 import { openTaskDayOf } from '@/lib/opentask-day'
 import { freqLabel, quotaPeriodOf } from '@/lib/track'
 import type { LabelColor, QuotaDayState, QuotaPromptConfig, Task } from '@/types'
@@ -98,7 +99,7 @@ export function comparePrompts(
   b: Pick<QuotaPrompt, 'priority' | 'title' | 'task_id'> & { number?: number | null },
 ): number {
   return (
-    (b.priority ?? 0) - (a.priority ?? 0) ||
+    byPriorityRank(a, b) ||
     a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) ||
     a.task_id - b.task_id ||
     (a.number ?? 0) - (b.number ?? 0)
