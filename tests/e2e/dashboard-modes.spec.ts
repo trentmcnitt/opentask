@@ -564,6 +564,15 @@ test.describe('Today · by priority, and the Med word', () => {
       const onDeck = section(page, 'on-deck')
       await expect(rowIn(onDeck, deck[2])).toBeVisible()
       expect(await idsIn(onDeck)).toEqual([2, 0, 1].map((p) => deck[p]))
+      // The compact row says Med / Low before the project, one grey run
+      // ("Med · Project"); unset says nothing.
+      const projectName = (await projectFor(page)).name
+      const words = (p: number) =>
+        rowIn(onDeck, deck[p]).locator('[data-compact-project]').locator('..')
+      await expect(words(2)).toHaveText(`Med·${projectName}`)
+      await expect(words(1)).toHaveText(`Low·${projectName}`)
+      await expect(words(0)).toHaveText(projectName)
+      await expect(rowIn(onDeck, deck[0]).locator('[data-compact-priority]')).toHaveCount(0)
 
       // The words: Med on Medium, Low on Low, nothing on unset — one grey.
       const med = rowIn(today, over[2]).locator('[data-lean-med]')

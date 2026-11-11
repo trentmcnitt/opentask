@@ -8,10 +8,11 @@
  *
  * - The lean row's done square: plain (no Horizon section draws a compact
  *   row), with the hold menu and tooltip naming the horizon (2026-10-29).
- * - The title, then "!" / "!!" (Medium hidden, Low not said), "⚑ <day>" for a
- *   deadline within a week (`compactDeadline`: the day only, never a time;
- *   red once passed), ↻ when it repeats, and the grey project name.
- * - Never on a compact row: labels (AI ones too), the created date, Low,
+ * - The title, then "!" / "!!", "⚑ <day>" for a deadline within a week
+ *   (`compactDeadline`: the day only, never a time; red once passed), ↻ when
+ *   it repeats, and the grey project name — after "Med · " or "Low · " for
+ *   Medium or Low (2026-11-11), one unbreakable run, no new line.
+ * - Never on a compact row: labels (AI ones too), the created date,
  *   notes, the target chip, the rrule line.
  * - The buttons are the lean row's own (`LeanButtons`): the lit deck icon at
  *   rest with a mouse, all three on a phone.
@@ -160,16 +161,31 @@ export function CompactRow({
               className="text-muted-foreground ml-2.5 inline size-3.5 align-[-1px]"
             />
           )}
-          {projectName && (
-            <span
-              data-compact-project
-              className="text-muted-foreground ml-2.5 text-[13px] whitespace-nowrap"
-            >
-              {projectName}
-            </span>
-          )}
+          <CompactTail priority={task.priority} projectName={projectName} />
         </p>
       </div>
     </div>
+  )
+}
+
+/**
+ * The row's grey tail: "Med · Inbox" / "Low · Inbox" (2026-11-11: a set
+ * Medium gets a marker on every row), or the project alone — one unbreakable
+ * run, so it never adds a line of its own. Unset and High/Urgent ("!" / "!!"
+ * after the title) say no word here.
+ */
+function CompactTail({ priority, projectName }: { priority: number; projectName?: string }) {
+  const word = priority === 2 ? 'Med' : priority === 1 ? 'Low' : null
+  if (!word && !projectName) return null
+  return (
+    <span className="text-muted-foreground ml-2.5 text-[13px] whitespace-nowrap">
+      {word && <span data-compact-priority={word}>{word}</span>}
+      {word && projectName && (
+        <span className="text-muted-foreground/50 mx-1.5" aria-hidden>
+          ·
+        </span>
+      )}
+      {projectName && <span data-compact-project>{projectName}</span>}
+    </span>
   )
 }

@@ -12,6 +12,7 @@
  * The grouping modes themselves are defined in `src/lib/grouping.ts`; Now's
  * "relevant now" rule and its folds in `src/lib/now-view.ts`.
  */
+import { byPriorityRank } from '@/lib/priority'
 import type { SectionView } from '@/lib/modes/types'
 import { effectiveHorizon, HORIZON_ORDER } from '@/lib/task-segments'
 import { isOverdue } from '@/lib/task-counts'
@@ -29,7 +30,7 @@ import {
  * The sort options for a task list. Default directions (reversed flips them;
  * selecting the active option again toggles the direction):
  *   - due_date: soonest first, no due date last (reversed = latest first)
- *   - priority: highest first (reversed = lowest first)
+ *   - priority: highest first, unset just below Medium (reversed = lowest first)
  *   - title: A-Z (reversed = Z-A)
  *   - age: newest first (reversed = oldest first)
  *   - modified: most recently modified first (reversed = least recently modified first)
@@ -87,18 +88,20 @@ export function sortTasks(
   switch (sortOption) {
     case 'due_date':
       // Default: soonest first, no due date last; priority as tiebreaker
+      // (`byPriorityRank`: unset just below Medium, never below Low)
       sorted.sort((a, b) => {
         const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
         const cmp = aDue - bDue
         if (cmp !== 0) return reversed ? -cmp : cmp
-        return (b.priority || 0) - (a.priority || 0)
+        return byPriorityRank(a, b)
       })
       break
     case 'priority':
-      // Default: highest first (4=urgent, 0=unset), then by due date
+      // Default: highest first — Urgent, High, Medium, unset, Low
+      // (`byPriorityRank`, 2026-11-11) — then by due date
       sorted.sort((a, b) => {
-        const priorityDiff = (b.priority || 0) - (a.priority || 0)
+        const priorityDiff = byPriorityRank(a, b)
         if (priorityDiff !== 0) return reversed ? -priorityDiff : priorityDiff
         const aDue = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bDue = b.due_at ? new Date(b.due_at).getTime() : Infinity
@@ -143,7 +146,7 @@ export function sortTasks(
         const bOrig = b.original_due_at ? new Date(b.original_due_at).getTime() : Infinity
         const cmp = aOrig - bOrig
         if (cmp !== 0) return reversed ? -cmp : cmp
-        return (b.priority || 0) - (a.priority || 0)
+        return byPriorityRank(a, b)
       })
       break
     case 'ai_insights':
@@ -404,7 +407,7 @@ export function compareHorizonOrder(a: Task, b: Task, now: Date): number {
   const aDl = a.deadline_at ? Date.parse(a.deadline_at) : Infinity
   const bDl = b.deadline_at ? Date.parse(b.deadline_at) : Infinity
   if (aDl !== bDl) return aDl < bDl ? -1 : 1
-  const pri = (b.priority || 0) - (a.priority || 0)
+  const pri = byPriorityRank(a, b)
   if (pri !== 0) return pri
   return Date.parse(b.created_at) - Date.parse(a.created_at)
 }

@@ -29,7 +29,21 @@ enum TaskLists {
             let r = rhs.dueDate ?? .distantFuture
             // Soonest (so: most overdue) first; priority breaks ties.
             if l != r { return l < r }
-            return lhs.priority > rhs.priority
+            return priorityRank(lhs.priority) < priorityRank(rhs.priority)
+        }
+    }
+
+    /// The priority order for a list (2026-11-11), the web's `priorityRank`
+    /// (`src/lib/priority.ts`): Urgent, High, Medium, unset, Low — unset sits
+    /// just below Medium, never below Low, so the raw value (0 = unset,
+    /// 1 = Low) is never the order. Lower rank sorts first.
+    static func priorityRank(_ priority: Int) -> Int {
+        switch priority {
+        case 4: return 0
+        case 3: return 1
+        case 2: return 2
+        case 1: return 4
+        default: return 3
         }
     }
 
