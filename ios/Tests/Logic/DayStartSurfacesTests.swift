@@ -35,6 +35,14 @@ final class DayStartSurfacesTests: WidgetStoreTestCase {
 
     // MARK: Tasks widget: Today, done today, Up next (TaskLists / TaskDayProgress)
 
+    /// A due-time tie breaks by priority: Urgent, High, Medium, unset, Low —
+    /// unset just below Medium, never below Low (the web's `priorityRank`).
+    func testDueTimeTiesBreakByPriorityUnsetAboveLow() {
+        let due = "2026-10-20T09:00:00.000Z"
+        let tasks = [1, 0, 2, 3, 4].map { TaskDTO(id: 10 + $0, title: "t", priority: $0, dueAt: due) }
+        XCTAssertEqual(TaskLists.sortedSoonestFirst(tasks).map(\.priority), [4, 3, 2, 0, 1])
+    }
+
     func testTodayRunsToTheDayStartNotMidnight() {
         // 2:00 AM Tuesday is still Monday's day with a 3:00 AM start.
         let now = local("2026-10-20T02:00")
