@@ -3015,6 +3015,11 @@ paths:
                               type: integer
                             reminders:
                               type: array
+                              description: |
+                                The slot's waiting reminders, by priority —
+                                Urgent, High, Medium, unset, Low (unset sits
+                                just below Medium, not below Low; since
+                                2026-11-11) — then creation order.
                               items:
                                 $ref: '#/components/schemas/Task'
                             considered:
