@@ -16,7 +16,10 @@
  * - The left control (`DoneControl`): the done square, or the selection
  *   checkbox in selection mode. No circle, no card: a hairline between rows.
  * - High "!" / Urgent "!!" right after the title, bound to its last word.
- *   Medium is never shown; Low is a grey word on the meta line.
+ *   Medium and Low are grey words on the meta line, "Med" and "Low" (Med
+ *   since 2026-11-11, Trent's combo 5), in the same spot and style; unset
+ *   says nothing. Neither changes the title's weight or opacity: "I don't
+ *   want the text any lighter just because it's low".
  * - The horizon: the done square is always plain (2026-10-29: "fully
  *   consistent checkboxes everywhere"); a hold or right-click on it changes
  *   the horizon, on every one-off. The horizon shows as main's perspective
@@ -29,7 +32,7 @@
  *   per row) — the
  *   target chip (its move / remove menu) blue while ahead, pale plum once
  *   passed (M1, 2026-10-29); a passed deadline red with its flag — then the
- *   horizon dot, "2×", and, dot-separated, Low and the grey project; labels
+ *   horizon dot, "2×", and, dot-separated, Med / Low and the grey project; labels
  *   (the AI glyph rule, `LabelBadges`) and the yellow notes mark; and LAST
  *   the created date (`createdDateWords`, plain grey). One 6px gap between
  *   every item; no "·" right after the horizon dot (`metaDots`).
@@ -371,7 +374,7 @@ function LeanTitle({
 
 /**
  * The meta line: deadline → target → created as one
- * run (no dots between), then "· Low · 📁 Project", labels and notes.
+ * run (no dots between), then "· Med · 📁 Project" (or Low), labels and notes.
  */
 function LeanMeta({
   task,
@@ -494,7 +497,7 @@ function LeanMeta({
         </span>
       )}
       {/* The created date LAST (Trent, 2026-10-29, round 10): after the
-          project, Low and notes, so it never sits against the target's
+          project, Med / Low and notes, so it never sits against the target's
           words ("Today 3:00 PM was 1:00 PM today 11:53 AM"). */}
       <span className={META_JOIN}>
         {line.createdDot && <MetaDot />}
@@ -507,10 +510,10 @@ function LeanMeta({
 }
 
 /**
- * Where the meta line's "·" go (2026-10-29): before the tail (Low, project)
+ * Where the meta line's "·" go (2026-10-29): before the tail (Med / Low, project)
  * and before the created date — each only when something sits before it,
  * and never right after the horizon dot ("no two dots in a row"; the dot
- * separates on its own). The line: chips, the horizon dot, "2×", Low,
+ * separates on its own). The line: chips, the horizon dot, "2×", Med / Low,
  * project, labels, notes, created.
  */
 function metaDots(
@@ -520,7 +523,7 @@ function metaDots(
   const dot = horizonGoverns(task)
   // What sits right before the tail: "2×", else the dot, else a chip.
   const tailLead = o.attempts >= 1 || (!dot && o.chips)
-  const tail = task.priority === 1 || !!o.projectName
+  const tail = task.priority === 1 || task.priority === 2 || !!o.projectName
   const afterTail = tail || task.labels.length > 0 || !!task.notes?.trim()
   const createdDot = afterTail || o.attempts >= 1 || (!dot && o.chips)
   return { tailLead, createdDot }
@@ -570,7 +573,7 @@ function useAttempts(task: Task): number {
     : (task.attempts ?? 0)
 }
 
-/** After the dates, dot-separated: Low (never Medium), then the grey project. */
+/** After the dates, dot-separated: Med or Low, then the grey project. */
 function MetaTail({
   task,
   projectName,
@@ -582,8 +585,14 @@ function MetaTail({
   lead: boolean
 }) {
   const parts = [
-    task.priority === 1 ? (
-      <span key="low" data-lean-low>
+    // Medium "Med", Low "Low" (2026-11-11); High and Urgent are the title's
+    // "!" / "!!", and unset says nothing.
+    task.priority === 2 ? (
+      <span key="priority" data-lean-med>
+        Med
+      </span>
+    ) : task.priority === 1 ? (
+      <span key="priority" data-lean-low>
         Low
       </span>
     ) : null,

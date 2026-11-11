@@ -10,7 +10,8 @@
  *
  * The ORDER: the mode's sort (the sort pill, `sorts.ts`) on a `sortable`
  * section, or on every section with "Sort every section" on; else the
- * section's own.
+ * section's own — behind the section's `lead` keys, if it has any (Today
+ * mode's priority, 2026-11-11), which no sort undoes.
  */
 import type { Task } from '@/types'
 import type { ModeContext, SectionDef, SectionView } from './types'
@@ -36,7 +37,9 @@ export function selectSections(
   const views: SectionView[] = []
   for (const def of sections) {
     const byMode = sort !== null && (def.sortable || sort.everywhere)
-    const order = byMode ? SORTS[sort.id].order : def.order
+    const base = byMode ? SORTS[sort.id].order : def.order
+    const lead = def.lead
+    const order = lead ? (a: Task, b: Task, c: ModeContext) => lead(a, b, c) || base(a, b, c) : base
     const rows = listable
       .filter((t) => (def.allowOverlap || !taken.has(t.id)) && def.match(t, ctx))
       .sort((a, b) => order(a, b, ctx) || a.id - b.id)
@@ -54,7 +57,7 @@ export function selectSections(
       complete: def.allowOverlap,
       sortedByMode: byMode,
       rows: def.rows,
-      ageSteps: !!def.ageSteps && order === byNewestCreated,
+      ageSteps: !!def.ageSteps && !lead && base === byNewestCreated,
     })
   }
   return views

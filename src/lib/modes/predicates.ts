@@ -72,12 +72,6 @@ export function isLate(task: Task, ctx: ModeContext): boolean {
   return isPastDeadline(task.deadline_at, ctx.now)
 }
 
-/** "!!" first, then "!", then everything else alike (Medium, Low and None are one rank). */
-export function markRank(task: Task): number {
-  if (task.priority >= 4) return 0
-  return task.priority === 3 ? 1 : 2
-}
-
 /**
  * Today's three runs, in order: due (the target has passed), later today
  * (a target still ahead today), the deadline's safety net.
@@ -155,11 +149,6 @@ export function soonestFirst(a: string | null, b: string | null): number {
   if (a === null) return 1
   if (b === null) return -1
   return a < b ? -1 : 1
-}
-
-/** Higher priority first, then the newer task. */
-export function byPriorityThenNewest(a: Task, b: Task): number {
-  return b.priority - a.priority || newestFirst(a.created_at, b.created_at)
 }
 
 /** The instant an OpenTask date (YYYY-MM-DD) begins — to sort a date with instants. */

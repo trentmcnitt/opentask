@@ -4,11 +4,11 @@
  * `predicates.ts`, which reads the app's existing date rules.
  */
 import { UNSET_HORIZON, type HorizonValue } from '@/lib/task-segments'
+import { byPriorityRank } from '@/lib/priority'
 import { HORIZON_LABELS } from '@/lib/task-model-words'
 import type { Task } from '@/types'
 import type { ModeContext, SectionDef } from './types'
 import {
-  byPriorityThenNewest,
   comingUpAt,
   dateMoment,
   daysAgo,
@@ -16,7 +16,6 @@ import {
   isLate,
   isOnDeckToday,
   isToday,
-  markRank,
   byNewestCreated,
   newestFirst,
   soonestFirst,
@@ -36,16 +35,23 @@ export const HORIZON_DAYS_CAP = 10
  * LATE, then TODAY (Trent, 2026-10-29, "O3" — "for now": Today gets its real
  * design later, so these two are kept small and swappable here).
  *
+ * PRIORITY LEADS every Today-mode section (Trent, 2026-11-11: "it should be
+ * sorted by priority"): Urgent, High, Medium, unset, Low (`byPriorityRank` —
+ * unset is a Medium for all intents, so it sits just below Medium, never
+ * below Low). It is each section's `lead`, so the sort pill orders only rows
+ * of equal priority; a tie keeps the section's own order.
+ *
  * LATE: every task whose DEADLINE has passed (over target alone is not
- * late): "!!" first, then "!", then by deadline, oldest first. Before TODAY
- * in the mode, so it claims them. Its heading shows only with rows (an empty
+ * late): by priority, then by deadline, oldest first. Before TODAY in the
+ * mode, so it claims them. Its heading shows only with rows (an empty
  * section is dropped).
  */
 export const LATE: SectionDef = {
   id: 'late',
   title: 'Late',
   match: isLate,
-  order: (a, b) => markRank(a) - markRank(b) || soonestFirst(a.deadline_at, b.deadline_at),
+  lead: byPriorityRank,
+  order: (a, b) => soonestFirst(a.deadline_at, b.deadline_at),
   sortable: false,
   cap: null,
   allowOverlap: false,
@@ -54,10 +60,11 @@ export const LATE: SectionDef = {
 
 /**
  * TODAY: the rest of what Today shows — over target, targeted later today
- * and the deadline safety net — in three runs (`todayRun`):
- * - due (the target has passed): "!!", then "!", then the rest
- *   (`markRank`); then most attempts first ("3×" before "1×"); then the
- *   target's time;
+ * and the deadline safety net — in three runs (`todayRun`), the runs never
+ * mixed (the over-target block stays above the not-yet block), and inside
+ * each run by priority; then:
+ * - due (the target has passed): most attempts first ("3×" before "1×"),
+ *   then the target's time;
  * - later today: by the target's time;
  * - the safety net: by the deadline.
  * Rows keep their own dates and times. The sort pill leaves it alone.
@@ -66,11 +73,9 @@ export const TODAY: SectionDef = {
   id: 'today',
   title: 'Today',
   match: isToday,
+  lead: (a, b, ctx) => todayRun(a, ctx) - todayRun(b, ctx) || byPriorityRank(a, b),
   order: (a, b, ctx) =>
-    todayRun(a, ctx) - todayRun(b, ctx) ||
-    (todayRun(a, ctx) === 0
-      ? markRank(a) - markRank(b) || (b.attempts ?? 0) - (a.attempts ?? 0)
-      : 0) ||
+    (todayRun(a, ctx) === 0 ? (b.attempts ?? 0) - (a.attempts ?? 0) : 0) ||
     soonestFirst(todayRunTime(a, ctx), todayRunTime(b, ctx)),
   sortable: false,
   cap: null,
@@ -78,12 +83,16 @@ export const TODAY: SectionDef = {
   rows: 'full',
 }
 
-/** Today's decks, in the compact row. */
+/**
+ * Today's decks, in the compact row: by priority, then the sort pill's order
+ * (its default, Newest: the newest deck first).
+ */
 export const ON_DECK: SectionDef = {
   id: 'on-deck',
   title: 'On deck',
   match: isOnDeckToday,
-  order: byPriorityThenNewest,
+  lead: byPriorityRank,
+  order: byNewestCreated,
   sortable: true,
   cap: null,
   allowOverlap: false,

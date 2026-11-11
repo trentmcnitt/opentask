@@ -16,6 +16,7 @@ import {
   listsEveryRow,
 } from '@/lib/modes/registry'
 import { HORIZON_DAYS_CAP, SECTION_CAP } from '@/lib/modes/sections'
+import { priorityRank } from '@/lib/priority'
 import { DEFAULT_MODE_SORT, type ModeSort } from '@/lib/modes/sorts'
 import type { ModeContext } from '@/lib/modes/types'
 import { UNSET_HORIZON } from '@/lib/task-segments'
@@ -129,29 +130,98 @@ describe('Today', () => {
     expect(today([picked, reminder, quota, done])).toEqual([])
   })
 
-  test('the sort pill re-orders On deck, never Today, unless every section is sorted', () => {
-    const lowDeck = task({
-      on_deck_day: '2026-10-28',
-      priority: 1,
-      created_at: at('2026-10-27T09:00'),
-    })
-    const highDeck = task({
-      on_deck_day: '2026-10-28',
-      priority: 4,
-      created_at: at('2026-10-01T09:00'),
-    })
-    // Both over target and of one rank (no "!"), so Today's own order is time.
-    const early = task({ due_at: at('2026-10-28T09:00'), priority: 1 })
-    const laterMedium = task({ due_at: at('2026-10-28T10:00'), priority: 2 })
-    const sorted = (everywhere: boolean) =>
-      selectSections([lowDeck, highDeck, early, laterMedium], MODES.today.sections!, ctx, {
-        id: 'priority',
+  test('the sort pill re-orders On deck within a priority, never Today, unless every section is sorted', () => {
+    const olderDeck = task({ on_deck_day: '2026-10-28', created_at: at('2026-10-01T09:00') })
+    const newerDeck = task({ on_deck_day: '2026-10-28', created_at: at('2026-10-27T09:00') })
+    // Both over target and of one priority, so Today's own order is time.
+    const early = task({ due_at: at('2026-10-28T09:00'), created_at: at('2026-10-01T09:00') })
+    const later = task({ due_at: at('2026-10-28T10:00'), created_at: at('2026-10-27T09:00') })
+    const sorted = (id: ModeSort['id'], everywhere: boolean) =>
+      selectSections([olderDeck, newerDeck, early, later], MODES.today.sections!, ctx, {
+        id,
         everywhere,
       })
-    const views = sorted(false)
-    expect(ids(section(views, 'today').tasks)).toEqual([early.id, laterMedium.id])
-    expect(ids(section(views, 'on-deck').tasks)).toEqual([highDeck.id, lowDeck.id])
-    expect(ids(section(sorted(true), 'today').tasks)).toEqual([laterMedium.id, early.id])
+    expect(ids(section(sorted('newest', false), 'on-deck').tasks)).toEqual([
+      newerDeck.id,
+      olderDeck.id,
+    ])
+    expect(ids(section(sorted('oldest', false), 'on-deck').tasks)).toEqual([
+      olderDeck.id,
+      newerDeck.id,
+    ])
+    expect(ids(section(sorted('newest', false), 'today').tasks)).toEqual([early.id, later.id])
+    expect(ids(section(sorted('newest', true), 'today').tasks)).toEqual([later.id, early.id])
+  })
+})
+
+describe('Today: priority leads every section (2026-11-11)', () => {
+  // Urgent, High, Medium, unset, Low: unset sits just below Medium, not below Low.
+  const RANKED = [4, 3, 2, 0, 1]
+  // Each set is made Low-first, so the raw value (b - a) would put unset last.
+  const make = (o: (p: number) => Partial<Task>) =>
+    [1, 0, 2, 3, 4].map((priority) => task({ priority, ...o(priority) }))
+  const byPriority = (tasks: Task[]) => RANKED.map((p) => tasks.find((t) => t.priority === p)!.id)
+
+  test('priorityRank: Urgent, High, Medium, unset, Low', () => {
+    expect([1, 0, 2, 3, 4].sort((a, b) => priorityRank(a) - priorityRank(b))).toEqual(RANKED)
+    expect(priorityRank(null)).toBe(priorityRank(0))
+  })
+
+  test('Late: by priority, a passed deadline order only within one', () => {
+    // The Low one has the oldest deadline: priority still leads.
+    const late = make((p) => ({ deadline_at: at(`2026-10-2${p}T17:00`) }))
+    expect(ids(section(today(late), 'late').tasks)).toEqual(byPriority(late))
+  })
+
+  test('Today: over target above not yet, the deadline net last, each by priority', () => {
+    // Earlier times on the lower priorities: the time decides nothing across priorities.
+    const over = make((p) => ({ due_at: at(`2026-10-28T0${5 + p}:00`) }))
+    const notYet = make((p) => ({ due_at: at(`2026-10-28T1${3 + p}:00`) }))
+    const net = make((p) => ({ deadline_at: at(`2026-10-29T1${p}:00`) }))
+    const views = today([...net, ...notYet, ...over])
+    expect(ids(section(views, 'today').tasks)).toEqual([
+      ...byPriority(over),
+      ...byPriority(notYet),
+      ...byPriority(net),
+    ])
+  })
+
+  test('Today: a tie keeps the block order (attempts, then time)', () => {
+    const at9 = task({ due_at: at('2026-10-28T09:00'), priority: 2 })
+    const at8 = task({ due_at: at('2026-10-28T08:00'), priority: 2 })
+    const at10x3 = task({ due_at: at('2026-10-28T10:00'), priority: 2, attempts: 3 })
+    expect(ids(section(today([at9, at8, at10x3]), 'today').tasks)).toEqual([
+      at10x3.id,
+      at8.id,
+      at9.id,
+    ])
+  })
+
+  test('On deck: by priority under the default pill (Newest), then newest', () => {
+    const decks = make((p) => ({
+      on_deck_day: '2026-10-28',
+      created_at: at(`2026-10-2${p}T09:00`),
+    }))
+    const newerMed = task({
+      on_deck_day: '2026-10-28',
+      priority: 2,
+      created_at: at('2026-10-27T09:00'),
+    })
+    const views = selectSections(
+      [...decks, newerMed],
+      MODES.today.sections!,
+      ctx,
+      DEFAULT_MODE_SORT,
+    )
+    const order = byPriority(decks)
+    order.splice(2, 0, newerMed.id)
+    expect(ids(section(views, 'on-deck').tasks)).toEqual(order)
+  })
+
+  test("the pill's Priority sort uses the same order (Scan)", () => {
+    const rows = make(() => ({ horizon: 'weeks' }))
+    const views = scan(rows, { id: 'priority', everywhere: false })
+    expect(ids(section(views, 'horizon-weeks').tasks)).toEqual(byPriority(rows))
   })
 })
 
@@ -359,7 +429,7 @@ describe("Scan's age steps (which sections draw them)", () => {
 
 describe('Today: Late, then Today in O3 order (2026-10-29)', () => {
   // ctx: Wed 2026-10-28 12:00 Chicago.
-  test('Late: only a passed DEADLINE; "!!", then "!", then the oldest deadline', () => {
+  test('Late: only a passed DEADLINE; by priority (unset above Low), then the oldest deadline', () => {
     const oldLow = task({ deadline_at: at('2026-10-20T17:00'), priority: 1 })
     const newHigh = task({ deadline_at: at('2026-10-27T17:00'), priority: 3 })
     const urgent = task({ deadline_at: at('2026-10-28T09:00'), priority: 4 })
@@ -376,9 +446,9 @@ describe('Today: Late, then Today in O3 order (2026-10-29)', () => {
     expect(ids(section(views, 'late').tasks)).toEqual([
       urgent.id,
       newHigh.id,
-      oldLow.id,
       newerLow.id,
       rental.id,
+      oldLow.id,
     ])
     expect(ids(section(views, 'today').tasks)).toEqual([overOnly.id])
   })

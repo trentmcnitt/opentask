@@ -248,6 +248,29 @@ describe('Reminders surface', () => {
   })
 
   /**
+   * RM-012b (2026-11-11): the priority order is Urgent, High, Medium, unset,
+   * Low — unset sits just below Medium, never below Low (`byPriorityRank`,
+   * the dashboard's Today mode's order too); a tie keeps creation order.
+   */
+  test('RM-012b: Urgent, High, Medium, unset, Low; then creation order', () => {
+    // Made Low first: the raw value (b - a) would put unset last.
+    ;[1, 0, 2, 3, 4, 0].forEach((priority, i) =>
+      makeReminder({ title: `p${priority}-${i}`, anchor_time: '07:00', priority }),
+    )
+    const morning = getRemindersBySlot(TEST_USER_ID, TEST_TIMEZONE).find(
+      (g) => g.slot?.label === 'Early morning',
+    )
+    expect(morning?.reminders.map((t) => t.title)).toEqual([
+      'p4-4',
+      'p3-3',
+      'p2-2',
+      'p0-1',
+      'p0-5',
+      'p1-0',
+    ])
+  })
+
+  /**
    * RM-013: A high-priority reminder STILL never notifies. Priority changes
    * position, never interruption — that is the §6 carve-out in one assertion.
    */
