@@ -160,14 +160,14 @@ describe('the Overdue filter classifies against the page clock', () => {
   // `applyTaskFilters`' `now` is the dashboard's one clock (useDashboardNow):
   // a task that crosses its due time joins the Overdue list when that clock
   // advances, with no data change in between.
-  test('a task due at 2pm joins the Overdue list once `now` passes 2pm', () => {
+  test('a task due at 2pm joins the Overdue list at 2pm exactly (`<=`, 2026-11-12)', () => {
     const criteria: TaskFilterCriteria = { ...emptyCriteria(), selectedDateFilters: ['overdue'] }
     const ids = (now: Date) =>
       applyTaskFilters(corpus, criteria, { dayStart: CALENDAR_DAY_START, timezone: TZ, now }).map(
         (t) => t.id,
       )
     expect(ids(NOW)).not.toContain(3)
-    expect(ids(new Date('2026-01-15T20:00:00Z'))).not.toContain(3) // exactly 2pm: not yet
-    expect(ids(new Date('2026-01-15T20:00:00.001Z'))).toContain(3)
+    expect(ids(new Date('2026-01-15T19:59:59.999Z'))).not.toContain(3) // a millisecond before
+    expect(ids(new Date('2026-01-15T20:00:00Z'))).toContain(3) // exactly 2pm
   })
 })

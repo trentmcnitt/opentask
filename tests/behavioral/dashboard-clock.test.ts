@@ -43,19 +43,22 @@ describe('nextClockTick', () => {
     expect(nextClockTick([due(null)], NOW, TZ, CALENDAR_DAY_START)).toEqual(MIDNIGHT)
   })
 
-  test('wakes 1ms AFTER the earliest future due time — isOverdue is strict', () => {
+  // Since 2026-11-12 a target is over target AT its instant (`<=`, the
+  // server's boundary; `targetArrived`), so the clock wakes exactly then.
+  test('wakes AT the earliest future due time — a target is overdue at its instant', () => {
     const in30m = NOW.getTime() + 30 * 60_000
     const in60m = NOW.getTime() + 60 * 60_000
     // Both are already inside the Soon window, so only the overdue crossings remain.
     const tick = nextClockTick([due(at(in60m)), due(at(in30m))], NOW, TZ, CALENDAR_DAY_START)
-    expect(tick.getTime()).toBe(in30m + 1)
+    expect(tick.getTime()).toBe(in30m)
   })
 
-  test('a task sitting exactly at its due instant is picked up 1ms later, not at midnight', () => {
-    // Fake timers land exactly on the scheduled instant: at `due`, the task is
-    // not yet overdue, so the next tick must still be for it.
-    const tick = nextClockTick([due(at(NOW.getTime()))], NOW, TZ, CALENDAR_DAY_START)
-    expect(tick.getTime()).toBe(NOW.getTime() + 1)
+  test('a task sitting exactly at its due instant is overdue already: no tick is owed for it', () => {
+    // Fake timers land exactly on the scheduled instant: at `due`, the task
+    // counts as overdue, so the next tick is the day's turn.
+    const tasks = [due(at(NOW.getTime()))]
+    expect(countTasks(tasks, TZ, CALENDAR_DAY_START, NOW).overdue).toBe(1)
+    expect(nextClockTick(tasks, NOW, TZ, CALENDAR_DAY_START)).toEqual(MIDNIGHT)
   })
 
   test('wakes when a task enters the Soon window (due within 2h)', () => {
@@ -109,7 +112,7 @@ describe('a count recomputed at the tick sees the crossing', () => {
     vi.useRealTimers()
   })
 
-  test('the scheduled timeout fires once the due time has passed, and the task counts as overdue', () => {
+  test('the scheduled timeout fires at the due time, and the task counts as overdue', () => {
     const tasks = [due(at(NOW.getTime() + 60_000))]
     expect(countTasks(tasks, TZ, CALENDAR_DAY_START, new Date()).overdue).toBe(0)
 
@@ -118,10 +121,10 @@ describe('a count recomputed at the tick sees the crossing', () => {
     const target = nextClockTick(tasks, new Date(), TZ, CALENDAR_DAY_START)
     setTimeout(() => (ticked = new Date()), clockTickDelay(target, new Date()))
 
-    vi.advanceTimersByTime(60_000)
-    expect(ticked).toBeNull() // at exactly `due`: not yet
+    vi.advanceTimersByTime(59_999)
+    expect(ticked).toBeNull() // a millisecond before `due`: not yet
     vi.advanceTimersByTime(1)
-    expect(ticked).not.toBeNull()
+    expect(ticked).not.toBeNull() // at exactly `due`
     expect(countTasks(tasks, TZ, CALENDAR_DAY_START, ticked!).overdue).toBe(1)
   })
 })

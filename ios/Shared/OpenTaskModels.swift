@@ -399,9 +399,13 @@ struct TaskDTO: Codable, Identifiable, Hashable {
     /// 2026-10-12 a deadline's target is STORED (`target_auto`), so `due_at`
     /// is the whole answer — the native implied-target rule is gone (see
     /// `TargetAge`).
+    ///
+    /// At or before now (`<=`, 2026-11-12): a 9:00 target is over target at
+    /// 9:00:00 — the server's boundary (`isCurrentlyDue`) and the web's
+    /// (`targetArrived`). It was a strict `<` until then.
     func isOverdue(now: Date = Date()) -> Bool {
         guard let target = dueDate else { return false }
-        return target < now
+        return target <= now
     }
 
     var deadlineDate: Date? {

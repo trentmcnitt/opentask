@@ -1,5 +1,6 @@
 'use client'
 
+import { targetArrived } from '@/lib/task-counts'
 import { BarHorizonControl, SelectionDetailLines } from '@/components/SelectionDetail'
 import { requestShowInList } from '@/lib/show-in-list'
 import type { HorizonValue } from '@/lib/task-segments'
@@ -76,7 +77,7 @@ function categorizeTasksForSnooze(tasks: Task[], targetTime?: string): SnoozeCat
     if (task.done) continue
     if (!task.due_at) {
       noDueDate.push(task)
-    } else if (new Date(task.due_at) < now) {
+    } else if (targetArrived(task.due_at, now)) {
       overdue.push(task)
     } else if (target && new Date(task.due_at) >= target) {
       dueAfterTarget.push(task)
