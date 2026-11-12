@@ -48,6 +48,7 @@
  * 10-12 (the deadline pulling the horizon in) — a truthful, dated degrade.
  */
 
+import { byPriorityRank } from '@/lib/priority'
 import { getDb, withTransaction } from '@/core/db'
 import { logAction, createTaskSnapshot } from '@/core/undo'
 import { AppError, ValidationError } from '@/core/errors'
@@ -430,12 +431,14 @@ function sortSegmentRows(
     tasks.sort(
       (a, b) =>
         Number(!!a.carried) - Number(!!b.carried) ||
-        b.task.priority - a.task.priority ||
+        byPriorityRank(a.task, b.task) ||
         Date.parse(b.task.created_at) - Date.parse(a.task.created_at) ||
         a.task.id - b.task.id,
     )
   } else if (kind !== 'upcoming') {
-    tasks.sort((a, b) => b.task.priority - a.task.priority || a.task.id - b.task.id)
+    // A horizon segment: priority in the one order (`byPriorityRank`,
+    // 2026-11-11: unset just below Medium, never below Low), then id.
+    tasks.sort((a, b) => byPriorityRank(a.task, b.task) || a.task.id - b.task.id)
   }
 }
 

@@ -168,13 +168,17 @@ describe('Task model', () => {
       for (const t of [r, q, rec]) expect(segmentOf(t.id)).toBeNull()
     })
 
-    test('TM-014: order is priority then id, and acting on one never reorders the rest', () => {
-      const ids = [0, 3, 1, 3].map((p) => make({ priority: p }).id)
+    // Priority in the one order (2026-11-11, `byPriorityRank`): Urgent, High,
+    // Medium, unset, Low — unset sits just below Medium, never below Low.
+    test('TM-014: order is priority (unset above Low) then id, and acting on one never reorders the rest', () => {
+      const ids = [0, 3, 1, 3, 2].map((p) => make({ priority: p }).id)
       for (const id of ids) age(id, '2026-10-01T09:00')
       const order = () => getTaskSegments(TEST_USER_ID, tz)[0].tasks.map((t) => t.task.id)
-      expect(order()).toEqual([ids[1], ids[3], ids[2], ids[0]])
+      // High, High (by id), Medium, unset, Low.
+      const expected = [ids[1], ids[3], ids[4], ids[0], ids[2]]
+      expect(order()).toEqual(expected)
       considerTasks(TEST_USER_ID, [ids[3]])
-      expect(order()).toEqual([ids[1], ids[3], ids[2], ids[0]])
+      expect(order()).toEqual(expected)
     })
 
     test('TM-015: Defer All hides the rest today, is not a consider, and they return tomorrow', () => {
