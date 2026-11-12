@@ -208,6 +208,111 @@ test.describe('Dashboard search · one kind, and the lift', () => {
   })
 })
 
+test.describe('Dashboard search · three more paths (state combinations, 2026-11-12)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('acting on a task result while the Tasks chip narrows the list: the row leaves, the counts follow, the chip stays', async ({
+    authenticatedPage: page,
+  }) => {
+    const w = word()
+    const made = await seed(page, w)
+    try {
+      await page.goto('/')
+      await page.getByRole('textbox', { name: 'Search tasks' }).fill(w)
+      await chip(page, 'task').click()
+      await expect(taskRow(page, made.dated)).toBeVisible()
+      await expect(pointer(page, made.reminder)).toHaveCount(0)
+
+      await taskRow(page, made.dated).locator('[data-lean-done]').click()
+      await expect(taskRow(page, made.dated)).toHaveCount(0)
+      // Still searching, still narrowed to tasks: one task left of three results.
+      await expect(page.getByRole('textbox', { name: 'Search tasks' })).toHaveValue(w)
+      await expect(chip(page, 'task')).toHaveAttribute('aria-checked', 'true')
+      await expect(chip(page, 'task')).toContainText('1')
+      await expect(chip(page, 'all')).toContainText('3')
+      await expect(taskRow(page, made.queued)).toBeVisible()
+      await expect(pointer(page, made.reminder)).toHaveCount(0)
+    } finally {
+      await cleanup(
+        page,
+        Object.values(made).filter((v): v is number => typeof v === 'number'),
+      )
+    }
+  })
+
+  test('arriving by /?search= with a project filter (CURRENT behaviour, question open with the design session): task hits are narrowed to the project, reminders and quotas are not', async ({
+    authenticatedPage: page,
+  }) => {
+    const w = word()
+    const made = await seed(page, w)
+    const projects = (await (await page.request.get('/api/projects')).json()).data.projects as {
+      id: number
+      name: string
+    }[]
+    const dated = (await (await page.request.get(`/api/tasks/${made.dated}`)).json()).data as {
+      project_id: number
+    }
+    const other = projects.find((p) => p.id !== dated.project_id)!
+    try {
+      await page.goto(`/?search=${w}&project=${other.id}`)
+      // The search is on, the params are gone from the address.
+      await expect(page.getByRole('textbox', { name: 'Search tasks' })).toHaveValue(w)
+      await expect(page).toHaveURL(/\/$/)
+      // Both tasks are in ANOTHER project than the filter names: not listed.
+      // The reminder and the quota, which have no project to filter by, are.
+      await expect(pointer(page, made.reminder)).toBeVisible()
+      await expect(pointer(page, made.quota)).toBeVisible()
+      await expect(taskRow(page, made.dated)).toHaveCount(0)
+      await expect(taskRow(page, made.queued)).toHaveCount(0)
+      await expect(chips(page).getByRole('radio')).toHaveText([
+        /^All\s*2$/,
+        /^Reminders\s*1$/,
+        /^Quotas\s*1$/,
+      ])
+    } finally {
+      await cleanup(
+        page,
+        Object.values(made).filter((v): v is number => typeof v === 'number'),
+      )
+    }
+  })
+
+  test('a pointer row tapped after the reminder was handled elsewhere (the hidden card is stale): no error, and it lands on the card or its details', async ({
+    authenticatedPage: page,
+  }) => {
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    // No live sync: what the page knows of the Reminders card is its last load.
+    await page.route('**/api/sync/stream', (route) => route.abort())
+    const w = word()
+    const slot = await firstSlot(page)
+    const [h, m] = slot.start_time.split(':').map(Number)
+    const reminder = await post(page, {
+      title: uniqueTitle(`${w} vitamins`),
+      is_reminder: true,
+      rrule: `FREQ=DAILY;BYHOUR=${h};BYMINUTE=${m}`,
+    })
+    try {
+      await page.goto('/')
+      await page.getByRole('textbox', { name: 'Search tasks' }).fill(w)
+      await expect(pointer(page, reminder)).toBeVisible()
+      // Another device considers it.
+      const done = await page.request.post(`/api/tasks/${reminder}/done`, { data: {} })
+      expect(done.ok()).toBeTruthy()
+      expect(await waitsToday(page, reminder)).toBe(false)
+
+      await pointer(page, reminder).click()
+      await expect(page.locator('[data-search-kind-chips]')).toHaveCount(0)
+      await expect
+        .poll(() => new URL(page.url()).pathname)
+        .toMatch(new RegExp(`^/$|^/tasks/${reminder}$`))
+      expect(errors).toEqual([])
+    } finally {
+      await cleanup(page, [reminder])
+    }
+  })
+})
+
 test.describe('The tabs: in place, plus what else matches', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
