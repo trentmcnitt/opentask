@@ -479,6 +479,14 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'lead_from')) {
     database.exec('ALTER TABLE tasks ADD COLUMN lead_from TEXT DEFAULT NULL')
   }
+  // Start date (2026-11-12): a deadline one-off's picked start day. No
+  // backfill: NULL is "no date picked", every existing row's state.
+  if (!hasColumn(database, 'tasks', 'start_date')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN start_date TEXT DEFAULT NULL')
+  }
+  if (!hasColumn(database, 'tasks', 'round_announced_day')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN round_announced_day TEXT DEFAULT NULL')
+  }
   // Deadline-anchored repeats (2026-10-21). NOT NULL DEFAULT 'target': every
   // existing repeat is target-anchored as it stands, so no backfill — the one
   // data step is `migrateRepeatAnchors`, for repeats that carry a deadline.

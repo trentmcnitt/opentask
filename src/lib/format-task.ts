@@ -42,6 +42,14 @@ export interface FormattedTask extends Task {
   /** `repeat_count − repeat_count_used` (the current one included); null with no count. */
   repeat_remaining: number | null
   /**
+   * START DATE (2026-11-12, START-9): a target-less deadline one-off's stage
+   * today, task queue on — `before_start` | `open` | `coming_due` |
+   * `safety_net`; null on any other task. `next_round`: in the open window,
+   * the next day it comes round (yyyy-MM-dd), or null.
+   */
+  deadline_window: 'before_start' | 'open' | 'coming_due' | 'safety_net' | null
+  next_round: string | null
+  /**
    * The TARGET (2026-10-10): when nagging starts. The primary name; `due_at`
    * is the same value under its deprecated name, kept for older clients.
    */
@@ -140,6 +148,8 @@ export function formatTaskResponse(task: Task, timezone: string): FormattedTask 
     // it has no end to judge (the export's rows select none): not the last.
     repeat_last: task.repeat_last ?? false,
     repeat_remaining: task.repeat_remaining ?? repeatRemaining(task),
+    deadline_window: task.deadline_window ?? null,
+    next_round: task.next_round ?? null,
     deadline_nag_off: nativeNagOff(task, now),
     attempts_label: attemptsLabel(task),
     // Task queue on: no "Remove target?" on a strippable task (resolution 1).

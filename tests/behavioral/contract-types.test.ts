@@ -120,6 +120,8 @@ const TASK: Record<keyof FormattedTask, Field> = {
   repeat_until: STR_N,
   repeat_last: BOOL,
   repeat_remaining: INT_N,
+  deadline_window: STR_N,
+  next_round: STR_N,
   original_due_at: STR_N,
   target_day_first_at: STR_N,
   deadline_at: STR_N,
@@ -144,6 +146,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   queued_from_deck_day: STR_N,
   lead_days: INT_N,
   lead_from: STR_N,
+  start_date: STR_N,
   heads_up: BOOL,
   rolled_over_at: STR_N,
   attempts_label: STR_N,
@@ -595,7 +598,13 @@ describe('contract fixtures: the deadlines page (2026-10-22)', () => {
     }
     for (const seg of segs) {
       for (const row of seg.tasks as Obj[]) {
-        const extras = new Set([...SEGMENT_ROW_EXTRAS, 'safety_net', 'seen'])
+        const extras = new Set([
+          ...SEGMENT_ROW_EXTRAS,
+          'safety_net',
+          'seen',
+          'window',
+          'next_round',
+        ])
         if (seg.horizon !== 'deadlines') {
           expect(row.safety_net, 'only deadlines rows carry safety_net').toBeUndefined()
         }

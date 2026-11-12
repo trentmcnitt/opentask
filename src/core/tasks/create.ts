@@ -12,6 +12,8 @@ import {
   deckSkip,
   leadDaysProblem,
   leadFor,
+  START_DATE_MESSAGES,
+  startDateProblem,
   occurrenceDates,
   resolveTarget,
   type LeadContext,
@@ -228,6 +230,8 @@ interface FirstDates {
   leadFrom: string | null
   /** The lead override (`lead_days`) — never on a reminder or a quota. */
   leadDays: number | null
+  /** A one-off's picked start date (START-1), or null. */
+  startDate: string | null
 }
 
 /**
@@ -248,6 +252,8 @@ function deadlineAnchoredDates(
   dayStart: string,
 ): FirstDates {
   const given = input.deadline_at!
+  // A start date is a one-off's (START-1): a repeat keeps `lead_days`.
+  if (input.start_date != null) throw new ValidationError(START_DATE_MESSAGES.no_deadline)
   assertRuleOnDeadline(rrule, null, given, timezone)
   const first = firstDueAt(given, rrule, false, timezone, dayStart)!
   const sent =
@@ -299,6 +305,7 @@ function deadlineAnchoredDates(
     relative,
     leadFrom: dates.leadFrom,
     leadDays: input.lead_days ?? null,
+    startDate: null,
   }
 }
 
@@ -375,14 +382,8 @@ function targetAnchoredDates(
   )
   // A one-off's lead day (the deadlines page, 2026-10-22): written whenever
   // it has a deadline — dormant while it has a target.
-  const leadFrom =
-    rrule || tracked || input.is_reminder
-      ? null
-      : leadFor(
-          { ...NO_SCHEDULE, deadline_at: input.deadline_at ?? null, lead_days: input.lead_days },
-          timezone,
-          lead,
-        )
+  const oneOff = !rrule && !tracked && !input.is_reminder
+  const { startDate, leadFrom } = oneOffStart(input, oneOff, timezone, lead)
   return {
     dueAt: target.dueAt,
     occurrenceAt: rrule && !tracked ? dueAt : null,
@@ -391,7 +392,51 @@ function targetAnchoredDates(
     relative: target.relative ?? null,
     leadFrom,
     leadDays: tracked || input.is_reminder ? null : (input.lead_days ?? null),
+    startDate,
   }
+}
+
+/**
+ * A new one-off's start date and lead day (the deadlines page, 2026-10-22):
+ * the lead day is written whenever it has a deadline — dormant while it has a
+ * target — and is the start date when one was picked.
+ */
+function oneOffStart(
+  input: TaskCreateInput,
+  oneOff: boolean,
+  timezone: string,
+  lead: LeadContext,
+): { startDate: string | null; leadFrom: string | null } {
+  const startDate = newStartDate(input, { oneOff, timezone, rolloverTime: lead.rolloverTime })
+  if (!oneOff) return { startDate, leadFrom: null }
+  const fields = {
+    ...NO_SCHEDULE,
+    deadline_at: input.deadline_at ?? null,
+    lead_days: input.lead_days,
+    start_date: startDate,
+  }
+  return { startDate, leadFrom: leadFor(fields, timezone, lead) }
+}
+
+/**
+ * A new task's start date (START-1, START-2): only on a one-off with a
+ * deadline, never with `lead_days`, never inside the safety net — each a 400
+ * (the PATCH's rules, `collectStartDate`).
+ */
+function newStartDate(
+  input: TaskCreateInput,
+  left: { oneOff: boolean; timezone: string; rolloverTime: string | null },
+): string | null {
+  const sent = input.start_date ?? null
+  if (sent === null) return null
+  if (input.lead_days != null) {
+    throw new ValidationError('Send start_date or lead_days, not both: they are one choice')
+  }
+  const problem = left.oneOff
+    ? startDateProblem(sent, input.deadline_at ?? null, left.timezone, left.rolloverTime)
+    : 'no_deadline'
+  if (problem) throw new ValidationError(START_DATE_MESSAGES[problem])
+  return sent
 }
 
 /**
@@ -579,8 +624,8 @@ export function createTask(options: CreateTaskOptions): Task {
         auto_snooze_minutes, labels, notes, progress_target, is_reminder, is_tracked,
         quota_prompt_config, deadline_at, horizon, horizon_set_at, ${TARGET_SET_FIELD},
         target_auto, occurrence_at, progress_period_start, on_deck_day, lead_days, lead_from,
-        heads_up, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        start_date, heads_up, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -632,6 +677,8 @@ export function createTask(options: CreateTaskOptions): Task {
         // The deadlines page (2026-10-22): the override and the lead day.
         first.leadDays,
         first.leadFrom,
+        // Start date (2026-11-12): a one-off's picked start day (`newStartDate`).
+        first.startDate,
         // Heads up (2026-11-02): off only when asked, on an ordinary task.
         input.heads_up === false && !tracked && !input.is_reminder ? 0 : 1,
         now,

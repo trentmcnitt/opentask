@@ -86,6 +86,8 @@ import {
   LEAD_DEFER_MESSAGES,
   compareDeadlineRows,
   deadlinePlace,
+  type DeadlineRowWindow,
+  deadlineWindowOf,
   isDeadlinePageTask,
   leadDeferRefusal,
   openTaskToday,
@@ -119,6 +121,15 @@ export interface SegmentTask {
   safetyNet?: boolean
   /** Deadlines page rows only: considered this OpenTask day. */
   seen?: boolean
+  /**
+   * Deadlines page rows only (2026-11-12, START-3): `open` — in its open
+   * window, listed on its rounds, under "Open window"; `due` — Coming due
+   * or the safety net. `nextRound`: an open row's next round day, if any.
+   */
+  window?: DeadlineRowWindow
+  nextRound?: string | null
+  /** An open row's latest round day (today when it came round today). Not sent. */
+  round?: string
   /**
    * Upcoming rows only (2026-10-25, the Upcoming split): the section the row
    * is in — Tomorrow (the day before its anchor) or Later. A left row
@@ -339,9 +350,24 @@ export function getTaskSegments(
   // (restates RULE DL-UPCOMING-RULE3, home: src/lib/task-segments.ts)
   // A target-less deadline task (the page drawn) is on the page or nowhere:
   // never in Upcoming, a future deck's row included (rule 3, 2026-10-25).
-  const placeDeadline = deadlinePlacer(userId, timezone, now, deadlineRows, (task, entry) => {
-    add('deadlines', { task, state: entry.state, safetyNet: entry.safetyNet, seen: entry.seen })
-  })
+  const placeDeadline = deadlinePlacer(
+    userId,
+    timezone,
+    now,
+    { deadlineRows, checkInDay },
+    (task, entry) => {
+      add('deadlines', {
+        task,
+        state: entry.state,
+        safetyNet: entry.safetyNet,
+        seen: entry.seen,
+        window: entry.window,
+        ...(entry.window === 'open'
+          ? { nextRound: entry.nextRound ?? null, round: entry.round }
+          : {}),
+      })
+    },
+  )
   /**
    * RULE TQ-PRECEDENCE: For one-offs, getTaskSegments places a task in the first of these that
    *   takes it: the queue (hidden without ?queue=1), the deadlines page, on deck, a picked target
@@ -476,7 +502,12 @@ function sortSegmentRows(
   if (kind === 'queue_today' || kind === 'queue_previous') {
     tasks.sort((a, b) => compareQueueRows(a.task, b.task, deckMoment))
   } else if (kind === 'deadlines') {
-    tasks.sort((a, b) => compareDeadlineRows(a.task, b.task))
+    // Coming due first, then the open window (START-3); each in the page's order.
+    tasks.sort(
+      (a, b) =>
+        Number(a.window === 'open') - Number(b.window === 'open') ||
+        compareDeadlineRows(a.task, b.task),
+    )
   } else if (kind === 'aged_out') {
     tasks.sort((a, b) => compareAgedOut(a.task, b.task))
   } else if (kind === 'new') {
@@ -583,21 +614,41 @@ type DeadlineEntry = Exclude<ReturnType<typeof deadlinePlace>, null>
  * caller's other rules never see it. The rollover time is read once per call.
  * Before its lead day it is placed nowhere (rule 3, 2026-10-25).
  */
+/**
+ * RULE START-8: A target-less deadline one-off with a start date is on the Due page or nowhere on
+ *   the queue, before its start and between its rounds too: never in New, Aged out, Upcoming or a
+ *   horizon segment. Lists that show every task (All, search, Scan) show it, saying "Starts <day>"
+ *   before its start. Native builds get an open-window row only on the days it is listed, as a Due
+ *   row with window "open"; a shipped build draws it in the one list.
+ * Why: The Due page alone holds a target-less deadline task (TQ-PRECEDENCE); a quiet day must not
+ *   leak it into another segment.
+ * Ruling: The design session's rules for E3 and D2, approved 2026-11-12.
+ */
 function deadlinePlacer(
   userId: number,
   timezone: string,
   now: Date,
-  deadlineRows: boolean,
+  opts: { deadlineRows: boolean; checkInDay: CheckInDay },
   put: (task: Task, entry: DeadlineEntry) => void,
 ): (task: Task) => boolean {
-  if (!deadlineRows || !taskQueueEnabled()) return () => false
+  if (!opts.deadlineRows || !taskQueueEnabled()) return () => false
   const rolloverTime = rolloverTimeForUser(userId)
   return (task) => {
     if (!isDeadlinePageTask(task)) return false
     if (task.rrule && task.repeat_anchor !== 'deadline') return false
-    const placed = deadlinePlace(task, timezone, now, rolloverTime)
+    const placed = deadlinePlace(task, timezone, now, rolloverTime, opts.checkInDay)
     if (placed) put(task, placed)
     return true
+  }
+}
+
+/** A task as a Defer of its lead day leaves it (`deferLeads`): the start date moves too. */
+function deferredLead(task: Task, day: string, stamp: string, movesStart: boolean): Task {
+  return {
+    ...task,
+    lead_from: day,
+    target_set_at: stamp,
+    start_date: movesStart ? day : task.start_date,
   }
 }
 
@@ -771,6 +822,22 @@ export function deferLeads(
     )
   }
   const rolloverTime = rolloverTimeForUser(userId)
+  const checkInDay = getCheckInDay(userId)
+  /**
+   * RULE START-5: Defer on an open-window row moves its start to the picked day (tap: tomorrow; the
+   *   day menu: up to D−2) and writes start_date with lead_from, so the row reads "Starts <that
+   *   day>" and its rounds count from there. A Coming-due row keeps its start date: only this
+   *   instance's lead day moves, and it is daily when it is back. A row with no start date is
+   *   unchanged (DL-DEFER-LEAD). Consider, Done, Target and On deck act as on any Due row.
+   * Why: A later start is what "not yet" means in the open window; moving the date of a row already
+   *   daily would turn it back into a weekly one.
+   * Ruling: Q5, the design session, 2026-11-12 (tap is tomorrow, like every Due row).
+   */
+  const movesStart = (task: Task): boolean => {
+    if (!task.start_date) return false
+    const stage = deadlineWindowOf(task, timezone, now, rolloverTime, checkInDay)?.window
+    return stage === 'open' || stage === 'before_start'
+  }
   const target = day ?? shiftDay(openTaskToday(timezone, now, rolloverTime), 1, timezone)
   if (!parseDeckDay(target, timezone)) throw new ValidationError('day must be a date (yyyy-MM-dd)')
   const tasks = ownOpenTasks(userId, ids)
@@ -790,15 +857,19 @@ export function deferLeads(
     const stamp = now.toISOString()
     const fields = ['lead_from', 'target_set_at']
     withTransaction((db) => {
+      // START-5: a task with a picked start date moves the date with its
+      // window's first day, so the row reads "Starts <that day>".
       const stmt = db.prepare(
-        'UPDATE tasks SET lead_from = ?, target_set_at = ?, updated_at = ? WHERE id = ?',
+        `UPDATE tasks SET lead_from = ?, target_set_at = ?, updated_at = ?, start_date = ?
+          WHERE id = ?`,
       )
       const snapshots = moving.map((task) => {
-        stmt.run(target, stamp, stamp, task.id)
+        const after = deferredLead(task, target, stamp, movesStart(task))
+        stmt.run(target, stamp, stamp, after.start_date, task.id)
         return createTaskSnapshot(
           task,
-          { ...task, lead_from: target, target_set_at: stamp },
-          fields,
+          after,
+          after.start_date !== task.start_date ? [...fields, 'start_date'] : fields,
         )
       })
       logAction(userId, 'task_segment', summary, fields, snapshots)
@@ -828,7 +899,7 @@ export function deferLeads(
     )
     for (const task of moving) {
       dispatchWebhookEvent(userId, 'task.updated', {
-        task: formatTaskResponse({ ...task, lead_from: target, target_set_at: stamp }, timezone),
+        task: formatTaskResponse(deferredLead(task, target, stamp, movesStart(task)), timezone),
       })
     }
   }
