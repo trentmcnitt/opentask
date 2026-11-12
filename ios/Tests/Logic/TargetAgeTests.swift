@@ -29,6 +29,9 @@ final class TargetAgeTests: XCTestCase {
     /// server's data) is not over target — the server stores the target now.
     func testOverTargetReadsTheStoredTarget() {
         XCTAssertTrue(task(due: "2026-10-10T14:00:00.000Z").isOverdue(now: now))
+        // At its exact instant a target is over target (`<=`, 2026-11-12: the server's boundary).
+        XCTAssertTrue(task(due: "2026-10-10T19:00:00.000Z").isOverdue(now: now))
+        XCTAssertFalse(task(due: "2026-10-10T19:00:00.001Z").isOverdue(now: now))
         XCTAssertFalse(task(due: "2026-10-10T23:00:00.000Z").isOverdue(now: now))
         XCTAssertFalse(task(deadline: "2026-10-11T23:00:00.000Z").isOverdue(now: now))
         XCTAssertEqual(TaskLists.overdue([task(deadline: "2026-10-11T23:00:00.000Z")], now: now).count, 0)

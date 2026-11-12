@@ -15,12 +15,11 @@
  * Rather than poll, the page holds one `now` and advances it at exactly the
  * instants an answer can change:
  *
- * - **`due_at + 1ms`** for every task that can be late (`hasDebtDueDate`):
- *   `isOverdue` is a STRICT `due < now`, so at `now === due_at` the task is
- *   not yet overdue. Waking at `due_at` itself would compute "not overdue",
- *   and — since the next candidate must be after `now` — skip the task until
- *   midnight. Fake timers (vitest, Playwright's clock) land exactly on the
- *   scheduled instant, so this is not hypothetical.
+ * - **`due_at`** for every task that can be late (`hasDebtDueDate`):
+ *   `isOverdue` is `due <= now` (`targetArrived`, 2026-11-12), so a wake-up
+ *   AT the due instant already computes "overdue". (Until then it was a
+ *   strict `<` and the wake-up was `due_at + 1ms`.) Fake timers (vitest,
+ *   Playwright's clock) land exactly on the scheduled instant.
  * - **`due_at - 2h + 1ms`**: the Soon chip (`classifyTaskDueDate`) counts a
  *   task once it is due within two hours, same strict comparison.
  * - **the next day start** (`tomorrowStart` — the user's OpenTask day,
@@ -60,7 +59,7 @@ export function nextClockTick(
   for (const task of tasks) {
     if (!hasDebtDueDate(task)) continue
     const due = new Date(task.due_at).getTime()
-    for (const candidate of [due + 1, due - SOON_WINDOW_MS + 1]) {
+    for (const candidate of [due, due - SOON_WINDOW_MS + 1]) {
       if (candidate > nowMs && candidate < next) next = candidate
     }
   }

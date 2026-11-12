@@ -45,8 +45,19 @@ export function hasDebtDueDate(task: CountableTask): task is CountableTask & { d
 }
 
 /**
- * THE definition of "overdue" on the Tasks page: a real due date strictly in
- * the past. Shared by `countTasks` (header pills, nav badges, GET
+ * THE INSTANT A TARGET ARRIVES: at or before now (`<=`). A 9:00 target is
+ * over target at 9:00:00, on the client exactly as on the server
+ * (`isCurrentlyDue`, `effectiveDueAt <= now`; 2026-11-12, issue I-03 — the
+ * client was a strict `<` until then). Every client test of "has the target
+ * passed" goes through here.
+ */
+export function targetArrived(target: string | Date, now: Date): boolean {
+  return new Date(target).getTime() <= now.getTime()
+}
+
+/**
+ * THE definition of "overdue" on the Tasks page: a real due date that has
+ * arrived (`targetArrived`: at or before now). Shared by `countTasks` (header pills, nav badges, GET
  * /api/tasks/counts) and `classifyTaskDueDate` (the Overdue filter chips and
  * the filter itself), so the pill and the chip cannot drift into two
  * definitions again. Snoozing moves `due_at` itself (`original_due_at` only
@@ -55,7 +66,7 @@ export function hasDebtDueDate(task: CountableTask): task is CountableTask & { d
  */
 export function isOverdue(task: CountableTask, now: Date): boolean {
   const target = countableTarget(task)
-  return target !== null && new Date(target) < now
+  return target !== null && targetArrived(target, now)
 }
 
 export function countTasks(
@@ -72,7 +83,7 @@ export function countTasks(
     const target = countableTarget(t)
     if (target === null) continue
     const due = new Date(target)
-    if (due < now) overdue++
+    if (targetArrived(due, now)) overdue++
     if (due >= todayStart && due < tomorrowStart) today++
   }
   return { total: tasks.length, overdue, today }

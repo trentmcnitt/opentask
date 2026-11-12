@@ -24,6 +24,7 @@
  * this module doesn't re-derive either, so there's exactly one place (the
  * caller's own task list) that decides what population a chip counts over.
  */
+import { targetArrived } from '@/lib/task-counts'
 import type { Task } from '@/types'
 import type { DayBoundaries } from '@/lib/format-date'
 
@@ -45,7 +46,7 @@ export function classifyChipDueBadge(
 ): ChipDueBadge {
   if (!task.due_at) return null
   const due = new Date(task.due_at)
-  if (due < now) return 'overdue'
+  if (targetArrived(due, now)) return 'overdue'
   if (due >= boundaries.todayStart && due < boundaries.tomorrowStart) return 'due_today'
   return null
 }

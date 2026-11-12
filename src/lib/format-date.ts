@@ -151,8 +151,9 @@ export function formatDueTimeParts(
 
   const time = formatTimeInZone(due, timezone)
 
-  // Overdue — due is in the past
-  if (due < now) {
+  // Overdue — the due time has arrived (`<=`, the one boundary: `targetArrived`
+  // in task-counts.ts, which imports this file, so it is spelled out here)
+  if (due.getTime() <= now.getTime()) {
     return formatOverdue(due, now, todayStart, yesterdayStart, timezone, dayStart, time)
   }
 
