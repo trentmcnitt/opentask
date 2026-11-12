@@ -94,6 +94,17 @@ export function getPriorityBadgeClasses(
 }
 
 /**
+ * RULE PRIO-RANK: Every priority-first order ranks Urgent, High, Medium, unset,
+ *   Low. Unset sits just below Medium, never below Low, so the raw value (0 =
+ *   unset, 1 = Low) is never the order. One helper, priorityRank /
+ *   byPriorityRank.
+ * Why: A task nobody set a priority on is a Medium for all intents; ranking it under Low
+ *   hid ordinary tasks below ones marked unimportant.
+ * Ruling: Trent 2026-11-11: "I like 5, but I don't want the text any lighter just
+ *   because it's low. I think it should be sorted by priority." Unset: tasks that aren't
+ *   set "are medium priority" (Trent, relayed by the design session the same day).
+ */
+/**
  * THE PRIORITY ORDER for a list (Trent, 2026-11-11): Urgent, High, Medium,
  * unset, Low. Unset sits just below Medium, not below Low — a task nobody
  * set "is medium priority" for all intents and purposes — so the raw value

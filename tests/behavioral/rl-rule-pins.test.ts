@@ -27,10 +27,18 @@ import { agedOutGroup, cutoffWords, growStep } from '@/lib/aged-out'
 import { listedSegments, mergePulled, type SegmentView } from '@/hooks/useTaskSegments'
 import { withoutRuleOnDeadline } from '@/core/ai/enrichment'
 import type { EnrichmentResult } from '@/core/ai/types'
-import { PULLED, PULLED_DAYS } from '@/lib/modes/sections'
+import { ON_DECK, PULLED, PULLED_DAYS } from '@/lib/modes/sections'
 import { nextTargetDayFirst } from '@/lib/target-day-first'
 import { localMoment, addDays, openTaskDayOf } from '@/lib/opentask-day'
-import { HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
+import {
+  HIGH_PRIORITY_THRESHOLD,
+  URGENT_PRIORITY,
+  byPriorityRank,
+  priorityRank,
+} from '@/lib/priority'
+import { selectSections } from '@/lib/modes/select'
+import { countSearchKinds, effectiveKindFilter } from '@/lib/search-kinds'
+import { justAddedItemKind, selectJustAddedEntries } from '@/lib/just-added'
 import { interruptionLevelFor } from '@/core/notifications/format'
 import type { Task } from '@/types'
 
@@ -281,5 +289,85 @@ describe('RL: priority and delivery', () => {
   test('RL-INTERRUPTION-LEVEL: only Urgent is critical; High and below are active', () => {
     expect(interruptionLevelFor(4)).toBe('critical')
     expect([0, 1, 2, 3].map(interruptionLevelFor)).toEqual(['active', 'active', 'active', 'active'])
+  })
+})
+
+describe('RL: the 2026-11 rules (priority order, search, Just now)', () => {
+  test('RL-PRIO-RANK: Urgent, High, Medium, unset, Low — unset just below Medium, never below Low', () => {
+    expect([1, 0, 2, 3, 4].sort((a, b) => priorityRank(a) - priorityRank(b))).toEqual([
+      4, 3, 2, 0, 1,
+    ])
+    expect(byPriorityRank({ priority: null }, { priority: 0 })).toBe(0)
+    expect(byPriorityRank({ priority: 0 }, { priority: 1 })).toBeLessThan(0)
+  })
+
+  test('RL-TODAY-LEAD: priority leads a Today section, whatever the sort pill says', () => {
+    const mk = (id: number, priority: number, created: string) =>
+      ({
+        id,
+        title: `t${id}`,
+        priority,
+        done: false,
+        deleted_at: null,
+        is_reminder: false,
+        is_tracked: false,
+        progress_target: 1,
+        due_at: null,
+        target_auto: false,
+        deadline_at: null,
+        horizon: null,
+        rrule: null,
+        on_deck_day: '2026-10-28',
+        queued_at: null,
+        created_at: created,
+        updated_at: created,
+      }) as Task
+    const ctx = { now: new Date(at('2026-10-28T12:00:00')), timezone: TZ, dayStart: DAY_START }
+    // The Low one is the newest: the pill's Newest would put it first.
+    const rows = [
+      mk(1, 1, at('2026-10-27T09:00:00')),
+      mk(2, 0, at('2026-10-20T09:00:00')),
+      mk(3, 2, at('2026-10-10T09:00:00')),
+    ]
+    const [onDeck] = selectSections(rows, [ON_DECK], ctx, { id: 'newest', everywhere: true })
+    expect(onDeck.tasks.map((t) => t.priority)).toEqual([2, 0, 1])
+  })
+
+  test('RL-SEARCH-KINDS: a hit is a task, a reminder or a quota; a chip with no hits left reads as All', () => {
+    const hit = (o: Partial<Task>) =>
+      ({ is_reminder: false, is_tracked: false, progress_target: 1, ...o }) as Task
+    const counts = countSearchKinds([
+      hit({}),
+      hit({ is_reminder: true }),
+      hit({ is_tracked: true, progress_target: 2 }),
+    ])
+    expect(counts).toEqual({ task: 1, reminder: 1, quota: 1 })
+    expect(effectiveKindFilter('reminder', { task: 1, reminder: 0, quota: 0 })).toBe('all')
+  })
+
+  test('RL-JN-KINDS: Just now lists a reminder and a quota like a task, newest event first', () => {
+    const now = Date.parse(at('2026-10-28T12:00:00'))
+    const made = (id: number, minutesAgo: number, o: Partial<Task>) =>
+      ({
+        id,
+        created_at: new Date(now - minutesAgo * 60_000).toISOString(),
+        segment_targeted_at: null,
+        on_deck_day: null,
+        is_reminder: false,
+        is_tracked: false,
+        progress_target: 1,
+        ...o,
+      }) as Task
+    const entries = selectJustAddedEntries(
+      [
+        made(1, 5, {}),
+        made(2, 2, { is_reminder: true }),
+        made(3, 1, { is_tracked: true, progress_target: 2 }),
+        made(4, 20, {}),
+      ],
+      now,
+    )
+    expect(entries.map((e) => e.task.id)).toEqual([3, 2, 1])
+    expect(entries.map((e) => justAddedItemKind(e.task))).toEqual(['quota', 'reminder', 'task'])
   })
 })

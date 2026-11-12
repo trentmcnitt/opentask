@@ -192,6 +192,16 @@ export function useReminderActions({
    * Either way one request, one undo entry (`remove`).
    */
   const [deleteRequest, setDeleteRequest] = useState<DeleteQuotasRequest | null>(null)
+  // RULE REM-DELETE-QUOTA: The Reminders tab's selection bar always
+  //   offers Delete. Reminders alone delete at once. With any quota
+  //   prompt selected, ONE dialog names each quota (two prompts of one
+  //   quota are one) and says the quota itself is deleted: all of it,
+  //   the reminders only, or cancel, which keeps the selection. One
+  //   request and one undo entry either way.
+  // Why: A prompt row is today's nudge; deleting from it deletes the quota for every day,
+  //   which the row does not say.
+  // Ruling: Trent 2026-11-12: "It's confusing." and "I think we go with one
+  //   confirmation."
   const deleteSelection = useCallback(() => {
     if (selectedPrompts.length === 0) {
       const tasks = selectedTasks

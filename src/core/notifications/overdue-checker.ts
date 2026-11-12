@@ -192,7 +192,8 @@ export function isNotificationBoundary(task: OverdueTask, now: Date): boolean {
 
 /**
  * RULE OVERDUE-CONSOLIDATION: Each tick, P0-P2 get 4 individual pushes plus a summary, P3 gets 5
- *   plus a summary, and P4 is unlimited. Highest priority goes first, then the most overdue.
+ *   plus a summary, and P4 is unlimited. Within a bucket the order is PRIO-RANK (Medium, unset,
+ *   Low: since 2026-11-11 Low is the first left to the summary), then the most overdue.
  * Why: A tick stays a readable number of banners; Urgent is never summarised.
  * Ruling: none recorded.
  */

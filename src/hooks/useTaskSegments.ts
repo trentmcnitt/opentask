@@ -551,6 +551,14 @@ export function listedSegments(views: SegmentView[]): SegmentView[] {
 }
 
 /**
+ * RULE DL-NET-NO-CONSIDER: A deadlines-page row its safety net holds
+ *   has no consider: only a target or done takes it off the page. Its
+ *   circle is the target clock, 'Considered all' leaves it out, and a
+ *   seen stamp from an older client is ignored.
+ * Why: A consider there changed nothing, and the screen said otherwise.
+ * Ruling: Trent 2026-11-02, recorded at this home.
+ */
+/**
  * The rows a consider still changes: waiting ones — but never a deadlines-page
  * row its safety net holds (Trent, 2026-11-02): only a target or done takes it
  * off the page, so a consider there changed nothing and the screen said

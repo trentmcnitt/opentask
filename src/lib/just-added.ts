@@ -108,6 +108,18 @@ export function isJustAdded(task: Task, now: number): boolean {
 }
 
 /**
+ * RULE JN-MEMBERS: Just now lists every open item whose latest event (created,
+ *   or targeted or decked from a segment) is under 15 minutes old: tasks,
+ *   reminders and quotas, one entry per item under its latest event. Not
+ *   narrowed by filters or folds; hidden while searching. Clear hides an entry
+ *   by id and event time.
+ * Why: Right after adding, the question is 'did it land, where, and what did the AI make of
+ *   it?', answerable without scrolling and without moving the real row.
+ * Ruling: Trent 2026-09-28: "We have to have a place that shows the recent tasks without
+ *   having to scroll down". Reminders and quotas: Trent 2026-11-09, recorded at this
+ *   home.
+ */
+/**
  * The card's entries, newest event first. Ties (two adds in the same instant,
  * or rows written with the schema's whole-second default) break by id, higher
  * first, since ids are assigned in insert order.

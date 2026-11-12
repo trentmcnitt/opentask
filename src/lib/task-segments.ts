@@ -150,9 +150,9 @@ export function segmentCounts(segment: {
 }
 
 /**
- * RULE SEG-ORDER: The display order is: deadlines, upcoming ('Heads up'), queue_today,
- *   queue_previous, days, weeks, months, eventually, aged_out, in four strip groups. The order is
- *   fixed; only which segments appear changes. Display order is separate from placement precedence.
+ * RULE SEG-ORDER: The display order is: deadlines, upcoming ('Heads up'), new, queue_today,
+ *   queue_previous, days, weeks, months, eventually, aged_out, in strip groups. The order is fixed;
+ *   only which segments appear changes. Display order is separate from placement precedence.
  * Why: A fixed order keeps every surface walking the segments the same way; the deadlines page is
  *   first as the only queue page that nags.
  * Ruling: Trent's tight N2 / Q2, 2026-10-29; deadlines first 2026-10-22.
@@ -1265,9 +1265,9 @@ export function queueRowState(
 }
 
 /**
- * RULE TQ-PANEL-ORDER: Queue rows are sorted by priority, highest first. Then the older remembered
- *   target comes first: queued_from_due_at, or for a deck the day-start moment of its day. Then id.
- *   Try Tomorrow rows are not lifted to the top.
+ * RULE TQ-PANEL-ORDER: Queue rows are sorted by priority (PRIO-RANK: unset just below Medium). Then
+ *   the older remembered target comes first: queued_from_due_at, or for a deck the day-start moment
+ *   of its day. Then id. Try Tomorrow rows are not lifted to the top.
  * Why: Priority first, then the oldest plan; Try Tomorrow rows carry a mark instead of being
  *   lifted.
  * Ruling: Designer 10-19 (Try Tomorrow not lifted).
@@ -2469,7 +2469,8 @@ function derivedLeadDay(
 }
 
 /**
- * RULE DL-ORDER: Rows are ordered by priority (highest first), then the nearest deadline, then id.
+ * RULE DL-ORDER: Rows are ordered by priority (PRIO-RANK: Urgent, High, Medium, unset, Low), then
+ *   the nearest deadline, then id.
  * Why: Priority first, then the deadline that is closest.
  * Ruling: A4, approved 2026-10-22.
  */
@@ -3049,10 +3050,13 @@ export function deckSkip(task: {
 }
 
 /**
- * RULE DECK-A1: While its deadline is ahead, a deadline task (one-off or repeat) may be decked for
- *   any day up to and including the deadline's OpenTask day. A passed deadline gives
- *   'deadline_nagging' and a later day gives 'after_auto_target'. If a deadline is added or moved
- *   so it falls before the deck day, the same write takes the deck off.
+ * RULE DECK-A1: While its deadline is ahead, a deadline task the deadlines page can hold (a one-
+ *   off, or a deadline-anchored repeat) may be decked for any day up to D−2, never into its safety
+ *   net: 'safety_net' once the net holds it, 'after_safety_net' for D−1 or D. Any other repeat may
+ *   be decked up to and including the deadline's OpenTask day. A passed deadline gives
+ *   'deadline_nagging' and a later day 'after_auto_target'. A deadline added or moved re-runs the
+ *   check, and a deck that no longer passes is taken off in the same write. (Until 2026-11-07: up
+ *   to and including D for every deadline task.)
  * Why: A deck must never sit on a task whose deadline has passed, or would pass while decked; the
  *   safety net still holds a deck on D.
  * Ruling: Deadlines-page plan §5, approved 2026-10-22 (replaces the 10-20 'A1 strict').

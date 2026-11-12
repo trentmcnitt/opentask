@@ -80,6 +80,17 @@ function openTaskIds(userId: number, ids: number[]): Set<number> {
   return new Set(rows.map((r) => r.id))
 }
 
+/**
+ * RULE BANNER-STALE: A delivered banner is stale by its kind: a prompt key no
+ *   longer standing; the deadlines nag with no row waiting; a period banner
+ *   whose period has not opened today or has nothing waiting; a named
+ *   reminder no longer standing; an overdue task no longer due; any other
+ *   task banner once the task is done or gone. A banner the rules do not know
+ *   is never stale. A count that only dropped leaves a period banner.
+ * Why: The device asks about everything it shows, so one request clears whatever no longer
+ *   stands.
+ * Ruling: The design session's call, 2026-11-10; Trent's words are not recorded here.
+ */
 /** The identifiers of the banners in `banners` that no longer stand. */
 export function staleBannerIds(
   userId: number,

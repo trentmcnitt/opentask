@@ -585,6 +585,16 @@ function useAttempts(task: Task): number {
     : (task.attempts ?? 0)
 }
 
+/**
+ * RULE PRIO-WORDS: High and Urgent are '!' and '!!' after the title. Medium and
+ *   Low are grey words, 'Med' and 'Low', on the lean row's meta line and before
+ *   the project on a compact row. Unset says nothing. No priority changes a
+ *   title's weight or opacity.
+ * Why: A set Medium gets a marker on every row, and low priority must never read as 'later
+ *   today'.
+ * Ruling: Trent 2026-11-11: "I like 5, but I don't want the text any lighter just
+ *   because it's low. I think it should be sorted by priority."
+ */
 /** After the dates, dot-separated: Med or Low, then the grey project. */
 function MetaTail({
   task,

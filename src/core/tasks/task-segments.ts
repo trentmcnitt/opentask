@@ -319,7 +319,9 @@ export function getTaskSegments(
   /**
    * RULE TQ-OPT-IN: Without ?queue=1, queued tasks are left out of every segment. Without ?deck=1,
    *   a decked task is in no segment. Without ?deadlines=1, target-less deadline tasks fall back to
-   *   their horizon segment. The web and native PR E send all of them (REMINDERS_URL).
+   *   their horizon segment. Without ?new=1 or ?aged=1 a task New or Aged out would hold is in its
+   *   horizon segment. The web sends all of them; native (PR E, REMINDERS_URL) sends neither new
+   *   nor aged.
    * Why: A shipped native build would list an unknown kind as a page of its own, so each new kind
    *   is opt-in (the options below).
    * Ruling: none recorded.
@@ -343,10 +345,10 @@ export function getTaskSegments(
   /**
    * RULE TQ-PRECEDENCE: For one-offs, getTaskSegments places a task in the first of these that
    *   takes it: the queue (hidden without ?queue=1), the deadlines page, on deck, a picked target
-   *   (Upcoming), Aged out (when asked for), then the horizon segment. Repeats go: queue, deadlines
-   *   page, on deck, a target-less deadline repeat in a horizon segment (degrade), then Upcoming.
-   *   This describes the read order only; whether exclusivity belongs at write time is PARKED
-   *   (issue I-02). In short: the read's order today; write-time vs read-time is PARKED (I-02).
+   *   (Upcoming), New (when asked for), Aged out (when asked for), then the horizon segment.
+   *   Repeats go: queue, deadlines page, on deck, a target-less deadline repeat in a horizon
+   *   segment (degrade), then Upcoming. This describes the read order only; whether exclusivity
+   *   belongs at write time is PARKED (issue I-02).
    * Why: A task the queue or the deadlines page takes is in no other segment, so it is never in two
    *   places.
    * Ruling: Spec rule 7 (2026-10-19). Deadlines page first: Trent 2026-10-22. Rule 3, 2026-10-25.

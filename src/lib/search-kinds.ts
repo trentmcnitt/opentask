@@ -33,6 +33,16 @@ export const searchKindOf = justAddedItemKind
 
 export type SearchKindCounts = Readonly<Record<SearchKind, number>>
 
+/**
+ * RULE SEARCH-KINDS: The dashboard's search lists tasks, reminders and
+ *   quotas: kind chips for the kinds that matched, one list grouped Tasks /
+ *   Reminders / Quotas, the result count over all of them. A reminder or
+ *   quota is a pointer row, never a selectable task row; its tap is the
+ *   dashboard lift when it waits today, else its details. The Reminders and
+ *   Quotas tabs filter in place and add one line for what else matches.
+ * Why: One search answers 'do I have anything about this', whatever kind it was filed as.
+ * Ruling: Trent 2026-11-12: "I like S3, R2, E3, and D2." (the search mockups S3 and R2).
+ */
 export function countSearchKinds(
   hits: Pick<Task, 'is_reminder' | 'progress_target' | 'is_tracked'>[],
 ) {

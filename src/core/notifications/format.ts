@@ -48,6 +48,15 @@ export function taskCollapseId(taskId: number): string {
 export const OVERDUE_SUMMARY_COLLAPSE_ID = 'overdue-summary'
 
 /**
+ * RULE NOTIF-KIND-ICON: Each APNs push kind carries its own icon in
+ *   data.icon: quota, reminder, period, task or deadline, with a label-
+ *   line subtitle. Web Push has neither and keeps the title's HIGH /
+ *   URGENT prefix. The icon also names the banner's kind to the stale
+ *   rules.
+ * Why: A banner says what kind of thing it is before it is read.
+ * Ruling: none recorded (shipped 2026-11-07, #456).
+ */
+/**
  * THE KIND'S ICON AND LABEL LINE (Trent, 2026-11-07, round 4 of the mockups).
  * Five APNs push kinds wear their own icon on the left — the native Notification
  * Service Extension (ios/OpenTaskNotificationService) reads `data.icon` and

@@ -3,6 +3,17 @@ import { usePathname } from 'next/navigation'
 import { retapPage } from '@/lib/scroll-to-top'
 
 /**
+ * RULE SEARCH-RETAP-CLEARS: A tap on the current page's own tab (phone
+ *   bar or desktop sidebar) while its search holds text clears the
+ *   search and does nothing else. With no search text the re-tap walks
+ *   to what needs you, else scrolls to the top. Nothing else is reset
+ *   by a tab.
+ * Why: The tab is the nearest 'back to normal' control under the thumb.
+ * Ruling: Trent 2026-11-12: "tapping the tab bar at the bottom (if you're tapping the
+ *   exact same bar) should clear the search." The rest: Trent 2026-10-29: "No filters or
+ *   anything should be reset by tapping a tab".
+ */
+/**
  * A nav link's click (phone tab bar, desktop sidebar): on its own page there
  * is nowhere to go, so the navigation is cancelled and:
  *

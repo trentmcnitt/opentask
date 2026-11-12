@@ -1055,6 +1055,140 @@ export const RULE_REGISTRY = {
     symbol: 'pendingDeadlineNags',
     pins: ['tests/behavioral/dn-deadline-nags.test.ts#DN-003'],
   },
+  'NEW-WHO': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'NewTaskPlace',
+    pins: [
+      'tests/behavioral/nw-new-page.test.ts#NW-01',
+      'tests/behavioral/nw-new-page.test.ts#NW-07',
+    ],
+  },
+  'NEW-ONE-PLACE': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'NewTaskPlace',
+    pins: ['tests/behavioral/nw-new-page.test.ts#NW-02'],
+  },
+  'NEW-ONE-PASS': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'NewTaskPlace',
+    pins: ['tests/behavioral/nw-new-page.test.ts#NW-03'],
+  },
+  'NEW-CONSIDER': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'newTaskPlace',
+    pins: ['tests/behavioral/nw-new-page.test.ts#NW-04'],
+  },
+  'NEW-NOT-TODAY': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'newTaskPlace',
+    pins: ['tests/behavioral/nw-new-page.test.ts#NW-05'],
+  },
+  'NEW-LEAVES': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'newTaskPlace',
+    pins: ['tests/behavioral/nw-new-page.test.ts#NW-06'],
+  },
+  'PRIO-RANK': {
+    home: 'src/lib/priority.ts',
+    symbol: 'PRIORITY_RANK',
+    pins: [
+      'tests/behavioral/rl-rule-pins.test.ts#RL-PRIO-RANK',
+      'tests/behavioral/rm-reminders.test.ts#RM-012b',
+      'tests/behavioral/tq-panels.test.ts#TQ-P10q',
+    ],
+  },
+  'TODAY-PRIORITY-LEADS': {
+    home: 'src/lib/modes/sections.ts',
+    symbol: 'lead: byPriorityRank',
+    pins: ['tests/behavioral/rl-rule-pins.test.ts#RL-TODAY-LEAD'],
+  },
+  'TODAY-NOT-YET-DIM': {
+    home: 'src/components/TaskList.tsx',
+    symbol: 'isNotYetRow',
+    pins: [],
+  },
+  'SEARCH-ALL-MODES': {
+    home: 'src/components/DashboardClient.tsx',
+    symbol: 'modeSections',
+    pins: [],
+  },
+  'SEARCH-KINDS': {
+    home: 'src/lib/search-kinds.ts',
+    symbol: 'countSearchKinds',
+    pins: ['tests/behavioral/rl-rule-pins.test.ts#RL-SEARCH-KINDS'],
+  },
+  'SEARCH-RETAP-CLEARS': {
+    home: 'src/hooks/useTabRetap.ts',
+    symbol: 'clearActiveSearch',
+    pins: [],
+  },
+  'JN-MEMBERS': {
+    home: 'src/lib/just-added.ts',
+    symbol: 'selectJustAddedEntries',
+    pins: ['tests/behavioral/rl-rule-pins.test.ts#RL-JN-KINDS'],
+  },
+  'JN-TABS': {
+    home: 'src/components/SurfaceJustAdded.tsx',
+    symbol: 'SurfaceJustAdded',
+    pins: [],
+  },
+  'QP-ONE-CHECK': {
+    home: 'src/lib/quota-prompts.ts',
+    symbol: 'didApplied',
+    pins: ['tests/behavioral/qp-matrix.test.ts#QPM-018', 'tests/behavioral/qp-move.test.ts#QP-069'],
+  },
+  'BANNER-STALE': {
+    home: 'src/core/notifications/stale.ts',
+    symbol: 'staleBannerIds',
+    pins: [
+      'tests/behavioral/nr-reconcile.test.ts#NR-01',
+      'tests/behavioral/nr-reconcile.test.ts#NR-05',
+      'tests/behavioral/nr-reconcile.test.ts#NR-07',
+    ],
+  },
+  'BANNER-DISMISS-BATCH': {
+    home: 'src/core/notifications/apns-dismiss-batch.ts',
+    symbol: 'queueApnsDismiss',
+    pins: ['tests/behavioral/nr-reconcile.test.ts#NR-08'],
+  },
+  'NOTIF-TAP-DASHBOARD': {
+    home: 'src/lib/panel-lift.ts',
+    symbol: 'liftFromParams',
+    pins: [],
+  },
+  'NOTIF-KIND-ICON': {
+    home: 'src/core/notifications/format.ts',
+    symbol: 'PushIcon',
+    pins: [],
+  },
+  'DL-NET-NO-CONSIDER': {
+    home: 'src/hooks/useTaskSegments.ts',
+    symbol: 'toConsider',
+    pins: [],
+  },
+  'REM-DELETE-QUOTA': {
+    home: 'src/hooks/useReminderSelection.ts',
+    symbol: 'deleteSelection',
+    pins: [],
+  },
+  'PAGE-CANCEL': {
+    home: 'src/app/tasks/[id]/page.tsx',
+    symbol: 'handleCancel',
+    pins: [],
+  },
+  'TGT-MENU-PERIODS': {
+    home: 'src/lib/target-menu.ts',
+    symbol: 'targetMenu',
+    pins: [
+      'tests/behavioral/tm-target-menu.test.ts#TM-T1-1',
+      'tests/behavioral/tm-target-menu.test.ts#TM-T1-5',
+    ],
+  },
+  'PRIO-WORDS': {
+    home: 'src/components/lean-row/LeanRow.tsx',
+    symbol: 'MetaTail',
+    pins: [],
+  },
 } as const satisfies Record<string, RuleEntry>
 
 export type RuleId = keyof typeof RULE_REGISTRY

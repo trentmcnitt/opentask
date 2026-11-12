@@ -39,6 +39,17 @@ export type PanelLift =
 /** The dashboard params that carry a lift (also the landing's: the card is where they go). */
 export const LIFT_PARAMS = ['reminder', 'prompt', 'slot'] as const
 
+/**
+ * RULE NOTIF-TAP-DASHBOARD: A tap on a named reminder push, a quota
+ *   push or a period push opens the dashboard, never the Reminders
+ *   tab. The Reminders card pages to the item's period and lifts a
+ *   reminder or prompt row to the top, flashing once; a period push
+ *   only pages. The lift lasts until the row is handled or the
+ *   dashboard is left.
+ * Why: The dashboard is where the day is worked; the Reminders tab is for admin work.
+ * Ruling: Trent 2026-11-09, recorded at this home ("NOTIFICATION TAPS LAND ON THE
+ *   DASHBOARD").
+ */
 /** The lift a dashboard URL asks for, if any. `?task=` is resolved elsewhere (it may not be a reminder). */
 export function liftFromParams(params: URLSearchParams): PanelLift | null {
   const reminder = params.get('reminder')

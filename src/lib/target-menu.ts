@@ -72,6 +72,16 @@ function morningOf(date: string, morningTime: string, timezone: string, dayStart
   return periodOpensAt(date, morningTime, timezone, dayStart)
 }
 
+/**
+ * RULE TGT-MENU-PERIODS: The target menu's top row is 'Next period ·
+ *   <name> <time>', the soonest period start. Below its rows, EVERY
+ *   period is a button, the next one too, each going to that period's
+ *   next start. So before the day's first period that period is named
+ *   twice, on purpose.
+ * Why: Leaving the next period out of the buttons read as a period gone missing.
+ * Ruling: Trent 2026-11-04: "we need all the chips listed because it ended up being
+ *   confusing that it was missing".
+ */
 export function targetMenu({
   now,
   timezone,
