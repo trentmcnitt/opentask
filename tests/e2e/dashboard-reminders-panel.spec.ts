@@ -380,6 +380,60 @@ test.describe('Dashboard Reminders panel — wide', () => {
 })
 
 /**
+ * The header's sweep, pressed (2026-11-12): its own describe for the same
+ * line-count reason as the one below.
+ */
+test.describe('Dashboard Reminders panel — Considered all from the header', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, timezoneId: TEST_TZ })
+
+  /** Which of `ids` still wait in today's card, by the server's word. */
+  async function waiting(page: Page, ids: number[]): Promise<number[]> {
+    const body = await (await page.request.get('/api/reminders')).json()
+    const groups = body.data.groups as { reminders: { id: number }[] }[]
+    const listed = new Set(groups.flatMap((g) => g.reminders.map((r) => r.id)))
+    return ids.filter((id) => listed.has(id))
+  }
+
+  test('without opening the card: it considers the period’s rows, the count follows, and Undo brings them back', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const startMinutes = parseHHMM(natural.start_time)
+    const at = (offset: number) =>
+      todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
+    const ids: number[] = []
+    try {
+      for (let i = 0; i < 3; i++) {
+        ids.push(
+          await createReminder(page, { title: `Sweep probe reminder ${i}`, due_at: at(i + 1) }),
+        )
+      }
+      await page.goto('/')
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
+      await expect(panel(page).getByText('Sweep probe reminder 0')).toBeVisible()
+      expect(await waiting(page, ids)).toEqual(ids)
+
+      // No tap on the header first: the sweep is there while rows wait.
+      const sweep = panel(page).getByRole('button', { name: /^Mark all .*in .+ as considered$/ })
+      await expect(sweep).toHaveText('Considered all')
+      await sweep.click()
+      // The card acts at once (its design: glance and tap; the Reminders
+      // page's sweep is the one that asks first).
+      await expect(page.getByRole('alertdialog')).toHaveCount(0)
+      await expect.poll(() => waiting(page, ids)).toEqual([])
+      await expect(panel(page).getByText('Sweep probe reminder 0')).toBeHidden()
+
+      // Undo: all three wait again.
+      await page.getByRole('button', { name: 'Undo', exact: true }).first().click()
+      await expect.poll(() => waiting(page, ids)).toEqual(ids)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+})
+
+/**
  * Press-and-hold on a row: a separate describe from the cap/paging suite
  * above so this file's per-describe line count stays under ESLint's
  * `max-lines-per-function` rather than growing that one further.
