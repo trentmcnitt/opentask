@@ -119,6 +119,10 @@ describe('TM-INV: target-model invariants (seeded random)', () => {
   afterAll(() => teardownTestDb())
   afterEach(() => vi.useRealTimers())
 
+  // A DECLARED LONG-RUNNING SIMULATION (2026-11-11): seeded random tasks,
+  // each checked over 35 local days. ~1 s on a dev machine, 2.0–2.8 s on a
+  // CI runner, 5.3 s once on a runner slowed by a GitHub backlog — past
+  // vitest's 5 s default. Its own timeout, so a slow runner isn't a failure.
   test('TM-INV-01: one-offs — random targets, deadlines and moves', () => {
     const r = rng(SEED)
     const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
@@ -172,7 +176,7 @@ describe('TM-INV: target-model invariants (seeded random)', () => {
         checkDay(final, day.toJSDate(), label(`day +${d}`))
       }
     }
-  })
+  }, 15_000)
 
   test('TM-INV-02: repeating — moves never touch the occurrence; done lands on the schedule after now', () => {
     const r = rng(SEED + 1)
