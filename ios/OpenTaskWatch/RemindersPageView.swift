@@ -469,6 +469,15 @@ struct TaskSegmentSection: View {
                     UpcomingSectionHeader(section: section)
                     rows(section.waiting)
                 }
+            } else if segment.isNew {
+                // New (2026-11-12): the fresh rows, then the ones back from
+                // yesterday's Not today under "Carried over" (the web's line).
+                let (fresh, carried) = segment.newRowsSplit
+                rows(fresh)
+                if !carried.isEmpty {
+                    CarriedOverHeader(count: carried.count)
+                    rows(carried)
+                }
             } else {
                 rows(segment.waitingTasks)
             }
@@ -501,6 +510,28 @@ struct TaskSegmentSection: View {
                 done: { model.completeSegmentTask(row.task) }
             )
         }
+    }
+}
+
+/// New's "Carried over" heading on the watch (2026-11-12, the web's
+/// `CarriedOverLine`): the words, muted, and how many rows are under it.
+private struct CarriedOverHeader: View {
+    let count: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(TaskWording.carriedOverWord)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Text("\(count)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(TaskWording.carriedOverWord), \(count)"))
     }
 }
 

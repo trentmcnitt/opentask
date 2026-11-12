@@ -55,9 +55,10 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // `REMINDERS_URL`, the question the native apps share.
     const agedOut = AGED_OUT_ENABLED && request.nextUrl.searchParams.get('aged') === '1'
     // `?new=1` (New, 2026-11-10 — src/lib/new-tasks.ts): this client draws the
-    // `new` segment, yesterday's new one-offs. The web sends it; it is not in
-    // `REMINDERS_URL`, the question the native apps mirror, so a native build
-    // keeps those tasks in their horizon segments as before.
+    // `new` segment, yesterday's new one-offs. Part of `REMINDERS_URL` since
+    // 2026-11-12 (the web and current native builds); a shipped native build
+    // sends the older question and keeps those tasks in their horizon
+    // segments as before.
     const newRows = request.nextUrl.searchParams.get('new') === '1'
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)

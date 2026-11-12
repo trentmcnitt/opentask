@@ -33,8 +33,6 @@ import { shiftDay, type SegmentState } from '@/lib/task-segments'
 
 /** The page's title, and the strip's word. */
 export const NEW_PAGE_TITLE = 'New'
-/** What the web adds to `REMINDERS_URL` to draw the page (`?new=1`). */
-export const NEW_ROWS_QUERY = '&new=1'
 /** The line over the rows back from yesterday's Not today (N5). */
 export const CARRIED_OVER_TITLE = 'Carried over'
 
@@ -54,7 +52,8 @@ export interface NewTaskFields {
  * RULE NEW-WHO: New holds an open one-off (not a reminder, quota or repeat) with no picked target,
  *   no deck and no deadline, CREATED during the previous OpenTask day, rollover to rollover,
  *   however it was made. A consider stamp from any day but today means it was seen: not on its
- *   pass. Only a caller that asks (?new=1, the web) gets the page.
+ *   pass. Only a caller that asks (?new=1: the web, and native builds since 2026-11-12) gets the
+ *   page.
  * Why: The day after it is written is when a fresh task is most worth one look, before it
  *   settles into its horizon's rhythm.
  * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created

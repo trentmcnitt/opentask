@@ -425,22 +425,23 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(
             segments.map(\.horizon),
             // The server's order since 2026-10-29: Dated, Pulled, Horizon.
-            ["deadlines", "upcoming", "queue_today", "queue_previous", "days", "weeks", "months", "eventually"]
+            ["deadlines", "upcoming", "new", "queue_today", "queue_previous", "days", "weeks", "months",
+             "eventually"]
         )
         XCTAssertEqual(
             segments.compactMap(\.kind),
-            [.deadlines, .upcoming, .queueToday, .queuePrevious, .horizon(.days), .horizon(.weeks),
+            [.deadlines, .upcoming, .new, .queueToday, .queuePrevious, .horizon(.days), .horizon(.weeks),
              .horizon(.months), .horizon(.eventually)],
             "every kind is known"
         )
-        XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -17, -18, -10, -11, -12, -13])
+        XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -20, -17, -18, -10, -11, -12, -13])
         // The server sends every kind (`?fill=1`); only the ones with rows are pages (2026-10-30).
         XCTAssertEqual(
             TaskSegmentDTO.listed(segments).map(\.horizon),
-            ["deadlines", "upcoming", "queue_today", "queue_previous", "weeks"]
+            ["deadlines", "upcoming", "new", "queue_today", "queue_previous", "weeks"]
         )
         XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
-        XCTAssertEqual(segments.map(\.title)[0...2], ["Deadlines", "Heads up", "Today's pulls"])
+        XCTAssertEqual(segments.map(\.title)[0...3], ["Deadlines", "Heads up", "New", "Today's pulls"])
 
         // The deadlines page: the seen safety-net row waits — no consider in
         // the net (2026-11-02), its circle the target clock; the deferred one
@@ -463,7 +464,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertFalse(deadlines.offersDeferAll)
 
         // "Today's pulls": the done row LEFT ("· done"); the Try Tomorrow row.
-        let today = segments[2]
+        let today = segments[3]
         let done = try XCTUnwrap(today.tasks.first { $0.id == Fixtures.queueNew })
         XCTAssertEqual(done.state, .considered)
         XCTAssertEqual(done.left, .done)
@@ -483,12 +484,26 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(deck.task.upcomingMeta(section: .later), "On\u{00A0}deck\u{00A0}Thu\u{00A0}Jan\u{00A0}15")
         XCTAssertEqual(deck.task.upcomingMeta(form: .short, section: .later), "On\u{00A0}deck\u{00A0}Jan\u{00A0}15")
 
+        // New (in the question since 2026-11-12): the row made yesterday,
+        // then the one back from yesterday's Not today, under "Carried over".
+        let new = segments[2]
+        XCTAssertTrue(new.isNew)
+        XCTAssertEqual(new.tasks.map(\.task.title), ["Sort the seed packets", "Label the spice jars"])
+        XCTAssertEqual(new.tasks.map(\.carriedOver), [false, true])
+        XCTAssertEqual(new.tasks.map(\.state), [.waiting, .waiting])
+        XCTAssertEqual(new.newRowsSplit.fresh.map(\.task.title), ["Sort the seed packets"])
+        XCTAssertEqual(new.newRowsSplit.carried.map(\.task.title), ["Label the spice jars"])
+        XCTAssertTrue(new.offersDeferAll, "Not today, all")
+        XCTAssertTrue(new.tasks.allSatisfy(\.isConsiderable))
+
         // The raw keys the DTO reads, so a renamed key can't decode as false.
         let raw = try Fixtures.object("reminders-native")
         let rawSegments = try XCTUnwrap(raw["task_segments"] as? [[String: Any]])
         let rawDeadlines = try XCTUnwrap(rawSegments.first?["tasks"] as? [[String: Any]])
         XCTAssertTrue(rawDeadlines.contains { $0["seen"] as? Bool == true && $0["safety_net"] as? Bool == true })
         XCTAssertTrue(rawDeadlines.contains { $0["segment_left"] as? String == "deferred" })
+        let rawNew = try XCTUnwrap(rawSegments[2]["tasks"] as? [[String: Any]])
+        XCTAssertEqual(rawNew.map { $0["carried_over"] as? Bool }, [false, true])
 
         // Round-trips through a cache with everything intact.
         let encoded = try JSONEncoder().encode(segments)

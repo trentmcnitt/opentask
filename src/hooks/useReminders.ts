@@ -18,7 +18,6 @@ import { PinnedUndone, SettlingConsiders, restoreInPlace } from '@/lib/reminder-
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 import { REMINDERS_URL } from '@/lib/reminders-query'
 import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
-import { NEW_ROWS_QUERY } from '@/lib/new-tasks'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -199,11 +198,12 @@ export { REMINDERS_URL }
 
 /**
  * What THIS client fetches: `REMINDERS_URL`, plus Aged out's `&aged=1` on a
- * build with that segment (prod and dev — `src/lib/aged-out.ts`), and New's
- * `&new=1` (2026-11-10, `src/lib/new-tasks.ts`).
- * Kept out of `REMINDERS_URL` itself, which the native apps mirror exactly.
+ * build with that segment (prod and dev — `src/lib/aged-out.ts`), which is
+ * kept out of `REMINDERS_URL` itself, the question the native apps mirror
+ * exactly. New's `&new=1` is part of `REMINDERS_URL` (2026-11-12: native
+ * draws New too).
  */
-const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '') + NEW_ROWS_QUERY
+const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '')
 
 export interface ReminderCreateInput {
   title: string

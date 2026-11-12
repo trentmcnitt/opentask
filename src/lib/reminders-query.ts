@@ -16,6 +16,11 @@
  * And it shows EVERY segment, every day, in fixed positions (`?fill=1`,
  * Trent 2026-10-24): an empty one comes back with no rows and reads as done
  * ("Nothing today ✓").
+ * And it draws NEW (`?new=1`, 2026-11-10 on the web; in this question since
+ * 2026-11-12, when the native apps began to draw it): yesterday's new
+ * one-offs, one pass, with `carried_over` on a row back from Not today
+ * (`src/lib/new-tasks.ts`). Without it such a task is in its horizon segment,
+ * as a shipped native build (which sends the older question) still sees it.
  *
  * The native apps ask the SAME question (native PR E, 2026-10-26:
  * `APIClient.remindersPath`). A leaf module, so the contract-fixture writer
@@ -24,4 +29,4 @@
  * `tests/fixtures/contract/reminders-query.json`, and the Swift
  * `ContractDecodeTests` asserts the native path equals it — the drift guard.
  */
-export const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1'
+export const REMINDERS_URL = '/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1&new=1'

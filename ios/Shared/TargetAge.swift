@@ -353,6 +353,9 @@ enum TaskWording {
     static let pulledTitle = "Pulled"
     static let pulledTodayWord = "Today"
     static let pulledEarlierWord = "Earlier"
+    /// The line over New's rows back from yesterday's Not today (the web's
+    /// `CARRIED_OVER_TITLE`, `src/lib/new-tasks.ts`).
+    static let carriedOverWord = "Carried over"
 
     /// A task segment's title: its word alone since 2026-10-29 ("Days";
     /// Trent: "I think just the title's enough now", the web's
