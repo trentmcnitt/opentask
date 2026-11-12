@@ -42,6 +42,17 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${port}`,
     trace: 'on-first-retry',
+    // NO SERVICE WORKER IN E2E (2026-11-11). No spec tests the offline shell
+    // (`public/sw.js`), and it made WebKit flaky: CI's picker-wheel-scroll
+    // hung 30 s in `page.goto('/')`. The kept trace: the worker had just
+    // installed and claimed the page (`skipWaiting` + `clients.claim`), then
+    // every request it intercepts — the `/_next/static` chunks and the
+    // navigation itself — failed or was never answered, while the server
+    // answered other requests in milliseconds. `OfflineBanner` swallows a
+    // refused register(), so the app runs as it does wherever a worker can't
+    // register. The cost: CI no longer sees a Safari stall in that takeover,
+    // if real users can hit one.
+    serviceWorkers: 'block',
   },
   projects: [
     {
