@@ -567,7 +567,8 @@ const bar = (page: Page) => page.locator('[data-selection-sheet]')
  * Quota prompts in a multi-selection on /reminders (2026-09-25). Selected by
  * `prompt_key` beside reminders; the bar's Considered covers both in one
  * request and one Undo, Details opens the quota editor only for a
- * prompts-only selection, and Trash is never offered with a prompt selected.
+ * prompts-only selection, and Delete — always offered since 2026-11-12 — asks
+ * once before it deletes a quota (`DeleteQuotasDialog`).
  */
 test.describe('Quota prompts — selection', () => {
   test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
@@ -620,7 +621,7 @@ test.describe('Quota prompts — selection', () => {
     await expect(promptRow(page, 'E2E select quota')).toBeVisible()
   })
 
-  test('a mixed selection (a Shift-click range) disables Details and offers no Trash', async ({
+  test('a mixed selection (a Shift-click range) disables Details; Delete is always offered', async ({
     authenticatedPage: page,
   }) => {
     const [slot] = await userSlots(page)
@@ -647,14 +648,14 @@ test.describe('Quota prompts — selection', () => {
     await expect(bar(page).locator('[data-selection-hint]')).toHaveText(
       'Details: pick only reminders or only quotas',
     )
-    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(0)
+    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(1)
 
-    // The prompt alone: still no Trash; Details is back (for the quota).
+    // The prompt alone: Delete stays; Details is back (for the quota).
     await thought.click()
     await expect(thought).toHaveAttribute('aria-selected', 'false')
     await expect(bar(page).getByRole('button', { name: 'Details' })).toBeEnabled()
     await expect(bar(page).locator('[data-selection-hint]')).toHaveCount(0)
-    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(0)
+    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(1)
     // A selection-mode tap never considered either of them.
     await expect(prompt).toBeVisible()
     await expect(thought).toBeVisible()
@@ -682,7 +683,6 @@ test.describe('Quota prompts — selection', () => {
     await dailyFirst.click({ modifiers: ['ControlOrMeta'] })
     await dailySecond.click({ modifiers: ['ControlOrMeta'] })
     await expect(bar(page)).toContainText('3 selected')
-    await expect(bar(page).getByRole('button', { name: /to trash/i })).toHaveCount(0)
 
     await bar(page).getByRole('button', { name: 'Details' }).click()
     const dialog = page.getByRole('dialog')
@@ -1144,5 +1144,141 @@ test.describe('Quota prompts — one check is one', () => {
     // The 1st walk is its own row: still waiting, its count one of two.
     await expect(one.locator('[data-prompt-did]')).toBeVisible()
     await expectCount(one, '1 of 2 today')
+  })
+})
+
+test.describe('Quota prompts — deleting from a selection', () => {
+  test.afterEach(async ({ authenticatedPage: page }) => cleanUp(page))
+
+  /**
+   * DELETE WITH A QUOTA IN THE SELECTION (Trent, 2026-11-12: "I think we go
+   * with one confirmation"): one dialog naming each quota, saying the quota
+   * itself goes; all of it, the reminders only, or cancel. One request, one
+   * undo entry.
+   */
+  const dialog = (page: Page) => page.locator('[data-delete-quotas-dialog]')
+  const deleted = (page: Page) =>
+    page.waitForResponse((r) => r.url().includes('/api/tasks/bulk/delete'))
+  const isTrashed = async (page: Page, id: number) =>
+    (await (await page.request.get(`/api/tasks/${id}`)).json()).data.deleted_at !== null
+
+  test('a quota prompt alone: Delete asks once, deletes the quota, and Undo restores it', async ({
+    authenticatedPage: page,
+  }) => {
+    const [slot] = await userSlots(page)
+    const quota = await makeQuota(page, 'E2E delete quota alone')
+    await placeIn(page, quota, { slot_id: slot.id })
+    await page.goto('/reminders')
+    const prompt = promptRow(page, 'E2E delete quota alone')
+    await prompt.click({ modifiers: ['ControlOrMeta'] })
+    await bar(page)
+      .getByRole('button', { name: /to trash/i })
+      .click()
+
+    await expect(dialog(page).getByRole('heading')).toHaveText('Delete this quota?')
+    await expect(dialog(page).locator('[data-delete-quota]')).toHaveText(['E2E delete quota alone'])
+    await expect(dialog(page)).toContainText('deletes the quota itself, not just today’s prompt')
+    // No reminders in the selection: no "Reminders only".
+    await expect(dialog(page).getByRole('button', { name: 'Reminders only' })).toHaveCount(0)
+    // Nothing has been deleted yet.
+    expect(await isTrashed(page, quota)).toBe(false)
+
+    const sent = deleted(page)
+    await dialog(page).getByRole('button', { name: 'Delete quota' }).click()
+    expect((await sent).request().postDataJSON()).toEqual({ ids: [quota] })
+    await expect(prompt).toHaveCount(0)
+    await expect(page.getByText('Deleted quota “E2E delete quota alone”')).toBeVisible()
+    expect(await isTrashed(page, quota)).toBe(true)
+
+    const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
+    await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+    await undone
+    await expect(promptRow(page, 'E2E delete quota alone')).toBeVisible()
+    expect(await isTrashed(page, quota)).toBe(false)
+  })
+
+  test('a mix: Cancel changes nothing; Reminders only leaves the quotas; Delete all is one request and one Undo', async ({
+    authenticatedPage: page,
+  }) => {
+    const [slot, laterSlot] = await userSlots(page)
+    const first = await makeReminder(page, 'E2E delete mix thought one', slot)
+    const second = await makeReminder(page, 'E2E delete mix thought two', slot)
+    // A daily quota of two: two prompt rows, ONE quota in the dialog.
+    const daily = await makeQuota(page, 'E2E delete mix daily', 'FREQ=DAILY', 2)
+    const weekly = await makeQuota(page, 'E2E delete mix weekly')
+    await placeIn(page, weekly, { slot_id: slot.id })
+    await placeIn(page, daily, { slot_id: slot.id, numbers: { '2': laterSlot.id } })
+    await page.goto('/reminders')
+    const thoughtOne = reminderRow(page, 'E2E delete mix thought one')
+    const thoughtTwo = reminderRow(page, 'E2E delete mix thought two')
+    const dailyRows = promptRow(page, 'E2E delete mix daily')
+    const weeklyRow = promptRow(page, 'E2E delete mix weekly')
+    await expect(weeklyRow).toBeVisible()
+    await expect(dailyRows).toHaveCount(2)
+    const dailyCount = 2
+
+    const selectAll = async () => {
+      await thoughtOne.click({ modifiers: ['ControlOrMeta'] })
+      for (let i = 0; i < dailyCount; i++)
+        await dailyRows.nth(i).click({ modifiers: ['ControlOrMeta'] })
+      await weeklyRow.click({ modifiers: ['ControlOrMeta'] })
+    }
+    await selectAll()
+    await expect(bar(page)).toContainText(`${2 + dailyCount} selected`)
+
+    // Cancel: nothing deleted, the selection kept.
+    await bar(page)
+      .getByRole('button', { name: /to trash/i })
+      .click()
+    await expect(dialog(page).getByRole('heading')).toHaveText('Delete 2 quotas?')
+    await expect(dialog(page).locator('[data-delete-quota]')).toHaveCount(2)
+    await expect(dialog(page)).toContainText('The reminder is deleted either way.')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog(page)).toHaveCount(0)
+    await expect(bar(page)).toContainText(`${2 + dailyCount} selected`)
+    expect(await isTrashed(page, first)).toBe(false)
+    expect(await isTrashed(page, weekly)).toBe(false)
+
+    // Reminders only: the reminder goes, both quotas stay (and stay selected).
+    await bar(page)
+      .getByRole('button', { name: /to trash/i })
+      .click()
+    let sent = deleted(page)
+    await dialog(page).getByRole('button', { name: 'Reminders only' }).click()
+    expect((await sent).request().postDataJSON()).toEqual({ ids: [first] })
+    // Already in the Trash: the cleanup's batch delete would be refused whole
+    // with it in the list.
+    created.splice(created.indexOf(first), 1)
+    await expect(thoughtOne).toHaveCount(0)
+    await expect(weeklyRow).toBeVisible()
+    await expect(bar(page)).toContainText(`${1 + dailyCount} selected`)
+    expect(await isTrashed(page, daily)).toBe(false)
+    expect(await isTrashed(page, weekly)).toBe(false)
+
+    // Delete all: the other reminder and both quotas, in one request.
+    await thoughtTwo.click({ modifiers: ['ControlOrMeta'] })
+    await bar(page)
+      .getByRole('button', { name: /to trash/i })
+      .click()
+    sent = deleted(page)
+    await dialog(page).getByRole('button', { name: 'Delete all 3' }).click()
+    const ids = (await sent).request().postDataJSON().ids as number[]
+    expect([...ids].sort()).toEqual([second, daily, weekly].sort())
+    await expect(page.getByText('Deleted 1 reminder and 2 quotas')).toBeVisible()
+    await expect(dailyRows).toHaveCount(0)
+    await expect(weeklyRow).toHaveCount(0)
+    await expect(thoughtTwo).toHaveCount(0)
+
+    // One Undo brings all three back (this action's toast; the "Reminders
+    // only" one is still up beside it).
+    const undone = page.waitForResponse((r) => r.url().includes('/api/undo'))
+    await page
+      .locator('[data-sonner-toast]', { hasText: 'Deleted 1 reminder and 2 quotas' })
+      .getByRole('button', { name: 'Undo' })
+      .click()
+    await undone
+    await expect(reminderRow(page, 'E2E delete mix thought two')).toBeVisible()
+    expect(await isTrashed(page, daily)).toBe(false)
+    expect(await isTrashed(page, weekly)).toBe(false)
   })
 })

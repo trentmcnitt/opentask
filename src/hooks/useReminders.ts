@@ -163,8 +163,8 @@ export interface UseRemindersReturn {
    * /undone, which a quota refuses.
    */
   putBackPrompt: (prompt: QuotaPrompt) => Promise<void>
-  /** Move reminders to Trash (soft delete), with Undo. */
-  remove: (tasks: Task[]) => Promise<void>
+  /** Move reminders — and quotas, once confirmed — to Trash (soft delete), one Undo. */
+  remove: (tasks: Task[], quotas?: DeletedQuota[]) => Promise<void>
   refresh: () => Promise<void>
   /** Reminders with no occurrence today — reachable, never counted. */
   notToday: Task[]
@@ -1078,8 +1078,33 @@ async function runOptimisticRequest({
   }
 }
 
+/** A quota deleted from the Reminders surface, by the prompt row(s) selected. */
+export interface DeletedQuota {
+  id: number
+  title: string
+}
+
 /**
- * Trash one or more reminders (POST /api/tasks/bulk/delete — a soft delete,
+ * The delete toast. Reminders alone keep their words; with a quota in it,
+ * "Deleted 4 reminders and 2 quotas" (Trent's ruling, 2026-11-12).
+ */
+export function deletedMessage(tasks: Task[], quotas: DeletedQuota[]): string {
+  if (quotas.length === 0)
+    return tasks.length === 1
+      ? `Moved “${tasks[0].title}” to Trash`
+      : `Moved ${tasks.length} reminders to Trash`
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  if (tasks.length === 0)
+    return quotas.length === 1
+      ? `Deleted quota “${quotas[0].title}”`
+      : `Deleted ${count(quotas.length, 'quota')}`
+  return `Deleted ${count(tasks.length, 'reminder')} and ${count(quotas.length, 'quota')}`
+}
+
+/**
+ * Trash one or more reminders — and, from a confirmed selection, the quotas
+ * behind selected prompt rows (`DeleteQuotasDialog`) — (POST
+ * /api/tasks/bulk/delete — a soft delete,
  * one undo entry). Trent (2026-09-05): the surface had no way to get rid of a
  * reminder. Same optimistic shape as considering: the rows leave at once,
  * the toast's Undo waits for the request, a failure restores the snapshot.
@@ -1092,8 +1117,9 @@ function useRemove({
 }: OptimisticDeps & { pendingIdsRef: React.MutableRefObject<Set<number>> }) {
   const { writeGroups, groupsRef, refresh, callbacksRef } = deps
   return useCallback(
-    async (tasks: Task[]) => {
-      const ids = tasks.map((t) => t.id)
+    async (tasks: Task[], quotas: DeletedQuota[] = []) => {
+      // Reminders and quotas in ONE request: one undo entry for the action.
+      const ids = [...tasks.map((t) => t.id), ...quotas.map((q) => q.id)]
       if (ids.length === 0) return
       const idSet = new Set(ids)
       for (const id of ids) pendingIdsRef.current.add(id)
@@ -1102,9 +1128,12 @@ function useRemove({
         snapshot.map((g) => {
           const reminders = g.reminders.filter((r) => !idSet.has(r.id))
           const consideredItems = g.consideredItems.filter((r) => !idSet.has(r.id))
+          // A deleted quota takes every one of its prompt rows with it.
+          const prompts = g.prompts.filter((p) => !idSet.has(p.task_id))
           if (
             reminders.length === g.reminders.length &&
-            consideredItems.length === g.consideredItems.length
+            consideredItems.length === g.consideredItems.length &&
+            prompts.length === g.prompts.length
           )
             return g
           return {
@@ -1113,6 +1142,7 @@ function useRemove({
             count: reminders.length,
             consideredItems,
             considered: consideredItems.length,
+            prompts,
           }
         }),
       )
@@ -1124,11 +1154,8 @@ function useRemove({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids }),
           }),
-        message:
-          tasks.length === 1
-            ? `Moved “${tasks[0].title}” to Trash`
-            : `Moved ${tasks.length} reminders to Trash`,
-        errorMessage: 'Could not delete reminders',
+        message: deletedMessage(tasks, quotas),
+        errorMessage: quotas.length > 0 ? 'Could not delete them' : 'Could not delete reminders',
         snapshot,
         settle: () => {
           for (const id of ids) pendingIdsRef.current.delete(id)
