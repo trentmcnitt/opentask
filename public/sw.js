@@ -8,7 +8,9 @@ const SHELL_URLS = ['/', '/manifest.json']
 
 // Forward errors to the main thread for reporting via /api/errors/report
 function forwardErrorToClients(message, stack) {
-  self.clients.matchAll().then((windowClients) => {
+  // Every window, controlled or not: a page opened before this worker
+  // installed is not controlled (no clients.claim(), below).
+  self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
     for (const client of windowClients) {
       client.postMessage({ type: 'sw_error', message, stack })
     }
@@ -31,6 +33,15 @@ self.addEventListener('install', (event) => {
   self.skipWaiting()
 })
 
+// NO clients.claim() (2026-11-11). A first install doesn't take over the page
+// that registered it: that page stays uncontrolled, and the worker serves
+// its fetches from the next navigation on. Nothing needs it sooner — Web Push
+// waits on `navigator.serviceWorker.ready` (an active worker, not control),
+// and push, dismiss, click and error forwarding all reach uncontrolled
+// windows (`includeUncontrolled`). Claiming a live page mid-load is what
+// stalled a WebKit navigation in CI (picker-wheel-scroll, the kept trace:
+// every intercepted request failed right after the claim), and the Mac app is
+// a WebKit WebView with this worker registered.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
@@ -39,7 +50,6 @@ self.addEventListener('activate', (event) => {
         Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))),
       ),
   )
-  self.clients.claim()
 })
 
 // Web Push: show notification or handle dismiss when push message arrives.
