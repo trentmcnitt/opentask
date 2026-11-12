@@ -37,6 +37,8 @@ import {
   isDeadlineAnchored,
   leadDaysProblem,
   leadFor,
+  START_DATE_MESSAGES,
+  startDateProblem,
   occurrenceDates,
   type LeadFields,
   openTaskToday,
@@ -796,6 +798,7 @@ const LEAD_INPUTS = [
   'is_tracked',
   'progress_target',
   'lead_days',
+  'start_date',
 ]
 
 /**
@@ -854,6 +857,14 @@ function collectLead(
   } else if (!ordinary && task.lead_days !== null) {
     trackField(data, 'lead_days', task.lead_days, null)
   }
+  const rolloverTime = left.rolloverTime ?? rolloverTimeForUser(task.user_id)
+  collectStartDate(data, task, input, {
+    ordinary,
+    rrule: after('rrule'),
+    deadlineAt: after('deadline_at'),
+    timezone: left.timezone,
+    rolloverTime,
+  })
   const row = {
     rrule: after('rrule'),
     repeat_anchor: after('repeat_anchor'),
@@ -862,6 +873,7 @@ function collectLead(
     recurrence_mode: after('recurrence_mode'),
     anchor_time: after('anchor_time'),
     lead_days: after('lead_days'),
+    start_date: after('start_date'),
     deadline_at: after('deadline_at'),
     occurrence_at: after('occurrence_at'),
     is_reminder: left.isReminder,
@@ -872,12 +884,64 @@ function collectLead(
   const removedRepeatTarget = ordinary && targetLess && removesRepeatTarget(data, task, input, row)
   if (!changed && !removedRepeatTarget && !(targetLess && task.lead_from === null)) return
   if (changed) assertLeadDays(row, after('due_at'), left.timezone)
-  const rolloverTime = left.rolloverTime ?? rolloverTimeForUser(task.user_id)
   const lead = { rolloverTime, now: left.now }
   const next = removedRepeatTarget
     ? openTaskToday(left.timezone, left.now, rolloverTime)
     : leadFor(row, left.timezone, lead)
   if (next !== task.lead_from) trackField(data, 'lead_from', task.lead_from, next)
+}
+
+/**
+ * RULE START-7: start_date as a write leaves it. Sent non-null: taken on an ordinary one-off with a
+ *   deadline (else a 400), refused inside the safety net (START-2), and it clears lead_days; sent
+ *   with a non-null lead_days it is a 400. A non-null lead_days sent alone clears it. Kept through
+ *   a deadline move unless the move puts it inside the net, when it is cleared in the same write.
+ *   Cleared when the deadline is removed, or the task is made to repeat, or a reminder or quota.
+ *   A picked target leaves it stored and inert. Undo restores it with the rest of the snapshot.
+ * Why: A date that no longer fits its deadline must not strand the task before a start that will
+ *   never come; the default lead takes over.
+ * Ruling: The design session's rules for E3, approved 2026-11-12 (START-7's table).
+ */
+function collectStartDate(
+  data: FieldChangeData,
+  task: Task,
+  input: FieldChangesInput,
+  left: {
+    ordinary: boolean
+    rrule: string | null
+    deadlineAt: string | null
+    timezone: string
+    rolloverTime: string
+  },
+): void {
+  const sent = input.start_date
+  if (sent != null && input.lead_days != null) {
+    throw new ValidationError('Send start_date or lead_days, not both: they are one choice')
+  }
+  const fits = (day: string) =>
+    left.ordinary && !left.rrule
+      ? startDateProblem(day, left.deadlineAt, left.timezone, left.rolloverTime)
+      : 'no_deadline'
+  let next = task.start_date
+  if (sent !== undefined) {
+    if (sent !== null) {
+      const problem = fits(sent)
+      if (problem) throw new ValidationError(START_DATE_MESSAGES[problem])
+    }
+    next = sent
+  } else if (input.lead_days != null) {
+    // Days chosen in the Starts row: the date goes.
+    next = null
+  } else if (next !== null && fits(next) !== null) {
+    // The deadline moved or went, or the task changed kind: the date no
+    // longer fits, and the default lead takes over.
+    next = null
+  }
+  if (next !== task.start_date) trackField(data, 'start_date', task.start_date, next)
+  // One choice: a date takes the Days override's place.
+  if (next !== null && sent != null && task.lead_days !== null && input.lead_days === undefined) {
+    trackField(data, 'lead_days', task.lead_days, null)
+  }
 }
 
 /**

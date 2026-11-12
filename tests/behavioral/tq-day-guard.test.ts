@@ -81,6 +81,11 @@ const NIGHT_HELPER =
 /** `file: trimmed line` → [occurrences, reason]. */
 const ALLOWLIST: Record<string, [number, string]> = {
   // ── Calendar arithmetic on an OpenTask date ─────────────────────────
+  'src/lib/task-segments.ts: return cadence >= at(startDay).plus(cadenceStep(h)) ? cadence.toFormat(LEAD_DAY_FORMAT) : startDay':
+    [
+      1,
+      `${ON_OPENTASK_DATE} (START-4: a full cadence step — a week, a month, a quarter — after the start day)`,
+    ],
   'src/components/OnDeckButton.tsx: const tomorrow = DateTime.fromISO(today).plus({ days: 1 }).toFormat(DECK_DAY_FORMAT)':
     [1, `${ON_OPENTASK_DATE} (the deck picker's tomorrow)`],
   'src/lib/deck-menu.ts: latestDay: today.minus({ days: 1 }).toFormat(DECK_DAY_FORMAT),': [

@@ -87,6 +87,7 @@ function makeTask(overrides: Partial<Task> & { id: number; created_at: string })
     queued_from_deck_day: null,
     lead_days: null,
     lead_from: null,
+    start_date: null,
     heads_up: true,
     target_auto: false,
     last_notified_at: null,

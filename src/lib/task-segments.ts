@@ -2287,6 +2287,8 @@ export function leadDaysProblem(
 /** The fields `leadFor` reads (a task, or the row a write leaves). */
 export interface LeadFields extends RepeatSchedule {
   deadline_at: string | null
+  /** A one-off's picked start date (START-1): its window's first day, in place of a lead. */
+  start_date?: string | null
   occurrence_at?: string | null
   is_reminder?: boolean
   is_tracked?: boolean
@@ -2317,7 +2319,12 @@ export function leadFor(task: LeadFields, timezone: string, lead: LeadContext): 
     return repeatLeadFrom(task, task.occurrence_at ?? task.deadline_at, timezone, lead)
   }
   const d = deadlineDay(task.deadline_at, timezone, lead.rolloverTime)
-  const wait = dayGap(d, openTaskToday(timezone, lead.now, lead.rolloverTime), timezone)
+  const today = openTaskToday(timezone, lead.now, lead.rolloverTime)
+  // A picked start date IS the day (START-2), as stored: a past one is on
+  // the page at once, and re-deriving it on a later deadline write never
+  // moves the rounds (they count from it). Never after the deadline's day.
+  if (task.start_date) return task.start_date > d ? d : task.start_date
+  const wait = dayGap(d, today, timezone)
   const days = task.lead_days ?? deadlineLeadDays(wait)
   return leadFrom(task.deadline_at, days, timezone, lead.rolloverTime, lead.now)
 }
@@ -2327,6 +2334,10 @@ export interface DeadlinePageFields {
   due_at: string | null
   deadline_at: string | null
   lead_from?: string | null
+  /** The picked start date (START-1): what gives the task an open window. */
+  start_date?: string | null
+  /** The SET horizon: an open-window row's cadence (START-4; unset = weeks). */
+  horizon?: HorizonValue | null
   /** For a row with no stored lead day (`lead_from` NULL): derived now (`leadFor`). */
   lead_days?: number | null
   repeat_anchor?: RepeatAnchor | null
@@ -2346,7 +2357,22 @@ export interface DeadlinePageFields {
 /** Where a target-less deadline task stands today (`deadlinePlace`). */
 export type DeadlinePlace =
   /** On the deadlines page. `seen`: considered this OpenTask day. */
-  | { kind: 'page'; state: SegmentState; safetyNet: boolean; seen: boolean }
+  | {
+      kind: 'page'
+      state: SegmentState
+      safetyNet: boolean
+      seen: boolean
+      /**
+       * START-3 (2026-11-12): `open` — a row in its OPEN WINDOW, between its
+       * start date and the day it becomes daily; listed on its rounds only.
+       * `due` — Coming due (daily) or the safety net: every other page row.
+       */
+      window: DeadlineRowWindow
+      /** An open-window row's next round day (yyyy-MM-dd), when one is left. */
+      nextRound?: string | null
+      /** An open-window row's latest round day: today on the day it comes round. */
+      round?: string
+    }
   /**
    * Nowhere today: before its lead day (quiet — rule 3, 2026-10-25: no
    * Upcoming rows, a future deck's included), or the On deck section holds it.
@@ -2427,11 +2453,14 @@ export function deadlinePlace(
   timezone: string,
   now: Date,
   rolloverTime: string | null,
+  /** The user's check-in day: an open-window row's rounds (START-4). */
+  checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
 ): DeadlinePlace {
   const today = openTaskToday(timezone, now, rolloverTime)
   const dayOf = (iso: string) => openTaskToday(timezone, new Date(iso), rolloverTime)
   const safetyNet = inSafetyNet(task.deadline_at!, timezone, now, rolloverTime)
-  const seen = !!task.last_considered_at && dayOf(task.last_considered_at) === today
+  const seenDay = task.last_considered_at ? dayOf(task.last_considered_at) : null
+  const seen = seenDay === today
   // A row with no stored lead day (from before the column; a write that
   // missed it) reads the one `leadFor` derives now.
   const leadDay = task.lead_from ?? derivedLeadDay(task, timezone, now, rolloverTime)
@@ -2439,10 +2468,204 @@ export function deadlinePlace(
     if (!safetyNet && deckIsToday(task, timezone, now, rolloverTime ?? CALENDAR_DAY_START)) {
       return null
     }
+    // The open window (START-3): on its rounds only, quiet between them.
+    const open = safetyNet
+      ? null
+      : openWindowOn(task, leadDay ?? today, today, timezone, rolloverTime, checkInDay)
+    if (open) {
+      if (!seen && seenDay !== null && seenDay >= open.round) return null
+      const state: SegmentState = seen ? 'considered' : 'waiting'
+      return { kind: 'page', state, safetyNet, seen, round: open.round, ...open.row() }
+    }
     const state: SegmentState = !safetyNet && seen ? 'considered' : 'waiting'
-    return { kind: 'page', state, safetyNet, seen }
+    return { kind: 'page', state, safetyNet, seen, window: 'due' }
   }
   return null
+}
+
+/** A Due-page row's group (START-3): its open window, or Coming due. */
+export type DeadlineRowWindow = 'open' | 'due'
+
+/**
+ * RULE START-1: A target-less deadline one-off says when it starts in one of three ways. Default:
+ *   nothing stored, the lead table's day. Days: lead_days (1-90), daily from that day. A date:
+ *   start_date, the only way to an open window. start_date and lead_days are one choice: setting
+ *   either clears the other, and sending both is a 400. Repeats keep lead_days alone.
+ * Why: Days is "remind me N days ahead"; a date is "leave me alone until then, then ease in".
+ * Ruling: Trent 2026-11-12: "I like S3, R2, E3, and D2." (the Starts mockup E3); Q1 and Q6, the
+ *   design session, 2026-11-12: Days stays daily, repeats stay out of this build.
+ */
+/**
+ * RULE START-2: A start date may be any day up to D−2, however far ahead of the deadline (no 90-day
+ *   cap on a date). A date today or in the past starts today. A date on or after D−1 is refused
+ *   (400): the safety net is not a start. Only on a one-off with a deadline.
+ * Why: The last two days are the net's, where nothing is optional; Defer has the same last day.
+ * Ruling: The design session's rules for E3, approved 2026-11-12.
+ */
+/** Why a start date cannot be taken, or null (`startDateProblem`). */
+export type StartDateProblem = 'no_deadline' | 'in_safety_net'
+
+export const START_DATE_MESSAGES: Record<StartDateProblem, string> = {
+  no_deadline: 'A start date (start_date) needs a deadline, on a task that does not repeat',
+  in_safety_net:
+    'The start date (start_date) must be at least two days before the deadline: the last two days are its safety net',
+}
+
+export function startDateProblem(
+  startDate: string,
+  deadlineAt: string | null,
+  timezone: string,
+  rolloverTime: string | null,
+): StartDateProblem | null {
+  if (!deadlineAt) return 'no_deadline'
+  return startDate > lastDeferDay(deadlineAt, timezone, rolloverTime) ? 'in_safety_net' : null
+}
+
+/**
+ * THE DAY A STARTED TASK BECOMES DAILY, C (START-1's table): the deadline's
+ * day minus the lead table's days for the wait FROM THE START (a stable
+ * number: it does not move as the days pass) — at least one day before the
+ * deadline, so never later than the safety net's first day, D−1.
+ */
+export function comingDueDay(
+  deadlineAt: string,
+  startDate: string,
+  timezone: string,
+  rolloverTime: string | null,
+): string {
+  const d = deadlineDay(deadlineAt, timezone, rolloverTime)
+  const lead = Math.max(1, deadlineLeadDays(dayGap(d, startDate, timezone)))
+  return shiftDay(d, -lead, timezone)
+}
+
+/** A horizon's full step: how far past the start the first cadence round must be (Q4). */
+function cadenceStep(horizon: HorizonValue): { days?: number; months?: number } {
+  switch (horizon) {
+    case 'days':
+      return { days: 1 }
+    case 'weeks':
+      return { days: 7 }
+    case 'months':
+      return { months: 1 }
+    case 'eventually':
+      return { months: 3 }
+  }
+}
+
+/**
+ * RULE START-4: In the open window the start day is always a round. After it the rounds are the SET
+ *   horizon's own cadence days (unset reads as weeks; the deadline never pulls the cadence in), the
+ *   first of them at least one full step after the start: a day for Days, a week for Weeks, a month
+ *   for Months, a quarter for Eventually. A row waits once a round has come since it was last
+ *   considered, and carries over daily until it is; considering it quiets it until the next round.
+ * Why: The date he picked must show the task that day; a cadence round the next morning would be a
+ *   second look for nothing.
+ * Ruling: Q2, Q3, Q4, the design session, 2026-11-12 (the set horizon, one step; Eventually rounds
+ *   quarterly plus the start; skip a round closer than a full step: Jan 1 then Sat Jan 9).
+ */
+export function latestRound(
+  startDay: string,
+  horizon: HorizonValue | null | undefined,
+  checkInDay: CheckInDay,
+  today: string,
+  timezone: string,
+): string {
+  const h = horizon ?? UNSET_HORIZON
+  const at = (day: string) => DateTime.fromISO(day, { zone: timezone })
+  const cadence = latestSegmentDay(h, at(today), checkInDay)
+  return cadence >= at(startDay).plus(cadenceStep(h)) ? cadence.toFormat(LEAD_DAY_FORMAT) : startDay
+}
+
+/** The first round after `today` and before `end` (the day the row becomes daily), or null. */
+export function nextRound(
+  startDay: string,
+  end: string,
+  horizon: HorizonValue | null | undefined,
+  checkInDay: CheckInDay,
+  today: string,
+  timezone: string,
+): string | null {
+  for (let day = shiftDay(today, 1, timezone); day < end; day = shiftDay(day, 1, timezone)) {
+    if (latestRound(startDay, horizon, checkInDay, day, timezone) === day) return day
+  }
+  return null
+}
+
+/**
+ * RULE START-3: Day by day, a target-less deadline one-off with a start date S, a daily day C
+ *   (comingDueDay) and a deadline day D. Before S: nowhere on the queue, quiet. From S to C−1, the
+ *   OPEN WINDOW: on the Due page under "Open window" on its rounds only (START-4), considered rows
+ *   listed that day, quiet between rounds. From C to D−2: Coming due, daily, as every Due row.
+ *   From D−1: the safety net. With no start date, or a start on or after C, there is no open
+ *   window. A deck on its day, outside the net, still takes the row to On deck.
+ * Why: A far deadline should be seen at its horizon's pace, not daily for months, and not at all
+ *   before the day he said.
+ * Ruling: Trent 2026-11-12: "I like S3, R2, E3, and D2." (the Due page split D2); "I want to be
+ *   reminded of it, maybe weekly… I don't want to start being nagged weekly about it until January
+ *   1".
+ */
+function openWindowOn(
+  task: DeadlinePageFields,
+  /** The window's first day as stored (`lead_from`: the start, or a Defer's later day). */
+  windowStart: string,
+  today: string,
+  timezone: string,
+  rolloverTime: string | null,
+  checkInDay: CheckInDay,
+): { round: string; row: () => { window: 'open'; nextRound: string | null } } | null {
+  if (!task.start_date || task.rrule) return null
+  const end = comingDueDay(task.deadline_at!, task.start_date, timezone, rolloverTime)
+  if (today >= end) return null
+  return {
+    round: latestRound(windowStart, task.horizon, checkInDay, today, timezone),
+    // Lazy: the next round is a day-by-day walk, wanted only on a listed row.
+    row: () => ({
+      window: 'open',
+      nextRound: nextRound(windowStart, end, task.horizon, checkInDay, today, timezone),
+    }),
+  }
+}
+
+/**
+ * RULE START-9: Every task the API returns carries start_date, and two read-only fields with the
+ *   task queue on: deadline_window (before_start, open, coming_due or safety_net; null on a task
+ *   that is not a target-less deadline one-off) and next_round (the next round day in the open
+ *   window). Due-page rows add window (open or due) and, on an open row, next_round. With the
+ *   switch off start_date is stored and has no effect.
+ * Why: A caller asking "will this remind me?" reads the stage instead of re-deriving the rules.
+ * Ruling: The design session's rules for E3, approved 2026-11-12.
+ */
+export type DeadlineWindow = 'before_start' | 'open' | 'coming_due' | 'safety_net'
+
+/**
+ * A target-less deadline one-off's stage today (`deadline_window`), with its
+ * next round in the open window. Null for any other task (a target, no
+ * deadline, a repeat, a reminder or quota). Pure; the Due page's own
+ * placement is `deadlinePlace`.
+ */
+export function deadlineWindowOf(
+  task: DeadlinePageFields & {
+    is_reminder?: boolean
+    is_tracked?: boolean
+    progress_target?: number
+  },
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+  checkInDay: CheckInDay = CHECK_IN_DAY_DEFAULT,
+): { window: DeadlineWindow; nextRound: string | null } | null {
+  if (!task.deadline_at || task.due_at || task.rrule) return null
+  if (task.is_reminder || task.is_tracked || (task.progress_target ?? 1) > 1) return null
+  const today = openTaskToday(timezone, now, rolloverTime)
+  if (inSafetyNet(task.deadline_at, timezone, now, rolloverTime)) {
+    return { window: 'safety_net', nextRound: null }
+  }
+  const start = task.lead_from ?? derivedLeadDay(task, timezone, now, rolloverTime)
+  if (start !== null && start > today) return { window: 'before_start', nextRound: null }
+  const open = openWindowOn(task, start ?? today, today, timezone, rolloverTime, checkInDay)
+  return open
+    ? { window: 'open', nextRound: open.row().nextRound }
+    : { window: 'coming_due', nextRound: null }
 }
 
 function derivedLeadDay(
@@ -2458,6 +2681,7 @@ function derivedLeadDay(
       target_days_before: task.target_days_before ?? null,
       target_time: task.target_time ?? null,
       lead_days: task.lead_days ?? null,
+      start_date: task.start_date ?? null,
       recurrence_mode: task.recurrence_mode ?? null,
       anchor_time: task.anchor_time ?? null,
       deadline_at: task.deadline_at,

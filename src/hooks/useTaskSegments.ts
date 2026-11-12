@@ -137,6 +137,12 @@ export interface SegmentRow {
   pulled?: PulledSection
   /** New's rows (2026-11-10, `src/lib/new-tasks.ts` N5): back from yesterday's Not today. */
   carried?: boolean
+  /**
+   * The deadlines page (2026-11-12, the start date): the row is in its OPEN
+   * WINDOW — listed on its rounds only, under "Open window", after the
+   * Coming-due rows.
+   */
+  openWindow?: boolean
 }
 
 export type PulledSection = 'today' | 'earlier'
@@ -477,6 +483,7 @@ function segmentViews(
           ...(obj?.seen || t.seen ? { seen: true } : {}),
           ...(seg.horizon === 'upcoming' ? { section: t.upcoming_section ?? 'later' } : {}),
           ...(t.carried_over ? { carried: true } : {}),
+          ...(t.window === 'open' ? { openWindow: true } : {}),
         }
       })
       .filter((r): r is SegmentRow => r.state !== 'gone')

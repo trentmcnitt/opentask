@@ -298,6 +298,15 @@ const targetDaysBefore = z.number().int().min(0).max(366)
  * default table. Clamped to D−1 at the near end (`leadFrom`).
  */
 const leadDays = z.number().int().min(1).max(90)
+/**
+ * A start date (2026-11-12, START-2): a calendar day, yyyy-MM-dd — the
+ * OpenTask day a target-less deadline one-off starts on. No 90-day cap; the
+ * core refuses one inside the safety net, or on a task that cannot carry it.
+ */
+const startDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date (YYYY-MM-DD)')
+  .refine((day) => !Number.isNaN(Date.parse(`${day}T00:00:00Z`)), 'Not a real date')
 const targetTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected a time (HH:MM)')
 /**
  * Relative targets (2026-10-24): the reminder period a relative target's time
@@ -368,6 +377,9 @@ export const taskCreateSchema = z
     target_slot_id: targetSlotId.nullable().optional(),
     // The deadlines page (2026-10-22): the lead override; null = the default.
     lead_days: leadDays.nullable().optional(),
+    // Start date (2026-11-12): a deadline one-off's picked start day, in
+    // place of `lead_days` (both non-null is a 400).
+    start_date: startDate.nullable().optional(),
     // Heads up (2026-11-02): false = never in Upcoming. Membership, not timing.
     heads_up: z.boolean().optional(),
     // Repeat ends (2026-10-22): one or the other; checked in `createTask`.
@@ -454,6 +466,10 @@ export const taskUpdateSchema = z
     // The deadlines page (2026-10-22): the lead override (series-level on a
     // repeat); null = the default table. Re-derives `lead_from`.
     lead_days: leadDays.nullable().optional(),
+    // Start date (2026-11-12): a deadline one-off's picked start day; setting
+    // it clears `lead_days`, and a non-null `lead_days` clears it. Both
+    // non-null in one request is a 400.
+    start_date: startDate.nullable().optional(),
     // Heads up (2026-11-02): false = never in Upcoming (Tomorrow or Later);
     // per task, so a repeat's holds for every occurrence.
     heads_up: z.boolean().optional(),

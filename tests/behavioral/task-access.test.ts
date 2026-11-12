@@ -98,7 +98,12 @@ describe('taskColumns', () => {
   // read (spec §7), week start, for a quota's served period (2026-10-16),
   // and rollover time, for attempts per OpenTask day (task queue), as
   // subqueries on the (aliased) table.
-  const OWNER_FIELDS = [' AS owner_timezone', ' AS owner_week_start', ' AS owner_rollover_time']
+  const OWNER_FIELDS = [
+    ' AS owner_timezone',
+    ' AS owner_week_start',
+    ' AS owner_rollover_time',
+    ' AS owner_check_in_day',
+  ]
   const columnsOf = (list: string) =>
     list.split(', ').filter((c) => !OWNER_FIELDS.some((f) => c.endsWith(f)))
 

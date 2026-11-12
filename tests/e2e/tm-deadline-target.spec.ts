@@ -223,7 +223,7 @@ test.describe('Deadline: the editor', () => {
         await expect(sheet.locator('[data-quick-panel-no-target]')).toHaveText('No target')
         await expect(sheet.locator('[data-quick-panel-auto-target]')).toHaveCount(0)
         const lead = sheet.locator('[data-quick-panel-lead]')
-        await expect(sheet.locator('[data-task-model-fields]')).toContainText('Lead time')
+        await expect(sheet.locator('[data-task-model-fields]')).toContainText('Starts')
         await expect(lead.getByRole('group', { name: 'Lead time' })).toBeVisible()
         const from = DateTime.fromISO(String(stored.lead_from), { zone: TZ }).toFormat('ccc LLL d')
         await expect(lead.locator('[data-lead-words]')).toHaveText(

@@ -447,6 +447,14 @@ Minutes. ONE considering ladder, no special cases (Trent, 2026-10-22): the user'
 
 **Off:** the task-queue switch off (no page), `notifications_enabled` off, the demo user.
 
+### The round push (2026-11-12)
+
+A deadline task with a start date is in its **open window** until it becomes daily (docs/TASK-MODEL.md § Start date). An open-window row never starts or paces the nag above (`countedDeadlineRows` leaves it out), but it adds to the nag's count while it waits (`openDeadlineRows`), and on each day it **comes round** it is announced once (RULE START-6, `pendingRoundPushes` / `claimRoundPush` in `deadline-nags.ts`):
+
+- **When.** On a round day (its start day included), at the user's Default task time — or at the next tick if the row comes round later that day (a start date set that afternoon). Not on a carry-over day, not for a row already considered that day, not for a row whose Nag is off, and not again that day: `tasks.round_announced_day` holds the OpenTask day last announced, claimed by compare-and-swap (a double tick sends once). A day the server was down for is not made up.
+- **What.** The deadlines kind, collapse id and payload (`deadlines-page`, `data.kind: "deadlines"`), silent, so shipped native builds need nothing. With no Coming-due row waiting: one row "<title> · due Mar 31 · 11 weeks left", several "3 open deadlines this week · nearest Mar 31". With Coming-due rows waiting, the nag's own words with the open rows in the count — sent then even when the nag's interval has not come, and without moving the nag's clock; when the nag is going out that same minute it carries the announcement and no second push is sent.
+- **Reconcile.** `deadlineRowsWaiting` counts open rows waiting too, so the banner is stale once nothing on the page waits (considered, targeted or done).
+
 ## The slot nag (on the ladder since 2026-10-22)
 
 `src/core/notifications/slot-nags.ts`. While any slot that has opened today still has reminders or quota prompts waiting, ONE push per user names the latest unfinished slot and counts the rest ("3 reminders waiting, and 2 earlier slots"), through the slot's own `SLOT_REMINDER` push (same collapse id, so it replaces that slot's banner; APNs only).

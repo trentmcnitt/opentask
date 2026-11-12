@@ -163,6 +163,14 @@
  *     POST /api/notifications/stale             → notifications-stale.json
  *     (a banner for a task not the user's is stale; one about no task never is)
  *
+ * 27. A start date (2026-11-12, START-9): a Weeks one-off, deadline 60 days
+ *     out, start date 10 days ago — in its open window, never considered
+ *     GET  /api/tasks/{id}                      → task-start-date.json
+ *     (`start_date`, `deadline_window: "open"`, `next_round`), then, switch on,
+ *     GET  /api/reminders?queue=1&deck=1&deadlines=1 → reminders-open-window.json
+ *     (its Due row last, `window: "open"` with `next_round`; the others
+ *     `window: "due"`)
+ *
  * Every captured mutation carries `undo_id` (2026-10-26), and undo-status
  * `newest_undoable_id` / `next_redoable_id`: undo-entry placeholders, like
  * `latest_id`, numbered 901.. in the order the fixtures are checked.
@@ -1190,6 +1198,52 @@ describe('contract fixtures (native clients)', () => {
     })
   })
 
+  // 27. A start date (2026-11-12): an open-window row. Its own hook, last. A
+  //     start in the past, so the row is in its window whatever the hour
+  //     (the server's day can still be yesterday's date before 3:00 AM).
+  beforeAll(async () => {
+    const placeholder = 101 + Object.keys(created).length
+    const ny = DateTime.now().setZone('America/New_York')
+    await setTaskQueue(true)
+    try {
+      const res = (await call('/api/tasks', {
+        title: 'Use the fern voucher',
+        horizon: 'weeks',
+        deadline_at: ny.plus({ days: 60 }).set({ hour: 23, minute: 59 }).toUTC().toISO(),
+        start_date: ny.minus({ days: 10 }).toISODate(),
+      })) as { data: { id: number } }
+      created.startDate = res.data.id
+      ids.register('task', res.data.id, placeholder)
+      captured['task-start-date'] = await call(`/api/tasks/${res.data.id}`)
+      captured['reminders-open-window'] = await call('/api/reminders?queue=1&deck=1&deadlines=1')
+    } finally {
+      await setTaskQueue(false)
+    }
+  })
+
+  test('a start date: the task says its stage, and its Due row is an open-window row, last', () => {
+    type T = { data: Record<string, unknown> }
+    const task = (captured['task-start-date'] as unknown as T).data
+    expect(task).toMatchObject({ deadline_window: 'open', lead_days: null, target_at: null })
+    expect(task.start_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(task.next_round).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    type Row = { id: number; segment_state: string; window?: string; next_round?: string | null }
+    type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
+    const segs = (captured['reminders-open-window'] as unknown as Segs).data.task_segments
+    const page = segs.find((s) => s.horizon === 'deadlines')!.tasks
+    const row = page[page.length - 1]
+    expect(row).toMatchObject({ id: created.startDate, segment_state: 'waiting', window: 'open' })
+    expect(row.next_round).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    for (const other of page.slice(0, -1)) {
+      expect(other.window).toBe('due')
+      expect(other.next_round).toBeNull()
+    }
+    // No other kind carries either key.
+    for (const seg of segs.filter((x) => x.horizon !== 'deadlines')) {
+      for (const t of seg.tasks) expect(t.window).toBeUndefined()
+    }
+  })
+
   test('the reconcile: a gone task is stale, a banner about no task never is', () => {
     expect(captured['notifications-stale']).toEqual({ data: { stale: ['task-999999901'] } })
   })
@@ -1429,6 +1483,8 @@ describe('contract fixtures (native clients)', () => {
     'reminders-query',
     'reminders-native',
     'notifications-stale',
+    'task-start-date',
+    'reminders-open-window',
   ]
 
   for (const name of names) {

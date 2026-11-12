@@ -345,6 +345,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- (days before the deadline's day); NULL = the default table.
   lead_days INTEGER DEFAULT NULL,
   lead_from TEXT DEFAULT NULL,
+  -- START DATE (2026-11-12, docs/TASK-MODEL.md § Start date): the OpenTask day
+  -- (yyyy-MM-dd) the user picked for a target-less deadline one-off to START
+  -- showing on the deadlines page — in place of lead_days (setting either
+  -- clears the other). Between it and the day the task becomes daily it comes
+  -- round on its horizon's cadence (the open window). NULL = no date picked.
+  -- Added by runMigrations too; never index it here.
+  start_date TEXT DEFAULT NULL,
+  -- The OpenTask day this task's open-window round was last announced by a
+  -- push (deadline-nags.ts, the round push): once per round day, a
+  -- compare-and-swap. Push bookkeeping, not task state: never in the undo
+  -- log or the API.
+  round_announced_day TEXT DEFAULT NULL,
   -- HEADS UP (2026-11-02, docs/TASK-MODEL.md § Upcoming): 0 = this task never
   -- shows in Upcoming (Tomorrow or Later); 1 (the default) = it does. Only
   -- membership: the target, its nags and the deadlines page are untouched,

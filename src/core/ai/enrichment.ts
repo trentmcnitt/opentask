@@ -68,6 +68,7 @@ import {
   deckSkip,
   hasPickedTarget,
   leadFor,
+  startDateProblem,
   relativeOf,
   relativeOneOffProblem,
   resolveTarget,
@@ -3162,9 +3163,23 @@ function collectEnrichmentLead(
   changes: FieldChanges,
 ): void {
   const { deadlineAt } = left
+  // START-7: a start date the result no longer fits (made a repeat, or the
+  // AI's deadline puts it inside the safety net) goes in the same write.
+  let startDate = task.start_date
+  if (
+    startDate &&
+    (left.rrule ||
+      left.tracked ||
+      task.is_reminder ||
+      startDateProblem(startDate, deadlineAt, left.timezone, rolloverTime))
+  ) {
+    startDate = null
+    changes.setClauses.push('start_date = NULL')
+    changes.fieldsChanged.push('start_date')
+  }
   if (deadlineAt === task.deadline_at || left.rrule || task.is_reminder || left.tracked) return
   const leadFrom = leadFor(
-    { ...ONE_OFF, deadline_at: deadlineAt, lead_days: task.lead_days },
+    { ...ONE_OFF, deadline_at: deadlineAt, lead_days: task.lead_days, start_date: startDate },
     left.timezone,
     { rolloverTime, now: new Date() },
   )
