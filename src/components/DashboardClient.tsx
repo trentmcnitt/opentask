@@ -1689,7 +1689,8 @@ function HomeContent({
 
   // Tapping the Dashboard tab resets nothing (Trent, 2026-10-29: "No filters
   // or anything should be reset by tapping a tab"): a re-tap only scrolls —
-  // the walk to what needs you, or the top (`useTabRetap`).
+  // the walk to what needs you, or the top (`useTabRetap`). The one exception
+  // (11-12): with a search active the tap clears it, and does only that.
 
   // Prefetch QuickActionPopover chunk after initial load so first interaction is instant
   // (CreateTaskPanel is prefetched by AppLayout which wraps all pages)

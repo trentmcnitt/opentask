@@ -38,6 +38,7 @@ import { RemindersHeadline } from '@/components/reminders/RemindersHeadline'
 import { SearchResults } from '@/components/reminders/SearchResults'
 import { NotTodayFold } from '@/components/reminders/NotTodayFold'
 import { QuickAdd } from '@/components/QuickAdd'
+import { SurfaceJustAdded } from '@/components/SurfaceJustAdded'
 import type { ReminderBulkChanges, ReminderCreateDraft } from '@/components/ReminderDetail'
 import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
@@ -156,6 +157,13 @@ export function RemindersView({
     create,
     applyUndone,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
+  // Every reminder the surface holds — waiting, considered today, not today —
+  // for the Just now card (`SurfaceJustAdded`): a just-added one is in exactly
+  // one of the three.
+  const heldReminders = useMemo(
+    () => [...groups.flatMap((g) => [...g.reminders, ...g.consideredItems]), ...notToday],
+    [groups, notToday],
+  )
   // Task segments (2026-10-10): tasks whose target hasn't arrived, as sections
   // after the slots (2026-10-11). Never counted in the nav badge; with the
   // task queue on, the headline counts them as its tasks half (2026-10-26,
@@ -714,6 +722,7 @@ export function RemindersView({
           onOpenAddForm={openCreate}
         />
       </div>
+      <SurfaceJustAdded tasks={heldReminders} searching={searching} />
       {loading ? (
         <RemindersSkeleton />
       ) : error ? (

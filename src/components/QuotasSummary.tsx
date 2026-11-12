@@ -1,5 +1,6 @@
 'use client'
 
+import { SurfaceJustAdded } from '@/components/SurfaceJustAdded'
 import { useCallback, useEffect, useState } from 'react'
 import { Gauge, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -129,6 +130,7 @@ export function QuotasSummary({
     // and two regions of one name would make "the Quotas panel" ambiguous.
     <div data-quotas-summary className="space-y-3 pb-24">
       <QuotasHeaderRow count={tasks.length} onNew={openCreate} />
+      <SurfaceJustAdded tasks={tasks} searching={searching} />
 
       {tasks.length > 0 && (
         <QuotasFilterLines

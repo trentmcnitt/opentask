@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { TAB_RETAP_SEARCH_EVENT } from '@/hooks/useTabRetap'
 
 interface SearchBarProps {
   onSearch: (query: string) => void
@@ -64,6 +65,8 @@ export function SearchBar({
     onClear()
     setExpandedState(false)
   }, [onClear, setExpandedState])
+
+  useRetapClears(query, debounceRef, handleClear)
 
   useEffect(() => {
     if (expanded) inputRef.current?.focus()
@@ -175,4 +178,27 @@ export function SearchBar({
       </div>
     </div>
   )
+}
+
+/**
+ * A re-tap of this page's own tab clears an active search, and that is all
+ * the tap does (`useTabRetap`, Trent 2026-11-12). With no text the event is
+ * left alone and the re-tap scrolls as usual. A search still inside its
+ * debounce is dropped with the text.
+ */
+function useRetapClears(
+  query: string,
+  debounceRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>,
+  clear: () => void,
+) {
+  useEffect(() => {
+    if (!query) return
+    const onRetap = (e: Event) => {
+      e.preventDefault()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      clear()
+    }
+    window.addEventListener(TAB_RETAP_SEARCH_EVENT, onRetap)
+    return () => window.removeEventListener(TAB_RETAP_SEARCH_EVENT, onRetap)
+  }, [query, debounceRef, clear])
 }
