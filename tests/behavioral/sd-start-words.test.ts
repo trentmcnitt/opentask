@@ -90,6 +90,13 @@ describe('SD-W the start date’s words', () => {
       'Starts Jan 1',
     )
     expect(startsNote({ deadline_window: 'before_start', start_date: null }, tz)).toBeNull()
+    // A deferred Coming-due row: the day it is back, not its past start date.
+    expect(
+      startsNote(
+        { deadline_window: 'before_start', start_date: '2027-01-01', lead_from: '2027-03-28' },
+        tz,
+      ),
+    ).toBe('Starts Mar 28')
     expect(startsNote({ deadline_window: 'open', start_date: '2027-01-01' }, tz)).toBeNull()
     expect(startsNote({ start_date: '2027-01-01' }, tz)).toBeNull()
   })

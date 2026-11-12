@@ -119,9 +119,12 @@ export function openWindowRowWords(
  * (restates RULE START-8, home: src/core/tasks/task-segments.ts)
  */
 export function startsNote(
-  task: { deadline_window?: string | null; start_date?: string | null },
+  task: { deadline_window?: string | null; start_date?: string | null; lead_from?: string | null },
   timezone: string,
 ): string | null {
   if (task.deadline_window !== 'before_start' || !task.start_date) return null
-  return `Starts ${dayOf(task.start_date, timezone).toFormat('LLL d')}`
+  // A Coming-due row deferred to a later day keeps its (past) start date:
+  // the day it is back is its stored first day (`lead_from`, START-5).
+  const day = task.lead_from && task.lead_from > task.start_date ? task.lead_from : task.start_date
+  return `Starts ${dayOf(day, timezone).toFormat('LLL d')}`
 }

@@ -34,6 +34,7 @@ import {
   checkDeadlineNags,
   deadlineRowsWaiting,
   pendingDeadlineNags,
+  pendingRoundPushes,
 } from '@/core/notifications/deadline-nags'
 import { sendApnsDeadlinesNag } from '@/core/notifications/apns'
 import { sendPushNotification } from '@/core/notifications/web-push'
@@ -116,6 +117,21 @@ describe('SD-4x the round push (START-6)', () => {
     await tick('2027-01-01T09:00')
     await tick('2027-01-01T15:00')
     expect(apns).not.toHaveBeenCalled()
+    // Settled for the day at the first tick: later ticks have no candidate.
+    const stamp = getDb()
+      .prepare('SELECT round_announced_day AS day FROM tasks WHERE id = ?')
+      .get(t.id) as { day: string | null }
+    expect(stamp.day).toBe('2027-01-01')
+  })
+
+  test('SD-49: from the day it becomes daily there is no round push (the nag speaks)', async () => {
+    make({ horizon: 'days', auto_snooze_minutes: null })
+    setClock('2027-03-27T09:00')
+    expect(pendingRoundPushes(new Date())).toEqual([])
+    const row = getDb().prepare('SELECT round_announced_day AS day FROM tasks').get() as {
+      day: string | null
+    }
+    expect(row.day).toBeNull()
   })
 
   test('SD-43: a row that comes round later in the day is announced at the next tick, on its own', async () => {

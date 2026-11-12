@@ -48,7 +48,7 @@ const DEADLINE = at('2027-03-31T23:59')
 const make = (input: Record<string, unknown> = {}) =>
   createTask({
     ...u,
-    input: { title: 'Synthetic gift card', horizon: 'weeks', deadline_at: DEADLINE, ...input },
+    input: { title: 'Synthetic fern voucher', horizon: 'weeks', deadline_at: DEADLINE, ...input },
   })
 
 const WEB = {

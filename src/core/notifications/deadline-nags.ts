@@ -90,6 +90,7 @@ import { addDays, dayStartMoment, localMoment } from '@/lib/opentask-day'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
 import {
+  comingDueDay,
   deadlineDay,
   latestRound,
   openTaskToday,
@@ -435,6 +436,7 @@ interface RoundCandidate {
   id: number
   start_date: string
   lead_from: string | null
+  deadline_at: string
   horizon: HorizonValue | null
 }
 
@@ -443,10 +445,15 @@ interface RoundCandidate {
  * terms, Nag on, not yet stamped today — and today one of their round days
  * (pure maths, so the page is built only on a day something comes round).
  */
-function roundCandidates(userId: number, day: string, timezone: string): number[] {
+function roundCandidates(
+  userId: number,
+  day: string,
+  timezone: string,
+  rolloverTime: string,
+): number[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, start_date, lead_from, horizon FROM tasks
+      `SELECT id, start_date, lead_from, deadline_at, horizon FROM tasks
        WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
          AND start_date IS NOT NULL AND deadline_at IS NOT NULL AND due_at IS NULL
          AND rrule IS NULL AND auto_snooze_minutes IS NOT 0
@@ -458,19 +465,27 @@ function roundCandidates(userId: number, day: string, timezone: string): number[
   return rows
     .filter((r) => {
       const start = r.lead_from ?? r.start_date
+      // Still in its open window today (before the day it becomes daily)…
+      if (day >= comingDueDay(r.deadline_at, r.start_date, timezone, rolloverTime)) return false
+      // …and today is one of its rounds.
       return start <= day && latestRound(start, r.horizon, checkInDay, day, timezone) === day
     })
     .map((r) => r.id)
 }
 
-/** Every round push due this minute, at most one per user. Read-only. */
+/**
+ * Every round push due this minute, at most one per user. A candidate the
+ * page shows nothing to announce for (considered before the Default task
+ * time, decked for today) is stamped here as settled for the day, so the page
+ * is built once per round day, not every minute after.
+ */
 export function pendingRoundPushes(now: Date = new Date()): PendingRoundPush[] {
   if (!taskQueueEnabled()) return []
   const pending: PendingRoundPush[] = []
   for (const user of notifiableUsers()) {
     const rolloverTime = rolloverTimeForUser(user.id)
     const day = openTaskToday(user.timezone, now, rolloverTime)
-    const candidates = new Set(roundCandidates(user.id, day, user.timezone))
+    const candidates = new Set(roundCandidates(user.id, day, user.timezone, rolloverTime))
     if (candidates.size === 0) continue
     if (now.getTime() < morningMoment(user.id, day, user.timezone, rolloverTime)) continue
     const page =
@@ -480,6 +495,11 @@ export function pendingRoundPushes(now: Date = new Date()): PendingRoundPush[] {
       }).find((s) => s.horizon === 'deadlines')?.tasks ?? []
     const open = openDeadlineRows(page)
     const rows = open.filter((r) => r.round === day && candidates.has(r.task.id))
+    const announced = new Set(rows.map((r) => r.task.id))
+    claimRoundPush(
+      [...candidates].filter((id) => !announced.has(id)),
+      day,
+    )
     if (rows.length === 0) continue
     const due = countedDeadlineRows(page)
     pending.push({
