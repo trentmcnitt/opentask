@@ -70,8 +70,14 @@ export function newTaskPlace(
   const yesterday = shiftDay(today, -1, timezone)
   const made = dayOf(task.created_at)
   const fresh = made === yesterday
+  // Carried (N5): made two days ago and deferred yesterday — or deferred
+  // AGAIN today, which only a carried row can be (a fresh one was made
+  // yesterday): it stays in New today, shown deferred, and goes to its
+  // horizon's rhythm the day after (2026-11-12; it used to jump to its
+  // horizon segment the moment it was deferred, shrinking New's count).
+  const deferred = dayOf(task.segment_deferred_at)
   const carried =
-    made === shiftDay(today, -2, timezone) && dayOf(task.segment_deferred_at) === yesterday
+    made === shiftDay(today, -2, timezone) && (deferred === yesterday || deferred === today)
   if (!fresh && !carried) return null
   // Seen on any other day (the made day, or a stamp a client wrote ahead):
   // seen already, so not on its pass.

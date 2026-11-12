@@ -7,8 +7,9 @@
  *  - SC-30..31 New across "Roll over now" and a day-start change;
  *  - SC-40..41 "Queue tomorrow" (a marked defer), then a deadline or a deck.
  *
- * Two of these pin CURRENT behaviour that reads wrong against the rules and
- * is reported, not decided here: SC-23 and SC-40 say so in their titles.
+ * SC-23 and SC-40 are the two the pass found wrong and fixed with it (design
+ * session, 2026-11-12): a twice-deferred carried row stays in New that day,
+ * and a deadline on a "Queue tomorrow" task drops the marker target.
  *
  * Synthetic data only. Task queue on (the day starts at 3:00 AM), check-in
  * day Saturday. America/Chicago: Mon 2026-11-09 14:00 is "now" at the start.
@@ -189,18 +190,17 @@ describe('SC-2x a New row acted on from New', () => {
     expect(where(t.id)).toEqual(['days:waiting'])
   })
 
-  test('SC-23: CURRENT (reported 2026-11-12): a carried row deferred again jumps to its horizon the same day', () => {
-    // NEW-NOT-TODAY says it goes to its horizon's rhythm "the day after". As
-    // built, the second Not today moves it out of New's list at once, into
-    // its horizon segment as a deferred row — New's "N of M" shrinks under
-    // the finger, where a fresh row deferred stays listed in New (SC-22).
+  test('SC-23: a carried row deferred again stays in New that day, deferred; its horizon the day after', () => {
+    // NEW-NOT-TODAY: "Deferred again, it goes to its horizon's rhythm the day
+    // after." Until 2026-11-12 the second Not today moved it into its horizon
+    // segment at once, and New's "N of M" shrank under the finger.
     const t = make()
     setClock('2026-11-10T10:00')
     deferTasks(TEST_USER_ID, [t.id])
     setClock('2026-11-11T10:00')
     expect(where(t.id)).toEqual(['new:waiting:carried'])
     deferTasks(TEST_USER_ID, [t.id])
-    expect(where(t.id)).toEqual(['days:deferred'])
+    expect(where(t.id)).toEqual(['new:deferred:carried'])
     setClock('2026-11-12T10:00')
     expect(where(t.id)).toEqual(['days:waiting'])
   })
@@ -240,21 +240,32 @@ describe('SC-4x "Queue tomorrow" (a marked defer), then a deadline or a deck', (
     return t.id
   }
 
-  test('SC-40: CURRENT (reported 2026-11-12): a deadline added to a marked task clears the mark but KEEPS the 3:00 AM marker as a real target', () => {
-    // TQ-CLEAR-ON-TARGET clears the mark on a deadline write. The marker
-    // target stays, now an ordinary picked target: at 3:00 AM the task is over
-    // target and nags, and the rollover no longer pulls it (a deadline task is
-    // never stripped). The user asked for "tomorrow's queue" and gets a 3 AM
-    // target; the Due page never holds it.
+  test('SC-40: a deadline added to a marked task drops the marker target with the mark; Undo restores both; the Due page holds it from its lead day', () => {
+    // The marker (the next rollover moment) is not a target the user picked.
+    // Until 2026-11-12 it stayed as a real 3:00 AM target that nagged, and the
+    // Due page never held the task.
     const id = marked()
     updateTask({ ...u, taskId: id, input: { deadline_at: at('2026-11-30T23:59') } })
-    expect(task(id)).toMatchObject({
-      queue_mark: false,
-      due_at: at('2026-11-10T03:00'),
-      lead_from: '2026-11-26',
-    })
+    expect(task(id)).toMatchObject({ queue_mark: false, due_at: null, lead_from: '2026-11-26' })
     setClock('2026-11-26T10:00')
-    expect(where(id)).toEqual([])
+    expect(where(id)).toEqual(['deadlines:waiting'])
+    setClock('2026-11-09T15:00')
+    executeUndo(TEST_USER_ID)
+    expect(task(id)).toMatchObject({
+      queue_mark: true,
+      due_at: at('2026-11-10T03:00'),
+      deadline_at: null,
+    })
+  })
+
+  test('SC-40b: a deadline sent WITH a target keeps that target (a pick), and clears the mark', () => {
+    const id = marked()
+    updateTask({
+      ...u,
+      taskId: id,
+      input: { deadline_at: at('2026-11-30T23:59'), due_at: at('2026-11-12T09:00') },
+    })
+    expect(task(id)).toMatchObject({ queue_mark: false, due_at: at('2026-11-12T09:00') })
   })
 
   test('SC-41: a deck on a marked task takes the marker target and the mark; Upcoming shows it before its day', () => {

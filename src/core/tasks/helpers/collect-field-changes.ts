@@ -494,9 +494,27 @@ function resolveTargetInput(
   relative: RelativeTarget | null | undefined
 } {
   const rrule = input.rrule !== undefined ? input.rrule : task.rrule
+  const deadlineAt = input.deadline_at !== undefined ? input.deadline_at : task.deadline_at
+  // A DEADLINE ON A "QUEUE TOMORROW" TASK DROPS THE MARKER (2026-11-12). A
+  // marked defer's target is only a marker — the next rollover moment, where
+  // the rollover pulls the task into the queue. A deadline write clears the
+  // mark (`stampTargetSet`), and a deadline task is never pulled; left alone,
+  // the marker became a real 3:00 AM target that nagged, and the Due page
+  // never held the task. So a write that adds or moves a deadline on a marked
+  // task, and sends no target of its own, removes the marker target with the
+  // mark: same write, same undo snapshot. The task then follows the deadline
+  // rules (the Due page from its lead day).
+  if (
+    task.queue_mark &&
+    input.due_at === undefined &&
+    deadlineAt !== null &&
+    deadlineAt !== task.deadline_at &&
+    taskQueueEnabled()
+  ) {
+    input = { ...input, due_at: null }
+  }
   const dueWritten = input.due_at !== undefined
   const left = dueWritten ? (input.due_at ?? null) : task.due_at
-  const deadlineAt = input.deadline_at !== undefined ? input.deadline_at : task.deadline_at
   const resolved = resolveTarget(
     {
       dueAt: left,

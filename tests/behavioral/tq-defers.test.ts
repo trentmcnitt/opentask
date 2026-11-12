@@ -478,14 +478,16 @@ describe('TQ-C: every pick clears the mark (and its undo puts it back)', () => {
     expect(task(t.id).lead_from).not.toBeNull()
   })
 
-  test('TQ-C06b: a deadline added while the target stays put', () => {
+  test('TQ-C06b: a deadline added with no target sent drops the marker target with the mark', () => {
     const t = marked()
-    // A deadline after the marked target: the target does not move, but the
-    // deadline write moves the EFFECTIVE target, so it is a target write.
+    // The marked target is only a marker (the rollover moment). Until
+    // 2026-11-12 it stayed as a real target when a deadline cleared the mark,
+    // and nagged at the rollover; now it goes with the mark, in the same
+    // write, and the deadline rules place the task (sc-state-combos SC-40).
     clearedThenRestored(t.id, () =>
       updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-10-30T17:00') } }),
     )
-    expect(task(t.id).due_at).toBe(at('2026-10-21T06:30'))
+    expect(task(t.id).due_at).toBeNull()
   })
 
   test('TQ-C07: done of a repeating task (the completion advance)', () => {
