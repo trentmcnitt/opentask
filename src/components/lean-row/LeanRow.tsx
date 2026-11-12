@@ -56,6 +56,8 @@
  * features' props (insights, What's Next annotations) are not drawn.
  */
 import { TITLE_TAIL } from './title-tail'
+import { useInSearchResults } from '@/components/search/SearchKindResults'
+import { searchQueueWord } from '@/lib/search-kinds'
 import { useMemo } from 'react'
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
 import { DeadlineChip } from '@/components/DeadlineChip'
@@ -418,11 +420,21 @@ function LeanMeta({
     attempts,
     projectName,
   })
+  // In the dashboard's search results a task the queue holds says so
+  // ("Task queue · Weeks"): there it is out of the section that would
+  // (`searchQueueWord`, 2026-11-12).
+  const inSearch = useInSearchResults()
+  const queueWord = inSearch ? searchQueueWord(task) : null
   return (
     <div
       data-lean-meta
       className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
     >
+      {queueWord && (
+        <span data-search-queue-word className="whitespace-nowrap">
+          {queueWord}
+        </span>
+      )}
       {task.deadline_at && (
         <DeadlineChip
           deadlineAt={task.deadline_at}

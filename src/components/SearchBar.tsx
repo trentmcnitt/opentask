@@ -14,6 +14,12 @@ interface SearchBarProps {
   focusRef?: React.MutableRefObject<(() => void) | null>
   /** What this bar searches, for the placeholder and the label. Default: tasks. */
   subject?: string
+  /**
+   * A search the page arrived with (`/?search=`, the Reminders and Quotas
+   * tabs' "show them"): the field starts holding it (shown on a phone too),
+   * without the focus. The page runs the search itself; this is only the text.
+   */
+  initialQuery?: string
 }
 
 export function SearchBar({
@@ -22,8 +28,9 @@ export function SearchBar({
   onExpandedChange,
   focusRef,
   subject = 'tasks',
+  initialQuery = '',
 }: SearchBarProps) {
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery)
   const [expanded, setExpanded] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -145,7 +152,9 @@ export function SearchBar({
       {/* Mobile: icon button, or absolute overlay when expanded */}
       {/* -mr-2.5 compensates for parent gap + extra space to match clock-hamburger spacing */}
       <div className="-mr-2.5 md:hidden">
-        {expanded ? (
+        {/* Holding text counts as open: a search the page arrived with
+            (`initialQuery`) shows in the field without taking the focus. */}
+        {expanded || query ? (
           <div className="animate-fade-in bg-background absolute inset-y-0 right-14 left-4 z-20 flex items-center gap-1">
             <Input
               type="text"
@@ -154,7 +163,7 @@ export function SearchBar({
               onKeyDown={handleKeyDown}
               placeholder="Search..."
               className="min-w-0 flex-1"
-              autoFocus
+              autoFocus={expanded}
               aria-label={`Search ${subject}`}
             />
             <button

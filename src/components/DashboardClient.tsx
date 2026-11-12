@@ -129,6 +129,22 @@ import { useSyncStream } from '@/hooks/useSyncStream'
 import { loginUrlFromLocation } from '@/lib/login-redirect'
 import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import { NAV_FILTER_EVENT, type NavFilter } from '@/lib/nav-filter'
+import {
+  SearchKindChips,
+  SearchKindHeading,
+  SearchPointerRows,
+  SearchResultsContext,
+} from '@/components/search/SearchKindResults'
+import {
+  SEARCH_PARAM,
+  effectiveKindFilter,
+  searchResultLift,
+  type SearchKindFilter,
+} from '@/lib/search-kinds'
+import { readRemindersGroups } from '@/hooks/useReminders'
+import { clearActiveSearch } from '@/hooks/useTabRetap'
+import { promptWaiting } from '@/lib/quota-prompts'
+import { scrollPageToTop } from '@/lib/scroll-to-top'
 import type { PanelLift } from '@/lib/panel-lift'
 import { usePanelLiftLink } from '@/hooks/usePanelLiftLink'
 import { scrollToRemindersCard } from '@/lib/dashboard-landing'
@@ -497,6 +513,29 @@ function HomeContent({
   // reminder. Held outside this component until the card applies it
   // (`usePanelLiftLink`: a fresh load can remount the dashboard).
   const { lift: panelLift, liftPanel, consume: consumeLift } = usePanelLiftLink(searchParams)
+  // A reminder or quota in the search results, tapped (`SearchPointerRows`):
+  // one waiting today is LIFTED in the Reminders card — the search ends, the
+  // card comes back and pages to it (`searchResultLift`; the card is away
+  // while searching, so what it last loaded decides) — any other opens its
+  // details.
+  const openSearchPointer = useCallback(
+    (task: Task) => {
+      const groups = readRemindersGroups()
+      const lift = groups ? searchResultLift(task, groups, promptWaiting) : null
+      if (!lift) {
+        router.push(`/tasks/${task.id}`)
+        return
+      }
+      clearActiveSearch()
+      liftPanel(lift)
+      scrollPageToTop()
+    },
+    [router, liftPanel],
+  )
+  // `/?search=<text>` (the Reminders and Quotas tabs' "N also match · show
+  // them", `dashboardSearchHref`): the dashboard arrives searching. Read once;
+  // the param is stripped below, so a reload is a plain dashboard.
+  const [arrivedSearch] = useState(() => searchParams.get(SEARCH_PARAM)?.trim() ?? '')
   const refreshAll = useCallback(async () => {
     await fetchTasks()
     refreshProjects()
@@ -834,6 +873,22 @@ function HomeContent({
   }, [searchResults, tasks])
 
   const baseTasks = searchQuery ? visibleSearchResults : visibleTasks
+  // SEARCH ACROSS KINDS (2026-11-12, `src/lib/search-kinds.ts`): the same
+  // hits' reminders and quotas, live out of `tasks` like the task hits above,
+  // for the results' Reminders and Quotas groups.
+  const searchOthers = useMemo(() => {
+    const reminders: Task[] = []
+    const quotas: Task[] = []
+    if (!searchQuery) return { reminders, quotas }
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    for (const hit of searchResults) {
+      const live = byId.get(hit.id)
+      if (!live) continue
+      if (isTracked(live)) quotas.push(live)
+      else if (live.is_reminder) reminders.push(live)
+    }
+    return { reminders, quotas }
+  }, [searchQuery, searchResults, tasks])
   const onLabelToggle = useCallback(() => selection.clear(), [selection])
 
   // `?filter=overdue` — the dashboard filtered to the Overdue chip. Two callers:
@@ -1470,6 +1525,23 @@ function HomeContent({
     setSearchQuery,
     setSearchResults,
   )
+  // The search the dashboard arrived with (`arrivedSearch`): run once, and
+  // its param taken off the URL.
+  const { handleSearch } = bulk
+  const arrivedSearchRun = useRef(false)
+  useEffect(() => {
+    if (!arrivedSearch || arrivedSearchRun.current) return
+    arrivedSearchRun.current = true
+    void handleSearch(arrivedSearch)
+    const params = new URLSearchParams(window.location.search)
+    params.delete(SEARCH_PARAM)
+    const rest = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      '',
+      window.location.pathname + (rest ? `?${rest}` : ''),
+    )
+  }, [arrivedSearch, handleSearch])
 
   // Keyboard completion handler (Cmd+D): one task goes through the same
   // `handleDone` as a row's checkbox; several go through the selection bar's
@@ -1785,6 +1857,9 @@ function HomeContent({
         timeSlots={timeSlots}
         searchQuery={searchQuery}
         searchHits={searchResults}
+        searchOthers={searchOthers}
+        searchInitialQuery={arrivedSearch}
+        onOpenSearchPointer={openSearchPointer}
         // The rows the list holds — what "N results" counts (a hit the
         // project chips or a filter hide is not a result shown).
         searchResultCount={shownTaskCount}
@@ -2222,6 +2297,9 @@ function DashboardView({
   todayAllClear,
   onDeckLeft,
   searchQuery,
+  searchInitialQuery,
+  searchOthers,
+  onOpenSearchPointer,
   searchHits,
   searchResultCount,
   shownTaskCount,
@@ -2375,6 +2453,12 @@ function DashboardView({
    * changes, and only a new search or a clear writes this array.
    */
   searchHits: Task[]
+  /** A search the dashboard arrived with (`/?search=`): the field's first text. */
+  searchInitialQuery: string
+  /** The hits that are reminders and quotas (`src/lib/search-kinds.ts`). */
+  searchOthers: { reminders: Task[]; quotas: Task[] }
+  /** A reminder or quota result tapped: its lift on the dashboard, or its details. */
+  onOpenSearchPointer: (task: Task) => void
   searchResultCount: number
   /** What the list renders — see `shownTaskCount` in `HomeContent`. */
   shownTaskCount: number
@@ -2600,6 +2684,27 @@ function DashboardView({
     (aiMode !== 'off' && aiFilterActive) ||
     (aiMode !== 'off' && selectedSignals.length > 0)
 
+  // Search across kinds: the chip chosen, kept per query (a new search starts
+  // on All), and never a kind that has no hits left (`effectiveKindFilter`).
+  const searchCounts = useMemo(
+    () => ({
+      task: searchQuery ? searchResultCount : 0,
+      reminder: searchOthers.reminders.length,
+      quota: searchOthers.quotas.length,
+    }),
+    [searchQuery, searchResultCount, searchOthers],
+  )
+  const [chosenKind, setChosenKind] = useState<{ query: string | null; kind: SearchKindFilter }>({
+    query: null,
+    kind: 'all',
+  })
+  const searchKind = effectiveKindFilter(
+    chosenKind.query === searchQuery ? chosenKind.kind : 'all',
+    searchCounts,
+  )
+  const setSearchKind = (kind: SearchKindFilter) => setChosenKind({ query: searchQuery, kind })
+  const searchTotal = searchCounts.task + searchCounts.reminder + searchCounts.quota
+
   // Whether the page splits into task column + Track column at `xl` (see the
   // block comment on <main>). Gated on the user actually HAVING a quota: with
   // nothing to put in it, the second column is dead space, and the only visible
@@ -2721,6 +2826,7 @@ function DashboardView({
   return (
     <div className="flex flex-1 flex-col">
       <Header
+        searchInitialQuery={searchInitialQuery}
         taskCount={shownTaskCount}
         overdueCount={headerCounts.overdueCount}
         todayCount={headerCounts.todayCount}
@@ -2896,10 +3002,13 @@ function DashboardView({
           />
 
           {searchQuery && (
-            <div className="mb-4 text-sm text-zinc-500">
-              {searchResultCount} result{searchResultCount !== 1 ? 's' : ''} for &ldquo;
+            <div className="mb-4 text-sm text-zinc-500" data-search-result-count>
+              {searchTotal} result{searchTotal !== 1 ? 's' : ''} for &ldquo;
               {searchQuery}&rdquo;
             </div>
+          )}
+          {searchQuery && (
+            <SearchKindChips counts={searchCounts} value={searchKind} onChange={setSearchKind} />
           )}
 
           {anyFilterActive && (
@@ -2963,7 +3072,36 @@ function DashboardView({
               now={now}
             />
           )}
-          {modes.sectioned ? renderTaskList('all') : renderTaskList('rest')}
+          {/* SEARCH ACROSS KINDS (2026-11-12, mockup S3): under the kind
+              chips (by the result count, above), one list grouped Tasks /
+              Reminders / Quotas. The task hits
+              are the list's own rows; reminders and quotas are pointer rows. */}
+          {searchQuery && searchKind === 'all' && searchCounts.task > 0 && (
+            <SearchKindHeading kind="task" count={searchCounts.task} />
+          )}
+          {(!searchQuery || searchKind === 'all' || searchKind === 'task') && (
+            <SearchResultsContext.Provider value={!!searchQuery}>
+              {modes.sectioned ? renderTaskList('all') : renderTaskList('rest')}
+            </SearchResultsContext.Provider>
+          )}
+          {searchQuery && (searchKind === 'all' || searchKind === 'reminder') && (
+            <SearchPointerRows
+              kind="reminder"
+              tasks={searchOthers.reminders}
+              timeSlots={timeSlots}
+              timezone={timezone}
+              onOpen={onOpenSearchPointer}
+            />
+          )}
+          {searchQuery && (searchKind === 'all' || searchKind === 'quota') && (
+            <SearchPointerRows
+              kind="quota"
+              tasks={searchOthers.quotas}
+              timeSlots={timeSlots}
+              timezone={timezone}
+              onOpen={onOpenSearchPointer}
+            />
+          )}
           {/* ROOM AT THE BOTTOM (Trent, 2026-10-30: the view pill and the FAB
               covered the all-clear card's "Next:" line): the last content
               scrolls clear of the bottom floats — the pill and the defer FAB,
