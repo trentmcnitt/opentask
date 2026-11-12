@@ -95,10 +95,10 @@ export interface NewTaskPlace {
  *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 /**
- * RULE NEW-NOT-TODAY: Not today brings the row back in New tomorrow, ONCE,
- *   as a carried row under 'Carried over', after the fresh ones: made two
- *   OpenTask days ago and deferred yesterday. Deferred again, it goes to its
- *   horizon's rhythm the day after.
+ * RULE NEW-NOT-TODAY: Not today brings the row back in New tomorrow, ONCE, as a carried row under
+ *   'Carried over', after the fresh ones: made two OpenTask days ago and deferred yesterday.
+ *   Deferred again, it stays in New that day, shown deferred (New listed it today: the day roster
+ *   says so), and goes to its horizon's rhythm the day after.
  * Why: One more chance, then the horizon takes over; New cannot become a second backlog.
  * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
  *   items, just to give them a one-off pass"; "I think the new page or the new segment makes

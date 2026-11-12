@@ -144,7 +144,9 @@ export interface CollectedWrite {
  * RULE TQ-CLEAR-ON-TARGET: Every write that changes due_at or deadline_at clears queue_mark,
  *   try_tomorrow and queued_at in the same write and snapshot, and keeps queued_from_due_at. The
  *   defer that sets the mark keeps it. A deck write leaves the queue the same way and stamps
- *   target_set_at, but only when the day changes. Fixed-SQL writers use QUEUE_CLEAR_SQL.
+ *   target_set_at, but only when the day changes. Fixed-SQL writers use QUEUE_CLEAR_SQL. A deadline
+ *   added or moved on a marked task, with no target sent, also removes the marker target itself
+ *   (the rollover moment is not a target the user picked), in the same write and snapshot.
  * Why: A queued task that gets a target leaves the queue (spec rule 8), and one write keeps the
  *   undo whole.
  * Ruling: Spec 'Picks and defers' and rule 8 (quoted at src/core/tasks/target-set.ts:41); B8, A6

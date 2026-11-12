@@ -392,6 +392,7 @@ export const RULE_REGISTRY = {
     home: 'src/lib/task-segments.ts',
     symbol: 'deckRefusal',
     pins: [
+      'tests/behavioral/sc-state-combos.test.ts#SC-01',
       'tests/behavioral/od-deck.test.ts#OD-R02',
       'tests/behavioral/od-repeating.test.ts#OD-RP53',
     ],
@@ -425,6 +426,7 @@ export const RULE_REGISTRY = {
     home: 'src/core/tasks/target-set.ts',
     symbol: 'stampTargetSet',
     pins: [
+      'tests/behavioral/sc-state-combos.test.ts#SC-40',
       'tests/behavioral/tq-defers.test.ts#TQ-C11',
       'tests/behavioral/tq-summary.test.ts#TQ-G10',
     ],
@@ -1081,12 +1083,18 @@ export const RULE_REGISTRY = {
   'NEW-NOT-TODAY': {
     home: 'src/lib/new-tasks.ts',
     symbol: 'newTaskPlace',
-    pins: ['tests/behavioral/nw-new-page.test.ts#NW-05'],
+    pins: [
+      'tests/behavioral/sc-state-combos.test.ts#SC-23',
+      'tests/behavioral/nw-new-page.test.ts#NW-05',
+    ],
   },
   'NEW-LEAVES': {
     home: 'src/lib/new-tasks.ts',
     symbol: 'newTaskPlace',
-    pins: ['tests/behavioral/nw-new-page.test.ts#NW-06'],
+    pins: [
+      'tests/behavioral/sc-state-combos.test.ts#SC-10',
+      'tests/behavioral/nw-new-page.test.ts#NW-06',
+    ],
   },
   'PRIO-RANK': {
     home: 'src/lib/priority.ts',
