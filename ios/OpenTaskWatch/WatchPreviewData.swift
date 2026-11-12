@@ -136,6 +136,13 @@ enum WatchPreviewData {
                 SegmentTaskDTO(task: TaskDTO(id: 9103, title: "Book the dentist for the kids", deadlineAt: deadline, horizon: "weeks"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Return the library books", horizon: "days"), state: .considered),
             ]),
+            // New (2026-11-12): yesterday's new one-offs, then one back
+            // from yesterday's Not today under "Carried over".
+            TaskSegmentDTO(horizon: "new", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9501, title: "Sort the seed packets", horizon: "weeks"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9503, title: "Find the spare bike pump", priority: 3), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9504, title: "Label the spice jars"), state: .waiting, carriedOver: true),
+            ]),
             // Upcoming (2026-10-12), after Days: a one-off with a deadline
             // and a repeating task — target dates, never a horizon word.
             // In its two sections since 2026-10-26: the one due tomorrow in
