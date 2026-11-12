@@ -160,15 +160,15 @@ describe('Daily N>1 — actions on one number', () => {
     expect(deltas(q.id)).toEqual([1, -1, 1])
   })
 
-  test('QPM-018: one check is one — the 2nd walk checked at 0 logs 1, never 2 (Trent, 2026-11-04)', () => {
-    // Daily Walks' shape: 2 a day, the 1st in the default period, the 2nd
+  test('QPM-018: one check is one — the 2nd row checked at 0 logs 1, never 2 (Trent, 2026-11-04)', () => {
+    // The shape that showed it: 2 a day, the 1st in the default period, the 2nd
     // moved to a later one.
     setUserDefault(slotId('Morning'))
-    const q = quota('Daily walks', 'FREQ=DAILY', 2)
+    const q = quota('Synthetic laps', 'FREQ=DAILY', 2)
     configure(q.id, { numbers: { '2': slotId('Afternoon') } })
     const one = promptKey(q.id, 1, TODAY)
     const two = promptKey(q.id, 2, TODAY)
-    act(one, false) // the morning walk considered, not done
+    act(one, false) // the morning one considered, not done
     act(two, true)
     expect(getTaskById(q.id)!.progress_current).toBe(1)
     expect(deltas(q.id)).toEqual([1])
