@@ -24,9 +24,12 @@ import { BarAction, SELECTION_BAR_HINT_ID, SelectionBarShell } from '@/component
  *   selected, the quota editor (deduped to the quotas behind the prompts) when
  *   only prompts are. A mix has no single editor, so Details is disabled and
  *   the bar says why, in one line.
- * - Trash is not offered at all while any prompt is selected: a prompt row
- *   must never be the way a quota gets deleted, and a bin that only half
- *   applies is worse than none. The quota editor keeps its own Delete.
+ * - Delete is ALWAYS offered (Trent, 2026-11-12: with a prompt selected
+ *   there was no Delete — "It's confusing"). Reminders alone delete at once.
+ *   With any prompt in the selection Delete would delete the QUOTA itself,
+ *   so the surface asks first, once (`DeleteQuotasDialog`): all of it, the
+ *   reminders only, or cancel. This replaced the 2026-09-25 rule that Trash
+ *   was not offered while a prompt was selected.
  */
 interface ReminderSelectionBarProps {
   selectedCount: number
@@ -37,7 +40,7 @@ interface ReminderSelectionBarProps {
   onConsidered: () => void
   /** Open the selection's details — reminders' editor, or the prompts' quotas. */
   onDetails: () => void
-  /** Move every selected reminder to Trash — a soft delete, one Undo. */
+  /** Delete the selection — reminders at once; with a prompt in it, after the one confirmation. */
   onDelete: () => void
   onClear: () => void
 }
@@ -71,15 +74,13 @@ export function ReminderSelectionBar({
         disabled={!canDetails}
         describedBy={mixed ? SELECTION_BAR_HINT_ID : undefined}
       />
-      {promptCount === 0 && (
-        <BarAction
-          tone="danger"
-          icon={<Trash2 />}
-          label="Delete"
-          onClick={onDelete}
-          ariaLabel={selectedCount === 1 ? 'Move to Trash' : `Move ${selectedCount} to Trash`}
-        />
-      )}
+      <BarAction
+        tone="danger"
+        icon={<Trash2 />}
+        label="Delete"
+        onClick={onDelete}
+        ariaLabel={selectedCount === 1 ? 'Move to Trash' : `Move ${selectedCount} to Trash`}
+      />
     </SelectionBarShell>
   )
 }

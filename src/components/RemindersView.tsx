@@ -19,6 +19,7 @@ import { useTimezone } from '@/hooks/useTimezone'
 import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSyncStream } from '@/hooks/useSyncStream'
 import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
+import { DeleteQuotasDialog } from '@/components/DeleteQuotasDialog'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
 import { SegmentDetailsModal } from '@/components/reminders/TaskSegmentDetails'
@@ -810,7 +811,8 @@ export function RemindersView({
       <ReminderSelectionBar
         // Counted from the rows on screen, like the two counts below it: a key
         // whose row has gone (handled on another device, a merged daily row)
-        // must neither inflate "N selected" nor, as a prompt, hide Trash wrongly.
+        // must neither inflate "N selected" nor, as a prompt, ask about a quota
+        // that is not there.
         selectedCount={selectedTasks.length + selectedPrompts.length}
         reminderCount={selectedTasks.length}
         promptCount={selectedPrompts.length}
@@ -825,6 +827,11 @@ export function RemindersView({
       />
       {/* A task-segment row's editor: its peek bubble's Open (task queue PR 3). */}
       <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
+      <DeleteQuotasDialog
+        request={actions.deleteRequest}
+        onConfirm={actions.confirmDelete}
+        onCancel={actions.cancelDelete}
+      />
       <ConsiderAllDialog
         request={considerAll.request}
         onConfirm={considerAll.confirm}

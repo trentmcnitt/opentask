@@ -1,6 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { DeleteQuotasRequest } from '@/components/DeleteQuotasDialog'
+import type { DeletedQuota } from '@/hooks/useReminders'
 import { slotGroupKey } from '@/lib/reminder-slots'
 import { promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { ReminderGroup } from '@/hooks/useReminders'
@@ -100,7 +102,7 @@ export function useReminderActions({
   completeGroup: (group: ReminderGroup) => Promise<void>
   considerPrompt: (prompt: QuotaPrompt) => Promise<void>
   didPrompt: (prompt: QuotaPrompt) => Promise<void>
-  remove: (tasks: Task[]) => Promise<void>
+  remove: (tasks: Task[], quotas?: DeletedQuota[]) => Promise<void>
 }) {
   const { isSelectionMode, toggle, rangeSelect, removeAll, clear } = selection
 
@@ -178,14 +180,47 @@ export function useReminderActions({
     clear()
     void completeMany(tasks, prompts)
   }, [startedGroups, clear, completeMany])
-  // Reminders only. The bar offers no Trash while a prompt is selected (a
-  // prompt row must never delete its quota); refused here as well.
+  /**
+   * DELETE (Trent, 2026-11-12: a prompt row selected, and no Delete — "It's
+   * confusing"; "I think we go with one confirmation").
+   * - Reminders only: at once, no confirmation (the toast's Undo is the net).
+   * - Any quota prompt selected: nothing happens yet — ONE dialog
+   *   (`DeleteQuotasDialog`) names every quota behind the selection (two
+   *   prompts of one quota are one quota) and says the quota itself goes, not
+   *   just today's prompt. Its answers: all of it, the reminders only, or
+   *   cancel — which changes nothing and keeps the selection.
+   * Either way one request, one undo entry (`remove`).
+   */
+  const [deleteRequest, setDeleteRequest] = useState<DeleteQuotasRequest | null>(null)
   const deleteSelection = useCallback(() => {
-    if (selectedPrompts.length > 0) return
-    const tasks = selectedTasks
-    clear()
-    void remove(tasks)
+    if (selectedPrompts.length === 0) {
+      const tasks = selectedTasks
+      clear()
+      void remove(tasks)
+      return
+    }
+    const quotas = new Map<number, DeletedQuota>()
+    for (const p of selectedPrompts)
+      if (!quotas.has(p.task_id)) quotas.set(p.task_id, { id: p.task_id, title: p.title })
+    setDeleteRequest({ reminders: selectedTasks, quotas: [...quotas.values()] })
   }, [selectedTasks, selectedPrompts, clear, remove])
+  const cancelDelete = useCallback(() => setDeleteRequest(null), [])
+  const confirmDelete = useCallback(
+    (scope: 'all' | 'reminders') => {
+      const request = deleteRequest
+      setDeleteRequest(null)
+      if (!request) return
+      if (scope === 'all') {
+        clear()
+        void remove(request.reminders, request.quotas)
+      } else {
+        // The quotas stay, and stay selected.
+        removeAll(request.reminders.map((t) => t.id))
+        void remove(request.reminders)
+      }
+    },
+    [deleteRequest, clear, removeAll, remove],
+  )
   // The details editor's verbs: the reminder(s) it holds, whether or not
   // they are the selection.
   const considerMany = useCallback(
@@ -216,6 +251,9 @@ export function useReminderActions({
     considerSelection,
     considerSoFar,
     deleteSelection,
+    deleteRequest,
+    confirmDelete,
+    cancelDelete,
     considerMany,
     deleteMany,
   }
