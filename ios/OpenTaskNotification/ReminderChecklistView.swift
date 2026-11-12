@@ -16,7 +16,9 @@ import SwiftUI
 ///    resizes to fit via `preferredContentSize`; it does NOT scroll natively,
 ///    so a long list is simply clipped and the rows past the cut are invisible
 ///    AND untappable. Hence the hard `maxVisibleRows` cap and the "+N more"
-///    footer, which tells the truth about what is off-screen.
+///    footer, which tells the truth about what is off-screen. The rows past
+///    the cap are never stranded: committing the checked ones reloads the
+///    list in place with what still waits (2026-11-12).
 ///
 /// QUOTA PROMPTS (quota reminders, 2026-09-24): the slot's waiting quota
 /// prompts are rows too, after its reminders (the web and the widgets put
@@ -272,8 +274,11 @@ struct ReminderChecklistView: View {
 
             if hidden > 0 {
                 // "Complete all" still covers these — the button acts on the
-                // slot, not on what happens to be rendered.
-                Text("+\(hidden) more \u{2014} open OpenTask to see them")
+                // slot, not on what happens to be rendered. "Complete N
+                // checked" brings the next ones up: the list reloads in place
+                // and the notification stays (2026-11-12,
+                // `commitSlotChecklist`).
+                Text("+\(hidden) more \u{2014} they come up as you complete these")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)

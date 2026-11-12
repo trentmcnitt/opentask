@@ -20,7 +20,9 @@ import UserNotificationsUI
 ///    buttons via extensionContext (staging only — a SwiftUI button NEVER commits)
 /// 3. User taps action button → didReceive(_:completionHandler:) fires API call
 /// 4. API call succeeds → notification dismissed; on failure `.doNotDismiss`, so a
-///    failed action leaves the notification standing rather than pretending
+///    failed action leaves the notification standing rather than pretending.
+///    The checklist's "Complete N checked" is the exception: with rows still
+///    waiting in the period it reloads in place and stays (`commitSlotChecklist`)
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
     /// Typed as the base class because the root view differs by category
@@ -373,6 +375,28 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     await reloadSlotChecklist(model)
                 }
                 completion(.doNotDismiss)
+                return
+            }
+
+            // LEFTOVERS STAY REACHABLE (Trent, 2026-11-12: he checked the
+            // rows shown, tapped "Complete N checked", and the banner went —
+            // with "+4 more" still waiting and no way back to them: "it's a
+            // confusing state… I'm tempted to not use that"). After a
+            // "Complete checked" the checklist reloads IN PLACE with what
+            // still waits in the period, and the notification stays until
+            // nothing does. Only an empty period (or "Complete all", which
+            // takes the whole period) dismisses. A reload that fails keeps
+            // the banner too: the leftovers are unknown, and a body tap still
+            // leads to them. The server agrees: its reconcile keeps a period
+            // banner while anything in the period waits (`stale.ts`).
+            if response.actionIdentifier == NotificationAction.completeChecked,
+               let model = checklistModel {
+                await reloadSlotChecklist(model)
+                if case .loaded(let items) = model.state, items.isEmpty {
+                    completion(.dismiss)
+                } else {
+                    completion(.doNotDismiss)
+                }
                 return
             }
 
