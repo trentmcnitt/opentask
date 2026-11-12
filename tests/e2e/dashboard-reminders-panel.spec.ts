@@ -252,13 +252,13 @@ test.describe('Dashboard Reminders panel — wide', () => {
       const showMore = panel(page).getByRole('button', { name: /Show more/ })
       await expect(showMore).toBeVisible()
       await expect(showMore).toContainText('6 more')
-      // No "Considered all" while capped. (Progress is no longer gated on
-      // expansion: the slot bar above carries it for the whole day and is
-      // always on screen — see ReminderSlotBar.)
+      // "Considered all" is in the header while rows wait, capped or not
+      // (Trent, 2026-11-12: it used to need a tap on the header first).
       const considerAll = panel(page).getByRole('button', {
         name: /^Mark all in .+ as considered$/,
       })
-      await expect(considerAll).toHaveCount(0)
+      await expect(considerAll).toBeVisible()
+      await expect(considerAll).toHaveText('Considered all')
 
       await showMore.click()
 
@@ -373,6 +373,60 @@ test.describe('Dashboard Reminders panel — wide', () => {
       await expect(panel(page).locator('li[data-reminder-id]:visible')).toHaveCount(7)
       await expect(panel(page).getByRole('button', { name: /Show more/ })).toBeHidden()
       await expect(panel(page).getByRole('button', { name: /Show less/ })).toHaveCount(0)
+    } finally {
+      await deleteTasks(page, ids)
+    }
+  })
+})
+
+/**
+ * The header's sweep, pressed (2026-11-12): its own describe for the same
+ * line-count reason as the one below.
+ */
+test.describe('Dashboard Reminders panel — Considered all from the header', () => {
+  test.use({ viewport: { width: 1280, height: 900 }, timezoneId: TEST_TZ })
+
+  /** Which of `ids` still wait in today's card, by the server's word. */
+  async function waiting(page: Page, ids: number[]): Promise<number[]> {
+    const body = await (await page.request.get('/api/reminders')).json()
+    const groups = body.data.groups as { reminders: { id: number }[] }[]
+    const listed = new Set(groups.flatMap((g) => g.reminders.map((r) => r.id)))
+    return ids.filter((id) => listed.has(id))
+  }
+
+  test('without opening the card: it considers the period’s rows, the count follows, and Undo brings them back', async ({
+    authenticatedPage: page,
+  }) => {
+    const slots = await fetchTimeSlots(page)
+    const natural = slots[naturalSlotIndex(slots)]
+    const startMinutes = parseHHMM(natural.start_time)
+    const at = (offset: number) =>
+      todayAt(Math.floor((startMinutes + offset) / 60), (startMinutes + offset) % 60)
+    const ids: number[] = []
+    try {
+      for (let i = 0; i < 3; i++) {
+        ids.push(
+          await createReminder(page, { title: `Sweep probe reminder ${i}`, due_at: at(i + 1) }),
+        )
+      }
+      await page.goto('/')
+      await expect(panel(page)).toHaveAttribute('data-reminders-slot', String(natural.id))
+      await expect(panel(page).getByText('Sweep probe reminder 0')).toBeVisible()
+      expect(await waiting(page, ids)).toEqual(ids)
+
+      // No tap on the header first: the sweep is there while rows wait.
+      const sweep = panel(page).getByRole('button', { name: /^Mark all .*in .+ as considered$/ })
+      await expect(sweep).toHaveText('Considered all')
+      await sweep.click()
+      // The card acts at once (its design: glance and tap; the Reminders
+      // page's sweep is the one that asks first).
+      await expect(page.getByRole('alertdialog')).toHaveCount(0)
+      await expect.poll(() => waiting(page, ids)).toEqual([])
+      await expect(panel(page).getByText('Sweep probe reminder 0')).toBeHidden()
+
+      // Undo: all three wait again.
+      await page.getByRole('button', { name: 'Undo', exact: true }).first().click()
+      await expect.poll(() => waiting(page, ids)).toEqual(ids)
     } finally {
       await deleteTasks(page, ids)
     }

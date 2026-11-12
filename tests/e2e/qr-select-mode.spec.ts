@@ -231,8 +231,8 @@ test.describe("Trent's phone", () => {
       await page.goto('/')
       await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
       await expect(row(page, ids[5])).toBeVisible()
-      // Open the header: its sweeps (Considered all, Not today, all) show.
-      await card(page).locator('[data-slot-header-toggle]').click()
+      // The header's sweeps (Considered all, Not today, all) are there
+      // without opening it (2026-11-12).
       const sweeps = card(page).getByRole('button', { name: /^(Mark all|Not today: all)/ })
       await expect(sweeps).toHaveCount(2)
       await card(page).locator('[data-queue-select-toggle]').click()
@@ -264,5 +264,107 @@ test.describe("Trent's phone", () => {
     } finally {
       await trash(page, ids)
     }
+  })
+})
+
+/**
+ * THE SWEEPS ARE ALWAYS IN SIGHT (Trent, 2026-11-12: "Where is the button to
+ * consider everything for days in the task queue?"). Until then "Considered
+ * all" and "Not today, all" showed only after a tap on the header.
+ */
+test.describe('the header sweeps, without opening the card', () => {
+  const sweeps = (page: Page) =>
+    card(page).getByRole('button', { name: /^(Mark all|Not today: all)/ })
+  const overflow = (page: Page) =>
+    page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+      header: Math.round(
+        document.querySelector('[data-tasks-panel] [data-pager-header]')!.getBoundingClientRect()
+          .right,
+      ),
+    }))
+
+  test.describe('desktop', () => {
+    test.use({ viewport: { width: 1280, height: 800 } })
+
+    test('both show with their words while rows wait; Considered all acts at once, Undo brings the rows back; none in select mode or with nothing waiting', async ({
+      page,
+    }) => {
+      const ids = await daysTasks(page, 3)
+      try {
+        await page.goto('/')
+        await expect(row(page, ids[0])).toBeVisible()
+        // Not opened: the header toggle is shut, and both sweeps are there.
+        await expect(card(page).locator('[data-slot-header-toggle]')).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        )
+        await expect(sweeps(page)).toHaveText(['Considered all', 'Not today, all'])
+        // Select mode: they step aside; back when it ends.
+        await card(page).locator('[data-queue-select-toggle]').click()
+        await expect(sweeps(page)).toHaveCount(0)
+        await card(page).locator('[data-queue-select-toggle]').click()
+        await expect(sweeps(page)).toHaveCount(2)
+
+        await card(page)
+          .getByRole('button', { name: /^Mark all in .+ as considered$/ })
+          .click()
+        for (const id of ids) await expect(row(page, id)).toHaveCount(0)
+        const state = async (id: number) =>
+          (await (await page.request.get(`/api/tasks/${id}`)).json()).data.last_considered_at
+        await expect.poll(() => state(ids[0])).not.toBeNull()
+        await page.locator('[data-sonner-toast]').getByRole('button', { name: 'Undo' }).click()
+        await expect.poll(() => state(ids[0])).toBeNull()
+
+        // Nothing waiting on the page: no sweep, and no second header line.
+        await page.request.post('/api/task-segments/consider', { data: { ids } })
+        await page.goto('/?tasks=days')
+        await expect(card(page)).toHaveAttribute('data-tasks-page', 'tasks:days')
+        await expect(sweeps(page)).toHaveCount(0)
+        await expect(card(page).locator('[data-pager-sweeps]:visible')).toHaveCount(0)
+      } finally {
+        await trash(page, ids)
+      }
+    })
+  })
+
+  test.describe('phone, at the app’s 119% text', () => {
+    test.use({ viewport: { width: 375, height: 812 } })
+
+    test('the sweeps take a line of their own under the header, words and all; nothing scrolls sideways; Not today, all works from there', async ({
+      page,
+    }) => {
+      const ids = await daysTasks(page, 3)
+      try {
+        await page.goto('/')
+        await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
+        await expect(row(page, ids[0])).toBeVisible()
+        await expect(sweeps(page)).toHaveText(['Considered all', 'Not today, all'])
+        const below = card(page).locator('[data-pager-sweeps="below"]')
+        await expect(below).toBeVisible()
+        await expect(card(page).locator('[data-pager-sweeps="inline"]')).toBeHidden()
+        const width = await overflow(page)
+        expect(width.scroll).toBeLessThanOrEqual(width.client)
+        expect(width.header).toBeLessThanOrEqual(width.client)
+        // Each sweep on one line, whole (never truncated, never wrapped mid-word).
+        for (const b of await sweeps(page).all()) {
+          expect(await b.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true)
+        }
+        // "TASK QUEUE" on one line beside Select and the count.
+        expect(
+          await card(page)
+            .locator('[data-slot-header-toggle] span span')
+            .first()
+            .evaluate((e) => e.getClientRects().length),
+        ).toBe(1)
+        await card(page)
+          .getByRole('button', { name: /^Not today: all/ })
+          .click()
+        for (const id of ids) await expect(row(page, id)).toHaveCount(0)
+      } finally {
+        await trash(page, ids)
+      }
+    })
   })
 })

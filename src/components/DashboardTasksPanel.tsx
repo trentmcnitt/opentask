@@ -66,7 +66,8 @@ import {
  * when finished, the deadlines page teal — `ReminderSlotBar`), the
  * same header (the title, "TASK QUEUE · DAILY", as a slot shows its name; "X of Y"
  * that opens what was considered with put-back, ‹ ›), the same rows, and
- * "Defer all" behind the header tap where a slot has "Considered all".
+ * "Not today, all" in the header where a slot has "Considered all" (always in
+ * sight while rows wait, 2026-11-12).
  *
  * ONLY THE SEGMENTS WITH ROWS (Trent, 2026-10-30, reversing 10-24's "every
  * segment, every day"): a segment with no rows today is not drawn — no bar,
@@ -173,6 +174,7 @@ export function DashboardTasksPanel({
   // Before the preferences load (`queue.loaded`) a non-queue page draws no
   // "Considered all" yet, so nothing appears or vanishes when they land.
   const queueOn = onlyWithQueue(segment.horizon) || (queue.loaded && queue.enabled)
+  const offersConsider = queueOn && toConsider(segment).length > 0
   return (
     <section
       ref={sectionRef}
@@ -202,15 +204,18 @@ export function DashboardTasksPanel({
         prevLabel="Previous task segment"
         nextLabel="Next task segment"
         // No sweeps while selecting (2026-10-30): the bar has Consider and
-        // Not today for the picked rows, and with "Select" in the header the
-        // two pushed it past a 402 phone's width at the app's 119% text.
+        // Not today for the picked rows. Otherwise whenever rows wait, the
+        // card open or not (2026-11-12; `SlotPagerHeader` gives them a second
+        // line where the header row has no room).
         sweep={
-          expanded && page.waiting > 0 && !select.on ? (
+          // Null, not an empty fragment, when the page offers neither (a
+          // Due page of safety-net rows): the header then has no second line.
+          page.waiting > 0 && !select.on && (offersConsider || offersDeferAll(segment.horizon)) ? (
             <>
               {/* "Considered all" (task queue PR 3, spec rule 9): the slot
                   page's sweep, beside Defer all, with the queue on. The
                   queue's panels have no Defer all (spec rule 8). */}
-              {queueOn && toConsider(segment).length > 0 && (
+              {offersConsider && (
                 <PagerSweep
                   kind="consider"
                   ariaLabel={`Mark all in ${page.label} as considered`}
@@ -228,7 +233,10 @@ export function DashboardTasksPanel({
           ) : null
         }
         beforeCount={<QueueSelectToggle on={select.on} onToggle={select.toggleMode} />}
-        compact={select.on}
+        // Always (2026-11-12; in select mode only until then): "TASK QUEUE"
+        // stays on one line beside Select and the count at a 375 phone and
+        // the app's 119% text, as the Reminders card's header does.
+        compact
         onToggleExpanded={() => setExpanded(!expanded)}
         showConsidered={showConsidered}
         onToggleConsidered={pager.toggleConsidered}

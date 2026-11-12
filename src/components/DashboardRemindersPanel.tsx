@@ -312,9 +312,10 @@ export function DashboardRemindersPanel({
           onPrev={() => pager.goTo(index - 1)}
           onNext={() => pager.goTo(index + 1)}
           // Only while the slot has something waiting (spec rule 9: Considered
-          // all shows only while the panel has waiting rows).
+          // all shows only while the panel has waiting rows) — the card open
+          // or not (Trent, 2026-11-12).
           sweep={
-            expanded && page.waiting > 0 ? (
+            page.waiting > 0 ? (
               <PagerSweep
                 kind="consider"
                 ariaLabel={`Mark all in ${page.label} as considered`}
