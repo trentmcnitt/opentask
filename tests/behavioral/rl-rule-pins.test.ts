@@ -64,14 +64,14 @@ const countable = (due_at: string | null) =>
   >
 
 describe('RL: overdue — the client and the server', () => {
-  test('RL-TGT-OVERDUE-CLIENT: isOverdue is strict — a target AT now is not overdue, 1 ms later it is (current behaviour, boundary issue I-03 open)', () => {
-    expect(isOverdue(countable(NOW.toISOString()), NOW)).toBe(false)
+  test('RL-TGT-OVERDUE-CLIENT: isOverdue is <= now, the server’s boundary — a target AT now is overdue (I-03 closed 2026-11-12)', () => {
+    expect(isOverdue(countable(NOW.toISOString()), NOW)).toBe(true)
     expect(isOverdue(countable(plus(-1)), NOW)).toBe(true)
     expect(isOverdue(countable(plus(1)), NOW)).toBe(false)
     expect(isOverdue(countable(null), NOW)).toBe(false)
   })
 
-  test('RL-TGT-OVERDUE: isCurrentlyDue is <= now; a target-anchored from_due repeat with no target is due from today’s occurrence; a deadline-anchored one and a target-less deck are never due (current behaviour, boundary issue I-03 open)', () => {
+  test('RL-TGT-OVERDUE: isCurrentlyDue is <= now; a target-anchored from_due repeat with no target is due from today’s occurrence; a deadline-anchored one and a target-less deck are never due', () => {
     const oneOff: OccurrenceTask = { due_at: NOW.toISOString(), rrule: null, anchor_time: null }
     expect(isCurrentlyDue(oneOff, TZ, DAY_START, NOW)).toBe(true)
     expect(isCurrentlyDue({ ...oneOff, due_at: plus(1) }, TZ, DAY_START, NOW)).toBe(false)

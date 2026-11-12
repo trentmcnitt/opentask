@@ -202,7 +202,7 @@ export function effectiveDueAt(
  *   notifier, snooze-overdue, ?overdue=true, each project's overdue_count and the simulator all use
  *   this one predicate.
  * Why: One predicate for the badge, the notifier, the sweep and the counts, so they never disagree
- *   (§4.6). Its boundary (<=) differs from the client's isOverdue (<): issue I-03, open.
+ *   (§4.6). The client's isOverdue shares the boundary (<=) since 2026-11-12 (I-03, closed).
  * Ruling: Word 'Overdue': Trent 2026-10-21 (docs/TASK-MODEL.md:172). A recurring task carries debt:
  *   Trent 2026-09-07 (src/core/notifications/overdue-checker.ts:380). <= cites ruling Q10
  *   (src/core/tasks/currently-due.ts:75). No fake targets: deadlines-page plan L1, 2026-10-22.

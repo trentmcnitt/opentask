@@ -680,7 +680,7 @@ export const RULE_REGISTRY = {
   },
   'SEG-ORDER-WITHIN': {
     home: 'src/core/tasks/task-segments.ts',
-    symbol: 'b.task.priority - a.task.priority',
+    symbol: 'byPriorityRank(a.task, b.task) || a.task.id - b.task.id',
     pins: ['tests/behavioral/tm-task-model.test.ts#TM-014'],
   },
   'UP-ORDER': {
