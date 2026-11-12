@@ -39,6 +39,7 @@ import { RemindersHeadline } from '@/components/reminders/RemindersHeadline'
 import { SearchResults } from '@/components/reminders/SearchResults'
 import { NotTodayFold } from '@/components/reminders/NotTodayFold'
 import { QuickAdd } from '@/components/QuickAdd'
+import { AlsoMatchLine } from '@/components/search/AlsoMatchLine'
 import { SurfaceJustAdded } from '@/components/SurfaceJustAdded'
 import type { ReminderBulkChanges, ReminderCreateDraft } from '@/components/ReminderDetail'
 import { ConsiderAllDialog, useConsiderAll } from '@/components/ConsiderAllDialog'
@@ -223,6 +224,12 @@ export function RemindersView({
           group.prompts.length > 0,
       )
   }, [groups, searching, matchesQuery, query])
+  // The quotas whose prompt rows the search already shows here: not counted
+  // again in "N also match" (`AlsoMatchLine`).
+  const searchShownIds = useMemo(
+    () => new Set(searchGroups.flatMap((g) => g.prompts.map((p) => p.task_id))),
+    [searchGroups],
+  )
   const searchNotToday = useMemo(
     () => (searching ? notToday.filter(matchesQuery) : []),
     [notToday, searching, matchesQuery],
@@ -724,6 +731,9 @@ export function RemindersView({
         />
       </div>
       <SurfaceJustAdded tasks={heldReminders} searching={searching} />
+      {searching && (
+        <AlsoMatchLine query={searchQuery?.trim() ?? ''} own="reminder" shownIds={searchShownIds} />
+      )}
       {loading ? (
         <RemindersSkeleton />
       ) : error ? (

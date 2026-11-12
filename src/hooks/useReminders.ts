@@ -1308,6 +1308,12 @@ function subscribeToCache(listener: () => void) {
   }
 }
 const readCache = () => remindersCache
+/**
+ * The groups last loaded, read once without subscribing — for a decision made
+ * in an event handler (where a search result's tap goes, `searchResultLift`).
+ * Null before the first load.
+ */
+export const readRemindersGroups = (): ReminderGroup[] | null => remindersCache?.groups ?? null
 const readServerCache = () => null
 
 export function useRemindersSummary(timezone: string): RemindersSummary<ReminderGroup> | null {

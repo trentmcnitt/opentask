@@ -104,6 +104,8 @@ interface HeaderProps {
   searchFocusRef?: React.MutableRefObject<(() => void) | null>
   /** What the search bar searches, for its placeholder. Default: tasks. */
   searchSubject?: string
+  /** A search the page arrived with (`SearchBar`'s `initialQuery`). */
+  searchInitialQuery?: string
   /**
    * Widen the bar at `xl` to match the two-column Tasks page beneath it.
    *
@@ -149,6 +151,7 @@ export function Header({
   timezone,
   searchFocusRef,
   searchSubject,
+  searchInitialQuery,
   wideAtXl = false,
 }: HeaderProps) {
   const [searchExpanded, setSearchExpanded] = useState(false)
@@ -289,6 +292,7 @@ export function Header({
                 onSearch={onSearch}
                 onClear={onSearchClear}
                 subject={searchSubject}
+                initialQuery={searchInitialQuery}
                 onExpandedChange={setSearchExpanded}
                 focusRef={searchFocusRef}
               />

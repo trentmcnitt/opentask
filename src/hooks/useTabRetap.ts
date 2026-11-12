@@ -42,7 +42,10 @@ export function useTabRetap() {
  */
 export const TAB_RETAP_SEARCH_EVENT = 'tab-retap-search'
 
-/** True when a search bar cleared its text for this tap. */
-function clearActiveSearch(): boolean {
+/**
+ * True when a search bar cleared its text for this tap. Also how a search
+ * result's tap ends the search before going to its item (`DashboardClient`).
+ */
+export function clearActiveSearch(): boolean {
   return !window.dispatchEvent(new CustomEvent(TAB_RETAP_SEARCH_EVENT, { cancelable: true }))
 }

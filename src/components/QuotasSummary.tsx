@@ -1,5 +1,6 @@
 'use client'
 
+import { AlsoMatchLine } from '@/components/search/AlsoMatchLine'
 import { SurfaceJustAdded } from '@/components/SurfaceJustAdded'
 import { useCallback, useEffect, useState } from 'react'
 import { Gauge, Plus } from 'lucide-react'
@@ -131,6 +132,7 @@ export function QuotasSummary({
     <div data-quotas-summary className="space-y-3 pb-24">
       <QuotasHeaderRow count={tasks.length} onNew={openCreate} />
       <SurfaceJustAdded tasks={tasks} searching={searching} />
+      {searching && <AlsoMatchLine query={searchQuery?.trim() ?? ''} own="quota" />}
 
       {tasks.length > 0 && (
         <QuotasFilterLines
