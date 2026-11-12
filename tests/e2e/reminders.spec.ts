@@ -151,7 +151,9 @@ async function openAllSlots(page: Page) {
  * swallowing it, every test using this would consider the row it just selected.
  */
 async function longPressRow(page: Page, row: Locator): Promise<void> {
-  await row.scrollIntoViewIfNeeded()
+  // Centred, not merely "in view": a row at the viewport's bottom edge sits
+  // under the phone's fixed tab bar, and the press would land on that.
+  await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
   const box = await row.boundingBox()
   if (!box) throw new Error('the row is not on screen')
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
@@ -163,6 +165,8 @@ async function longPressRow(page: Page, row: Locator): Promise<void> {
 // No task segment but what a test makes: tasks other specs left behind would
 // otherwise show under the slots on some days (a Saturday, the default
 // check-in day) and not others — see `hideStraySegmentTasks`.
+// Slot labels are read inside `[data-slot-group]`: the Just now card names a
+// just-added reminder's period too (2026-11-12).
 test.beforeEach(() => hideStraySegmentTasks())
 
 test.describe('Reminders surface', () => {
@@ -212,14 +216,18 @@ test.describe('Reminders surface', () => {
 
       // Slot headers carry the label and the boundary time — visible whether the
       // slot is open or folded.
-      await expect(page.getByText('Early morning', { exact: true })).toBeVisible()
+      await expect(
+        page.locator('[data-slot-group]').getByText('Early morning', { exact: true }),
+      ).toBeVisible()
       // The boundary time is read from the slot header itself: a bare
       // getByText('7:00 AM') also matched the sidebar's build stamp
       // ("v0.2.1 · Oct 26, 7:00 AM") when CI happened to build at 7:00 (10-26).
       await expect(page.getByRole('button', { name: /^Early morning · 7:00 AM\b/ })).toBeVisible()
       await expect(page.getByText('Evening', { exact: true })).toBeVisible()
       // Un-slotted reminders get an honest group rather than disappearing.
-      await expect(page.getByText('Anytime', { exact: true })).toBeVisible()
+      await expect(
+        page.locator('[data-slot-group]').getByText('Anytime', { exact: true }),
+      ).toBeVisible()
 
       // Priority is prominence: the higher-priority thought sits first inside
       // its slot. Nothing else about it shouts.
@@ -1468,7 +1476,9 @@ test.describe('Reminder details', () => {
       id = (await response.json()).data.id as number
       const task = (await (await page.request.get(`/api/tasks/${id}`)).json()).data
       expect(task.rrule).toBeNull()
-      await expect(page.getByText('Anytime', { exact: true })).toBeVisible()
+      await expect(
+        page.locator('[data-slot-group]').getByText('Anytime', { exact: true }),
+      ).toBeVisible()
     } finally {
       if (id) await deleteTasks(page, [id])
     }
