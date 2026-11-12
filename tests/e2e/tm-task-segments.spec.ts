@@ -290,9 +290,8 @@ test.describe('Task segments on the dashboard', () => {
       await tasks.getByRole('button', { name: 'Previous task segment' }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:days')
 
-      // Defer all, behind the header tap, finishes Days: on to Weeks, the
-      // next with work.
-      await tasks.locator('[data-slot-header-toggle]').click()
+      // Not today, all — in the header without opening it (2026-11-12) —
+      // finishes Days: on to Weeks, the next with work.
       await tasks.getByRole('button', { name: /^Not today: all/ }).click()
       await expect(tasks).toHaveAttribute('data-tasks-page', 'tasks:weeks')
       for (const id of days) {

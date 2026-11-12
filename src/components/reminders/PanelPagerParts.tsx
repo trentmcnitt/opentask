@@ -33,7 +33,7 @@ export const NARROW_CAP = 5
 
 /**
  * Prev chevron / page name + time (a task segment: its hint) / count /
- * (Considered all or Defer all, expanded only) / next chevron — one row, mirroring the widget's own `ChevronPager` header
+ * the sweeps (Considered all, Not today all) / next chevron — mirroring the widget's own `ChevronPager` header
  * except for the readout: the widget says "N left", this says the mockup's
  * "<considered> of <total>" so the number reads the same way the real
  * Reminders page's slot counter does (climbs, never counts down).
@@ -77,7 +77,17 @@ export function SlotPagerHeader({
   /** The chevrons' names: time slots, or task segments on the Tasks card. */
   prevLabel?: string
   nextLabel?: string
-  /** "Considered all" on a slot, "Not today, all" on a task segment (`PagerSweep`). */
+  /**
+   * "Considered all" on a slot, "Not today, all" on a task segment
+   * (`PagerSweep`). ALWAYS IN SIGHT while rows wait (Trent, 2026-11-12:
+   * "Where is the button to consider everything for days in the task
+   * queue?" — until then they showed only once the header had been tapped
+   * open, an unmarked tap). Where the card is wide enough (36rem, measured
+   * on the card itself, so a desktop's narrow side column and a phone at the
+   * app's 119% text are judged alike) they sit in the header row; narrower,
+   * they take a second line under it, right-aligned, WITH their words — never
+   * bare icons, never truncated, and no second line when there is no sweep.
+   */
   sweep: React.ReactNode
   /** Just left of the count: the task queue card's "Select" (2026-10-30). */
   beforeCount?: React.ReactNode
@@ -113,21 +123,25 @@ export function SlotPagerHeader({
     />
   )
   return (
-    <div
-      className={cn('flex min-h-11 items-center py-1.5', compact ? 'gap-1 px-1.5' : 'gap-1.5 px-2')}
-    >
-      <button
-        type="button"
-        onClick={onPrev}
-        disabled={!canGoPrev}
-        aria-label={prevLabel}
-        title={prevLabel}
-        className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-30"
+    <div className="@container" data-pager-header>
+      <div
+        className={cn(
+          'flex min-h-11 items-center py-1.5',
+          compact ? 'gap-1 px-1.5' : 'gap-1.5 px-2',
+        )}
       >
-        <ChevronLeft className="size-4" strokeWidth={2} />
-      </button>
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={!canGoPrev}
+          aria-label={prevLabel}
+          title={prevLabel}
+          className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-30"
+        >
+          <ChevronLeft className="size-4" strokeWidth={2} />
+        </button>
 
-      {/* The whole bar between the chevrons toggles the slot open and shut.
+        {/* The whole bar between the chevrons toggles the slot open and shut.
           Trent, 2026-09-21: "If you tap anywhere in there that's not on one of
           the carrots, it'd be nice if that expanded and collapsed the
           section." The chevrons page between slots and keep their own hit
@@ -136,111 +150,150 @@ export function SlotPagerHeader({
           It toggles even when no rows are held back, and that is deliberate:
           a slot under the cap has no "Show more" button at all, so before this
           there was no way to unclamp its titles or reach "Considered all". */}
-      <button
-        type="button"
-        onClick={onToggleExpanded}
-        aria-expanded={expanded}
-        data-slot-header-toggle
-        className={cn(
-          'hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1 text-left transition-colors',
-          compact ? 'px-0.5' : 'px-1',
-        )}
-      >
-        {/* The name may wrap, never truncate: "TASK QUEUE · PREVIOUSLY
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+          data-slot-header-toggle
+          className={cn(
+            'hover:bg-foreground/5 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1 text-left transition-colors',
+            compact ? 'px-0.5' : 'px-1',
+          )}
+        >
+          {/* The name may wrap, never truncate: "TASK QUEUE · PREVIOUSLY
             STAGED" (2026-10-20) is wider than a phone's header and read
             "TASK QUEUE · PREVI…". A period's name and time fit as before. */}
-        <span className="min-w-0 flex-1 text-xs text-balance">
-          <span
-            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-            // A task segment's title wears its horizon's teal (2026-10-11).
-            style={accent ? { color: accent } : undefined}
-          >
-            {label}
-          </span>
-          {/* A slot's start time (a task segment has none, only its title):
+          <span className="min-w-0 flex-1 text-xs text-balance">
+            <span
+              className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
+              // A task segment's title wears its horizon's teal (2026-10-11).
+              style={accent ? { color: accent } : undefined}
+            >
+              {label}
+            </span>
+            {/* A slot's start time (a task segment has none, only its title):
               ~#8a8a8a light, ~#8f8f8f dark (2026-10-11 visual QA; /50
               measured 1.9:1 and 2.9:1). */}
-          {time && (
-            <span className="text-muted-foreground/80 dark:text-muted-foreground/90 text-xs whitespace-nowrap">
-              {' '}
-              &middot; {time}
-            </span>
-          )}
-        </span>
-      </button>
+            {time && (
+              <span className="text-muted-foreground/80 dark:text-muted-foreground/90 text-xs whitespace-nowrap">
+                {' '}
+                &middot; {time}
+              </span>
+            )}
+          </span>
+        </button>
 
-      {/* The count IS the considered count, so tapping it is how you see what
+        {/* The count IS the considered count, so tapping it is how you see what
           those were (Trent, 2026-09-21, choosing this over a second full-width
           bar in the footer: "Show Considered stacked on Show More looks like a
           big UX no-no"). A button only when there is something behind it —
           otherwise it is a plain readout and must not look pressable. */}
-      {beforeCount}
-      {considered > 0 ? (
-        <button
-          type="button"
-          onClick={onToggleConsidered}
-          aria-expanded={showConsidered}
-          data-considered-toggle
-          aria-label={`${considered} of ${total} considered — show what was considered`}
-          className={cn(
-            'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
-            compact ? 'px-1' : 'px-1.5',
-            // THE BOX IS THE WHOLE SIGNAL. Trent, 2026-09-21: "when you
-            // highlight it there's a little box around the text. When the
-            // considered stuff is open there should still be a gray box
-            // around the X of Y text." A bolding was tried alongside it and
-            // cut the same day — "Don't bold the text... I like the box
-            // around it though" — so the text never changes weight and the
-            // held box says everything. It reuses the affordance the pointer
-            // already reveals rather than adding a new one.
-            showConsidered && 'bg-foreground/5',
-          )}
-        >
-          {/* ONE COLOUR ACROSS THE WHOLE COUNT, AND NO WEIGHT CHANGE. The
+        {beforeCount}
+        {considered > 0 ? (
+          <button
+            type="button"
+            onClick={onToggleConsidered}
+            aria-expanded={showConsidered}
+            data-considered-toggle
+            aria-label={`${considered} of ${total} considered — show what was considered`}
+            className={cn(
+              'hover:bg-foreground/5 flex shrink-0 items-center gap-1 rounded-lg py-1 text-xs whitespace-nowrap tabular-nums transition-colors',
+              compact ? 'px-1' : 'px-1.5',
+              // THE BOX IS THE WHOLE SIGNAL. Trent, 2026-09-21: "when you
+              // highlight it there's a little box around the text. When the
+              // considered stuff is open there should still be a gray box
+              // around the X of Y text." A bolding was tried alongside it and
+              // cut the same day — "Don't bold the text... I like the box
+              // around it though" — so the text never changes weight and the
+              // held box says everything. It reuses the affordance the pointer
+              // already reveals rather than adding a new one.
+              showConsidered && 'bg-foreground/5',
+            )}
+          >
+            {/* ONE COLOUR ACROSS THE WHOLE COUNT, AND NO WEIGHT CHANGE. The
               considered number sat a shade darker than "of N" for no reason
               anyone could name — Trent, 2026-09-21: "Why is 1 darker than the
               19?" It also briefly went bold while open, which he cut the same
               day: "Don't bold the text... I like the box around it though."
               So the box is the state and the text merely lifts out of muted. */}
-          <span className={cn(showConsidered ? 'text-foreground' : 'text-muted-foreground')}>
-            {considered} of {total}
-          </span>
-          {/* THE CHECK REPORTS STATUS, NOT AN AFFORDANCE — unlike the caret
+            <span className={cn(showConsidered ? 'text-foreground' : 'text-muted-foreground')}>
+              {considered} of {total}
+            </span>
+            {/* THE CHECK REPORTS STATUS, NOT AN AFFORDANCE — unlike the caret
               and the bolding cut from this same element (2026-09-21), this
               earns its place: it is the only thing on the panel that answers
               "is this slot actually finished?" without asking the reader to
               compare a fill's length to the end of its track. Small, quiet,
               and only ever present when true — never a greyed-out
               placeholder for "not yet". */}
-          {doneCheck}
-        </button>
-      ) : (
-        <span
-          className={cn(
-            'flex shrink-0 items-center gap-1 text-xs whitespace-nowrap tabular-nums',
-            compact ? 'px-1' : 'px-1.5',
-          )}
-          aria-label={`${considered} of ${total} considered`}
-        >
-          <span className="text-muted-foreground">
-            {considered} of {total}
+            {doneCheck}
+          </button>
+        ) : (
+          <span
+            className={cn(
+              'flex shrink-0 items-center gap-1 text-xs whitespace-nowrap tabular-nums',
+              compact ? 'px-1' : 'px-1.5',
+            )}
+            aria-label={`${considered} of ${total} considered`}
+          >
+            <span className="text-muted-foreground">
+              {considered} of {total}
+            </span>
+            {doneCheck}
           </span>
-          {doneCheck}
-        </span>
+        )}
+
+        <PagerSweeps place="inline">{sweep}</PagerSweeps>
+
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!canGoNext}
+          aria-label={nextLabel}
+          title={nextLabel}
+          className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-30"
+        >
+          <ChevronRight className="size-4" strokeWidth={2} />
+        </button>
+      </div>
+      <PagerSweeps place="below" compact={compact}>
+        {sweep}
+      </PagerSweeps>
+    </div>
+  )
+}
+
+/**
+ * The header's sweeps in one of their two places (`SlotPagerHeader`'s
+ * `sweep`): in the header row where the card is at least 36rem wide, else on
+ * a line of their own under it. Nothing at all with no sweep to show.
+ */
+function PagerSweeps({
+  place,
+  compact = false,
+  children,
+}: {
+  place: 'inline' | 'below'
+  compact?: boolean
+  children: React.ReactNode
+}) {
+  if (!children) return null
+  if (place === 'inline') {
+    return (
+      <span className="hidden shrink-0 items-center @xl:flex" data-pager-sweeps="inline">
+        {children}
+      </span>
+    )
+  }
+  return (
+    <div
+      data-pager-sweeps="below"
+      className={cn(
+        'flex flex-wrap items-center justify-end gap-x-1 pb-1.5 @xl:hidden',
+        compact ? 'px-1.5' : 'px-2',
       )}
-
-      {sweep}
-
-      <button
-        type="button"
-        onClick={onNext}
-        disabled={!canGoNext}
-        aria-label={nextLabel}
-        title={nextLabel}
-        className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-30"
-      >
-        <ChevronRight className="size-4" strokeWidth={2} />
-      </button>
+    >
+      {children}
     </div>
   )
 }
@@ -292,8 +345,8 @@ export function RowCountToggle({
 /**
  * The header's sweep, in the place a slot has always had it: "Considered all"
  * on a slot, "Defer all" on a task segment (2026-10-11) — the segment's way to
- * clear today's list without considering each row. Only while the page is
- * expanded, like the slot's.
+ * clear today's list without considering each row. Shown whenever rows wait
+ * (2026-11-12), always with its words.
  */
 export function PagerSweep({
   kind,
@@ -318,7 +371,7 @@ export function PagerSweep({
       ) : (
         <Forward className="size-3.5" strokeWidth={2.5} />
       )}
-      <span className="hidden sm:inline">{consider ? 'Considered all' : NOT_TODAY_ALL}</span>
+      <span>{consider ? 'Considered all' : NOT_TODAY_ALL}</span>
     </button>
   )
 }

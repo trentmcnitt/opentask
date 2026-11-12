@@ -252,13 +252,13 @@ test.describe('Dashboard Reminders panel — wide', () => {
       const showMore = panel(page).getByRole('button', { name: /Show more/ })
       await expect(showMore).toBeVisible()
       await expect(showMore).toContainText('6 more')
-      // No "Considered all" while capped. (Progress is no longer gated on
-      // expansion: the slot bar above carries it for the whole day and is
-      // always on screen — see ReminderSlotBar.)
+      // "Considered all" is in the header while rows wait, capped or not
+      // (Trent, 2026-11-12: it used to need a tap on the header first).
       const considerAll = panel(page).getByRole('button', {
         name: /^Mark all in .+ as considered$/,
       })
-      await expect(considerAll).toHaveCount(0)
+      await expect(considerAll).toBeVisible()
+      await expect(considerAll).toHaveText('Considered all')
 
       await showMore.click()
 
