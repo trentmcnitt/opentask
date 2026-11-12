@@ -285,6 +285,13 @@ for (const gap of [120, 650]) {
       await page.goto('/reminders')
       const circle = () =>
         page.getByRole('button', { name: /^Mark ".*CB reminder.*" as considered$/ })
+      // Before its period starts (the small hours, until the day's first
+      // period), a slot previews 5 rows behind "Show all N" (§7.3,
+      // `SLOT_PREVIEW_COUNT`): open it, so all 7 are rows whatever the hour.
+      await expect(circle().first()).toBeVisible()
+      const slot = page.locator('[data-slot-group]', { has: circle().first() })
+      const showAll = slot.getByRole('button', { name: /^Show all \d+/ })
+      if ((await showAll.count()) > 0) await showAll.click()
       await expect(circle()).toHaveCount(7)
       await page.evaluate(() => {
         const w = window as unknown as { __frames: string[]; __raf: number }

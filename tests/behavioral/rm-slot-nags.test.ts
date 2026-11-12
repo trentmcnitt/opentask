@@ -109,6 +109,15 @@ function freezeAndSeed() {
   })
 }
 
+/**
+ * A DECLARED LONG-RUNNING WALK (2026-11-12): RN-001, RN-023 and RN-029 step
+ * the tick through 17 hours a minute at a time — under a second each alone,
+ * about 4 s on a loaded machine, against vitest's 5 s default; RN-029 timed
+ * out once that way. Their own timeout,
+ * as TM-INV-01 has.
+ */
+const WHOLE_DAY_TIMEOUT = 20_000
+
 describe('Unfinished-slot nag — the ladder paces it', () => {
   freezeAndSeed()
 
@@ -117,10 +126,14 @@ describe('Unfinished-slot nag — the ladder paces it', () => {
    * push), the nag follows every 60 minutes from then — past the old 22:00
    * Sleep edge, with no cap of three.
    */
-  test('RN-001: every 60 minutes after the slot opens, all day, no cap', () => {
-    makeReminder(7)
-    expect(firingMinutes(at(7), at(23, 59))).toEqual(hourly('15', 8, 23))
-  })
+  test(
+    'RN-001: every 60 minutes after the slot opens, all day, no cap',
+    () => {
+      makeReminder(7)
+      expect(firingMinutes(at(7), at(23, 59))).toEqual(hourly('15', 8, 23))
+    },
+    WHOLE_DAY_TIMEOUT,
+  )
 
   /**
    * RN-002: the slot's own push restarts the clock: a later slot opening with
@@ -466,11 +479,15 @@ describe('Unfinished-slot nag — priority paces it', () => {
   })
 
   /** RN-023 (Push PR 4): a period with only a Medium+ quota prompt sends no period push and no nag. */
-  test('RN-023: only an Urgent quota prompt waiting → no period push, no nag', () => {
-    makeQuota(4)
-    expect(pendingSlotNotifications(at(7))).toEqual([])
-    expect(firingMinutes(at(7), at(23, 59))).toEqual([])
-  })
+  test(
+    'RN-023: only an Urgent quota prompt waiting → no period push, no nag',
+    () => {
+      makeQuota(4)
+      expect(pendingSlotNotifications(at(7))).toEqual([])
+      expect(firingMinutes(at(7), at(23, 59))).toEqual([])
+    },
+    WHOLE_DAY_TIMEOUT,
+  )
 
   /** RN-023b: a Low quota prompt is still the period's, at its quota's priority — Low, 480. */
   test('RN-023b: a Low quota prompt waiting → counted, every 480', () => {
@@ -550,10 +567,14 @@ describe('Unfinished-slot nag — priority paces it', () => {
   })
 
   /** RN-029 (2026-10-26): a period with only Medium+ reminders sends no period push and no nag. */
-  test('RN-029: only Medium+ reminders waiting → no period push, no nag', () => {
-    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 2 })
-    makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 4 })
-    expect(pendingSlotNotifications(at(7))).toEqual([])
-    expect(firingMinutes(at(7), at(23, 59))).toEqual([])
-  })
+  test(
+    'RN-029: only Medium+ reminders waiting → no period push, no nag',
+    () => {
+      makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 2 })
+      makeReminder(7, 0, TEST_USER_ID, TEST_TIMEZONE, { priority: 4 })
+      expect(pendingSlotNotifications(at(7))).toEqual([])
+      expect(firingMinutes(at(7), at(23, 59))).toEqual([])
+    },
+    WHOLE_DAY_TIMEOUT,
+  )
 })

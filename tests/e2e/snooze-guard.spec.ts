@@ -94,15 +94,17 @@ async function inOwnProject(
 }
 
 /**
- * The snooze menu once its time slots are in ("Early morning" may be the
- * "Next period · …" item, so the match is unanchored). "Early morning" is one of the
+ * The snooze menu once its time slots are in. "Early morning" is one of the
  * default slots every user is given (`backfillTimeSlots`, src/core/db/index.ts),
- * so its item showing means the list has reached its final shape.
+ * so an item naming it means the list has reached its final shape. `.first()`:
+ * before that period starts it is named TWICE, on purpose — the "Next period ·
+ * Early morning …" row and its own period button (every period is listed, the
+ * next one too: Trent, 2026-11-04, `src/lib/target-menu.ts`).
  */
 async function openedMenu(page: Page) {
   const menu = page.getByRole('menu', { name: 'Defer options' })
   await expect(menu).toBeVisible()
-  await expect(menu.getByRole('menuitem', { name: /Early morning/ })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: /Early morning/ }).first()).toBeVisible()
   return menu
 }
 
