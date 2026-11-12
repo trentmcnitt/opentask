@@ -21,6 +21,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DateTime } from 'luxon'
 import { getDb } from '@/core/db'
 import { bulkEdit, createTask, getTaskById, rolloverTrackedPeriods, updateTask } from '@/core/tasks'
+import { deleteTask } from '@/core/tasks/delete'
 import { incrementProgress } from '@/core/tasks/progress'
 import { getQuotaPromptsBySlot, type QuotaPrompt } from '@/core/tasks/quota-prompts'
 import { actOnPrompts } from '@/core/tasks/quota-prompt-actions'
@@ -182,6 +183,79 @@ describe('Daily N>1 — actions on one number', () => {
     act(one, true)
     expect(getTaskById(q.id)!.progress_current).toBe(2)
     expect(deltas(q.id)).toEqual([1, 1])
+  })
+})
+
+describe('Daily N>1 in two periods — checked, deleted, undone together (state combinations, 2026-11-12)', () => {
+  /** Two a day: #1 in Morning (the default), #2 moved to Afternoon. */
+  function twoPeriods() {
+    setUserDefault(slotId('Morning'))
+    const q = quota('Synthetic stretches', 'FREQ=DAILY', 2)
+    configure(q.id, { numbers: { '2': slotId('Afternoon') } })
+    return { q, one: promptKey(q.id, 1, TODAY), two: promptKey(q.id, 2, TODAY) }
+  }
+  const rows = () => prompts().map((p) => [p.slot, p.number, p.considered, p.done])
+
+  test('QPM-019: the later period’s row checked first, then the quota deleted: both rows go; Undo brings both back as they were', () => {
+    const { q, two } = twoPeriods()
+    act(two, true)
+    const before = rows()
+    expect(before).toEqual([
+      ['Morning', 1, false, false],
+      ['Afternoon', 2, true, true],
+    ])
+    deleteTask({ userId: TEST_USER_ID, taskId: q.id })
+    expect(rows()).toEqual([])
+    executeUndo(TEST_USER_ID)
+    expect(rows()).toEqual(before)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(deltas(q.id)).toEqual([1])
+  })
+
+  test('QPM-020: both rows checked, undone one at a time: each Undo takes back exactly its own row and its own +1', () => {
+    const { q, one, two } = twoPeriods()
+    act(two, true)
+    act(one, true)
+    expect(getTaskById(q.id)!.progress_current).toBe(2)
+    // Met: both rows stay listed that day, done.
+    expect(rows()).toEqual([
+      ['Morning', 1, true, true],
+      ['Afternoon', 2, true, true],
+    ])
+    // Undo the Morning check.
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
+    expect(rows()).toEqual([
+      ['Morning', 1, false, false],
+      ['Afternoon', 2, true, true],
+    ])
+    // Undo the Afternoon check.
+    executeUndo(TEST_USER_ID)
+    expect(getTaskById(q.id)!.progress_current).toBe(0)
+    expect(rows()).toEqual([
+      ['Morning', 1, false, false],
+      ['Afternoon', 2, false, false],
+    ])
+  })
+
+  test('QPM-021: checked, deleted, restored by Undo, then the check itself undone: the count and the row agree at every step', () => {
+    const { q, one } = twoPeriods()
+    act(one, true)
+    deleteTask({ userId: TEST_USER_ID, taskId: q.id })
+    executeUndo(TEST_USER_ID) // the delete
+    expect(rows()).toEqual([
+      ['Morning', 1, true, true],
+      ['Afternoon', 2, false, false],
+    ])
+    executeUndo(TEST_USER_ID) // the check
+    expect(getTaskById(q.id)!.progress_current).toBe(0)
+    expect(rows()).toEqual([
+      ['Morning', 1, false, false],
+      ['Afternoon', 2, false, false],
+    ])
+    // And a fresh check on the other row still logs exactly one.
+    act(promptKey(q.id, 2, TODAY), true)
+    expect(getTaskById(q.id)!.progress_current).toBe(1)
   })
 })
 
