@@ -365,7 +365,7 @@ describe('SC-6x a deadline-anchored repeat with a relative target, decked near i
       target_time: '09:00',
     })
 
-  test('SC-60 (CURRENT behaviour, question open with the design session): D−1 and D are refused as "too close to the deadline", though no safety net ever holds this task', () => {
+  test('SC-60: D−1 and D are refused as "too close to the deadline", like every deadline task: one limit, D−2 (ruled 2026-11-12)', () => {
     const t = repeat()
     expect(task(t.id)).toMatchObject({ repeat_anchor: 'deadline', due_at: at('2026-11-17T09:00') })
     for (const day of ['2026-11-19', '2026-11-20']) {

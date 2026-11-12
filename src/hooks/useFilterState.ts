@@ -14,6 +14,12 @@ interface UseFilterStateOptions {
   /** The page's clock (`useDashboardNow`) — the Overdue/Today filters move with it. */
   now?: Date
   initialDateFilters?: DueDateFilter[]
+  /**
+   * Leave the list unfiltered while keeping every selection (2026-11-12,
+   * SEARCH-ALL-MODES): a search shows every hit, and clearing it brings the
+   * chips' effect back untouched.
+   */
+  bypass?: boolean
 }
 
 /** The five corpus-slicing filter groups FilterBar renders as chip rows. */
@@ -181,6 +187,7 @@ export function useFilterState({
   timezone,
   now,
   initialDateFilters,
+  bypass = false,
 }: UseFilterStateOptions) {
   const dayStart = useDayStart()
   // Include state
@@ -374,8 +381,8 @@ export function useFilterState({
   )
 
   const filteredTasks = useMemo(
-    () => applyTaskFilters(tasks, criteria, { timezone, dayStart, now }),
-    [tasks, criteria, timezone, dayStart, now],
+    () => (bypass ? tasks : applyTaskFilters(tasks, criteria, { timezone, dayStart, now })),
+    [bypass, tasks, criteria, timezone, dayStart, now],
   )
 
   // How many include/exclude selections are active across every group — the

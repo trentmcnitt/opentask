@@ -240,7 +240,7 @@ test.describe('Dashboard search · three more paths (state combinations, 2026-11
     }
   })
 
-  test('arriving by /?search= with a project filter (CURRENT behaviour, question open with the design session): task hits are narrowed to the project, reminders and quotas are not', async ({
+  test('arriving by /?search= with a project filter: the search shows everything, the chips dimmed; "only <project>" narrows the results and back', async ({
     authenticatedPage: page,
   }) => {
     const w = word()
@@ -255,20 +255,64 @@ test.describe('Dashboard search · three more paths (state combinations, 2026-11
     const other = projects.find((p) => p.id !== dated.project_id)!
     try {
       await page.goto(`/?search=${w}&project=${other.id}`)
-      // The search is on, the params are gone from the address.
       await expect(page.getByRole('textbox', { name: 'Search tasks' })).toHaveValue(w)
       await expect(page).toHaveURL(/\/$/)
-      // Both tasks are in ANOTHER project than the filter names: not listed.
-      // The reminder and the quota, which have no project to filter by, are.
+      // Both tasks are in ANOTHER project than the filter names, and found.
+      await expect(taskRow(page, made.dated)).toBeVisible()
+      await expect(taskRow(page, made.queued)).toBeVisible()
       await expect(pointer(page, made.reminder)).toBeVisible()
-      await expect(pointer(page, made.quota)).toBeVisible()
+      await expect(chip(page, 'all')).toContainText('4')
+      const line = page.locator('[data-search-filter-line]')
+      await expect(line).toHaveAttribute('data-search-filter-line', 'everything')
+      await expect(line).toHaveText(`Searching everything · only ${other.name}`)
+      await expect(page.locator('[data-filters-idle]')).toHaveCount(1)
+
+      // "only <project>": the filter over the results. Nothing here is in it.
+      await line.click()
+      await expect(line).toHaveAttribute('data-search-filter-line', 'narrowed')
+      await expect(line).toHaveText(`Only ${other.name} · search everything`)
       await expect(taskRow(page, made.dated)).toHaveCount(0)
-      await expect(taskRow(page, made.queued)).toHaveCount(0)
-      await expect(chips(page).getByRole('radio')).toHaveText([
-        /^All\s*2$/,
-        /^Reminders\s*1$/,
-        /^Quotas\s*1$/,
-      ])
+      await expect(pointer(page, made.reminder)).toHaveCount(0)
+      await expect(pointer(page, made.quota)).toHaveCount(0)
+      await expect(page.locator('[data-search-result-count]')).toContainText('0 results')
+      await expect(page.locator('[data-filters-idle]')).toHaveCount(0)
+
+      // And back.
+      await line.click()
+      await expect(taskRow(page, made.dated)).toBeVisible()
+      await expect(chip(page, 'all')).toContainText('4')
+    } finally {
+      await cleanup(
+        page,
+        Object.values(made).filter((v): v is number => typeof v === 'number'),
+      )
+    }
+  })
+
+  test('a filter chip on, then a search: everything is found; clearing the search puts the filter back as it was', async ({
+    authenticatedPage: page,
+  }) => {
+    const w = word()
+    const made = await seed(page, w)
+    const projects = (await (await page.request.get('/api/projects')).json()).data.projects as {
+      id: number
+    }[]
+    const dated = (await (await page.request.get(`/api/tasks/${made.dated}`)).json()).data as {
+      project_id: number
+    }
+    const other = projects.find((p) => p.id !== dated.project_id)!
+    try {
+      await page.goto(`/?project=${other.id}`)
+      await expect(page).toHaveURL(/\/$/)
+      const search = page.getByRole('textbox', { name: 'Search tasks' })
+      await search.fill(w)
+      await expect(taskRow(page, made.dated)).toBeVisible()
+      await expect(page.locator('[data-search-filter-line]')).toBeVisible()
+      await search.fill('')
+      // The search is over: the project filter narrows the list again.
+      await expect(page.locator('[data-search-filter-line]')).toHaveCount(0)
+      await expect(page.locator('[data-filters-idle]')).toHaveCount(0)
+      await expect(taskRow(page, made.dated)).toHaveCount(0)
     } finally {
       await cleanup(
         page,
