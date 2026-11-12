@@ -1235,6 +1235,13 @@ function HomeContent({
   // rows show, and Now's split (relevant rows, then the fold). Collapsed
   // groups and shut folds drop out of `orderedIds` so navigation skips them.
   const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
+  // RULE SEARCH-ALL-MODES: With text in the dashboard's search box the
+  //   list is every hit, whatever the mode: no mode sections, the
+  //   result count is the rows shown, and the view pill is away.
+  //   Clearing the search draws the mode again.
+  // Why: A hit outside Today was counted but not shown.
+  // Ruling: Trent 2026-11-10: "It should, by default, search everything… nobody has
+  //   enough things in Today that they have to search for it".
   // A sectioned mode's sections, each with its rows SHOWN ("Show 5 more"
   // adds to a section's `sectionExtra`): they ARE the visual order then, so
   // the keyboard, shift-click ranges and Cmd+C follow them as drawn. The

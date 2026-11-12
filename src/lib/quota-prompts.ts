@@ -223,6 +223,14 @@ export function normalizeDayState(state: QuotaDayState | null): QuotaDayState | 
 }
 
 /**
+ * RULE QP-ONE-CHECK: A check on a quota prompt row logs exactly +1 and ticks
+ *   that row only. A daily quota's numbers are separate rows that never
+ *   merge; progress logged elsewhere ticks the earliest open rows, one each.
+ * Why: A check on the 2nd walk at 0 logged two walks.
+ * Ruling: Trent 2026-11-04: "putting a check mark on the reminder item should count as
+ *   one always… nothing should ever go from zero to two".
+ */
+/**
  * What a key in `did` added to the count, for taking it back. Recorded since
  * 2026-09-25 (`did_applied`). A key "did" before then has no record: a
  * once-a-day prompt's did-it always added exactly 1 (it adds nothing only

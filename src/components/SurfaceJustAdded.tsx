@@ -36,6 +36,15 @@ import type { Project, Task } from '@/types'
  */
 const NO_PROJECTS: Project[] = []
 
+/**
+ * RULE JN-TABS: The Reminders and Quotas tabs show the same Just now card under
+ *   their add control, listing that tab's kind only, added from anywhere. A task
+ *   added meanwhile is the dashboard card's.
+ * Why: A just-added reminder lands in the default period, rarely the one on screen, and its
+ *   row's pulse has no words.
+ * Ruling: Trent 2026-11-12: "if you add a reminder, you need to see the enrichment
+ *   progress the same way on the Reminders tab. Likewise for the Quotes tab."
+ */
 export function SurfaceJustAdded({
   tasks,
   searching,

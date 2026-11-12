@@ -206,7 +206,7 @@ export function useTaskSegments({
   // write answered (`src/lib/pending-overlay.ts`).
   const overlay = useMemo(() => activePending(pending, payloadSeq), [pending, payloadSeq])
   const view = useMemo(
-    () => mergePulled(segmentViews(segments, overlay)).filter((v) => v.rows.length > 0),
+    () => listedSegments(mergePulled(segmentViews(segments, overlay))),
     [segments, overlay],
   )
   // Which rows are the deadlines page's, and which of those its safety net
@@ -493,6 +493,14 @@ function segmentViews(
 }
 
 /**
+ * RULE SEG-PULLED-MERGE: The web merges queue_today and queue_previous into one view in
+ *   queue_today's place. Rows are tagged today or earlier and the counts are summed. The server's
+ *   two kinds and the native caches are unchanged.
+ * Why: One strip bar, one page and one "N of M" for the pulls; the server's kinds and the native
+ *   apps are unchanged.
+ * Ruling: Trent 2026-10-29 ('just have pulls … Today … Earlier', src/hooks/useTaskSegments.ts:487).
+ */
+/**
  * PULLED, ONE SEGMENT (Trent, 2026-10-29: "just have pulls and then the
  * first thing is Today and the other section is Earlier"): the queue's two
  * panels — Today's pulls, Previous pulls — drawn as ONE segment in the web
@@ -524,6 +532,32 @@ export function mergePulled(views: SegmentView[]): SegmentView[] {
   return [...rest.slice(0, at), merged, ...rest.slice(at)]
 }
 
+/**
+ * RULE SEG-VISIBLE-WEB: The client drops a segment kind that has no rows today, waiting or
+ *   considered, after Pulled's merge. A segment finished today keeps its rows. The order stays
+ *   fixed.
+ * Why: People who never use a kind never see its section ("people that really don't use
+ *   deadlines will just never see a deadline section").
+ * Ruling: Trent 2026-10-30: 'people that really don't use deadlines will just never see a
+ *   deadline section'.
+ */
+/**
+ * The segments the web lists (2026-10-30): every one that holds a row today —
+ * waiting, considered or left — in the order given. The server's `fill`
+ * (`?fill=1`) still sends every kind; only the display drops the empty ones.
+ */
+export function listedSegments(views: SegmentView[]): SegmentView[] {
+  return views.filter((v) => v.rows.length > 0)
+}
+
+/**
+ * RULE DL-NET-NO-CONSIDER: A deadlines-page row its safety net holds
+ *   has no consider: only a target or done takes it off the page. Its
+ *   circle is the target clock, 'Considered all' leaves it out, and a
+ *   seen stamp from an older client is ignored.
+ * Why: A consider there changed nothing, and the screen said otherwise.
+ * Ruling: Trent 2026-11-02, recorded at this home.
+ */
 /**
  * The rows a consider still changes: waiting ones — but never a deadlines-page
  * row its safety net holds (Trent, 2026-11-02): only a target or done takes it

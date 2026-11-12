@@ -1,0 +1,29 @@
+name: Rules line
+
+# Every pull request's description says which task-state rules it added or
+# changed: "Rules: <ids>" (ids from src/lib/rule-registry.ts), or
+# "Rules: none". See scripts/check-rules-line.mjs for why. `edited` is in the
+# trigger list so fixing the description re-runs the check. Dependabot's
+# descriptions are its own and are left alone.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  rules-line:
+    name: Rules line
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: node scripts/check-rules-line.mjs
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}

@@ -336,6 +336,7 @@ export function upcomingLeadWords(line: UpcomingLeadLine, timezone: string, toda
   return `${later} (${leadDaysWords(line.laterDaysBefore)}) · ${tomorrow}`
 }
 
+// (restates RULE DL-DEADLINE-DAY-PICK, home: src/lib/task-segments.ts)
 /**
  * The pickers' "Morning of the deadline" choice (ruling Q8, 2026-10-12; was
  * "Deadline day"): the user's morning on the deadline's local day, or the

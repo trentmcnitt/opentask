@@ -828,6 +828,19 @@ function isCompact(group: SortedTaskGroup): boolean {
 }
 
 /**
+ * RULE TODAY-NOT-YET-DIM: In Today mode's Today section, a row whose
+ *   picked target is still ahead today is drawn at 60%, and at full
+ *   strength on hover, focus, swipe, selection and the highlight flash.
+ *   Over-target rows, Late, the deadline safety net and On deck stay
+ *   full.
+ * Why: What can be acted on now stands out from what is only waiting for its time; a net
+ *   row has no target to wait for and wants a decision now.
+ * Ruling: Trent 2026-11-10: "making the items that are currently not at their target a little
+ *   transparent. Just having the blue highlight on the ones that are currently over target just
+ *   doesn't stand out quite enough"; "number 3: 60%. and on deck stays full strength." The deadline
+ *   net staying full is the design session's call the same day.
+ */
+/**
  * A not-yet row (`LeanRow` dims it): in Today mode's TODAY section, its
  * picked target still ahead today. The deadline net stays full (2026-11-10):
  * a net row has no target to wait for — it is the row that wants a decision

@@ -32,6 +32,17 @@ export const HORIZON_DAYS_CAP = 10
 // ── Today ──────────────────────────────────────────────────────────────────
 
 /**
+ * RULE TODAY-PRIORITY-LEADS: Priority leads every Today-mode section
+ *   (Late, Today, On deck), ahead of the section's own order and of
+ *   the sort pill. In Today the over-target, not-yet and deadline-net
+ *   blocks never mix; inside each, priority, then the block's own
+ *   order.
+ * Why: The row that costs most to miss is read first; the pill then orders only rows of
+ *   equal priority.
+ * Ruling: Trent 2026-11-11: "I like 5, but I don't want the text any lighter just
+ *   because it's low. I think it should be sorted by priority."
+ */
+/**
  * LATE, then TODAY (Trent, 2026-10-29, "O3" — "for now": Today gets its real
  * design later, so these two are kept small and swappable here).
  *

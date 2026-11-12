@@ -16,6 +16,14 @@ export function notificationTitlePrefix(priority: number): string {
 }
 
 /**
+ * RULE INTERRUPTION-LEVEL: Urgent (P4) overdue uses the critical APNs level at the user's volume.
+ *   Everything else is active, or passive when it does not lead. The time-sensitive level is not
+ *   used.
+ * Why: Only Urgent breaks through Focus: nights are the phone's Sleep mode's to handle, not
+ *   OpenTask's.
+ * Ruling: Trent 2026-10-26 (src/core/notifications/format.ts:23); ruling 4 2026-10-22.
+ */
+/**
  * APNs interruption level by priority. P4 is a critical alert (bypasses mute
  * and Do Not Disturb, at the user's critical_alert_volume); everything else,
  * High included, is `active` — a banner and a sound that respect Focus.
@@ -39,6 +47,15 @@ export function taskCollapseId(taskId: number): string {
 }
 export const OVERDUE_SUMMARY_COLLAPSE_ID = 'overdue-summary'
 
+/**
+ * RULE NOTIF-KIND-ICON: Each APNs push kind carries its own icon in
+ *   data.icon: quota, reminder, period, task or deadline, with a label-
+ *   line subtitle. Web Push has neither and keeps the title's HIGH /
+ *   URGENT prefix. The icon also names the banner's kind to the stale
+ *   rules.
+ * Why: A banner says what kind of thing it is before it is read.
+ * Ruling: Trent 2026-11-07: "I like number 5. The left icon is what's important."
+ */
 /**
  * THE KIND'S ICON AND LABEL LINE (Trent, 2026-11-07, round 4 of the mockups).
  * Five APNs push kinds wear their own icon on the left — the native Notification

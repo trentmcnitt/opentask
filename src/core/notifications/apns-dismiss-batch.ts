@@ -32,6 +32,17 @@ interface Pending {
 
 const pending = new Map<number, Pending>()
 
+/**
+ * RULE BANNER-DISMISS-BATCH: APNs dismiss pushes are gathered per
+ *   user for a fixed 3-second window and sent as ONE push carrying
+ *   the union of ids. A dismiss-all drops the pending one. Every
+ *   native client reconciles its delivered banners after any dismiss
+ *   push and on going to the background.
+ * Why: iOS budgets silent pushes: a burst of about 20 delivered only the newest, and the
+ *   rest of the banners stayed.
+ * Ruling: Trent 2026-11-10, of a task marked off earlier that day: "the notification remains. Is
+ *   that not synced up?" The mechanism is the design session's call.
+ */
 /** Ask for an APNs dismiss of these tasks (and prompts); sent at the end of the user's window. */
 export function queueApnsDismiss(userId: number, taskIds: number[], promptKeys?: string[]): void {
   if (taskIds.length === 0) return

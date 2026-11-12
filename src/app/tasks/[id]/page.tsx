@@ -123,6 +123,11 @@ export default function TaskDetailPage() {
     }
   }, [requestNavigation, router])
 
+  // RULE PAGE-CANCEL: Cancel on the task page drops the staged edits and
+  //   leaves for the back arrow's destination (the dashboard for a task),
+  //   without asking. Reminder and quota pages show no Cancel.
+  // Why: Cancel on this page did nothing.
+  // Ruling: Trent 2026-11-10: Cancel on this page did nothing (recorded at this home).
   // The task editor's Cancel: the panel has already dropped its staged edits
   // (Cancel is the discard), so leave the way the back arrow does without
   // asking — the guard's dirty flag may not have heard the reset yet, so it is

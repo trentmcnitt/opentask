@@ -3,29 +3,30 @@
  * best"): the task queue's one-off pass for the day after a task is written.
  * Prod data: 40% of one-offs are done the day they're written, 10% the next
  * day, 23% in days 2–6 — so the day after is when a fresh task is most worth
- * a look, before it settles into its horizon's rhythm.
+ * a look, before it settles into its horizon's rhythm. The six rules, each
+ * with its RULE block further down (the rules map):
  *
- * RULE N1 — WHO: an open one-off (not a reminder, quota or repeat — the
+ * N1 (NEW-WHO) — WHO: an open one-off (not a reminder, quota or repeat — the
  * caller's `eligibleTasks` already), with no picked target, no deck and no
  * deadline, CREATED during the previous OpenTask day (rollover to rollover).
  * However it was made: typed, AI-added, from the desk.
  *
- * RULE N2 — ONE PLACE AT A TIME: on its New day it is in no horizon segment.
+ * N2 (NEW-ONE-PLACE) — ONE PLACE AT A TIME: on its New day it is in no horizon segment.
  *
- * RULE N3 — ONE PASS, NOT A BACKLOG: untouched by the next rollover, it drops
+ * N3 (NEW-ONE-PASS) — ONE PASS, NOT A BACKLOG: untouched by the next rollover, it drops
  * out of New into its horizon's rhythm. (Unlike the other segments' carry
  * over, on purpose.)
  *
- * RULE N4 — CONSIDER: it leaves New for its horizon, seen there — the
+ * N4 (NEW-CONSIDER) — CONSIDER: it leaves New for its horizon, seen there — the
  * shared `last_considered_at` stamp counts for the horizon too. Listed today
  * as a handled row.
  *
- * RULE N5 — NOT TODAY: it comes back in New tomorrow, ONCE, as a CARRIED
+ * N5 (NEW-NOT-TODAY) — NOT TODAY: it comes back in New tomorrow, ONCE, as a CARRIED
  * row ("Carried over", below the fresh ones): made the day before yesterday
  * and deferred yesterday. Deferred again, it goes to its horizon's rhythm
  * the day after (N3).
  *
- * RULE N6 — Done, a target, a deck or a deadline: it leaves (N1).
+ * N6 (NEW-LEAVES) — Done, a target, a deck or a deadline: it leaves (N1).
  */
 import { openTaskDayOf } from '@/lib/opentask-day'
 import { shiftDay, type SegmentState } from '@/lib/task-segments'
@@ -49,12 +50,68 @@ export interface NewTaskFields {
   segment_deferred_at?: string | null
 }
 
+/**
+ * RULE NEW-WHO: New holds an open one-off (not a reminder, quota or repeat) with no picked target,
+ *   no deck and no deadline, CREATED during the previous OpenTask day, rollover to rollover,
+ *   however it was made. A consider stamp from any day but today means it was seen: not on its
+ *   pass. Only a caller that asks (?new=1, the web) gets the page.
+ * Why: The day after it is written is when a fresh task is most worth one look, before it
+ *   settles into its horizon's rhythm.
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
+ */
+/**
+ * RULE NEW-ONE-PLACE: On its New day the task is in no horizon segment, and
+ *   New is asked before Aged out. For a caller that does not ask for New it
+ *   is in its horizon segment as before.
+ * Why: One place at a time: a row listed twice is counted twice.
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
+ */
+/**
+ * RULE NEW-ONE-PASS: Untouched by the next rollover, the task drops out of
+ *   New into its horizon's rhythm. New never carries a waiting row over,
+ *   unlike the other segments.
+ * Why: New is one pass, not a backlog.
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
+ */
 export interface NewTaskPlace {
   state: SegmentState
   /** N5: back from yesterday's Not today, under "Carried over". */
   carried: boolean
 }
 
+/**
+ * RULE NEW-CONSIDER: Considering a New row sends it on to its horizon, seen
+ *   there: the one last_considered_at stamp counts for the horizon too. It is
+ *   listed in New today as a handled row.
+ * Why: A look in New is the look its horizon would have asked for.
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
+ */
+/**
+ * RULE NEW-NOT-TODAY: Not today brings the row back in New tomorrow, ONCE, as a carried row under
+ *   'Carried over', after the fresh ones: made two OpenTask days ago and deferred yesterday.
+ *   Deferred again, it stays in New that day, shown deferred (New listed it today: the day roster
+ *   says so), and goes to its horizon's rhythm the day after.
+ * Why: One more chance, then the horizon takes over; New cannot become a second backlog.
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
+ */
+/**
+ * RULE NEW-LEAVES: Done, a target, a deck or a deadline takes the task out of
+ *   New at once: it no longer meets NEW-WHO.
+ * Why: A task that has been given a date or finished has had its look.
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
+ */
 /** Where a task stands in New today, or null when it isn't there. Pure. */
 export function newTaskPlace(
   task: NewTaskFields,
