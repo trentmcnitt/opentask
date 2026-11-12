@@ -256,6 +256,19 @@ function beforeHandled(
  * Bookkeeping, like the roster itself: no undo entry (an undone defer puts the
  * row back on the page, and a listed row always wins).
  */
+/**
+ * The tasks New has listed today (the roster's memory of the page). Read by
+ * the placement itself: a carried New row deferred a second time has lost the
+ * stamp that made it carried, and only this says it was New's row today
+ * (`newTaskPlace`'s `listedInNewToday`, 2026-11-12).
+ */
+export function rosterNewToday(userId: number, day: string): Set<number> {
+  const rows = getDb()
+    .prepare("SELECT task_id FROM segment_roster WHERE user_id = ? AND day = ? AND kind = 'new'")
+    .all(userId, day) as { task_id: number }[]
+  return new Set(rows.map((r) => r.task_id))
+}
+
 export function markRosterDeferred(userId: number, day: string, taskIds: number[]): void {
   const stmt = getDb().prepare(
     `INSERT INTO segment_roster (user_id, day, kind, task_id, left_how)

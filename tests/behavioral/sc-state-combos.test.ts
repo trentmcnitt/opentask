@@ -206,6 +206,21 @@ describe('SC-2x a New row acted on from New', () => {
   })
 })
 
+describe('SC-2x (continued): not every task made two days ago is New\u2019s', () => {
+  test('SC-24: left untouched on its New day, it is its horizon\u2019s; a Not today there keeps it there', () => {
+    // The first cut of SC-23's fix read "made two days ago and deferred
+    // today" as a carried row and pulled this one back into New (caught by
+    // tm-task-segments.spec). Only a row New listed today is New's.
+    const t = make()
+    setClock('2026-11-10T10:00')
+    expect(where(t.id)).toEqual(['new:waiting'])
+    setClock('2026-11-11T10:00')
+    expect(where(t.id)).toEqual(['days:waiting'])
+    deferTasks(TEST_USER_ID, [t.id])
+    expect(where(t.id)).toEqual(['days:deferred'])
+  })
+})
+
 describe('SC-3x New and the day boundary', () => {
   test('SC-30: Roll over now does not start a task’s New day: only the real rollover does', () => {
     const t = make()

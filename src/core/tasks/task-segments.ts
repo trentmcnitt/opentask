@@ -92,7 +92,12 @@ import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { dayBoundaryForUser, rolloverTimeForUser } from './rollover-time'
 import { dayStartMoment, latestRollover, openTaskDayOf } from '@/lib/opentask-day'
-import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-roster'
+import {
+  markRosterDeferred,
+  rosterLeftRows,
+  rosterNewToday,
+  type SegmentLeft,
+} from './segment-roster'
 import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
@@ -323,8 +328,13 @@ export function getTaskSegments(
     return placeDeadline(task)
   }
   // New before the horizons (and Aged out): one place at a time (N2).
+  // What New listed earlier today (`newListedToday`): a carried row deferred
+  // again stays New's today.
+  const inNewToday = newListedToday(userId, [newRows, handledRows], () =>
+    openTaskDayOf(now, timezone, dayStart),
+  )
   const placeNew = (task: Task): boolean => {
-    const fresh = newRows ? newTaskPlace(task, timezone, now, dayStart) : null
+    const fresh = newRows ? newTaskPlace(task, timezone, now, dayStart, inNewToday(task.id)) : null
     if (fresh) add('new', { task, state: fresh.state, carried: fresh.carried })
     return fresh !== null
   }
@@ -445,6 +455,22 @@ function sortSegmentRows(
 /** Upcoming's section order: Tomorrow, then Later. */
 function sectionRank(section: UpcomingSection | undefined): number {
   return section === 'tomorrow' ? 0 : 1
+}
+
+/**
+ * Whether New listed a task earlier today, from the day roster — asked only
+ * by a caller that draws New and keeps a roster (`wanted`); for any other,
+ * never (New's rule then reads the task's own stamps alone).
+ */
+function newListedToday(
+  userId: number,
+  /** The caller's `newRows` and `handledRows`: both, or the answer is never. */
+  wanted: readonly (boolean | undefined)[],
+  today: () => string,
+): (taskId: number) => boolean {
+  if (!wanted.every(Boolean)) return () => false
+  const ids = rosterNewToday(userId, today())
+  return (taskId) => ids.has(taskId)
 }
 
 /**
