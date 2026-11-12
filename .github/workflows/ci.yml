@@ -208,7 +208,11 @@ jobs:
       # Chrome's libraries, so little is actually downloaded).
       - name: Install Playwright OS dependencies
         run: npx playwright install-deps chromium
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
+      # A FIRST-RUN failure keeps its trace (not only the retry's), as the
+      # WebKit job does: overdue-ticks.spec failed twice on 2026-11-12, each
+      # time passing on retry, and left nothing to read. Traces are written
+      # only for failing tests, so a green run costs nothing extra.
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3 --trace=retain-on-failure
       # Flaky tests fail the run (`failOnFlakyTests` in playwright.config.ts);
       # this names them, and the rest of the tally, on the run's summary page.
       - name: E2E summary

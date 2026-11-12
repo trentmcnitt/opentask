@@ -909,6 +909,13 @@ test.describe('Reminders surface', () => {
       await expect(lastSection).not.toBeInViewport()
       await segment.click()
       await expect(lastSection).toBeInViewport()
+      // Let the smooth scroll land before scrolling away again: "in the
+      // viewport" is already true part-way through it, and a jump to the top
+      // issued mid-animation does not stick (the page came to rest 16px down
+      // in CI, twice, on 2026-11-12 with tracing on).
+      await expect(async () => {
+        expect(Math.round((await lastSection.boundingBox())!.y)).toBe(Math.round(margin))
+      }).toPass()
 
       // And the move is one-shot: the slot list remounting (a search typed
       // and cleared) must not replay it.
