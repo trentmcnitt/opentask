@@ -305,7 +305,8 @@ test.describe('Dashboard multi-select — only tasks', () => {
    * A search makes this testable without touching anyone else's rows: the
    * server matches all four items (the positive control below — without it,
    * a server that stopped returning reminders would pass this vacuously),
-   * the page renders only the two tasks, and Select All + Done must send
+   * the page renders only the two tasks as rows (the reminder and the quota
+   * are pointer rows since 2026-11-12), and Select All + Done must send
    * exactly those two.
    */
   test('a reminder or a quota never enters the selection, even with Select All', async ({
@@ -342,9 +343,14 @@ test.describe('Dashboard multi-select — only tasks', () => {
           (t) => t.id,
         )
         expect(sorted(hits)).toEqual(sorted(everything))
-        await expect(page.getByText(`2 results for “${token}”`)).toBeVisible()
+        // Search across kinds (2026-11-12): the reminder and the quota are
+        // results too, as POINTER rows under their own headings — never task
+        // rows, so never selectable.
+        await expect(page.getByText(`4 results for “${token}”`)).toBeVisible()
         await expect(row(page, reminder)).toHaveCount(0)
         await expect(row(page, quota)).toHaveCount(0)
+        await expect(page.locator(`[data-search-pointer-row="${reminder}"]`)).toBeVisible()
+        await expect(page.locator(`[data-search-pointer-row="${quota}"]`)).toBeVisible()
 
         await page.getByRole('button', { name: 'Select All', exact: true }).click()
         await expect(bar(page)).toContainText('2 selected')
