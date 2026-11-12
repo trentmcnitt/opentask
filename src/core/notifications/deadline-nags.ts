@@ -109,7 +109,9 @@ export const DEADLINES_PAGE_PATH = tasksPanelPath('deadlines')
  *   counts in the badge and has no quiet hours. A row counts when it is waiting, has not left and
  *   its Nag is not off. A decked row counts only in the safety net: legacy only since 2026-11-07,
  *   when decks stopped at D−2 (a deck made before then, or one a later deadline move left in the
- *   net). The pace is the overdue tier ×2, at least hourly in the safety net.
+ *   net). An open-window row (START-3) never counts toward the pace or starts the nag; while it
+ *   waits it is added to the count in the words (START-6). The pace is the overdue tier ×2, at
+ *   least hourly in the safety net.
  * Why: One push per user reminds them to plan, never one per task (the module comment).
  * Ruling: Nag-map rulings 2-5 (2026-10-22); coordinator ruling 2026-10-22 ('off means off'); Trent
  *   2026-10-22 (one ladder ×2).
