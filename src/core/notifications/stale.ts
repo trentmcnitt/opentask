@@ -89,7 +89,8 @@ function openTaskIds(userId: number, ids: number[]): Set<number> {
  *   is never stale. A count that only dropped leaves a period banner.
  * Why: The device asks about everything it shows, so one request clears whatever no longer
  *   stands.
- * Ruling: The design session's call, 2026-11-10; Trent's words are not recorded here.
+ * Ruling: Trent 2026-11-10, of a task marked off earlier that day: "the notification remains. Is
+ *   that not synced up?" The mechanism is the design session's call.
  */
 /** The identifiers of the banners in `banners` that no longer stand. */
 export function staleBannerIds(

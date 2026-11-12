@@ -40,7 +40,8 @@ const pending = new Map<number, Pending>()
  *   push and on going to the background.
  * Why: iOS budgets silent pushes: a burst of about 20 delivered only the newest, and the
  *   rest of the banners stayed.
- * Ruling: The design session's call, 2026-11-10; Trent's words are not recorded here.
+ * Ruling: Trent 2026-11-10, of a task marked off earlier that day: "the notification remains. Is
+ *   that not synced up?" The mechanism is the design session's call.
  */
 /** Ask for an APNs dismiss of these tasks (and prompts); sent at the end of the user's window. */
 export function queueApnsDismiss(userId: number, taskIds: number[], promptKeys?: string[]): void {

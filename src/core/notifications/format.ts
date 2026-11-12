@@ -54,7 +54,7 @@ export const OVERDUE_SUMMARY_COLLAPSE_ID = 'overdue-summary'
  *   URGENT prefix. The icon also names the banner's kind to the stale
  *   rules.
  * Why: A banner says what kind of thing it is before it is read.
- * Ruling: none recorded (shipped 2026-11-07, #456).
+ * Ruling: Trent 2026-11-07: "I like number 5. The left icon is what's important."
  */
 /**
  * THE KIND'S ICON AND LABEL LINE (Trent, 2026-11-07, round 4 of the mockups).

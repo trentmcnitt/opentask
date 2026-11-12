@@ -835,8 +835,10 @@ function isCompact(group: SortedTaskGroup): boolean {
  *   full.
  * Why: What can be acted on now stands out from what is only waiting for its time; a net
  *   row has no target to wait for and wants a decision now.
- * Ruling: Trent's rulings of 2026-11-10 (dim the not-yet rows; the deadline net stays
- *   full), relayed by the design session; his words are not recorded here.
+ * Ruling: Trent 2026-11-10: "making the items that are currently not at their target a little
+ *   transparent. Just having the blue highlight on the ones that are currently over target just
+ *   doesn't stand out quite enough"; "number 3: 60%. and on deck stays full strength." The deadline
+ *   net staying full is the design session's call the same day.
  */
 /**
  * A not-yet row (`LeanRow` dims it): in Today mode's TODAY section, its

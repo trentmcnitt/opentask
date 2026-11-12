@@ -57,21 +57,27 @@ export interface NewTaskFields {
  *   pass. Only a caller that asks (?new=1, the web) gets the page.
  * Why: The day after it is written is when a fresh task is most worth one look, before it
  *   settles into its horizon's rhythm.
- * Ruling: The design session's call, 2026-11-10; Trent: "Whatever you think is best".
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 /**
  * RULE NEW-ONE-PLACE: On its New day the task is in no horizon segment, and
  *   New is asked before Aged out. For a caller that does not ask for New it
  *   is in its horizon segment as before.
  * Why: One place at a time: a row listed twice is counted twice.
- * Ruling: The design session's call, 2026-11-10; Trent: "Whatever you think is best".
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 /**
  * RULE NEW-ONE-PASS: Untouched by the next rollover, the task drops out of
  *   New into its horizon's rhythm. New never carries a waiting row over,
  *   unlike the other segments.
  * Why: New is one pass, not a backlog.
- * Ruling: The design session's call, 2026-11-10; Trent: "Whatever you think is best".
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 export interface NewTaskPlace {
   state: SegmentState
@@ -84,7 +90,9 @@ export interface NewTaskPlace {
  *   there: the one last_considered_at stamp counts for the horizon too. It is
  *   listed in New today as a handled row.
  * Why: A look in New is the look its horizon would have asked for.
- * Ruling: The design session's call, 2026-11-10; Trent: "Whatever you think is best".
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 /**
  * RULE NEW-NOT-TODAY: Not today brings the row back in New tomorrow, ONCE,
@@ -92,13 +100,17 @@ export interface NewTaskPlace {
  *   OpenTask days ago and deferred yesterday. Deferred again, it goes to its
  *   horizon's rhythm the day after.
  * Why: One more chance, then the horizon takes over; New cannot become a second backlog.
- * Ruling: The design session's call, 2026-11-10; Trent: "Whatever you think is best".
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 /**
  * RULE NEW-LEAVES: Done, a target, a deck or a deadline takes the task out of
  *   New at once: it no longer meets NEW-WHO.
  * Why: A task that has been given a date or finished has had its look.
- * Ruling: The design session's call, 2026-11-10; Trent: "Whatever you think is best".
+ * Ruling: Trent 2026-11-10: "we might want to add a segment to the task queue for recently created
+ *   items, just to give them a one-off pass"; "I think the new page or the new segment makes
+ *   sense". The mechanics were delegated to the design session ("Whatever you think is best").
  */
 /** Where a task stands in New today, or null when it isn't there. Pure. */
 export function newTaskPlace(

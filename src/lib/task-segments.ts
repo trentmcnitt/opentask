@@ -3059,7 +3059,9 @@ export function deckSkip(task: {
  *   to and including D for every deadline task.)
  * Why: A deck must never sit on a task whose deadline has passed, or would pass while decked; the
  *   safety net still holds a deck on D.
- * Ruling: Deadlines-page plan §5, approved 2026-10-22 (replaces the 10-20 'A1 strict').
+ * Ruling: Deadlines-page plan §5, approved 2026-10-22 (replaces the 10-20 'A1 strict'). D−2: the
+ *   design session's call under Trent's 2026-11-07 ruling: "Why did it even let me put it on deck
+ *   for tomorrow if it must be targeted?"
  */
 /**
  * A1, THE DEADLINES PAGE'S RULE (2026-10-22, plan §5 — replaces the 10-20
