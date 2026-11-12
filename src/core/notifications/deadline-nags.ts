@@ -72,15 +72,31 @@ import { log } from '@/lib/logger'
 import { APP_URL, deadlinePushLabel } from '@/core/notifications/format'
 import { nagIntervalMinutes, userNagTiers, type NagTiers } from './nag-ladder'
 import { claimNagSend, nagPace, nagSendDue } from './nag-sends'
-import { runTick, type Channels, type Delivery, type SourcePlan, type TickSource } from './tick'
+import {
+  runTick,
+  type Channels,
+  type Delivery,
+  type SourcePlan,
+  type TickSend,
+  type TickSource,
+} from './tick'
 import { notifiableUsers } from './notifiable-users'
 import { mergeSettled, type DeliveryResult } from './delivery-result'
 import { isWebPushConfigured, sendPushNotification } from './web-push'
 import { DEADLINES_NAG_COLLAPSE_ID, isApnsConfigured, sendApnsDeadlinesNag } from './apns'
-import { getTaskSegments, type SegmentTask } from '@/core/tasks/task-segments'
+import { getCheckInDay, getTaskSegments, type SegmentTask } from '@/core/tasks/task-segments'
+import { getAnchorTimes } from '@/core/users/anchor-times'
+import { addDays, dayStartMoment, localMoment } from '@/lib/opentask-day'
 import { taskQueueEnabled } from '@/core/tasks/task-queue'
 import { rolloverTimeForUser } from '@/core/tasks/rollover-time'
-import { deadlineDay, openTaskToday, shiftDay } from '@/lib/task-segments'
+import {
+  comingDueDay,
+  deadlineDay,
+  latestRound,
+  openTaskToday,
+  shiftDay,
+  type HorizonValue,
+} from '@/lib/task-segments'
 import { tasksPanelPath } from '@/lib/tasks-panel-link'
 
 /** The `nag_sends` key of this nag. */
@@ -94,7 +110,9 @@ export const DEADLINES_PAGE_PATH = tasksPanelPath('deadlines')
  *   counts in the badge and has no quiet hours. A row counts when it is waiting, has not left and
  *   its Nag is not off. A decked row counts only in the safety net: legacy only since 2026-11-07,
  *   when decks stopped at D−2 (a deck made before then, or one a later deadline move left in the
- *   net). The pace is the overdue tier ×2, at least hourly in the safety net.
+ *   net). An open-window row (START-3) never counts toward the pace or starts the nag; while it
+ *   waits it is added to the count in the words (START-6). The pace is the overdue tier ×2, at
+ *   least hourly in the safety net.
  * Why: One push per user reminds them to plan, never one per task (the module comment).
  * Ruling: Nag-map rulings 2-5 (2026-10-22); coordinator ruling 2026-10-22 ('off means off'); Trent
  *   2026-10-22 (one ladder ×2).
@@ -105,8 +123,26 @@ export function countedDeadlineRows(rows: SegmentTask[]): SegmentTask[] {
     (r) =>
       r.state === 'waiting' &&
       !r.left &&
+      // START-6: an open-window row never starts or paces the nag.
+      r.window !== 'open' &&
       r.task.auto_snooze_minutes !== 0 &&
       (!r.task.on_deck_day || r.safetyNet === true),
+  )
+}
+
+/**
+ * The OPEN-WINDOW rows waiting on the page with their Nag on (START-6): they
+ * add to the nag's count and keep its banner standing, and never set its
+ * pace. Pure.
+ */
+export function openDeadlineRows(rows: SegmentTask[]): SegmentTask[] {
+  return rows.filter(
+    (r) =>
+      r.state === 'waiting' &&
+      !r.left &&
+      r.window === 'open' &&
+      r.task.auto_snooze_minutes !== 0 &&
+      !r.task.on_deck_day,
   )
 }
 
@@ -176,6 +212,8 @@ export function deadlineNagContent(
   timezone: string,
   now: Date,
   rolloverTime: string | null,
+  /** Open-window rows waiting too (START-6): counted, never named as "nearest". */
+  open = 0,
 ): DeadlineNagContent {
   const today = openTaskToday(timezone, now, rolloverTime)
   const days = rows.map((r) => deadlineDay(r.task.deadline_at!, timezone, rolloverTime))
@@ -185,7 +223,7 @@ export function deadlineNagContent(
   if (net.length > 0) {
     const word = net.reduce((a, b) => (NET_RANK[b] < NET_RANK[a] ? b : a))
     const n = net.filter((w) => w === word).length
-    const more = rows.length - n
+    const more = rows.length - n + open
     const head = `${n === 1 ? 'Deadline' : 'Deadlines'} ${word}: ${n} unplanned`
     return {
       title: 'Deadlines',
@@ -194,7 +232,8 @@ export function deadlineNagContent(
     }
   }
   const nearest = days.reduce((a, b) => (b < a ? b : a))
-  const count = rows.length === 1 ? '1 deadline' : `${rows.length} deadlines`
+  const total = rows.length + open
+  const count = total === 1 ? '1 deadline' : `${total} deadlines`
   const nearestName = dayName(nearest, today, timezone)
   return {
     title: 'Deadlines',
@@ -223,8 +262,9 @@ function hasDeadlineCandidate(userId: number): boolean {
 /**
  * How many rows keep the deadlines nag going right now (`countedDeadlineRows`
  * of the page as the nag builds it) — 0 with the task queue off, or with no
- * target-less deadline task. The banner reconcile (stale.ts) asks it: with
- * none, a delivered deadlines banner is stale.
+ * target-less deadline task — plus the open-window rows waiting (the round
+ * push's banner stands while its row waits). The banner reconcile (stale.ts)
+ * asks it: with none, a delivered deadlines banner is stale.
  */
 export function deadlineRowsWaiting(userId: number, timezone: string, now: Date): number {
   if (!taskQueueEnabled() || !hasDeadlineCandidate(userId)) return 0
@@ -232,7 +272,7 @@ export function deadlineRowsWaiting(userId: number, timezone: string, now: Date)
     getTaskSegments(userId, timezone, now, { queuePanels: true, deadlineRows: true }).find(
       (s) => s.horizon === 'deadlines',
     )?.tasks ?? []
-  return countedDeadlineRows(page).length
+  return countedDeadlineRows(page).length + openDeadlineRows(page).length
 }
 
 /** The shortest interval any page row could set for these tiers (the safety net's rungs). */
@@ -301,7 +341,13 @@ export function pendingDeadlineNags(now: Date = new Date()): PendingDeadlineNag[
     const rows = countedDeadlineRows(page)
     const interval = due(deadlineNagRungs(rows, tiers))
     if (interval === null) continue
-    const content = deadlineNagContent(rows, user.timezone, now, rolloverTimeForUser(user.id))
+    const content = deadlineNagContent(
+      rows,
+      user.timezone,
+      now,
+      rolloverTimeForUser(user.id),
+      openDeadlineRows(page).length,
+    )
     pending.push({
       userId: user.id,
       intervalMinutes: interval,
@@ -312,6 +358,180 @@ export function pendingDeadlineNags(now: Date = new Date()): PendingDeadlineNag[
     })
   }
   return pending
+}
+
+/**
+ * RULE START-6: An open-window row is announced once on each day it comes round (its start day
+ *   included): one silent push at the user's Default task time, or at the next tick if it comes
+ *   round later that day. No repeats, none on a carry-over day, none for a row considered first or
+ *   with its Nag off. It never starts or paces the deadlines nag; while Coming due rows wait the
+ *   push is the nag's own words with the open rows added to the count, else "<title> · due <day> ·
+ *   N weeks left" for one row and "N open deadlines this week · nearest <day>" for several. The
+ *   banner stands while any page row it speaks for waits.
+ * Why: He wants one reminder per round from the day he said, not a nag.
+ * Ruling: Trent 2026-11-12: "I want to be reminded of it, maybe weekly… I don't want to start being
+ *   nagged weekly about it until January 1" (the design session's change to the draft's START-6).
+ */
+export interface PendingRoundPush {
+  userId: number
+  timezone: string
+  /** The OpenTask day the rounds came on: the stamp the claim writes. */
+  day: string
+  /** The rows announced. */
+  taskIds: number[]
+  /** Counted Coming-due rows wait too: the push is the nag's words. */
+  safetyNet: boolean
+  count: number
+  content: DeadlineNagContent
+}
+
+/** "11 weeks left" from two weeks out, else "9 days left" / "1 day left". */
+function timeLeft(days: number): string {
+  if (days >= 14) return `${Math.floor(days / 7)} weeks left`
+  return days === 1 ? '1 day left' : `${days} days left`
+}
+
+/** The round push's words with no Coming-due row waiting (pure). */
+export function roundPushContent(
+  rows: SegmentTask[],
+  timezone: string,
+  now: Date,
+  rolloverTime: string | null,
+): DeadlineNagContent {
+  const today = openTaskToday(timezone, now, rolloverTime)
+  const days = rows.map((r) => deadlineDay(r.task.deadline_at!, timezone, rolloverTime))
+  const nearest = days.reduce((a, b) => (b < a ? b : a))
+  const name = dayName(nearest, today, timezone)
+  if (rows.length === 1) {
+    const left = timeLeft(openTaskDaysBetweenDays(today, nearest, timezone))
+    return {
+      title: 'Deadline',
+      body: `${rows[0].task.title} · due ${name} · ${left}`,
+      subtitle: deadlinePushLabel(name),
+    }
+  }
+  return {
+    title: 'Deadlines',
+    body: `${rows.length} open deadlines this week · nearest ${name}`,
+    subtitle: deadlinePushLabel(name),
+  }
+}
+
+/** Whole days from one OpenTask day to a later one. */
+function openTaskDaysBetweenDays(from: string, to: string, timezone: string): number {
+  const at = (day: string) => DateTime.fromISO(day, { zone: timezone })
+  return Math.round(at(to).diff(at(from), 'days').days)
+}
+
+/** The moment the user's Default task time falls in this OpenTask day. */
+function morningMoment(userId: number, day: string, timezone: string, dayStart: string): number {
+  const time = getAnchorTimes(userId).morning.time
+  const start = dayStartMoment(day, timezone, dayStart).getTime()
+  // A Default task time earlier than the day start falls on the next date.
+  const onDate = localMoment(day, time, timezone).getTime()
+  return onDate >= start ? onDate : localMoment(addDays(day, 1), time, timezone).getTime()
+}
+
+interface RoundCandidate {
+  id: number
+  start_date: string
+  lead_from: string | null
+  deadline_at: string
+  horizon: HorizonValue | null
+}
+
+/**
+ * The tasks whose round could be announced today: a start date, on the page's
+ * terms, Nag on, not yet stamped today — and today one of their round days
+ * (pure maths, so the page is built only on a day something comes round).
+ */
+function roundCandidates(
+  userId: number,
+  day: string,
+  timezone: string,
+  rolloverTime: string,
+): number[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, start_date, lead_from, deadline_at, horizon FROM tasks
+       WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL
+         AND start_date IS NOT NULL AND deadline_at IS NOT NULL AND due_at IS NULL
+         AND rrule IS NULL AND auto_snooze_minutes IS NOT 0
+         AND (round_announced_day IS NULL OR round_announced_day < ?)`,
+    )
+    .all(userId, day) as RoundCandidate[]
+  if (rows.length === 0) return []
+  const checkInDay = getCheckInDay(userId)
+  return rows
+    .filter((r) => {
+      const start = r.lead_from ?? r.start_date
+      // Still in its open window today (before the day it becomes daily)…
+      if (day >= comingDueDay(r.deadline_at, r.start_date, timezone, rolloverTime)) return false
+      // …and today is one of its rounds.
+      return start <= day && latestRound(start, r.horizon, checkInDay, day, timezone) === day
+    })
+    .map((r) => r.id)
+}
+
+/**
+ * Every round push due this minute, at most one per user. A candidate the
+ * page shows nothing to announce for (considered before the Default task
+ * time, decked for today) is stamped here as settled for the day, so the page
+ * is built once per round day, not every minute after.
+ */
+export function pendingRoundPushes(now: Date = new Date()): PendingRoundPush[] {
+  if (!taskQueueEnabled()) return []
+  const pending: PendingRoundPush[] = []
+  for (const user of notifiableUsers()) {
+    const rolloverTime = rolloverTimeForUser(user.id)
+    const day = openTaskToday(user.timezone, now, rolloverTime)
+    const candidates = new Set(roundCandidates(user.id, day, user.timezone, rolloverTime))
+    if (candidates.size === 0) continue
+    if (now.getTime() < morningMoment(user.id, day, user.timezone, rolloverTime)) continue
+    const page =
+      getTaskSegments(user.id, user.timezone, now, {
+        queuePanels: true,
+        deadlineRows: true,
+      }).find((s) => s.horizon === 'deadlines')?.tasks ?? []
+    const open = openDeadlineRows(page)
+    const rows = open.filter((r) => r.round === day && candidates.has(r.task.id))
+    const announced = new Set(rows.map((r) => r.task.id))
+    claimRoundPush(
+      [...candidates].filter((id) => !announced.has(id)),
+      day,
+    )
+    if (rows.length === 0) continue
+    const due = countedDeadlineRows(page)
+    pending.push({
+      userId: user.id,
+      timezone: user.timezone,
+      day,
+      taskIds: rows.map((r) => r.task.id),
+      safetyNet: due.some((r) => r.safetyNet === true),
+      count: due.length > 0 ? due.length + open.length : rows.length,
+      content:
+        due.length > 0
+          ? deadlineNagContent(due, user.timezone, now, rolloverTime, open.length)
+          : roundPushContent(rows, user.timezone, now, rolloverTime),
+    })
+  }
+  return pending
+}
+
+/**
+ * Stamp the rounds announced (compare-and-swap): true when this call stamped
+ * any, so a double tick sends once.
+ */
+export function claimRoundPush(taskIds: number[], day: string): boolean {
+  if (taskIds.length === 0) return false
+  const marks = taskIds.map(() => '?').join(', ')
+  const result = getDb()
+    .prepare(
+      `UPDATE tasks SET round_announced_day = ?
+       WHERE id IN (${marks}) AND (round_announced_day IS NULL OR round_announced_day < ?)`,
+    )
+    .run(day, ...taskIds, day)
+  return result.changes > 0
 }
 
 /**
@@ -361,8 +581,34 @@ async function sendDeadlinesNag(
  */
 export function planDeadlineNagSends(now: Date, channels: Channels): SourcePlan {
   if (!channels.webPush && !channels.apns) return { sends: [] }
-  return {
-    sends: pendingDeadlineNags(now).map((nag) => ({
+  const nags = pendingDeadlineNags(now)
+  const rounds = pendingRoundPushes(now)
+  const roundOf = new Map(rounds.map((r) => [r.userId, r]))
+  const nagging = new Set(nags.map((n) => n.userId))
+  // The round push (START-6): on its own only when the nag is not going out
+  // for this user this minute — then the nag carries it (its count already
+  // includes the open rows) and its claim stamps the rounds.
+  const roundSends: TickSend[] = rounds
+    .filter((r) => !nagging.has(r.userId))
+    .map((round) => ({
+      userId: round.userId,
+      kind: round.safetyNet ? 'deadlines_safety_net' : 'deadlines',
+      items: round.count,
+      silent: true,
+      claim: () => {
+        const won = claimRoundPush(round.taskIds, round.day)
+        if (won) {
+          log.info(
+            'notifications',
+            `Deadline round push for user ${round.userId}: ${round.taskIds.length} row(s)`,
+          )
+        }
+        return won
+      },
+      deliver: (delivery) => sendDeadlinesNag(round.userId, round.content, channels, delivery),
+    }))
+  const nagSends: SourcePlan = {
+    sends: nags.map((nag) => ({
       userId: nag.userId,
       kind: nag.safetyNet ? 'deadlines_safety_net' : 'deadlines',
       items: nag.count,
@@ -382,12 +628,15 @@ export function planDeadlineNagSends(now: Date, channels: Channels): SourcePlan 
             'notifications',
             `Deadlines nag for user ${nag.userId}: ${nag.count} row(s), every ${nag.intervalMinutes} min`,
           )
+          const round = roundOf.get(nag.userId)
+          if (round) claimRoundPush(round.taskIds, round.day)
         }
         return won
       },
       deliver: (delivery) => sendDeadlinesNag(nag.userId, nag.content, channels, delivery),
     })),
   }
+  return { sends: [...nagSends.sends, ...roundSends] }
 }
 
 /** The deadlines nag as one of the minute tick's sources. */

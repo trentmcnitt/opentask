@@ -12,6 +12,8 @@ import { getDb } from '@/core/db'
 import type { QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import { normalizeDayState } from '@/lib/quota-prompts'
 import {
+  coerceCheckInDay,
+  deadlineWindowOf,
   effectiveAttempts,
   hasRepeatEnd,
   isLastOccurrence,
@@ -75,6 +77,7 @@ const TASK_COLUMNS = [
   'queued_from_deck_day',
   'lead_days',
   'lead_from',
+  'start_date',
   'heads_up',
   'last_notified_at',
   'last_critical_alert_at',
@@ -118,11 +121,15 @@ export function taskColumns(alias?: string): string {
   // 2026-10-24). Read only with the switch on, when attempts count OpenTask
   // days (`effectiveAttempts`).
   const ownerRollover = `COALESCE((SELECT s.start_time FROM users u JOIN time_slots s ON s.id = u.day_start_slot_id AND s.user_id = u.id WHERE u.id = ${table}.user_id),(SELECT day_start_time FROM users WHERE users.id = ${table}.user_id),'${DEFAULT_DAY_START}') AS owner_rollover_time`
+  // And the owner's CHECK-IN DAY (2026-11-12): a deadline task's open-window
+  // rounds fall on it (`deadlineWindowOf`, START-4).
+  const ownerCheckIn = `(SELECT check_in_day FROM users WHERE users.id = ${table}.user_id) AS owner_check_in_day`
   return [
     ...TASK_COLUMNS.map((c) => (alias ? `${alias}.${c}` : c)),
     ownerTz,
     ownerWeekStart,
     ownerRollover,
+    ownerCheckIn,
   ].join(', ')
 }
 
@@ -340,9 +347,12 @@ export interface TaskRow {
   queued_from_deck_day?: string | null
   lead_days?: number | null
   lead_from?: string | null
+  start_date?: string | null
   heads_up?: number
   /** Not a column: the owner's rollover time (`taskColumns`), for the attempts read. */
   owner_rollover_time?: string | null
+  /** Not a column: the owner's check-in day (`taskColumns`), for the open window's rounds. */
+  owner_check_in_day?: number | null
   /** Not a column: the owner's timezone (`taskColumns`), for the attempts read. */
   owner_timezone?: string | null
   /** Not a column: the owner's `week_start` (`taskColumns`), for a quota's served period. */
@@ -415,6 +425,19 @@ export function rowToTask(row: TaskRow): Task {
       row.owner_timezone,
       rolloverTime ?? CALENDAR_DAY_START,
     )
+    // Start date (2026-11-12, START-9): a target-less deadline one-off's
+    // stage today, with the task queue on (the deadlines page exists).
+    if (rolloverTime && task.deadline_at && !task.due_at && !task.rrule) {
+      const stage = deadlineWindowOf(
+        task,
+        row.owner_timezone,
+        new Date(),
+        rolloverTime,
+        coerceCheckInDay(row.owner_check_in_day),
+      )
+      task.deadline_window = stage?.window ?? null
+      task.next_round = stage?.nextRound ?? null
+    }
     // Repeat ends (2026-10-22): judged in the owner's zone, only on a row
     // with an end. A count is arithmetic; a date end asks the engine once
     // (`isLastOccurrence`).
@@ -460,6 +483,7 @@ function queueFields(
   | 'queued_from_deck_day'
   | 'lead_days'
   | 'lead_from'
+  | 'start_date'
   | 'heads_up'
 > {
   return {
@@ -472,6 +496,7 @@ function queueFields(
     queued_from_deck_day: row.queued_from_deck_day ?? null,
     lead_days: row.lead_days ?? null,
     lead_from: row.lead_from ?? null,
+    start_date: row.start_date ?? null,
     // On unless stored off (a row from before the column reads as on).
     heads_up: row.heads_up !== 0,
   }

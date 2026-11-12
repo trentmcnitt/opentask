@@ -51,6 +51,7 @@
         "queued_from_deck_day": null,
         "lead_days": null,
         "lead_from": null,
+        "start_date": null,
         "heads_up": true,
         "last_notified_at": null,
         "last_critical_alert_at": null,

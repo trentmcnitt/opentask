@@ -142,6 +142,16 @@ export interface Task {
    * owner's zone; the API response always carries it (`formatTaskResponse`).
    */
   repeat_last?: boolean
+  /**
+   * Derived on read (2026-11-12, `deadlineWindowOf`; START-9), with the task
+   * queue on: a target-less deadline one-off's stage today — `before_start`
+   * (quiet until its start), `open` (its open window: on the deadlines page
+   * on its rounds, `next_round` the next one), `coming_due` (daily) or
+   * `safety_net`. Null on any other task; the API response always carries
+   * both (`formatTaskResponse`).
+   */
+  deadline_window?: 'before_start' | 'open' | 'coming_due' | 'safety_net' | null
+  next_round?: string | null
   /** Derived on read: `repeat_count − repeat_count_used` (the current one included), else null. */
   repeat_remaining?: number | null
 
@@ -262,6 +272,16 @@ export interface Task {
    */
   lead_days: number | null
   lead_from: string | null
+  /**
+   * START DATE (2026-11-12, docs/TASK-MODEL.md § Start date): the OpenTask
+   * day (yyyy-MM-dd) the user picked for a target-less deadline one-off to
+   * start showing on the deadlines page, in place of `lead_days` (one choice:
+   * setting either clears the other). It opens the task's OPEN WINDOW, where
+   * it comes round on its horizon's cadence until the day it becomes daily
+   * (`comingDueDay`). Null: no date picked. Never on a repeat, a reminder or
+   * a quota; kept, inert, while the task has a target.
+   */
+  start_date: string | null
   /**
    * HEADS UP (2026-11-02, docs/TASK-MODEL.md § Upcoming): false = the task
    * never shows in Upcoming (Tomorrow or Later). Membership only — the

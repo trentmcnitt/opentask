@@ -71,6 +71,7 @@ import {
   usePadPresets,
   useTaskQueue,
   useDayStart,
+  useCheckInDay,
 } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import { formatTaskSince, formatTimeInTimezone } from '@/lib/format-date'
@@ -148,6 +149,8 @@ export interface QuickActionPanelChanges {
    * before the deadline; null = the default table. Single-task only.
    */
   lead_days?: number | null
+  /** The Starts row's date (2026-11-12): a yyyy-MM-dd OpenTask day, or null = none. Single-task only. */
+  start_date?: string | null
   /** Heads up (2026-11-02): false = never in Upcoming. Single-task here; bulk via ⋯ More. */
   heads_up?: boolean
   horizon?: HorizonValue | null
@@ -249,6 +252,7 @@ type DirtyField =
   | 'notes'
   | 'deadline'
   | 'leadDays'
+  | 'startDate'
   | 'headsUp'
   | 'horizon'
   | 'deck'
@@ -437,6 +441,8 @@ export function QuickActionPanel({
   const [pendingDeadline, setPendingDeadline] = useState<string | null | undefined>(undefined)
   // The deadlines page's lead override (the Lead row): undefined = no change, null = default.
   const [pendingLeadDays, setPendingLeadDays] = useState<number | null | undefined>(undefined)
+  // The Starts row's date (2026-11-12): undefined = unchanged, null = cleared.
+  const [pendingStartDate, setPendingStartDate] = useState<string | null | undefined>(undefined)
   // Heads up (2026-11-02, the "Heads up" switch): undefined = no change.
   const [pendingHeadsUp, setPendingHeadsUp] = useState<boolean | undefined>(undefined)
   const [pendingHorizon, setPendingHorizon] = useState<HorizonValue | null | undefined>(undefined)
@@ -457,6 +463,7 @@ export function QuickActionPanel({
   // is a picked target, which takes the task out of the queue.
   const { enabled: queueEnabled, attemptsRolloverTime: rolloverTime } = useTaskQueue()
   const dayStart = useDayStart()
+  const { checkInDay } = useCheckInDay()
   const queuedOccurrence =
     effectiveTask && !isCreateMode && queueEnabled ? queuedRepeatOccurrence(effectiveTask) : null
   const dueAt = effectiveTask ? pickerBaseDueAt(effectiveTask, queueEnabled) : null
@@ -605,6 +612,7 @@ export function QuickActionPanel({
     notes: pendingNotes !== undefined,
     deadline: pendingDeadline !== undefined,
     leadDays: pendingLeadDays !== undefined,
+    startDate: pendingStartDate !== undefined,
     headsUp: pendingHeadsUp !== undefined,
     horizon: pendingHorizon !== undefined,
     deck: pendingDeck !== undefined,
@@ -976,7 +984,13 @@ export function QuickActionPanel({
     if (pendingIsReminder !== null) changes.is_reminder = pendingIsReminder
     if (pendingNotes !== undefined) changes.notes = pendingNotes
     if (pendingDeadline !== undefined) changes.deadline_at = pendingDeadline
-    if (pendingLeadDays !== undefined) changes.lead_days = pendingLeadDays
+    // The Starts row: a date and a Days override are one choice — never both
+    // non-null in one request (a 400); a picked date clears the override on
+    // the server.
+    if (pendingLeadDays !== undefined && typeof pendingStartDate !== 'string') {
+      changes.lead_days = pendingLeadDays
+    }
+    if (pendingStartDate !== undefined) changes.start_date = pendingStartDate
     if (pendingHeadsUp !== undefined) changes.heads_up = pendingHeadsUp
     if (pendingHorizon !== undefined) changes.horizon = pendingHorizon
     // On deck (D2): unless a target staged after it overrides it — the pick
@@ -994,6 +1008,7 @@ export function QuickActionPanel({
   }, [
     pendingDeadline,
     pendingLeadDays,
+    pendingStartDate,
     pendingHeadsUp,
     pendingHorizon,
     pendingDeck,
@@ -1038,6 +1053,7 @@ export function QuickActionPanel({
     setNotesExpanded(false)
     setPendingDeadline(undefined)
     setPendingLeadDays(undefined)
+    setPendingStartDate(undefined)
     setPendingHeadsUp(undefined)
     setPendingHorizon(undefined)
     setPendingDeck(undefined)
@@ -1301,6 +1317,12 @@ export function QuickActionPanel({
       pendingDeadline !== undefined && pendingDeadline !== (effectiveTask?.deadline_at ?? null),
     pendingDeadline,
     pendingLeadDays,
+    start: {
+      pending: pendingStartDate,
+      horizon: pendingHorizon !== undefined ? pendingHorizon : (effectiveTask?.horizon ?? null),
+      checkInDay,
+      onStartDate: setPendingStartDate,
+    },
     headsUp: pendingHeadsUp ?? effectiveTask?.heads_up ?? true,
     timezone,
     rolloverTime,
@@ -1313,6 +1335,13 @@ export function QuickActionPanel({
   // never sent for a row the panel no longer shows (adjusted during render,
   // as the deck's is).
   if (!leadRow && pendingLeadDays !== undefined) setPendingLeadDays(undefined)
+  // The same for the Starts row's date — and a staged date the row no longer
+  // shows (a deadline staged after it puts it inside the safety net) is
+  // never sent: the server would refuse it.
+  if (!leadRow?.starts && pendingStartDate !== undefined) setPendingStartDate(undefined)
+  else if (typeof pendingStartDate === 'string' && leadRow?.starts && !leadRow.starts.date) {
+    setPendingStartDate(effectiveTask?.start_date ? null : undefined)
+  }
   // Create mode with a staged deadline-anchored repeat: the offsets set the
   // target (`draftToCreateFields` sends no `due_at`) — said in words, no pad.
   const targetText =

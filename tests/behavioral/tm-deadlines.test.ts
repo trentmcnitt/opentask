@@ -226,6 +226,7 @@ describe('DL-L: the lead day (pure)', () => {
       state: 'waiting',
       safetyNet: false,
       seen: false,
+      window: 'due',
     })
     // Seen on the OpenTask day: considered until the next rollover (A7).
     const seen = { last_considered_at: at('2026-10-27T23:50') }
@@ -238,6 +239,7 @@ describe('DL-L: the lead day (pure)', () => {
       state: 'waiting',
       safetyNet: true,
       seen: true,
+      window: 'due',
     })
     // Past the deadline (A8): still the safety net.
     expect(on('2026-11-02T10:00')).toMatchObject({ kind: 'page', safetyNet: true })
@@ -557,6 +559,7 @@ describe('DL-S: the page', () => {
       state: 'waiting',
       safetyNet: true,
       seen: true,
+      window: 'due',
     })
   })
 

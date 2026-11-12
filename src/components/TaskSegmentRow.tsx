@@ -47,6 +47,7 @@ import {
   UPCOMING_LABEL,
 } from '@/lib/task-model-words'
 import {
+  openTaskToday,
   SEGMENT_NUDGE_THRESHOLD,
   isQueueKind,
   onlyWithQueue,
@@ -74,6 +75,7 @@ import {
   type AgedOutGroup,
 } from '@/lib/aged-out'
 import { CARRIED_OVER_TITLE, NEW_PAGE_TITLE } from '@/lib/new-tasks'
+import { COMING_DUE_TITLE, OPEN_WINDOW_TITLE, openWindowRowWords } from '@/lib/start-date-words'
 import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
 import { prominenceClasses } from '@/components/reminders/ReminderRow'
@@ -1547,6 +1549,7 @@ function SegmentMetaLine({
       {/* The deadline chip right AFTER the project (Trent's 10-20 rule: every
           row's project starts at the same x), 2026-10-22. */}
       {task.deadline_at && <DeadlineChip deadlineAt={task.deadline_at} timezone={timezone} />}
+      <OpenWindowWords task={task} timezone={timezone} kind={segmentHorizon} />
       {/* The horizon dot AFTER the project (Trent, 2026-10-20), not before
           it: only one-offs wear it, so in front it pushed their project names
           right of the repeating rows'. Now every row's project starts at the
@@ -1791,6 +1794,74 @@ export function CarriedOverLine({
       hiddenWhenNarrow={hiddenWhenNarrow}
     />
   )
+}
+
+/**
+ * THE DUE PAGE'S TWO GROUPS (2026-11-12, Trent's D2): "Coming due" (daily
+ * rows and the safety net) then "Open window" (rows between their start date
+ * and the day they become daily, here on their rounds). The server sends
+ * them in that order. The headings show ONLY when both groups have rows —
+ * a page of one kind needs no heading (no empty chrome).
+ * (restates RULE START-3, home: src/lib/task-segments.ts)
+ */
+export function deadlineGroupBefore(
+  horizon: SegmentKind,
+  rows: readonly SegmentRow[],
+  index: number,
+): { open: boolean; count: number } | null {
+  if (horizon !== 'deadlines') return null
+  const open = !!rows[index].openWindow
+  if (index > 0 && !!rows[index - 1].openWindow === open) return null
+  const count = rows.filter((r) => !!r.openWindow === open).length
+  return count === rows.length ? null : { open, count }
+}
+
+export function DeadlineGroupHeading({
+  open,
+  count,
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  open: boolean
+  count: number
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <SectionPill
+      data={{ 'data-deadline-group': open ? 'open' : 'due' }}
+      label={open ? OPEN_WINDOW_TITLE : COMING_DUE_TITLE}
+      count={count}
+      panel={panel}
+      hiddenWhenNarrow={hiddenWhenNarrow}
+    />
+  )
+}
+
+/**
+ * An open-window row's words after its deadline chip: "· weekly · next Sat ·
+ * 11 weeks left" — its cadence (the set horizon's), when it next comes
+ * round, and how long is left. Plain grey text: nothing to press.
+ */
+function OpenWindowWords({
+  task,
+  timezone,
+  kind,
+}: {
+  task: Task
+  timezone: string
+  kind: SegmentKind
+}) {
+  const { attemptsRolloverTime } = useTaskQueue()
+  if (kind !== 'deadlines' || task.deadline_window !== 'open' || !task.deadline_at) return null
+  const words = openWindowRowWords(
+    { horizon: task.horizon, nextRound: task.next_round },
+    task.deadline_at,
+    openTaskToday(timezone, new Date(), attemptsRolloverTime),
+    timezone,
+    attemptsRolloverTime,
+  )
+  return <span data-open-window-words>· {words.join(' · ')}</span>
 }
 
 /** The kind a row acts as: a merged Pulled view's earlier row is a Previous pull. */

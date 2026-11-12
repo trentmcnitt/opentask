@@ -2959,6 +2959,18 @@ paths:
                                         description: >
                                           `deadlines` rows only: considered this OpenTask day
                                           (outside the safety net that is the `considered` state).
+                                      window:
+                                        type: string
+                                        enum: [open, due]
+                                        description: >
+                                          `deadlines` rows only (2026-11-12): `open` — the row
+                                          is in its open window (a task with a `start_date`,
+                                          before the day it becomes daily), listed on its rounds
+                                          only, drawn under "Open window"; `due` — every other
+                                          page row ("Coming due", the safety net included). Open
+                                          rows come after the due rows. Headings are drawn only
+                                          when both groups have rows. An open row's next round is
+                                          the task's own `next_round`.
                                       upcoming_section:
                                         type: string
                                         enum: [tomorrow, later]
@@ -6428,7 +6440,46 @@ components:
             The deadlines page (2026-10-22): the OpenTask day (yyyy-MM-dd) this instance goes on
             the deadlines page — derived on every deadline write and advance, moved by
             `POST /api/task-segments/defer-lead`. Set on an ordinary task with a deadline and no
-            relative target (dormant while it has a target); else null. Server-set.
+            relative target (dormant while it has a target); else null. Server-set. With a
+            `start_date` it is that day.
+        start_date:
+          type: [string, 'null']
+          format: date
+          description: >
+            START DATE (2026-11-12): the OpenTask day (yyyy-MM-dd) the user picked for a
+            deadline one-off with no target to start showing on the deadlines page — in place of
+            `lead_days` (one choice: setting either clears the other; both non-null in one
+            request is a 400). Any day up to two days before the deadline's day, however far
+            ahead (no 90-day cap); a day inside the safety net (the deadline's day or the day
+            before) is a 400, a past day starts today. Only on a one-off with a deadline (400 on
+            a repeat, a reminder, a quota or a task with no deadline). From it until the day the
+            task becomes daily (the deadline's day minus the default lead for the wait from the
+            start) the task is in its OPEN WINDOW: on the deadlines page only on its ROUNDS — the
+            start day, then its set horizon's days (Days daily, Weeks or unset the check-in day,
+            Months the month's first check-in day, Eventually the quarter's), the first of them
+            at least a full step after the start — waiting until considered, then quiet until
+            the next round, with one silent push per round. Kept when the deadline moves unless
+            it would then fall inside the safety net (cleared in the same write); cleared when
+            the deadline is removed or the task is made to repeat, a reminder or a quota; kept,
+            inert, while the task has a target. `POST /api/task-segments/defer-lead` moves it
+            while the task is in or before its open window. With the task queue off it is stored
+            and has no effect. Writable on create, PATCH and bulk edit.
+        deadline_window:
+          type: [string, 'null']
+          enum: [before_start, open, coming_due, safety_net, null]
+          description: >
+            Derived, read-only (2026-11-12), with the task queue on: where a deadline one-off
+            with no target stands today — `before_start` (nowhere on the queue until its start
+            or lead day), `open` (its open window: on the deadlines page on its rounds, see
+            `start_date`), `coming_due` (on the page daily, with the deadlines nag) or
+            `safety_net` (from the day before the deadline). Null on any other task.
+        next_round:
+          type: [string, 'null']
+          format: date
+          description: >
+            Derived, read-only (2026-11-12): in the open window, the next OpenTask day the task
+            comes round, or null when the next thing is the day it becomes daily. Null outside
+            the open window.
         heads_up:
           type: boolean
           description: >
@@ -6628,7 +6679,17 @@ components:
             The lead override (2026-10-22; widened 2026-10-25): days ahead of the anchor — the
             target or deck day (Upcoming's Later day), else the deadline's day (the deadlines
             page). Null = the default table. On a repeat it must be fewer than the days between
-            the rule's occurrences (400). Re-derives `lead_from`.
+            the rule's occurrences (400). Re-derives `lead_from`. Non-null, it clears
+            `start_date`.
+        start_date:
+          type: [string, 'null']
+          format: date
+          description: >
+            A deadline one-off's start date (2026-11-12, see the Task schema): the OpenTask day
+            it starts showing on the deadlines page, with an open window until it becomes daily.
+            Clears `lead_days`; 400 with a non-null `lead_days`, inside the safety net (after
+            two days before the deadline's day), or on a task that is not a one-off with a
+            deadline. Null = no date (the default lead, or `lead_days`).
         heads_up:
           type: boolean
           description: >
@@ -7019,7 +7080,17 @@ components:
             The lead override (2026-10-22; widened 2026-10-25): days ahead of the anchor — the
             target or deck day (Upcoming's Later day), else the deadline's day (the deadlines
             page). Null = the default table. On a repeat it must be fewer than the days between
-            the rule's occurrences (400). Re-derives `lead_from`.
+            the rule's occurrences (400). Re-derives `lead_from`. Non-null, it clears
+            `start_date`.
+        start_date:
+          type: [string, 'null']
+          format: date
+          description: >
+            A deadline one-off's start date (2026-11-12, see the Task schema): the OpenTask day
+            it starts showing on the deadlines page, with an open window until it becomes daily.
+            Clears `lead_days`; 400 with a non-null `lead_days`, inside the safety net (after
+            two days before the deadline's day), or on a task that is not a one-off with a
+            deadline. Null = no date (the default lead, or `lead_days`).
         heads_up:
           type: boolean
           description: >

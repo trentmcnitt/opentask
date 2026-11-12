@@ -252,7 +252,10 @@ export interface TaskSegmentPayload {
    *  this OpenTask day.
    *  `upcoming_section` (Upcoming rows only, 2026-10-25): 'tomorrow' (the day before the
    *  anchor) or 'later' — Tomorrow's rows first. Read by the sections (PR B).
-   *  `carried_over` (New's rows only, `?new=1`, 2026-11-10): back from yesterday's Not today. */
+   *  `carried_over` (New's rows only, `?new=1`, 2026-11-10): back from yesterday's Not today.
+   *  `window` / `next_round` (the deadlines page only, 2026-11-12): 'open' — a row in its open
+   *  window, listed on its rounds, under "Open window" (`next_round` its next round day) —
+   *  or 'due'. Open rows come last. */
   tasks: (Task & {
     segment_state: SegmentState
     recurring?: boolean
@@ -261,6 +264,8 @@ export interface TaskSegmentPayload {
     seen?: boolean
     upcoming_section?: UpcomingSection
     carried_over?: boolean
+    window?: 'open' | 'due'
+    next_round?: string | null
   })[]
   waiting: number
   considered: number

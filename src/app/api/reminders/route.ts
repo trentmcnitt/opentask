@@ -13,7 +13,7 @@ import { requireAuth, AuthError } from '@/core/auth'
 import { success, unauthorized, handleError } from '@/lib/api-response'
 import { getRemindersBySlot, getRemindersNotToday, hasAnyReminders } from '@/core/tasks/reminders'
 import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts'
-import { getTaskSegments } from '@/core/tasks/task-segments'
+import { getTaskSegments, type SegmentKind, type SegmentTask } from '@/core/tasks/task-segments'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -119,34 +119,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         newRows,
       }).map((seg) => ({
         horizon: seg.horizon,
-        tasks: seg.tasks.map(({ task, state, left, safetyNet, seen, section, carried }) => ({
-          ...formatTaskResponse(task, user.timezone),
-          segment_state: state,
-          // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
-          // hide Today, its picker and Remove target on these rows: target-today
-          // skips them (`skipped_recurring`), and removing the target would
-          // take the recurrence with it.
-          recurring: task.rrule !== null,
-          // How a row that left the segment today was handled (`?handled=1`
-          // only): 'done' | 'deck' | 'target' | 'considered'. Such a row is
-          // `considered`, counted in the segment's N and M, with no put-back.
-          ...(left ? { segment_left: left } : {}),
-          // The deadlines page (`?deadlines=1` only, 2026-10-22): `safety_net`
-          // — from the day before the deadline, seeing the row does not
-          // silence it (draw the circle non-silencing; Defer hidden); `seen`
-          // — considered this OpenTask day.
-          ...(seg.horizon === 'deadlines' ? { safety_net: !!safetyNet, seen: !!seen } : {}),
-          // Upcoming's section (2026-10-25, the Upcoming split; always sent on
-          // an Upcoming row): 'tomorrow' — the day before its anchor — or
-          // 'later'. Tomorrow's rows come first. A left row (`segment_left`)
-          // carries the section the day roster remembered. One kind, no new
-          // kinds: a shipped native build lists both sections' rows as one
-          // Upcoming page and ignores the key.
-          ...(seg.horizon === 'upcoming' ? { upcoming_section: section ?? 'later' } : {}),
-          // New's rows (`?new=1` only, 2026-11-10): `carried_over` — back from
-          // yesterday's Not today, drawn under "Carried over" after the fresh ones.
-          ...(seg.horizon === 'new' ? { carried_over: !!carried } : {}),
-        })),
+        tasks: seg.tasks.map((row) => segmentRowFields(seg.horizon, row, user.timezone)),
         waiting: seg.waiting,
         considered: seg.considered,
         deferred: seg.deferred,
@@ -165,3 +138,45 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     return handleError(err)
   }
 })
+
+/** One task-segment row as the API sends it (`task_segments[].tasks[]`). */
+function segmentRowFields(
+  horizon: SegmentKind,
+  { task, state, left, safetyNet, seen, section, carried, window }: SegmentTask,
+  timezone: string,
+) {
+  return {
+    ...formatTaskResponse(task, timezone),
+    segment_state: state,
+    // A repeating task's occurrence (2026-10-12, Upcoming only). Clients
+    // hide Today, its picker and Remove target on these rows: target-today
+    // skips them (`skipped_recurring`), and removing the target would
+    // take the recurrence with it.
+    recurring: task.rrule !== null,
+    // How a row that left the segment today was handled (`?handled=1`
+    // only): 'done' | 'deck' | 'target' | 'considered'. Such a row is
+    // `considered`, counted in the segment's N and M, with no put-back.
+    ...(left ? { segment_left: left } : {}),
+    // The deadlines page (`?deadlines=1` only, 2026-10-22): `safety_net`
+    // — from the day before the deadline, seeing the row does not
+    // silence it (draw the circle non-silencing; Defer hidden); `seen`
+    // — considered this OpenTask day.
+    ...(horizon === 'deadlines' ? { safety_net: !!safetyNet, seen: !!seen } : {}),
+    // The deadlines page's two groups (2026-11-12, START-3): `window` is
+    // 'open' for a row in its open window (listed on its rounds only, under
+    // "Open window") and 'due' for every other page row. Open rows come
+    // last. The row's next round is the task's own `next_round`. A shipped
+    // native build ignores the key and lists the rows as one page.
+    ...(horizon === 'deadlines' && window ? { window } : {}),
+    // Upcoming's section (2026-10-25, the Upcoming split; always sent on
+    // an Upcoming row): 'tomorrow' — the day before its anchor — or
+    // 'later'. Tomorrow's rows come first. A left row (`segment_left`)
+    // carries the section the day roster remembered. One kind, no new
+    // kinds: a shipped native build lists both sections' rows as one
+    // Upcoming page and ignores the key.
+    ...(horizon === 'upcoming' ? { upcoming_section: section ?? 'later' } : {}),
+    // New's rows (`?new=1` only, 2026-11-10): `carried_over` — back from
+    // yesterday's Not today, drawn under "Carried over" after the fresh ones.
+    ...(horizon === 'new' ? { carried_over: !!carried } : {}),
+  }
+}

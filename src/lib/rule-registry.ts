@@ -1197,6 +1197,72 @@ export const RULE_REGISTRY = {
     symbol: 'MetaTail',
     pins: [],
   },
+  'START-1': {
+    home: 'src/lib/task-segments.ts',
+    symbol: 'START_DATE_MESSAGES',
+    pins: [
+      'tests/behavioral/sd-start-date.test.ts#SD-22',
+      'tests/behavioral/sd-start-date.test.ts#SD-11',
+    ],
+  },
+  'START-2': {
+    home: 'src/lib/task-segments.ts',
+    symbol: 'startDateProblem',
+    pins: [
+      'tests/behavioral/sd-start-date.test.ts#SD-02',
+      'tests/behavioral/sd-start-date.test.ts#SD-21',
+    ],
+  },
+  'START-3': {
+    home: 'src/lib/task-segments.ts',
+    symbol: 'openWindowOn',
+    pins: [
+      'tests/behavioral/sd-start-date.test.ts#SD-10',
+      'tests/behavioral/sd-start-date.test.ts#SD-30',
+    ],
+  },
+  'START-4': {
+    home: 'src/lib/task-segments.ts',
+    symbol: 'latestRound',
+    pins: [
+      'tests/behavioral/sd-start-date.test.ts#SD-03',
+      'tests/behavioral/sd-start-date.test.ts#SD-04',
+    ],
+  },
+  'START-5': {
+    home: 'src/core/tasks/task-segments.ts',
+    symbol: 'movesStart',
+    pins: [
+      'tests/behavioral/sd-start-date.test.ts#SD-26',
+      'tests/behavioral/sd-start-date.test.ts#SD-28',
+    ],
+  },
+  'START-6': {
+    home: 'src/core/notifications/deadline-nags.ts',
+    symbol: 'PendingRoundPush',
+    pins: [
+      'tests/behavioral/sd-round-push.test.ts#SD-40',
+      'tests/behavioral/sd-round-push.test.ts#SD-48',
+    ],
+  },
+  'START-7': {
+    home: 'src/core/tasks/helpers/collect-field-changes.ts',
+    symbol: 'collectStartDate',
+    pins: [
+      'tests/behavioral/sd-start-date.test.ts#SD-23',
+      'tests/behavioral/sd-start-date.test.ts#SD-24',
+    ],
+  },
+  'START-8': {
+    home: 'src/core/tasks/task-segments.ts',
+    symbol: 'deadlinePlacer',
+    pins: ['tests/behavioral/sd-start-date.test.ts#SD-10'],
+  },
+  'START-9': {
+    home: 'src/lib/task-segments.ts',
+    symbol: 'DeadlineWindow',
+    pins: ['tests/behavioral/sd-start-date.test.ts#SD-12'],
+  },
 } as const satisfies Record<string, RuleEntry>
 
 export type RuleId = keyof typeof RULE_REGISTRY

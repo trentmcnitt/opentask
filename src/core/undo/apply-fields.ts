@@ -84,6 +84,7 @@ const VALID_TASK_COLUMNS = new Set([
   // day, Defer moves it, PATCH sets the override — all in undo snapshots.
   'lead_days',
   'lead_from',
+  'start_date',
   // Heads up (2026-11-02): PATCH and bulk edit set it, in undo snapshots.
   'heads_up',
   // Retired 2026-10-12 but KEPT: undo entries written before then name them,
