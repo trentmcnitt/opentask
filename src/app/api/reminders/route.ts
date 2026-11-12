@@ -142,7 +142,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
 /** One task-segment row as the API sends it (`task_segments[].tasks[]`). */
 function segmentRowFields(
   horizon: SegmentKind,
-  { task, state, left, safetyNet, seen, section, carried, window, nextRound }: SegmentTask,
+  { task, state, left, safetyNet, seen, section, carried, window }: SegmentTask,
   timezone: string,
 ) {
   return {
@@ -164,12 +164,10 @@ function segmentRowFields(
     ...(horizon === 'deadlines' ? { safety_net: !!safetyNet, seen: !!seen } : {}),
     // The deadlines page's two groups (2026-11-12, START-3): `window` is
     // 'open' for a row in its open window (listed on its rounds only, under
-    // "Open window"; `next_round` its next round day or null) and 'due' for
-    // every other page row. Open rows come last. A shipped native build
-    // ignores both keys and lists the rows as one page.
-    ...(horizon === 'deadlines' && window
-      ? { window, ...(window === 'open' ? { next_round: nextRound ?? null } : {}) }
-      : {}),
+    // "Open window") and 'due' for every other page row. Open rows come
+    // last. The row's next round is the task's own `next_round`. A shipped
+    // native build ignores the key and lists the rows as one page.
+    ...(horizon === 'deadlines' && window ? { window } : {}),
     // Upcoming's section (2026-10-25, the Upcoming split; always sent on
     // an Upcoming row): 'tomorrow' — the day before its anchor — or
     // 'later'. Tomorrow's rows come first. A left row (`segment_left`)

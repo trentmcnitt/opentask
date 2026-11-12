@@ -649,6 +649,43 @@ Sorted priority, then the NEAREST deadline, then id (A4; RULE DL-ORDER). Rows ca
 
 **The day simulator** has a `deadlines` place; its line adds `net` in the safety net and `seen` once seen (`dayLine`). The timelines are `tests/golden/deadlines.ts`; the rules' tests `tests/behavioral/tm-deadlines.test.ts` (`dl-`).
 
+## Start date
+
+**2026-11-12** (rules START-1 to START-9; Trent: "I want to be reminded of it, maybe weekly… I don't want to start being nagged weekly about it until January 1"). For a **one-off with a deadline and no target**, task queue on. Repeats keep `lead_days` alone.
+
+**Three ways to say when it starts** (RULE START-1). _Default_: nothing stored, the lead table's day. _Days_: `lead_days` (1–90), daily from that day — both as before. _A date_: `start_date` (an OpenTask day), the only way to an **open window**. `start_date` and `lead_days` are one choice: setting either clears the other, and both non-null in one request is a 400.
+
+**Limits** (RULE START-2, `startDateProblem`). Any day up to D−2, however far ahead (no 90-day cap on a date). A past day starts today. A day on or after D−1 is a 400: the safety net is not a start. Only on a one-off with a deadline.
+
+**Terms.** D: the deadline's OpenTask day. S: the start (`start_date`; the stored `lead_from` is the same day). C, the daily day (`comingDueDay`): D minus the lead table's days for the wait from S to D, at least one — a fixed day, it does not move as time passes. The open window is S ≤ today < C.
+
+**Day by day** (RULE START-3, `deadlinePlace` → `openWindowOn`):
+
+| Day                                        | Where it is                                                                 |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| Before S                                   | Nowhere on the queue. Its row elsewhere says "Starts Jan 1"                 |
+| S to C−1, a round has come since last seen | The Due page, **Open window**, waiting; carried over daily until considered |
+| S to C−1, considered today                 | The Due page, Open window, considered                                       |
+| S to C−1, seen since the latest round      | Not listed: quiet until the next round                                      |
+| C to D−2                                   | The Due page, **Coming due**, daily, as any page row                        |
+| From D−1                                   | The safety net                                                              |
+
+The page's rows carry `window` (`open` / `due`); open rows come after the due rows, and the headings "Coming due" / "Open window" are drawn only when both groups have rows. Inside each group the page's own order (RULE DL-ORDER).
+
+**Rounds** (RULE START-4, `latestRound` / `nextRound`). S is always a round. After it the rounds are the SET horizon's cadence days (`latestSegmentDay`: Days daily; Weeks and unset the check-in day; Months the month's first check-in day; Eventually the quarter's) — the deadline never pulls the cadence in — and the first cadence round is at least a full step after S (a day, a week, a month, a quarter): a start on Fri Jan 1 with a Saturday check-in day comes round next on Sat Jan 9, not Jan 2. A horizon change moves the cadence from that day; nothing stored changes.
+
+**Actions** (RULE START-5). Consider quiets the row until the next round. Done, Target and On deck act as on any page row. Defer on an open-window row moves the start (tap: tomorrow; the day menu: up to D−2) and writes `start_date` with `lead_from`; on a Coming-due row it moves only this instance's lead day and the start date stays, so the row is daily when it is back.
+
+**The push** (RULE START-6, `pendingRoundPushes`; docs/NOTIFICATIONS.md § The round push). One silent push on each day the row comes round, at the Default task time (or the next tick, if it comes round later that day). No repeats, none on a carry-over day. It never starts or paces the deadlines nag.
+
+**Later changes** (RULE START-7, `collectStartDate`). The deadline moves: the date stays, unless it would then be on or after D−1, when it is cleared in the same write and the default lead takes over. The deadline is removed, or the task is made to repeat or into a reminder or quota: cleared. A target is picked: kept, inert; Remove target brings the window back. Days chosen: `lead_days` set, the date cleared. Undo restores it with the snapshot. A deadline move never moves the rounds: they count from the stored start.
+
+**Other pages** (RULE START-8). Never in New, Aged out, Upcoming or a horizon segment, before the start and between rounds too.
+
+**API** (RULE START-9). `start_date` on create, PATCH and bulk edit, returned on every task; read-only `deadline_window` (`before_start` | `open` | `coming_due` | `safety_net`, null on any other task) and `next_round`. With the task queue off `start_date` is stored and has no effect.
+
+**Tests.** `tests/behavioral/sd-start-date.test.ts` (the state table by horizon, the write rules, the Jan 1 → Mar 31 simulation) and `sd-round-push.test.ts`.
+
 ## Priority Values
 
 | Value | Meaning |

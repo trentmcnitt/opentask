@@ -4,7 +4,11 @@
  * Why: OpenTask has no time-of-day behaviour; the phone's sleep mode handles nights. Marks place a
  *   repeat, never hold one back.
  * Ruling: Ruling 2 / Trent 2026-10-22 ('Do not add them back without Trent',
- *   src/core/notifications/slot-nags.ts:38).
+ *   src/core/notifications/slot-nags.ts:38). Restated, Trent 2026-11-12: "There is no such thing as
+ *   quiet hours. I put my phone on Do Not Disturb when I sleep. As long as it doesn't break through
+ *   that, then it's not going to make any noise… every time that's been brought up, I've said there
+ *   are no special hours to keep track of for quiet." Only Urgent breaks through Do Not Disturb, as
+ *   now. Do not raise it again.
  */
 /**
  * THE NAG LADDER — how often each kind of nag repeats, by priority, in ONE

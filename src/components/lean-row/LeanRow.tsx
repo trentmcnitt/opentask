@@ -61,6 +61,7 @@ import { searchQueueWord } from '@/lib/search-kinds'
 import { useMemo } from 'react'
 import { FolderOpen, Repeat, StickyNote } from 'lucide-react'
 import { DeadlineChip } from '@/components/DeadlineChip'
+import { StartsNote } from '@/components/StartsNote'
 import { HorizonDotButton } from '@/components/HorizonDot'
 import { LabelBadges } from '@/components/LabelBadges'
 import { useDayStart, useLabelConfig, useTaskQueue } from '@/components/PreferencesProvider'
@@ -456,6 +457,7 @@ function LeanMeta({
           }
         />
       )}
+      {task.deadline_at && <StartsNote task={task} timezone={timezone} />}
       {words.target && (
         <TargetTimeText
           task={task}

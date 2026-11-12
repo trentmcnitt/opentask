@@ -17,6 +17,8 @@ import {
 import { isPastDeadline } from '@/lib/task-segments'
 import { LEAD_DAYS_MIN } from '@/lib/editor-target-labels'
 import { MOVES_WITH_DEADLINE } from '@/lib/relative-target-ui'
+import { STARTS_WORD } from '@/lib/start-date-words'
+import { PickStartDate, StartsDateRow, type StartsProps } from '@/components/quick-panel/StartsRow'
 
 /**
  * THE QUICK PANEL'S "THIS ONE" ROWS (2026-10-22, editor plan §3, mock E;
@@ -138,7 +140,9 @@ export function ThisOneFields({
         )}
         {lead && (
           <>
-            <RowLabel>{LEAD_WORD}</RowLabel>
+            {/* "Starts" on a deadline one-off with no target (2026-11-12,
+                StartsRow.tsx); "Lead time" on a repeat and for Upcoming. */}
+            <RowLabel>{lead.starts ? STARTS_WORD : LEAD_WORD}</RowLabel>
             <LeadRow {...lead} />
           </>
         )}
@@ -418,6 +422,13 @@ export interface LeadRowProps {
   editable: boolean
   /** Stage an override (1–90), or null for the default table. */
   onLeadDays: (days: number | null) => void
+  /**
+   * The STARTS form (2026-11-12): a deadline one-off with no target — the
+   * row is labelled "Starts", may carry a picked date (`starts.date`, drawn
+   * by `StartsDateRow` in place of the words and the stepper) and else ends
+   * with "Pick a date".
+   */
+  starts?: StartsProps
   disabled?: boolean
 }
 
@@ -440,6 +451,40 @@ function LeadRow({
   max,
   onLeadDays,
   editable,
+  starts,
+  disabled = false,
+}: LeadRowProps) {
+  if (starts?.date) {
+    return (
+      <StartsDateRow
+        starts={{ ...starts, date: starts.date }}
+        staged={staged}
+        disabled={disabled}
+      />
+    )
+  }
+  return (
+    <LeadDaysRow
+      {...{ form, words, deferred, staged, leadDays, clamped, override, max, onLeadDays, editable }}
+      starts={starts}
+      disabled={disabled}
+    />
+  )
+}
+
+/** The words and the stepper (Default and Days), with "Pick a date" in the Starts form. */
+function LeadDaysRow({
+  form,
+  words,
+  deferred,
+  staged,
+  leadDays,
+  clamped,
+  override,
+  max,
+  onLeadDays,
+  editable,
+  starts,
   disabled = false,
 }: LeadRowProps) {
   const tone = staged ? 'font-medium text-blue-500' : 'text-muted-foreground'
@@ -510,6 +555,7 @@ function LeadRow({
           )}
         </span>
       )}
+      {starts && <PickStartDate starts={starts} disabled={disabled} />}
     </div>
   )
 }

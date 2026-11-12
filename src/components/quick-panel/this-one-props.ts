@@ -6,7 +6,16 @@
  */
 
 import { DateTime } from 'luxon'
-import { capAtDeadline, capsAt, openTaskToday } from '@/lib/task-segments'
+import {
+  capAtDeadline,
+  capsAt,
+  lastDeferDay,
+  openTaskToday,
+  type CheckInDay,
+  type HorizonValue,
+} from '@/lib/task-segments'
+import { startsDateWords } from '@/lib/start-date-words'
+import type { StartsProps } from '@/components/quick-panel/StartsRow'
 import { planRepeatSchedule } from '@/core/tasks/repeat-schedule'
 import { formatBulkRecurrence } from '@/lib/format-rrule'
 import {
@@ -292,12 +301,24 @@ export function leadRowFor(s: {
   restamp: boolean
   pendingDeadline: string | null | undefined
   pendingLeadDays: number | null | undefined
+  /**
+   * The Starts form (2026-11-12): the staged start date (undefined: the
+   * stored one; null: cleared), the SET horizon and check-in day its rounds
+   * follow, and the setter. Left out by a caller with no Starts row.
+   */
+  start?: {
+    pending: string | null | undefined
+    horizon: HorizonValue | null
+    checkInDay: CheckInDay
+    onStartDate: (day: string | null | undefined) => void
+  }
   /** Heads up, staged or stored (`heads_up`): off, no Upcoming form. */
   headsUp: boolean
   timezone: string
   rolloverTime: string | null
   dayStart: string
-  onLeadDays: (days: number | null) => void
+  /** `undefined` unstages the override (the Starts form's date takes its place). */
+  onLeadDays: (days: number | null | undefined) => void
   disabled: boolean
 }): LeadRowProps | null {
   if (!s.show || !s.task) return null
@@ -331,8 +352,14 @@ export function leadRowFor(s: {
     }
   }
   if (!s.queueEnabled || !s.showsNoTarget) return null
+  const today = openTaskToday(s.timezone, now, s.rolloverTime)
+  const starts = startsFor(s, today)
+  // A start date staged away (cleared, "Days instead", or one a staged
+  // deadline no longer fits): the days form previews what Save would derive,
+  // not the stored first day (which IS the old date).
+  const dateGone = !!starts && !starts.props.date && !!s.task.start_date
   const line = leadLine(
-    s.task,
+    starts ? { ...s.task, start_date: null, ...(dateGone ? { lead_from: null } : {}) } : s.task,
     { deadline: s.pendingDeadline, leadDays: s.pendingLeadDays },
     s.timezone,
     s.rolloverTime,
@@ -342,15 +369,107 @@ export function leadRowFor(s: {
   return {
     ...shared,
     form: 'deadline',
-    words: leadLineWords(line, s.timezone, openTaskToday(s.timezone, now, s.rolloverTime)),
+    words: leadLineWords(line, s.timezone, today),
     deferred: line.deferredTo
       ? DateTime.fromISO(line.deferredTo, { zone: s.timezone }).toFormat('ccc')
       : null,
-    staged: line.staged,
+    staged: line.staged || dateGone || !!starts?.staged,
     leadDays: line.leadDays,
     clamped: line.clamped,
     override: line.override,
     max: line.max,
+    ...(starts
+      ? { starts: withDaysInstead(starts.props, s, defaultLeadDays(s, now) ?? line.leadDays) }
+      : {}),
+  }
+}
+
+/**
+ * THE STARTS FORM of the deadline row (2026-11-12, `StartsRow.tsx`): only a
+ * ONE-OFF's (a repeat keeps "Lead time": its lead is series-wide). The date
+ * shown is the staged one, else the stored — unless it no longer fits the
+ * (staged) deadline: later than D−2 the server would refuse or clear it, so
+ * the row falls back to the days form. `staged`: the date differs from the
+ * stored one.
+ * (restates RULE START-1, home: src/lib/task-segments.ts)
+ * (restates RULE START-7, home: src/core/tasks/helpers/collect-field-changes.ts)
+ */
+function startsFor(
+  s: Parameters<typeof leadRowFor>[0],
+  today: string,
+): { props: StartsProps; staged: boolean } | null {
+  const { start, task } = s
+  if (!start || !task || task.rrule) return null
+  const deadline = s.pendingDeadline !== undefined ? s.pendingDeadline : task.deadline_at
+  if (!deadline) return null
+  const stored = task.start_date ?? null
+  const latest = lastDeferDay(deadline, s.timezone, s.rolloverTime)
+  const wanted = start.pending !== undefined ? start.pending : stored
+  const day = wanted && wanted <= latest ? wanted : null
+  const setStart = (next: string | null) => start.onStartDate(next === stored ? undefined : next)
+  return {
+    staged: day !== stored,
+    props: {
+      date: day
+        ? {
+            day,
+            ...startsDateWords(
+              day,
+              deadline,
+              start.horizon,
+              start.checkInDay,
+              s.timezone,
+              s.rolloverTime,
+            ),
+          }
+        : null,
+      today,
+      latest: latest >= today ? latest : null,
+      onPick: (picked) => {
+        // One choice: a date takes the Days override's place (the server
+        // clears `lead_days`; a staged one must not be sent with it).
+        s.onLeadDays(undefined)
+        setStart(picked)
+      },
+      onClear: () => {
+        s.onLeadDays(undefined)
+        setStart(null)
+      },
+      onDaysInstead: () => {},
+    },
+  }
+}
+
+/**
+ * The lead the DEFAULT table would give this task now (no override, no date,
+ * no deferral) — where "Days instead" starts: a date 89 days ahead must not
+ * become 89 days of a daily row.
+ */
+function defaultLeadDays(s: Parameters<typeof leadRowFor>[0], now: Date): number | null {
+  if (!s.task) return null
+  const line = leadLine(
+    { ...s.task, start_date: null, lead_days: null, lead_from: null },
+    { deadline: s.pendingDeadline, leadDays: null },
+    s.timezone,
+    s.rolloverTime,
+    now,
+  )
+  return line?.leadDays ?? null
+}
+
+/** "Days instead": the stepper, on the lead the default would give (1–90). */
+function withDaysInstead(
+  props: StartsProps,
+  s: Parameters<typeof leadRowFor>[0],
+  defaultDays: number,
+): StartsProps {
+  const stored = s.task?.start_date ?? null
+  return {
+    ...props,
+    onDaysInstead: () => {
+      s.onLeadDays(defaultDays)
+      s.start?.onStartDate(stored ? null : undefined)
+    },
   }
 }
 

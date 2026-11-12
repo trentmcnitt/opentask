@@ -598,13 +598,7 @@ describe('contract fixtures: the deadlines page (2026-10-22)', () => {
     }
     for (const seg of segs) {
       for (const row of seg.tasks as Obj[]) {
-        const extras = new Set([
-          ...SEGMENT_ROW_EXTRAS,
-          'safety_net',
-          'seen',
-          'window',
-          'next_round',
-        ])
+        const extras = new Set([...SEGMENT_ROW_EXTRAS, 'safety_net', 'seen', 'window'])
         if (seg.horizon !== 'deadlines') {
           expect(row.safety_net, 'only deadlines rows carry safety_net').toBeUndefined()
         }

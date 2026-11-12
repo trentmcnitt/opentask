@@ -42,6 +42,7 @@ import { RowCorner } from '@/components/RowCorner'
 import { TargetTodayButton } from '@/components/TargetMenu'
 import { OnDeckButton } from '@/components/OnDeckButton'
 import { DeadlineChip } from '@/components/DeadlineChip'
+import { StartsNote } from '@/components/StartsNote'
 import { deckClosed, deckReplaces, offersDeck } from '@/lib/deck-menu'
 import { TargetTimeText } from '@/components/TargetTimeText'
 import { TimeChip } from '@/components/TimeChip'
@@ -845,6 +846,7 @@ function TaskRowMeta({
       {deadline && (
         <DeadlineChip deadlineAt={deadline} timezone={timezone} className="mr-0.5 text-xs" />
       )}
+      {deadline && <StartsNote task={task} timezone={timezone} />}
       {targetParts.length > 0 &&
         (timeControl ? (
           <TargetTimeText
