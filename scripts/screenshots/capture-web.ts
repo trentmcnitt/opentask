@@ -18,6 +18,7 @@
  * doesn't break a rerun.
  */
 import fs from 'node:fs'
+import Database from 'better-sqlite3'
 import path from 'node:path'
 import {
   webkit,
@@ -361,8 +362,9 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
   await dialog.waitFor({ state: 'hidden' })
 
   // Task detail page.
-  const detailHref = await card.getByRole('link').first().getAttribute('href')
-  await gotoAndSettle(page, detailHref!, page.getByRole('main'))
+  // From the row's id: a lean row has no title link (2026-11-12).
+  const rowId = (await card.first().getAttribute('id'))!.replace('task-row-', '')
+  await gotoAndSettle(page, `/tasks/${rowId}`, page.getByRole('main'))
   const detailFile = outPath(`web-task-detail-page-${theme}.png`)
   await page.screenshot({ path: detailFile })
   record(detailFile, 'Task detail page', theme, [
@@ -383,28 +385,110 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
     `docs:public/images/concepts/web-quotas-${theme}.png`,
   ])
 
-  // The Newest view (Now is the dashboard shot above). The toggle saves
-  // `default_grouping` on the (throwaway) account, so put Now back at the end.
-  // There is no Today view since 2026-10-14.
-  await gotoAndSettle(page, '/', dashboardReady(page))
-  await clearJustAdded(page)
-  const views = page.getByRole('group', { name: 'View mode' })
-  for (const view of ['Newest'] as const) {
-    await views.getByRole('button', { name: view }).click()
-    await views.getByRole('button', { name: view, pressed: true }).waitFor()
-    await settle(page)
-    await scrollToTasks(page)
-    const file = outPath(`web-dashboard-${view.toLowerCase()}-${theme}.png`)
-    await page.screenshot({ path: file })
-    record(file, `Dashboard, ${view} view`, theme, [
-      `docs:public/images/dashboard/web-dashboard-${view.toLowerCase()}-${theme}.png`,
-    ])
-  }
-  await page.evaluate(() => window.scrollTo(0, 0))
-  await views.getByRole('button', { name: 'Now' }).click()
-  await views.getByRole('button', { name: 'Now', pressed: true }).waitFor()
-  await settle(page)
+  // (The Now · Newest toggle is gone with lean rows, the build's default
+  // since 2026-10-29: the dashboard's modes are shot below.)
+  await queueAndSearchShots(page, theme)
+  // A dashboard poll may still be in the cookie route as the context closes.
+  await page.context().unrouteAll({ behavior: 'ignoreErrors' })
   await page.context().close()
+}
+
+/**
+ * The task queue's newer pages, the Starts row and search (2026-11-12). Their
+ * tasks need the task-queue switch, which the seed runs without (its
+ * `assertSwitchFree`), so they are made here through the running server's
+ * API, once (the first theme), and the New page's task is then aged into
+ * yesterday straight in the throwaway database. All invented.
+ */
+let extraIds: { dated: number } | null = null
+async function seedQueueExtras(page: Page): Promise<{ dated: number }> {
+  if (extraIds) return extraIds
+  const now = new Date(NOW!)
+  const day = (n: number, hh: string, offset = '-05:00') => {
+    const d = new Date(now.getTime() + n * 86_400_000)
+    // 23:59 or the given time, America/Chicago (UTC−5 on the frozen date).
+    return `${d.toISOString().slice(0, 10)}T${hh}:00${offset}`
+  }
+  const post = async (data: Record<string, unknown>): Promise<number> => {
+    const res = await page.request.post('/api/tasks', { data })
+    if (!res.ok()) throw new Error(`seed extra: ${res.status()} ${await res.text()}`)
+    return ((await res.json()) as { data: { id: number } }).data.id
+  }
+  await post({ title: 'Send the warranty claim', deadline_at: day(2, '23:59'), lead_days: 5 })
+  await post({
+    title: 'Renew the parking permit',
+    deadline_at: day(4, '17:00'),
+    lead_days: 6,
+    priority: 3,
+  })
+  const dated = await post({
+    title: 'Use the bookshop voucher',
+    horizon: 'weeks',
+    // December is standard time in Chicago.
+    deadline_at: day(91, '23:59', '-06:00'),
+    start_date: now.toISOString().slice(0, 10),
+  })
+  const fresh = [
+    await post({ title: 'Buy a stretch band', horizon: 'weeks' }),
+    await post({ title: 'Look up the ferry timetable' }),
+  ]
+  const db = new Database(path.join(OUT, 'screenshots.db'))
+  try {
+    // Written yesterday afternoon: New holds a task the day after it is made.
+    const yesterday = new Date(now.getTime() - 19 * 3_600_000).toISOString()
+    const stmt = db.prepare('UPDATE tasks SET created_at = ?, target_set_at = ? WHERE id = ?')
+    for (const id of fresh) stmt.run(yesterday, yesterday, id)
+  } finally {
+    db.close()
+  }
+  extraIds = { dated }
+  return extraIds
+}
+
+async function queueAndSearchShots(page: Page, theme: Exclude<Theme, 'n/a'>): Promise<void> {
+  const { dated } = await seedQueueExtras(page)
+
+  // The Reminders page's task queue: the Due page's two groups, and New.
+  await gotoAndSettle(page, '/reminders', page.locator('[data-task-segment="deadlines"]'))
+  const due = page.locator('[data-task-segments] [data-task-segment="deadlines"]')
+  const dueFile = outPath(`web-due-page-${theme}.png`)
+  await shootWithPadding(page, due, dueFile, 16)
+  record(dueFile, 'The Due page: Coming due and Open window', theme, [
+    `docs:public/images/concepts/web-due-page-${theme}.png`,
+  ])
+  const fresh = page.locator('[data-task-segments] [data-task-segment="new"]')
+  await fresh.waitFor()
+  const newFile = outPath(`web-new-page-${theme}.png`)
+  await shootWithPadding(page, fresh, newFile, 16)
+  record(newFile, 'The New page: tasks written yesterday', theme, [
+    `docs:public/images/concepts/web-new-page-${theme}.png`,
+  ])
+
+  // The editor's Starts row, a date picked.
+  await gotoAndSettle(page, `/tasks/${dated}`, page.locator('[data-starts-date]'))
+  const startsFile = outPath(`web-starts-row-${theme}.png`)
+  await page.screenshot({ path: startsFile })
+  record(startsFile, 'The editor on a deadline task: the Starts row with a picked date', theme, [
+    `docs:public/images/tasks/web-starts-row-${theme}.png`,
+  ])
+
+  // Search across kinds: one word that a task, a reminder and a quota share.
+  await gotoAndSettle(page, '/?search=stretch', page.locator('[data-search-kind-chips]'))
+  const searchFile = outPath(`web-search-results-${theme}.png`)
+  await page.screenshot({ path: searchFile })
+  record(searchFile, 'Search results across tasks, reminders and quotas', theme, [
+    `docs:public/images/dashboard/web-search-results-${theme}.png`,
+  ])
+
+  // The dashboard in Today mode (lean rows).
+  await gotoAndSettle(page, '/?mode=today', dashboardReady(page))
+  await clearJustAdded(page)
+  await scrollToTasks(page)
+  const todayFile = outPath(`web-dashboard-today-${theme}.png`)
+  await page.screenshot({ path: todayFile })
+  record(todayFile, 'Dashboard, Today mode (lean rows)', theme, [
+    `docs:public/images/dashboard/web-dashboard-today-${theme}.png`,
+  ])
 }
 
 /** Element screenshot with a margin of page around it. */

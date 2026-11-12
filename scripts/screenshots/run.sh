@@ -57,7 +57,10 @@ fi
 if [ "${SCREENSHOTS_SKIP_BUILD:-0}" != "1" ]; then
   # A fixed build stamp: the sidebar prints "v<version> · <build date>".
   echo "build: next build (stamp 20260914-1730)"
-  NEXT_PUBLIC_BUILD_ID=20260914-1730 npx next build >"$OUT/build.log" 2>&1 ||
+  # Built as production is (2026-11-12): lean task rows are the default, so
+  # the dashboard has its Today / Scan / All modes.
+  NEXT_PUBLIC_BUILD_ID=20260914-1730 NEXT_PUBLIC_DEFAULT_TASK_ROWS=lean \
+    npx next build >"$OUT/build.log" 2>&1 ||
     { tail -30 "$OUT/build.log" >&2; exit 1; }
 fi
 
@@ -73,6 +76,7 @@ OPENTASK_DB_PATH="$OUT/screenshots.db" \
   NODE_OPTIONS="$PRELOAD" \
   AUTH_SECRET="screenshots-only-secret" \
   AUTH_TRUST_HOST=true \
+  OPENTASK_TASK_QUEUE=1 \
   OPENTASK_AI_ENABLED=true \
   OPENTASK_AI_PROVIDER=openai \
   OPENAI_API_KEY=sk-screenshots-offline \
