@@ -265,7 +265,7 @@ export function getTaskSegments(
     queuePanels?: boolean
     /**
      * NEW (2026-11-10, `src/lib/new-tasks.ts`): the caller draws the `new`
-     * segment (`GET /api/reminders?new=1`, the web). Yesterday's new one-offs
+     * segment (`GET /api/reminders?new=1`: the web, and native since 2026-11-12). Yesterday's new one-offs
      * are then there and in no horizon segment that day (N2). Without it
      * nothing changes — a native build, the day simulator unless asked.
      */
@@ -331,8 +331,8 @@ export function getTaskSegments(
    * RULE TQ-OPT-IN: Without ?queue=1, queued tasks are left out of every segment. Without ?deck=1,
    *   a decked task is in no segment. Without ?deadlines=1, target-less deadline tasks fall back to
    *   their horizon segment. Without ?new=1 or ?aged=1 a task New or Aged out would hold is in its
-   *   horizon segment. The web sends all of them; native (PR E, REMINDERS_URL) sends neither new
-   *   nor aged.
+   *   horizon segment. The web sends all of them; native (REMINDERS_URL) sends all but aged (new
+   *   since 2026-11-12; a shipped build sends the older question, without it).
    * Why: A shipped native build would list an unknown kind as a page of its own, so each new kind
    *   is opt-in (the options below).
    * Ruling: none recorded.

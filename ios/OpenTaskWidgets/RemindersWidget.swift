@@ -603,6 +603,18 @@ private enum ReminderPreviewData {
             // tomorrow afternoon, and 1:00 AM after tomorrow's date (tomorrow
             // NIGHT's, with a 3:00 AM day start); one Later row considered.
             TaskSegmentDTO(horizon: "upcoming", tasks: upcomingTomorrow + upcomingLater),
+            // New (2026-11-12), after Upcoming as the server sends it:
+            // yesterday's new one-offs (one with a set horizon, one long
+            // title), then two back from yesterday's Not today
+            // ("Carried over"), and one already considered.
+            TaskSegmentDTO(horizon: "new", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 9501, title: "Sort the seed packets", horizon: "weeks"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9502, title: "Ask the neighbour whether the ladder can stay over the weekend while the gutters dry out"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9503, title: "Find the spare bike pump", priority: 3, horizon: "days"), state: .waiting),
+                SegmentTaskDTO(task: TaskDTO(id: 9504, title: "Label the spice jars", horizon: "months"), state: .waiting, carriedOver: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9505, title: "Measure the hallway for a runner"), state: .waiting, carriedOver: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9506, title: "Email the choir rota"), state: .considered),
+            ]),
             TaskSegmentDTO(horizon: "weeks", tasks: [
                 // Undated and past its horizon's threshold: the age label (the
                 // server's `age_label`).
@@ -742,6 +754,14 @@ private enum ReminderPreviewData {
             $0.isUpcoming ? $0.replacingTasks(ReminderPreviewData.upcomingLater) : $0
         }
     )
+}
+
+#Preview("Reminders Large — task segment (New)", as: .systemLarge) {
+    RemindersWidget()
+} timeline: {
+    let _ = WidgetStore.clearSlotOverride()
+    let _ = ReminderPreviewData.prepare(page: 0, showCompleted: false, slotKey: -20)
+    ReminderPreviewData.segmentEntry(key: -20)
 }
 
 #Preview("Reminders Large — task segment (Weeks)", as: .systemLarge) {

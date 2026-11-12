@@ -157,7 +157,10 @@
  *     GET  REMINDERS_URL                       → reminders-native.json
  *     (every kind, an empty one with no rows (`fill`); a left done row and
  *     step 19's left deferred row (`handled`); the seen safety-net row; step
- *     16's deck row; step 15's Try Tomorrow row)
+ *     16's deck row; step 15's Try Tomorrow row; and New (`new`, in the
+ *     question since 2026-11-12): "Sort the seed packets", made yesterday,
+ *     then "Label the spice jars", made two days ago and deferred yesterday,
+ *     `carried_over: true`)
  *
  * 26. The banner reconcile (2026-11-10): a device's delivered banners asked about
  *     POST /api/notifications/stale             → notifications-stale.json
@@ -694,7 +697,9 @@ interface Prompt {
 function backdate(
   taskIds: number[],
   days: number,
-  columns: ('target_set_at' | 'created_at' | 'last_considered_at')[] = ['target_set_at'],
+  columns: ('target_set_at' | 'created_at' | 'last_considered_at' | 'segment_deferred_at')[] = [
+    'target_set_at',
+  ],
 ) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-integration.db'))
   try {
@@ -1175,6 +1180,21 @@ describe('contract fixtures (native clients)', () => {
     try {
       // Seen in the safety net: it stays waiting, `seen: true`.
       await call('/api/task-segments/consider', { ids: [created.deadlinePassed] })
+      // New (in the question since 2026-11-12): a task made yesterday, and
+      // one made two days ago and deferred yesterday (`carried_over`). Made
+      // over the API (every write stamps now), so both are backdated.
+      let placeholder = 101 + Object.keys(created).length
+      for (const [name, title] of [
+        ['newFresh', 'Sort the seed packets'],
+        ['newCarried', 'Label the spice jars'],
+      ] as const) {
+        const res = (await call('/api/tasks', { title })) as { data: { id: number } }
+        created[name] = res.data.id
+        ids.register('task', res.data.id, placeholder++)
+      }
+      backdate([created.newFresh], 1, ['created_at'])
+      backdate([created.newCarried], 2, ['created_at'])
+      backdate([created.newCarried], 1, ['segment_deferred_at'])
       // Read once, so the day roster remembers what is listed (it remembers
       // only rows a `handled=1` read listed), then done from "Today's
       // pulls": back as a considered row, `segment_left: done`.
@@ -1256,6 +1276,7 @@ describe('contract fixtures (native clients)', () => {
       safety_net?: boolean
       seen?: boolean
       try_tomorrow?: boolean
+      carried_over?: boolean
       on_deck_day: string | null
     }
     type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
@@ -1264,12 +1285,22 @@ describe('contract fixtures (native clients)', () => {
     expect(segs.map((s) => s.horizon)).toEqual([
       'deadlines',
       'upcoming',
+      'new',
       'queue_today',
       'queue_previous',
       'days',
       'weeks',
       'months',
       'eventually',
+    ])
+    // New: the fresh row, then the one back from yesterday's Not today.
+    expect(
+      segs
+        .find((s) => s.horizon === 'new')!
+        .tasks.map((t) => [t.id, t.segment_state, t.carried_over]),
+    ).toEqual([
+      [created.newFresh, 'waiting', false],
+      [created.newCarried, 'waiting', true],
     ])
     const row = (horizon: string, id: number) =>
       segs.find((s) => s.horizon === horizon)!.tasks.find((t) => t.id === id)

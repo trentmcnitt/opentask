@@ -511,12 +511,18 @@ enum SegmentKind: Hashable {
     /// it, and the unknown-kind fallback `capitalized` drew "Aged_Out" on the
     /// widget's strip (Trent, 10-30).
     case agedOut
+    /// NEW (2026-11-10 on the web, `src/lib/new-tasks.ts`; native 2026-11-12):
+    /// yesterday's new one-offs, one pass. Sent only with `?new=1`, after
+    /// Heads up and before the queue's panels; a row back from yesterday's
+    /// Not today carries `carried_over`.
+    case new
 
     static let upcomingRaw = "upcoming"
     static let deadlinesRaw = "deadlines"
     static let queueTodayRaw = "queue_today"
     static let queuePreviousRaw = "queue_previous"
     static let agedOutRaw = "aged_out"
+    static let newRaw = "new"
 
     /// The words for a kind this build doesn't know: its wire string with
     /// "_" as a space, sentence-cased ("some_kind" → "Some kind") — never an
@@ -534,6 +540,7 @@ enum SegmentKind: Hashable {
         case Self.queueTodayRaw: self = .queueToday
         case Self.queuePreviousRaw: self = .queuePrevious
         case Self.agedOutRaw: self = .agedOut
+        case Self.newRaw: self = .new
         default:
             guard let horizon = TaskHorizon(rawValue: raw) else { return nil }
             self = .horizon(horizon)
@@ -549,6 +556,7 @@ enum SegmentKind: Hashable {
         case .queueToday: return Self.queueTodayRaw
         case .queuePrevious: return Self.queuePreviousRaw
         case .agedOut: return Self.agedOutRaw
+        case .new: return Self.newRaw
         }
     }
 
@@ -563,7 +571,7 @@ enum SegmentKind: Hashable {
         switch self {
         case .horizon(let horizon): return horizon.label
         case .upcoming: return "Heads up"
-        case .deadlines, .queueToday, .queuePrevious, .agedOut: return titleWord
+        case .deadlines, .queueToday, .queuePrevious, .agedOut, .new: return titleWord
         }
     }
 
@@ -582,6 +590,8 @@ enum SegmentKind: Hashable {
         case .queueToday: return "Today's pulls"
         case .queuePrevious: return "Previous pulls"
         case .agedOut: return "Aged out"
+        // The web's `NEW_PAGE_TITLE`.
+        case .new: return "New"
         }
     }
 
@@ -603,6 +613,7 @@ enum SegmentKind: Hashable {
         // dots only when the words don't fit (`ViewThatFits`).
         case .horizon(let horizon): return horizon.label
         case .agedOut: return "Aged"
+        case .new: return "New"
         }
     }
 
@@ -615,6 +626,9 @@ enum SegmentKind: Hashable {
         case .horizon: return 2
         // Its own group, as on the web (`SEGMENT_STRIP_GROUP`: 'aged').
         case .agedOut: return 3
+        // Stands alone between Dated and Pulled, as on the web
+        // (`SEGMENT_STRIP_GROUP`: 'new'). Only equality is read.
+        case .new: return 4
         }
     }
 
@@ -631,6 +645,7 @@ enum SegmentKind: Hashable {
         case .queueToday: return -17
         case .queuePrevious: return -18
         case .agedOut: return -19
+        case .new: return -20
         }
     }
 
@@ -652,6 +667,9 @@ enum SegmentKind: Hashable {
         case .queuePrevious: return (0x5C9BA3, 0x7FBCC4)
         // `--segment-aged_out` (#7f9e9a, dark #9dbbb7).
         case .agedOut: return (0x7F9E9A, 0x9DBBB7)
+        // `--segment-new` = `--row-highlight-ring` (blue-500 #3b82f6, dark
+        // blue-400 #60a5fa).
+        case .new: return (0x3B82F6, 0x60A5FA)
         }
     }
 
@@ -666,7 +684,7 @@ enum SegmentKind: Hashable {
     var doneColorHex: (light: UInt32, dark: UInt32)? {
         switch self {
         case .deadlines: return colorHex
-        case .horizon, .upcoming, .queueToday, .queuePrevious, .agedOut: return nil
+        case .horizon, .upcoming, .queueToday, .queuePrevious, .agedOut, .new: return nil
         }
     }
 
@@ -683,6 +701,8 @@ enum SegmentKind: Hashable {
         case .queuePrevious: return (0x0A6670, 0x7FBCC4)
         // `--segment-title-aged_out` (#4d6b67; dark the fill, #9dbbb7).
         case .agedOut: return (0x4D6B67, 0x9DBBB7)
+        // `--segment-title-new` (blue-600 #2563eb; dark the fill).
+        case .new: return (0x2563EB, 0x60A5FA)
         }
     }
 
@@ -695,7 +715,8 @@ enum SegmentKind: Hashable {
         switch self {
         // Aged out keeps "Defer all" (the web's `offersDeferAll`, and what
         // this build gave it as an unknown kind).
-        case .horizon, .upcoming, .agedOut: return true
+        // New keeps it too: the web's "Not today, all" (`offersDeferAll`).
+        case .horizon, .upcoming, .agedOut, .new: return true
         case .deadlines, .queueToday, .queuePrevious: return false
         }
     }
@@ -706,7 +727,10 @@ enum SegmentKind: Hashable {
     /// page the web shows no horizon word.
     var namesRowHorizon: Bool {
         if case .horizon = self { return true }
-        return false
+        // New (2026-11-12) has no horizon of its own, so a row says the one
+        // it was given — where it goes once considered; an unset one says
+        // nothing (`horizonLabel`).
+        return self == .new
     }
 
     /// Whether a row wears the two badges ("3×", "old"). No badges on a
@@ -1252,6 +1276,19 @@ struct TaskSegmentDTO: Codable, Hashable, Identifiable {
     /// Upcoming would draw as a horizon.
     var kind: SegmentKind? { SegmentKind(raw: horizon) }
 
+    /// The New segment (2026-11-12, `SegmentKind.new`): yesterday's new
+    /// one-offs. Its rows back from Not today (`carriedOver`) are listed
+    /// after the fresh ones, under "Carried over".
+    var isNew: Bool { kind == .new }
+
+    /// New's waiting rows in the order the page lists them (the web's
+    /// `carriedLineBefore`): the fresh ones, then the carried ones. The
+    /// server already sends them so; the split only finds the heading's place.
+    var newRowsSplit: (fresh: [SegmentTaskDTO], carried: [SegmentTaskDTO]) {
+        let waiting = waitingTasks
+        return (waiting.filter { !$0.carriedOver }, waiting.filter(\.carriedOver))
+    }
+
     /// The Upcoming segment (2026-10-12): targeted tasks on their heads-up
     /// days. Its rows show the target date, and every row offers Today (repeating ones too, since 2026-10-12).
     var isUpcoming: Bool { kind == .upcoming }
@@ -1454,6 +1491,10 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     /// mark). Decoded; Try Tomorrow itself is app only, nothing native draws
     /// the mark yet.
     let tryTomorrow: Bool
+    /// A New row back from yesterday's Not today (`carried_over`, the web's
+    /// NEW-NOT-TODAY; native 2026-11-12): listed after the fresh rows, under
+    /// "Carried over". False on every other kind's rows.
+    let carriedOver: Bool
 
     var id: Int { task.id }
 
@@ -1503,11 +1544,13 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         case safetyNet = "safety_net"
         case seen
         case tryTomorrow = "try_tomorrow"
+        case carriedOver = "carried_over"
     }
 
     init(
         task: TaskDTO, state: State, recurring: Bool? = nil, upcomingSection: UpcomingSection? = nil,
-        left: SegmentLeft? = nil, safetyNet: Bool = false, seen: Bool = false, tryTomorrow: Bool = false
+        left: SegmentLeft? = nil, safetyNet: Bool = false, seen: Bool = false, tryTomorrow: Bool = false,
+        carriedOver: Bool = false
     ) {
         self.task = task
         self.state = state
@@ -1517,6 +1560,7 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         self.safetyNet = safetyNet
         self.seen = seen
         self.tryTomorrow = tryTomorrow
+        self.carriedOver = carriedOver
     }
 
     init(from decoder: Decoder) throws {
@@ -1539,6 +1583,7 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         safetyNet = try c.decodeIfPresent(Bool.self, forKey: .safetyNet) ?? false
         seen = try c.decodeIfPresent(Bool.self, forKey: .seen) ?? false
         tryTomorrow = try c.decodeIfPresent(Bool.self, forKey: .tryTomorrow) ?? false
+        carriedOver = try c.decodeIfPresent(Bool.self, forKey: .carriedOver) ?? false
     }
 
     /// Written back for the caches (`WidgetStore`'s, the watch's), so a row
@@ -1553,12 +1598,14 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         try c.encode(safetyNet, forKey: .safetyNet)
         try c.encode(seen, forKey: .seen)
         try c.encode(tryTomorrow, forKey: .tryTomorrow)
+        if carriedOver { try c.encode(true, forKey: .carriedOver) }
     }
 
     func with(state: State) -> SegmentTaskDTO {
         SegmentTaskDTO(
             task: task, state: state, recurring: recurring, upcomingSection: upcomingSection,
-            left: left, safetyNet: safetyNet, seen: seen, tryTomorrow: tryTomorrow
+            left: left, safetyNet: safetyNet, seen: seen, tryTomorrow: tryTomorrow,
+            carriedOver: carriedOver
         )
     }
 
@@ -1569,7 +1616,8 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
     func leaving(_ how: SegmentLeft) -> SegmentTaskDTO {
         SegmentTaskDTO(
             task: task, state: .considered, recurring: recurring, upcomingSection: upcomingSection,
-            left: how, safetyNet: safetyNet, seen: seen, tryTomorrow: tryTomorrow
+            left: how, safetyNet: safetyNet, seen: seen, tryTomorrow: tryTomorrow,
+            carriedOver: carriedOver
         )
     }
 
@@ -1582,7 +1630,8 @@ struct SegmentTaskDTO: Codable, Hashable, Identifiable {
         guard safetyNet else { return state == .waiting ? with(state: .considered) : self }
         return SegmentTaskDTO(
             task: task, state: state, recurring: recurring, upcomingSection: upcomingSection,
-            left: left, safetyNet: safetyNet, seen: true, tryTomorrow: tryTomorrow
+            left: left, safetyNet: safetyNet, seen: true, tryTomorrow: tryTomorrow,
+            carriedOver: carriedOver
         )
     }
 

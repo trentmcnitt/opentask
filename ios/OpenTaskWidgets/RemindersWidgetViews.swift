@@ -1768,6 +1768,16 @@ private struct TaskSegmentListView: View {
                     [SegmentListItem.pulledHeader(title: title, count: rows.count)] + rows.map { .waiting($0) }
                 }
         }
+        // New (2026-11-12, the web's "Carried over" line): the fresh rows,
+        // then the ones back from yesterday's Not today under their heading
+        // — a heading row like Pulled's, none when nothing was carried.
+        if segment.isNew, segment.hasWaiting {
+            let (fresh, carried) = segment.newRowsSplit
+            guard !carried.isEmpty else { return fresh.map { .waiting($0) } }
+            return fresh.map { SegmentListItem.waiting($0) }
+                + [.pulledHeader(title: TaskWording.carriedOverWord, count: carried.count)]
+                + carried.map { .waiting($0) }
+        }
         guard segment.isUpcoming, segment.hasWaiting else {
             return segment.waitingTasks.map { SegmentListItem.waiting($0) }
         }

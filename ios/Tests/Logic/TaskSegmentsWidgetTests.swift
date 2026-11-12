@@ -58,6 +58,46 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertNil(segment.kind?.doneColorHex, "finishes green")
     }
 
+    /// NEW (2026-11-12): a kind of its own with the web's words, between
+    /// Heads up and the queue on the strip; "Not today, all" as on the web;
+    /// its rows name the horizon they were given.
+    func testNewHasTheWebsWords() {
+        let segment = TaskSegmentDTO(horizon: "new", tasks: [])
+        XCTAssertEqual(segment.kind, .new)
+        XCTAssertEqual(segment.kind?.raw, "new")
+        XCTAssertEqual(segment.label, "New")
+        XCTAssertEqual(segment.title, "New")
+        XCTAssertEqual(segment.kind?.stripWord, "New")
+        XCTAssertEqual(segment.pageKey, -20)
+        XCTAssertTrue(segment.offersDeferAll)
+        XCTAssertNil(segment.kind?.doneColorHex, "finishes green")
+        // Its own strip group: a hairline on both sides.
+        let groups: [SegmentKind] = [.upcoming, .new, .queueToday, .horizon(.days), .agedOut]
+        XCTAssertEqual(Set(groups.map(\.stripGroup)).count, groups.count)
+        XCTAssertTrue(SegmentKind.new.namesRowHorizon)
+        XCTAssertTrue(SegmentKind.new.showsBadges)
+    }
+
+    /// New's carried rows (`carried_over`): decoded, kept through the cache
+    /// and every optimistic rebuild, listed after the fresh ones.
+    func testCarriedOverRowsSurviveTheCacheAndComeLast() throws {
+        let fresh = SegmentTaskDTO(task: TaskDTO(id: 1, title: "Sort the seed packets"), state: .waiting)
+        let carried = SegmentTaskDTO(
+            task: TaskDTO(id: 2, title: "Label the spice jars"), state: .waiting, carriedOver: true
+        )
+        let segment = TaskSegmentDTO(horizon: "new", tasks: [fresh, carried])
+        let decoded = try JSONDecoder().decode(TaskSegmentDTO.self, from: JSONEncoder().encode(segment))
+        XCTAssertEqual(decoded.tasks.map(\.carriedOver), [false, true])
+        XCTAssertTrue(carried.with(state: .deferred).carriedOver)
+        XCTAssertTrue(carried.leaving(.done).carriedOver)
+        XCTAssertTrue(carried.consideredByTap().carriedOver)
+        XCTAssertEqual(segment.newRowsSplit.fresh.map(\.id), [1])
+        XCTAssertEqual(segment.newRowsSplit.carried.map(\.id), [2])
+        // A considered carried row is no longer under the heading.
+        let after = TaskSegmentDTO(horizon: "new", tasks: [fresh, carried.consideredByTap()])
+        XCTAssertTrue(after.newRowsSplit.carried.isEmpty)
+    }
+
     /// A kind this build doesn't know: its wire string spaced and
     /// sentence-cased — never an underscore on screen.
     func testAnUnknownKindNeverShowsAnUnderscore() {
