@@ -817,6 +817,10 @@ function HomeContent({
   }, [sortOption])
 
   const [searchQuery, setSearchQuery] = useState<string | null>(null)
+  // A search shows every hit, whatever filter chips are on (SEARCH-ALL-MODES,
+  // 2026-11-12); `searchNarrowed` is the user's tap on "only <filter>" to put
+  // the filters back over the results. It ends with the search.
+  const [searchNarrowed, setSearchNarrowed] = useState(false)
   const [searchResults, setSearchResults] = useState<Task[]>([])
 
   /**
@@ -971,7 +975,24 @@ function HomeContent({
     timezone,
     now,
     initialDateFilters,
+    bypass: !!searchQuery && !searchNarrowed,
   })
+  // The search's filter line (SEARCH-ALL-MODES): shown only when a filter was
+  // on. Narrowed, the reminders and quotas (which have no project or label
+  // chips to match) leave the results with the tasks the filters drop.
+  const searchFilter = useMemo(() => {
+    if (!searchQuery || activeFilterCount === 0) return null
+    const only =
+      activeFilterCount === 1 && selectedProjects.length === 1
+        ? (projects.find((p) => p.id === selectedProjects[0])?.name ?? 'your filter')
+        : activeFilterCount === 1 && selectedLabels.length === 1
+          ? selectedLabels[0]
+          : activeFilterCount === 1
+            ? 'your filter'
+            : 'your filters'
+    return { narrowed: searchNarrowed, only, onToggle: () => setSearchNarrowed((v) => !v) }
+  }, [searchQuery, activeFilterCount, selectedProjects, selectedLabels, projects, searchNarrowed])
+  const shownSearchOthers = searchFilter?.narrowed ? NO_SEARCH_OTHERS : searchOthers
 
   // Support ?project=<id> from sidebar/project list links AND the widget's
   // dashboard-header deep link (`WidgetLink`-style, ios/AGENTS.md) — set the
@@ -1166,6 +1187,7 @@ function HomeContent({
     setSelectedSignals([])
     clearAllFilters()
     setSearchQuery(null)
+    setSearchNarrowed(false)
     setSearchResults([])
   }, [selection, clearAllFilters])
 
@@ -1236,10 +1258,14 @@ function HomeContent({
   // groups and shut folds drop out of `orderedIds` so navigation skips them.
   const listScoreMap = showInsights && aiMode !== 'off' ? insightsData.insightsScoreMap : undefined
   // RULE SEARCH-ALL-MODES: With text in the dashboard's search box the
-  //   list is every hit, whatever the mode: no mode sections, the
-  //   result count is the rows shown, and the view pill is away.
-  //   Clearing the search draws the mode again.
-  // Why: A hit outside Today was counted but not shown.
+  //   list is every hit, whatever the mode and whatever filter chips are on:
+  //   no mode sections, the result count is the rows shown, and the view
+  //   pill is away. The filter chips stay selected but are not applied
+  //   (drawn dimmed); with any on, a line under the count reads "Searching
+  //   everything · only <filter>", and its tap applies the filters to the
+  //   results (tasks narrowed, reminders and quotas away) until tapped back.
+  //   Clearing the search draws the mode again, the filters as they were.
+  // Why: A hit outside Today, or in another project, was counted or expected but not shown.
   // Ruling: Trent 2026-11-10: "It should, by default, search everything… nobody has
   //   enough things in Today that they have to search for it".
   // A sectioned mode's sections, each with its rows SHOWN ("Show 5 more"
@@ -1864,7 +1890,8 @@ function HomeContent({
         timeSlots={timeSlots}
         searchQuery={searchQuery}
         searchHits={searchResults}
-        searchOthers={searchOthers}
+        searchOthers={shownSearchOthers}
+        searchFilter={searchFilter}
         searchInitialQuery={arrivedSearch}
         onOpenSearchPointer={openSearchPointer}
         // The rows the list holds — what "N results" counts (a hit the
@@ -1910,6 +1937,7 @@ function HomeContent({
         onSearchClear={() => {
           selection.clear()
           setSearchQuery(null)
+          setSearchNarrowed(false)
           setSearchResults([])
         }}
         onBulkDone={bulk.bulkDone}
@@ -2101,6 +2129,9 @@ function useFocusQuickAddOnArrival(status: string, loading: boolean, error: stri
  * cold-open landing and the Dashboard re-tap put the hairline right under the
  * top bar (src/lib/dashboard-landing.ts).
  */
+/** No reminder or quota results (a search narrowed to the filter chips). */
+const NO_SEARCH_OTHERS: { reminders: Task[]; quotas: Task[] } = { reminders: [], quotas: [] }
+
 function TasksHeading() {
   return (
     <div data-tasks-heading className="border-border border-t px-1 pt-[18px] pb-3">
@@ -2306,6 +2337,7 @@ function DashboardView({
   searchQuery,
   searchInitialQuery,
   searchOthers,
+  searchFilter,
   onOpenSearchPointer,
   searchHits,
   searchResultCount,
@@ -2464,6 +2496,12 @@ function DashboardView({
   searchInitialQuery: string
   /** The hits that are reminders and quotas (`src/lib/search-kinds.ts`). */
   searchOthers: { reminders: Task[]; quotas: Task[] }
+  /**
+   * While searching with filter chips on: the line under the count. Not
+   * narrowed, the search shows everything and the chips are dimmed; narrowed,
+   * the filters apply to the results again.
+   */
+  searchFilter: { narrowed: boolean; only: string; onToggle: () => void } | null
   /** A reminder or quota result tapped: its lift on the dashboard, or its details. */
   onOpenSearchPointer: (task: Task) => void
   searchResultCount: number
@@ -2686,6 +2724,9 @@ function DashboardView({
   // The AI chips stay visible in the collapsed control row, so they are not
   // part of the count — but they still narrow the list, so they still count
   // toward "is anything filtered".
+  // Searching everything: the chips are on but not applied — drawn dimmed,
+  // and the "Showing N of M" banner is away (nothing is filtered right now).
+  const filtersIdle = !!searchFilter && !searchFilter.narrowed
   const anyFilterActive =
     activeFilterCount > 0 ||
     (aiMode !== 'off' && aiFilterActive) ||
@@ -2947,66 +2988,71 @@ function DashboardView({
             {nowSummary && <NowSummary {...nowSummary} />}
           </div>
 
-          <FilterBar
-            projectsOutside={modes.enabled}
-            tasks={allTasks}
-            expanded={filtersExpanded}
-            onToggleExpanded={onToggleFilters}
-            activeFilterCount={activeFilterCount}
-            pinnedOverdueCount={headerCounts.overdueCount}
-            now={now}
-            selectedPriorities={selectedPriorities}
-            selectedLabels={selectedLabels}
-            selectedDateFilters={selectedDateFilters}
-            onTogglePriority={onTogglePriority}
-            onExclusivePriority={onExclusivePriority}
-            onToggleLabel={onToggleLabel}
-            onExclusiveLabel={onExclusiveLabel}
-            onToggleDateFilter={onToggleDateFilter}
-            onExclusiveDateFilter={onExclusiveDateFilter}
-            attributeFilters={attributeFilters}
-            onToggleAttribute={onToggleAttribute}
-            onExclusiveAttribute={onExclusiveAttribute}
-            projects={projects}
-            selectedProjects={selectedProjects}
-            onToggleProject={onToggleProject}
-            onExclusiveProject={onExclusiveProject}
-            excludedPriorities={excludedPriorities}
-            excludedLabels={excludedLabels}
-            excludedDateFilters={excludedDateFilters}
-            excludedAttributes={excludedAttributes}
-            excludedProjects={excludedProjects}
-            onExcludePriority={onExcludePriority}
-            onExcludeLabel={onExcludeLabel}
-            onExcludeDateFilter={onExcludeDateFilter}
-            onExcludeAttribute={onExcludeAttribute}
-            onExcludeProject={onExcludeProject}
-            timezone={timezone}
-            aiAvailable={aiAvailable}
-            aiMode={aiMode}
-            aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
-            aiFilterActive={aiFilterActive}
-            aiFilterLoading={aiInsights.loading}
-            onToggleAiFilter={onToggleAiFilter}
-            insightsActive={showInsights}
-            onToggleInsights={onToggleInsights}
-            hasInsightsData={insightsData.hasResults}
-            insightsGenerating={insightsData.generating}
-            insightsSignalChipsVisible={insightsSignalChips}
-            signalChips={
-              aiMode !== 'off' && insightsData.hasResults
-                ? insightsData.activeSignals.map((s) => ({
-                    key: s.key,
-                    label: s.label,
-                    count: insightsData.signalCounts[s.key] || 0,
-                    description: s.description,
-                  }))
-                : undefined
-            }
-            selectedSignals={selectedSignals}
-            onSignalClick={onSignalClick}
-            onSignalLongPress={onSignalLongPress}
-          />
+          <div
+            data-filters-idle={filtersIdle ? '' : undefined}
+            className={filtersIdle ? 'opacity-50' : undefined}
+          >
+            <FilterBar
+              projectsOutside={modes.enabled}
+              tasks={allTasks}
+              expanded={filtersExpanded}
+              onToggleExpanded={onToggleFilters}
+              activeFilterCount={activeFilterCount}
+              pinnedOverdueCount={headerCounts.overdueCount}
+              now={now}
+              selectedPriorities={selectedPriorities}
+              selectedLabels={selectedLabels}
+              selectedDateFilters={selectedDateFilters}
+              onTogglePriority={onTogglePriority}
+              onExclusivePriority={onExclusivePriority}
+              onToggleLabel={onToggleLabel}
+              onExclusiveLabel={onExclusiveLabel}
+              onToggleDateFilter={onToggleDateFilter}
+              onExclusiveDateFilter={onExclusiveDateFilter}
+              attributeFilters={attributeFilters}
+              onToggleAttribute={onToggleAttribute}
+              onExclusiveAttribute={onExclusiveAttribute}
+              projects={projects}
+              selectedProjects={selectedProjects}
+              onToggleProject={onToggleProject}
+              onExclusiveProject={onExclusiveProject}
+              excludedPriorities={excludedPriorities}
+              excludedLabels={excludedLabels}
+              excludedDateFilters={excludedDateFilters}
+              excludedAttributes={excludedAttributes}
+              excludedProjects={excludedProjects}
+              onExcludePriority={onExcludePriority}
+              onExcludeLabel={onExcludeLabel}
+              onExcludeDateFilter={onExcludeDateFilter}
+              onExcludeAttribute={onExcludeAttribute}
+              onExcludeProject={onExcludeProject}
+              timezone={timezone}
+              aiAvailable={aiAvailable}
+              aiMode={aiMode}
+              aiInsightsCount={aiInsights.hasData ? aiInsights.aiTaskIds.size : undefined}
+              aiFilterActive={aiFilterActive}
+              aiFilterLoading={aiInsights.loading}
+              onToggleAiFilter={onToggleAiFilter}
+              insightsActive={showInsights}
+              onToggleInsights={onToggleInsights}
+              hasInsightsData={insightsData.hasResults}
+              insightsGenerating={insightsData.generating}
+              insightsSignalChipsVisible={insightsSignalChips}
+              signalChips={
+                aiMode !== 'off' && insightsData.hasResults
+                  ? insightsData.activeSignals.map((s) => ({
+                      key: s.key,
+                      label: s.label,
+                      count: insightsData.signalCounts[s.key] || 0,
+                      description: s.description,
+                    }))
+                  : undefined
+              }
+              selectedSignals={selectedSignals}
+              onSignalClick={onSignalClick}
+              onSignalLongPress={onSignalLongPress}
+            />
+          </div>
 
           {searchQuery && (
             <div className="mb-4 text-sm text-zinc-500" data-search-result-count>
@@ -3014,11 +3060,33 @@ function DashboardView({
               {searchQuery}&rdquo;
             </div>
           )}
+          {/* (restates RULE SEARCH-ALL-MODES, home: this file) A search ignores
+              the filter chips; this line says so and offers them back. */}
+          {searchFilter && (
+            <button
+              type="button"
+              data-search-filter-line={searchFilter.narrowed ? 'narrowed' : 'everything'}
+              onClick={searchFilter.onToggle}
+              className="text-muted-foreground hover:text-foreground -mt-3 mb-4 block text-left text-sm"
+            >
+              {searchFilter.narrowed ? (
+                <>
+                  Only {searchFilter.only} &middot;{' '}
+                  <span className="text-foreground font-medium">search everything</span>
+                </>
+              ) : (
+                <>
+                  Searching everything &middot;{' '}
+                  <span className="text-foreground font-medium">only {searchFilter.only}</span>
+                </>
+              )}
+            </button>
+          )}
           {searchQuery && (
             <SearchKindChips counts={searchCounts} value={searchKind} onChange={setSearchKind} />
           )}
 
-          {anyFilterActive && (
+          {anyFilterActive && !filtersIdle && (
             <div className="text-muted-foreground mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/30">
               Showing {tasks.length} of {allTasks.length} tasks{' '}
               <span className="mx-1">&middot;</span>

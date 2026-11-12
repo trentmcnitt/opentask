@@ -3274,10 +3274,10 @@ export function deckSkip(task: {
 }
 
 /**
- * RULE DECK-A1: While its deadline is ahead, a deadline task the deadlines page can hold (a one-
- *   off, or a deadline-anchored repeat) may be decked for any day up to D−2, never into its safety
- *   net: 'safety_net' once the net holds it, 'after_safety_net' for D−1 or D. Any other repeat may
- *   be decked up to and including the deadline's OpenTask day. A passed deadline gives
+ * RULE DECK-A1: While its deadline is ahead, a task with a deadline (a one-off, or a repeat, which
+ *   carries a deadline only when it is deadline-anchored: with a relative target too, though the
+ *   deadlines page never holds that one) may be decked for any day up to D−2, never the last two
+ *   days: 'safety_net' once the net holds it, 'after_safety_net' for D−1 or D. A passed deadline gives
  *   'deadline_nagging' and a later day 'after_auto_target'. A deadline added or moved re-runs the
  *   check, and a deck that no longer passes is taken off in the same write. (Until 2026-11-07: up
  *   to and including D for every deadline task.)
@@ -3285,7 +3285,8 @@ export function deckSkip(task: {
  *   safety net still holds a deck on D.
  * Ruling: Deadlines-page plan §5, approved 2026-10-22 (replaces the 10-20 'A1 strict'). D−2: the
  *   design session's call under Trent's 2026-11-07 ruling: "Why did it even let me put it on deck
- *   for tomorrow if it must be targeted?"
+ *   for tomorrow if it must be targeted?" One limit for every deadline repeat, a relative target
+ *   or not: the design session, 2026-11-12 ("One rule is worth more than the extra day").
  */
 /**
  * A1, THE DEADLINES PAGE'S RULE (2026-10-22, plan §5 — replaces the 10-20

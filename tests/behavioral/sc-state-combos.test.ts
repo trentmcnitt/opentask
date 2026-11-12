@@ -5,7 +5,10 @@
  *  - SC-10..11 a New row gets a deadline: out of New, then the Due page;
  *  - SC-20..23 a New row targeted, decked, carried and considered, deferred twice;
  *  - SC-30..31 New across "Roll over now" and a day-start change;
- *  - SC-40..41 "Queue tomorrow" (a marked defer), then a deadline or a deck.
+ *  - SC-40..41 "Queue tomorrow" (a marked defer), then a deadline or a deck;
+ *  - SC-50..52 heads-up off, with a future deck and with a relative target;
+ *  - SC-60..61 a deadline-anchored repeat with a relative target, decked near
+ *    its deadline.
  *
  * SC-23 and SC-40 are the two the pass found wrong and fixed with it (design
  * session, 2026-11-12): a twice-deferred carried row stays in New that day,
@@ -27,7 +30,7 @@ vi.mock('@/core/webhooks/dispatch', () => ({ dispatchWebhookEvent: vi.fn() }))
 
 import { bulkSnooze, createTask, updateTask } from '@/core/tasks'
 import { getDb } from '@/core/db'
-import { deckTasks } from '@/core/tasks/deck'
+import { deckTasks, onDeckToday } from '@/core/tasks/deck'
 import { getTaskById } from '@/core/tasks/read'
 import { runRolloverNow } from '@/core/tasks/rollover-now'
 import {
@@ -289,5 +292,103 @@ describe('SC-4x "Queue tomorrow" (a marked defer), then a deadline or a deck', (
     expect(task(id)).toMatchObject({ queue_mark: false, due_at: null, on_deck_day: '2026-11-11' })
     setClock('2026-11-10T10:00')
     expect(where(id)).toEqual(['upcoming:waiting'])
+  })
+})
+
+describe('SC-5x heads-up off, with a deck and with a relative target', () => {
+  const upcomingOn = (id: number, day: string) => {
+    setClock(`${day}T10:00`)
+    return where(id).filter((w) => w.startsWith('upcoming'))
+  }
+  const onDeck = (id: number) => onDeckToday(TEST_USER_ID, tz).some((t) => t.id === id)
+
+  test('SC-50: a future deck with heads-up off is never in Upcoming, on its Later day or its Tomorrow day; on its day it is on deck', () => {
+    const off = make({ heads_up: false })
+    const on = make()
+    deck(off.id, '2026-11-19')
+    deck(on.id, '2026-11-19')
+    // Later (three days before) and Tomorrow (the day before): only the one with heads-up on.
+    expect(upcomingOn(on.id, '2026-11-16')).toEqual(['upcoming:waiting'])
+    expect(upcomingOn(off.id, '2026-11-16')).toEqual([])
+    expect(upcomingOn(on.id, '2026-11-18')).toEqual(['upcoming:waiting'])
+    expect(upcomingOn(off.id, '2026-11-18')).toEqual([])
+    // The deck itself is untouched: on its day both are on deck.
+    setClock('2026-11-19T10:00')
+    expect(task(off.id).on_deck_day).toBe('2026-11-19')
+    expect(onDeck(off.id)).toBe(true)
+    expect(onDeck(on.id)).toBe(true)
+  })
+
+  test('SC-51: heads-up turned back on before the deck day: the row is in Upcoming again', () => {
+    const t = make({ heads_up: false })
+    deck(t.id, '2026-11-19')
+    expect(upcomingOn(t.id, '2026-11-18')).toEqual([])
+    updateTask({ ...u, taskId: t.id, input: { heads_up: true } })
+    expect(where(t.id).filter((w) => w.startsWith('upcoming'))).toEqual(['upcoming:waiting'])
+    expect(task(t.id).on_deck_day).toBe('2026-11-19')
+  })
+
+  test('SC-52: a relative target with heads-up off: never in Upcoming, the target still follows the deadline and still arrives', () => {
+    const relative = (heads_up: boolean) =>
+      make({
+        heads_up,
+        deadline_at: at('2026-11-25T17:00'),
+        target_days_before: 2,
+        target_time: '09:00',
+      })
+    const off = relative(false)
+    const on = relative(true)
+    expect(task(off.id).due_at).toBe(at('2026-11-23T09:00'))
+    expect(upcomingOn(on.id, '2026-11-20')).toEqual(['upcoming:waiting'])
+    expect(upcomingOn(off.id, '2026-11-20')).toEqual([])
+    expect(upcomingOn(on.id, '2026-11-22')).toEqual(['upcoming:waiting'])
+    expect(upcomingOn(off.id, '2026-11-22')).toEqual([])
+    // Never anywhere else while it waits for its target (a target is quiet), the Due page included.
+    expect(where(off.id)).toEqual([])
+    // The deadline moves: the target follows, heads-up off or not.
+    updateTask({ ...u, taskId: off.id, input: { deadline_at: at('2026-12-05T17:00') } })
+    expect(task(off.id)).toMatchObject({ due_at: at('2026-12-03T09:00'), heads_up: false })
+    // And it arrives: overdue at its minute.
+    setClock('2026-12-03T09:00')
+    expect(Date.parse(task(off.id).due_at!)).toBeLessThanOrEqual(Date.now())
+  })
+})
+
+describe('SC-6x a deadline-anchored repeat with a relative target, decked near its deadline (DECK-A1)', () => {
+  // Every 14 days, deadline Fri Nov 20 17:00, target three days before at 9:00.
+  // It has a real target each occurrence, so the Due page never holds it.
+  const repeat = () =>
+    make({
+      rrule: 'FREQ=DAILY;INTERVAL=14;BYHOUR=17;BYMINUTE=0',
+      deadline_at: at('2026-11-20T17:00'),
+      target_days_before: 3,
+      target_time: '09:00',
+    })
+
+  test('SC-60: D−1 and D are refused as "too close to the deadline", like every deadline task: one limit, D−2 (ruled 2026-11-12)', () => {
+    const t = repeat()
+    expect(task(t.id)).toMatchObject({ repeat_anchor: 'deadline', due_at: at('2026-11-17T09:00') })
+    for (const day of ['2026-11-19', '2026-11-20']) {
+      const result = deck(t.id, day)
+      expect(result.decked).toBe(0)
+      expect(result.refused).toEqual([{ id: t.id, reason: 'after_safety_net' }])
+    }
+    expect(deck(t.id, '2026-11-21').refused).toEqual([{ id: t.id, reason: 'after_auto_target' }])
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, due_at: at('2026-11-17T09:00') })
+  })
+
+  test('SC-61: D−2 is taken: the deck replaces this occurrence’s target, and the schedule is untouched', () => {
+    const t = repeat()
+    const result = deck(t.id, '2026-11-18')
+    expect(result.decked).toBe(1)
+    expect(task(t.id)).toMatchObject({
+      on_deck_day: '2026-11-18',
+      due_at: null,
+      deadline_at: at('2026-11-20T17:00'),
+      occurrence_at: at('2026-11-20T17:00'),
+      target_days_before: 3,
+    })
+    executeUndo(TEST_USER_ID)
+    expect(task(t.id)).toMatchObject({ on_deck_day: null, due_at: at('2026-11-17T09:00') })
   })
 })
