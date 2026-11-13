@@ -218,7 +218,7 @@ export function DashboardTasksPanel({
               {offersConsider && (
                 <PagerSweep
                   kind="consider"
-                  ariaLabel={`Mark all in ${page.label} as considered`}
+                  ariaLabel={`Consider all in ${page.label}`}
                   onClick={() => void actions.considerAll(segment)}
                 />
               )}

@@ -66,7 +66,7 @@ export function ReminderSelectionBar({
       onDoubleClickIntent={canDetails ? onDetails : undefined}
       hint={mixed ? MIXED_DETAILS_HINT : undefined}
     >
-      <BarAction tone="done" icon={<CheckCheck />} label="Considered" onClick={onConsidered} />
+      <BarAction tone="done" icon={<CheckCheck />} label="Consider" onClick={onConsidered} />
       <BarAction
         icon={<FileText />}
         label="Details"

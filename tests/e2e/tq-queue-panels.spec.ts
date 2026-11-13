@@ -451,7 +451,7 @@ test('Considered all on a queue panel, then Undo', async ({ page }) => {
     await expect(earlier.getByRole('button', { name: /^Not today: all/ })).toHaveCount(0)
     await earlier
       .getByRole('button', {
-        name: /^Mark all \d+ in Pulled as considered$/,
+        name: /^Consider all \d+ in Pulled$/,
       })
       .click()
     await expect(row(page, a)).toHaveCount(0)
@@ -488,7 +488,7 @@ test('Considered all on a reminder period, then Undo', async ({ page }) => {
       ids.push((await res.json()).data.id)
     }
     await page.goto('/reminders')
-    const sweep = page.getByRole('button', { name: /^Mark all 2 in .+ as considered$/ })
+    const sweep = page.getByRole('button', { name: /^Consider all 2 in .+$/ })
     await sweep.click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Consider all 2' }).click()
     await expect(page.locator('li[data-reminder-id]')).toHaveCount(0)

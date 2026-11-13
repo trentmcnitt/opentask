@@ -318,7 +318,7 @@ export function DashboardRemindersPanel({
             page.waiting > 0 ? (
               <PagerSweep
                 kind="consider"
-                ariaLabel={`Mark all in ${page.label} as considered`}
+                ariaLabel={`Consider all in ${page.label}`}
                 onClick={() => void completeGroup(page.group)}
               />
             ) : null
@@ -641,7 +641,7 @@ function PanelRow({
           onClick={onComplete}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label={`Mark "${reminder.title}" as considered`}
-          title="Considered"
+          title="Consider"
           // No top margin: the 19px circle and the 19.2px first line share a
           // centre on their own. The `mt-0.5` this used to carry pushed the
           // circle ~2px below it — Trent, 2026-09-21: "the text is a little

@@ -386,7 +386,7 @@ struct PromptRowView: View {
                 .onLongPressGesture(minimumDuration: 0.4) { hold?() }
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isButton)
-                .accessibilityLabel(Text("Considered: \(spokenLabel)"))
+                .accessibilityLabel(Text("Consider: \(spokenLabel)"))
                 .accessibilityAction(named: Text("Move to another period")) { hold?() }
 
                 HStack(spacing: 0) {
@@ -658,7 +658,7 @@ struct SegmentRowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(inSafetyNet ? "Target today: \(spoken)" : "Considered: \(spoken)"))
+            .accessibilityLabel(Text(inSafetyNet ? "Target today: \(spoken)" : "Consider: \(spoken)"))
 
             Button(action: done) {
                 Image(systemName: "square")

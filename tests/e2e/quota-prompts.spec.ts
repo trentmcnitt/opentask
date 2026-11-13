@@ -599,7 +599,7 @@ test.describe('Quota prompts — selection', () => {
       }
     })
     const sent = page.waitForResponse((r) => r.url().includes('/api/tasks/bulk/complete'))
-    await bar(page).getByRole('button', { name: 'Considered' }).click()
+    await bar(page).getByRole('button', { name: 'Consider' }).click()
     const res = await sent
     expect(res.ok()).toBeTruthy()
     expect(res.request().postDataJSON()).toEqual({
@@ -730,7 +730,7 @@ test.describe('Quota prompts — selection', () => {
 
     // Both, considered together: the prompts' own endpoint, both keys, no +1.
     const sent = page.waitForResponse((r) => r.url().includes('/api/quota-prompts/consider'))
-    await bar(page).getByRole('button', { name: 'Considered' }).click()
+    await bar(page).getByRole('button', { name: 'Consider' }).click()
     const res = await sent
     expect(res.ok()).toBeTruthy()
     expect([...res.request().postDataJSON().keys].sort()).toEqual([...keys].sort())
@@ -797,7 +797,7 @@ test.describe('Quota prompts — the bar never logs progress', () => {
       const considered = page.waitForResponse((r) =>
         r.url().includes('/api/quota-prompts/consider'),
       )
-      await bar(page).getByRole('button', { name: 'Considered' }).click()
+      await bar(page).getByRole('button', { name: 'Consider' }).click()
       const first_ = await considered
       expect(first_.ok()).toBeTruthy()
       expect([...first_.request().postDataJSON().keys].sort()).toEqual([weeklyKey, oneKey].sort())
@@ -809,7 +809,7 @@ test.describe('Quota prompts — the bar never logs progress', () => {
       await dailyTwo.click({ modifiers: ['ControlOrMeta'] })
       await expect(bar(page)).toContainText('2 selected')
       const completed = page.waitForResponse((r) => r.url().includes('/api/tasks/bulk/complete'))
-      await bar(page).getByRole('button', { name: 'Considered' }).click()
+      await bar(page).getByRole('button', { name: 'Consider' }).click()
       const second_ = await completed
       expect(second_.ok()).toBeTruthy()
       expect(second_.request().postDataJSON()).toEqual({

@@ -392,7 +392,7 @@ test.describe('Reminders surface', () => {
       await expect(page).toHaveURL(/\/reminders/)
       await expect(row('First thought of the range')).toBeVisible()
       await expect(row('First thought of the range').getByRole('checkbox')).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Consider', exact: true })).toBeVisible()
       // Single selection offers Details; that is the deliberate way to open one.
       await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible()
 
@@ -412,7 +412,7 @@ test.describe('Reminders surface', () => {
       await expect(page.getByText('3 selected')).toBeVisible()
 
       // One action considers the whole selection, and one Undo brings it all back.
-      await page.getByRole('button', { name: 'Considered', exact: true }).click()
+      await page.getByRole('button', { name: 'Consider', exact: true }).click()
       await expect(row('First thought of the range')).toHaveCount(0)
       await expect(row('Third thought of the range')).toHaveCount(0)
       await expect(page.getByText('Considered 3')).toBeVisible()
@@ -424,9 +424,9 @@ test.describe('Reminders surface', () => {
       // Escape clears a selection, and the circles come back with it — so the
       // next tap considers again rather than selecting.
       await longPressRow(page, row('Second thought of the range'))
-      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Consider', exact: true })).toBeVisible()
       await page.keyboard.press('Escape')
-      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Consider', exact: true })).toHaveCount(0)
       await expect(row('Second thought of the range').getByRole('checkbox')).toHaveCount(0)
       await expect(
         row('Second thought of the range').getByRole('button', {
@@ -552,7 +552,7 @@ test.describe('Reminders surface', () => {
       await slot.getByRole('button', { expanded: true }).first().click()
       await expect(slot.locator('li[data-reminder-id]')).toHaveCount(0)
 
-      await page.getByRole('button', { name: /^Mark all 2 waiting so far/ }).click()
+      await page.getByRole('button', { name: /^Consider all 2 waiting so far/ }).click()
       await page
         .getByRole('alertdialog')
         .getByRole('button', { name: /^Consider all 2$/ })
@@ -696,7 +696,7 @@ test.describe('Reminders surface', () => {
 
       // The sweep asks first. Cancel changes nothing; confirm clears exactly
       // the waiting-so-far set.
-      const sweep = page.getByRole('button', { name: /Mark all 2 waiting so far as considered/ })
+      const sweep = page.getByRole('button', { name: /Consider all 2 waiting so far/ })
       await sweep.click()
       const dialog = page.getByRole('alertdialog')
       await expect(dialog).toContainText('Consider all 2 waiting so far?')
@@ -1053,7 +1053,7 @@ test.describe('Reminders selection bar on a phone', () => {
       await openAllSlots(page)
       const row = (title: string) => page.locator('li[data-reminder-id]', { hasText: title })
       await longPressRow(page, row('A thought for the phone bar'))
-      await expect(page.getByRole('button', { name: 'Considered', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Consider', exact: true })).toBeVisible()
       await expectCancelOnTopLine(page, 'one selected', { oneRow: true })
       await row('Another for the phone bar').click()
       await expect(page.getByText('2 selected')).toBeVisible()
@@ -1103,7 +1103,7 @@ test.describe('Considered all confirms', () => {
     try {
       await openReminders(page)
       await openAllSlots(page)
-      const sweep = page.getByRole('button', { name: /^Mark all 2 in .+ as considered$/ })
+      const sweep = page.getByRole('button', { name: /^Consider all 2 in .+$/ })
       await sweep.click()
       const dialog = page.getByRole('alertdialog')
       await expect(dialog).toContainText(/Consider all 2 in .+\?/)

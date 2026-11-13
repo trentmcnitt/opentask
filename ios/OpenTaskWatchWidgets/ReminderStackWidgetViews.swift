@@ -209,10 +209,10 @@ private struct ReminderCardView: View {
             if let taskId = card.segmentTaskId {
                 // A task segment row: "I saw it" — never a completion.
                 Button(intent: ConsiderSegmentCardIntent(taskId: taskId)) { label }
-                    .accessibilityLabel("Considered")
+                    .accessibilityLabel("Consider")
             } else if let promptKey = card.promptKey {
                 Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: false)) { label }
-                    .accessibilityLabel("Considered")
+                    .accessibilityLabel("Consider")
             } else {
                 Button(intent: ConsiderReminderIntent(taskId: card.taskId)) { label }
                     .accessibilityLabel("Check off")

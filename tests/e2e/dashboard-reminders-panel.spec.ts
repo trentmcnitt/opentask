@@ -255,10 +255,10 @@ test.describe('Dashboard Reminders panel — wide', () => {
       // "Considered all" is in the header while rows wait, capped or not
       // (Trent, 2026-11-12: it used to need a tap on the header first).
       const considerAll = panel(page).getByRole('button', {
-        name: /^Mark all in .+ as considered$/,
+        name: /^Consider all in .+$/,
       })
       await expect(considerAll).toBeVisible()
-      await expect(considerAll).toHaveText('Considered all')
+      await expect(considerAll).toHaveText('Consider all')
 
       await showMore.click()
 
@@ -415,8 +415,8 @@ test.describe('Dashboard Reminders panel — Considered all from the header', ()
       expect(await waiting(page, ids)).toEqual(ids)
 
       // No tap on the header first: the sweep is there while rows wait.
-      const sweep = panel(page).getByRole('button', { name: /^Mark all .*in .+ as considered$/ })
-      await expect(sweep).toHaveText('Considered all')
+      const sweep = panel(page).getByRole('button', { name: /^Consider all .*in .+$/ })
+      await expect(sweep).toHaveText('Consider all')
       await sweep.click()
       // The card acts at once (its design: glance and tap; the Reminders
       // page's sweep is the one that asks first).

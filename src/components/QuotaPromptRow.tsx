@@ -536,7 +536,7 @@ function PromptDashedCircle({
       onPointerDown={(e) => e.stopPropagation()}
       tabIndex={-1}
       aria-label={`Mark "${prompt.title}" as considered`}
-      title="Considered"
+      title="Consider"
       data-prompt-consider
       className={cn(
         'flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',

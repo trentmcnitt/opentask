@@ -157,11 +157,11 @@ export function TaskSegmentGroup({
             type="button"
             data-segment-consider-all
             onClick={() => void actions.considerAll(segment)}
-            aria-label={`Mark all ${considerable} in ${label} as considered`}
+            aria-label={`Consider all ${considerable} in ${label}`}
             className={SLOT_SWEEP_CLASS}
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Considered all</span>
+            <span className="hidden sm:inline">Consider all</span>
           </button>
         )}
         {open && waiting.length > 0 && offersDeferAll(segment.horizon) && (

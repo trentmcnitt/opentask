@@ -269,9 +269,7 @@ async function headlineCountsApart(page: Page, phone: boolean) {
 
     // "Considered all so far" is the reminders' (it says so), and with
     // both halves handled the day is done.
-    await page
-      .getByRole('button', { name: 'Mark all 2 reminders waiting so far as considered' })
-      .click()
+    await page.getByRole('button', { name: 'Consider all 2 reminders waiting so far' }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Consider all 2' }).click()
     await expect(line).toHaveText('All clear for today')
     await expect(count).toHaveText('All 2 reminders · 1 task considered today', {

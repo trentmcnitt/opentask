@@ -266,7 +266,7 @@ function ReminderRowMarker({
       // a surface that can hold seventy of them.
       tabIndex={-1}
       aria-label={`Mark "${reminder.title}" as considered`}
-      title="Considered"
+      title="Consider"
       // "Color checkbox" on: the task row's done-circle colours, its check
       // showing on the circle's own hover (`group/done`) as there. Off: the
       // neutral circle, whose check shows on the whole row's hover (the row

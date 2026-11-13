@@ -1534,7 +1534,7 @@ private struct PromptRow: View {
                 )
                 control(
                     intent: ActOnPromptIntent(promptKey: prompt.promptKey, did: false),
-                    symbol: "circle.dashed", label: "Considered: \(spokenLabel)"
+                    symbol: "circle.dashed", label: "Consider: \(spokenLabel)"
                 )
             }
         }
@@ -2435,7 +2435,7 @@ private struct SegmentTaskRow: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.vertical, -markerBleed)
-                    .accessibilityLabel(Text("Considered: \(spoken)"))
+                    .accessibilityLabel(Text("Consider: \(spoken)"))
                 }
             }
         }

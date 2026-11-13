@@ -663,7 +663,7 @@ export function ReminderDetail({
             className="bg-green-600 text-white hover:bg-green-700 active:bg-green-700"
           >
             <Check className="mr-1 size-4" />
-            Considered
+            Consider
           </Button>
         )}
         {onCancel && (
