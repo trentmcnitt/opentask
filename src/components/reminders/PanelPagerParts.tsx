@@ -371,7 +371,7 @@ export function PagerSweep({
       ) : (
         <Forward className="size-3.5" strokeWidth={2.5} />
       )}
-      <span>{consider ? 'Considered all' : NOT_TODAY_ALL}</span>
+      <span>{consider ? 'Consider all' : NOT_TODAY_ALL}</span>
     </button>
   )
 }

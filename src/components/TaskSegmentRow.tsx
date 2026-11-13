@@ -641,7 +641,7 @@ function SegmentRowCircle({
       aria-label={
         keeps ? `Keep the horizon of "${task.title}"` : `Mark "${task.title}" as considered`
       }
-      title={keeps ? 'Keep (the horizon stays; asks again later)' : 'Considered (seen — not done)'}
+      title={keeps ? 'Keep (the horizon stays; asks again later)' : 'Consider (seen — not done)'}
       className={cn(
         'hover:border-foreground/60 hover:bg-foreground/5 flex shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
         panel ? 'border-foreground/25 size-[19px]' : 'border-foreground/20 mt-[3px] size-6',
@@ -663,13 +663,13 @@ export const ROW_PEEK_ONLY_DESCRIPTION =
   'The deadline is close: target it or mark it done. Hold, right-click or press Command-Enter for details.'
 /** The queue card's rows, where a hold selects (L1). */
 const ROW_SELECT_DESCRIPTION =
-  'Tap to mark considered. Hold, right-click or press Command-Enter to select.'
+  'Tap to consider. Hold, right-click or press Command-Enter to select.'
 const ROW_SELECT_ONLY_DESCRIPTION =
   'The deadline is close: target it or mark it done. Hold, right-click or press Command-Enter to select.'
 
 /** Read to assistive tech on every waiting row: the peek's ways in. */
 export const ROW_PEEK_DESCRIPTION =
-  'Tap to mark considered. Hold, right-click or press Command-Enter for details.'
+  'Tap to consider. Hold, right-click or press Command-Enter for details.'
 
 /**
  * A Shift-click's RANGE: the waiting rows of the page on screen, in the order

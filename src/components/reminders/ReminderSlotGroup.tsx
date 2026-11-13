@@ -258,11 +258,11 @@ export function ReminderSlotGroup({
           <button
             type="button"
             onClick={() => onCompleteGroup(group)}
-            aria-label={`Mark all ${count} in ${label} as considered`}
+            aria-label={`Consider all ${count} in ${label}`}
             className={SLOT_SWEEP_CLASS}
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Considered all</span>
+            <span className="hidden sm:inline">Consider all</span>
           </button>
         )}
       </div>

@@ -143,11 +143,11 @@ export function RemindersHeadline({
             onClick={onConsiderSoFar}
             // Reminders only (Consider-all for tasks is on hold): with a task
             // half it says so, as the line beside it counts both.
-            aria-label={`Mark all ${summary.waitingSoFar}${counts.tasks ? ' reminders' : ''} waiting so far as considered`}
+            aria-label={`Consider all ${summary.waitingSoFar}${counts.tasks ? ' reminders' : ''} waiting so far`}
             className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
           >
             <CheckCheck className="size-3.5" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Considered all so far</span>
+            <span className="hidden sm:inline">Consider all so far</span>
             <span className="sm:hidden">All so far</span>
           </button>
         )}

@@ -233,7 +233,7 @@ test.describe("Trent's phone", () => {
       await expect(row(page, ids[5])).toBeVisible()
       // The header's sweeps (Considered all, Not today, all) are there
       // without opening it (2026-11-12).
-      const sweeps = card(page).getByRole('button', { name: /^(Mark all|Not today: all)/ })
+      const sweeps = card(page).getByRole('button', { name: /^(Consider all|Not today: all)/ })
       await expect(sweeps).toHaveCount(2)
       await card(page).locator('[data-queue-select-toggle]').click()
       // Selecting: the bar has Consider and Not today; the header drops its sweeps.
@@ -274,7 +274,7 @@ test.describe("Trent's phone", () => {
  */
 test.describe('the header sweeps, without opening the card', () => {
   const sweeps = (page: Page) =>
-    card(page).getByRole('button', { name: /^(Mark all|Not today: all)/ })
+    card(page).getByRole('button', { name: /^(Consider all|Not today: all)/ })
   const overflow = (page: Page) =>
     page.evaluate(() => ({
       scroll: document.documentElement.scrollWidth,
@@ -300,7 +300,7 @@ test.describe('the header sweeps, without opening the card', () => {
           'aria-expanded',
           'false',
         )
-        await expect(sweeps(page)).toHaveText(['Considered all', 'Not today, all'])
+        await expect(sweeps(page)).toHaveText(['Consider all', 'Not today, all'])
         // Select mode: they step aside; back when it ends.
         await card(page).locator('[data-queue-select-toggle]').click()
         await expect(sweeps(page)).toHaveCount(0)
@@ -308,7 +308,7 @@ test.describe('the header sweeps, without opening the card', () => {
         await expect(sweeps(page)).toHaveCount(2)
 
         await card(page)
-          .getByRole('button', { name: /^Mark all in .+ as considered$/ })
+          .getByRole('button', { name: /^Consider all in .+$/ })
           .click()
         for (const id of ids) await expect(row(page, id)).toHaveCount(0)
         const state = async (id: number) =>
@@ -340,7 +340,7 @@ test.describe('the header sweeps, without opening the card', () => {
         await page.goto('/')
         await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
         await expect(row(page, ids[0])).toBeVisible()
-        await expect(sweeps(page)).toHaveText(['Considered all', 'Not today, all'])
+        await expect(sweeps(page)).toHaveText(['Consider all', 'Not today, all'])
         const below = card(page).locator('[data-pager-sweeps="below"]')
         await expect(below).toBeVisible()
         await expect(card(page).locator('[data-pager-sweeps="inline"]')).toBeHidden()
