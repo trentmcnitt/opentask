@@ -77,5 +77,7 @@ export function useQuotaEditor({
     />
   )
 
-  return { saveQuotas, createQuota, deleteQuotas, openEdit, openCreate, close, modal }
+  /** The editor is open (a pager card holds its page meanwhile). */
+  const open = editing.length > 0 || creating !== null
+  return { saveQuotas, createQuota, deleteQuotas, openEdit, openCreate, close, modal, open }
 }

@@ -1115,6 +1115,33 @@ export const RULE_REGISTRY = {
     symbol: 'isNotYetRow',
     pins: [],
   },
+  'PAGER-CLOCK-TAKEOVER': {
+    home: 'src/lib/panel-pager.ts',
+    symbol: 'clockMove',
+    pins: [
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-10',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-11',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-13',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-15',
+    ],
+  },
+  'PAGER-FINISH-BEAT': {
+    home: 'src/lib/panel-pager.ts',
+    symbol: 'beatMove',
+    pins: [
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-01',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-03',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-05',
+    ],
+  },
+  'PAGER-HELD': {
+    home: 'src/hooks/usePanelPager.ts',
+    symbol: 'held',
+    pins: [
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-20',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-21',
+    ],
+  },
   'SEARCH-ALL-MODES': {
     home: 'src/components/DashboardClient.tsx',
     symbol: 'modeSections',

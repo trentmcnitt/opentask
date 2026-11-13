@@ -25,6 +25,7 @@ import { DeckTomorrowIcon } from '@/components/icons/DeckTomorrowIcon'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
 import { useQueueModifierPick, useQueueSelect, useQueueSelectEnter } from '@/components/QueueSelect'
 import { requestShowInList, showInListHref } from '@/lib/show-in-list'
+import { usePagerHold } from '@/hooks/usePanelPager'
 import { fromPortal, useLongPress, useSimpleLongPress } from '@/hooks/useLongPress'
 import { useLastKnownQueueOn } from '@/lib/last-known-queue'
 import { HorizonDotButton, HorizonDotMark, HorizonMenuContent } from '@/components/HorizonDot'
@@ -1087,6 +1088,8 @@ function GrowButton({
     onShortPress: () => void actions.grow(task),
     tapOn: 'click',
   })
+  // The menu is in a portal: it holds the pager card it belongs to.
+  usePagerHold(menuOpen)
   if (!to) return <span aria-hidden className={SLOT_HIT} />
   const words = `Grow to ${HORIZON_LABELS[to]}`
   return (
@@ -1269,6 +1272,8 @@ export function DeckTomorrowButton({
       ? deckReplaces(task, timezone)
       : replacesGiven
   const [pending, setPending] = useState<string | null>(null)
+  // The menu and the confirm are in portals: they hold the pager card.
+  usePagerHold(menuOpen || pending !== null)
   // Nothing to replace any more (the row changed under an open confirm): drop it.
   if (!replaces && pending) setPending(null)
   const act = (day: string | null) => {
@@ -1395,6 +1400,7 @@ function DeferLeadSlot({
   panel: boolean
 }) {
   const [open, setOpen] = useState(false)
+  usePagerHold(open)
   const { attemptsRolloverTime } = useTaskQueue()
   const { task } = row
   const days =
