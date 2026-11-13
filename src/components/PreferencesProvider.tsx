@@ -408,7 +408,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   // (the dirty fields).
   const [loadPreferences] = useState(() => async (): Promise<void> => {
     const res = await fetch('/api/user/preferences')
-    const data = res.ok ? await res.json() : null
+    // A failed load is not a load: merging nothing would write the DEFAULTS
+    // (task queue off, the default day start) over what this viewer has.
+    if (!res.ok) throw new Error(`GET /api/user/preferences ${res.status}`)
+    const data = await res.json()
     const server = parseServerPrefs(data?.data)
     // Take (and reset) the dirty set now: a change made after this point
     // is applied by its own state update, which React queues after this merge.
@@ -416,22 +419,51 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     setPrefs((local) => mergeLoadedPrefs(local, changed, server))
   })
 
+  // THE MOUNT LOAD COUNTS ONLY WHEN IT SUCCEEDS (2026-11-12). A failed fetch
+  // (a dropped connection, a request cut off) used to mark the preferences
+  // loaded anyway, with the defaults: a task-queue user's page drew the
+  // queue-off way, and "queue off" was remembered for the next load's first
+  // paint (`rememberQueueOn`). Now a failure leaves `preferencesLoaded` false
+  // — every surface keeps its "not known yet" state, which reads what this
+  // browser remembers (`useLastKnownQueueOn`, `useLastKnownDayStart`) — and
+  // the load is tried again: after 1 s, 2 s, 4 s … up to every 30 s, and at
+  // once when the browser comes back online.
   useEffect(() => {
     if (status !== 'authenticated') return
-    loadPreferences()
-      .then(() => {
-        // Register iOS device token and provision Bearer token using session cookie auth.
-        // This ensures push notifications follow the web-logged-in user,
-        // not the bearer token user from initial iOS setup.
-        registerDeviceToken()
-        provisionBearerToken()
-      })
-      .catch((err: unknown) => {
-        console.error('Failed to fetch preferences:', err)
-      })
-      .finally(() => {
-        setPreferencesLoaded(true)
-      })
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempt = 0
+    const load = () => {
+      loadPreferences().then(
+        () => {
+          if (cancelled) return
+          // Register iOS device token and provision Bearer token using session cookie auth.
+          // This ensures push notifications follow the web-logged-in user,
+          // not the bearer token user from initial iOS setup.
+          registerDeviceToken()
+          provisionBearerToken()
+          setPreferencesLoaded(true)
+        },
+        (err: unknown) => {
+          if (cancelled) return
+          console.error('Failed to fetch preferences:', err)
+          timer = setTimeout(load, preferencesRetryDelay(attempt++))
+        },
+      )
+    }
+    const onOnline = () => {
+      if (timer === undefined) return
+      clearTimeout(timer)
+      timer = undefined
+      load()
+    }
+    load()
+    window.addEventListener('online', onOnline)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      window.removeEventListener('online', onOnline)
+    }
   }, [status, loadPreferences])
 
   // ANCHOR TIMES ARE THE SERVER'S (2026-10-21): Morning, Wake, Sleep and the
@@ -626,6 +658,11 @@ export function useWeekStart() {
 export function useCheckInDay() {
   const { checkInDay, setCheckInDay } = useContext(PreferencesContext)
   return { checkInDay, setCheckInDay }
+}
+
+/** How long to wait before retrying a failed preferences load: 1 s, 2 s, 4 s … capped at 30 s. */
+export function preferencesRetryDelay(attempt: number): number {
+  return Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5))
 }
 
 /**

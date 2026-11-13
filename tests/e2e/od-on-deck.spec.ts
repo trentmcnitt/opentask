@@ -903,6 +903,48 @@ test('switch off: no On deck placeholder while the preferences load, unless it w
   }
 })
 
+test('a failed preferences load is not a load: a queue-on page stays queue-on, and loads when the fetch works again', async ({
+  page,
+}) => {
+  const ids: number[] = []
+  let failed = 0
+  try {
+    const id = await create(page, { title: uniqueTitle('OD prefs failure'), horizon: 'days' })
+    ids.push(id)
+    madeYesterday(id)
+    const r = () => segRow(segment(page, 'days'), id)
+    // A normal load first: the row has On deck, and the switch is remembered on.
+    await page.goto('/reminders')
+    await expect(r().locator('[data-on-deck]')).toHaveCount(1)
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem('opentask.taskQueueOn')))
+      .toBe('1')
+
+    // The connection drops for the preferences: every GET fails.
+    await page.route('**/api/user/preferences', (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      failed += 1
+      return route.abort('internetdisconnected')
+    })
+    await page.reload()
+    await expect(r()).toBeVisible()
+    await expect.poll(() => failed).toBeGreaterThan(0)
+    // Not drawn the queue-off way: On deck's place is kept (the switch is
+    // not known yet), and "on" stays remembered — the defaults were never
+    // taken for an answer.
+    await expect(r().locator('[data-deck-placeholder]')).toHaveCount(1)
+    expect(await page.evaluate(() => window.localStorage.getItem('opentask.taskQueueOn'))).toBe('1')
+
+    // The connection is back: the retry loads them, and On deck is there.
+    await page.unroute('**/api/user/preferences')
+    await expect(r().locator('[data-on-deck]')).toHaveCount(1)
+    await expect(r().locator('[data-deck-placeholder]')).toHaveCount(0)
+  } finally {
+    await page.unroute('**/api/user/preferences').catch(() => {})
+    await trash(page, ids)
+  }
+})
+
 test.describe('touch', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } })
 
