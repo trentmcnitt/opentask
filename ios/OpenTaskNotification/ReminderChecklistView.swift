@@ -372,7 +372,7 @@ struct ReminderChecklistView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Considered: \(prompt.title), \(prompt.spokenCount)"))
+            .accessibilityLabel(Text("Consider: \(prompt.title), \(prompt.spokenCount)"))
 
             Button {
                 model.choose(prompt: prompt.promptKey, did: true)
