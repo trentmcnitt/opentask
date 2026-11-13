@@ -867,14 +867,27 @@ test('switch off: no On deck placeholder while the preferences load, unless it w
     ids.push(id)
     madeYesterday(id)
     await page.goto('/reminders')
-    await page.evaluate(() => window.localStorage.setItem('opentask.taskQueueOn', '1'))
-    await setQueue(page, false)
-    // Hold the preferences until the row has been looked at.
+    // Hold the preferences until the row has been looked at. Registered
+    // before the switch goes off, so no response fetched after that can land
+    // in the page that is about to be reloaded.
     await page.route('**/api/user/preferences', async (route) => {
       if (route.request().method() !== 'GET') return route.continue()
       await new Promise<void>((resolve) => held.push(resolve))
       // A request the page dropped meanwhile (a reload) is already handled.
       await route.continue().catch(() => {})
+    })
+    await setQueue(page, false)
+    // "Last seen ON" is the reloaded page's STARTING state, so it is set as
+    // that page begins, before any of its scripts, once (the session marker
+    // keeps the second reload below from setting it again). Setting it in the
+    // old page and then reloading left a window in which the flag was no
+    // longer '1' when the new page read it: in the CI failure's trace the
+    // row had no placeholder from its first paint, with both preferences
+    // requests still held.
+    await page.addInitScript(() => {
+      if (window.sessionStorage.getItem('od-last-seen-on')) return
+      window.sessionStorage.setItem('od-last-seen-on', '1')
+      window.localStorage.setItem('opentask.taskQueueOn', '1')
     })
     const r = () => segRow(segment(page, 'days'), id)
 
