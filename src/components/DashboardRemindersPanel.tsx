@@ -13,6 +13,7 @@ import { useTaskSegments } from '@/hooks/useTaskSegments'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePanelPager } from '@/hooks/usePanelPager'
+import { usePagerClock } from '@/hooks/usePagerClock'
 import { ReminderDetailModal } from '@/components/ReminderDetailModal'
 import { ReminderRowPopover } from '@/components/ReminderRowPopover'
 import { ReminderSlotBar } from '@/components/ReminderSlotBar'
@@ -134,7 +135,7 @@ function useRowEditor({
     />
   )
 
-  return { open, modal }
+  return { open, modal, isOpen: editing.length > 0 }
 }
 
 /**
@@ -179,6 +180,46 @@ function buildSlotPages(
   })
 }
 
+/**
+ * The Reminders card's pages and pager: the periods in the day's order, the
+ * clock's period, and the card's state (`usePanelPager`).
+ */
+function useSlotPager({
+  groups,
+  timeSlots,
+  timezone,
+  blocked,
+}: {
+  groups: ReminderGroup[]
+  timeSlots: TimeSlot[]
+  timezone: string
+  blocked: boolean
+}) {
+  const dayStart = useDayStart()
+  // The card's clock (`usePagerClock`): React state that moves when a period
+  // opens, the day turns or the app comes back. State, not `new Date()` in
+  // the render: the React Compiler memoizes the pages on what they are made
+  // from, and a wall clock read during render is not something it sees
+  // change, so the card used to follow the clock only when its data changed.
+  const { now, day } = usePagerClock(
+    timeSlots.map((s) => s.start_time),
+    timezone,
+    dayStart,
+  )
+  // In the day's order, so a slot before the day start is the last page.
+  const dayGroups = orderGroupsByDay(groups, dayStart)
+  const pages = buildSlotPages(dayGroups, timezone, now, dayStart)
+  // The slots alone: the natural page is the clock's slot, and finishing one
+  // goes to the earliest slot up to now still waiting (`pageAfterFinishing`
+  // with every page a slot is `slotAfterFinishing`).
+  const naturalSlot = pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0
+  const pager = usePanelPager(pages, pages.length, naturalSlot, {
+    day,
+    blocked,
+  })
+  return { pages, naturalSlot, pager }
+}
+
 interface DashboardRemindersPanelProps {
   onUndo: () => void
   onCompleted: () => void
@@ -205,7 +246,6 @@ export function DashboardRemindersPanel({
   onLiftApplied,
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
-  const dayStart = useDayStart()
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
   const segments = useTaskSegments({
     segments: reminders.taskSegments,
@@ -246,20 +286,9 @@ export function DashboardRemindersPanel({
     }
   }, [refreshRef, refresh])
 
-  // `new Date()` at the call site, not hoisted to a variable: this keeps the
-  // call a fresh object identity every render, so the React Compiler cannot
-  // memoize it away as "pure in groups/timezone" and skip recomputing purely
-  // because the wall clock moved — see the module docblock's "component state
-  // that recomputes... on each render is sufficient" assumption.
-  const now = new Date()
-  // In the day's order, so a slot before the day start is the last page.
-  const dayGroups = orderGroupsByDay(groups, dayStart)
-  const pages = buildSlotPages(dayGroups, timezone, now, dayStart)
-  // The slots alone: the natural page is the clock's slot, and finishing one
-  // goes to the earliest slot up to now still waiting (`pageAfterFinishing`
-  // with every page a slot is `slotAfterFinishing`).
-  const naturalSlot = pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0
-  const pager = usePanelPager(pages, pages.length, naturalSlot)
+  // A row's bubble, its editor, a prompt's bubble or editor: the card is held.
+  const blocked = peekId !== null || editor.isOpen || prompts.busy
+  const { pages, naturalSlot, pager } = useSlotPager({ groups, timeSlots, timezone, blocked })
   liftState.apply({ hydrated: reminders.hydrated, pages, pager })
   const { lifted, flashId } = liftState
   // A stop of the Dashboard tab's re-tap walk while a period that has come
@@ -295,6 +324,7 @@ export function DashboardRemindersPanel({
         data-reminders-slot={page.key}
         data-retap-stop
         data-needs-you={needsYou ? '' : undefined}
+        {...pager.cardProps}
         // Closer to the Tasks card beneath it, so the two read as a pair.
         className={cn(
           'bg-muted/30 scroll-below-header overflow-hidden rounded-2xl',

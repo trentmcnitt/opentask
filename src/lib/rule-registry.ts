@@ -1115,6 +1115,21 @@ export const RULE_REGISTRY = {
     symbol: 'isNotYetRow',
     pins: [],
   },
+  'PAGER-CLOCK-TAKEOVER': {
+    home: 'src/lib/panel-pager.ts',
+    symbol: 'clockMove',
+    pins: [],
+  },
+  'PAGER-FINISH-BEAT': {
+    home: 'src/lib/panel-pager.ts',
+    symbol: 'beatMove',
+    pins: [],
+  },
+  'PAGER-HELD': {
+    home: 'src/hooks/usePanelPager.ts',
+    symbol: 'held',
+    pins: [],
+  },
   'SEARCH-ALL-MODES': {
     home: 'src/components/DashboardClient.tsx',
     symbol: 'modeSections',

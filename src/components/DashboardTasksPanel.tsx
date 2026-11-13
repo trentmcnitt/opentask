@@ -33,7 +33,8 @@ import {
   segmentTitleColor,
   waitingRows,
 } from '@/components/TaskSegmentRow'
-import { usePanelPager } from '@/hooks/usePanelPager'
+import { PagerHoldProvider, usePanelPager } from '@/hooks/usePanelPager'
+import { usePagerClock } from '@/hooks/usePagerClock'
 import { UpcomingSections } from '@/components/reminders/UpcomingSections'
 import {
   QueueSelectContext,
@@ -44,7 +45,7 @@ import {
 } from '@/components/QueueSelect'
 import { toConsider, type SegmentView, type TaskSegmentActions } from '@/hooks/useTaskSegments'
 import { TASK_QUEUE_TITLE } from '@/lib/task-model-words'
-import { useTaskQueue } from '@/components/PreferencesProvider'
+import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { onlyWithQueue } from '@/lib/task-segments'
 import {
   TASKS_PANEL_PARAM,
@@ -126,7 +127,14 @@ export function DashboardTasksPanel({
     }
   })
   // No page is a slot: the natural page is the first segment still waiting.
-  const pager = usePanelPager(pages, 0, 0)
+  // The day turning lets the card go of its page (RULE PAGER-CLOCK-TAKEOVER).
+  const dayStart = useDayStart()
+  const clock = usePagerClock([], timezone, dayStart)
+  const pager = usePanelPager(pages, 0, 0, {
+    day: clock.day,
+    // Select mode, a row's bubble, its editor: the card is held.
+    blocked: select.on || actions.peek !== null || actions.detailsTask !== null,
+  })
   const queue = useTaskQueue()
   const sectionRef = useRef<HTMLElement>(null)
   const scrollPending = useRef(false)
@@ -186,6 +194,7 @@ export function DashboardTasksPanel({
       // (src/lib/retap-walk.ts).
       data-retap-stop
       data-needs-you={pages.some((p) => p.waiting > 0) ? '' : undefined}
+      {...pager.cardProps}
       className="bg-muted/30 scroll-below-header mb-6 overflow-hidden rounded-2xl"
     >
       <SlotPagerHeader
@@ -248,20 +257,22 @@ export function DashboardTasksPanel({
         onJump={goTo}
         ariaLabel="Today's task segments"
       />
-      <QueueSelectEnterContext.Provider value={select.enter}>
-        <QueueSelectModifierContext.Provider value={select.modifierPick}>
-          <QueueSelectContext.Provider value={select.state}>
-            <TaskPageBody
-              segment={segment}
-              actions={actions}
-              timezone={timezone}
-              expanded={expanded}
-              showConsidered={showConsidered}
-              onToggleExpanded={() => setExpanded(!expanded)}
-            />
-          </QueueSelectContext.Provider>
-        </QueueSelectModifierContext.Provider>
-      </QueueSelectEnterContext.Provider>
+      <PagerHoldProvider value={pager.hold}>
+        <QueueSelectEnterContext.Provider value={select.enter}>
+          <QueueSelectModifierContext.Provider value={select.modifierPick}>
+            <QueueSelectContext.Provider value={select.state}>
+              <TaskPageBody
+                segment={segment}
+                actions={actions}
+                timezone={timezone}
+                expanded={expanded}
+                showConsidered={showConsidered}
+                onToggleExpanded={() => setExpanded(!expanded)}
+              />
+            </QueueSelectContext.Provider>
+          </QueueSelectModifierContext.Provider>
+        </QueueSelectEnterContext.Provider>
+      </PagerHoldProvider>
       {select.bar}
     </section>
   )

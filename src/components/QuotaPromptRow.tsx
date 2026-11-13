@@ -717,7 +717,13 @@ export function usePromptRows({
       onHighlightDone={onHighlightDone}
     />
   )
-  return { renderPrompt, openQuotas: detail.openQuotas, modal: detail.modal }
+  return {
+    renderPrompt,
+    openQuotas: detail.openQuotas,
+    modal: detail.modal,
+    /** A prompt's bubble or the quota editor is open. */
+    busy: detail.busy,
+  }
 }
 
 /**
@@ -742,7 +748,13 @@ function useQuotaPromptDetail({
   const router = useRouter()
   const [peekKey, setPeekKey] = useState<string | null>(null)
   const [task, setTask] = useState<Task | null>(null)
-  const { saveQuotas, deleteQuotas, openEdit, modal } = useQuotaEditor({
+  const {
+    saveQuotas,
+    deleteQuotas,
+    openEdit,
+    modal,
+    open: editorOpen,
+  } = useQuotaEditor({
     refresh: onRefresh,
     onUndo,
     onCompleted,
@@ -864,5 +876,5 @@ function useQuotaPromptDetail({
     )
   }
 
-  return { peek, wrap, openQuotas, modal }
+  return { peek, wrap, openQuotas, modal, busy: peekKey !== null || editorOpen }
 }
