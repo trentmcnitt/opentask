@@ -24,19 +24,23 @@ const MAX_TIMEOUT_MS = 2 ** 31 - 1
  *   all; the card re-reads the clock the moment it is looked at again
  *   (`useDashboardNow`'s reason).
  *
- * Returns that instant and its OpenTask day.
+ * Returns that instant, its OpenTask day, and what they were read against.
  */
 export function usePagerClock(
   startTimes: readonly string[],
   timezone: string,
   dayStart: string,
-): { now: Date; day: string } {
+): { now: Date; day: string; basis: string } {
   const [now, setNow] = useState(() => new Date())
   const starts = startTimes.join(',')
 
   useEffect(() => {
-    const at = nextPagerBoundary(starts ? starts.split(',') : [], timezone, dayStart, now)
-    const delay = Math.min(Math.max(at.getTime() - now.getTime(), 0), MAX_TIMEOUT_MS)
+    // From the wall clock, not `now`: a re-arm for new settings is not late
+    // by however long ago `now` was read. `now` is a dependency so each tick
+    // arms the next.
+    const from = new Date(Math.max(Date.now(), now.getTime()))
+    const at = nextPagerBoundary(starts ? starts.split(',') : [], timezone, dayStart, from)
+    const delay = Math.min(Math.max(at.getTime() - from.getTime(), 0), MAX_TIMEOUT_MS)
     const id = setTimeout(() => setNow(new Date()), delay)
     return () => clearTimeout(id)
   }, [starts, timezone, dayStart, now])
@@ -55,5 +59,10 @@ export function usePagerClock(
     }
   }, [])
 
-  return { now, day: openTaskDayOf(now, timezone, dayStart) }
+  return {
+    now,
+    day: openTaskDayOf(now, timezone, dayStart),
+    // What the pager reads the clock against (`ClockAck.basis`).
+    basis: `${dayStart}|${timezone}|${starts}`,
+  }
 }

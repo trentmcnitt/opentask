@@ -6,6 +6,7 @@ import {
   PAGER_START,
   beatOver,
   settlePager,
+  touchCard,
   turnPage,
   type PagerState,
 } from '@/lib/panel-pager'
@@ -44,15 +45,19 @@ function useCardHold() {
   useEffect(() => {
     if (!pressing) return
     const release = () => setPressing(false)
-    window.addEventListener('pointerup', release)
-    window.addEventListener('pointercancel', release)
+    // Every way a press ends without a pointerup reaching the page: the
+    // system's context menu, the window losing focus mid-press.
+    const ends = ['pointerup', 'pointercancel', 'contextmenu', 'blur'] as const
+    for (const name of ends) window.addEventListener(name, release)
     return () => {
-      window.removeEventListener('pointerup', release)
-      window.removeEventListener('pointercancel', release)
+      for (const name of ends) window.removeEventListener(name, release)
     }
   }, [pressing])
   const hold = useCallback((delta: 1 | -1) => setMenus((n) => n + delta), [])
-  const onPointerDownCapture = useCallback(() => setPressing(true), [])
+  // The primary button (a finger, a pen): a right-click is not a press held.
+  const onPointerDownCapture = useCallback((e: { button: number }) => {
+    if (e.button === 0) setPressing(true)
+  }, [])
   return { held: pressing || menus > 0, hold, onPointerDownCapture }
 }
 
@@ -74,7 +79,8 @@ function useCardHold() {
  * a finished page's beat ending (RULE PAGER-FINISH-BEAT), a period opening or
  * the day turning, and an Undo bringing back the row that finished a page.
  *
- * `day` is the OpenTask day and `blocked` the card's own reasons to be held.
+ * `day` is the OpenTask day, `basis` what the clock is read against
+ * (`usePagerClock`), and `blocked` the card's own reasons to be held.
  * The card spreads `cardProps` on its section and wraps its rows in
  * `PagerHoldProvider value={hold}`.
  */
@@ -82,7 +88,7 @@ export function usePanelPager<P extends PagerPage>(
   pages: P[],
   slotCount: number,
   naturalSlot: number,
-  { day, blocked = false }: { day: string; blocked?: boolean },
+  { day, basis, blocked = false }: { day: string; basis: string; blocked?: boolean },
 ) {
   // Which page is held, the finished page's beat, the clock last settled
   // with: one state, settled once a render (`settlePager`).
@@ -111,12 +117,19 @@ export function usePanelPager<P extends PagerPage>(
   //   state then.
   // Why: A page turning under a press, or behind an open menu, acts on a row
   //   the user was not looking at.
-  // Ruling: Trent, 2026-11-13 (the hand-off's design).
+  // Ruling: The design session, 2026-11-13 (the hand-off Trent asked for).
   const held = blocked || cardHold.held || showConsidered
 
   // Settled during render, not in an effect, so a page the card is leaving
   // is not painted once more after its move is due.
-  const { next, index } = settlePager(state, { pages, slotCount, naturalSlot, day, held })
+  const { next, index } = settlePager(state, {
+    pages,
+    slotCount,
+    naturalSlot,
+    day,
+    basis,
+    held,
+  })
   if (next !== state) setState(next)
   const page = pages[index]
 
@@ -145,7 +158,12 @@ export function usePanelPager<P extends PagerPage>(
     showConsidered,
     toggleConsidered: () => setShowConsidered((v) => !v),
     /** Spread on the card's section: a press on the card holds it. */
-    cardProps: { onPointerDownCapture: cardHold.onPointerDownCapture },
+    cardProps: {
+      onPointerDownCapture: (e: { button: number }) => {
+        cardHold.onPointerDownCapture(e)
+        setState(touchCard)
+      },
+    },
     /** For `PagerHoldProvider`: a row's menu holds the card. */
     hold: cardHold.hold,
   }

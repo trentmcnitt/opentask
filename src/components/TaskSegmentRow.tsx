@@ -1272,6 +1272,8 @@ export function DeckTomorrowButton({
       ? deckReplaces(task, timezone)
       : replacesGiven
   const [pending, setPending] = useState<string | null>(null)
+  // The menu and the confirm are in portals: they hold the pager card.
+  usePagerHold(menuOpen || pending !== null)
   // Nothing to replace any more (the row changed under an open confirm): drop it.
   if (!replaces && pending) setPending(null)
   const act = (day: string | null) => {
@@ -1398,6 +1400,7 @@ function DeferLeadSlot({
   panel: boolean
 }) {
   const [open, setOpen] = useState(false)
+  usePagerHold(open)
   const { attemptsRolloverTime } = useTaskQueue()
   const { task } = row
   const days =

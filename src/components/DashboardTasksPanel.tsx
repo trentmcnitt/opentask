@@ -132,6 +132,7 @@ export function DashboardTasksPanel({
   const clock = usePagerClock([], timezone, dayStart)
   const pager = usePanelPager(pages, 0, 0, {
     day: clock.day,
+    basis: clock.basis,
     // Select mode, a row's bubble, its editor: the card is held.
     blocked: select.on || actions.peek !== null || actions.detailsTask !== null,
   })

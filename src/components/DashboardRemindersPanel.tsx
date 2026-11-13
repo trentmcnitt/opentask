@@ -201,7 +201,7 @@ function useSlotPager({
   // the render: the React Compiler memoizes the pages on what they are made
   // from, and a wall clock read during render is not something it sees
   // change, so the card used to follow the clock only when its data changed.
-  const { now, day } = usePagerClock(
+  const { now, day, basis } = usePagerClock(
     timeSlots.map((s) => s.start_time),
     timezone,
     dayStart,
@@ -215,6 +215,7 @@ function useSlotPager({
   const naturalSlot = pages.length > 0 ? naturalSlotIndex(dayGroups, timezone, now, dayStart) : 0
   const pager = usePanelPager(pages, pages.length, naturalSlot, {
     day,
+    basis,
     blocked,
   })
   return { pages, naturalSlot, pager }

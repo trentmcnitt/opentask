@@ -4,6 +4,7 @@ import {
   beatOver,
   nextPagerBoundary,
   settlePager,
+  touchCard,
   turnPage,
   type PagerInput,
   type PagerState,
@@ -22,6 +23,7 @@ function periods(waiting: number[], naturalSlot: number, extra: Partial<PagerInp
     slotCount: waiting.length,
     naturalSlot,
     day: '2026-11-13',
+    basis: 'settings',
     held: false,
     ...extra,
   }
@@ -32,6 +34,7 @@ function segments(waiting: number[], extra: Partial<PagerInput> = {}): PagerInpu
     slotCount: 0,
     naturalSlot: 0,
     day: '2026-11-13',
+    basis: 'settings',
     held: false,
     ...extra,
   }
@@ -108,6 +111,14 @@ describe('PH: finishing a page (RULE PAGER-FINISH-BEAT)', () => {
     expect(at.key).toBe('midday')
   })
 
+  it('PH-08: once the card is touched after the move, a row arriving on the page it left does not pull it back', () => {
+    let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1)])
+    at = play(endBeat(at.state), [periods([2, 0, 0], 1)])
+    expect(at.key).toBe('early')
+    at = play(touchCard(at.state), [periods([2, 1, 0], 1)])
+    expect(at.key).toBe('early')
+  })
+
   it('PH-07: the Task queue card goes to the first segment still waiting, and stays when none waits', () => {
     let at = play(PAGER_START, [segments([0, 2, 1])])
     expect(at.key).toBe('seg1')
@@ -160,6 +171,17 @@ describe('PH: the clock (RULE PAGER-CLOCK-TAKEOVER)', () => {
     expect(queue.key).toBe('seg1')
   })
 
+  it('PH-15: the settings arriving (day start, periods) are not the clock: a held page stays held, a lift included', () => {
+    // A lift's page, then the preferences land: another day key, another clock period.
+    let at = play(turnPage(PAGER_START, 'midday'), [periods([0, 0, 0], 2)])
+    at = play(at.state, [periods([0, 0, 0], 0, { day: '2026-11-12', basis: 'loaded' })])
+    expect(at.key).toBe('midday')
+    // With no page held, the card shows the clock's period as now read.
+    at = play(PAGER_START, [periods([0, 2, 0], 1)])
+    at = play(at.state, [periods([0, 2, 0], 0, { day: '2026-11-12', basis: 'loaded' })])
+    expect(at.key).toBe('early')
+  })
+
   it('PH-14: with no page held the Task queue card has no clock to follow within a day', () => {
     const at = play(turnPage(PAGER_START, 'seg2'), [segments([1, 0, 0]), segments([2, 0, 0])])
     expect(at.key).toBe('seg2')
@@ -205,12 +227,12 @@ describe('PH: a page turned on purpose wins', () => {
 describe('PH: the next boundary', () => {
   const tz = 'America/Chicago'
   it('PH-40: the next period start today, else the day start, else tomorrow’s first', () => {
-    const starts = ['05:15', '07:00', '12:00']
+    const starts = ['06:10', '07:00', '12:00']
     // 06:30 Chicago (CST, UTC-6) on 2026-11-13.
     expect(nextPagerBoundary(starts, tz, '03:00', new Date('2026-11-13T12:30:00Z'))).toEqual(
       new Date('2026-11-13T13:00:00Z'),
     )
-    // 13:00: nothing more today; the 03:00 day start comes before 05:15.
+    // 13:00: nothing more today; the 03:00 day start comes before 06:10.
     expect(nextPagerBoundary(starts, tz, '03:00', new Date('2026-11-13T19:00:00Z'))).toEqual(
       new Date('2026-11-14T09:00:00Z'),
     )
