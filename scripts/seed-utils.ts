@@ -107,8 +107,17 @@ export interface SeedTaskRow {
  * with any of those would be written for the wrong switch (the 2026-10-24
  * automatic-target bug), so `seedTasks` refuses one.
  *
+ * NEW (2026-11-17, src/lib/new-tasks.ts). A seeded account is a settled one:
+ * New has ended (`new_ended_at`) for every row made more than two days
+ * before the seed runs, as the one-time seed of a real database ends it for
+ * old tasks; a row made in the last two days stays New, so a seeded Days
+ * segment shows the heading over a few rows and not over all of them.
+ *
  * Uses the open database (`getDb()`). Returns the new ids, in order.
  */
+/** A seed row made within this long of the seed's run stays New (see NEW above). */
+const NEW_AFTER_SEED_MS = 2 * 86_400_000
+
 export function seedTasks(userId: number, timezone: string, rows: SeedTaskRow[]): number[] {
   for (const row of rows) assertSwitchFree(row.input)
   const db = getDb()
@@ -131,7 +140,7 @@ export function seedTasks(userId: number, timezone: string, rows: SeedTaskRow[])
     UPDATE tasks SET created_at = ?, updated_at = ?, target_set_at = ?,
       horizon_set_at = CASE WHEN horizon_set_at IS NULL THEN NULL ELSE ? END,
       done = ?, done_at = ?, archived_at = ?, deleted_at = ?,
-      completion_count = ?, last_completed_at = ?
+      completion_count = ?, last_completed_at = ?, new_ended_at = ?
     WHERE id = ?
   `)
   const ids = rows.map((row) => {
@@ -149,6 +158,7 @@ export function seedTasks(userId: number, timezone: string, rows: SeedTaskRow[])
       row.deletedAt ?? null,
       row.completionCount ?? 0,
       row.lastCompletedAt ?? null,
+      Date.now() - Date.parse(row.createdAt) > NEW_AFTER_SEED_MS ? row.createdAt : null,
       task.id,
     )
     return task.id

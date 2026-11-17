@@ -196,6 +196,9 @@ describe('horizon', () => {
     const after = getTaskById(task.id)!
     expect(after.horizon).toBe('months')
     expect(after.horizon_set_at).not.toBeNull()
+    // A pace read from the words leaves the task New (RULE NEW-ENDS): only a
+    // change after creation, by hand, ends it.
+    expect(after.new_ended_at).toBeNull()
     expect(after.due_at).toBeNull()
   })
 

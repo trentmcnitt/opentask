@@ -139,6 +139,7 @@ test.describe('New as a heading', () => {
   }) => {
     const tapped = await create(page, uniqueTitle('NH tap'))
     const held = await create(page, uniqueTitle('NH hold'))
+    const extra: number[] = []
     age(tapped, 1)
     age(held, 1)
     try {
@@ -175,8 +176,25 @@ test.describe('New as a heading', () => {
       await menu.getByRole('menuitemradio', { name: /Months/ }).click()
       await expect(page.getByText(/^Grown to Months/)).toBeVisible()
       await expect.poll(async () => (await stateOf(page, held)).horizon).toBe('months')
+
+      // Days, for an unset row, is a pick too: it sets Days and ends New.
+      const toDays = await create(page, uniqueTitle('NH to days'))
+      extra.push(toDays)
+      age(toDays, 1)
+      await page.reload()
+      const growDays = row(page, 'days', toDays).locator('[data-grow]')
+      await holdUntil(growDays, async () => {
+        await expect(menu).toBeVisible()
+      })
+      await menu.getByRole('menuitemradio', { name: /^Days/ }).click()
+      await expect
+        .poll(async () => {
+          const t = await stateOf(page, toDays)
+          return [t.horizon, t.new_ended_at !== null]
+        })
+        .toEqual(['days', true])
     } finally {
-      await trash(page, [tapped, held])
+      await trash(page, [tapped, held, ...extra])
     }
   })
 })

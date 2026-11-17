@@ -332,7 +332,7 @@ function TaskPageBody({
             // Aged out's group headings, Pulled's sections (2026-10-29).
             const heading = agedGroupBefore(segment.horizon, visible, i)
             const pulled = pulledSectionBefore(segment, visible, i)
-            const fresh = newHeadingBefore(visible, i)
+            const fresh = newHeadingBefore(visible, i, rows)
             const group = deadlineGroupBefore(segment.horizon, visible, i)
             return (
               <Fragment key={row.task.id}>

@@ -1784,15 +1784,17 @@ export function PulledSectionHeading({
 /**
  * NEW's heading (2026-11-17, RULE NEW-HEADING in src/lib/new-tasks.ts): in a
  * horizon segment, before the first New row waiting — the server sends them
- * first. Its count is the New rows in the list it is drawn over.
+ * first. Its count is every New row waiting, shown or behind "Show more".
  */
 export function newHeadingBefore(
   rows: readonly SegmentRow[],
   index: number,
+  /** Every waiting row, when `rows` is a capped slice of them (the card): the count is theirs. */
+  all: readonly SegmentRow[] = rows,
 ): { count: number } | null {
   if (!rows[index].isNew) return null
   if (index > 0 && rows[index - 1].isNew) return null
-  return { count: rows.filter((r) => r.isNew).length }
+  return { count: all.filter((r) => r.isNew).length }
 }
 
 export function NewHeading({

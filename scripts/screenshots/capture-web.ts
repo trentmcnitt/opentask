@@ -397,8 +397,8 @@ async function desktopPages(browser: Browser, theme: Exclude<Theme, 'n/a'>): Pro
  * The task queue's newer pages, the Starts row and search (2026-11-12). Their
  * tasks need the task-queue switch, which the seed runs without (its
  * `assertSwitchFree`), so they are made here through the running server's
- * API, once (the first theme), and the New page's task is then aged into
- * yesterday straight in the throwaway database. All invented.
+ * API, once (the first theme), and the New rows' tasks are then aged into
+ * yesterday straight in the throwaway database (they show from the next day). All invented.
  */
 let extraIds: { dated: number } | null = null
 async function seedQueueExtras(page: Page): Promise<{ dated: number }> {
@@ -429,7 +429,7 @@ async function seedQueueExtras(page: Page): Promise<{ dated: number }> {
     start_date: now.toISOString().slice(0, 10),
   })
   const fresh = [
-    await post({ title: 'Buy a stretch band', horizon: 'weeks' }),
+    await post({ title: 'Buy a stretch band' }),
     await post({ title: 'Look up the ferry timetable' }),
   ]
   const db = new Database(path.join(OUT, 'screenshots.db'))
@@ -448,7 +448,7 @@ async function seedQueueExtras(page: Page): Promise<{ dated: number }> {
 async function queueAndSearchShots(page: Page, theme: Exclude<Theme, 'n/a'>): Promise<void> {
   const { dated } = await seedQueueExtras(page)
 
-  // The Reminders page's task queue: the Due page's two groups, and New.
+  // The Reminders page's task queue: the Due page's two groups, and Days' New heading.
   await gotoAndSettle(page, '/reminders', page.locator('[data-task-segment="deadlines"]'))
   const due = page.locator('[data-task-segments] [data-task-segment="deadlines"]')
   const dueFile = outPath(`web-due-page-${theme}.png`)
@@ -456,12 +456,14 @@ async function queueAndSearchShots(page: Page, theme: Exclude<Theme, 'n/a'>): Pr
   record(dueFile, 'The Due page: Coming due and Open window', theme, [
     `docs:public/images/concepts/web-due-page-${theme}.png`,
   ])
-  const fresh = page.locator('[data-task-segments] [data-task-segment="new"]')
-  await fresh.waitFor()
-  const newFile = outPath(`web-new-page-${theme}.png`)
+  // New is a heading in the task's own segment since 2026-11-17 (it was a
+  // page): the Days segment, its New rows first, with Grow.
+  const fresh = page.locator('[data-task-segments] [data-task-segment="days"]')
+  await fresh.locator('[data-new-heading]').waitFor()
+  const newFile = outPath(`web-new-heading-${theme}.png`)
   await shootWithPadding(page, fresh, newFile, 16)
-  record(newFile, 'The New page: tasks written yesterday', theme, [
-    `docs:public/images/concepts/web-new-page-${theme}.png`,
+  record(newFile, 'Days with the New heading: tasks not yet considered twice', theme, [
+    `docs:public/images/concepts/web-new-heading-${theme}.png`,
   ])
 
   // The editor's Starts row, a date picked.

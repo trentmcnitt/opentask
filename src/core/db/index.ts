@@ -855,8 +855,8 @@ export const NEW_SEED_RECENT_DAYS = 7
  * RULE NEW-SEED: At the one startup that adds the New columns, every task
  *   that already exists has New ended (new_ended_at = that moment), except a
  *   task with no horizon created in the 7 days before it, which starts New
- *   with a count of 0. A task with no horizon created earlier also gets
- *   horizon = weeks, with horizon_set_at left NULL: a horizon set by hand or
+ *   with a count of 0. An OPEN one-off (not done, trashed or archived) with
+ *   no horizon created earlier also gets horizon = weeks, with horizon_set_at left NULL: a horizon set by hand or
  *   by enrichment always has that stamp, so a seeded one stays tellable
  *   apart, and Process's growth clock for it (from created_at, as Weeks) is
  *   what it was.
@@ -879,7 +879,8 @@ export function seedNewEnded(database: Database.Database, now: Date): void {
     .prepare(
       `UPDATE tasks SET horizon = 'weeks'
         WHERE horizon IS NULL AND julianday(created_at) < julianday(@line)
-          AND rrule IS NULL AND is_reminder = 0 AND is_tracked = 0`,
+          AND rrule IS NULL AND is_reminder = 0 AND is_tracked = 0
+          AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
     )
     .run({ line })
 }

@@ -268,6 +268,12 @@ describe('NW-50 the seed (RULE NEW-SEED)', () => {
     const oldDays = make({ title: 'Synthetic old days', horizon: 'days' })
     const oldUnset = make({ title: 'Synthetic old unset' })
     const oldRepeat = make({ title: 'Synthetic old repeat', rrule: 'FREQ=WEEKLY;BYDAY=MO' })
+    const oldDone = make({ title: 'Synthetic old done' })
+    markDone({ userId: TEST_USER_ID, userTimezone: tz, taskId: oldDone.id })
+    const oldTrashed = make({ title: 'Synthetic old trashed' })
+    getDb()
+      .prepare('UPDATE tasks SET deleted_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), oldTrashed.id)
     setClock('2026-11-14T10:00')
     const recentUnset = make({ title: 'Synthetic recent unset' })
     const recentWeeks = make({ title: 'Synthetic recent weeks', horizon: 'weeks' })
@@ -288,6 +294,13 @@ describe('NW-50 the seed (RULE NEW-SEED)', () => {
     // A repeat has no horizon to give; New has ended for it like any old task.
     const repeat = read(oldRepeat.id)
     expect([repeat.horizon, repeat.new_ended_at]).toEqual([null, stamp])
+    // Not open (done, trashed): the horizon is left as it was; New has ended.
+    for (const id of [oldDone.id, oldTrashed.id]) {
+      const row = getDb()
+        .prepare('SELECT horizon, new_ended_at FROM tasks WHERE id = ?')
+        .get(id) as { horizon: string | null; new_ended_at: string | null }
+      expect([row.horizon, row.new_ended_at]).toEqual([null, stamp])
+    }
     // Recent and unset: left alone, New, count 0.
     const recent = read(recentUnset.id)
     expect([recent.horizon, recent.consider_count, recent.new_ended_at]).toEqual([null, 0, null])
