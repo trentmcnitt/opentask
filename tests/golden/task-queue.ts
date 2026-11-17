@@ -17,8 +17,9 @@
  * `queue_previous` after that, and in no horizon segment and not in Upcoming
  * (rule 7). The `tap` policy considers it there. A stripped ONE-OFF then
  * leaves the queue (rule 8): untargeted, back on its horizon's rhythm (unset
- * reads as weeks: the check-in day, Saturday), with no badge — attempts show
- * only while a task has a target or is queued. A waiting REPEATING task
+ * reads as days since 2026-11-17, HZ-UNSET: every day, from the day after it
+ * is made; it read as weeks, the Saturday check-in day), with no badge —
+ * attempts show only while a task has a target or is queued. A waiting REPEATING task
  * stays queued, in "previously targeted" every morning until its occurrence
  * (resolution 6: considered yesterday is previously targeted today).
  *
@@ -101,11 +102,10 @@ export const taskQueueScenarios: GoldenScenario[] = [
       task: {
         '2026-10-19': 'over 1×',
         // Stripped: "Stripped today", considered there (the tap), so out of
-        // the queue — untargeted, on the weeks rhythm (unset), no badge.
+        // the queue — untargeted, on the days rhythm (unset): in Days every
+        // day from the next one, no badge.
         '2026-10-20': 'queue_today queued 1×',
-        '2026-10-21..2026-10-23': 'quiet',
-        '2026-10-24': 'weeks',
-        '2026-10-25': 'quiet',
+        '2026-10-21..2026-10-25': 'days',
       },
     },
   },
@@ -130,9 +130,8 @@ export const taskQueueScenarios: GoldenScenario[] = [
         '2026-10-19': 'over 1×',
         '2026-10-20': 'over 2×',
         '2026-10-21': 'queue_today queued 2×',
-        '2026-10-22..2026-10-23': 'quiet',
-        '2026-10-24': 'weeks',
-        '2026-10-25': 'quiet',
+        // Out of the queue, untargeted: Days (unset), daily.
+        '2026-10-22..2026-10-25': 'days',
       },
     },
   },
@@ -155,8 +154,8 @@ export const taskQueueScenarios: GoldenScenario[] = [
       task: {
         '2026-10-19': 'over 1×',
         '2026-10-20': 'queue_today queued 1×',
-        '2026-10-21..2026-10-23': 'quiet',
-        '2026-10-24': 'weeks',
+        // Out of the queue, untargeted: Days (unset), daily.
+        '2026-10-21..2026-10-24': 'days',
       },
     },
   },
@@ -429,8 +428,9 @@ export const taskQueueScenarios: GoldenScenario[] = [
       left: {
         '2026-10-19': 'over 1×',
         '2026-10-20': 'queue_today queued 1×',
-        // Considered in the queue on Tue: out of it, untargeted.
-        '2026-10-21': 'quiet',
+        // Considered in the queue on Tue: out of it, untargeted — in Days
+        // (unset) the next day.
+        '2026-10-21': 'days',
       },
     },
   },
@@ -456,9 +456,9 @@ export const taskQueueScenarios: GoldenScenario[] = [
     expect: {
       task: {
         '2027-03-13': 'over 1×',
-        // Untargeted on Sunday, its weeks segment (Saturday) came round after it was made.
+        // Untargeted on Sunday (considered in the queue); Days (unset) the next day.
         '2027-03-14': 'queue_today queued 1×',
-        '2027-03-15': 'quiet',
+        '2027-03-15': 'days',
       },
     },
   },

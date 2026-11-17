@@ -157,10 +157,10 @@
  *     GET  REMINDERS_URL                       → reminders-native.json
  *     (every kind, an empty one with no rows (`fill`); a left done row and
  *     step 19's left deferred row (`handled`); the seen safety-net row; step
- *     16's deck row; step 15's Try Tomorrow row; and New (`new`, in the
- *     question since 2026-11-12): "Sort the seed packets", made yesterday,
- *     then "Label the spice jars", made two days ago and deferred yesterday,
- *     `carried_over: true`)
+ *     16's deck row; step 15's Try Tomorrow row; and New (a mark on Days'
+ *     rows since 2026-11-17, `new: true`): "Sort the seed packets", made
+ *     yesterday and never considered, then "Label the spice jars", made two
+ *     days ago and considered once, yesterday)
  *
  * 26. The banner reconcile (2026-11-10): a device's delivered banners asked about
  *     POST /api/notifications/stale             → notifications-stale.json
@@ -1180,21 +1180,23 @@ describe('contract fixtures (native clients)', () => {
     try {
       // Seen in the safety net: it stays waiting, `seen: true`.
       await call('/api/task-segments/consider', { ids: [created.deadlinePassed] })
-      // New (in the question since 2026-11-12): a task made yesterday, and
-      // one made two days ago and deferred yesterday (`carried_over`). Made
-      // over the API (every write stamps now), so both are backdated.
+      // New (2026-11-17: a mark on a horizon row): a task made yesterday,
+      // and one made two days ago and considered once, yesterday — both
+      // unset, so in Days, both still under two considers. Made over the API
+      // (every write stamps now), so both are backdated.
       let placeholder = 101 + Object.keys(created).length
       for (const [name, title] of [
         ['newFresh', 'Sort the seed packets'],
-        ['newCarried', 'Label the spice jars'],
+        ['newOnce', 'Label the spice jars'],
       ] as const) {
         const res = (await call('/api/tasks', { title })) as { data: { id: number } }
         created[name] = res.data.id
         ids.register('task', res.data.id, placeholder++)
       }
       backdate([created.newFresh], 1, ['created_at'])
-      backdate([created.newCarried], 2, ['created_at'])
-      backdate([created.newCarried], 1, ['segment_deferred_at'])
+      backdate([created.newOnce], 2, ['created_at'])
+      await call('/api/task-segments/consider', { ids: [created.newOnce] })
+      backdate([created.newOnce], 1, ['last_considered_at'])
       // Read once, so the day roster remembers what is listed (it remembers
       // only rows a `handled=1` read listed), then done from "Today's
       // pulls": back as a considered row, `segment_left: done`.
@@ -1276,7 +1278,8 @@ describe('contract fixtures (native clients)', () => {
       safety_net?: boolean
       seen?: boolean
       try_tomorrow?: boolean
-      carried_over?: boolean
+      new?: boolean
+      consider_count: number
       on_deck_day: string | null
     }
     type Segs = { data: { task_segments: { horizon: string; tasks: Row[] }[] } }
@@ -1285,7 +1288,6 @@ describe('contract fixtures (native clients)', () => {
     expect(segs.map((s) => s.horizon)).toEqual([
       'deadlines',
       'upcoming',
-      'new',
       'queue_today',
       'queue_previous',
       'days',
@@ -1293,15 +1295,27 @@ describe('contract fixtures (native clients)', () => {
       'months',
       'eventually',
     ])
-    // New: the fresh row, then the one back from yesterday's Not today.
+    // New: Days' first rows, the newest first; both still under two considers
+    // (the scenario's older never-considered tasks are New too, after them).
+    const days = segs.find((s) => s.horizon === 'days')!.tasks
+    const firstSettled = days.findIndex((t) => !t.new)
+    expect(days.slice(firstSettled === -1 ? days.length : firstSettled).some((t) => t.new)).toBe(
+      false,
+    )
     expect(
-      segs
-        .find((s) => s.horizon === 'new')!
-        .tasks.map((t) => [t.id, t.segment_state, t.carried_over]),
+      days
+        .filter((t) => t.new)
+        .slice(0, 2)
+        .map((t) => [t.id, t.segment_state, t.consider_count]),
     ).toEqual([
-      [created.newFresh, 'waiting', false],
-      [created.newCarried, 'waiting', true],
+      [created.newFresh, 'waiting', 0],
+      [created.newOnce, 'waiting', 1],
     ])
+    // Only a horizon segment's rows carry the key.
+    for (const seg of segs) {
+      const horizon = ['days', 'weeks', 'months', 'eventually'].includes(seg.horizon)
+      for (const t of seg.tasks) expect(typeof t.new).toBe(horizon ? 'boolean' : 'undefined')
+    }
     const row = (horizon: string, id: number) =>
       segs.find((s) => s.horizon === horizon)!.tasks.find((t) => t.id === id)
     expect(row('deadlines', created.deadlinePassed)).toMatchObject({

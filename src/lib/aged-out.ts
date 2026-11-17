@@ -6,7 +6,7 @@
  *
  * - MEMBERS: exactly the tasks Process's `growthAsk` asks about — a one-off
  *   with no picked target of its own, past its horizon's threshold (days 10
- *   days, weeks or unset a month, months a quarter), counted from the latest
+ *   days, weeks a month, months a quarter), counted from the latest
  *   of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Eventually
  *   never grows, so it is never here.
  * - CADENCE: weekly, on the check-in day (the Weeks segment's day): a task
@@ -60,7 +60,7 @@ export const AGED_OUT_QUERY = '&aged=1'
  */
 /**
  * Grow: one step out — Days → Weeks → Months → Eventually; unset counts as
- * Weeks, so it grows to Months. Eventually has nowhere to go (null).
+ * Days, so it grows to Weeks. Eventually has nowhere to go (null).
  */
 export function growStep(horizon: string | null): HorizonValue | null {
   const on = setHorizonOrUnset(horizon)
@@ -161,7 +161,7 @@ export function ageWords(
 /**
  * The cutoff a horizon's tasks age out at, for an Aged out group's heading
  * ("Days · >10 days"; Trent, 2026-10-29: ">" with no space): ">10 days",
- * ">1 month", ">3 months" — its `AGE_THRESHOLDS` entry, unset read as Weeks.
+ * ">1 month", ">3 months" — its `AGE_THRESHOLDS` entry, unset read as Days.
  */
 export function cutoffWords(horizon: string | null): string {
   const on = setHorizonOrUnset(horizon)
@@ -173,7 +173,7 @@ export function cutoffWords(horizon: string | null): string {
 /**
  * AGED OUT'S GROUPS (Trent, 2026-10-29: "add little categories… so that all
  * the days, then all the weeks and months… are just grouped"): the horizon a
- * row is aged on, unset read as Weeks (`UNSET_HORIZON`). Eventually never
+ * row is aged on, unset read as Days (`UNSET_HORIZON`). Eventually never
  * ages out, so there are three.
  */
 export type AgedOutGroup = Exclude<HorizonValue, 'eventually'>
@@ -193,7 +193,7 @@ export function agedClockStart(
 }
 
 /**
- * RULE AG-GROUPS: Rows are grouped Days, then Weeks (unset included), then Months. Within each
+ * RULE AG-GROUPS: Rows are grouped Days (unset included), then Weeks, then Months. Within each
  *   group the oldest age clock comes first, then id.
  * Why: All the days, then the weeks, then the months together, oldest first within each.
  * Ruling: Trent 2026-10-29.

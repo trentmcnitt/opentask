@@ -138,6 +138,8 @@ const TASK: Record<keyof FormattedTask, Field> = {
   attempts_counted_through: STR_N,
   growth_kept_at: STR_N,
   growth_kept_count: INT,
+  consider_count: INT,
+  new_ended_at: STR_N,
   queue_mark: BOOL,
   try_tomorrow: BOOL,
   queued_at: STR_N,
@@ -184,7 +186,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
  * The keys a task segment row adds to a FormattedTask: its state, `recurring`
  * and — Upcoming rows only (2026-10-25) — `upcoming_section`.
  */
-const SEGMENT_ROW_EXTRAS = new Set(['segment_state', 'recurring', 'upcoming_section'])
+const SEGMENT_ROW_EXTRAS = new Set(['segment_state', 'recurring', 'upcoming_section', 'new'])
 
 const TASK_COUNTS: Record<keyof TaskCounts, Field> = {
   total: INT,

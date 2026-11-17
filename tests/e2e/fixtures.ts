@@ -119,9 +119,13 @@ export function waitForPreferenceSave(page: Page, field: string) {
  * fetch sees the write. `daysAgo` (default 1; 2 with `inSegments`): further
  * back, for a spec on a pinned clock up to a day behind real now, where a day
  * back from the real clock can still be the pin's own day
- * (nav-retap-walk.spec.ts). `inSegments` goes back TWO days since New
- * (2026-11-10, src/lib/new-tasks.ts): a task made yesterday is on the New
- * page, not its horizon segment.
+ * (nav-retap-walk.spec.ts). `inSegments` goes back two days.
+ *
+ * A backdated task is a SETTLED one: New has ended for it (`new_ended_at`,
+ * 2026-11-17, src/lib/new-tasks.ts), so its segment row is an ordinary row
+ * with the on-deck controls, not a New row with Grow. Every spec that
+ * backdates a task itself does the same; a spec about New sets the stamps it
+ * needs (new-heading.spec.ts).
  */
 export function backdateCreated(
   ids: number[],
@@ -130,7 +134,7 @@ export function backdateCreated(
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const stmt = db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?) WHERE id = ?`,
+      `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?) WHERE id = ?`,
     )
     // A task created before today shows in its horizon's task segment
     // (2026-10-10) — a second copy of its title on the dashboard. Unless a

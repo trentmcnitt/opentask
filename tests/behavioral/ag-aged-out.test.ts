@@ -55,10 +55,10 @@ function placeOf(now: Date, agedOut = true): Map<number, string> {
 }
 
 describe('AG: growStep', () => {
-  test('AG-001: one step out; unset counts as Weeks; Eventually has nowhere to go', () => {
+  test('AG-001: one step out; unset counts as Days; Eventually has nowhere to go', () => {
     expect(growStep('days')).toBe('weeks')
     expect(growStep('weeks')).toBe('months')
-    expect(growStep(null)).toBe('months')
+    expect(growStep(null)).toBe('weeks')
     expect(growStep('months')).toBe('eventually')
     expect(growStep('eventually')).toBeNull()
   })
@@ -129,10 +129,10 @@ describe('AG: the row says how old, and the cutoff', () => {
     expect(age('2023-03-01T09:00')).toBe('3 years')
   })
 
-  test('AG-041: the cutoff each horizon passed; unset reads as Weeks', () => {
+  test('AG-041: the cutoff each horizon passed; unset reads as Days', () => {
     expect(cutoffWords('days')).toBe('>10 days')
     expect(cutoffWords('weeks')).toBe('>1 month')
-    expect(cutoffWords(null)).toBe('>1 month')
+    expect(cutoffWords(null)).toBe('>10 days')
     expect(cutoffWords('months')).toBe('>3 months')
   })
 })
@@ -162,9 +162,10 @@ describe('AG: membership and cadence', () => {
     expect(placeOf(WED).get(id)).toBe('aged_out:waiting')
   })
 
-  test('AG-013: each horizon past its own threshold; unset reads as Weeks', () => {
+  test('AG-013: each horizon past its own threshold; unset reads as Days', () => {
     const weeks = make('Weeks, 2 months', 'weeks', at('2026-08-20T09:00'))
-    const unset = make('Unset, 2 months', null, at('2026-08-20T09:00'))
+    // Two weeks old: past Days' 10 days (unset), not past Weeks' month.
+    const unset = make('Unset, 2 weeks', null, at('2026-10-10T09:00'))
     const months = make('Months, 5 months', 'months', at('2026-05-20T09:00'))
     const youngWeeks = make('Weeks, 2 weeks', 'weeks', at('2026-10-10T09:00'))
     const p = placeOf(SAT)
@@ -194,7 +195,7 @@ describe('AG: grouped by horizon, oldest first', () => {
   afterEach(() => vi.useRealTimers())
   afterAll(() => teardownTestDb())
 
-  test('AG-050: Days, then Weeks (unset there too), then Months; each oldest first, whatever the priority', () => {
+  test('AG-050: Days (unset there too), then Weeks, then Months; each oldest first, whatever the priority', () => {
     const weeksNew = make('Weeks newer', 'weeks', at('2026-09-01T09:00'), { priority: 4 })
     const months = make('Months', 'months', at('2026-05-01T09:00'))
     const unsetOld = make('Unset older', null, at('2026-08-01T09:00'))
@@ -204,7 +205,7 @@ describe('AG: grouped by horizon, oldest first', () => {
     const aged = getTaskSegments(TEST_USER_ID, tz, SAT, { agedOut: true }).find(
       (s) => s.horizon === 'aged_out',
     )!
-    expect(aged.tasks.map((r) => r.task.id)).toEqual([daysOld, daysNew, unsetOld, weeksNew, months])
+    expect(aged.tasks.map((r) => r.task.id)).toEqual([unsetOld, daysOld, daysNew, weeksNew, months])
   })
 })
 
@@ -253,7 +254,8 @@ describe('AG: keep and grow', () => {
     vi.setSystemTime(WED)
     expect(growTasks(TEST_USER_ID, tz, [id])).toBe(1)
     let task = getTaskById(id)!
-    expect(task.horizon).toBe('months')
+    // Unset counts as Days: one step out is Weeks.
+    expect(task.horizon).toBe('weeks')
     expect(task.horizon_set_at).toBe(WED.toISOString())
     expect(task.growth_kept_count).toBe(0)
     expect(placeOf(WED).get(id)).toBe('aged_out:considered')

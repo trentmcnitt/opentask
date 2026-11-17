@@ -98,9 +98,9 @@ describe('Task model', () => {
       expect(latestSegmentDay('days', day('2026-10-14')).toISODate()).toBe('2026-10-14')
     })
 
-    test('TM-002: unset reads as weeks; a near deadline pulls the horizon in, never out', () => {
+    test('TM-002: unset reads as days; a near deadline pulls the horizon in, never out', () => {
       const now = SAT
-      expect(effectiveHorizon({ horizon: null, deadline_at: null }, now)).toBe('weeks')
+      expect(effectiveHorizon({ horizon: null, deadline_at: null }, now)).toBe('days')
       expect(
         effectiveHorizon({ horizon: 'months', deadline_at: at('2026-10-15T12:00') }, now),
       ).toBe('days')
@@ -115,23 +115,28 @@ describe('Task model', () => {
 
   describe('segments', () => {
     test("TM-010: a task shows from its segment's first shown day AFTER its creation", () => {
-      const old = make({ title: 'Squeaky door' })
+      const old = make({ title: 'Squeaky door', horizon: 'weeks' })
       age(old.id, '2026-10-01T09:00')
       expect(segmentOf(old.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
       // Created ON a shown day (Saturday, weeks): it waits for the next one
       // (Trent, 2026-10-31: "It should wait till the next cadence"; it
       // showed the same day from 10-11).
-      const fresh = make({ title: 'Just added' })
+      const fresh = make({ title: 'Just added', horizon: 'weeks' })
       expect(segmentOf(fresh.id)).toBeNull()
       // A days task written down today first shows tomorrow.
       vi.setSystemTime(new Date(at('2026-10-11T12:00'))) // Sunday
       const today = make({ title: 'Days, new', horizon: 'days' })
       expect(segmentOf(today.id)).toBeNull()
       // A weeks task created AFTER Saturday waits for the next one.
-      const sunday = make({ title: 'Weeks, Sunday' })
+      const sunday = make({ title: 'Weeks, Sunday', horizon: 'weeks' })
       expect(segmentOf(sunday.id)).toBeNull()
+      // No horizon stated: read as Days, so it too first shows tomorrow.
+      const unset = make({ title: 'No pace yet' })
+      expect(segmentOf(unset.id)).toBeNull()
       vi.setSystemTime(new Date(at('2026-10-12T09:00'))) // Monday
       expect(segmentOf(today.id)).toEqual({ horizon: 'days', state: 'waiting' })
+      expect(segmentOf(unset.id)).toEqual({ horizon: 'days', state: 'waiting' })
+      expect(segmentOf(sunday.id)).toBeNull()
       vi.setSystemTime(new Date(at('2026-10-17T09:00'))) // next Saturday
       expect(segmentOf(sunday.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
       expect(segmentOf(fresh.id)).toEqual({ horizon: 'weeks', state: 'waiting' })
@@ -173,6 +178,9 @@ describe('Task model', () => {
     test('TM-014: order is priority (unset above Low) then id, and acting on one never reorders the rest', () => {
       const ids = [0, 3, 1, 3, 2].map((p) => make({ priority: p }).id)
       for (const id of ids) age(id, '2026-10-01T09:00')
+      // Not New (its rows go first, in their own order: NEW-HEADING): this is
+      // the order of a segment's settled rows.
+      getDb().prepare('UPDATE tasks SET new_ended_at = created_at').run()
       const order = () => getTaskSegments(TEST_USER_ID, tz)[0].tasks.map((t) => t.task.id)
       // High, High (by id), Medium, unset, Low.
       const expected = [ids[1], ids[3], ids[4], ids[0], ids[2]]
@@ -182,7 +190,8 @@ describe('Task model', () => {
     })
 
     test('TM-015: Defer All hides the rest today, is not a consider, and they return tomorrow', () => {
-      const t = make()
+      // Weeks, stated: off its check-in day, only the carry-over brings it back.
+      const t = make({ horizon: 'weeks' })
       age(t.id, '2026-10-01T09:00')
       deferTasks(TEST_USER_ID, [t.id])
       expect(segmentOf(t.id)?.state).toBe('deferred')

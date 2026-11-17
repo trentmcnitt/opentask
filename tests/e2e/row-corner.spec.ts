@@ -3,7 +3,7 @@
  *
  * - the priority tab (E2b): Urgent red, High orange; Medium, Low and None
  *   show nothing (2026-10-15), and the old priority word under the title is gone;
- * - the horizon dot (R1): a size per horizon, unset as the Weeks dot, a
+ * - the horizon dot (R1): a size per horizon, unset as the Days dot, a
  *   tooltip saying when it comes back, hidden on a row with a picked target;
  *   the corner reads dot · attempts · priority;
  * - the target time's menu (Remove target / Move… — a deadline task's too
@@ -184,7 +184,7 @@ test.describe('Row corner · desktop', () => {
     }
   })
 
-  test('horizon dot: a size per horizon, unset as the Weeks dot, tooltip, hidden on a picked target', async ({
+  test('horizon dot: a size per horizon, unset as the Days dot, tooltip, hidden on a picked target', async ({
     authenticatedPage: page,
   }) => {
     const horizons = ['days', 'weeks', 'months', 'eventually', null] as const
@@ -211,18 +211,19 @@ test.describe('Row corner · desktop', () => {
         Number(await dot(h).locator('circle').getAttribute('opacity'))
       expect(await opacity('eventually')).toBeLessThan(await opacity('months'))
       expect(await opacity('eventually')).toBeGreaterThanOrEqual(0.4)
-      // Unset: the Weeks dot (2026-10-29, Trent: "There should never be an
-      // empty circle"; it was a hollow ring). Still marked unset.
+      // Unset: the dot of the horizon it reads as (2026-10-29, Trent: "There
+      // should never be an empty circle"; Days since 2026-11-17, Weeks
+      // before). Still marked unset.
       await expect(dot('null')).toHaveAttribute('data-horizon-dot', 'unset')
       const unset = dot('null').locator('circle')
       await expect(unset).toHaveAttribute('fill', 'currentColor')
-      expect(await radius('null')).toBe(await radius('weeks'))
-      expect(await opacity('null')).toBe(await opacity('weeks'))
+      expect(await radius('null')).toBe(await radius('days'))
+      expect(await opacity('null')).toBe(await opacity('days'))
       // Tooltips (the test user's check-in day is the default, Saturday).
       await expect(dot('weeks')).toHaveAttribute('title', 'Weeks · comes back Saturdays')
       await expect(dot('days')).toHaveAttribute('title', 'Days · comes back daily')
       await expect(dot('eventually')).toHaveAttribute('title', 'Eventually · comes back quarterly')
-      await expect(dot('null')).toHaveAttribute('title', 'Weeks (unset) · comes back Saturdays')
+      await expect(dot('null')).toHaveAttribute('title', 'Days (unset) · comes back daily')
       // A picked target: the horizon decides nothing until it is removed.
       await expect(taskRow(page, targeted)).toBeVisible()
       await expect(taskRow(page, targeted).locator('[data-horizon-dot]')).toHaveCount(0)
@@ -606,7 +607,7 @@ test.describe('Row corner · phone', () => {
       await dot.evaluate((el) => el.scrollIntoView({ block: 'center' }))
       const box = (await dot.boundingBox())!
       await page.touchscreen.tap(box.x - 16, box.y + box.height + 20)
-      // Weeks itself, not "Weeks (unset)" below it.
+      // Weeks itself (the unset choice below it reads "Days (unset)").
       await expect(page.getByRole('menuitemradio', { name: /^Weeks(?! \(unset\))/ })).toBeVisible()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await page.screenshot({ path: `${SHOTS}/phone-dot-menu.png`, animations: 'disabled' })

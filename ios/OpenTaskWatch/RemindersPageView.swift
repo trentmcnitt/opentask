@@ -469,17 +469,17 @@ struct TaskSegmentSection: View {
                     UpcomingSectionHeader(section: section)
                     rows(section.waiting)
                 }
-            } else if segment.isNew {
-                // New (2026-11-12): the fresh rows, then the ones back from
-                // yesterday's Not today under "Carried over" (the web's line).
-                let (fresh, carried) = segment.newRowsSplit
-                rows(fresh)
-                if !carried.isEmpty {
-                    CarriedOverHeader(count: carried.count)
-                    rows(carried)
-                }
             } else {
-                rows(segment.waitingTasks)
+                // New (2026-11-17, RULE NEW-HEADING; the New page is gone): a
+                // horizon segment with New rows waiting opens with the "New"
+                // heading over them, then its other rows. No heading without
+                // one (`newHeadingSplit`: a horizon segment only).
+                let (new, rest) = segment.newHeadingSplit
+                if !new.isEmpty {
+                    NewRowsHeader(count: new.count)
+                    rows(new)
+                }
+                rows(rest)
             }
             // An ordinary watch action button (the bulk-snooze sheet's
             // weight), not a small tinted link. Never on the queue's panels
@@ -513,16 +513,17 @@ struct TaskSegmentSection: View {
     }
 }
 
-/// New's "Carried over" heading on the watch (2026-11-12, the web's
-/// `CarriedOverLine`): the words, muted, and how many rows are under it.
-private struct CarriedOverHeader: View {
+/// A horizon segment's "New" heading on the watch (2026-11-17, the web's
+/// `NewHeading`; it was the New page's "Carried over" heading until then):
+/// the word in the New blue, and how many rows are under it.
+private struct NewRowsHeader: View {
     let count: Int
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(TaskWording.carriedOverWord)
+            Text(TaskWording.newHeading)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WatchTheme.newHeading)
             Spacer(minLength: 4)
             Text("\(count)")
                 .font(.caption2)
@@ -531,7 +532,7 @@ private struct CarriedOverHeader: View {
         }
         .padding(.top, 2)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(TaskWording.carriedOverWord), \(count)"))
+        .accessibilityLabel(Text("\(TaskWording.newHeading), \(count)"))
     }
 }
 

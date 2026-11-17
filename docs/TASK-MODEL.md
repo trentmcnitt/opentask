@@ -12,12 +12,12 @@ Two questions are **parked**, not decided: whether a deck may ever coexist with 
 
 The 2026-10-10 task model. Until then one field, `due_at`, carried four different things: real deadlines, the times Trent wanted to start, AI placeholders, and pure awareness. Daily bulk snoozing bent it until "overdue" meant nothing ("I have 25 overdue things, and I'm really not overdue on 25 things" — Trent, 10-10). Now a task carries a separate answer for each question:
 
-| Column        | API name                                | Meaning                                                                                                    | Moved by                                                                                  |
-| ------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `due_at`      | `target_at` (`due_at` deprecated alias) | The **target**: when nagging starts. A soft commitment to a day and time. Never after the deadline         | Any move ("Defer" in the UI), Remove target (Back to auto with the task-queue switch off) |
-| `deadline_at` | `deadline_at`                           | The **deadline**: the real cutoff. It can move, but only deliberately                                      | Only an explicit write of the field. Never a snooze                                       |
-| `horizon`     | `horizon`                               | How soon it should get done, its pace: `days`, `weeks`, `months`, `eventually`, or `null` (unset, = weeks) | Only an explicit write. Nothing grows or shrinks it on its own                            |
-| `priority`    | `priority`                              | Unchanged: what missing it costs                                                                           | Unchanged                                                                                 |
+| Column        | API name                                | Meaning                                                                                                   | Moved by                                                                                  |
+| ------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `due_at`      | `target_at` (`due_at` deprecated alias) | The **target**: when nagging starts. A soft commitment to a day and time. Never after the deadline        | Any move ("Defer" in the UI), Remove target (Back to auto with the task-queue switch off) |
+| `deadline_at` | `deadline_at`                           | The **deadline**: the real cutoff. It can move, but only deliberately                                     | Only an explicit write of the field. Never a snooze                                       |
+| `horizon`     | `horizon`                               | How soon it should get done, its pace: `days`, `weeks`, `months`, `eventually`, or `null` (unset, = days) | Only an explicit write. Nothing grows or shrinks it on its own                            |
+| `priority`    | `priority`                              | Unchanged: what missing it costs                                                                          | Unchanged                                                                                 |
 
 Target, deadline and horizon are each nullable, but tied by two rules since 2026-10-12 (spec §8): **a one-off with a deadline always has a target** (the deadline's stored automatic target, if the user picked none — with the task-queue switch off; with it on, a deadline task may have none and goes on [the deadlines page](#the-deadlines-page)), and **the target is never after the deadline**. The pure rules live in ONE module, `src/lib/task-segments.ts` (each constant named once; each rule's home is its `RULE` block, [above](#where-the-rules-live)), shared by the server and the web UI — the native apps get them through the API (`attempts_label`, `attempts_offer`, `age_label`, the segments). `tests/behavioral/tm-task-model.test.ts`, `tm-auto-target.test.ts`, `tm-occurrence.test.ts`, `bg-badges.test.ts`, the seeded random invariants in `tm-invariants.test.ts` and the golden suite have the rules as tests (see [Testing the model](#testing-the-model-the-golden-suite-and-the-day-simulator)).
 
@@ -158,9 +158,9 @@ The task editor (`QuickActionPanel`) has two modes (2026-10-22, editor PR 4c, de
 
 ### Horizon
 
-How soon the task should get done. It decides which [task segment](#task-segments) the task appears in, and nothing else. `null` is unset: treated as `weeks`, but never reported as set (`task.horizon` stays null, and the UI says "Weeks (unset)", Trent 2026-10-29; RULE HZ-UNSET). The four values and their order are RULE HZ-VALUES. Enrichment sets it only from explicit pace wording ("sometime this month"). Changing it restarts `horizon_set_at`, the clock Process reads to ask whether a horizon should grow; re-sending the same value is not a change (RULE HZ-CLOCK).
+How soon the task should get done. It decides which [task segment](#task-segments) the task appears in, and nothing else. `null` is unset: treated as `days` (as `weeks` until 2026-11-17, RULE HZ-UNSET), but never reported as set (`task.horizon` stays null, and the UI says "Weeks (unset)", Trent 2026-10-29; RULE HZ-UNSET). The four values and their order are RULE HZ-VALUES. Enrichment sets it only from explicit pace wording ("sometime this month"). Changing it restarts `horizon_set_at`, the clock Process reads to ask whether a horizon should grow; re-sending the same value is not a change (RULE HZ-CLOCK).
 
-**Effective horizon** (`effectiveHorizon`) is the sooner of the set horizon (unset = weeks) and the one the deadline implies, its days measured as 24-hour spans from now (RULE DL-HORIZON-PULL):
+**Effective horizon** (`effectiveHorizon`) is the sooner of the set horizon (unset = days) and the one the deadline implies, its days measured as 24-hour spans from now (RULE DL-HORIZON-PULL):
 
 | Deadline         | Implies  |
 | ---------------- | -------- |
@@ -322,20 +322,20 @@ Spec §7 (2026-10-12; rulings Q5–Q7, Q10 — Trent: separate signals). The rul
 
 ### Age
 
-Only a task with **neither a target nor a deadline** (truly undated), counted from `created_at`, shown only past one threshold per horizon — unset reads as weeks (`AGE_THRESHOLDS`, `AGE_LABELS`, `ageLabel`; RULE TGT-AGE, RULE AGE-THRESHOLDS):
+Only a task with **neither a target nor a deadline** (truly undated), counted from `created_at`, shown only past one threshold per horizon — unset reads as days (`AGE_THRESHOLDS`, `AGE_LABELS`, `ageLabel`; RULE TGT-AGE, RULE AGE-THRESHOLDS):
 
-| Horizon         | Shown past |
-| --------------- | ---------- |
-| `days`          | 10 days    |
-| `weeks` / unset | 1 month    |
-| `months`        | 1 quarter  |
-| `eventually`    | 6 months   |
+| Horizon      | Shown past |
+| ------------ | ---------- |
+| `days`       | 10 days    |
+| `weeks`      | 1 month    |
+| `months`     | 1 quarter  |
+| `eventually` | 6 months   |
 
 The label is one word, **`old`**, for every horizon (`AGE_LABEL`; Trent, 2026-10-29: "it just needs to say 'old' instead of the actual time because I never know what that age thing really means"). It was `>1 wk` / `>1 mo` / `>3 mo` / `>6 mo`.
 
 Days was 7 days (`>1 wk`) until 2026-10-29 (Trent: "the days threshold 10 is settled for old, yes, for now"). Calendar arithmetic (a month is a calendar month) in the **user's timezone**, strictly past — the server's `age_label` and the web row compute it the same way (`ageLabel(task, now, timezone)`), so a task made late on the evening of Oct 30 turns `old` at that local evening on Nov 30, not at the UTC instant a few hours earlier. The API sends it as `age_label`; the dashboard row shows it where every row used to show "Xd old", and segment rows end their second line with it.
 
-**The same thresholds are Process's growth asks** (ruling Q7; they replaced 14/60/180 days): a days task is asked "weeks?" past 10 days on its horizon, weeks or unset "months?" past a month, months "eventually?" past a quarter — counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Choosing **keep** (`affirm_horizon`) stamps `growth_kept_at`, so Process asks again only one threshold period after it; the horizon's own clock is untouched and the badge still shows creation age. Growth asks about a deadline-only task too (when its deadline is far enough not to steer the horizon); the badge is for undated tasks only.
+**The same thresholds are Process's growth asks** (ruling Q7; they replaced 14/60/180 days): a days or unset task is asked "weeks?" past 10 days on its horizon, weeks "months?" past a month, months "eventually?" past a quarter — counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Choosing **keep** (`affirm_horizon`) stamps `growth_kept_at`, so Process asks again only one threshold period after it; the horizon's own clock is untouched and the badge still shows creation age. Growth asks about a deadline-only task too (when its deadline is far enough not to steer the horizon); the badge is for undated tasks only.
 
 ## Testing the model: the golden suite and the day simulator
 
@@ -382,7 +382,7 @@ Why the change (Trent, 2026-09-15): with four overdue High tasks and nothing els
 - `original_due_at` is the first-target date: the gap to `due_at` is how far moves have carried the target since it was set, but not how many moves occurred or why. Don't infer snooze counts or user intent from dates alone. (There is no snooze count since 2026-10-12.)
 - A target marked `target_auto` (printed "(from deadline)" in the AI's task lines) was not picked by the user: it is the deadline's automatic lead-in.
 - For P0-2 tasks, avoid language like "deferred three times" (implies conscious decisions). Prefer factual framing: "has been on your list for 3 weeks." These tasks ride the bulk sweep, so a shifted target reflects a sweep the user never read, not a decision.
-- An unset `horizon` is unset, not "weeks": never report it as stated.
+- An unset `horizon` is unset, not "days": never report it as stated.
 
 ## The OpenTask day, picks and defers
 
@@ -581,12 +581,12 @@ Taking a one-off off deck stamps nothing and changes nothing else: it goes back 
 - **Members** (RULE AG-MEMBERS; the ask, RULE GROW-ASK)**:** exactly the one-offs Process's `growthAsk` asks about — no picked target, not on deck, no deadline close enough to steer the horizon, past the horizon's threshold (days 10 days, weeks or unset a month, months a quarter), counted from the latest of `horizon_set_at` (else `created_at`) and `growth_kept_at`. Eventually never grows, so an Eventually task is never here.
 - **Cadence:** weekly, on the check-in day (the Weeks segment's day): a task joins when it was already aged at the start of the latest check-in day, then carries over daily until handled, like every segment. A task that ages mid-week waits for the next check-in day in its horizon segment.
 - **Never two places:** on a day a task is in Aged out it is in no horizon segment. The queue's panels and the deadlines page still come first.
-- **Grow** (`POST /api/task-segments/grow`, `growTasks`; RULE AG-GROW-STEP): the horizon one step out — Days → Weeks → Months → Eventually; unset counts as Weeks, so it grows to Months. Through `bulkEdit`: `horizon_set_at` restarts, the keep count goes to 0.
+- **Grow** (`POST /api/task-segments/grow`, `growTasks`; RULE AG-GROW-STEP): the horizon one step out — Days → Weeks → Months → Eventually; unset counts as Days, so it grows to Weeks. Through `bulkEdit`: `horizon_set_at` restarts, the keep count goes to 0.
 - **Keep** (the row's circle, `POST /api/task-segments/keep`, `keepTasks`): Process's keep (`affirm_horizon`) — `growth_kept_at` stamped, so the task returns one threshold period later — and `growth_kept_count` + 1. The row says "kept 2×".
 - **`growth_kept_count`:** +1 on every keep (Process's included), 0 on a grow or any change of the horizon (`collectTaskModelFields`); a same-value edit is not a change.
 - **Handled rows stay:** grow and keep both stamp `last_considered_at`, so the row stays today as a considered row and "N of M" holds. It has no put-back (put-back clears only the consider stamp, which would drop the row instead of undoing the keep); the toast's Undo reverses it. Both are one undo entry (`task_segment`).
 - **Defer all** works as on any segment (`segment_deferred_at`): back tomorrow.
-- **Grouped by horizon** (Trent, 10-29: "add little categories… so that all the days, then all the weeks and months… are just grouped"): the rows come Days, then Weeks (unset rows there too), then Months (`compareAgedOut`), each group oldest first — the age clock that started longest ago (RULE AG-GROUPS) — and the web draws a heading before each group's first row (Trent's pick, A3): a quiet pill — the horizon's dot, then "DAYS" / "WEEKS" / "MONTHS" — the group's count, and the cutoff faint on the right (">10 days", ">1 month", ">3 months"); an empty group has none. From `sm` up the Grow button says where it grows to ("Weeks", "Months", "Eventually"); a phone shows the sprout alone. Until then the order was every horizon segment's: priority, then id.
+- **Grouped by horizon** (Trent, 10-29: "add little categories… so that all the days, then all the weeks and months… are just grouped"): the rows come Days (unset rows there too), then Weeks, then Months (`compareAgedOut`), each group oldest first — the age clock that started longest ago (RULE AG-GROUPS) — and the web draws a heading before each group's first row (Trent's pick, A3): a quiet pill — the horizon's dot, then "DAYS" / "WEEKS" / "MONTHS" — the group's count, and the cutoff faint on the right (">10 days", ">1 month", ">3 months"); an empty group has none. From `sm` up the Grow button says where it grows to ("Weeks", "Months", "Eventually"); a phone shows the sprout alone. Until then the order was every horizon segment's: priority, then id.
 - **The row's meta**: the project, the horizon dot, then the facts joined by "·" — the created date (`createdDateWords`) and how old (`ageWords`: "5 weeks old"), or, when the age clock restarted (`agedClockRestart`), what and when, said plainly: "horizon set Sep 3, 1 month ago", "kept 2×, last Sep 12, 6 weeks ago" — then the labels and the priority last. No age badge (every row is old).
 - **Grow's hold menu** (a hold or right-click on the button): the horizon menu without "Unset"; a pick is a grow to that horizon (`POST /api/task-segments/grow { ids, horizon }`), in or out, the keep count reset and the row handled. A tap still grows one step.
 
@@ -594,19 +594,18 @@ Tests: `tests/behavioral/ag-aged-out.test.ts`.
 
 ## New
 
-**2026-11-10 (the design session's call; Trent: "Whatever you think is best").** A one-off pass for the day after a task is written, on the task queue's **New** page. On prod, 40% of one-offs are done the day they're written, 10% the next day, and 23% in days 2–6, so the day after is when a fresh task most needs a look. `src/lib/new-tasks.ts` holds the rules (RULE NEW-WHO, NEW-ONE-PLACE, NEW-ONE-PASS, NEW-CONSIDER, NEW-NOT-TODAY, NEW-LEAVES; N1–N6 below); `getTaskSegments(…, { newRows })` places the rows. Only for a caller that asks (`GET /api/reminders?new=1`). Since 2026-11-12 `new=1` is part of `REMINDERS_URL`, the question the web and the native apps share: current native builds draw New (`SegmentKind.new`, ios/AGENTS.md § The web's reminders question), and a build shipped before then, which sends the question without it, keeps these tasks in their horizon segments.
+**2026-11-17 (Trent, after mockups; it replaces the New page of 2026-11-10).** A task that has not had its looks yet is drawn under a **New** heading at the top of its own horizon segment, with Grow on its row. `src/lib/new-tasks.ts` holds the rules (RULE NEW-WHO, RULE NEW-ENDS, RULE NEW-COUNT, RULE NEW-HEADING, RULE NEW-GROW); the seed for tasks older than the columns is RULE NEW-SEED (`seedNewEnded`, `src/core/db/index.ts`).
 
-- **Members (N1):** open one-offs (not reminders, quotas or repeats), with no picked target, no deck and no deadline, created during the previous OpenTask day (rollover to rollover). AI- and desk-created tasks count. A task with a consider stamp on any day other than today has been seen and isn't on its pass.
-- **Placement:** after Heads up, before Pulled (`SEGMENT_ORDER`); its own strip group; hidden when empty, like every segment.
-- **One place at a time (N2):** on its New day a task is in no horizon segment. New is placed before the horizons and Aged out.
-- **One pass, not a backlog (N3):** untouched by the next rollover, a task drops out of New into its horizon's rhythm. This deliberately differs from the other segments' carry-over.
-- **Consider (N4):** the task leaves New's waiting rows, listed today as handled. The shared `last_considered_at` counts as seen for its horizon too: a Weeks task waits for the next check-in day, and a Days task comes round tomorrow.
-- **Not today (N5):** the task comes back the next day, once, under a "Carried over" line below the fresh rows (`carried_over: true` on the row; the line shows only with a carried row). Deferred again, it goes to its horizon's rhythm the day after.
-- **Leaves (N6):** done, a target, a deck or a deadline.
-- **Rows** are flat, with no horizon subheadings. Each shows its horizon as elsewhere (the horizon dot, with the task queue on). The order is fresh first, then carried; within each, priority, then newest first.
-- **The day simulator / CLI:** `simulateDays({ newRows })`. The CLI (`scripts/simulate-days.ts`) turns it on and prints a `new` count and the `new:` ids. The golden suite runs without it: its timelines predate New.
+- **Who (RULE NEW-WHO, `isNewRow`):** a row of a horizon segment (an open one-off with no picked target, deck or deadline) whose `consider_count` is under its segment's threshold and for which New has not ended (`new_ended_at` null). The threshold is 2 in Days and Weeks and 1 in Months and Eventually (`NEW_CONSIDERS`; Trent: "for time periods over 2 weeks, one consider is enough"), judged on the horizon the task has now, unset read as Days. There is no clock and no day limit (Trent: "I don't like automatic settling").
+- **Where:** in its own segment, on that segment's cadence, as carry-over says: an unset or Days task first shows the day after it is written, a Weeks task on the next check-in day. New rows come first (priority, then newest), under the blue "New" heading; there is no heading without a New row waiting, no New page and no "Carried over" line. The row cap and "Show more" are the segment's.
+- **The count (RULE NEW-COUNT):** every write of the considered stamp adds 1 to `consider_count`: the circle, Consider all (each swept row once), the select bar's Consider, Keep, Grow, and Today or a deck from a segment row; from any client. A put-back of a considered row takes 1 off (never below 0) and an Undo puts the old number back. Not today adds nothing.
+- **Ends (RULE NEW-ENDS):** a Grow, or any change of the horizon after creation (details, select bar, the dot's menu, Process, the API; clearing it too), stamps `new_ended_at`. A horizon stated at creation, by the user or by enrichment reading the words, does not: the task starts New in that segment.
+- **Grow (RULE NEW-GROW):** New rows only, the Sprout with no word, where the on-deck-tomorrow control sits. A tap grows one step (unset → Weeks), considers the task, ends New, and the row leaves with "Grown to Weeks" and an Undo. A hold or right-click offers every other horizon. On Eventually a tap opens that menu.
+- **Edges:** a task that leaves the segments (a target, a deck) keeps its count and is New again if it comes back still under the threshold. Done then undone: as it was. On an Aged out day the task is in Aged out only.
+- **The seed (RULE NEW-SEED):** at the one startup that adds the columns, New is ended for every existing task except an unset one created in the previous 7 days; an older unset one-off also gets `horizon = weeks` with `horizon_set_at` left null (a horizon set by hand or by enrichment always has that stamp).
+- **On the wire:** a horizon segment's rows carry `new` (boolean). No `new` segment is sent; `?new=1` is accepted and ignored (a native build shipped between 2026-11-12 and this change still asks it, and lists the rows in their horizon segment with no heading).
 
-Tests: `tests/behavioral/nw-new-page.test.ts`, `tests/e2e/new-page.spec.ts`.
+Tests: `tests/behavioral/nw-new-heading.test.ts`, `tests/e2e/new-heading.spec.ts`.
 
 ## The deadlines page
 
@@ -672,7 +671,7 @@ Sorted priority, then the NEAREST deadline, then id (A4; RULE DL-ORDER). Rows ca
 
 The page's rows carry `window` (`open` / `due`); open rows come after the due rows, and the headings "Coming due" / "Open window" are drawn only when both groups have rows. Inside each group the page's own order (RULE DL-ORDER).
 
-**Rounds** (RULE START-4, `latestRound` / `nextRound`). S is always a round. After it the rounds are the SET horizon's cadence days (`latestSegmentDay`: Days daily; Weeks and unset the check-in day; Months the month's first check-in day; Eventually the quarter's) — the deadline never pulls the cadence in — and the first cadence round is at least a full step after S (a day, a week, a month, a quarter): a start on Fri Jan 1 with a Saturday check-in day comes round next on Sat Jan 9, not Jan 2. A horizon change moves the cadence from that day; nothing stored changes.
+**Rounds** (RULE START-4, `latestRound` / `nextRound`). S is always a round. After it the rounds are the SET horizon's cadence days (`latestSegmentDay`: Days and unset daily; Weeks the check-in day; Months the month's first check-in day; Eventually the quarter's) — the deadline never pulls the cadence in — and the first cadence round is at least a full step after S (a day, a week, a month, a quarter): a start on Fri Jan 1 with a Saturday check-in day comes round next on Sat Jan 9, not Jan 2. A horizon change moves the cadence from that day; nothing stored changes.
 
 **Actions** (RULE START-5). Consider quiets the row until the next round. Done, Target and On deck act as on any page row. Defer on an open-window row moves the start (tap: tomorrow; the day menu: up to D−2) and writes `start_date` with `lead_from`; on a Coming-due row it moves only this instance's lead day and the start date stays, so the row is daily when it is back.
 

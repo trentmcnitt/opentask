@@ -148,7 +148,7 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     // two days ago it has no occurrence that day, so it waits in the queue.
     // Made six days ago, so the days it sat over target count as attempts.
     sql(
-      'UPDATE tasks SET due_at = ?, occurrence_at = ?, created_at = ? WHERE id = ?',
+      'UPDATE tasks SET new_ended_at = created_at, due_at = ?, occurrence_at = ?, created_at = ? WHERE id = ?',
       daysFromNow(-4),
       daysFromNow(-4),
       daysFromNow(-6),
@@ -174,7 +174,7 @@ test('both panels after a test rollover, first, with the Try Tomorrow mark', asy
     // Made 40 days ago: an undated task past the weeks threshold has an age
     // badge ("old") everywhere but the queue.
     sql(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-40 days') WHERE id = ?`,
+      `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-40 days') WHERE id = ?`,
       old,
     )
 
@@ -396,7 +396,7 @@ test('the peek bubble on a queue row and on a horizon row opens the Quick panel'
     await strip(page, { today: [queued] })
     // A days task made before today waits in today's Days segment.
     sql(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
+      `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
       plain,
     )
 

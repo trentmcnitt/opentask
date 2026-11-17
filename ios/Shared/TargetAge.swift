@@ -140,7 +140,7 @@ extension TaskDTO {
     /// rule (docs/TASK-MODEL.md § Task segments, "the row"): the task's SET
     /// horizon only when it differs from the segment it sits in (a deadline
     /// pulled it in — "Weeks" on a Days page), never for an unset horizon
-    /// (shown as nothing, never as "Weeks"); a future target's day ("Nov 1");
+    /// (shown as nothing, never as a set one); a future target's day ("Nov 1");
     /// the deadline ("deadline Oct 16"); then the two badges, the web's
     /// `BadgeChips` (spec §7, 2026-10-12): the attempts ("3×", the server's
     /// `attempts_label`, LAST when present — grey like the rest of the words)
@@ -353,9 +353,9 @@ enum TaskWording {
     static let pulledTitle = "Pulled"
     static let pulledTodayWord = "Today"
     static let pulledEarlierWord = "Earlier"
-    /// The line over New's rows back from yesterday's Not today (the web's
-    /// `CARRIED_OVER_TITLE`, `src/lib/new-tasks.ts`).
-    static let carriedOverWord = "Carried over"
+    /// The heading over a horizon segment's New rows (the web's
+    /// `NEW_HEADING_TITLE`, `src/lib/new-tasks.ts`, RULE NEW-HEADING).
+    static let newHeading = "New"
 
     /// A task segment's title: its word alone since 2026-10-29 ("Days";
     /// Trent: "I think just the title's enough now", the web's

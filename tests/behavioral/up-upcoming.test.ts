@@ -246,7 +246,13 @@ describe('Upcoming', () => {
       done(f.id)
       make({ title: 'B target Tue Oct 20', due_at: at('2026-10-20T09:00') })
       make({ title: 'C snowmobile Nov 1', due_at: at('2026-11-01T09:00') })
-      make({ title: 'D deadline Fri Oct 23', deadline_at: at('2026-10-23T23:59') })
+      // Weeks, stated, so the near deadline is what pulls D into Days (with no
+      // horizon it would read as Days and come round daily from Oct 13).
+      make({
+        title: 'D deadline Fri Oct 23',
+        deadline_at: at('2026-10-23T23:59'),
+        horizon: 'weeks',
+      })
       make({ title: 'W weeks, no target', horizon: 'weeks' })
 
       const seen: Record<string, string[]> = {}
@@ -397,7 +403,8 @@ describe('Upcoming', () => {
 
   describe('§1: a target makes a task quiet until its date', () => {
     test('UP-040: a deadline-only task (23:59) shows in its pulled-in segment D−6 to D−4, never Upcoming', () => {
-      const t = make({ deadline_at: at('2026-10-23T23:59') })
+      // Weeks, stated: the pull-in is the subject (unset already reads as Days).
+      const t = make({ deadline_at: at('2026-10-23T23:59'), horizon: 'weeks' })
       // The automatic target (§8.1): set Mon Oct 12, an 11-day wait → lead 3
       // → Tue Oct 20, 9:00 AM. Auto, so it never makes the task quiet.
       const stored = getTaskById(t.id)!

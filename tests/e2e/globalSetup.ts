@@ -220,7 +220,9 @@ export async function seedE2eDatabase(db: Database.Database): Promise<void> {
   // default (now), every seeded task would also be previewed at the top of
   // the dashboard for the run's first 10 minutes (`src/lib/just-added.ts`).
   // Shifting all of them by the same day keeps their order.
-  db.exec(`UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '-1 day')`)
+  db.exec(
+    `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '-1 day')`,
+  )
 
   // Task segments (2026-10-10): a task created before today whose target
   // hasn't arrived shows in its horizon's segment on the reminders surfaces —

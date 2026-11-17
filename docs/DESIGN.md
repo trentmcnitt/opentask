@@ -33,7 +33,7 @@ A single task might be snoozed many times in one day and still get completed tha
 
 - **The target (`due_at`)**: "when to start nagging," not a deadline, at any priority. Snoozes change it constantly.
 - **`deadline_at`**: the real cutoff. Changes are deliberate. A passed deadline is significant at any priority.
-- **`horizon`**: the user's stated pace. `null` means unset, treated as weeks but never reported as stated.
+- **`horizon`**: the user's stated pace. `null` means unset, treated as days (weeks until 2026-11-17) but never reported as stated.
 - **`original_due_at`**: the first-target date. A snooze keeps it, a deliberate re-target restarts it. The gap to `due_at` shows how far the target has drifted, not how many snoozes or why.
 - **`snooze_count`**: lifetime count of snoozes (incremented on every snooze including bulk). High counts are normal and don't indicate avoidance.
 - **`created_at`**: the most reliable signal of task age. It never changes.

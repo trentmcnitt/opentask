@@ -200,8 +200,7 @@ export { REMINDERS_URL }
  * What THIS client fetches: `REMINDERS_URL`, plus Aged out's `&aged=1` on a
  * build with that segment (prod and dev — `src/lib/aged-out.ts`), which is
  * kept out of `REMINDERS_URL` itself, the question the native apps mirror
- * exactly. New's `&new=1` is part of `REMINDERS_URL` (2026-11-12: native
- * draws New too).
+ * exactly.
  */
 const WEB_REMINDERS_URL = REMINDERS_URL + (AGED_OUT_ENABLED ? AGED_OUT_QUERY : '')
 
@@ -252,7 +251,7 @@ export interface TaskSegmentPayload {
    *  this OpenTask day.
    *  `upcoming_section` (Upcoming rows only, 2026-10-25): 'tomorrow' (the day before the
    *  anchor) or 'later' — Tomorrow's rows first. Read by the sections (PR B).
-   *  `carried_over` (New's rows only, `?new=1`, 2026-11-10): back from yesterday's Not today.
+   *  `new` (a horizon segment's rows, 2026-11-17): the task is New (RULE NEW-WHO).
    *  `window` / `next_round` (the deadlines page only, 2026-11-12): 'open' — a row in its open
    *  window, listed on its rounds, under "Open window" (`next_round` its next round day) —
    *  or 'due'. Open rows come last. */
@@ -263,7 +262,7 @@ export interface TaskSegmentPayload {
     safety_net?: boolean
     seen?: boolean
     upcoming_section?: UpcomingSection
-    carried_over?: boolean
+    new?: boolean
     window?: 'open' | 'due'
     next_round?: string | null
   })[]

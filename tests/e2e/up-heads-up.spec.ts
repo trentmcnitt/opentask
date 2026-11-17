@@ -44,7 +44,9 @@ async function tomorrowTask(page: Page, title: string): Promise<number> {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const ago = new Date(Date.now() - 10 * 86_400_000).toISOString()
-    db.prepare('UPDATE tasks SET target_set_at = ?, created_at = ? WHERE id = ?').run(ago, ago, id)
+    db.prepare(
+      'UPDATE tasks SET new_ended_at = created_at, target_set_at = ?, created_at = ? WHERE id = ?',
+    ).run(ago, ago, id)
   } finally {
     db.close()
   }

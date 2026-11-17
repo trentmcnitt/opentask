@@ -58,44 +58,107 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertNil(segment.kind?.doneColorHex, "finishes green")
     }
 
-    /// NEW (2026-11-12): a kind of its own with the web's words, between
-    /// Heads up and the queue on the strip; "Not today, all" as on the web;
-    /// its rows name the horizon they were given.
-    func testNewHasTheWebsWords() {
-        let segment = TaskSegmentDTO(horizon: "new", tasks: [])
-        XCTAssertEqual(segment.kind, .new)
-        XCTAssertEqual(segment.kind?.raw, "new")
-        XCTAssertEqual(segment.label, "New")
-        XCTAssertEqual(segment.title, "New")
-        XCTAssertEqual(segment.kind?.stripWord, "New")
-        XCTAssertEqual(segment.pageKey, -20)
-        XCTAssertTrue(segment.offersDeferAll)
-        XCTAssertNil(segment.kind?.doneColorHex, "finishes green")
-        // Its own strip group: a hairline on both sides.
-        let groups: [SegmentKind] = [.upcoming, .new, .queueToday, .horizon(.days), .agedOut]
-        XCTAssertEqual(Set(groups.map(\.stripGroup)).count, groups.count)
-        XCTAssertTrue(SegmentKind.new.namesRowHorizon)
-        XCTAssertTrue(SegmentKind.new.showsBadges)
+    /// NEW IS A HEADING, NOT A PAGE (2026-11-17, RULE NEW-HEADING): no kind
+    /// for the retired `new` segment, and every decode drops one an older
+    /// server or a cache still holds — the payload, a cached segment list —
+    /// so it is no page, no bar, and never holds "Day complete" off.
+    func testARetiredNewSegmentDecodesAndIsNoPage() throws {
+        XCTAssertNil(SegmentKind(raw: "new"))
+        XCTAssertEqual(SegmentKind.retiredNewRaw, "new")
+        let json = """
+        { "groups": [], "task_segments": [
+          { "horizon": "upcoming", "tasks": [], "nudge": false },
+          { "horizon": "new", "nudge": false, "tasks": [
+            { "id": 1, "title": "Sort the seed packets", "segment_state": "waiting", "carried_over": false },
+            { "id": 2, "title": "Label the spice jars", "segment_state": "waiting", "carried_over": true }
+          ] },
+          { "horizon": "days", "nudge": false, "tasks": [
+            { "id": 3, "title": "Find the spare bike pump", "segment_state": "considered" }
+          ] }
+        ] }
+        """
+        let payload = try JSONDecoder().decode(RemindersPayload.self, from: Data(json.utf8))
+        XCTAssertEqual(payload.taskSegments.map(\.horizon), ["upcoming", "days"])
+        XCTAssertEqual(TaskSegmentDTO.listed(payload.taskSegments).map(\.horizon), ["days"])
+        XCTAssertFalse(payload.taskSegments.contains(where: \.hasWaiting), "its waiting rows hold nothing open")
+        XCTAssertEqual(payload.taskSegments.map(\.pageKey), [-14, -10])
+
+        // A cache written by a build that had the page: a bare segment list
+        // (the watch's) still decodes, and the readers' filter drops it.
+        let cached = [
+            TaskSegmentDTO(horizon: "new", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 1, title: "Sort the seed packets"), state: .waiting),
+            ]),
+            TaskSegmentDTO(horizon: "weeks", tasks: [
+                SegmentTaskDTO(task: TaskDTO(id: 4, title: "Label the spice jars"), state: .waiting),
+            ]),
+        ]
+        let decoded = try JSONDecoder().decode([TaskSegmentDTO].self, from: JSONEncoder().encode(cached))
+        XCTAssertEqual(decoded.count, 2, "it decodes")
+        XCTAssertEqual(TaskSegmentDTO.droppingRetired(decoded).map(\.horizon), ["weeks"])
+        // A kind this build truly doesn't know is still kept, as before.
+        let future = TaskSegmentDTO(horizon: "some_kind", tasks: cached[1].tasks)
+        XCTAssertEqual(TaskSegmentDTO.droppingRetired([future]).map(\.horizon), ["some_kind"])
     }
 
-    /// New's carried rows (`carried_over`): decoded, kept through the cache
-    /// and every optimistic rebuild, listed after the fresh ones.
-    func testCarriedOverRowsSurviveTheCacheAndComeLast() throws {
-        let fresh = SegmentTaskDTO(task: TaskDTO(id: 1, title: "Sort the seed packets"), state: .waiting)
-        let carried = SegmentTaskDTO(
-            task: TaskDTO(id: 2, title: "Label the spice jars"), state: .waiting, carriedOver: true
-        )
-        let segment = TaskSegmentDTO(horizon: "new", tasks: [fresh, carried])
+    /// A New row (`new`): decoded (false when missing), kept through the
+    /// cache and every optimistic rebuild.
+    func testNewRowsSurviveTheCacheAndEveryRebuild() throws {
+        let json = """
+        { "horizon": "days", "nudge": false, "tasks": [
+          { "id": 1, "title": "Sort the seed packets", "segment_state": "waiting", "new": true },
+          { "id": 2, "title": "Label the spice jars", "segment_state": "waiting", "new": false },
+          { "id": 3, "title": "Find the spare bike pump", "segment_state": "waiting" }
+        ] }
+        """
+        let segment = try JSONDecoder().decode(TaskSegmentDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(segment.tasks.map(\.isNew), [true, false, false])
         let decoded = try JSONDecoder().decode(TaskSegmentDTO.self, from: JSONEncoder().encode(segment))
-        XCTAssertEqual(decoded.tasks.map(\.carriedOver), [false, true])
-        XCTAssertTrue(carried.with(state: .deferred).carriedOver)
-        XCTAssertTrue(carried.leaving(.done).carriedOver)
-        XCTAssertTrue(carried.consideredByTap().carriedOver)
-        XCTAssertEqual(segment.newRowsSplit.fresh.map(\.id), [1])
-        XCTAssertEqual(segment.newRowsSplit.carried.map(\.id), [2])
-        // A considered carried row is no longer under the heading.
-        let after = TaskSegmentDTO(horizon: "new", tasks: [fresh, carried.consideredByTap()])
-        XCTAssertTrue(after.newRowsSplit.carried.isEmpty)
+        XCTAssertEqual(decoded.tasks.map(\.isNew), [true, false, false])
+        XCTAssertEqual(decoded, segment)
+        let new = segment.tasks[0]
+        XCTAssertTrue(new.with(state: .deferred).isNew)
+        XCTAssertTrue(new.leaving(.done).isNew)
+        XCTAssertTrue(new.consideredByTap().isNew)
+        XCTAssertFalse(segment.tasks[1].consideredByTap().isNew)
+        XCTAssertFalse(SegmentTaskDTO(task: TaskDTO(id: 9, title: "Sort the seed packets"), state: .waiting).isNew)
+    }
+
+    /// The "New" heading (RULE NEW-HEADING): a horizon segment's WAITING New
+    /// rows, then its other waiting rows; no heading without one; never on
+    /// another kind's page.
+    func testTheNewHeadingIsOverAHorizonSegmentsWaitingNewRows() {
+        func row(_ id: Int, new: Bool = false, state: SegmentTaskDTO.State = .waiting) -> SegmentTaskDTO {
+            SegmentTaskDTO(task: TaskDTO(id: id, title: "Sort the seed packets"), state: state, isNew: new)
+        }
+        let days = TaskSegmentDTO(horizon: "days", tasks: [row(1, new: true), row(2, new: true), row(3), row(4)])
+        XCTAssertEqual(days.newHeadingSplit.new.map(\.id), [1, 2])
+        XCTAssertEqual(days.newHeadingSplit.rest.map(\.id), [3, 4])
+        XCTAssertEqual(TaskWording.newHeading, "New")
+
+        // By the flag, not by position.
+        let mixed = TaskSegmentDTO(horizon: "eventually", tasks: [row(1), row(2, new: true)])
+        XCTAssertEqual(mixed.newHeadingSplit.new.map(\.id), [2])
+        XCTAssertEqual(mixed.newHeadingSplit.rest.map(\.id), [1])
+
+        // A considered or deferred New row is not under the heading; with
+        // none waiting there is no heading.
+        let handled = TaskSegmentDTO(horizon: "weeks", tasks: [
+            row(1, new: true).consideredByTap(), row(2, new: true, state: .deferred), row(3),
+        ])
+        XCTAssertTrue(handled.newHeadingSplit.new.isEmpty)
+        XCTAssertEqual(handled.newHeadingSplit.rest.map(\.id), [3])
+        XCTAssertTrue(TaskSegmentDTO(horizon: "months", tasks: [row(1), row(2)]).newHeadingSplit.new.isEmpty)
+
+        // Only a horizon segment has the heading.
+        for kind in ["aged_out", "upcoming", "deadlines", "queue_today", "queue_previous", "some_kind"] {
+            let other = TaskSegmentDTO(horizon: kind, tasks: [row(1, new: true), row(2)])
+            XCTAssertTrue(other.newHeadingSplit.new.isEmpty, kind)
+            XCTAssertEqual(other.newHeadingSplit.rest.map(\.id), [1, 2], kind)
+        }
+        // New rows count in the segment's numbers like any row.
+        XCTAssertEqual(days.waitingCount, 4)
+        XCTAssertEqual(ReminderDayProgress.PeriodCount(days).text, "0 of 4")
     }
 
     /// A kind this build doesn't know: its wire string spaced and

@@ -135,9 +135,10 @@ export const oneOffScenarios: GoldenScenario[] = [
   ),
   {
     id: 'ref-deadline-only',
-    title: 'Deadline only, Fri Oct 23 23:59 (made Mon Oct 12): Days from D−6, auto target Tue',
+    title:
+      'Deadline only, Fri Oct 23 23:59 (made Mon Oct 12): unset in Days daily, Weeks in Days from D−6; auto target Tue',
     source:
-      'spec §1 (deadline-only), §8.1/§8.5; TASK-MODEL "a 23:59 deadline 11 days out: Days on D−6 to D−4, then nagging from D−3" (v7 row predates §8)',
+      'spec §1 (deadline-only), §8.1/§8.5; HZ-UNSET (unset reads as days, 2026-11-17); TASK-MODEL "a 23:59 deadline 11 days out: Days on D−6 to D−4, then nagging from D−3" (v7 row predates §8)',
     from: '2026-10-12',
     to: '2026-10-24',
     policy: ['tap'],
@@ -147,14 +148,33 @@ export const oneOffScenarios: GoldenScenario[] = [
         created: '2026-10-12T10:00',
         input: { title: 'Synthetic deadline task', deadline_at: iso('2026-10-23T23:59') },
       },
+      {
+        name: 'weeks',
+        created: '2026-10-12T10:00',
+        input: {
+          title: 'Synthetic weeks deadline task',
+          deadline_at: iso('2026-10-23T23:59'),
+          horizon: 'weeks',
+        },
+      },
     ],
     // Wait 11 → lead 3 → the automatic target is Tue Oct 20, 9:00 (morning).
-    // Until then its unset horizon (weeks) is pulled in by the deadline: weeks
-    // through Fri (7.1 days left at 21:00 — and a weeks task made on Monday
-    // waits for the next check-in day), days from Sat. Never in Upcoming.
-    // An automatic target offers nothing at 3× (Q9).
+    // Never in Upcoming. An automatic target offers nothing at 3× (Q9).
     expect: {
+      // No horizon: read as days (HZ-UNSET), so it is in Days every day from
+      // the day after it is made, until the target.
       task: {
+        '2026-10-13..2026-10-19': 'days',
+        '2026-10-20': 'over 1×',
+        '2026-10-21': 'over 2×',
+        '2026-10-22': 'over 3×',
+        '2026-10-23': 'over 4×',
+        '2026-10-24': 'over 5×',
+      },
+      // Weeks, stated: pulled in by the deadline — weeks through Fri (7.1
+      // days left at 21:00, and a weeks task made on Monday waits for the
+      // next check-in day), days from Sat.
+      weeks: {
         '2026-10-17..2026-10-19': 'days',
         '2026-10-20': 'over 1×',
         '2026-10-21': 'over 2×',

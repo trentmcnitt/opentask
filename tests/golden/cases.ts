@@ -231,21 +231,26 @@ export const caseScenarios: GoldenScenario[] = [
   {
     id: 'case-age-undated',
     title:
-      'Undated tasks: weeks shows on Saturdays, "old" past a month; days daily, "old" past 10 days',
+      'Undated tasks: weeks shows on Saturdays, "old" past a month; days (and unset) daily, "old" past 10 days',
     source: 'spec §7 age badge; rulings Q6',
     from: '2026-09-01',
     to: '2026-10-11',
     policy: ['tap'],
     tasks: [
-      { name: 'weeks', created: '2026-09-01T10:00', input: { title: 'Synthetic someday task' } },
+      {
+        name: 'weeks',
+        created: '2026-09-01T10:00',
+        input: { title: 'Synthetic someday task', horizon: 'weeks' },
+      },
       {
         name: 'days',
         created: '2026-10-01T10:00',
         input: { title: 'Synthetic soon task', horizon: 'days' },
       },
+      { name: 'unset', created: '2026-10-01T10:00', input: { title: 'Synthetic unpaced task' } },
     ],
     expect: {
-      // Unset horizon = weeks: every Saturday (the default check-in day).
+      // Weeks: every Saturday (the default check-in day).
       // Past one month (Oct 1 10:00) it carries "old".
       weeks: {
         '2026-09-05': 'weeks',
@@ -262,6 +267,9 @@ export const caseScenarios: GoldenScenario[] = [
       // its next cadence day (2026-10-31). Strictly past 10 days from Oct 11
       // 10:00 (the threshold, 2026-10-29; it was 7 days, ">1 wk" from Oct 8).
       days: { '2026-10-01': 'quiet', '2026-10-02..2026-10-10': 'days', '2026-10-11': 'days old' },
+      // No horizon reads as days (HZ-UNSET, 2026-11-17; weeks before): the
+      // same days, and the same 10-day threshold.
+      unset: { '2026-10-01': 'quiet', '2026-10-02..2026-10-10': 'days', '2026-10-11': 'days old' },
     },
   },
 ]

@@ -122,7 +122,9 @@ extension WatchCache {
         guard let data = defaults?.data(forKey: taskSegmentsKey),
               let segments = try? JSONDecoder().decode([TaskSegmentDTO].self, from: data)
         else { return [] }
-        return segments
+        // Without the retired New page a cache from before 2026-11-17 may
+        // hold (`TaskSegmentDTO.droppingRetired`).
+        return TaskSegmentDTO.droppingRetired(segments)
     }
 
     /// Mirror a segment action into the cache — `state` for a consider or a

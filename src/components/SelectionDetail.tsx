@@ -40,7 +40,7 @@ export function sharedHorizon(
   return values.size === 1 ? [...values][0] : 'mixed'
 }
 
-/** The bar's horizon control: "● Days ⌄", "Weeks (unset) ⌄" or "Mixed ⌄". */
+/** The bar's horizon control: "● Days ⌄", "Days (unset) ⌄" or "Mixed ⌄". */
 export function BarHorizonControl({
   tasks,
   onChange,

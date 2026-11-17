@@ -79,7 +79,11 @@ enum WidgetStore {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             groups = try c.decodeIfPresent([ReminderGroupDTO].self, forKey: .groups) ?? []
-            taskSegments = try c.decodeIfPresent([TaskSegmentDTO].self, forKey: .taskSegments) ?? []
+            // Without the retired New page a cache from before 2026-11-17
+            // may hold (`TaskSegmentDTO.droppingRetired`).
+            taskSegments = TaskSegmentDTO.droppingRetired(
+                try c.decodeIfPresent([TaskSegmentDTO].self, forKey: .taskSegments) ?? []
+            )
         }
     }
 

@@ -62,7 +62,10 @@ async function trash(page: Page, ids: number[]) {
 function createdYesterday(id: number) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
-    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(fromNow(-2 * DAY), id)
+    db.prepare('UPDATE tasks SET new_ended_at = created_at, created_at = ? WHERE id = ?').run(
+      fromNow(-2 * DAY),
+      id,
+    )
   } finally {
     db.close()
   }

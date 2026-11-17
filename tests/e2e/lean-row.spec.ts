@@ -349,7 +349,7 @@ test.describe('Lean row · the horizon done square', () => {
       }
       // The SET horizon, targeted and deadline rows too; unset as UNSET_HORIZON.
       await expect(square(made.weeks)).toHaveAttribute('data-horizon-square', 'weeks')
-      await expect(square(made.unset)).toHaveAttribute('data-horizon-square', 'weeks')
+      await expect(square(made.unset)).toHaveAttribute('data-horizon-square', 'days')
       await expect(square(made.dated)).toHaveAttribute('data-horizon-square', 'eventually')
       await expect(square(made.deadline)).toHaveAttribute('data-horizon-square', 'months')
       await expect(square(made.months)).toHaveAttribute(
@@ -358,21 +358,22 @@ test.describe('Lean row · the horizon done square', () => {
       )
       await expect(square(made.unset)).toHaveAttribute(
         'title',
-        'Done · Horizon: Weeks (unset). Hold to change.',
+        'Done · Horizon: Days (unset). Hold to change.',
       )
       await expect(square(made.unset)).toHaveAccessibleName(
-        /^Done: ".+" · Horizon: Weeks \(unset\)\. Hold to change\.$/,
+        /^Done: ".+" · Horizon: Days \(unset\)\. Hold to change\.$/,
       )
 
       // The horizon DOT on the meta line (2026-10-29), main's perspective
-      // dot: every one-off; unset draws as the Weeks dot, no hollow ring.
+      // dot: every one-off; unset draws as the Days dot, no hollow ring.
       const dot = (id: number) => row(page, id).locator('[data-lean-meta] [data-horizon-dot]')
       const circle = (id: number) =>
         dot(id)
           .locator('circle')
           .evaluate((c) => [c.getAttribute('r'), c.getAttribute('opacity'), c.getAttribute('fill')])
       expect(await circle(made.weeks)).toEqual(['3', '0.7', 'currentColor'])
-      expect(await circle(made.unset)).toEqual(await circle(made.weeks))
+      expect((await circle(made.unset))[0]).toBe('4')
+      expect((await circle(made.unset))[2]).toBe('currentColor')
       expect(await circle(made.months)).toEqual(['2.5', '0.55', 'currentColor'])
       expect(await circle(made.dated)).toEqual(['2.25', '0.42', 'currentColor'])
       await expect(dot(made.deadline)).toHaveCount(1)

@@ -62,7 +62,7 @@ function sql(statement: string, ...args: unknown[]) {
 async function daysTask(page: Page, title: string, extra: Record<string, unknown> = {}) {
   const id = await create(page, { title, horizon: 'days', ...extra })
   sql(
-    `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
+    `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     id,
   )
   return id

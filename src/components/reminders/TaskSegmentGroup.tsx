@@ -14,8 +14,8 @@ import {
 import {
   AgedGroupHeading,
   PulledSectionHeading,
-  CarriedOverLine,
-  carriedLineBefore,
+  NewHeading,
+  newHeadingBefore,
   DeadlineGroupHeading,
   deadlineGroupBefore,
   agedGroupBefore,
@@ -205,13 +205,13 @@ export function TaskSegmentGroup({
                 // Aged out's group headings, Pulled's sections (2026-10-29).
                 const heading = agedGroupBefore(segment.horizon, waiting, i)
                 const pulled = pulledSectionBefore(segment, waiting, i)
-                const carried = carriedLineBefore(waiting, i)
+                const fresh = newHeadingBefore(waiting, i)
                 const group = deadlineGroupBefore(segment.horizon, waiting, i)
                 return (
                   <Fragment key={row.task.id}>
                     {heading && <AgedGroupHeading {...heading} panel={false} />}
                     {pulled && <PulledSectionHeading {...pulled} panel={false} />}
-                    {carried && <CarriedOverLine {...carried} panel={false} />}
+                    {fresh && <NewHeading {...fresh} panel={false} />}
                     {group && <DeadlineGroupHeading {...group} panel={false} />}
                     <TaskSegmentRow
                       row={row}

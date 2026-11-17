@@ -1399,6 +1399,8 @@ function collectTaskModelFields(
   }
   if (input.last_considered_at !== undefined) {
     trackField(data, 'last_considered_at', task.last_considered_at, input.last_considered_at)
+    // (restates RULE NEW-COUNT, home: src/lib/new-tasks.ts) Every write of the stamp counts.
+    trackField(data, 'consider_count', task.consider_count, task.consider_count + 1)
   }
   if (input.segment_targeted_at !== undefined) {
     trackField(data, 'segment_targeted_at', task.segment_targeted_at, input.segment_targeted_at)
@@ -1420,6 +1422,12 @@ function collectTaskModelFields(
       task.horizon_set_at,
       input.horizon ? now.toISOString() : null,
     )
+    // (restates RULE NEW-ENDS, home: src/lib/new-tasks.ts) A horizon changed
+    // after creation ends New for good. Enrichment's horizon is not written
+    // here, so the pace it reads from the words leaves a task New.
+    if (task.new_ended_at === null) {
+      trackField(data, 'new_ended_at', task.new_ended_at, now.toISOString())
+    }
     // Any change of the horizon starts the keep count over (Aged out, 2026-10-29).
     if (task.growth_kept_count !== 0) {
       trackField(data, 'growth_kept_count', task.growth_kept_count, 0)

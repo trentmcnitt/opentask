@@ -105,7 +105,7 @@ describe('GET /api/process', () => {
     expect(data.inbox.every((t) => t.project_id === 1)).toBe(true)
 
     const ask = data.growth.find((g) => g.task.id === oldUnset)
-    expect(ask).toMatchObject({ from: null, to: 'months', can_act: true })
+    expect(ask).toMatchObject({ from: null, to: 'weeks', can_act: true })
     expect(ask!.days_on_horizon).toBeGreaterThanOrEqual(61)
 
     const staleIds = data.stale_targets.map((s) => s.task.id)

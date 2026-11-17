@@ -131,17 +131,15 @@ enum WatchPreviewData {
         let tomorrow = DateHelpers.formatISO(Date().addingTimeInterval(day))
         return [
             TaskSegmentDTO(horizon: "days", tasks: [
+                // New (2026-11-17): two New rows first, as the server sends
+                // them (priority, then newest), under the "New" heading; the
+                // segment's ordinary rows follow.
+                SegmentTaskDTO(task: TaskDTO(id: 9503, title: "Find the spare bike pump", priority: 3, horizon: "days"), state: .waiting, isNew: true),
+                SegmentTaskDTO(task: TaskDTO(id: 9501, title: "Sort the seed packets"), state: .waiting, isNew: true),
                 SegmentTaskDTO(task: TaskDTO(id: 9101, title: "Call the insurance office about the renewal letter", priority: 3, horizon: "days"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9102, title: "Fix the squeaky gate hinge", dueAt: soon, horizon: "days"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9103, title: "Book the dentist for the kids", deadlineAt: deadline, horizon: "weeks"), state: .waiting),
                 SegmentTaskDTO(task: TaskDTO(id: 9104, title: "Return the library books", horizon: "days"), state: .considered),
-            ]),
-            // New (2026-11-12): yesterday's new one-offs, then one back
-            // from yesterday's Not today under "Carried over".
-            TaskSegmentDTO(horizon: "new", tasks: [
-                SegmentTaskDTO(task: TaskDTO(id: 9501, title: "Sort the seed packets", horizon: "weeks"), state: .waiting),
-                SegmentTaskDTO(task: TaskDTO(id: 9503, title: "Find the spare bike pump", priority: 3), state: .waiting),
-                SegmentTaskDTO(task: TaskDTO(id: 9504, title: "Label the spice jars"), state: .waiting, carriedOver: true),
             ]),
             // Upcoming (2026-10-12), after Days: a one-off with a deadline
             // and a repeating task — target dates, never a horizon word.

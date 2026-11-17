@@ -18,6 +18,7 @@ import {
   nextRound,
   type CheckInDay,
   type HorizonValue,
+  UNSET_HORIZON,
 } from '@/lib/task-segments'
 
 /** The Starts row's label (the deadline form of the Lead time row, on a one-off). */
@@ -26,9 +27,9 @@ export const STARTS_WORD = 'Starts'
 export const COMING_DUE_TITLE = 'Coming due'
 export const OPEN_WINDOW_TITLE = 'Open window'
 
-/** How often a horizon's rounds come: unset reads as weeks. */
+/** How often a horizon's rounds come: unset reads as days (`UNSET_HORIZON`). */
 export function cadenceWord(horizon: HorizonValue | null | undefined): string {
-  switch (horizon ?? 'weeks') {
+  switch (horizon ?? UNSET_HORIZON) {
     case 'days':
       return 'daily'
     case 'months':

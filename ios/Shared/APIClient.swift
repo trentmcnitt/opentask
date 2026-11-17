@@ -858,12 +858,13 @@ final class APIClient {
     /// `src/lib/reminders-query.ts`) — the task queue's panels (`queue`), a
     /// future deck's Upcoming row (`deck`), the day roster's left rows
     /// (`handled`), the deadlines page (`deadlines`), every segment kind,
-    /// an empty one too (`fill`), and since 2026-11-12 New (`new`:
-    /// yesterday's new one-offs as their own segment, `SegmentKind.new`). Guarded against drift by
+    /// an empty one too (`fill`). No `new=1` since 2026-11-17: the New page
+    /// is gone, a New row is in its horizon segment with `new: true`
+    /// (`SegmentTaskDTO.isNew`), asked or not. Guarded against drift by
     /// `tests/fixtures/contract/reminders-query.json`
     /// (`ContractDecodeTests.testRemindersPathIsTheWebsQuery`). An older
     /// server ignores the flags it doesn't know.
-    static let remindersPath = "/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1&new=1"
+    static let remindersPath = "/api/reminders?queue=1&deck=1&handled=1&deadlines=1&fill=1"
 
     /// Today's incomplete reminders grouped by time slot (§6), the groups in
     /// the OpenTask day's order (`RemindersPayload.orderedByDay` — the one
