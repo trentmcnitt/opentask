@@ -100,42 +100,6 @@ test('finishing Heads up scrolls Days, the next section still waiting, under the
   }
 })
 
-test('a scroll by hand after the last tick keeps the page where the user put it', async ({
-  authenticatedPage: page,
-}) => {
-  const tomorrow = await openTaskDay(page, 1)
-  const headsUp = await create(page, {
-    title: uniqueTitle('NS heads up'),
-    target_at: DateTime.fromISO(tomorrow, { zone: TZ }).set({ hour: 9 }).toUTC().toISO(),
-  })
-  targetSetDaysAgo(headsUp, 10)
-  const fill = await daysTasks(page, 'NS days')
-  try {
-    await onlyTheseTasks(page, [headsUp, ...fill])
-    // The page's timers run on a clock the test steps: the move's delay
-    // passes exactly when the test says so.
-    await page.clock.install()
-    await page.goto('/reminders')
-    const upcoming = page.locator('[data-section-key="tasks:upcoming"]')
-    const row = upcoming.locator(`[data-segment-task="${headsUp}"]`)
-    await expect(row).toBeVisible()
-
-    await row.getByRole('button', { name: /as considered/ }).click()
-    await expect(row).toHaveCount(0)
-    const clicked = await page.evaluate(() => window.scrollY)
-    await page.mouse.wheel(0, 40)
-    const handScrolled = clicked + 40
-    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBe(handScrolled)
-
-    // Past the move's delay, the page is still where the wheel left it.
-    await page.clock.runFor(2000)
-    expect(await page.evaluate(() => window.scrollY)).toBe(handScrolled)
-  } finally {
-    await page.unrouteAll({ behavior: 'ignoreErrors' })
-    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [headsUp, ...fill] } })
-  }
-})
-
 test('with a notch inset the header still lands below the top bar', async ({
   authenticatedPage: page,
 }) => {

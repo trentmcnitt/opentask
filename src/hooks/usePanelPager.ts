@@ -1,15 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import {
-  FINISH_BEAT_MS,
-  PAGER_START,
-  beatOver,
-  settlePager,
-  touchCard,
-  turnPage,
-  type PagerState,
-} from '@/lib/panel-pager'
+import { PAGER_START, settlePager, turnPage, type PagerState } from '@/lib/panel-pager'
 
 /** What a pager needs to know about a page. */
 export interface PagerPage {
@@ -75,9 +67,9 @@ function useCardHold() {
  * strip tap, a notification's or a link's page, an automatic move), else the
  * natural one. The card lets go of a held page when the clock says so
  * (RULE PAGER-CLOCK-TAKEOVER, src/lib/panel-pager.ts). It moves by itself in
- * three cases, each decided once a render by `settlePager`:
- * a finished page's beat ending (RULE PAGER-FINISH-BEAT), a period opening or
- * the day turning, and an Undo bringing back the row that finished a page.
+ * two cases, each decided once a render by `settlePager`: a page finished
+ * (RULE PAGER-FINISH-MOVE, at once, the emptied page never painted first),
+ * and a period opening or the day turning.
  *
  * `day` is the OpenTask day, `basis` what the clock is read against
  * (`usePagerClock`), and `blocked` the card's own reasons to be held.
@@ -90,7 +82,7 @@ export function usePanelPager<P extends PagerPage>(
   naturalSlot: number,
   { day, basis, blocked = false }: { day: string; basis: string; blocked?: boolean },
 ) {
-  // Which page is held, the finished page's beat, the clock last settled
+  // Which page is held, a finished page's owed move, the clock last settled
   // with: one state, settled once a render (`settlePager`).
   const [state, setState] = useState<PagerState>(PAGER_START)
   // Per-page uncapped state — a Set so paging away and back remembers it.
@@ -100,13 +92,6 @@ export function usePanelPager<P extends PagerPage>(
   // one page rather than a mode the card sits in.
   const [showConsidered, setShowConsidered] = useState(false)
   const cardHold = useCardHold()
-
-  const beatKey = state.beat && !state.beat.due ? state.beat.key : null
-  useEffect(() => {
-    if (beatKey === null) return
-    const id = window.setTimeout(() => setState((s) => beatOver(s, beatKey)), FINISH_BEAT_MS)
-    return () => window.clearTimeout(id)
-  }, [beatKey])
 
   if (pages.length === 0) return null
 
@@ -161,7 +146,6 @@ export function usePanelPager<P extends PagerPage>(
     cardProps: {
       onPointerDownCapture: (e: { button: number }) => {
         cardHold.onPointerDownCapture(e)
-        setState(touchCard)
       },
     },
     /** For `PagerHoldProvider`: a row's menu holds the card. */

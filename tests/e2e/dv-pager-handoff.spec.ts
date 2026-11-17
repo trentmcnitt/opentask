@@ -1,17 +1,17 @@
 /**
  * The dashboard Reminders card's hand-off (2026-11-13; RULES
- * PAGER-FINISH-BEAT, PAGER-CLOCK-TAKEOVER, PAGER-HELD in
+ * PAGER-FINISH-MOVE, PAGER-CLOCK-TAKEOVER, PAGER-HELD in
  * src/lib/panel-pager.ts and src/hooks/usePanelPager.ts): a finished page
- * shows for its beat and then moves on, a period opening takes a finished
- * page and never one with rows waiting, and a held card moves when the hold
- * ends. The Task queue card runs the same state (`settlePager`), pinned in
+ * moves on at once, a period opening takes a finished page and never one
+ * with rows waiting, and a held card moves when the hold ends. The Task queue card runs the same state (`settlePager`), pinned in
  * tests/behavioral/dv-pager-handoff.test.ts.
  *
  * Both clocks are pinned (tq-late-night.spec.ts has the why): the server's
  * through POST /api/test/clock, at the most recent such instant at or before
  * real now, and the browser's through `page.clock`, PAUSED once the card is
- * drawn, so a beat ends and a period opens exactly when a test says
- * (`runFor`, `fastForward`). Only the browser's clock is moved on, by minutes.
+ * drawn, so no timer runs unless a test says so: a move that happens here
+ * waits on none, and a period opens exactly when a test says
+ * (`fastForward`). Only the browser's clock is moved on, by minutes.
  */
 import { DateTime } from 'luxon'
 import { test, expect, uniqueTitle } from './fixtures'
@@ -96,11 +96,13 @@ const consider = (page: Page, title: string) =>
     .click()
 
 test.describe('Dashboard pager hand-off', () => {
-  test.afterEach(async ({ authenticatedPage: page }) => {
-    await setClock(page.request, null)
+  // The bare `request` fixture, not the page's: after a test that timed out
+  // the page is gone, and a server clock left pinned breaks every spec after.
+  test.afterEach(async ({ request }) => {
+    await setClock(request, null)
   })
 
-  test('PAGER-FINISH-BEAT: the finished page shows for its beat, then the earliest waiting period; Undo brings the card back', async ({
+  test('PAGER-FINISH-MOVE: the card goes to the earliest waiting period at once, on no timer; Undo puts the row back and the card stays', async ({
     authenticatedPage: page,
   }) => {
     const [first, second] = await firstTwoSlots(page)
@@ -115,47 +117,21 @@ test.describe('Dashboard pager hand-off', () => {
     try {
       await openPaused(page, pin)
       await onSlot(page, second)
+      // The browser's clock is paused: nothing that waits on a timer can run.
       await consider(page, late)
-      // The beat: the finished page is in view, its count done, until 1 s is up.
-      await expect(card(page).getByText(late)).toBeHidden()
-      await expect(card(page).getByText('1 of 1')).toBeVisible()
-      await page.clock.runFor(900)
-      await onSlot(page, second)
-      await page.clock.runFor(200)
       await onSlot(page, first)
       await expect(card(page).getByText(early)).toBeVisible()
 
-      // Undo: the row is back, and the card is back on its page.
+      // The move is proven; the rest runs on a running clock (the toast and
+      // its Undo draw on timers, which a paused clock never fires).
+      await page.clock.resume()
+      // Undo: the row waits again in its own period, and the card has not
+      // moved: one page on from where it stands is that period (had the card
+      // jumped back, one page on would be the period after it).
       await page.getByRole('button', { name: 'Undo', exact: true }).first().click()
+      await card(page).getByRole('button', { name: 'Next time slot' }).click()
       await onSlot(page, second)
       await expect(card(page).getByText(late)).toBeVisible()
-    } finally {
-      await trash(page, ids)
-    }
-  })
-
-  test('PAGER-FINISH-BEAT: a page turned by hand during the beat cancels the move', async ({
-    authenticatedPage: page,
-  }) => {
-    const [first, second] = await firstTwoSlots(page)
-    const pin = mostRecent(minutesOf(second.start_time) + 2)
-    await pinClocks(page, pin)
-    const early = uniqueTitle('Synthetic kettle')
-    const late = uniqueTitle('Synthetic lantern')
-    const ids = [
-      await reminderIn(page, first, pin, early),
-      await reminderIn(page, second, pin, late),
-    ]
-    try {
-      await openPaused(page, pin)
-      await onSlot(page, second)
-      await consider(page, late)
-      await expect(card(page).getByText('1 of 1')).toBeVisible()
-      await card(page).getByRole('button', { name: 'Next time slot' }).click()
-      const turnedTo = await card(page).getAttribute('data-reminders-slot')
-      expect(turnedTo).not.toBe(String(second.id))
-      await page.clock.runFor(3000)
-      await expect(card(page)).toHaveAttribute('data-reminders-slot', String(turnedTo))
     } finally {
       await trash(page, ids)
     }
@@ -183,7 +159,6 @@ test.describe('Dashboard pager hand-off', () => {
       await expect(card(page).getByText(early)).toBeVisible()
       // Finishing it then moves on to the opened period.
       await consider(page, early)
-      await page.clock.runFor(1100)
       await onSlot(page, second)
     } finally {
       await trash(page, ids)
@@ -244,8 +219,7 @@ test.describe('Dashboard pager hand-off', () => {
       await openPaused(page, pin)
       await onSlot(page, first)
       await consider(page, early)
-      // Nothing opened waits: after its beat the card stays on the finished page.
-      await page.clock.runFor(1100)
+      // Nothing opened waits: the card stays on the finished page.
       await onSlot(page, first)
       await card(page).locator('[data-considered-toggle]').click()
       await expect(card(page).getByText(early)).toBeVisible()
