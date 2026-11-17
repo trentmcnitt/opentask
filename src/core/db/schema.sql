@@ -311,6 +311,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- How many keeps in a row (2026-10-29, Aged out): +1 on each keep, 0 on a
   -- grow or any change of the horizon. Shown as "kept 2×".
   growth_kept_count INTEGER NOT NULL DEFAULT 0,
+  -- New (2026-11-17, src/lib/new-tasks.ts). consider_count: how many times
+  -- the considered stamp was written (the circle, Consider all, Keep, a Grow,
+  -- Today, a deck); a put-back or an Undo takes one off. new_ended_at: New is
+  -- over for this task for good (grown, its horizon changed after creation,
+  -- or it existed before the columns did). NULL = not ended.
+  consider_count INTEGER NOT NULL DEFAULT 0,
+  new_ended_at TEXT DEFAULT NULL,
   -- THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
   -- queue_mark: a Snooze-all (a DEFER) that landed at or after the next
   -- rollover moved the target to that rollover moment and marked the task for

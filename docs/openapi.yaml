@@ -2308,11 +2308,11 @@ paths:
       tags: [Reminders]
       description: >
         Aged out's Grow (2026-10-29, first pass): each task's horizon one step out — days →
-        weeks → months → eventually; unset counts as weeks, so it grows to months; an
+        weeks → months → eventually; unset counts as days, so it grows to weeks; an
         eventually task is left alone. `horizon_set_at` restarts, `growth_kept_count` goes to 0,
         and `last_considered_at` = now, so the row stays today as considered. The caller's own
-        open tasks only. One undo entry. 404 unless the build has Aged out
-        (`NEXT_PUBLIC_AGED_OUT=1`).
+        open tasks only. One undo entry. Also a New row's Grow (2026-11-17), which ends
+        New for the task (`new_ended_at`); available on every build since then.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       requestBody:
@@ -2642,7 +2642,7 @@ paths:
         - `inbox`: tasks still in the Inbox project, oldest first, recurring ones included (the
           dashboard's Inbox group, so the two counts agree).
         - `growth`: tasks long past their horizon, longest first. Past the age badge's thresholds
-          (one set, spec §7): days over 7 days, weeks or unset over 1 month, months over 1 quarter
+          (one set, spec §7): days or unset over 10 days, weeks over 1 month, months over 1 quarter
           (eventually never), measured from the latest of `horizon_set_at` (else `created_at`) and
           `growth_kept_at` (the last "keep": it asks again one threshold after it). Asks for the
           next horizon up. Excludes tasks whose target has arrived (they are in the old-target
@@ -2812,9 +2812,9 @@ paths:
             type: string
             enum: ['1']
           description: >
-            `1` (2026-11-10): this client draws the `new` segment, yesterday's new
-            one-offs (see `task_segments`). The web sends it beside `REMINDERS_URL`, which
-            the native apps share. Omitted: those tasks stay in their horizon segments.
+            Accepted and ignored since 2026-11-17. From 2026-11-10 it asked for a `new`
+            segment; New is now the `new` flag on a horizon segment's rows (see
+            `task_segments`), sent to every caller.
       responses:
         '200':
           description: Reminder groups in slot order
@@ -2867,14 +2867,15 @@ paths:
                           TOP-LEVEL, never inside `groups`; never counted in
                           `total`, the nav badge or the slot notifications.
 
-                          NEW (2026-11-10; only with `?new=1`): `horizon:
-                          "new"`, after `upcoming` — open one-offs with no
-                          picked target, deck or deadline, created during the
-                          previous OpenTask day; one pass (untouched, the next
-                          rollover drops them to their horizon). A row back
-                          from yesterday's Not today carries `carried_over:
-                          true` and comes after the fresh ones. A task on New
-                          is in no horizon segment that day.
+                          NEW (2026-11-17; a `new` segment from 2026-11-10
+                          until then): each row of a horizon segment (`days`,
+                          `weeks`, `months`, `eventually`) carries `new`
+                          (boolean) — true while the task's `consider_count`
+                          is under its segment's threshold (2 in days and
+                          weeks, 1 in months and eventually; unset reads as
+                          days) and `new_ended_at` is null. New rows come
+                          first in the segment (priority, then newest). No
+                          `new` segment and no `carried_over` are sent.
 
                           AGED OUT (2026-10-29, first pass; only on a build
                           with `NEXT_PUBLIC_AGED_OUT=1` AND `?aged=1` on the
@@ -6279,7 +6280,7 @@ components:
           enum: [days, weeks, months, eventually, null]
           description: >
             How soon it should get done; picks the task segment it appears in.
-            null = unset (treated as weeks, never reported as set).
+            null = unset (treated as days since 2026-11-17, weeks before; never reported as set).
         horizon_set_at:
           type: [string, 'null']
           format: date-time
@@ -6386,6 +6387,21 @@ components:
             Keeps in a row (2026-10-29, Aged out): +1 on each keep (`affirm_horizon`,
             `/api/task-segments/keep`), back to 0 on a grow or any change of `horizon`. The Aged
             out row shows it as "kept 2×". Server-set.
+        consider_count:
+          type: integer
+          description: >
+            New (2026-11-17): how many times the task's considered stamp was written (the
+            circle, Consider all, Keep, Grow, Today or a deck from a segment row); a put-back
+            takes one off, an Undo puts the old number back. Server-set.
+        new_ended_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            New (2026-11-17): when New ended for the task for good — a Grow, a horizon change
+            after creation, or the one-time seed for a task that existed before the field. null
+            = not ended. A horizon-segment row is `new` while this is null and `consider_count`
+            is under its segment's threshold. Server-set.
         queue_mark:
           type: boolean
           description: >
@@ -6455,7 +6471,7 @@ components:
             a repeat, a reminder, a quota or a task with no deadline). From it until the day the
             task becomes daily (the deadline's day minus the default lead for the wait from the
             start) the task is in its OPEN WINDOW: on the deadlines page only on its ROUNDS — the
-            start day, then its set horizon's days (Days daily, Weeks or unset the check-in day,
+            start day, then its set horizon's days (Days or unset daily, Weeks the check-in day,
             Months the month's first check-in day, Eventually the quarter's), the first of them
             at least a full step after the start — waiting until considered, then quiet until
             the next round, with one silent push per round. Kept when the deadline moves unless

@@ -106,7 +106,13 @@ function undoCount(): number {
     }
   ).n
 }
-function placesOf(id: number, opts = { queuePanels: true, deckRows: true }): string[] {
+function placesOf(
+  id: number,
+  opts: { queuePanels: boolean; deckRows: boolean; deadlineRows?: boolean } = {
+    queuePanels: true,
+    deckRows: true,
+  },
+): string[] {
   return getTaskSegments(TEST_USER_ID, tz, now(), opts)
     .filter((s) => s.tasks.some((r) => r.task.id === id))
     .map((s) => s.horizon)
@@ -477,8 +483,9 @@ describe('OD-W: refusals, un-deck, the queue, PATCH, undo', () => {
     const r = deck([a.id, b.id], null)
     expect(r).toMatchObject({ day: null, undecked: 1, summary: 'Took 1 task off deck' })
     expect(task(a.id)).toMatchObject({ on_deck_day: null, target_set_at: before })
-    // Back in its horizon segment (considered today by the deck, so ticked).
-    expect(placesOf(a.id)).toEqual(['weeks'])
+    // Back in its horizon segment (considered today by the deck, so ticked):
+    // Days, where an unset horizon reads.
+    expect(placesOf(a.id)).toEqual(['days'])
   })
 
   test('OD-W09: decking a queued task takes it out of the queue (rule 3, B8)', () => {
@@ -871,8 +878,13 @@ describe('OD-RO: the rollover sends an ended deck to the queue', () => {
       queued_at: null,
       queued_from_deck_day: null,
     })
-    // Before its lead day: in no queue panel and no segment (its heads-ups come later).
-    expect(placesOf(ahead.id)).toEqual([])
+    // Before its lead day: in no queue panel and no segment (its heads-ups come
+    // later). Asked as the apps ask, with the deadlines page: a caller without
+    // it gets the task in its horizon segment (TQ-OPT-IN), daily now that
+    // unset reads as Days.
+    expect(placesOf(ahead.id, { queuePanels: true, deckRows: true, deadlineRows: true })).toEqual(
+      [],
+    )
     expect(getCurrentlyDueTaskIds(TEST_USER_ID)).not.toContain(ahead.id)
   })
 

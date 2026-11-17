@@ -2,17 +2,21 @@
  * STATE COMBINATIONS (2026-11-12, the rules-map pass): states that each have
  * their own tests but had none TOGETHER. `sc-`:
  *  - SC-01..05 a decked deadline task, then the deadline moves (D−2, 2026-11-07);
- *  - SC-10..11 a New row gets a deadline: out of New, then the Due page;
- *  - SC-20..23 a New row targeted, decked, carried and considered, deferred twice;
- *  - SC-30..31 New across "Roll over now" and a day-start change;
+ *  - SC-10..11 a New row gets a deadline: out of its horizon segment (and so
+ *    not New), then the Due page;
+ *  - SC-20..24 a New row targeted, decked, deferred then considered, left
+ *    untouched (New is a mark on a horizon segment's row since 2026-11-17,
+ *    `src/lib/new-tasks.ts`; it was a page of its own from 2026-11-10);
+ *  - SC-30 a task made today across "Roll over now";
  *  - SC-40..41 "Queue tomorrow" (a marked defer), then a deadline or a deck;
  *  - SC-50..52 heads-up off, with a future deck and with a relative target;
  *  - SC-60..61 a deadline-anchored repeat with a relative target, decked near
  *    its deadline.
  *
- * SC-23 and SC-40 are the two the pass found wrong and fixed with it (design
- * session, 2026-11-12): a twice-deferred carried row stays in New that day,
- * and a deadline on a "Queue tomorrow" task drops the marker target.
+ * SC-40 is one the pass found wrong and fixed with it (design session,
+ * 2026-11-12): a deadline on a "Queue tomorrow" task drops the marker target.
+ * (SC-23, the other, was about the New page's "Carried over" rows; they went
+ * with the page.)
  *
  * Synthetic data only. Task queue on (the day starts at 3:00 AM), check-in
  * day Saturday. America/Chicago: Mon 2026-11-09 14:00 is "now" at the start.
@@ -39,7 +43,6 @@ import {
   getTaskSegments,
   targetTasksToday,
 } from '@/core/tasks/task-segments'
-import { updatePreferences } from '@/core/users/preferences'
 import { executeUndo } from '@/core/undo'
 import { setupTestDb, teardownTestDb, TEST_TIMEZONE, TEST_USER_ID } from '../helpers/setup'
 
@@ -59,10 +62,9 @@ const WEB = {
   deckRows: true,
   handledRows: true,
   deadlineRows: true,
-  newRows: true,
   fill: false,
 }
-/** Where task `id` is now: `<segment>:<state>` with `:carried`, `:left=<how>`, `:net`. */
+/** Where task `id` is now: `<segment>:<state>` with `:new`, `:left=<how>`, `:net`. */
 function where(id: number): string[] {
   return getTaskSegments(TEST_USER_ID, tz, new Date(), WEB).flatMap((s) =>
     s.tasks
@@ -70,7 +72,7 @@ function where(id: number): string[] {
       .map(
         (r) =>
           `${s.horizon}:${r.state}` +
-          (r.carried ? ':carried' : '') +
+          (r.isNew ? ':new' : '') +
           (r.left ? `:left=${r.left}` : '') +
           (r.safetyNet ? ':net' : ''),
       ),
@@ -137,16 +139,19 @@ describe('SC-0x a decked deadline task, then the deadline moves (DECK-A1)', () =
   })
 })
 
-describe('SC-1x a New row gets a deadline (NEW-LEAVES, then the Due page)', () => {
-  test('SC-10: it leaves New at once and is quiet until its lead day', () => {
+describe('SC-1x a New row gets a deadline (NEW-WHO, then the Due page)', () => {
+  test('SC-10: it leaves its horizon segment at once, so it is not New, and is quiet until its lead day', () => {
     const t = make()
     setClock('2026-11-10T10:00')
-    expect(where(t.id)).toEqual(['new:waiting'])
+    expect(where(t.id)).toEqual(['days:waiting:new'])
     // Deadline Mon Nov 30: 20 days off, so the lead table says 4 days → Thu Nov 26.
     updateTask({ ...u, taskId: t.id, input: { deadline_at: at('2026-11-30T23:59') } })
     expect(task(t.id)).toMatchObject({ lead_from: '2026-11-26', due_at: null })
-    // Listed in New today only as the row that left; in no horizon segment.
-    expect(where(t.id).filter((w) => !w.startsWith('new:'))).toEqual([])
+    // In no segment as a row of its own, and nowhere marked New: a task outside
+    // the horizon segments is not shown as New. It keeps its count (no look yet).
+    expect(where(t.id).filter((w) => !w.includes(':left='))).toEqual([])
+    expect(where(t.id).filter((w) => w.includes(':new'))).toEqual([])
+    expect(task(t.id)).toMatchObject({ consider_count: 0, new_ended_at: null })
     setClock('2026-11-25T10:00')
     expect(where(t.id)).toEqual([])
   })
@@ -162,89 +167,68 @@ describe('SC-1x a New row gets a deadline (NEW-LEAVES, then the Due page)', () =
   })
 })
 
-describe('SC-2x a New row acted on from New', () => {
-  test('SC-20: targeted today: it leaves, and New lists it as the row that left', () => {
+describe('SC-2x a New row acted on from its horizon segment', () => {
+  test('SC-20: targeted today: it leaves, its segment lists it as the row that left, and the look is counted', () => {
     const t = make()
     setClock('2026-11-10T10:00')
-    expect(where(t.id)).toEqual(['new:waiting']) // the page was drawn: the roster knows the row
+    expect(where(t.id)).toEqual(['days:waiting:new']) // the segment was drawn: the roster knows the row
     targetTasksToday(TEST_USER_ID, tz, [t.id])
     expect(task(t.id).due_at).not.toBeNull()
-    expect(where(t.id)).toEqual(['new:considered:left=target'])
+    // The left row is a handled row, not a New one (a target is outside the segments).
+    expect(where(t.id)).toEqual(['days:considered:left=target'])
+    // NEW-COUNT: Today from a segment row writes the considered stamp, so it counts.
+    expect(task(t.id).consider_count).toBe(1)
   })
 
-  test('SC-21: decked for today: New lists it as left (the On deck section holds it)', () => {
+  test('SC-21: decked for today: its segment lists it as left (the On deck section holds it), and the look is counted', () => {
     const t = make()
     setClock('2026-11-10T10:00')
-    expect(where(t.id)).toEqual(['new:waiting'])
+    expect(where(t.id)).toEqual(['days:waiting:new'])
     deck(t.id, '2026-11-10')
-    expect(where(t.id)).toEqual(['new:considered:left=deck'])
+    expect(where(t.id)).toEqual(['days:considered:left=deck'])
+    expect(task(t.id).consider_count).toBe(1)
   })
 
-  test('SC-22: a carried row considered: handled in New that day, its horizon the next', () => {
+  test('SC-22: Not today, then considered the next day: one look counted, so still New (Days takes two); the second ends it', () => {
     const t = make()
     setClock('2026-11-10T10:00')
     deferTasks(TEST_USER_ID, [t.id])
-    expect(where(t.id)).toEqual(['new:deferred'])
+    expect(where(t.id)).toEqual(['days:deferred:new'])
+    expect(task(t.id).consider_count).toBe(0) // Not today is not a look
     setClock('2026-11-11T10:00')
-    expect(where(t.id)).toEqual(['new:waiting:carried'])
+    expect(where(t.id)).toEqual(['days:waiting:new'])
     considerTasks(TEST_USER_ID, [t.id])
-    expect(where(t.id)).toEqual(['new:considered:carried'])
+    expect(where(t.id)).toEqual(['days:considered:new'])
     setClock('2026-11-12T10:00')
+    expect(where(t.id)).toEqual(['days:waiting:new'])
+    considerTasks(TEST_USER_ID, [t.id])
+    expect(task(t.id).consider_count).toBe(2)
+    expect(where(t.id)).toEqual(['days:considered'])
+    setClock('2026-11-13T10:00')
     expect(where(t.id)).toEqual(['days:waiting'])
   })
 
-  test('SC-23: a carried row deferred again stays in New that day, deferred; its horizon the day after', () => {
-    // NEW-NOT-TODAY: "Deferred again, it goes to its horizon's rhythm the day
-    // after." Until 2026-11-12 the second Not today moved it into its horizon
-    // segment at once, and New's "N of M" shrank under the finger.
+  test('SC-24: left untouched it is still New days later (no clock); a Not today keeps it New, in its segment', () => {
     const t = make()
     setClock('2026-11-10T10:00')
+    expect(where(t.id)).toEqual(['days:waiting:new'])
+    setClock('2026-11-14T10:00')
+    expect(where(t.id)).toEqual(['days:waiting:new'])
     deferTasks(TEST_USER_ID, [t.id])
-    setClock('2026-11-11T10:00')
-    expect(where(t.id)).toEqual(['new:waiting:carried'])
-    deferTasks(TEST_USER_ID, [t.id])
-    expect(where(t.id)).toEqual(['new:deferred:carried'])
-    setClock('2026-11-12T10:00')
-    expect(where(t.id)).toEqual(['days:waiting'])
+    expect(where(t.id)).toEqual(['days:deferred:new'])
+    setClock('2026-11-15T10:00')
+    expect(where(t.id)).toEqual(['days:waiting:new'])
   })
 })
 
-describe('SC-2x (continued): not every task made two days ago is New\u2019s', () => {
-  test('SC-24: left untouched on its New day, it is its horizon\u2019s; a Not today there keeps it there', () => {
-    // The first cut of SC-23's fix read "made two days ago and deferred
-    // today" as a carried row and pulled this one back into New (caught by
-    // tm-task-segments.spec). Only a row New listed today is New's.
-    const t = make()
-    setClock('2026-11-10T10:00')
-    expect(where(t.id)).toEqual(['new:waiting'])
-    setClock('2026-11-11T10:00')
-    expect(where(t.id)).toEqual(['days:waiting'])
-    deferTasks(TEST_USER_ID, [t.id])
-    expect(where(t.id)).toEqual(['days:deferred'])
-  })
-})
-
-describe('SC-3x New and the day boundary', () => {
-  test('SC-30: Roll over now does not start a task’s New day: only the real rollover does', () => {
+describe('SC-3x a task made today and the day boundary', () => {
+  test('SC-30: Roll over now does not bring a task made today into its segment: it first shows, New, on the next real day', () => {
     const t = make()
     setClock('2026-11-09T20:00')
     runRolloverNow({ userId: TEST_USER_ID, now: new Date() })
     expect(where(t.id)).toEqual([])
     setClock('2026-11-10T10:00')
-    expect(where(t.id)).toEqual(['new:waiting'])
-  })
-
-  test('SC-31: a day-start change moves New’s boundary with it (11 PM: the pass ends at 11 PM)', () => {
-    const t = make()
-    setClock('2026-11-10T10:00')
-    expect(where(t.id)).toEqual(['new:waiting'])
-    updatePreferences(TEST_USER_ID, { day_start_time: '23:00', day_start_slot_id: null })
-    expect(where(t.id)).toEqual(['new:waiting'])
-    setClock('2026-11-10T22:59')
-    expect(where(t.id)).toEqual(['new:waiting'])
-    // 11 PM Tuesday starts Wednesday's OpenTask day: one pass, then its horizon.
-    setClock('2026-11-10T23:30')
-    expect(where(t.id)).toEqual(['days:waiting'])
+    expect(where(t.id)).toEqual(['days:waiting:new'])
   })
 })
 

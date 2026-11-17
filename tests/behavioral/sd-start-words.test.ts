@@ -21,10 +21,10 @@ const SAT = 6
 const DEADLINE = DateTime.fromISO('2027-03-31T23:59', { zone: tz }).toUTC().toISO()!
 
 describe('SD-W the start date’s words', () => {
-  test('SD-W01: the cadence word is the set horizon’s; unset reads as weeks', () => {
+  test('SD-W01: the cadence word is the set horizon’s; unset reads as days', () => {
     expect(
       [null, 'days', 'weeks', 'months', 'eventually'].map((h) => cadenceWord(h as never)),
-    ).toEqual(['weekly', 'daily', 'weekly', 'monthly', 'quarterly'])
+    ).toEqual(['daily', 'daily', 'weekly', 'monthly', 'quarterly'])
   })
 
   test('SD-W02: the line names the first cadence round, a full step after the start', () => {
@@ -35,8 +35,9 @@ describe('SD-W the start date’s words', () => {
       daysBefore: 89,
       line: 'Comes round weekly from Sat Jan 9 until Sat Mar 27, then daily',
     })
+    // Unset reads as days: the same line as a set Days.
     expect(words('2027-01-01', null).line).toBe(
-      'Comes round weekly from Sat Jan 9 until Sat Mar 27, then daily',
+      'Comes round daily from Sat Jan 2 until Sat Mar 27, then daily',
     )
     expect(words('2027-01-01', 'days').line).toBe(
       'Comes round daily from Sat Jan 2 until Sat Mar 27, then daily',

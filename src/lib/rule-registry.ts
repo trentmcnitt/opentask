@@ -682,7 +682,7 @@ export const RULE_REGISTRY = {
   },
   'SEG-ORDER-WITHIN': {
     home: 'src/core/tasks/task-segments.ts',
-    symbol: 'byPriorityRank(a.task, b.task) || a.task.id - b.task.id',
+    symbol: 'byPriorityRank(a.task, b.task) ||',
     pins: ['tests/behavioral/tm-task-model.test.ts#TM-014'],
   },
   'UP-ORDER': {
@@ -1059,42 +1059,43 @@ export const RULE_REGISTRY = {
   },
   'NEW-WHO': {
     home: 'src/lib/new-tasks.ts',
-    symbol: 'NewTaskPlace',
+    symbol: 'isNewRow',
     pins: [
-      'tests/behavioral/nw-new-page.test.ts#NW-01',
-      'tests/behavioral/nw-new-page.test.ts#NW-07',
+      'tests/behavioral/nw-new-heading.test.ts#NW-10',
+      'tests/behavioral/nw-new-heading.test.ts#NW-12',
+      'tests/behavioral/nw-new-heading.test.ts#NW-40',
     ],
   },
-  'NEW-ONE-PLACE': {
+  'NEW-ENDS': {
     home: 'src/lib/new-tasks.ts',
-    symbol: 'NewTaskPlace',
-    pins: ['tests/behavioral/nw-new-page.test.ts#NW-02'],
-  },
-  'NEW-ONE-PASS': {
-    home: 'src/lib/new-tasks.ts',
-    symbol: 'NewTaskPlace',
-    pins: ['tests/behavioral/nw-new-page.test.ts#NW-03'],
-  },
-  'NEW-CONSIDER': {
-    home: 'src/lib/new-tasks.ts',
-    symbol: 'newTaskPlace',
-    pins: ['tests/behavioral/nw-new-page.test.ts#NW-04'],
-  },
-  'NEW-NOT-TODAY': {
-    home: 'src/lib/new-tasks.ts',
-    symbol: 'newTaskPlace',
+    symbol: 'new_ended_at',
     pins: [
-      'tests/behavioral/sc-state-combos.test.ts#SC-23',
-      'tests/behavioral/nw-new-page.test.ts#NW-05',
+      'tests/behavioral/nw-new-heading.test.ts#NW-30',
+      'tests/behavioral/nw-new-heading.test.ts#NW-31',
     ],
   },
-  'NEW-LEAVES': {
+  'NEW-COUNT': {
     home: 'src/lib/new-tasks.ts',
-    symbol: 'newTaskPlace',
+    symbol: 'consider_count',
     pins: [
-      'tests/behavioral/sc-state-combos.test.ts#SC-10',
-      'tests/behavioral/nw-new-page.test.ts#NW-06',
+      'tests/behavioral/nw-new-heading.test.ts#NW-20',
+      'tests/behavioral/nw-new-heading.test.ts#NW-21',
     ],
+  },
+  'NEW-HEADING': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'compareNewRows',
+    pins: ['tests/behavioral/nw-new-heading.test.ts#NW-11'],
+  },
+  'NEW-GROW': {
+    home: 'src/lib/new-tasks.ts',
+    symbol: 'compareNewRows',
+    pins: ['tests/behavioral/nw-new-heading.test.ts#NW-30'],
+  },
+  'NEW-SEED': {
+    home: 'src/core/db/index.ts',
+    symbol: 'seedNewEnded',
+    pins: ['tests/behavioral/nw-new-heading.test.ts#NW-50'],
   },
   'PRIO-RANK': {
     home: 'src/lib/priority.ts',

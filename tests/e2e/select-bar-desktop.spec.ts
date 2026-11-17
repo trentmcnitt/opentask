@@ -39,7 +39,7 @@ async function daysTask(page: Page, title: string): Promise<number> {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
+      `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-2 day') WHERE id = ?`,
     ).run(id)
   } finally {
     db.close()

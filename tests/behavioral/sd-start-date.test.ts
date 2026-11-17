@@ -112,7 +112,8 @@ describe('SD-0x the pure rules', () => {
     expect(round('weeks', '2027-01-08')).toBe('2027-01-01')
     expect(round('weeks', '2027-01-09')).toBe('2027-01-09')
     expect(round('weeks', '2027-01-15')).toBe('2027-01-09')
-    // Unset reads as weeks.
+    // Unset reads as days: the next day, like a set Days.
+    expect(round(null, '2027-01-02')).toBe('2027-01-02')
     expect(round(null, '2027-01-09')).toBe('2027-01-09')
     // Days: the next day.
     expect(round('days', '2027-01-02')).toBe('2027-01-02')

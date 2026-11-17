@@ -42,7 +42,7 @@ function madeAnHourAgo(ids: number[]) {
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
     const stmt = db.prepare(
-      `UPDATE tasks SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 hour') WHERE id = ?`,
+      `UPDATE tasks SET new_ended_at = created_at, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 hour') WHERE id = ?`,
     )
     for (const id of ids) stmt.run(id)
   } finally {

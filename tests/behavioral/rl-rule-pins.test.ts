@@ -233,16 +233,16 @@ describe('RL: decks', () => {
 })
 
 describe('RL: horizons', () => {
-  test('RL-HZ-UNSET: unset reads as Weeks in every rule — grow, the cutoff words, the Aged out group, the effective horizon', () => {
-    expect(setHorizonOrUnset(null)).toBe('weeks')
-    expect(growStep(null)).toBe(growStep('weeks'))
-    expect(cutoffWords(null)).toBe(cutoffWords('weeks'))
-    expect(agedOutGroup(null)).toBe(agedOutGroup('weeks'))
+  test('RL-HZ-UNSET: unset reads as Days in every rule — grow, the cutoff words, the Aged out group, the effective horizon', () => {
+    expect(setHorizonOrUnset(null)).toBe('days')
+    expect(growStep(null)).toBe(growStep('days'))
+    expect(cutoffWords(null)).toBe(cutoffWords('days'))
+    expect(agedOutGroup(null)).toBe(agedOutGroup('days'))
     expect(effectiveHorizon({ horizon: null, deadline_at: null }, NOW)).toBe(
-      effectiveHorizon({ horizon: 'weeks', deadline_at: null }, NOW),
+      effectiveHorizon({ horizon: 'days', deadline_at: null }, NOW),
     )
     // Any other stored value reads as unset too.
-    expect(setHorizonOrUnset('fortnights')).toBe('weeks')
+    expect(setHorizonOrUnset('fortnights')).toBe('days')
   })
 })
 

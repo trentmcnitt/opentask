@@ -1623,6 +1623,13 @@ private enum SegmentListItem {
     case sectionHeader(UpcomingSections.Section)
     /// The merged Pulled page's sections (2026-10-29): "Today  2", "Earlier  1".
     case pulledHeader(title: String, count: Int)
+    /// A horizon segment's "New" heading (2026-11-17, RULE NEW-HEADING):
+    /// "New  2" in the New blue, over the segment's waiting New rows. Drawn
+    /// by Pulled's heading view, so it measures as one.
+    case newHeader(count: Int)
+    /// Where the New rows end (2026-11-17): a hairline before the segment's
+    /// other rows, with no word. Only after a `newHeader`'s rows.
+    case newEnd
     case waiting(SegmentTaskDTO)
     case divider(count: Int)
     case considered(SegmentTaskDTO)
@@ -1630,7 +1637,7 @@ private enum SegmentListItem {
     /// A section heading (Upcoming's or Pulled's): kept with the row after it.
     var isHeading: Bool {
         switch self {
-        case .sectionHeader, .pulledHeader: return true
+        case .sectionHeader, .pulledHeader, .newHeader: return true
         default: return false
         }
     }
@@ -1639,6 +1646,8 @@ private enum SegmentListItem {
         switch self {
         case .sectionHeader(let s): return "seg-section-\(s.section.rawValue)"
         case .pulledHeader(let title, _): return "seg-pulled-\(title)"
+        case .newHeader: return "seg-new-heading"
+        case .newEnd: return "seg-new-end"
         case .waiting(let row): return "seg-\(row.id)"
         case .divider: return "seg-divider"
         case .considered(let row): return "seg-considered-\(row.id)"
@@ -1651,9 +1660,10 @@ private enum SegmentListItem {
     /// start on it ("Later" heads page 2), so an anchor can name it.
     var pagedRow: PagedRow {
         switch self {
-        case .sectionHeader, .pulledHeader: return PagedRow(keys: [id], identities: [], staysWithNext: true)
+        case .sectionHeader, .pulledHeader, .newHeader:
+            return PagedRow(keys: [id], identities: [], staysWithNext: true)
         case .waiting(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
-        case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
+        case .divider, .newEnd: return PagedRow(keys: [], identities: [], staysWithNext: true)
         case .considered(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
         }
     }
@@ -1768,18 +1778,18 @@ private struct TaskSegmentListView: View {
                     [SegmentListItem.pulledHeader(title: title, count: rows.count)] + rows.map { .waiting($0) }
                 }
         }
-        // New (2026-11-12, the web's "Carried over" line): the fresh rows,
-        // then the ones back from yesterday's Not today under their heading
-        // — a heading row like Pulled's, none when nothing was carried.
-        if segment.isNew, segment.hasWaiting {
-            let (fresh, carried) = segment.newRowsSplit
-            guard !carried.isEmpty else { return fresh.map { .waiting($0) } }
-            return fresh.map { SegmentListItem.waiting($0) }
-                + [.pulledHeader(title: TaskWording.carriedOverWord, count: carried.count)]
-                + carried.map { .waiting($0) }
-        }
         guard segment.isUpcoming, segment.hasWaiting else {
-            return segment.waitingTasks.map { SegmentListItem.waiting($0) }
+            // New (2026-11-17, RULE NEW-HEADING; the New page of 11-12 is
+            // gone): a horizon segment with New rows waiting opens with the
+            // "New" heading over them — a heading row like Pulled's — then
+            // its other rows, with no heading of their own. No heading
+            // without a waiting New row (`newHeadingSplit`: a horizon only).
+            let (new, rest) = segment.newHeadingSplit
+            guard !new.isEmpty else { return rest.map { SegmentListItem.waiting($0) } }
+            // The hairline closes the New rows when ordinary ones follow.
+            let end: [SegmentListItem] = rest.isEmpty ? [] : [.newEnd]
+            return [.newHeader(count: new.count)] + new.map { SegmentListItem.waiting($0) } + end
+                + rest.map { SegmentListItem.waiting($0) }
         }
         return UpcomingSections.split(segment.tasks).flatMap { section in
             [SegmentListItem.sectionHeader(section)] + section.waiting.map { SegmentListItem.waiting($0) }
@@ -1949,7 +1959,10 @@ private struct TaskSegmentListView: View {
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
         switch item {
-        case .divider, .sectionHeader, .pulledHeader:
+        case .newEnd:
+            // A hairline and its breathing room (`NewEndLine`).
+            return ReminderRowLayout(lines: 1, height: NewEndLine.height)
+        case .divider, .sectionHeader, .pulledHeader, .newHeader:
             // One caption2 line each — what `DoneDivider`,
             // `UpcomingSectionHeading` and `PulledSectionHeading` draw.
             return ReminderRowLayout(lines: 1, height: metrics.caption2Height)
@@ -2009,6 +2022,10 @@ private struct TaskSegmentListView: View {
             UpcomingSectionHeading(section: section)
         case .pulledHeader(let title, let count):
             PulledSectionHeading(title: title, count: count)
+        case .newHeader(let count):
+            PulledSectionHeading(title: TaskWording.newHeading, count: count, tintHex: NewHeadingColors.titleHex)
+        case .newEnd:
+            NewEndLine()
         case .divider(let count):
             DoneDivider(count: count, label: "CONSIDERED")
         case .waiting(let row):
@@ -2256,14 +2273,28 @@ private struct TaskSegmentListView: View {
 /// "Earlier  1" — the web's TODAY / EARLIER pills, in `UpcomingSectionHeading`'s
 /// small type. ONE caption2 line — the height the list measures it at.
 private struct PulledSectionHeading: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let title: String
     let count: Int
+    /// The title's own colour, light and dark — the "New" heading's blue
+    /// (`NewHeadingColors`); nil is Pulled's muted secondary.
+    var tintHex: (light: UInt32, dark: UInt32)?
+
+    private var titleStyle: Color {
+        guard let tintHex else { return .secondary }
+        let hex = colorScheme == .dark ? tintHex.dark : tintHex.light
+        return Color(
+            red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(titleStyle)
             Text("\(count)")
                 .font(.caption2)
                 .monospacedDigit()
@@ -2630,3 +2661,19 @@ private struct LockScreenCardPreview: View {
 
 #endif
 
+
+/// Where a horizon segment's New rows end (2026-11-17, the web's
+/// `NewEndLine`): a hairline, no word, before the segment's other rows.
+struct NewEndLine: View {
+    /// The line and the room around it; what the page measures for it.
+    static let height: CGFloat = 5
+
+    var body: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.height)
+            .accessibilityHidden(true)
+    }
+}

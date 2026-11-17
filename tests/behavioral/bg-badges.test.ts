@@ -264,8 +264,9 @@ describe('BG: age', () => {
   test.each([
     // Days: 10 days (2026-10-29; it was 7, ">1 wk").
     ['days', '2026-10-02T09:00', '2026-10-02T08:59', 'old'],
+    // Unset reads as Days (2026-11-17; it read as Weeks, a month).
+    [null, '2026-10-02T09:00', '2026-10-02T08:59', 'old'],
     ['weeks', '2026-09-12T09:00', '2026-09-12T08:59', 'old'],
-    [null, '2026-09-12T09:00', '2026-09-12T08:59', 'old'],
     ['months', '2026-07-12T09:00', '2026-07-12T08:59', 'old'],
     ['eventually', '2026-04-12T09:00', '2026-04-12T08:59', 'old'],
   ] as const)(
@@ -294,7 +295,8 @@ describe('BG: age', () => {
     // Made Fri Oct 30 at 10 PM in Chicago = Oct 31 03:00 UTC. A UTC month
     // ends Nov 30 03:00 UTC; the user's month ends Mon Nov 30 at 10 PM CST
     // (Dec 1 04:00 UTC). Month-end is where the two zones' months differ.
-    const t = make({})
+    // Weeks, stated: its threshold is the calendar month (unset is 10 days).
+    const t = make({ horizon: 'weeks' })
     getDb()
       .prepare('UPDATE tasks SET created_at = ? WHERE id = ?')
       .run(at('2026-10-30T22:00'), t.id)

@@ -38,7 +38,7 @@ function backdate(id: number, days: number) {
   try {
     const when = new Date(Date.now() - days * DAY).toISOString()
     db.prepare(
-      'UPDATE tasks SET created_at = ?, target_set_at = ?, horizon_set_at = NULL WHERE id = ?',
+      'UPDATE tasks SET new_ended_at = created_at, created_at = ?, target_set_at = ?, horizon_set_at = NULL WHERE id = ?',
     ).run(when, when, id)
   } finally {
     db.close()
@@ -106,8 +106,9 @@ test.describe('Process', () => {
       // 3. Horizons: our task, checked by default; grow it.
       await modal.getByRole('tab', { name: /Horizons/ }).click()
       const growRow = modal.locator(`[data-process-growth-row="${growId}"]`)
-      await expect(growRow).toContainText('Weeks (unset)')
-      await expect(growRow).toContainText('Months')
+      // Unset reads as Days (2026-11-17): the ask is Days → Weeks.
+      await expect(growRow).toContainText('Days (unset)')
+      await expect(growRow).toContainText('Weeks')
       await expect(growRow.getByRole('checkbox')).toBeChecked()
       for (const row of await modal.locator('[data-process-growth-row]').all()) {
         if ((await row.getAttribute('data-process-growth-row')) !== String(growId)) {
@@ -116,7 +117,7 @@ test.describe('Process', () => {
       }
       await modal.locator('[data-process-growth-apply]').click()
       await expect(growRow).toHaveCount(0)
-      await expect.poll(async () => (await getTask(page, growId)).horizon).toBe('months')
+      await expect.poll(async () => (await getTask(page, growId)).horizon).toBe('weeks')
 
       // 4. Old targets: only ours checked; remove, then Undo from the toast.
       await modal.getByRole('tab', { name: /Old targets/ }).click()

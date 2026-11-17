@@ -574,7 +574,7 @@ test('the strip writes the horizons, and shows their dots only when the words do
     // Made a month ago: in Weeks today, whatever the check-in day.
     const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
     try {
-      db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(
+      db.prepare('UPDATE tasks SET new_ended_at = created_at, created_at = ? WHERE id = ?').run(
         new Date(Date.now() - 30 * DAY).toISOString(),
         weekly,
       )

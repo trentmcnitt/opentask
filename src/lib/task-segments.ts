@@ -71,6 +71,11 @@ import type { RepeatAnchor } from '@/types'
 export const HORIZON_ORDER = ['days', 'weeks', 'months', 'eventually'] as const
 export type HorizonValue = (typeof HORIZON_ORDER)[number]
 
+/** Whether a segment kind is one of the four horizons' own. */
+export function isHorizonKind(kind: string): kind is HorizonValue {
+  return (HORIZON_ORDER as readonly string[]).includes(kind)
+}
+
 /**
  * The task queue's two panels (task queue PR 3, 2026-10-19; design rules 6-8,
  * docs/TASK-MODEL.md § The task queue). Code words only — the titles on screen
@@ -91,7 +96,7 @@ export type QueueKind = (typeof QUEUE_KINDS)[number]
  * `"aged_out"`, or NEW (2026-11-10, `src/lib/new-tasks.ts`, only for a caller
  * that asks): `"new"`.
  */
-export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out' | 'new'
+export type SegmentKind = HorizonValue | 'upcoming' | QueueKind | 'deadlines' | 'aged_out'
 
 /** Whether a segment is one of the task queue's panels. */
 export function isQueueKind(kind: SegmentKind): kind is QueueKind {
@@ -169,9 +174,6 @@ export function segmentCounts(segment: {
 export const SEGMENT_ORDER: readonly SegmentKind[] = [
   'deadlines',
   'upcoming',
-  // New (2026-11-10, `src/lib/new-tasks.ts`): yesterday's new one-offs, a
-  // one-off pass — after Heads up, before Pulled. Only for a caller that asks.
-  'new',
   'queue_today',
   'queue_previous',
   'days',
@@ -184,8 +186,8 @@ export const SEGMENT_ORDER: readonly SegmentKind[] = [
 ]
 
 // (restates RULE HZ-UNSET, home: src/lib/task-segments.ts)
-/** Unset reads as weeks — but is never reported as set (`task.horizon` stays null). */
-export const UNSET_HORIZON: HorizonValue = 'weeks'
+/** Unset reads as days — but is never reported as set (`task.horizon` stays null). */
+export const UNSET_HORIZON: HorizonValue = 'days'
 
 /**
  * RULE SEG-NUDGE: A segment with more than 50 WAITING rows sets nudge. Considered and deferred rows
@@ -612,7 +614,7 @@ function sooner(a: HorizonValue, b: HorizonValue | null): HorizonValue {
 
 // (restates RULE DL-HORIZON-PULL, home: src/lib/task-segments.ts)
 /**
- * The soonest of the set horizon (unset = weeks) and what the deadline implies.
+ * The soonest of the set horizon (unset = days) and what the deadline implies.
  * A deadline only ever pulls a horizon IN; nothing here grows one — growth is
  * Process asking, and the user saying yes.
  */
@@ -841,7 +843,7 @@ export function segmentState(
 // ===========================================================================
 
 /**
- * RULE AGE-THRESHOLDS: The thresholds are: days 10 days, weeks (and unset) 1 calendar month, months
+ * RULE AGE-THRESHOLDS: The thresholds are: days (and unset) 10 days, weeks 1 calendar month, months
  *   1 quarter, eventually 6 months. A task must be strictly past its threshold, computed with
  *   calendar maths in the user's zone.
  * Why: One set of thresholds, so the age badge, Process's growth ask and Aged out never disagree on
@@ -853,7 +855,7 @@ export function segmentState(
 /**
  * AGE — only a task with NEITHER a target NOR a deadline (truly undated),
  * counted from `created_at`, and shown only past one threshold per horizon
- * (unset reads as weeks). Fixed labels (ruling Q6). The SAME thresholds are
+ * (unset reads as days). Fixed labels (ruling Q6). The SAME thresholds are
  * Process's growth thresholds (ruling Q7, `growthAsk` in process-rules.ts):
  * one set. They replaced the row's "Xd old" text and Process's 14/60/180-day
  * growth clock. Days is 10 days since 2026-10-29 (Trent: "the days threshold
@@ -875,14 +877,16 @@ export const AGE_THRESHOLDS: Record<HorizonValue, { days?: number; months?: numb
 export const AGE_LABEL = 'old'
 
 /**
- * RULE HZ-UNSET: Every rule treats a null horizon as weeks, but task.horizon stays null in the API.
- *   The UI shows it as 'Weeks (unset)'.
+ * RULE HZ-UNSET: Every rule treats a null horizon as days (segment, cadence, sorting, the age
+ *   threshold, Process's growth ask, a start date's rounds), but task.horizon stays null in the
+ *   API. The UI shows it as 'Days (unset)'. Weeks until 2026-11-17.
  * Why: Unset is not a choice the user made, so it is never reported as one, but every rule needs a
- *   pace to read.
- * Ruling: 'Weeks (unset)' wording: Trent 2026-10-29 (src/lib/task-model-words.ts:191).
+ *   pace to read; read as days, a task nobody has paced comes round until someone does.
+ * Ruling: Trent 2026-11-17: "`unset` needs to be `days`". '(unset)' wording: Trent 2026-10-29
+ *   (src/lib/task-model-words.ts:191).
  * Restated at: src/lib/task-segments.ts (UNSET_HORIZON).
  */
-/** A stored horizon as a HorizonValue, unset read as weeks. */
+/** A stored horizon as a HorizonValue, unset read as days. */
 export function setHorizonOrUnset(horizon: string | null): HorizonValue {
   return (HORIZON_ORDER as readonly string[]).includes(horizon ?? '')
     ? (horizon as HorizonValue)
@@ -2336,7 +2340,7 @@ export interface DeadlinePageFields {
   lead_from?: string | null
   /** The picked start date (START-1): what gives the task an open window. */
   start_date?: string | null
-  /** The SET horizon: an open-window row's cadence (START-4; unset = weeks). */
+  /** The SET horizon: an open-window row's cadence (START-4; unset = days). */
   horizon?: HorizonValue | null
   /** For a row with no stored lead day (`lead_from` NULL): derived now (`leadFor`). */
   lead_days?: number | null
@@ -2554,7 +2558,7 @@ function cadenceStep(horizon: HorizonValue): { days?: number; months?: number } 
 
 /**
  * RULE START-4: In the open window the start day is always a round. After it the rounds are the SET
- *   horizon's own cadence days (unset reads as weeks; the deadline never pulls the cadence in), the
+ *   horizon's own cadence days (unset reads as days; the deadline never pulls the cadence in), the
  *   first of them at least one full step after the start: a day for Days, a week for Weeks, a month
  *   for Months, a quarter for Eventually. A row waits once a round has come since it was last
  *   considered, and carries over daily until it is; considering it quiets it until the next round.

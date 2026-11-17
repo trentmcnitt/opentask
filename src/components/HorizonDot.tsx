@@ -28,7 +28,7 @@ import type { Task } from '@/types'
  * and light. Sizes and opacities are `HORIZON_DOT` in `src/lib/row-corner.ts`.
  * Drawn in the foreground colour at 78%, so it follows the theme.
  *
- * UNSET DRAWS AS THE WEEKS DOT, everywhere (Trent, 2026-10-29: "There should
+ * UNSET DRAWS AS THE DOT OF THE HORIZON IT READS AS (Days since 2026-11-17, Weeks before), everywhere (Trent, 2026-10-29: "There should
  * never be an empty circle"; "if it's not set, it is weeks, the same way as
  * tasks that are not set are medium priority"). It was a hollow ring.
  * "Unset" is said only in words: the task details and the horizon menu's

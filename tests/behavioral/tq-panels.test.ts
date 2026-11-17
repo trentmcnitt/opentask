@@ -121,15 +121,15 @@ describe('TQ-P: the task queue panels', () => {
   })
   afterAll(() => teardownTestDb())
 
-  test('TQ-P01q: the segment order: Dated, New, Pulled, Horizon, Aged out', () => {
+  test('TQ-P01q: the segment order: Dated, Pulled, Horizon, Aged out (no New kind)', () => {
     // The deadlines page first (2026-10-22, APPROVED: first in the carousel,
     // the only queue page that nags), then Heads up, then the queue's panels
     // (Trent's tight N2, 2026-10-29: the strip's groups).
     expect(SEGMENT_ORDER).toEqual([
       'deadlines',
       'upcoming',
-      // New (2026-11-10): after Heads up, before Pulled.
-      'new',
+      // No `new` kind (a page 2026-11-10 to 11-17): New is a mark on a
+      // horizon segment's row.
       'queue_today',
       'queue_previous',
       'days',

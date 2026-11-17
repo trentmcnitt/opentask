@@ -184,7 +184,7 @@ export interface Task {
    * real cutoff: a snooze never moves it, and it caps one.
    */
   deadline_at: string | null
-  /** How soon it should get done. null = unset (treated as weeks). */
+  /** How soon it should get done. null = unset (treated as days). */
   horizon: 'days' | 'weeks' | 'months' | 'eventually' | null
   /** When `horizon` was last set or re-affirmed (Process's growth clock). */
   horizon_set_at: string | null
@@ -232,6 +232,14 @@ export interface Task {
    * change of the horizon. The segment row says "kept 2×".
    */
   growth_kept_count: number
+  /**
+   * New (2026-11-17, src/lib/new-tasks.ts): how many times the considered
+   * stamp was written, and when New ended for the task for good (null: not
+   * ended). A horizon-segment row is New while the count is under its
+   * segment's threshold and New has not ended.
+   */
+  consider_count: number
+  new_ended_at: string | null
   /**
    * THE TASK QUEUE (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
    * `queue_mark`: a defer (Snooze-all, Try Tomorrow) landing at or after the

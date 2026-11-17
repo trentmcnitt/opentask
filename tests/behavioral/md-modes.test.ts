@@ -242,16 +242,16 @@ describe('Scan', () => {
       ['newest', [fresh.id, pulled.id, soon.id, unset.id, later.id]],
       ['coming-up', [soon.id]],
       ['horizon-days', [pulled.id]],
-      ['horizon-weeks', [fresh.id]],
-      // Unset is its own section, right after the horizon it counts as.
+      // Unset is its own section, right after the horizon it counts as (Days).
       ['horizon-unset', [unset.id]],
+      ['horizon-weeks', [fresh.id]],
       // `soon` has a deadline: no horizon section governs it.
       ['horizon-eventually', [later.id]],
     ])
     expect(views.map((s) => s.title).slice(3)).toEqual([
       'Horizon: Days',
+      'Horizon: Days (Unset)',
       'Horizon: Weeks',
-      'Horizon: Weeks (Unset)',
       'Horizon: Eventually',
     ])
     // Counts only where a section claims its rows: Pulled and Coming up.
@@ -360,7 +360,7 @@ describe('the sort pill', () => {
     expect(ids(section(views, 'coming-up').tasks)).toEqual([laterHigh.id, soonLow.id])
   })
 
-  test('each sort orders by its field: newest, oldest, horizon (unset after weeks), deadline, target, last touched', () => {
+  test('each sort orders by its field: newest, oldest, horizon (unset after days), deadline, target, last touched', () => {
     const everywhere = (tasks: Task[], id: ModeSort['id']) =>
       ids(section(scan(tasks, { id, everywhere: true }), 'newest').tasks)
     const a = task({ created_at: at('2026-10-01T09:00') })
@@ -373,8 +373,8 @@ describe('the sort pill', () => {
     const months = task({ horizon: 'months' })
     expect(everywhere([months, unset, weeks, days], 'horizon')).toEqual([
       days.id,
-      weeks.id,
       unset.id,
+      weeks.id,
       months.id,
     ])
     const dlLate = task({ deadline_at: at('2026-11-20T17:00') })

@@ -428,6 +428,17 @@ function runMigrations(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'growth_kept_count')) {
     database.exec('ALTER TABLE tasks ADD COLUMN growth_kept_count INTEGER NOT NULL DEFAULT 0')
   }
+  // New as a heading (2026-11-17, src/lib/new-tasks.ts): the consider count
+  // and New's end. The seed runs in the one startup that adds the columns:
+  // that is what makes it run once (it reads "7 days before now", so a later
+  // run would sweep up tasks that have since passed the line).
+  if (!hasColumn(database, 'tasks', 'consider_count')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN consider_count INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!hasColumn(database, 'tasks', 'new_ended_at')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN new_ended_at TEXT DEFAULT NULL')
+    seedNewEnded(database, new Date())
+  }
   // The task queue (2026-10-19, docs/TASK-MODEL.md § Picks and defers).
   for (const col of ['queue_mark', 'try_tomorrow']) {
     if (!hasColumn(database, 'tasks', col)) {
@@ -837,6 +848,43 @@ export function restoreProjectGrouping(database: Database.Database): void {
  *
  * Exported so a behavioral test can call it directly.
  */
+/** How recent an unset task must be, at the seed, to start out New. */
+export const NEW_SEED_RECENT_DAYS = 7
+
+/**
+ * RULE NEW-SEED: At the one startup that adds the New columns, every task
+ *   that already exists has New ended (new_ended_at = that moment), except a
+ *   task with no horizon created in the 7 days before it, which starts New
+ *   with a count of 0. An OPEN one-off (not done, trashed or archived) with
+ *   no horizon created earlier also gets horizon = weeks, with horizon_set_at left NULL: a horizon set by hand or
+ *   by enrichment always has that stamp, so a seeded one stays tellable
+ *   apart, and Process's growth clock for it (from created_at, as Weeks) is
+ *   what it was.
+ * Why: Unset reads as Days from this build on. Without the seed every old
+ *   task would read as never considered and sit under New, and every old
+ *   unset task would come round daily.
+ * Ruling: Trent 2026-11-17: "Just make all 108 weeks unless they were
+ *   created over the past 5 to 7 days… I just want to make sure they would
+ *   show up in new."
+ */
+export function seedNewEnded(database: Database.Database, now: Date): void {
+  const stamp = now.toISOString()
+  const line = new Date(now.getTime() - NEW_SEED_RECENT_DAYS * 86_400_000).toISOString()
+  // created_at is 'YYYY-MM-DD HH:MM:SS' (SQL default) or ISO: compare as instants.
+  const recentUnset = `horizon IS NULL AND julianday(created_at) >= julianday(@line)`
+  database
+    .prepare(`UPDATE tasks SET new_ended_at = @stamp WHERE NOT (${recentUnset})`)
+    .run({ stamp, line })
+  database
+    .prepare(
+      `UPDATE tasks SET horizon = 'weeks'
+        WHERE horizon IS NULL AND julianday(created_at) < julianday(@line)
+          AND rrule IS NULL AND is_reminder = 0 AND is_tracked = 0
+          AND done = 0 AND deleted_at IS NULL AND archived_at IS NULL`,
+    )
+    .run({ line })
+}
+
 export function clearQuotaDueDates(database: Database.Database): void {
   database.exec(
     `UPDATE tasks

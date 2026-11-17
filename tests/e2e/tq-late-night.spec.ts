@@ -94,7 +94,7 @@ async function daysTask(page: Page, title: string): Promise<number> {
   const id = await create(page, { title, horizon: 'days' })
   const db = new Database(path.join(process.cwd(), 'data', 'test-e2e.db'))
   try {
-    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(
+    db.prepare('UPDATE tasks SET new_ended_at = created_at, created_at = ? WHERE id = ?').run(
       PIN.minus({ hours: 50 }).toUTC().toISO(),
       id,
     )

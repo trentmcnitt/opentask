@@ -52,6 +52,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": null,
@@ -287,6 +289,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": null,
@@ -416,6 +420,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": null,
@@ -512,6 +518,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": "2026-01-15T16:00:00.000Z",
@@ -598,6 +606,8 @@
             "attempts_counted_through": "2026-01-15",
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": true,
             "queued_at": "2026-01-15T16:00:00.000Z",
@@ -693,6 +703,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": "2026-01-15T16:00:00.000Z",
@@ -779,6 +791,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": "2026-01-15T16:00:00.000Z",
@@ -874,6 +888,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 1,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": null,
@@ -920,17 +936,9 @@
             "attempts_offer": null,
             "age_label": null,
             "segment_state": "considered",
-            "recurring": false
-          }
-        ],
-        "waiting": 0,
-        "considered": 1,
-        "deferred": 0,
-        "nudge": false
-      },
-      {
-        "horizon": "weeks",
-        "tasks": [
+            "recurring": false,
+            "new": true
+          },
           {
             "id": 113,
             "user_id": 2,
@@ -969,6 +977,8 @@
             "attempts_counted_through": null,
             "growth_kept_at": null,
             "growth_kept_count": 0,
+            "consider_count": 0,
+            "new_ended_at": null,
             "queue_mark": false,
             "try_tomorrow": false,
             "queued_at": null,
@@ -1015,11 +1025,12 @@
             "attempts_offer": null,
             "age_label": "old",
             "segment_state": "waiting",
-            "recurring": false
+            "recurring": false,
+            "new": true
           }
         ],
         "waiting": 1,
-        "considered": 0,
+        "considered": 1,
         "deferred": 0,
         "nudge": false
       }

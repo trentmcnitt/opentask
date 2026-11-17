@@ -14,6 +14,7 @@ import { success, unauthorized, handleError } from '@/lib/api-response'
 import { getRemindersBySlot, getRemindersNotToday, hasAnyReminders } from '@/core/tasks/reminders'
 import { getQuotaPromptsBySlot, promptWaiting } from '@/core/tasks/quota-prompts'
 import { getTaskSegments, type SegmentKind, type SegmentTask } from '@/core/tasks/task-segments'
+import { isHorizonKind } from '@/lib/task-segments'
 import { formatTaskResponse } from '@/lib/format-task'
 import { log } from '@/lib/logger'
 import { withLogging } from '@/lib/with-logging'
@@ -54,12 +55,9 @@ export const GET = withLogging(async function GET(request: NextRequest) {
     // a build with the segment (`NEXT_PUBLIC_AGED_OUT=1`, dev): it is not in
     // `REMINDERS_URL`, the question the native apps share.
     const agedOut = AGED_OUT_ENABLED && request.nextUrl.searchParams.get('aged') === '1'
-    // `?new=1` (New, 2026-11-10 — src/lib/new-tasks.ts): this client draws the
-    // `new` segment, yesterday's new one-offs. Part of `REMINDERS_URL` since
-    // 2026-11-12 (the web and current native builds); a shipped native build
-    // sends the older question and keeps those tasks in their horizon
-    // segments as before.
-    const newRows = request.nextUrl.searchParams.get('new') === '1'
+    // `?new=1` (the New page, 2026-11-10 to 2026-11-17) is accepted and
+    // ignored: New is a mark on a horizon row now (`new`, below), and a
+    // shipped native build that still asks gets its rows there.
     const groups = getRemindersBySlot(user.id, user.timezone, now)
     const notToday = getRemindersNotToday(user.id, user.timezone, now)
     const promptsBySlot = getQuotaPromptsBySlot(user.id, user.timezone, now)
@@ -117,7 +115,6 @@ export const GET = withLogging(async function GET(request: NextRequest) {
         deadlineRows,
         fill,
         agedOut,
-        newRows,
       }).map((seg) => ({
         horizon: seg.horizon,
         tasks: seg.tasks.map((row) => segmentRowFields(seg.horizon, row, user.timezone)),
@@ -143,7 +140,7 @@ export const GET = withLogging(async function GET(request: NextRequest) {
 /** One task-segment row as the API sends it (`task_segments[].tasks[]`). */
 function segmentRowFields(
   horizon: SegmentKind,
-  { task, state, left, safetyNet, seen, section, carried, window }: SegmentTask,
+  { task, state, left, safetyNet, seen, section, isNew, window }: SegmentTask,
   timezone: string,
 ) {
   return {
@@ -176,8 +173,10 @@ function segmentRowFields(
     // kinds: a shipped native build lists both sections' rows as one
     // Upcoming page and ignores the key.
     ...(horizon === 'upcoming' ? { upcoming_section: section ?? 'later' } : {}),
-    // New's rows (`?new=1` only, 2026-11-10): `carried_over` — back from
-    // yesterday's Not today, drawn under "Carried over" after the fresh ones.
-    ...(horizon === 'new' ? { carried_over: !!carried } : {}),
+    // A horizon segment's rows (2026-11-17, RULE NEW-WHO): `new` — the task
+    // is New, drawn under the segment's "New" heading with Grow; New rows
+    // come first. A shipped native build ignores the key and lists the row
+    // in its segment.
+    ...(isHorizonKind(horizon) ? { new: !!isNew } : {}),
   }
 }

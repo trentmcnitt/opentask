@@ -102,17 +102,12 @@ import { bulkEdit } from './bulk'
 import { taskQueueEnabled } from './task-queue'
 import { dayBoundaryForUser, rolloverTimeForUser } from './rollover-time'
 import { dayStartMoment, latestRollover, openTaskDayOf } from '@/lib/opentask-day'
-import {
-  markRosterDeferred,
-  rosterLeftRows,
-  rosterNewToday,
-  type SegmentLeft,
-} from './segment-roster'
+import { markRosterDeferred, rosterLeftRows, type SegmentLeft } from './segment-roster'
 import { logActivity } from '@/core/activity'
 import { dispatchWebhookEvent } from '@/core/webhooks/dispatch'
 import { formatTaskResponse } from '@/lib/format-task'
 import { agedOutState, compareAgedOut, growStep } from '@/lib/aged-out'
-import { newTaskPlace } from '@/lib/new-tasks'
+import { compareNewRows, isNewRow } from '@/lib/new-tasks'
 
 export interface SegmentTask {
   task: Task
@@ -142,10 +137,10 @@ export interface SegmentTask {
    */
   left?: SegmentLeft
   /**
-   * New rows only (2026-11-10, `src/lib/new-tasks.ts` N5): back from
-   * yesterday's Not today — drawn under "Carried over", after the fresh ones.
+   * Horizon-segment rows only (2026-11-17, `src/lib/new-tasks.ts`): the task
+   * is New (`isNewRow`) — drawn under the segment's "New" heading, with Grow.
    */
-  carried?: boolean
+  isNew?: boolean
 }
 
 export { SEGMENT_ORDER, type SegmentKind }
@@ -212,6 +207,11 @@ export function getCheckInDay(userId: number): CheckInDay {
   return coerceCheckInDay(row?.check_in_day)
 }
 
+/** A horizon segment's row: marked New while the task is (`isNewRow`). */
+function horizonRow(task: Task, state: SegmentState): SegmentTask {
+  return isNewRow(task) ? { task, state, isNew: true } : { task, state }
+}
+
 function segmentOf(horizon: SegmentKind, tasks: SegmentTask[]): TaskSegment {
   const count = (s: SegmentState) => tasks.filter((t) => t.state === s).length
   return {
@@ -260,16 +260,8 @@ export function getTaskSegments(
     deadlineRows = false,
     fill = false,
     agedOut,
-    newRows,
   }: {
     queuePanels?: boolean
-    /**
-     * NEW (2026-11-10, `src/lib/new-tasks.ts`): the caller draws the `new`
-     * segment (`GET /api/reminders?new=1`: the web, and native since 2026-11-12). Yesterday's new one-offs
-     * are then there and in no horizon segment that day (N2). Without it
-     * nothing changes — a native build, the day simulator unless asked.
-     */
-    newRows?: boolean
     /**
      * AGED OUT (2026-10-29, first pass, `src/lib/aged-out.ts`): the caller
      * draws the `aged_out` segment (`GET /api/reminders?aged=1`, the web on a
@@ -330,9 +322,9 @@ export function getTaskSegments(
   /**
    * RULE TQ-OPT-IN: Without ?queue=1, queued tasks are left out of every segment. Without ?deck=1,
    *   a decked task is in no segment. Without ?deadlines=1, target-less deadline tasks fall back to
-   *   their horizon segment. Without ?new=1 or ?aged=1 a task New or Aged out would hold is in its
-   *   horizon segment. The web sends all of them; native (REMINDERS_URL) sends all but aged (new
-   *   since 2026-11-12; a shipped build sends the older question, without it).
+   *   their horizon segment. Without ?aged=1 a task Aged out would hold is in its horizon segment.
+   *   The web sends all of them; native (REMINDERS_URL) sends all but aged. ?new=1 (the New page,
+   *   2026-11-10 to 2026-11-17) is accepted and ignored.
    * Why: A shipped native build would list an unknown kind as a page of its own, so each new kind
    *   is opt-in (the options below).
    * Ruling: none recorded.
@@ -371,7 +363,7 @@ export function getTaskSegments(
   /**
    * RULE TQ-PRECEDENCE: For one-offs, getTaskSegments places a task in the first of these that
    *   takes it: the queue (hidden without ?queue=1), the deadlines page, on deck, a picked target
-   *   (Upcoming), New (when asked for), Aged out (when asked for), then the horizon segment.
+   *   (Upcoming), Aged out (when asked for), then the horizon segment.
    *   Repeats go: queue, deadlines page, on deck, a target-less deadline repeat in a horizon
    *   segment (degrade), then Upcoming. This describes the read order only; whether exclusivity
    *   belongs at write time is PARKED (issue I-02).
@@ -390,25 +382,12 @@ export function getTaskSegments(
     }
     return placeDeadline(task)
   }
-  // New before the horizons (and Aged out): one place at a time (N2).
-  // What New listed earlier today (`newListedToday`): a carried row deferred
-  // again stays New's today.
-  const inNewToday = newListedToday(userId, [newRows, handledRows], () =>
-    openTaskDayOf(now, timezone, dayStart),
-  )
-  const placeNew = (task: Task): boolean => {
-    const fresh = newRows ? newTaskPlace(task, timezone, now, dayStart, inNewToday(task.id)) : null
-    if (fresh) add('new', { task, state: fresh.state, carried: fresh.carried })
-    return fresh !== null
-  }
   // Aged out before the horizons: never also in its horizon segment that day.
   const placeAged = (task: Task): boolean => {
     const aged = agedOut ? agedOutState(task, timezone, now, dayStart, checkInDay) : null
     if (aged) add('aged_out', { task, state: aged })
     return aged !== null
   }
-  // New, then Aged out: either takes a task out of the horizons that day.
-  const placeAside = (task: Task): boolean => placeNew(task) || placeAged(task)
   for (const task of eligibleTasks(userId)) {
     if (placeFirst(task)) continue
     // ON DECK (B6): quiet like a picked target — in no horizon segment; a
@@ -422,9 +401,10 @@ export function getTaskSegments(
       addUpcoming(task)
       continue
     }
-    if (placeAside(task)) continue
+    if (placeAged(task)) continue
     const placed = segmentState(task, timezone, now, dayStart, checkInDay)
-    if (placed) add(placed.horizon, { task, state: placed.state })
+    // (restates RULE NEW-WHO, home: src/lib/new-tasks.ts) New is a mark on a horizon row.
+    if (placed) add(placed.horizon, horizonRow(task, placed.state))
   }
   const placeRepeating = (task: Task): void => {
     // A decked repeating task (2026-10-20), as a one-off's deck above: a
@@ -466,7 +446,6 @@ export function getTaskSegments(
     addLeftRows(userId, timezone, now, byKind, {
       queuePanels,
       deadlines: deadlineRows && taskQueueEnabled(),
-      newRows: newRows === true,
     })
   }
   /**
@@ -483,7 +462,6 @@ export function getTaskSegments(
     if (kind === 'deadlines') return queueOn && deadlineRows
     if (isQueueKind(kind)) return queueOn && queuePanels
     if (kind === 'aged_out') return agedOut === true
-    if (kind === 'new') return newRows === true
     return true
   }
   return SEGMENT_ORDER.filter(shown).map((kind) => {
@@ -510,25 +488,24 @@ function sortSegmentRows(
     )
   } else if (kind === 'aged_out') {
     tasks.sort((a, b) => compareAgedOut(a.task, b.task))
-  } else if (kind === 'new') {
-    // The fresh ones, then "Carried over" (N5); each by priority, then
-    // newest first — written yesterday, the latest is the freshest in mind.
-    tasks.sort(
-      (a, b) =>
-        Number(!!a.carried) - Number(!!b.carried) ||
-        byPriorityRank(a.task, b.task) ||
-        Date.parse(b.task.created_at) - Date.parse(a.task.created_at) ||
-        a.task.id - b.task.id,
-    )
   } else if (kind !== 'upcoming') {
     /**
      * RULE SEG-ORDER-WITHIN: Rows are ordered by priority (PRIO-RANK: Urgent, High, Medium, unset,
-     *   Low), then id. The horizon decides whether a task shows, never where it sits.
+     *   Low), then id, after the segment's New rows (NEW-HEADING), which come first in their own
+     *   order. The horizon decides whether a task shows, never where it sits.
      * Why: Acting on one row never reorders the rest under the finger.
      * Ruling: The 09-05 rule (src/core/tasks/task-segments.ts:193); the one priority order, Trent
      *   2026-11-11.
      */
-    tasks.sort((a, b) => byPriorityRank(a.task, b.task) || a.task.id - b.task.id)
+    // (restates RULE NEW-HEADING, home: src/lib/new-tasks.ts) New rows first,
+    // in their own order; the rest as SEG-ORDER-WITHIN says.
+    tasks.sort(
+      (a, b) =>
+        Number(!!b.isNew) - Number(!!a.isNew) ||
+        (a.isNew && b.isNew ? compareNewRows(a.task, b.task) : 0) ||
+        byPriorityRank(a.task, b.task) ||
+        a.task.id - b.task.id,
+    )
   }
 }
 
@@ -542,22 +519,6 @@ function sortSegmentRows(
 /** Upcoming's section order: Tomorrow, then Later. */
 function sectionRank(section: UpcomingSection | undefined): number {
   return section === 'tomorrow' ? 0 : 1
-}
-
-/**
- * Whether New listed a task earlier today, from the day roster — asked only
- * by a caller that draws New and keeps a roster (`wanted`); for any other,
- * never (New's rule then reads the task's own stamps alone).
- */
-function newListedToday(
-  userId: number,
-  /** The caller's `newRows` and `handledRows`: both, or the answer is never. */
-  wanted: readonly (boolean | undefined)[],
-  today: () => string,
-): (taskId: number) => boolean {
-  if (!wanted.every(Boolean)) return () => false
-  const ids = rosterNewToday(userId, today())
-  return (taskId) => ids.has(taskId)
 }
 
 /**
@@ -578,7 +539,7 @@ function addLeftRows(
    * What the caller draws: the queue's panels (`queuePanels`), the deadlines
    * page (`deadlineRows`, switch on) — never a left row of a kind it can't.
    */
-  shown: { queuePanels: boolean; deadlines: boolean; newRows: boolean },
+  shown: { queuePanels: boolean; deadlines: boolean },
 ): void {
   // Never add a queue panel of left rows that would not otherwise be drawn.
   const queueShown = shown.queuePanels && taskQueueEnabled()
@@ -591,9 +552,9 @@ function addLeftRows(
   for (const [kind, rows] of rosterLeftRows(userId, timezone, now, listed)) {
     if (isQueueKind(kind) && !queueShown) continue
     if (kind === 'deadlines' && !shown.deadlines) continue
-    // New (2026-11-10): only for a caller that draws it — never an unknown
-    // kind to a native build.
-    if (kind === 'new' && !shown.newRows) continue
+    // A kind this build no longer has (the New page's rows, remembered on
+    // the day the heading replaced it): not a segment.
+    if (!SEGMENT_ORDER.includes(kind)) continue
     const list = byKind.get(kind) ?? []
     for (const { task, left, section } of rows) {
       list.push({ task, state: 'considered', left, ...(section ? { section } : {}) })
@@ -733,24 +694,39 @@ function stampTasks(
   const tasks = ownOpenTasks(userId, ids)
   const now = new Date().toISOString()
   const fieldsAll = new Set<string>([column])
+  // (restates RULE NEW-COUNT, home: src/lib/new-tasks.ts) A consider counts;
+  // Not today (the other column) does not.
+  const counts = column === 'last_considered_at'
+  if (counts) fieldsAll.add('consider_count')
+  const bump = counts ? ', consider_count = consider_count + 1' : ''
   withTransaction((db) => {
-    const stmt = db.prepare(`UPDATE tasks SET ${column} = ?, updated_at = ? WHERE id = ?`)
+    const stmt = db.prepare(`UPDATE tasks SET ${column} = ?${bump}, updated_at = ? WHERE id = ?`)
     const unqueue = db.prepare(
-      `UPDATE tasks SET ${column} = ?, queued_at = NULL, try_tomorrow = 0, updated_at = ? WHERE id = ?`,
+      `UPDATE tasks SET ${column} = ?${bump}, queued_at = NULL, try_tomorrow = 0, updated_at = ? WHERE id = ?`,
     )
     const snapshots = tasks.map((task) => {
+      const counted = counts ? { consider_count: task.consider_count + 1 } : {}
+      const countField = counts ? ['consider_count'] : []
       if (leaveQueue && task.queued_at && !task.rrule) {
         unqueue.run(now, now, task.id)
-        const fields = [column, 'queued_at', ...(task.try_tomorrow ? ['try_tomorrow'] : [])]
+        const fields = [
+          column,
+          ...countField,
+          'queued_at',
+          ...(task.try_tomorrow ? ['try_tomorrow'] : []),
+        ]
         fields.forEach((f) => fieldsAll.add(f))
         return createTaskSnapshot(
           task,
-          { ...task, [column]: now, queued_at: null, try_tomorrow: false },
+          { ...task, [column]: now, ...counted, queued_at: null, try_tomorrow: false },
           fields,
         )
       }
       stmt.run(now, now, task.id)
-      return createTaskSnapshot(task, { ...task, [column]: now }, [column])
+      return createTaskSnapshot(task, { ...task, [column]: now, ...counted }, [
+        column,
+        ...countField,
+      ])
     })
     logAction(userId, 'task_segment', description, [...fieldsAll], snapshots)
   })
@@ -925,22 +901,26 @@ export function deferTasks(userId: number, ids: number[]): number {
  * Put back: undo a consider or a Defer All from the "Show considered" list
  * (2026-10-11, the slots' put-back). Clears both stamps, so the row waits in
  * its segment again today and comes back daily until it is considered — the
- * meaning of "not considered". One undo entry, logged even when nothing was
+ * meaning of "not considered" — and takes a considered row's look off its
+ * count (NEW-COUNT). One undo entry, logged even when nothing was
  * stamped (the toast's Undo must never reach an older action).
  */
 export function restoreTasks(userId: number, ids: number[]): number {
   const tasks = ownOpenTasks(userId, ids)
   const now = new Date().toISOString()
-  const fields = ['last_considered_at', 'segment_deferred_at']
+  const fields = ['last_considered_at', 'segment_deferred_at', 'consider_count']
   withTransaction((db) => {
     const stmt = db.prepare(
-      'UPDATE tasks SET last_considered_at = NULL, segment_deferred_at = NULL, updated_at = ? WHERE id = ?',
+      'UPDATE tasks SET last_considered_at = NULL, segment_deferred_at = NULL, consider_count = ?, updated_at = ? WHERE id = ?',
     )
     const snapshots = tasks.map((task) => {
-      stmt.run(now, task.id)
+      // (restates RULE NEW-COUNT, home: src/lib/new-tasks.ts) Putting back a
+      // considered row takes its look off the count; a deferred one had none.
+      const count = Math.max(0, task.consider_count - (task.last_considered_at ? 1 : 0))
+      stmt.run(count, now, task.id)
       return createTaskSnapshot(
         task,
-        { ...task, last_considered_at: null, segment_deferred_at: null },
+        { ...task, last_considered_at: null, segment_deferred_at: null, consider_count: count },
         fields,
       )
     })
@@ -1060,7 +1040,7 @@ export function targetTasksToday(
 
 /**
  * GROW (Aged out's row action): each task's horizon one step out
- * (`growStep`: Days → Weeks → Months → Eventually, unset → Months). Through
+ * (`growStep`: Days → Weeks → Months → Eventually, unset → Weeks). Through
  * `bulkEdit`, so the horizon's clock restarts (`horizon_set_at`), the keep
  * count goes to 0, and one undo entry takes it all back; the row is also
  * considered today (`last_considered_at`), so it stays in Aged out as a

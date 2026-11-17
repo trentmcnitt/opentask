@@ -135,8 +135,8 @@ export interface SegmentRow {
    * Pulled view's rows; the row acts as its own kind.
    */
   pulled?: PulledSection
-  /** New's rows (2026-11-10, `src/lib/new-tasks.ts` N5): back from yesterday's Not today. */
-  carried?: boolean
+  /** A horizon segment's row that is New (2026-11-17, RULE NEW-WHO): under the heading, with Grow. */
+  isNew?: boolean
   /**
    * The deadlines page (2026-11-12, the start date): the row is in its OPEN
    * WINDOW — listed on its rounds only, under "Open window", after the
@@ -482,7 +482,8 @@ function segmentViews(
           ...(t.safety_net ? { safetyNet: true } : {}),
           ...(obj?.seen || t.seen ? { seen: true } : {}),
           ...(seg.horizon === 'upcoming' ? { section: t.upcoming_section ?? 'later' } : {}),
-          ...(t.carried_over ? { carried: true } : {}),
+          // New only while it waits: a considered or deferred row is listed apart.
+          ...(t.new && state === 'waiting' ? { isNew: true } : {}),
           ...(t.window === 'open' ? { openWindow: true } : {}),
         }
       })
@@ -727,9 +728,10 @@ function useAgedOutActions(run: RunSegmentAction) {
       ),
     [run],
   )
-  // `pick`: the hold menu's horizon; omitted, one step out.
+  // `pick`: the hold menu's horizon; omitted, one step out. `fresh`: a New
+  // row's Grow (RULE NEW-GROW), which says "Grown to <horizon>".
   const grow = useCallback(
-    (task: Task, pick?: HorizonValue) => {
+    (task: Task, pick?: HorizonValue, fresh = false) => {
       const to = pick ?? growStep(task.horizon)
       if (!to || to === task.horizon) return
       return run(
@@ -737,7 +739,9 @@ function useAgedOutActions(run: RunSegmentAction) {
         { left: 'considered', patch: { horizon: to, growth_kept_count: 0 } },
         () =>
           post('/api/task-segments/grow', { ids: [task.id], ...(pick ? { horizon: pick } : {}) }),
-        `Horizon now ${HORIZON_LABELS[to]}: “${task.title}”`,
+        fresh
+          ? `Grown to ${HORIZON_LABELS[to]}: “${task.title}”`
+          : `Horizon now ${HORIZON_LABELS[to]}: “${task.title}”`,
       )
     },
     [run],

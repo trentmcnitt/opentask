@@ -478,7 +478,7 @@ test.describe('Scan · plain squares, the horizon dot', () => {
 
   // Trent, 2026-10-29: "fully consistent checkboxes everywhere" — the square
   // is plain in the Horizon sections too; the horizon is the meta line's dot,
-  // unset drawn as the Weeks dot.
+  // unset drawn as the Days dot (unset reads as Days since 2026-11-17).
   test('every square in Scan is plain, the Horizon sections included; each one-off wears its dot', async ({
     authenticatedPage: page,
   }) => {
@@ -504,9 +504,9 @@ test.describe('Scan · plain squares, the horizon dot', () => {
       }
       const r = (id: string, task: number) =>
         rowIn(section(page, id), task).locator('[data-lean-meta] [data-horizon-dot] circle')
-      expect(await r('horizon-unset', made.unset).getAttribute('r')).toBe(
-        await r('horizon-weeks', made.weeks).getAttribute('r'),
-      )
+      // The Days dot's radius (4), a size up from Weeks' (3).
+      expect(await r('horizon-weeks', made.weeks).getAttribute('r')).toBe('3')
+      expect(await r('horizon-unset', made.unset).getAttribute('r')).toBe('4')
       expect(await r('horizon-unset', made.unset).getAttribute('fill')).toBe('currentColor')
     } finally {
       await cleanUp(page, Object.values(made))

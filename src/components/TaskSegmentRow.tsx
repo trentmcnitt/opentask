@@ -75,7 +75,7 @@ import {
   growStep,
   type AgedOutGroup,
 } from '@/lib/aged-out'
-import { CARRIED_OVER_TITLE, NEW_PAGE_TITLE } from '@/lib/new-tasks'
+import { NEW_HEADING_TITLE } from '@/lib/new-tasks'
 import { COMING_DUE_TITLE, OPEN_WINDOW_TITLE, openWindowRowWords } from '@/lib/start-date-words'
 import { createdDateWords } from '@/lib/created-date'
 import type { Task } from '@/types'
@@ -179,7 +179,6 @@ export function segmentTitle(kind: SegmentKind): string {
   if (isQueueKind(kind)) return QUEUE_PANEL_TITLES[kind]
   if (kind === 'deadlines') return DEADLINES_PAGE_TITLE
   if (kind === 'aged_out') return AGED_OUT_TITLE
-  if (kind === 'new') return NEW_PAGE_TITLE
   return kind === 'upcoming' ? UPCOMING_LABEL : SEGMENT_TITLES[kind]
 }
 
@@ -890,6 +889,10 @@ function TaskSegmentRowActions({
         // Aged out (2026-10-29): Grow in On deck tomorrow's place, whatever
         // the switch says — the segment's own question.
         <GrowButton task={task} actions={actions} panel={panel} />
+      ) : row.isNew ? (
+        // (restates RULE NEW-GROW, home: src/lib/new-tasks.ts) A New row: the
+        // Sprout alone, in On deck tomorrow's place.
+        <GrowButton task={task} actions={actions} panel={panel} fresh />
       ) : segmentHorizon === 'deadlines' ? (
         // The deadlines page (2026-10-22): Defer in On deck tomorrow's place —
         // both are "another day" — hidden in the safety net (the place kept).
@@ -1065,7 +1068,7 @@ const SLOT_HIT = '-my-[11px] h-[44px] w-[34px] shrink-0'
 
 /**
  * GROW (Aged out, 2026-10-29, `src/lib/aged-out.ts`): the horizon one step
- * out — Days → Weeks → Months → Eventually, unset → Months. In On deck
+ * out — Days → Weeks → Months → Eventually, unset → Weeks. In On deck
  * tomorrow's slot, the same hit target and hover box. The tooltip names the
  * horizon it grows to; the row then stays, considered.
  */
@@ -1073,10 +1076,17 @@ function GrowButton({
   task,
   actions,
   panel,
+  fresh = false,
 }: {
   task: Task
   actions: TaskSegmentActions
   panel: boolean
+  /**
+   * A New row's Grow (2026-11-17, RULE NEW-GROW): the Sprout with no word at
+   * any width, the toast "Grown to <horizon>", and on Eventually, where there
+   * is no step out, a tap opens the menu (Aged out leaves the place empty).
+   */
+  fresh?: boolean
 }) {
   // A hold or right-click opens the horizon menu (Trent, 2026-10-29: "press
   // and hold on the grow icon to … select what horizon I want"); a tap grows
@@ -1085,19 +1095,19 @@ function GrowButton({
   const to = growStep(task.horizon)
   const press = useSimpleLongPress({
     onLongPress: () => setMenuOpen(true),
-    onShortPress: () => void actions.grow(task),
+    onShortPress: () => (to ? void actions.grow(task, undefined, fresh) : setMenuOpen(true)),
     tapOn: 'click',
   })
   // The menu is in a portal: it holds the pager card it belongs to.
   usePagerHold(menuOpen)
-  if (!to) return <span aria-hidden className={SLOT_HIT} />
-  const words = `Grow to ${HORIZON_LABELS[to]}`
+  if (!to && !fresh) return <span aria-hidden className={SLOT_HIT} />
+  const words = to ? `Grow to ${HORIZON_LABELS[to]}` : 'Pick a horizon'
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <button
         type="button"
         data-grow
-        data-grow-to={to}
+        data-grow-to={to ?? ''}
         data-no-row-press
         onClick={(e) => {
           e.stopPropagation()
@@ -1113,13 +1123,15 @@ function GrowButton({
           e.stopPropagation()
           setMenuOpen(true)
         }}
-        aria-label={`${words}: “${task.title}” (hold to pick a horizon)`}
-        title={`${words} · hold to pick`}
+        aria-label={
+          to ? `${words}: “${task.title}” (hold to pick a horizon)` : `${words}: “${task.title}”`
+        }
+        title={to ? `${words} · hold to pick` : words}
         className={cn(
           'group/grow text-muted-foreground hover:text-foreground relative flex cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors select-none [-webkit-touch-callout:none]',
           SLOT_HIT,
           // From `sm` up it says where it grows to (A5): wider than the slot.
-          'sm:w-auto',
+          !fresh && 'sm:w-auto',
         )}
       >
         {/* The menu's anchor: inert, so only the hold or right-click opens it. */}
@@ -1130,7 +1142,7 @@ function GrowButton({
           className={cn(
             'group-hover/grow:bg-foreground/5 flex items-center justify-center gap-1 rounded-md transition-colors',
             panel ? DECK_BOX.panel : DECK_BOX.page,
-            'sm:w-auto sm:px-1.5',
+            !fresh && 'sm:w-auto sm:px-1.5',
           )}
         >
           <Sprout className={panel ? 'size-[18px]' : 'size-[20px]'} strokeWidth={1.75} />
@@ -1141,22 +1153,24 @@ function GrowButton({
               2026-10-29: a box that changes width moves the row's other
               buttons, as the cutoff chip did): the word and an invisible
               "Eventually" share one grid cell, the word left-aligned. */}
-          <span
-            data-grow-word
-            className="hidden justify-items-start text-xs font-medium sm:inline-grid"
-          >
-            <span className="col-start-1 row-start-1">{HORIZON_LABELS[to]}</span>
-            <span aria-hidden className="invisible col-start-1 row-start-1">
-              {HORIZON_LABELS.eventually}
+          {!fresh && to && (
+            <span
+              data-grow-word
+              className="hidden justify-items-start text-xs font-medium sm:inline-grid"
+            >
+              <span className="col-start-1 row-start-1">{HORIZON_LABELS[to]}</span>
+              <span aria-hidden className="invisible col-start-1 row-start-1">
+                {HORIZON_LABELS.eventually}
+              </span>
             </span>
-          </span>
+          )}
         </span>
       </button>
       <HorizonMenuContent
         value={task.horizon}
         unset={false}
         onChange={(h) => {
-          if (h) void actions.grow(task, h)
+          if (h) void actions.grow(task, h, fresh)
         }}
       />
     </DropdownMenu>
@@ -1643,7 +1657,7 @@ function AgedOutMeta({
       )}
       {/* EVERY row's dot (Trent, 2026-10-29: "with dots on every row"),
           whatever the task-queue switch says — an Aged out row is always a
-          one-off with no picked target; unset draws as the Weeks dot. */}
+          one-off with no picked target; unset draws as the Days dot. */}
       <HorizonDotButton task={task} variant="meta" onOpen={onOpenDetails} />
       <span data-aged-facts>{agedFacts(task, timezone, dayStart).join(' · ')}</span>
       <SegmentLabels task={task} />
@@ -1690,7 +1704,7 @@ function agedFacts(task: Task, timezone: string, dayStart: string): string[] {
  * so the heading teaches the dot the rows wear ("DAYS ●") — the group's
  * count, and the cutoff faint on the right ("DAYS ● 3 … >10 days"). The rows come sorted by group
  * (`compareAgedOut`); a heading goes before each group's first row, so an
- * empty group has none. Unset rows read as Weeks.
+ * empty group has none. Unset rows read as Days.
  */
 export function agedGroupBefore(
   segmentHorizon: SegmentKind,
@@ -1768,21 +1782,49 @@ export function PulledSectionHeading({
 }
 
 /**
- * NEW's "Carried over" line (2026-11-10, `src/lib/new-tasks.ts` N5): before
- * the first row back from yesterday's Not today — the fresh ones come first
- * (the server's order) and have no heading; the line shows only when a
- * carried row does. Its count is the carried rows'.
+ * NEW's heading (2026-11-17, RULE NEW-HEADING in src/lib/new-tasks.ts): in a
+ * horizon segment, before the first New row waiting — the server sends them
+ * first. Its count is every New row waiting, shown or behind "Show more".
  */
-export function carriedLineBefore(
+export function newHeadingBefore(
   rows: readonly SegmentRow[],
   index: number,
+  /** Every waiting row, when `rows` is a capped slice of them (the card): the count is theirs. */
+  all: readonly SegmentRow[] = rows,
 ): { count: number } | null {
-  if (!rows[index].carried) return null
-  if (index > 0 && rows[index - 1].carried) return null
-  return { count: rows.filter((r) => r.carried).length }
+  if (!rows[index].isNew) return null
+  if (index > 0 && rows[index - 1].isNew) return null
+  return { count: all.filter((r) => r.isNew).length }
 }
 
-export function CarriedOverLine({
+/**
+ * Where the New rows end (Trent's mockup, 2026-11-17): a hairline before the
+ * first row that is not New, when New rows come before it. No word: the rows
+ * under it are the segment's ordinary ones.
+ */
+export function newEndBefore(rows: readonly SegmentRow[], index: number): boolean {
+  return index > 0 && !rows[index].isNew && !!rows[index - 1].isNew
+}
+
+export function NewEndLine({
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <li
+      role="presentation"
+      data-new-end
+      className={cn('py-1.5', panel ? 'px-1' : 'px-2', hiddenWhenNarrow && 'hidden xl:block')}
+    >
+      <div className="bg-border h-px" />
+    </li>
+  )
+}
+
+export function NewHeading({
   count,
   panel,
   hiddenWhenNarrow = false,
@@ -1793,11 +1835,12 @@ export function CarriedOverLine({
 }) {
   return (
     <SectionPill
-      data={{ 'data-carried-over': '' }}
-      label={CARRIED_OVER_TITLE}
+      data={{ 'data-new-heading': '' }}
+      label={NEW_HEADING_TITLE}
       count={count}
       panel={panel}
       hiddenWhenNarrow={hiddenWhenNarrow}
+      tone="new"
     />
   )
 }
@@ -1888,6 +1931,7 @@ function SectionPill({
   right,
   panel,
   hiddenWhenNarrow,
+  tone,
 }: {
   data: Record<string, string>
   label: string
@@ -1896,6 +1940,8 @@ function SectionPill({
   right?: string
   panel: boolean
   hiddenWhenNarrow: boolean
+  /** New's heading: the blue (`--segment-new`), the one pill with a colour. */
+  tone?: 'new'
 }) {
   return (
     <li
@@ -1907,7 +1953,14 @@ function SectionPill({
         hiddenWhenNarrow && 'hidden xl:flex',
       )}
     >
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef0f3] px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] text-slate-600 uppercase dark:bg-white/[0.08] dark:text-slate-300">
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold tracking-[0.06em] uppercase',
+          tone === 'new'
+            ? 'bg-[color-mix(in_srgb,var(--segment-new)_16%,transparent)] text-[var(--segment-title-new)]'
+            : 'bg-[#eef0f3] text-slate-600 dark:bg-white/[0.08] dark:text-slate-300',
+        )}
+      >
         {label}
         {dot && <HorizonDotMark horizon={dot} />}
       </span>

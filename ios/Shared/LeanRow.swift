@@ -194,9 +194,10 @@ enum LeanRow {
     static func cornerDots(_ look: SquareLook) -> Bool { look == .dots }
 
     /// The spoken words on a governed square: "Horizon Weeks" / "Horizon
-    /// unset".
+    /// Days (unset)" — unset names what it reads as, as the web's hint does
+    /// (`horizonSquareHint`; "Horizon unset" until 2026-11-17).
     static func squareAccessibilityLabel(_ horizon: TaskHorizon?) -> String {
-        "Horizon \(horizon?.label ?? "unset")"
+        "Horizon \(horizon?.label ?? TaskHorizon.unsetWords)"
     }
 
     // MARK: - Colours (0xRRGGBB, light / dark)
@@ -251,8 +252,14 @@ enum LeanRow {
 }
 
 extension TaskHorizon {
-    /// What an unset horizon is READ as (the web's `UNSET_HORIZON`): Weeks.
-    /// Never shown as set — only where unset must look like something (the
-    /// horizon square).
-    static let unsetReadsAs: TaskHorizon = .weeks
+    /// What an unset horizon is READ as (the web's `UNSET_HORIZON`, RULE
+    /// HZ-UNSET): Days since 2026-11-17 (Trent: "`unset` needs to be
+    /// `days`"; Weeks until then). Never shown as set — only where unset
+    /// must look like something (the horizon square) or be named with its
+    /// reading (`unsetWords`).
+    static let unsetReadsAs: TaskHorizon = .days
+
+    /// An unset horizon in words: "Days (unset)" (the web's
+    /// `horizonSquareWords`, `src/lib/horizon-square.ts`).
+    static var unsetWords: String { "\(unsetReadsAs.label) (unset)" }
 }

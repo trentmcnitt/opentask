@@ -36,6 +36,10 @@ enum WatchTheme {
         rgb((kind ?? .horizon(.weeks)).colorHex.dark)
     }
 
+    /// A horizon segment's "New" heading (2026-11-17): the New blue's dark
+    /// value (`NewHeadingColors`, the web's dark `--segment-title-new`).
+    static let newHeading = rgb(NewHeadingColors.titleHex.dark)
+
     /// Every strip bar's fill while it fills — a period's and a task
     /// segment's alike (2026-10-26, the web's PR #383), and the Smart Stack's
     /// circular/corner gauge (`RingContent`, Trent's ruling the same day):

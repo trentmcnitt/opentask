@@ -68,6 +68,8 @@ function makeTask(overrides: Partial<Task> & { id: number; title: string }): Tas
     attempts_counted_through: null,
     growth_kept_at: null,
     growth_kept_count: 0,
+    consider_count: 0,
+    new_ended_at: null,
     queue_mark: false,
     try_tomorrow: false,
     queued_at: null,

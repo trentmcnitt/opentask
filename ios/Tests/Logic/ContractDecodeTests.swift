@@ -425,23 +425,24 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(
             segments.map(\.horizon),
             // The server's order since 2026-10-29: Dated, Pulled, Horizon.
-            ["deadlines", "upcoming", "new", "queue_today", "queue_previous", "days", "weeks", "months",
-             "eventually"]
+            ["deadlines", "upcoming", "queue_today", "queue_previous", "days", "weeks", "months", "eventually"],
+            "no `new` segment since 2026-11-17: a New row is in its horizon segment"
         )
         XCTAssertEqual(
             segments.compactMap(\.kind),
-            [.deadlines, .upcoming, .new, .queueToday, .queuePrevious, .horizon(.days), .horizon(.weeks),
+            [.deadlines, .upcoming, .queueToday, .queuePrevious, .horizon(.days), .horizon(.weeks),
              .horizon(.months), .horizon(.eventually)],
             "every kind is known"
         )
-        XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -20, -17, -18, -10, -11, -12, -13])
+        XCTAssertEqual(segments.map(\.pageKey), [-16, -14, -17, -18, -10, -11, -12, -13])
         // The server sends every kind (`?fill=1`); only the ones with rows are pages (2026-10-30).
         XCTAssertEqual(
             TaskSegmentDTO.listed(segments).map(\.horizon),
-            ["deadlines", "upcoming", "new", "queue_today", "queue_previous", "weeks"]
+            ["deadlines", "upcoming", "queue_today", "queue_previous", "days"]
         )
-        XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["days", "months", "eventually"])
-        XCTAssertEqual(segments.map(\.title)[0...3], ["Deadlines", "Heads up", "New", "Today's pulls"])
+        // An unset horizon reads as Days since 2026-11-17 (Weeks before).
+        XCTAssertEqual(segments.filter(\.isEmpty).map(\.horizon), ["weeks", "months", "eventually"])
+        XCTAssertEqual(segments.map(\.title)[0...2], ["Deadlines", "Heads up", "Today's pulls"])
 
         // The deadlines page: the seen safety-net row waits — no consider in
         // the net (2026-11-02), its circle the target clock; the deferred one
@@ -464,7 +465,7 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertFalse(deadlines.offersDeferAll)
 
         // "Today's pulls": the done row LEFT ("· done"); the Try Tomorrow row.
-        let today = segments[3]
+        let today = segments[2]
         let done = try XCTUnwrap(today.tasks.first { $0.id == Fixtures.queueNew })
         XCTAssertEqual(done.state, .considered)
         XCTAssertEqual(done.left, .done)
@@ -484,17 +485,22 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(deck.task.upcomingMeta(section: .later), "On\u{00A0}deck\u{00A0}Thu\u{00A0}Jan\u{00A0}15")
         XCTAssertEqual(deck.task.upcomingMeta(form: .short, section: .later), "On\u{00A0}deck\u{00A0}Jan\u{00A0}15")
 
-        // New (in the question since 2026-11-12): the row made yesterday,
-        // then the one back from yesterday's Not today, under "Carried over".
-        let new = segments[2]
-        XCTAssertTrue(new.isNew)
-        XCTAssertEqual(new.tasks.map(\.task.title), ["Sort the seed packets", "Label the spice jars"])
-        XCTAssertEqual(new.tasks.map(\.carriedOver), [false, true])
-        XCTAssertEqual(new.tasks.map(\.state), [.waiting, .waiting])
-        XCTAssertEqual(new.newRowsSplit.fresh.map(\.task.title), ["Sort the seed packets"])
-        XCTAssertEqual(new.newRowsSplit.carried.map(\.task.title), ["Label the spice jars"])
-        XCTAssertTrue(new.offersDeferAll, "Not today, all")
-        XCTAssertTrue(new.tasks.allSatisfy(\.isConsiderable))
+        // New (a heading since 2026-11-17, RULE NEW-HEADING): the New rows
+        // are in Days (their horizon unset, read as Days), each `new: true`,
+        // and the page opens with the "New" heading over them.
+        let days = segments[4]
+        XCTAssertEqual(
+            days.tasks.map(\.task.title), ["Sort the seed packets", "Label the spice jars", "Clear out the garage"]
+        )
+        XCTAssertEqual(days.tasks.map(\.isNew), [true, true, true])
+        XCTAssertEqual(days.tasks.map(\.state), [.waiting, .waiting, .waiting])
+        XCTAssertEqual(days.tasks.map(\.task.horizon), [nil, nil, nil])
+        XCTAssertEqual(days.newHeadingSplit.new.map(\.task.title), days.tasks.map(\.task.title))
+        XCTAssertTrue(days.newHeadingSplit.rest.isEmpty)
+        XCTAssertTrue(days.offersDeferAll, "Not today, all")
+        XCTAssertTrue(days.tasks.allSatisfy(\.isConsiderable))
+        // No other kind's row is New.
+        XCTAssertFalse(segments.filter { $0.horizon != "days" }.flatMap(\.tasks).contains(where: \.isNew))
 
         // The raw keys the DTO reads, so a renamed key can't decode as false.
         let raw = try Fixtures.object("reminders-native")
@@ -502,8 +508,10 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         let rawDeadlines = try XCTUnwrap(rawSegments.first?["tasks"] as? [[String: Any]])
         XCTAssertTrue(rawDeadlines.contains { $0["seen"] as? Bool == true && $0["safety_net"] as? Bool == true })
         XCTAssertTrue(rawDeadlines.contains { $0["segment_left"] as? String == "deferred" })
-        let rawNew = try XCTUnwrap(rawSegments[2]["tasks"] as? [[String: Any]])
-        XCTAssertEqual(rawNew.map { $0["carried_over"] as? Bool }, [false, true])
+        let rawDays = try XCTUnwrap(rawSegments[4]["tasks"] as? [[String: Any]])
+        XCTAssertEqual(rawDays.map { $0["new"] as? Bool }, [true, true, true])
+        XCTAssertFalse(rawSegments.contains { $0["horizon"] as? String == "new" })
+        XCTAssertFalse(rawSegments.flatMap { $0["tasks"] as? [[String: Any]] ?? [] }.contains { $0["carried_over"] != nil })
 
         // Round-trips through a cache with everything intact.
         let encoded = try JSONEncoder().encode(segments)
@@ -572,10 +580,11 @@ final class ContractDecodeTests: WidgetStoreTestCase {
         XCTAssertEqual(oneOffs.count, 2)
         XCTAssertTrue(oneOffs.allSatisfy { $0["deadline_nag_off"] as? Bool == true })
         XCTAssertEqual(rawRows.map { $0["safety_net"] as? Bool }, [true, false, false])
-        // The other segments are unchanged by the opt-in.
+        // The other segments are unchanged by the opt-in (the unset-horizon
+        // rows are in Days since 2026-11-17, Weeks before).
         XCTAssertEqual(
             payload.taskSegments.dropFirst().map(\.horizon),
-            ["upcoming", "queue_today", "queue_previous", "weeks"]
+            ["upcoming", "queue_today", "queue_previous", "days"]
         )
     }
 

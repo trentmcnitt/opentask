@@ -70,11 +70,11 @@ describe('Process: horizon growth asks', () => {
     expect(growthOf(after.id)).toMatchObject({ from: horizon, to, days_on_horizon: days + 1 })
   })
 
-  test('PC-002: unset reads as weeks on the clock but is reported as unset', () => {
-    const young = onHorizonFor(30)
-    const old = onHorizonFor(31)
+  test('PC-002: unset reads as days on the clock but is reported as unset', () => {
+    const young = onHorizonFor(10)
+    const old = onHorizonFor(11)
     expect(growthOf(young.id)).toBeNull()
-    expect(growthOf(old.id)).toMatchObject({ from: null, to: 'months' })
+    expect(growthOf(old.id)).toMatchObject({ from: null, to: 'weeks' })
   })
 
   test('PC-003: eventually never grows', () => {
@@ -115,10 +115,13 @@ describe('Process: horizon growth asks', () => {
   })
 
   test('PC-007: a deadline steering the horizon blocks the ask; a far one does not', () => {
+    // Weeks, stated: the steering is what is tested, not what unset reads as.
     const near = onHorizonFor(90, {
+      horizon: 'weeks',
       deadline_at: new Date(NOW.getTime() + 30 * DAY).toISOString(),
     })
     const far = onHorizonFor(90, {
+      horizon: 'weeks',
       deadline_at: new Date(NOW.getTime() + 200 * DAY).toISOString(),
     })
     expect(growthOf(near.id)).toBeNull()
