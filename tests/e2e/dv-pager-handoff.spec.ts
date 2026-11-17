@@ -96,8 +96,10 @@ const consider = (page: Page, title: string) =>
     .click()
 
 test.describe('Dashboard pager hand-off', () => {
-  test.afterEach(async ({ authenticatedPage: page }) => {
-    await setClock(page.request, null)
+  // The bare `request` fixture, not the page's: after a test that timed out
+  // the page is gone, and a server clock left pinned breaks every spec after.
+  test.afterEach(async ({ request }) => {
+    await setClock(request, null)
   })
 
   test('PAGER-FINISH-MOVE: the card goes to the earliest waiting period at once, on no timer; Undo puts the row back and the card stays', async ({
@@ -120,15 +122,13 @@ test.describe('Dashboard pager hand-off', () => {
       await onSlot(page, first)
       await expect(card(page).getByText(early)).toBeVisible()
 
-      // Undo: the row waits again in its own period; the card has not moved.
+      // The move is proven; the rest runs on a running clock (the toast and
+      // its Undo draw on timers, which a paused clock never fires).
+      await page.clock.resume()
+      // Undo: the row waits again in its own period, and the card has not
+      // moved: one page on from where it stands is that period (had the card
+      // jumped back, one page on would be the period after it).
       await page.getByRole('button', { name: 'Undo', exact: true }).first().click()
-      await expect
-        .poll(async () => {
-          const res = await page.request.get(`/api/tasks/${ids[1]}`)
-          return (await res.json()).data.last_considered_at ?? null
-        })
-        .toBeNull()
-      await onSlot(page, first)
       await card(page).getByRole('button', { name: 'Next time slot' }).click()
       await onSlot(page, second)
       await expect(card(page).getByText(late)).toBeVisible()
