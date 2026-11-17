@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   PAGER_START,
-  beatOver,
   nextPagerBoundary,
   settlePager,
-  touchCard,
   turnPage,
   type PagerInput,
   type PagerState,
@@ -52,70 +50,32 @@ function play(start: PagerState, inputs: PagerInput[]): { state: PagerState; key
   }
   return { state, key }
 }
-/** The beat of the page in view ends. */
-const endBeat = (state: PagerState) => beatOver(state, state.beat?.key ?? '')
-
-describe('PH: finishing a page (RULE PAGER-FINISH-BEAT)', () => {
-  it('PH-01: the finished page stays through its beat, then the card goes to the earliest opened period still waiting', () => {
+describe('PH: finishing a page (RULE PAGER-FINISH-MOVE)', () => {
+  it('PH-01: the card goes at once to the earliest opened period still waiting', () => {
     // Midday is the clock's; Early and Midday wait; Morning (paged to) is finished.
     let at = play(turnPage(PAGER_START, 'morning'), [periods([2, 1, 3], 2)])
     at = play(at.state, [periods([2, 0, 3], 2)])
-    expect(at.key).toBe('morning')
-    expect(at.state.beat).toEqual({ key: 'morning', due: false })
-    at = play(endBeat(at.state), [periods([2, 0, 3], 2)])
     expect(at.key).toBe('early')
+    expect(at.state.finished).toBeNull()
   })
 
   it('PH-02: never to a period that has not opened; nothing waiting up to now: it stays', () => {
     let at = play(PAGER_START, [periods([0, 1, 4], 1)])
     at = play(at.state, [periods([0, 0, 4], 1)])
-    at = play(endBeat(at.state), [periods([0, 0, 4], 1)])
     expect(at.key).toBe('morning')
-    expect(at.state.beat).toBeNull()
-  })
-
-  it('PH-03: a page turned by hand during the beat cancels the move', () => {
-    let at = play(PAGER_START, [periods([2, 1, 0], 1)])
-    at = play(at.state, [periods([2, 0, 0], 1)])
-    at = play(turnPage(at.state, 'midday'), [periods([2, 0, 0], 1)])
-    expect(at.state.beat).toBeNull()
-    // The timer's answer, arriving late, moves nothing.
-    at = play(beatOver(at.state, 'morning'), [periods([2, 0, 0], 1)])
-    expect(at.key).toBe('midday')
+    expect(at.state.finished).toBeNull()
   })
 
   it('PH-04: a page already finished when paged to is never left by this rule', () => {
     const at = play(turnPage(PAGER_START, 'early'), [periods([0, 3, 0], 1), periods([0, 3, 0], 1)])
     expect(at.key).toBe('early')
-    expect(at.state.beat).toBeNull()
+    expect(at.state.finished).toBeNull()
   })
 
-  it('PH-05: an Undo during the beat keeps the page; after the move it brings the card back', () => {
+  it('PH-05: an Undo after the move puts the row back and leaves the card where it is', () => {
     let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1)])
-    // The row is back before the beat ends: no move.
-    at = play(at.state, [periods([2, 1, 0], 1)])
-    expect(at.state.beat).toBeNull()
-    expect(at.key).toBe('morning')
-    // Finished again, moved to Early; then the Undo.
-    at = play(at.state, [periods([2, 0, 0], 1)])
-    at = play(endBeat(at.state), [periods([2, 0, 0], 1)])
     expect(at.key).toBe('early')
     at = play(at.state, [periods([2, 1, 0], 1)])
-    expect(at.key).toBe('morning')
-  })
-
-  it('PH-06: after the move, a page turned by hand ends the Undo return', () => {
-    let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1)])
-    at = play(endBeat(at.state), [periods([2, 0, 0], 1)])
-    at = play(turnPage(at.state, 'midday'), [periods([2, 1, 0], 1)])
-    expect(at.key).toBe('midday')
-  })
-
-  it('PH-08: once the card is touched after the move, a row arriving on the page it left does not pull it back', () => {
-    let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1)])
-    at = play(endBeat(at.state), [periods([2, 0, 0], 1)])
-    expect(at.key).toBe('early')
-    at = play(touchCard(at.state), [periods([2, 1, 0], 1)])
     expect(at.key).toBe('early')
   })
 
@@ -123,11 +83,9 @@ describe('PH: finishing a page (RULE PAGER-FINISH-BEAT)', () => {
     let at = play(PAGER_START, [segments([0, 2, 1])])
     expect(at.key).toBe('seg1')
     at = play(turnPage(at.state, 'seg2'), [segments([3, 2, 1]), segments([3, 2, 0])])
-    at = play(endBeat(at.state), [segments([3, 2, 0])])
     expect(at.key).toBe('seg0')
     // The last one anywhere: the card stays on its finished page.
     at = play(turnPage(PAGER_START, 'seg1'), [segments([0, 1, 0]), segments([0, 0, 0])])
-    at = play(endBeat(at.state), [segments([0, 0, 0])])
     expect(at.key).toBe('seg1')
   })
 })
@@ -150,7 +108,6 @@ describe('PH: the clock (RULE PAGER-CLOCK-TAKEOVER)', () => {
     at = play(at.state, [periods([1, 4, 0], 1)])
     expect(at.key).toBe('early')
     at = play(at.state, [periods([0, 4, 0], 1)])
-    at = play(endBeat(at.state), [periods([0, 4, 0], 1)])
     expect(at.key).toBe('morning')
   })
 
@@ -189,12 +146,20 @@ describe('PH: the clock (RULE PAGER-CLOCK-TAKEOVER)', () => {
 })
 
 describe('PH: a held card (RULE PAGER-HELD)', () => {
-  it('PH-20: a beat that ends while the card is held moves when the hold ends', () => {
-    let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1)])
-    at = play(endBeat(at.state), [periods([2, 0, 0], 1, { held: true })])
+  it('PH-20: a page finished while the card is held moves when the hold ends', () => {
+    let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1, { held: true })])
     expect(at.key).toBe('morning')
     at = play(at.state, [periods([2, 0, 0], 1)])
     expect(at.key).toBe('early')
+  })
+
+  it('PH-23: held, a page turned by hand or the row coming back cancels the owed move', () => {
+    let at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1, { held: true })])
+    at = play(turnPage(at.state, 'midday'), [periods([2, 0, 0], 1)])
+    expect(at.key).toBe('midday')
+    at = play(PAGER_START, [periods([2, 1, 0], 1), periods([2, 0, 0], 1, { held: true })])
+    at = play(at.state, [periods([2, 1, 0], 1, { held: true }), periods([2, 1, 0], 1)])
+    expect(at.key).toBe('morning')
   })
 
   it('PH-21: a period opening while the card is held takes over when the hold ends', () => {

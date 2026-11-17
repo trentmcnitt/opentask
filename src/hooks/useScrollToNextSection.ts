@@ -2,16 +2,6 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { sectionAfterFinishing } from '@/lib/time-slot-assign'
-import { PAGE_RETAP_EVENT } from '@/lib/scroll-to-top'
-
-/**
- * How long the finished section's green "done" shows before the page moves
- * on (Trent's spec, 2026-10-29: "so the section's done state registers").
- */
-export const NEXT_SECTION_DELAY_MS = 600
-
-/** Keys that scroll the page by hand: one of them cancels the move. */
-const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '])
 
 /**
  * FINISHING A SECTION SCROLLS TO THE NEXT ONE (Trent, 2026-10-29, checking
@@ -31,9 +21,10 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
  * - WHERE: `sectionAfterFinishing` — the pager's own rule over the same
  *   pages: the earliest period up to now still waiting, then the task
  *   segments in screen order. Nothing left waiting: no move.
- * - WHEN: `NEXT_SECTION_DELAY_MS` later, so the finished section's green
- *   registers first. A wheel, touch scroll, scroll key or a re-tap of the tab
- *   (`PAGE_RETAP_EVENT`) in that time cancels it: the user has taken the page.
+ * - WHEN: at once (Trent, 2026-11-16, of the same pause on the dashboard
+ *   cards: "I prefer it to be instant"). Until 2026-11-17 it waited 600 ms
+ *   for the finished section's green to register, and a scroll by hand in
+ *   that time cancelled it.
  * - Undo puts a row back (waiting up again) and never scrolls back.
  *
  * `goTo` is the surface's `goToSlot` (opens and uncaps the section, then
@@ -56,7 +47,6 @@ export function useScrollToNextSection({
 }) {
   const lastTouched = useRef<string | null>(null)
   const previous = useRef<Map<string, number> | null>(null)
-  const cancelPending = useRef<(() => void) | null>(null)
   const latest = useRef({ pages, slotCount, naturalSlot, goTo })
   useEffect(() => {
     latest.current = { pages, slotCount, naturalSlot, goTo }
@@ -74,33 +64,8 @@ export function useScrollToNextSection({
     const now = previous.current.get(key)
     if (!((before.get(key) ?? 0) > 0 && now === 0)) return
     const target = sectionAfterFinishing(pages, slotCount, key, naturalSlot)
-    if (!target) return
-
-    cancelPending.current?.()
-    const onKey = (e: KeyboardEvent) => {
-      if (SCROLL_KEYS.has(e.key)) cancel()
-    }
-    const cancel = () => {
-      window.clearTimeout(timer)
-      window.removeEventListener('wheel', cancel)
-      window.removeEventListener('touchmove', cancel)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener(PAGE_RETAP_EVENT, cancel)
-      if (cancelPending.current === cancel) cancelPending.current = null
-    }
-    const timer = window.setTimeout(() => {
-      cancel()
-      goTo(target)
-    }, NEXT_SECTION_DELAY_MS)
-    window.addEventListener('wheel', cancel, { passive: true })
-    window.addEventListener('touchmove', cancel, { passive: true })
-    window.addEventListener('keydown', onKey)
-    // A re-tap of the Reminders tab (`scrollPageToTop`) takes the page too.
-    window.addEventListener(PAGE_RETAP_EVENT, cancel)
-    cancelPending.current = cancel
+    if (target) goTo(target)
   }, [signature])
-
-  useEffect(() => () => cancelPending.current?.(), [])
 
   /** The surface's capture handler: remembers which section was touched. */
   const onInteract = useCallback((e: { target: EventTarget | null }) => {

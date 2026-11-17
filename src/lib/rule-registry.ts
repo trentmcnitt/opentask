@@ -1125,13 +1125,13 @@ export const RULE_REGISTRY = {
       'tests/behavioral/dv-pager-handoff.test.ts#PH-15',
     ],
   },
-  'PAGER-FINISH-BEAT': {
+  'PAGER-FINISH-MOVE': {
     home: 'src/lib/panel-pager.ts',
-    symbol: 'beatMove',
+    symbol: 'finishMove',
     pins: [
       'tests/behavioral/dv-pager-handoff.test.ts#PH-01',
-      'tests/behavioral/dv-pager-handoff.test.ts#PH-03',
       'tests/behavioral/dv-pager-handoff.test.ts#PH-05',
+      'tests/behavioral/dv-pager-handoff.test.ts#PH-23',
     ],
   },
   'PAGER-HELD': {
