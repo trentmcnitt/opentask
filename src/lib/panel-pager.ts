@@ -1,8 +1,7 @@
 /**
  * The dashboard pager cards' decisions about MOVING BY THEMSELVES (2026-11-13),
  * as pure functions `usePanelPager` runs: when the clock takes the card to a
- * newly opened period, when a finished page moves on, and when an Undo brings
- * the card back. Where a finished page goes is `pageAfterFinishing`
+ * newly opened period and when a finished page moves on. Where a finished page goes is `pageAfterFinishing`
  * (src/lib/time-slot-assign.ts), unchanged.
  */
 import { nextRollover } from '@/lib/opentask-day'
@@ -12,12 +11,6 @@ import {
   pageAfterFinishing,
   parseHHMM,
 } from '@/lib/time-slot-assign'
-
-/**
- * How long a finished page's green count shows before the card moves on
- * (Trent's ask, 2026-11-13: the finished state is seen, then the card goes).
- */
-export const FINISH_BEAT_MS = 1000
 
 /** What the card last settled with the clock: the clock's period and the OpenTask day. */
 export interface ClockAck {
@@ -48,7 +41,7 @@ export type ClockMove = 'none' | 'rebase' | 'take' | 'pin' | 'wait'
 //   card is mounted (seen at once, or on coming back to the app), the card
 //   goes to that period only if the page in view has nothing waiting; a
 //   page with rows waiting is never left by the clock (the strip shows the
-//   new period; finishing the page moves on, PAGER-FINISH-BEAT). A page
+//   new period; finishing the page moves on, PAGER-FINISH-MOVE). A page
 //   reached by hand or by a move is kept until then. When the OpenTask day
 //   turns, the card lets go of its page whatever it holds. Neither happens
 //   while the card is held (PAGER-HELD), only when the hold ends. A change
@@ -74,34 +67,34 @@ export function clockMove(
 }
 
 /**
- * What a finished page's beat does once it is over:
+ * What a finished page does:
  * - `drop`: the page is no longer the one finished (paged away, or a row is
  *   back): no move;
  * - `wait`: the card is held, ask again;
  * - `move`: go where `pageAfterFinishing` says (or stay, if it says so).
  */
-export type BeatMove = 'drop' | 'wait' | 'move'
+export type FinishMove = 'drop' | 'wait' | 'move'
 
-// RULE PAGER-FINISH-BEAT: When the last waiting row of the page in view on a
-//   dashboard pager card is considered, done or swept, the card shows the
-//   finished page for FINISH_BEAT_MS and then moves to the page
-//   `pageAfterFinishing` names (the earliest opened period still waiting;
-//   the first task segment still waiting), or stays when it names none. A
-//   page turned by hand, a notification's or a search result's lift, or a
-//   row coming back (Undo) during the beat cancels the move. A page that was
-//   already finished when the user paged to it never moves by this rule.
-//   After the move, an Undo that puts a row back on the finished page brings
-//   the card back to it, unless the user has touched the card since.
-// Why: The move was instant, so the finished count was never seen; and the
-//   Undo's row came back on a page no longer in view.
+// RULE PAGER-FINISH-MOVE: When the last waiting row of the page in view on a
+//   dashboard pager card is considered, done or swept, the card moves at
+//   once, with no pause, to the page `pageAfterFinishing` names (the
+//   earliest opened period still waiting; the first task segment still
+//   waiting), or stays when it names none. While the card is held
+//   (PAGER-HELD) the move waits for the hold to end; a page turned by hand
+//   or a row coming back meanwhile cancels it. A page that was already
+//   finished when the user paged to it never moves by this rule. An Undo
+//   after the move puts the row back where it lives; the card stays.
+// Why: A pause before the move made tapping through a card slow, and a
+//   card that jumped back on Undo was more machinery than it was worth.
 // Ruling: Trent, 2026-09-23: "it should take you to the earliest undone tab
-//   next"; the beat and the Undo's return, the design session, 2026-11-13.
-export function beatMove(
-  /** The page the beat belongs to. */
+//   next"; 2026-11-16: "I prefer it to be instant"; 2026-11-13, on the
+//   Undo's return: "unnecessary code, unnecessary complexity."
+export function finishMove(
+  /** The page that was finished. */
   finishedKey: string,
   inView: { key: string; waiting: number },
   held: boolean,
-): BeatMove {
+): FinishMove {
   if (inView.key !== finishedKey || inView.waiting > 0) return 'drop'
   return held ? 'wait' : 'move'
 }
@@ -131,10 +124,8 @@ export interface PagerState {
   overrideKey: string | null
   /** The page in view and what waited on it at the last render. */
   seen: { key: string; waiting: number } | null
-  /** A finished page in its beat, and whether the beat is over. */
-  beat: { key: string; due: boolean } | null
-  /** The page an automatic move left: an Undo there brings the card back. */
-  movedFrom: string | null
+  /** A page finished while the card was held: its move is owed (its key). */
+  finished: string | null
   /** What the card last settled with the clock. */
   ack: ClockAck | null
 }
@@ -142,8 +133,7 @@ export interface PagerState {
 export const PAGER_START: PagerState = {
   overrideKey: null,
   seen: null,
-  beat: null,
-  movedFrom: null,
+  finished: null,
   ack: null,
 }
 
@@ -189,14 +179,14 @@ function settleClock(state: PagerState, input: PagerInput): PagerState {
   const page = pages[pageInView(state, input)]
   const move = clockMove(state.ack, clock, page.waiting, held)
   if (move === 'take') {
-    return { ...state, ack: clock, overrideKey: null, beat: null, movedFrom: null }
+    return { ...state, ack: clock, overrideKey: null, finished: null }
   }
   if (move === 'rebase') return { ...state, ack: clock }
   if (move === 'pin') return { ...state, ack: clock, overrideKey: page.key }
   return state
 }
 
-/** The finished page's step (RULE PAGER-FINISH-BEAT): start a beat, end one, move. */
+/** The finished page's step (RULE PAGER-FINISH-MOVE). */
 function settleFinish(state: PagerState, input: PagerInput): PagerState {
   const { pages, slotCount, naturalSlot, held } = input
   const index = pageInView(state, input)
@@ -210,37 +200,26 @@ function settleFinish(state: PagerState, input: PagerInput): PagerState {
     next = {
       ...next,
       seen: { key: page.key, waiting: page.waiting },
-      beat: finished ? { key: page.key, due: false } : next.beat,
+      finished: finished ? page.key : next.finished,
     }
   }
-  if (next.beat === null) return next
-  const after = beatMove(next.beat.key, page, held)
-  if (after === 'drop') return { ...next, beat: null }
-  if (after === 'wait' || !next.beat.due) return next
+  if (next.finished === null) return next
+  const after = finishMove(next.finished, page, held)
+  if (after === 'wait') return next
+  if (after === 'drop') return { ...next, finished: null }
   const target = pageAfterFinishing(
     pages.map((p) => p.waiting),
     slotCount,
     index,
     naturalSlot,
   )
-  if (target === null) return { ...next, beat: null }
-  return { ...next, beat: null, overrideKey: pages[target].key, movedFrom: page.key }
-}
-
-/** An Undo of the consider that finished a page brings the card back to it. */
-function settleUndo(state: PagerState, input: PagerInput): PagerState {
-  if (state.movedFrom === null || input.held) return state
-  const page = input.pages[pageInView(state, input)]
-  if (page.key === state.movedFrom) return { ...state, movedFrom: null }
-  const back = input.pages.find((p) => p.key === state.movedFrom)
-  if (!back) return { ...state, movedFrom: null }
-  if (back.waiting === 0) return state
-  return { ...state, movedFrom: null, overrideKey: back.key }
+  if (target === null) return { ...next, finished: null }
+  return { ...next, finished: null, overrideKey: pages[target].key }
 }
 
 /**
- * ONE RENDER of a pager card: the state after the clock, a finished page and
- * an Undo have each had their say, and the page in view for it. `next` is
+ * ONE RENDER of a pager card: the state after the clock and a finished page
+ * have each had their say, and the page in view for it. `next` is
  * `state` itself when nothing changed. Needs at least one page.
  */
 export function settlePager(
@@ -252,7 +231,7 @@ export function settlePager(
   // for good, so a few passes always suffice.
   let next = state
   for (let pass = 0; pass < 4; pass++) {
-    const after = settleUndo(settleFinish(settleClock(next, input), input), input)
+    const after = settleFinish(settleClock(next, input), input)
     if (after === next) break
     next = after
   }
@@ -261,18 +240,5 @@ export function settlePager(
 
 /** A page turned on purpose (by hand, a notification's lift, a link): it is held. */
 export function turnPage(state: PagerState, key: string): PagerState {
-  return { ...state, overrideKey: key, beat: null, movedFrom: null }
-}
-
-/**
- * The card was touched: an Undo's return (RULE PAGER-FINISH-BEAT) is over, so
- * a row arriving later on the page the card left does not pull it back.
- */
-export function touchCard(state: PagerState): PagerState {
-  return state.movedFrom === null ? state : { ...state, movedFrom: null }
-}
-
-/** The beat of `key` is over (the timer's answer). */
-export function beatOver(state: PagerState, key: string): PagerState {
-  return state.beat?.key === key ? { ...state, beat: { key, due: true } } : state
+  return { ...state, overrideKey: key, finished: null }
 }
