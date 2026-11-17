@@ -1627,6 +1627,9 @@ private enum SegmentListItem {
     /// "New  2" in the New blue, over the segment's waiting New rows. Drawn
     /// by Pulled's heading view, so it measures as one.
     case newHeader(count: Int)
+    /// Where the New rows end (2026-11-17): a hairline before the segment's
+    /// other rows, with no word. Only after a `newHeader`'s rows.
+    case newEnd
     case waiting(SegmentTaskDTO)
     case divider(count: Int)
     case considered(SegmentTaskDTO)
@@ -1644,6 +1647,7 @@ private enum SegmentListItem {
         case .sectionHeader(let s): return "seg-section-\(s.section.rawValue)"
         case .pulledHeader(let title, _): return "seg-pulled-\(title)"
         case .newHeader: return "seg-new-heading"
+        case .newEnd: return "seg-new-end"
         case .waiting(let row): return "seg-\(row.id)"
         case .divider: return "seg-divider"
         case .considered(let row): return "seg-considered-\(row.id)"
@@ -1659,7 +1663,7 @@ private enum SegmentListItem {
         case .sectionHeader, .pulledHeader, .newHeader:
             return PagedRow(keys: [id], identities: [], staysWithNext: true)
         case .waiting(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
-        case .divider: return PagedRow(keys: [], identities: [], staysWithNext: true)
+        case .divider, .newEnd: return PagedRow(keys: [], identities: [], staysWithNext: true)
         case .considered(let row): return PagedRow(keys: [id], identities: ["task:\(row.id)"])
         }
     }
@@ -1781,8 +1785,11 @@ private struct TaskSegmentListView: View {
             // its other rows, with no heading of their own. No heading
             // without a waiting New row (`newHeadingSplit`: a horizon only).
             let (new, rest) = segment.newHeadingSplit
-            let heading: [SegmentListItem] = new.isEmpty ? [] : [.newHeader(count: new.count)]
-            return heading + (new + rest).map { SegmentListItem.waiting($0) }
+            guard !new.isEmpty else { return rest.map { SegmentListItem.waiting($0) } }
+            // The hairline closes the New rows when ordinary ones follow.
+            let end: [SegmentListItem] = rest.isEmpty ? [] : [.newEnd]
+            return [.newHeader(count: new.count)] + new.map { SegmentListItem.waiting($0) } + end
+                + rest.map { SegmentListItem.waiting($0) }
         }
         return UpcomingSections.split(segment.tasks).flatMap { section in
             [SegmentListItem.sectionHeader(section)] + section.waiting.map { SegmentListItem.waiting($0) }
@@ -1952,6 +1959,9 @@ private struct TaskSegmentListView: View {
         for item: SegmentListItem, width: CGFloat, budget: CGFloat, metrics: WidgetTextMetrics
     ) -> ReminderRowLayout {
         switch item {
+        case .newEnd:
+            // A hairline and its breathing room (`NewEndLine`).
+            return ReminderRowLayout(lines: 1, height: NewEndLine.height)
         case .divider, .sectionHeader, .pulledHeader, .newHeader:
             // One caption2 line each — what `DoneDivider`,
             // `UpcomingSectionHeading` and `PulledSectionHeading` draw.
@@ -2014,6 +2024,8 @@ private struct TaskSegmentListView: View {
             PulledSectionHeading(title: title, count: count)
         case .newHeader(let count):
             PulledSectionHeading(title: TaskWording.newHeading, count: count, tintHex: NewHeadingColors.titleHex)
+        case .newEnd:
+            NewEndLine()
         case .divider(let count):
             DoneDivider(count: count, label: "CONSIDERED")
         case .waiting(let row):
@@ -2649,3 +2661,19 @@ private struct LockScreenCardPreview: View {
 
 #endif
 
+
+/// Where a horizon segment's New rows end (2026-11-17, the web's
+/// `NewEndLine`): a hairline, no word, before the segment's other rows.
+struct NewEndLine: View {
+    /// The line and the room around it; what the page measures for it.
+    static let height: CGFloat = 5
+
+    var body: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.height)
+            .accessibilityHidden(true)
+    }
+}

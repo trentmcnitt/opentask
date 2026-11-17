@@ -77,11 +77,17 @@ test.describe('New as a heading', () => {
       await expect(heading(page, 'days')).toHaveCount(1)
       await expect(heading(page, 'days')).toContainText('New')
       await expect(heading(page, 'days')).toContainText('1')
-      // The heading, the New row, then the settled one.
+      // The heading, the New row, a hairline where New ends, then the settled one.
       const order = await days
-        .locator('[data-new-heading], [data-segment-task]')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('data-segment-task') ?? 'heading'))
-      expect(order.slice(0, 3)).toEqual(['heading', String(fresh), String(settled)])
+        .locator('[data-new-heading], [data-new-end], [data-segment-task]')
+        .evaluateAll((els) =>
+          els.map(
+            (el) =>
+              el.getAttribute('data-segment-task') ??
+              (el.hasAttribute('data-new-end') ? 'end' : 'heading'),
+          ),
+        )
+      expect(order.slice(0, 4)).toEqual(['heading', String(fresh), 'end', String(settled)])
       // Grow on the New row only, with no word; the settled row keeps its own controls.
       const grow = row(page, 'days', fresh).locator('[data-grow]')
       await expect(grow).toHaveAttribute('data-grow-to', 'weeks')

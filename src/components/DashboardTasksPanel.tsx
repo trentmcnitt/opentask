@@ -12,7 +12,9 @@ import {
 import {
   AgedGroupHeading,
   PulledSectionHeading,
+  NewEndLine,
   NewHeading,
+  newEndBefore,
   newHeadingBefore,
   DeadlineGroupHeading,
   deadlineGroupBefore,
@@ -341,6 +343,7 @@ function TaskPageBody({
                   <PulledSectionHeading {...pulled} panel hiddenWhenNarrow={narrowHidden} />
                 )}
                 {fresh && <NewHeading {...fresh} panel hiddenWhenNarrow={narrowHidden} />}
+                {newEndBefore(visible, i) && <NewEndLine panel hiddenWhenNarrow={narrowHidden} />}
                 {group && <DeadlineGroupHeading {...group} panel hiddenWhenNarrow={narrowHidden} />}
                 <TaskSegmentRow
                   row={row}

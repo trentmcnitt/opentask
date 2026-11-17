@@ -1797,6 +1797,33 @@ export function newHeadingBefore(
   return { count: all.filter((r) => r.isNew).length }
 }
 
+/**
+ * Where the New rows end (Trent's mockup, 2026-11-17): a hairline before the
+ * first row that is not New, when New rows come before it. No word: the rows
+ * under it are the segment's ordinary ones.
+ */
+export function newEndBefore(rows: readonly SegmentRow[], index: number): boolean {
+  return index > 0 && !rows[index].isNew && !!rows[index - 1].isNew
+}
+
+export function NewEndLine({
+  panel,
+  hiddenWhenNarrow = false,
+}: {
+  panel: boolean
+  hiddenWhenNarrow?: boolean
+}) {
+  return (
+    <li
+      role="presentation"
+      data-new-end
+      className={cn('py-1.5', panel ? 'px-1' : 'px-2', hiddenWhenNarrow && 'hidden xl:block')}
+    >
+      <div className="bg-border h-px" />
+    </li>
+  )
+}
+
 export function NewHeading({
   count,
   panel,

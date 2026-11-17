@@ -478,6 +478,8 @@ struct TaskSegmentSection: View {
                 if !new.isEmpty {
                     NewRowsHeader(count: new.count)
                     rows(new)
+                    // Where the New rows end: a hairline, no word (the web's `NewEndLine`).
+                    if !rest.isEmpty { Divider().accessibilityHidden(true) }
                 }
                 rows(rest)
             }

@@ -14,7 +14,9 @@ import {
 import {
   AgedGroupHeading,
   PulledSectionHeading,
+  NewEndLine,
   NewHeading,
+  newEndBefore,
   newHeadingBefore,
   DeadlineGroupHeading,
   deadlineGroupBefore,
@@ -212,6 +214,7 @@ export function TaskSegmentGroup({
                     {heading && <AgedGroupHeading {...heading} panel={false} />}
                     {pulled && <PulledSectionHeading {...pulled} panel={false} />}
                     {fresh && <NewHeading {...fresh} panel={false} />}
+                    {newEndBefore(waiting, i) && <NewEndLine panel={false} />}
                     {group && <DeadlineGroupHeading {...group} panel={false} />}
                     <TaskSegmentRow
                       row={row}
