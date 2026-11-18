@@ -282,6 +282,59 @@ test('Share: the task’s text to the share sheet, the selection kept; with no s
   }
 })
 
+test('desktop: right after a rename, with its toast up, ⋯ → Share is on top and can be pressed', async ({
+  page,
+}) => {
+  const id = await daysTask(page, uniqueTitle('TE toast'))
+  try {
+    await page.addInitScript(() => {
+      const w = window as unknown as { __shared: unknown[] }
+      w.__shared = []
+      Object.defineProperty(navigator, 'share', {
+        configurable: true,
+        value: (data: unknown) => {
+          w.__shared.push(data)
+          return Promise.resolve()
+        },
+      })
+    })
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await withPreferences(page, { default_grouping: 'new' }, async () => {
+      await page.goto('/')
+      const bar = page.locator('[data-selection-sheet]:not([data-queue-selection-bar])')
+      await page
+        .locator(`#task-row-${id}`)
+        .getByText(/^TE toast/)
+        .click({ modifiers: ['ControlOrMeta'] })
+      await bar.locator('[data-selection-title]').click()
+      const renamed = uniqueTitle('TE toast renamed')
+      await field(bar).fill(renamed)
+      await page.keyboard.press('Enter')
+      const toast = page.locator('[data-sonner-toast]').first()
+      await expect(toast).toBeVisible()
+      // The toast clears the bar (once it has slid into place)…
+      await expect
+        .poll(async () => {
+          const barBox = (await bar.boundingBox())!
+          const toastBox = (await toast.boundingBox())!
+          return toastBox.y + toastBox.height - barBox.y
+        })
+        .toBeLessThanOrEqual(0)
+      // …and the menu that opens into its place is drawn over it.
+      await bar.locator('[data-bar-more]').click()
+      const share = page.getByRole('menuitem', { name: 'Share' })
+      await expect(toast).toBeVisible()
+      await share.click()
+      const shared = await page.evaluate(
+        () => (window as unknown as { __shared: { text: string }[] }).__shared,
+      )
+      expect(shared.map((s) => s.text)).toEqual([renamed])
+    })
+  } finally {
+    await trash(page, [id])
+  }
+})
+
 test('Share in the editors: a reminder’s link (title and notes only), a task’s ⋯, a quota’s button', async ({
   page,
 }) => {
