@@ -309,6 +309,7 @@ export function useTaskSegments({
   const setHorizon = useSetHorizon(onUndo, refresh, onCompleted)
   const horizonMany = useSetHorizonMany(onUndo, refresh, onCompleted)
   const headsUpMany = useSetHeadsUpMany(onUndo, refresh, onCompleted)
+  const retitle = useRetitle(onUndo, refresh, onCompleted)
 
   // Put back (2026-10-11): a considered or deferred row from "Show N
   // considered" waits again — the slots' put-back.
@@ -348,6 +349,7 @@ export function useTaskSegments({
     setHorizon,
     horizonMany,
     headsUpMany,
+    retitle,
     restore,
     removeTarget,
     remove,
@@ -671,6 +673,33 @@ function useSetHorizonMany(
         onCompleted?.()
       } catch (err) {
         showToast({ message: err instanceof Error ? err.message : 'Failed', type: 'error' })
+      } finally {
+        void refresh()
+      }
+    },
+    [onUndo, onCompleted, refresh],
+  )
+}
+
+/**
+ * THE SELECT BAR'S TITLE (2026-11-18): the one picked task's title, edited in
+ * place — a PATCH of `title`, with Undo; the row redraws with the refresh.
+ * Rejects when the save failed (the bar puts the old title back).
+ */
+function useRetitle(onUndo: () => void, refresh: () => Promise<void>, onCompleted?: () => void) {
+  return useCallback(
+    async (id: number, title: string) => {
+      try {
+        await patchTask(id, { title })
+        showToast({
+          message: `Renamed: “${title}”`,
+          type: 'success',
+          action: { label: 'Undo', onClick: onUndo },
+        })
+        onCompleted?.()
+      } catch (err) {
+        showToast({ message: err instanceof Error ? err.message : 'Failed', type: 'error' })
+        throw err
       } finally {
         void refresh()
       }

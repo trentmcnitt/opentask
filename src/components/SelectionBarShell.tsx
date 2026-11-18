@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
@@ -65,6 +72,7 @@ export function SelectionBarShell({
   hint,
   more,
   title,
+  onTitleSave,
   detail,
   aside,
   children,
@@ -102,6 +110,12 @@ export function SelectionBarShell({
    * under it, above the verbs.
    */
   title?: string
+  /**
+   * Makes the one task's title editable in place (`BarTitle`): called with
+   * the new title, never with an empty or unchanged one. A promise that
+   * rejects puts the old title back.
+   */
+  onTitleSave?: TitleSave
   detail?: ReactNode
   /** Beside ⋯ on the count's line: the horizon control with several picked. */
   aside?: ReactNode
@@ -117,6 +131,7 @@ export function SelectionBarShell({
       hint={hint}
       more={more}
       title={title}
+      onTitleSave={onTitleSave}
       detail={detail}
       aside={aside}
     >
@@ -172,6 +187,7 @@ function BarPanel({
   hint,
   more,
   title,
+  onTitleSave,
   detail,
   aside,
   children,
@@ -183,6 +199,7 @@ function BarPanel({
   hint?: string
   more?: ReactNode
   title?: string
+  onTitleSave?: TitleSave
   detail?: ReactNode
   aside?: ReactNode
   children: ReactNode
@@ -194,6 +211,8 @@ function BarPanel({
   const attrs = testAttr ? { [testAttr]: '' } : {}
   const panelRef = useRef<HTMLDivElement>(null)
   const spacer = useBarSpacer(panelRef)
+  const [editing, setEditing] = useState(false)
+  const keyboard = useKeyboardInset(editing)
 
   // PORTALLED TO <body> (Trent's Mac, 2026-10-31): the bar is `fixed`, but a
   // task-queue card's bar is rendered inside the dashboard's right column, a
@@ -210,8 +229,13 @@ function BarPanel({
       // A 16px margin each side on a phone (in px: a rem margin grew with the
       // text size and took the verbs' room), at most 28rem wide on a desktop.
       className="animate-slide-up fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100vw-16px))] md:bottom-6"
+      // The title's field open over a phone's keyboard: the bar sits on it.
+      style={keyboard > 0 ? { bottom: keyboard + 8 } : undefined}
       onClickCapture={(e) => {
         if (e.detail < 2) return
+        // A double-click in the title's field picks a word, as in any field
+        // (and the second click of the one that opened it lands there).
+        if ((e.target as Element).closest('[data-selection-title-field]')) return
         e.preventDefault()
         e.stopPropagation()
         onDoubleClickIntent?.()
@@ -221,14 +245,20 @@ function BarPanel({
         className="rounded-2xl border border-white/10 bg-neutral-900 px-1.5 pt-2.5 pb-1.5 text-white shadow-xl"
         aria-live="polite"
       >
-        <div className="flex items-center justify-between gap-2 pr-0.5 pl-2">
+        <div
+          className={cn(
+            'flex justify-between gap-2 pr-0.5 pl-2',
+            editing ? 'items-start' : 'items-center',
+          )}
+        >
           {title ? (
-            <span data-selection-title className="min-w-0 truncate text-sm font-semibold">
-              <span data-selection-count className="sr-only">
-                {count} selected:{' '}
-              </span>
-              {title}
-            </span>
+            <BarTitle
+              count={count}
+              title={title}
+              onSave={onTitleSave}
+              editing={editing}
+              onEditing={setEditing}
+            />
           ) : (
             <span data-selection-count className="shrink-0 text-sm font-semibold tabular-nums">
               {count} selected
@@ -271,6 +301,164 @@ function BarPanel({
       {spacer}
       {typeof document === 'undefined' ? bar : createPortal(bar, document.body)}
     </>
+  )
+}
+
+/**
+ * How a title edit is saved. `end` says whether the edit was finished on its
+ * own — Enter, or a click away from the bar — and not by pressing something
+ * else ON the bar (a verb, ⋯, Cancel), whose own action is what the user
+ * meant next: a surface whose selection ends after one action ends it only
+ * for the first.
+ */
+export type TitleSave = (title: string, how: { end: boolean }) => Promise<unknown> | void
+
+/**
+ * HOW MUCH OF THE WINDOW THE ON-SCREEN KEYBOARD COVERS, while `active`: a
+ * phone's keyboard shrinks the visual viewport and leaves the layout one
+ * alone, so a `fixed` bar at the bottom stays under it. Zero with no
+ * keyboard, and on a desktop.
+ */
+function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!active || !viewport) return
+    const read = () =>
+      setInset(Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)))
+    read()
+    viewport.addEventListener('resize', read)
+    viewport.addEventListener('scroll', read)
+    return () => {
+      viewport.removeEventListener('resize', read)
+      viewport.removeEventListener('scroll', read)
+      setInset(0)
+    }
+  }, [active])
+  return inset
+}
+
+/**
+ * THE ONE PICKED TASK'S TITLE, EDITABLE IN PLACE (Trent, 2026-11-18: "just
+ * click there and edit the text directly rather than having to go to
+ * details"). With `onSave`, the title is a button; a click turns it into a
+ * field holding the WHOLE title, wrapping (the bar grows to fit it — nothing
+ * is truncated while editing). Enter or leaving the field saves; Escape puts
+ * it back. An empty or unchanged title saves nothing. Pasted line breaks
+ * become spaces: a title is one line.
+ *
+ * The new title shows at once and stays until the list's own copy arrives
+ * (the `title` prop changes) or the save fails.
+ */
+function BarTitle({
+  count,
+  title,
+  onSave,
+  editing,
+  onEditing,
+}: {
+  count: number
+  title: string
+  onSave?: TitleSave
+  editing: boolean
+  onEditing: (editing: boolean) => void
+}) {
+  const [draft, setDraft] = useState(title)
+  const [saved, setSaved] = useState<{ from: string; to: string } | null>(null)
+  if (saved && saved.from !== title) setSaved(null)
+  const shown = saved ? saved.to : title
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
+  // Whether the press that is taking the focus away landed on the bar itself.
+  const pressedBar = useRef(false)
+  // Escape, or a save already made by Enter: the blur that follows does nothing.
+  const settled = useRef(false)
+
+  // The field as tall as its text, from one line up.
+  useLayoutEffect(() => {
+    const field = fieldRef.current
+    if (!editing || !field) return
+    field.style.height = 'auto'
+    field.style.height = `${field.scrollHeight}px`
+  }, [editing, draft])
+  useEffect(() => {
+    if (!editing) return
+    const field = fieldRef.current
+    field?.focus()
+    field?.setSelectionRange(field.value.length, field.value.length)
+    const onPress = (e: PointerEvent) => {
+      const target = e.target as Element
+      pressedBar.current =
+        !!target.closest('[data-selection-sheet]') &&
+        !target.closest('[data-selection-title-field]')
+    }
+    document.addEventListener('pointerdown', onPress, true)
+    return () => document.removeEventListener('pointerdown', onPress, true)
+  }, [editing])
+
+  const finish = (save: boolean, end: boolean) => {
+    if (settled.current) return
+    settled.current = true
+    onEditing(false)
+    const next = draft.replace(/\s*[\r\n]+\s*/g, ' ').trim()
+    if (!save || next === '' || next === shown.trim()) return
+    setSaved({ from: title, to: next })
+    Promise.resolve(onSave?.(next, { end })).catch(() => setSaved(null))
+  }
+
+  if (!editing) {
+    const words = (
+      <>
+        <span data-selection-count className="sr-only">
+          {count} selected:{' '}
+        </span>
+        {shown}
+      </>
+    )
+    return onSave ? (
+      <button
+        type="button"
+        data-selection-title
+        title="Edit title"
+        onClick={() => {
+          setDraft(shown)
+          settled.current = false
+          pressedBar.current = false
+          onEditing(true)
+        }}
+        className="-mx-1 min-w-0 cursor-text truncate rounded px-1 text-left text-sm font-semibold hover:bg-white/10"
+      >
+        {words}
+      </button>
+    ) : (
+      <span data-selection-title className="min-w-0 truncate text-sm font-semibold">
+        {words}
+      </span>
+    )
+  }
+  return (
+    <textarea
+      ref={fieldRef}
+      data-selection-title-field
+      aria-label="Title"
+      rows={1}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => finish(true, !pressedBar.current)}
+      onKeyDown={(e) => {
+        // The page's own keys (Escape leaves the selection, letters act on
+        // it) stay out of a field being typed in.
+        e.stopPropagation()
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          e.preventDefault()
+          finish(true, true)
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          finish(false, false)
+        }
+      }}
+      // 16px on a phone: Safari zooms the page into a smaller field.
+      className="-mx-1 block min-w-0 flex-1 resize-none overflow-hidden rounded bg-white/10 px-1 text-base font-semibold break-words text-white outline-none focus:ring-1 focus:ring-white/40 md:text-sm"
+    />
   )
 }
 

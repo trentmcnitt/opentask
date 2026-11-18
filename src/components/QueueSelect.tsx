@@ -1,9 +1,9 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, CheckCheck, FileText, Forward, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
+import { BarAction, SelectionBarShell, type TitleSave } from '@/components/SelectionBarShell'
 import { DeckVerb, MoreVerb, TargetVerb } from '@/components/SelectionBarVerbs'
 import { BarHorizonControl, SelectionDetailLines } from '@/components/SelectionDetail'
 import { requestShowInList } from '@/lib/show-in-list'
@@ -164,6 +164,14 @@ export function useQueueSelectMode({
     },
     [anchor, on, toggle, enter],
   )
+  // What is picked and how the mode started, as of now: a save that lands
+  // later reads them (`onTitleSave`).
+  const selectedNow = useRef(selected)
+  const heldNow = useRef(held)
+  useEffect(() => {
+    selectedNow.current = selected
+    heldNow.current = held
+  })
   const leave = useCallback(() => {
     setOn(false)
     setHeld(false)
@@ -219,6 +227,16 @@ export function useQueueSelectMode({
             if (held) leave()
           })
         }
+        // The title, edited in place (2026-11-18): a hold's selection ends
+        // once the save lands — if the edit was ended on its own (not by a
+        // press on the bar) and the pick is still this one row.
+        onTitleSave={(title, { end }) => {
+          const id = picked[0].id
+          return actions.retitle(id, title).then(() => {
+            const now = selectedNow.current
+            if (end && heldNow.current && now.size === 1 && now.has(id)) leave()
+          })
+        }}
         onOpen={() => {
           actions.openDetails(picked[0])
           leave()
@@ -291,6 +309,7 @@ export function QueueSelectionBar({
   onSkipUntil,
   onCancel,
   onHorizon,
+  onTitleSave,
   onOpen,
   onShowInList,
 }: {
@@ -310,6 +329,7 @@ export function QueueSelectionBar({
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   onCancel: () => void
   onHorizon: (horizon: HorizonValue | null) => void
+  onTitleSave: TitleSave
   onOpen: () => void
   onShowInList: () => void
 }) {
@@ -321,6 +341,7 @@ export function QueueSelectionBar({
       onClear={onCancel}
       testAttr="data-queue-selection-bar"
       title={one?.title}
+      onTitleSave={onTitleSave}
       detail={
         one && (
           <SelectionDetailLines

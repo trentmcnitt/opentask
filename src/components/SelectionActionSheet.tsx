@@ -40,7 +40,7 @@ import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { formatTimeInTimezone } from '@/lib/format-date'
 import { taskWord } from '@/lib/utils'
 import { DirtyCard } from '@/components/DirtyCard'
-import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
+import { BarAction, SelectionBarShell, type TitleSave } from '@/components/SelectionBarShell'
 import { DeckVerb, MoreVerb, TargetVerb } from '@/components/SelectionBarVerbs'
 import type { Task, Project } from '@/types'
 
@@ -158,6 +158,11 @@ export function SelectionActionSheet({
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
+  // The selection as of now: a title save that lands later reads it.
+  const selectedNow = useRef(selectedTasks)
+  useEffect(() => {
+    selectedNow.current = selectedTasks
+  })
   const isMobile = useIsMobile()
 
   // Staged changes from the most recent QuickActionPanel.onSaveAll call. The
@@ -462,6 +467,18 @@ export function SelectionActionSheet({
             })
             .catch(() => undefined)
         }
+        // The title, edited in place (2026-11-18): one save, one Undo. It
+        // is the selection's one action once it lands — unless Select All
+        // started it, the edit was ended by pressing something else on the
+        // bar (that press is the action), or the selection is no longer
+        // this one task (a click on another row saved it and grew it).
+        onTitleSave={(title, { end }) => {
+          const id = selectedTasks[0].id
+          return onSaveAll({ title }).then(() => {
+            const now = selectedNow.current
+            if (end && !sticky && now.length === 1 && now[0].id === id) onClear()
+          })
+        }}
         onShowInList={(id) => {
           requestShowInList(id)
           onClear()
@@ -622,8 +639,10 @@ function ListSelectionBar({
   onHeadsUp,
   onHorizon,
   onShowInList,
+  onTitleSave,
   onClear,
 }: {
+  onTitleSave: TitleSave
   selectedTasks: Task[]
   timezone: string
   onDone: () => void
@@ -649,6 +668,7 @@ function ListSelectionBar({
       // One task: its details on the bar; several: the horizon beside ⋯
       // (`SelectionDetail.tsx`, 2026-10-30).
       title={one?.title}
+      onTitleSave={onTitleSave}
       detail={
         one && (
           <SelectionDetailLines

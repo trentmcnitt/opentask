@@ -40,17 +40,35 @@ function useTapToDismiss() {
  * Trent, 2026-09-06: "the undo and redo toasts cover up that floating
  * multi-select thing so I have to wait for all the toasts to go away before I
  * can continue working."
+ *
+ * Its HEIGHT, zero with none up (2026-11-18): the bar with one task picked
+ * is several lines tall (title, details, notes), and a toast placed for the
+ * old one-line bar sat on its title — now a button.
  */
-function useSelectionSheetPresent(): boolean {
-  const [present, setPresent] = useState(false)
+function useSelectionSheetHeight(): number {
+  const [height, setHeight] = useState(0)
   useEffect(() => {
-    const check = () => setPresent(!!document.querySelector('[data-selection-sheet]'))
+    let watched: Element | null = null
+    const sizes = new ResizeObserver(() =>
+      setHeight((watched as HTMLElement | null)?.offsetHeight ?? 0),
+    )
+    const check = () => {
+      const bar = document.querySelector('[data-selection-sheet]')
+      if (bar === watched) return
+      sizes.disconnect()
+      watched = bar
+      if (bar) sizes.observe(bar)
+      else setHeight(0)
+    }
     check()
     const observer = new MutationObserver(check)
     observer.observe(document.body, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      sizes.disconnect()
+    }
   }, [])
-  return present
+  return height
 }
 
 const Toaster = ({ ...props }: ToasterProps) => {
@@ -61,7 +79,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   // subscription is always in place first.
   useNativeSnoozeToast()
   const { resolvedTheme } = useTheme()
-  const selectionSheet = useSelectionSheetPresent()
+  const barHeight = useSelectionSheetHeight()
 
   return (
     <Sonner
@@ -73,15 +91,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // toasts, so their Undo has to work (2026-10-10).
       className="toaster group [&_[data-sonner-toast]]:pointer-events-auto"
       // Clear the selection bar when one is up, so the toast and its Undo sit
-      // above it rather than across it. The bar is 56px tall and sits at
-      // bottom-6 on a wide screen and bottom-20 above the phone's tab bar;
-      // these are those plus a gap.
-      offset={selectionSheet ? { bottom: '92px' } : undefined}
+      // above it rather than across it: the bar's own height, on top of where
+      // it sits (bottom-6 on a wide screen, bottom-20 above the phone's tab
+      // bar), plus a gap.
+      offset={barHeight ? { bottom: `${24 + barHeight + 12}px` } : undefined}
       // Push toasts above the mobile bottom nav bar (~78px + safe area inset + gap).
       // Sonner adds ~9px of internal padding below the toast, so we need extra room.
       mobileOffset={{
-        bottom: selectionSheet
-          ? 'calc(152px + env(safe-area-inset-bottom, 0px))'
+        bottom: barHeight
+          ? `calc(${80 + barHeight + 16}px + env(safe-area-inset-bottom, 0px))`
           : 'calc(96px + env(safe-area-inset-bottom, 0px))',
       }}
       icons={{
