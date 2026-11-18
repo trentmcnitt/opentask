@@ -99,7 +99,9 @@ final class NotificationActionRunnerTests: XCTestCase {
         _ category: String,
         _ action: NotificationActionRunner.Action,
         userInfo: [AnyHashable: Any] = [:],
-        customDueAt: String? = nil
+        customDueAt: String? = nil,
+        now: Date = Date(),
+        slots: [TimeSlotDTO] = []
     ) async throws -> NotificationActionRunner.Outcome {
         try await NotificationActionRunner.perform(
             category: category,
@@ -107,6 +109,8 @@ final class NotificationActionRunnerTests: XCTestCase {
             userInfo: userInfo,
             customDueAt: customDueAt,
             api: api,
+            now: now,
+            slots: slots,
             dismissAfterSweep: { self.dismissed.append($0) }
         )
     }
@@ -215,6 +219,189 @@ final class NotificationActionRunnerTests: XCTestCase {
         XCTAssertEqual(done, .taskUpdated(taskId: 42))
         XCTAssertEqual(plusHour, .taskUpdated(taskId: 42))
         XCTAssertEqual(dismissed, [])
+    }
+
+    // MARK: - The single-task "Next period" (2026-11-18)
+
+    private let periods = [
+        TimeSlotDTO(id: 1, label: "Morning", startTime: "09:00"),
+        TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
+        TimeSlotDTO(id: 3, label: "Evening", startTime: "20:30"),
+    ]
+
+    /// Local wall-clock time on 2026-01-15 (+ `day` days).
+    private func local(_ hour: Int, _ minute: Int = 0, day: Int = 0) -> Date {
+        var c = DateComponents()
+        c.year = 2026
+        c.month = 1
+        c.day = 15 + day
+        c.hour = hour
+        c.minute = minute
+        return Calendar.current.date(from: c)!
+    }
+
+    /// An overdue task (every task banner's case) goes to the first period
+    /// after NOW: one PATCH of this task alone, no sweep, no other call.
+    func testTaskNextPeriodMovesJustTheTaskToTheNextPeriodAfterNow() async throws {
+        var info = taskInfo
+        info["dueAt"] = DateHelpers.formatISO(local(8))
+        let outcome = try await run(
+            task, .button(NotificationAction.snoozeNextPeriod), userInfo: info,
+            now: local(10, 20), slots: periods
+        )
+        XCTAssertEqual(api.calls, [.snoozeTo(42, DateHelpers.formatISO(local(12)))])
+        XCTAssertEqual(outcome, .taskUpdated(taskId: 42))
+        XCTAssertEqual(dismissed, [])
+    }
+
+    /// The widget's ⏭ rule: a task whose own time is still ahead counts from
+    /// it; past the day's last period it is tomorrow's first; a period that
+    /// starts exactly now is not "next".
+    func testTaskNextPeriodCountsFromTheLaterOfNowAndTheTasksTime() async throws {
+        var ahead = taskInfo
+        ahead["dueAt"] = DateHelpers.formatISO(local(13))
+        _ = try await run(
+            task, .button(NotificationAction.snoozeNextPeriod), userInfo: ahead,
+            now: local(10, 20), slots: periods
+        )
+        _ = try await run(
+            task, .button(NotificationAction.snoozeNextPeriod), userInfo: taskInfo,
+            now: local(21), slots: periods
+        )
+        _ = try await run(
+            task, .button(NotificationAction.snoozeNextPeriod), userInfo: taskInfo,
+            now: local(12), slots: periods
+        )
+        XCTAssertEqual(api.calls, [
+            .snoozeTo(42, DateHelpers.formatISO(local(20, 30))),
+            .snoozeTo(42, DateHelpers.formatISO(local(9, day: 1))),
+            .snoozeTo(42, DateHelpers.formatISO(local(20, 30))),
+        ])
+    }
+
+    /// A named single-task period (`SNOOZE_SLOT:<HH:MM>`, the long-press's
+    /// "This task" rows) lands on that period's next start: this task alone.
+    func testTaskNamedPeriodMovesJustTheTaskToThatPeriodsNextStart() async throws {
+        _ = try await run(
+            task, .button(NotificationAction.snoozeSlotIdentifier(startTime: "20:30")), userInfo: taskInfo,
+            now: local(10, 20), slots: periods
+        )
+        // Morning has started today: its next start is tomorrow's.
+        _ = try await run(
+            task, .button(NotificationAction.snoozeSlotIdentifier(startTime: "09:00")), userInfo: taskInfo,
+            now: local(10, 20), slots: periods
+        )
+        // A period that no longer exists: nothing sent.
+        let gone = try await run(
+            task, .button(NotificationAction.snoozeSlotIdentifier(startTime: "05:00")), userInfo: taskInfo,
+            now: local(10, 20), slots: periods
+        )
+        XCTAssertEqual(api.calls, [
+            .snoozeTo(42, DateHelpers.formatISO(local(20, 30))),
+            .snoozeTo(42, DateHelpers.formatISO(local(9, day: 1))),
+        ])
+        XCTAssertEqual(gone, .ignored)
+        XCTAssertEqual(dismissed, [])
+    }
+
+    // MARK: - The rows themselves (`TaskNotificationList`)
+
+    private func ids(_ rows: [TaskNotificationList.Row]) -> [String] { rows.map(\.identifier) }
+    private func titles(_ rows: [TaskNotificationList.Row]) -> [String] { rows.map(\.title) }
+    private func clock(_ date: Date) -> String { DateHelpers.formatShortTime(date) }
+
+    /// Where no custom view runs (a banner, the Watch, the Mac): four rows,
+    /// three for this task and the one bulk row; no period rows without periods.
+    func testRegisteredListIsDoneNextPeriodPlusHourAndAllNext() {
+        XCTAssertEqual(titles(TaskNotificationList.registered(hasSlots: true)), [
+            "Done", "Next period", "+1hr", "All \u{2192} Next period",
+        ])
+        XCTAssertEqual(ids(TaskNotificationList.registered(hasSlots: true)), [
+            NotificationAction.done, NotificationAction.snoozeNextPeriod, NotificationAction.snooze1hr,
+            NotificationAction.snoozeAllSlotNext,
+        ])
+        XCTAssertEqual(titles(TaskNotificationList.registered(hasSlots: false)), ["Done", "+1hr"])
+    }
+
+    /// The long-press in "This task": Done, the next period by name, +1 hour,
+    /// the periods after it (all of them here: there are only two more), each
+    /// single-task, then the standing bulk row.
+    func testThisTaskListIsSingleTaskRowsThenAllNext() {
+        let rows = TaskNotificationList.thisTask(dueAtISO: nil, now: local(10, 20), slots: periods)
+        XCTAssertEqual(titles(rows), [
+            "Done",
+            "Midday \u{00B7} \(clock(local(12)))",
+            "+1 hour \u{00B7} \(clock(local(11)))",
+            "Evening \u{00B7} \(clock(local(20, 30)))",
+            "Morning \u{00B7} \(clock(local(9, day: 1)))",
+            "All \u{2192} Next period",
+        ])
+        XCTAssertEqual(ids(rows), [
+            NotificationAction.done,
+            NotificationAction.snoozeNextPeriod,
+            NotificationAction.snooze1hr,
+            NotificationAction.snoozeSlotIdentifier(startTime: "20:30"),
+            NotificationAction.snoozeSlotIdentifier(startTime: "09:00"),
+            NotificationAction.snoozeAllSlotNext,
+        ])
+        // Every row's identifier is one the runner acts on for a task.
+        XCTAssertEqual(Set(ids(rows)).count, rows.count)
+    }
+
+    /// At most three named periods after the next one: seven rows in all.
+    func testThisTaskListNamesAtMostThreePeriodsAfterTheNext() {
+        let many = (6...12).map { TimeSlotDTO(id: $0, label: "P\($0)", startTime: String(format: "%02d:00", $0)) }
+        let rows = TaskNotificationList.thisTask(dueAtISO: nil, now: local(5), slots: many)
+        XCTAssertEqual(rows.count, 7)
+        XCTAssertEqual(rows.map(\.title).map { $0.components(separatedBy: " ").first }, [
+            "Done", "P6", "+1", "P7", "P8", "P9", "All",
+        ])
+    }
+
+    /// With no cached period: Done and +1 hour only.
+    func testThisTaskListWithoutPeriods() {
+        let rows = TaskNotificationList.thisTask(dueAtISO: nil, now: local(10, 20), slots: [])
+        XCTAssertEqual(ids(rows), [NotificationAction.done, NotificationAction.snooze1hr])
+    }
+
+    /// "All overdue": the bulk rows, no Done.
+    func testAllOverdueListIsTheBulkRows() {
+        let rows = TaskNotificationList.allOverdue(now: local(10, 20), slots: periods)
+        XCTAssertEqual(titles(rows), [
+            "All \u{2192} \(clock(local(11)))", "All \u{2192} Next period", "All \u{2192} Evening",
+            "All \u{2192} Morning",
+        ])
+        XCTAssertEqual(ids(rows), [
+            NotificationAction.snoozeAll1hr, NotificationAction.snoozeAllSlotNext,
+            NotificationAction.snoozeAllSlotIdentifier(startTime: "20:30"),
+            NotificationAction.snoozeAllSlotIdentifier(startTime: "09:00"),
+        ])
+    }
+
+    /// A time picked in the grid: that time for the scope, with Done only for this task.
+    func testPickedTimeListFollowsTheScope() {
+        XCTAssertEqual(ids(TaskNotificationList.picked(local(15), scope: .thisTask)), [
+            NotificationAction.done, NotificationAction.snoozeCustom,
+        ])
+        XCTAssertEqual(ids(TaskNotificationList.picked(local(15), scope: .allOverdue)), [
+            NotificationAction.snoozeAllCustom,
+        ])
+    }
+
+    /// No cached period: nothing to move it to, nothing sent.
+    func testTaskNextPeriodWithoutPeriodsSendsNothing() async throws {
+        let outcome = try await run(task, .button(NotificationAction.snoozeNextPeriod), userInfo: taskInfo)
+        XCTAssertEqual(outcome, .ignored)
+        XCTAssertEqual(api.calls, [])
+    }
+
+    /// A summary has no task of its own: the single-task action means nothing there.
+    func testSummaryIgnoresTheSingleTaskNextPeriod() async throws {
+        let outcome = try await run(
+            summary, .button(NotificationAction.snoozeNextPeriod), now: local(10, 20), slots: periods
+        )
+        XCTAssertEqual(outcome, .ignored)
+        XCTAssertEqual(api.calls, [])
     }
 
     // MARK: - TASK_ADDED (the "AI finished" notification)
@@ -379,6 +566,7 @@ final class NotificationActionRunnerTests: XCTestCase {
     func testReminderIgnoresEveryOtherButton() async throws {
         for id in [
             NotificationAction.snooze1hr, NotificationAction.snoozeAll1hr, NotificationAction.snoozeAllSlotNext,
+            NotificationAction.snoozeNextPeriod, NotificationAction.snoozeSlotIdentifier(startTime: "09:00"),
             NotificationAction.delete, NotificationAction.completeAll,
         ] {
             let outcome = try await run(reminder, .button(id), userInfo: reminderInfo)
@@ -500,7 +688,8 @@ final class NotificationActionRunnerTests: XCTestCase {
     func testPromptIgnoresEveryOtherButton() async throws {
         for id in [
             NotificationAction.done, NotificationAction.snooze1hr, NotificationAction.snoozeAll1hr,
-            NotificationAction.snoozeAllSlotNext, NotificationAction.delete, NotificationAction.completeAll,
+            NotificationAction.snoozeAllSlotNext, NotificationAction.snoozeNextPeriod, NotificationAction.delete,
+            NotificationAction.completeAll,
         ] {
             let outcome = try await run(quota, .button(id), userInfo: quotaInfo)
             XCTAssertEqual(outcome, .ignored, id)

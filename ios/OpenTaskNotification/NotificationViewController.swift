@@ -39,6 +39,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     /// True when displaying a TASK_SUMMARY notification (bulk-only actions, no taskId).
     private var isBulkMode = false
 
+    /// A task notification's switch (2026-11-18, `SnoozePanel`): this task
+    /// alone, or every overdue task. A summary has no switch (`isBulkMode`).
+    private var scope: TaskNotificationList.SnoozeScope = .thisTask
+    /// The task's own time from the payload (the grid's base in "This task").
+    private var taskDueAt: String = ""
+    /// Whether the list and the grid act on every overdue task right now.
+    private var actsOnAll: Bool { isBulkMode || scope == .allOverdue }
+
     // §6.1 batch checklist state
     /// True when displaying a SLOT_REMINDER notification (checklist, not grid).
     private var isSlotMode = false
@@ -63,6 +71,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // the custom action buttons (e.g., "+3hr") persist even though the grid resets.
         hasReceivedInitialNotification = false
         isBulkMode = false
+        scope = .thisTask
         selectedDueAt = nil
         selectedDeltaMinutes = nil
 
@@ -103,34 +112,39 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             return
         }
 
-        let mode: SnoozeMode
+        let onSelection: (String) -> Void = { [weak self] newDueAt in
+            self?.handleGridSelection(newDueAt)
+        }
+        let onDirty: (Bool) -> Void = { [weak self] isDirty in
+            self?.updatePreferredContentSize()
+            if !isDirty {
+                self?.selectedDueAt = nil
+                self?.selectedDeltaMinutes = nil
+                self?.setDefaultTimeActions()
+            }
+        }
         if isBulkMode {
             let overflowCount = userInfo["overflowCount"] as? Int ?? 0
             let totalOverdueCount = userInfo["totalOverdueCount"] as? Int ?? overflowCount
-            mode = .bulk(taskCount: totalOverdueCount)
             // Use "now" as the base time for bulk mode (no single task's dueAt)
             dueAt = DateHelpers.formatISO(Date())
+            install(hosting: UIHostingController(rootView: SnoozeGridView(
+                mode: .bulk(taskCount: totalOverdueCount),
+                onGridSelection: onSelection,
+                onDirtyStateChanged: onDirty
+            )))
         } else {
-            dueAt = userInfo["dueAt"] as? String ?? ""
-            mode = .individual(taskTitle: title, originalDueAt: dueAt)
+            taskDueAt = userInfo["dueAt"] as? String ?? ""
+            dueAt = taskDueAt
+            install(hosting: UIHostingController(rootView: SnoozePanel(
+                taskTitle: title,
+                taskDueAt: taskDueAt,
+                overdueCount: userInfo["overdueCount"] as? Int,
+                onScopeChange: { [weak self] scope in self?.handleScopeChange(scope) },
+                onGridSelection: onSelection,
+                onDirtyStateChanged: onDirty
+            )))
         }
-
-        let gridView = SnoozeGridView(
-            mode: mode,
-            onGridSelection: { [weak self] newDueAt in
-                self?.handleGridSelection(newDueAt)
-            },
-            onDirtyStateChanged: { [weak self] isDirty in
-                self?.updatePreferredContentSize()
-                if !isDirty {
-                    self?.selectedDueAt = nil
-                    self?.selectedDeltaMinutes = nil
-                    self?.setDefaultTimeActions()
-                }
-            }
-        )
-
-        install(hosting: UIHostingController(rootView: gridView))
 
         // Set initial action buttons with absolute time (e.g., "4:00 PM" instead of "+1hr")
         setDefaultTimeActions()
@@ -483,50 +497,40 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             return
         }
 
-        let timeLabel = DateHelpers.formatShortTime(targetDate)
+        extensionContext?.notificationActions = notificationActions(
+            TaskNotificationList.picked(targetDate, scope: actsOnAll ? .allOverdue : .thisTask)
+        )
+    }
 
-        if isBulkMode {
-            // Bulk mode: only bulk snooze action
-            extensionContext?.notificationActions = [
-                UNNotificationAction(identifier: NotificationAction.snoozeAllCustom, title: "All \u{2192} \(timeLabel)", options: []),
-            ]
-        } else {
-            // Individual mode: Done, single snooze, bulk snooze
-            extensionContext?.notificationActions = [
-                UNNotificationAction(identifier: NotificationAction.done, title: "Done", options: []),
-                UNNotificationAction(identifier: NotificationAction.snoozeCustom, title: timeLabel, options: []),
-                UNNotificationAction(identifier: NotificationAction.snoozeAllCustom, title: "All \u{2192} \(timeLabel)", options: []),
-            ]
-        }
+    /// The switch was flipped (`SnoozePanel`): the grid is a fresh one in the
+    /// other mode — nothing picked, counting from now for "All overdue" and
+    /// from the task's own time for "This task" — and the list is rewritten.
+    /// The notification stays open.
+    private func handleScopeChange(_ newScope: TaskNotificationList.SnoozeScope) {
+        scope = newScope
+        selectedDueAt = nil
+        selectedDeltaMinutes = nil
+        dueAt = newScope == .allOverdue ? DateHelpers.formatISO(Date()) : taskDueAt
+        setDefaultTimeActions()
+        updatePreferredContentSize()
     }
 
     // MARK: - Default Actions
 
-    /// Set action buttons showing the absolute "next hour" time (e.g., "4:00 PM").
-    /// Called on initial notification expansion and when the grid resets to clean state.
-    ///
-    /// Slot-snooze actions (from `TimeSlotStore`'s cache — the extension never
-    /// fetches on its own, see `TimeSlotStore.swift`) are appended after the
-    /// default +1hr actions using the same `slotSnoozeActions()` builder
-    /// `registerNotificationCategories()` uses, so the identifiers, ordering
-    /// and "All → …" titles never drift between the lock-screen category and
-    /// this expanded view.
+    /// The action list with nothing picked in the grid, worked out as it is
+    /// set (`TaskNotificationList`): this task's rows — Done, the next
+    /// period by name, +1 hour, the next three periods, then All → Next
+    /// period — or, for a summary or with the switch on "All overdue", the
+    /// bulk rows. Periods come from `TimeSlotStore`'s cache; the extension
+    /// never fetches on its own.
     private func setDefaultTimeActions() {
-        let nextHour = DateHelpers.snapToNextHour()
-        let timeLabel = DateHelpers.formatShortTime(nextHour)
-        let slotActions = slotSnoozeActions()
-
-        if isBulkMode {
-            extensionContext?.notificationActions = [
-                UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
-            ] + slotActions
-        } else {
-            extensionContext?.notificationActions = [
-                UNNotificationAction(identifier: NotificationAction.done, title: "Done", options: []),
-                UNNotificationAction(identifier: NotificationAction.snooze1hr, title: timeLabel, options: []),
-                UNNotificationAction(identifier: NotificationAction.snoozeAll1hr, title: "All \u{2192} \(timeLabel)", options: []),
-            ] + slotActions
-        }
+        let now = Date()
+        let slots = TimeSlotStore.cachedSlots
+        extensionContext?.notificationActions = notificationActions(
+            actsOnAll
+                ? TaskNotificationList.allOverdue(now: now, slots: slots)
+                : TaskNotificationList.thisTask(dueAtISO: taskDueAt, now: now, slots: slots)
+        )
     }
 }
 

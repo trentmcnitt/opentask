@@ -141,6 +141,8 @@ enum NotificationActionRunner {
     ///     for `SNOOZE_CUSTOM` / `SNOOZE_ALL_CUSTOM`. The app delegates pass
     ///     nil: those two actions are served by the extension, which calls the
     ///     API itself and dismisses without forwarding.
+    ///   - now, slots: what a single-task period button is worked out from
+    ///     (the clock and the cached periods; a test passes its own).
     ///   - dismissAfterSweep: called with the result of every successful bulk
     ///     snooze, before this returns.
     static func perform(
@@ -149,6 +151,8 @@ enum NotificationActionRunner {
         userInfo: [AnyHashable: Any],
         customDueAt: String?,
         api: NotificationActionAPI,
+        now: Date = Date(),
+        slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots,
         dismissAfterSweep: (APIClient.BulkSnoozeResult) async -> Void
     ) async throws -> Outcome {
         switch category {
@@ -205,6 +209,13 @@ enum NotificationActionRunner {
                 taskId: taskId,
                 action: action,
                 customDueAt: customDueAt,
+                // A single-task period button (2026-11-18): where it sends
+                // this task, worked out now.
+                periodTarget: { identifier in
+                    TaskNotificationList.singleTarget(
+                        for: identifier, dueAtISO: userInfo["dueAt"] as? String, now: now, slots: slots
+                    )
+                },
                 api: api,
                 dismissAfterSweep: dismissAfterSweep
             )
@@ -280,6 +291,7 @@ enum NotificationActionRunner {
         taskId: Int,
         action: Action,
         customDueAt: String?,
+        periodTarget: (String) -> Date?,
         api: NotificationActionAPI,
         dismissAfterSweep: (APIClient.BulkSnoozeResult) async -> Void
     ) async throws -> Outcome {
@@ -305,6 +317,15 @@ enum NotificationActionRunner {
         case .button(NotificationAction.snoozeAllCustom):
             guard let customDueAt else { return .ignored }
             result = try await api.snoozeOverdue(until: customDueAt, includeTaskId: taskId)
+        case .button(let identifier)
+            where identifier == NotificationAction.snoozeNextPeriod
+            || NotificationAction.parseSnoozeSlot(identifier) != nil:
+            // This task alone, to the next period or a named one: one PATCH,
+            // one undo entry (the grid's own single-task call). No cached
+            // period, or one that is gone: nothing to send.
+            guard let target = periodTarget(identifier) else { return .ignored }
+            try await api.snoozeTo(taskId: taskId, dueAt: DateHelpers.formatISO(target))
+            return .taskUpdated(taskId: taskId)
         case .button(let identifier):
             guard let slot = NotificationAction.parseSnoozeAllSlot(identifier) else { return .ignored }
             result = try await api.snoozeOverdue(slot: slot, includeTaskId: taskId)
