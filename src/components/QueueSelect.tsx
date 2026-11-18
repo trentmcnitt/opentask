@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { Check, CheckCheck, FileText, Forward, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
+import { BarAction, SelectionBarShell, type TitleSave } from '@/components/SelectionBarShell'
 import { DeckVerb, MoreVerb, TargetVerb } from '@/components/SelectionBarVerbs'
 import { BarHorizonControl, SelectionDetailLines } from '@/components/SelectionDetail'
 import { requestShowInList } from '@/lib/show-in-list'
@@ -219,6 +219,9 @@ export function useQueueSelectMode({
             if (held) leave()
           })
         }
+        // The title, edited in place (2026-11-18): it never ends the
+        // selection, a hold's included — rename, then Done, is the order.
+        onTitleSave={(title) => actions.retitle(picked[0].id, title)}
         onOpen={() => {
           actions.openDetails(picked[0])
           leave()
@@ -291,6 +294,7 @@ export function QueueSelectionBar({
   onSkipUntil,
   onCancel,
   onHorizon,
+  onTitleSave,
   onOpen,
   onShowInList,
 }: {
@@ -310,6 +314,7 @@ export function QueueSelectionBar({
   onSkipUntil?: (ids: number[], until: string | null) => Promise<void>
   onCancel: () => void
   onHorizon: (horizon: HorizonValue | null) => void
+  onTitleSave: TitleSave
   onOpen: () => void
   onShowInList: () => void
 }) {
@@ -321,6 +326,7 @@ export function QueueSelectionBar({
       onClear={onCancel}
       testAttr="data-queue-selection-bar"
       title={one?.title}
+      onTitleSave={onTitleSave}
       detail={
         one && (
           <SelectionDetailLines

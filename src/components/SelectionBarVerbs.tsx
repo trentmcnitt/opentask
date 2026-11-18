@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Clock3, Eye, EyeOff, MoreHorizontal, SkipForward, XCircle } from 'lucide-react'
+import { Clock3, Eye, EyeOff, MoreHorizontal, Share, SkipForward, XCircle } from 'lucide-react'
 import { BarAction } from '@/components/SelectionBarShell'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
 import { DeckMenu } from '@/components/OnDeckButton'
@@ -9,6 +9,7 @@ import { OnDeckIcon } from '@/components/icons/OnDeckIcon'
 import { OptionMenu } from '@/components/OptionMenu'
 import { SkipUntilDialog } from '@/components/SkipUntilDialog'
 import { removableTargetIds } from '@/lib/row-corner'
+import { shareTask } from '@/lib/share-task'
 import { canSkipUntil } from '@/lib/skip-until'
 import { isTracked } from '@/lib/track'
 import { REMOVE_TARGET } from '@/lib/task-model-words'
@@ -90,6 +91,7 @@ export function DeckVerb({
 const SKIP = 'skip-until'
 const REMOVE = 'remove-target'
 const HEADS_UP = 'heads-up'
+const SHARE = 'share'
 
 /**
  * THE ⋯ HEADS UP ITEM (2026-11-02): over the selection's ordinary open tasks
@@ -108,7 +110,10 @@ function headsUpChoice(tasks: Task[]): { on: boolean; ids: number[] } | null {
 /**
  * More: Skip until… (the selection's repeating tasks) and Remove target (its
  * one-offs with a picked target), each offered when some selected task takes
- * it, with how many when not all do. Disabled when neither applies. A "⋯"
+ * it, with how many when not all do; and Share (2026-11-18, `share-task.ts`)
+ * with exactly one task picked — its text to the share sheet or the
+ * clipboard, the selection left as it was (nothing changed, so it is not the
+ * hold's "one action"). Disabled when nothing applies. A "⋯"
  * on the bar's top line, beside Cancel (the shell's `more`), not a verb.
  */
 export function MoreVerb({
@@ -148,6 +153,7 @@ export function MoreVerb({
           },
         ]
       : []),
+    ...(selectedTasks.length === 1 ? [{ label: 'Share', option: SHARE, icon: <Share /> }] : []),
   ]
   return (
     <>
@@ -161,6 +167,7 @@ export function MoreVerb({
           if (option === SKIP) setSkipOpen(true)
           else if (option === REMOVE) onRemoveTargets(removable)
           else if (option === HEADS_UP && headsUp) onHeadsUp?.(headsUp.ids, headsUp.on)
+          else if (option === SHARE) shareTask(selectedTasks[0], timezone)
         }}
       >
         <button

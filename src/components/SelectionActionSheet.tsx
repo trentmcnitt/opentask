@@ -40,7 +40,7 @@ import { formatBulkRecurrence } from '@/lib/format-rrule'
 import { formatTimeInTimezone } from '@/lib/format-date'
 import { taskWord } from '@/lib/utils'
 import { DirtyCard } from '@/components/DirtyCard'
-import { BarAction, SelectionBarShell } from '@/components/SelectionBarShell'
+import { BarAction, SelectionBarShell, type TitleSave } from '@/components/SelectionBarShell'
 import { DeckVerb, MoreVerb, TargetVerb } from '@/components/SelectionBarVerbs'
 import type { Task, Project } from '@/types'
 
@@ -462,6 +462,9 @@ export function SelectionActionSheet({
             })
             .catch(() => undefined)
         }
+        // The title, edited in place (2026-11-18): one save, one Undo. It
+        // never ends the selection — rename, then Done, is the natural order.
+        onTitleSave={(title) => onSaveAll({ title })}
         onShowInList={(id) => {
           requestShowInList(id)
           onClear()
@@ -622,8 +625,10 @@ function ListSelectionBar({
   onHeadsUp,
   onHorizon,
   onShowInList,
+  onTitleSave,
   onClear,
 }: {
+  onTitleSave: TitleSave
   selectedTasks: Task[]
   timezone: string
   onDone: () => void
@@ -649,6 +654,7 @@ function ListSelectionBar({
       // One task: its details on the bar; several: the horizon beside ⋯
       // (`SelectionDetail.tsx`, 2026-10-30).
       title={one?.title}
+      onTitleSave={onTitleSave}
       detail={
         one && (
           <SelectionDetailLines

@@ -277,7 +277,7 @@ test.describe('Task detail: Cancel leaves', () => {
         const row = page.locator(`#task-row-${id}`)
         await waitForPrefsLoaded(page, () => page.goto('/'), row)
         await cmdClickRow(row)
-        await sheet(page).getByRole('button', { name: 'Details' }).click()
+        await sheet(page).getByRole('button', { name: 'Details', exact: true }).click()
         await page.waitForURL(`/tasks/${id}`)
 
         await stageTitle(page, title, `${title} (edited)`)

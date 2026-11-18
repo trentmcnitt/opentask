@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useMemo, useState, type MutableRefObject } from 'react'
-import { Check, Lightbulb, Pencil, Repeat, Trash2 } from 'lucide-react'
+import { Check, Lightbulb, Pencil, Repeat, Share, Trash2 } from 'lucide-react'
+import { shareTask } from '@/lib/share-task'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -701,6 +702,19 @@ export function ReminderDetail({
               title="Leave the Reminders surface and edit it as a task — project, labels, due date"
             >
               Make this a task
+            </button>
+          )}
+          {/* Share (2026-11-18, `share-task.ts`): the SAVED reminder's title
+              and notes, as text. */}
+          {single && (
+            <button
+              type="button"
+              data-share-item
+              onClick={() => shareTask(single, timezone)}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+            >
+              <Share className="size-3" />
+              Share
             </button>
           )}
           {onOpenPage && single && (

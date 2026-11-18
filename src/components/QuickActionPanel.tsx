@@ -12,6 +12,7 @@ import {
   TimerOff,
   Trash2,
   MoreHorizontal,
+  Share,
   Info,
   Check,
   X,
@@ -79,6 +80,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { AutoSnoozePicker, formatAutoSnoozeLabel } from '@/components/AutoSnoozePicker'
 import { computeCommonLabels, computeCommonPriority, hasLabelVariations } from '@/lib/bulk-utils'
 import { isPickedReschedule } from '@/lib/picked-reschedule'
+import { shareTask } from '@/lib/share-task'
 import { isTracked } from '@/lib/track'
 import { GridButton } from '@/components/quick-panel/GridButton'
 import { SinceAge } from '@/components/quick-panel/SinceAge'
@@ -2178,6 +2180,20 @@ export function QuickActionPanel({
                           />
                           Reminder
                         </DropdownMenuCheckboxItem>
+                      )}
+                      {/* Share (2026-11-18, `share-task.ts`): the SAVED task's
+                          text, so it waits for unsaved edits like Skip until. */}
+                      {isSingleTask && effectiveTask && (
+                        <DropdownMenuItem
+                          inset
+                          disabled={isDirty}
+                          title={isDirty ? 'Save or reset your changes first' : undefined}
+                          onClick={() => shareTask(effectiveTask, timezone)}
+                          data-share-item
+                        >
+                          <Share className="mr-2 size-4" />
+                          Share
+                        </DropdownMenuItem>
                       )}
                       {isSingleTask && onNavigateToDetail && (
                         <DropdownMenuItem inset onClick={onNavigateToDetail}>

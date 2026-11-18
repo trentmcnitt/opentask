@@ -26,6 +26,8 @@ import {
 import { isReservedLabel } from '@/lib/label-vocabulary'
 import { useDomainLabels } from '@/hooks/useDomainLabels'
 import { useStagedEditor } from '@/hooks/useStagedEditor'
+import { useTimezone } from '@/hooks/useTimezone'
+import { shareTask } from '@/lib/share-task'
 import { useLabelConfig } from '@/components/PreferencesProvider'
 import { getLabelClasses } from '@/lib/label-colors'
 import type { QuotaPromptConfig, Task } from '@/types'
@@ -120,6 +122,7 @@ export function QuotaDetail({
 }: QuotaDetailProps) {
   const creating = tasks.length === 0 && !!create
   const single = tasks.length === 1 ? tasks[0] : null
+  const timezone = useTimezone()
   // One quota on screen (editing it, or a new one): the per-quota fields show.
   const oneQuota = creating || single !== null
 
@@ -252,6 +255,9 @@ export function QuotaDetail({
         onCancel={onCancel}
         onOpenPage={onOpenPage}
         onDelete={onDelete}
+        // Share (2026-11-18, `share-task.ts`): the SAVED quota's title, its
+        // count ("2 a week") and its notes, as text.
+        onShare={single ? () => shareTask(single, timezone) : undefined}
       />
     </div>
   )
@@ -653,7 +659,9 @@ function QuotaActions({
   onCancel,
   onOpenPage,
   onDelete,
+  onShare,
 }: {
+  onShare?: () => void
   creating: boolean
   canSave: boolean
   saving: boolean
@@ -682,6 +690,11 @@ function QuotaActions({
       {onOpenPage && (
         <Button variant="ghost" onClick={onOpenPage} className="ml-auto">
           Open full page
+        </Button>
+      )}
+      {onShare && !creating && (
+        <Button variant="ghost" data-share-item onClick={onShare}>
+          Share
         </Button>
       )}
       {onDelete && !creating && (
