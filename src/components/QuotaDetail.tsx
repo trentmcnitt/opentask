@@ -257,7 +257,7 @@ export function QuotaDetail({
         onDelete={onDelete}
         // Share (2026-11-18, `share-task.ts`): the SAVED quota's title, its
         // count ("2 a week") and its notes, as text.
-        onShare={single ? (from) => shareTask(single, timezone, from) : undefined}
+        onShare={single ? () => shareTask(single, timezone) : undefined}
       />
     </div>
   )
@@ -661,7 +661,7 @@ function QuotaActions({
   onDelete,
   onShare,
 }: {
-  onShare?: (from: Element) => void
+  onShare?: () => void
   creating: boolean
   canSave: boolean
   saving: boolean
@@ -693,7 +693,7 @@ function QuotaActions({
         </Button>
       )}
       {onShare && !creating && (
-        <Button variant="ghost" data-share-item onClick={(e) => onShare(e.currentTarget)}>
+        <Button variant="ghost" data-share-item onClick={onShare}>
           Share
         </Button>
       )}

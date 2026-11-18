@@ -2188,7 +2188,7 @@ export function QuickActionPanel({
                           inset
                           disabled={isDirty}
                           title={isDirty ? 'Save or reset your changes first' : undefined}
-                          onClick={(e) => shareTask(effectiveTask, timezone, e.currentTarget)}
+                          onClick={() => shareTask(effectiveTask, timezone)}
                           data-share-item
                         >
                           <Share className="mr-2 size-4" />

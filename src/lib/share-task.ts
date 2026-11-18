@@ -110,37 +110,19 @@ export function taskShareText(
   return notes ? `${lines.join('\n')}\n\n${notes}` : lines.join('\n')
 }
 
-interface NativeShareWindow {
-  /** Set by a native build whose bridge takes `share` (never by an older one). */
-  __OPENTASK_SHARE?: boolean
-  webkit?: { messageHandlers?: { opentask?: { postMessage: (msg: unknown) => void } } }
-}
-
 /**
  * Hand `text` to whatever shares here, from inside the click that asked (the
  * share sheet and the clipboard both need the user's gesture, so nothing is
  * awaited before them):
  *
- * 1. the native app's share sheet, when the build has the bridge;
- * 2. the browser's (`navigator.share`), where it exists — a sheet the user
- *    closes without sharing is not a failure and copies nothing;
- * 3. else the clipboard, with a "Copied" toast.
- *
- * `anchor` is the element the share was asked from: an iPad or a Mac hangs
- * its sheet off that spot.
+ * 1. the system share sheet (`navigator.share`), where it exists — a phone's
+ *    browser, Safari, and the native apps' web views, which need no bridge
+ *    for it (the Mac app's WKWebView shows the system picker; checked
+ *    2026-11-18). A sheet the user closes without sharing is not a failure
+ *    and copies nothing;
+ * 2. else the clipboard, with a "Copied" toast.
  */
-export function shareText(text: string, anchor?: Element | null): void {
-  const w = window as unknown as NativeShareWindow
-  const bridge = w.webkit?.messageHandlers?.opentask
-  if (w.__OPENTASK_SHARE && bridge) {
-    const r = anchor?.getBoundingClientRect()
-    bridge.postMessage({
-      action: 'share',
-      text,
-      rect: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null,
-    })
-    return
-  }
+export function shareText(text: string): void {
   if (typeof navigator.share === 'function') {
     navigator.share({ text }).catch((err: unknown) => {
       // Closed without sharing: nothing to say. Anything else: the clipboard.
@@ -163,7 +145,7 @@ function copyText(text: string): void {
   )
 }
 
-/** Share one task: its text, from the element that asked. */
-export function shareTask(task: ShareableTask, timezone: string, anchor?: Element | null): void {
-  shareText(taskShareText(task, timezone), anchor)
+/** Share one task: its text. */
+export function shareTask(task: ShareableTask, timezone: string): void {
+  shareText(taskShareText(task, timezone))
 }

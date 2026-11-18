@@ -710,7 +710,7 @@ export function ReminderDetail({
             <button
               type="button"
               data-share-item
-              onClick={(e) => shareTask(single, timezone, e.currentTarget)}
+              onClick={() => shareTask(single, timezone)}
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
             >
               <Share className="size-3" />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Clock3, Eye, EyeOff, MoreHorizontal, Share, SkipForward, XCircle } from 'lucide-react'
 import { BarAction } from '@/components/SelectionBarShell'
 import { SnoozeMenu } from '@/components/SnoozeMenu'
@@ -133,7 +133,6 @@ export function MoreVerb({
 }) {
   const [open, setOpen] = useState(false)
   const [skipOpen, setSkipOpen] = useState(false)
-  const moreRef = useRef<HTMLButtonElement>(null)
   const removable = removableTargetIds(selectedTasks)
   const repeating = onSkipUntil ? selectedTasks.filter(canSkipUntil) : []
   const headsUp = onHeadsUp ? headsUpChoice(selectedTasks) : null
@@ -168,11 +167,10 @@ export function MoreVerb({
           if (option === SKIP) setSkipOpen(true)
           else if (option === REMOVE) onRemoveTargets(removable)
           else if (option === HEADS_UP && headsUp) onHeadsUp?.(headsUp.ids, headsUp.on)
-          else if (option === SHARE) shareTask(selectedTasks[0], timezone, moreRef.current)
+          else if (option === SHARE) shareTask(selectedTasks[0], timezone)
         }}
       >
         <button
-          ref={moreRef}
           type="button"
           onClick={() => setOpen(true)}
           disabled={options.length === 0}
