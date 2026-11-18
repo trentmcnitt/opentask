@@ -368,7 +368,7 @@ final class NotificationActionRunnerTests: XCTestCase {
     func testAllOverdueListIsTheBulkRows() {
         let rows = TaskNotificationList.allOverdue(now: local(10, 20), slots: periods)
         XCTAssertEqual(titles(rows), [
-            "All \u{2192} \(clock(local(11)))", "All \u{2192} Next period", "All \u{2192} Evening",
+            "All \u{2192} +1 hour \u{00B7} \(clock(local(11)))", "All \u{2192} Next period", "All \u{2192} Evening",
             "All \u{2192} Morning",
         ])
         XCTAssertEqual(ids(rows), [

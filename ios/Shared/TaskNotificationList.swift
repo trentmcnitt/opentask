@@ -95,7 +95,8 @@ enum TaskNotificationList {
     static func allOverdue(now: Date, slots: [TimeSlotDTO], calendar: Calendar = .current) -> [Row] {
         var rows = [Row(
             identifier: NotificationAction.snoozeAll1hr,
-            title: "All \u{2192} \(DateHelpers.formatShortTime(DateHelpers.snapToNextHour(now: now)))"
+            // Says it is the +1 hour row, as the single one does.
+            title: "All \u{2192} \(named("+1 hour", DateHelpers.snapToNextHour(now: now)))"
         )]
         guard !slots.isEmpty else { return rows }
         rows.append(allNextPeriod)
