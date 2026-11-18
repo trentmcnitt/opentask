@@ -84,7 +84,7 @@ describe('stripMachineLines', () => {
   test('SH-11: a key line and a program’s signature go', () => {
     const notes = [
       'They wrote: "Thursday works."',
-      'Made by the relay desk; it closes this when you reply.',
+      'Made by the parcel desk. Do not edit below.',
       'desk-relay: thread=sms:+15550100 #sms:ab12cd34',
     ].join('\n')
     expect(stripMachineLines(notes)).toBe('They wrote: "Thursday works."')

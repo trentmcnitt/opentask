@@ -117,8 +117,8 @@ export function taskShareText(
  *
  * 1. the system share sheet (`navigator.share`), where it exists — a phone's
  *    browser, Safari, and the native apps' web views, which need no bridge
- *    for it (the Mac app's WKWebView shows the system picker; checked
- *    2026-11-18). A sheet the user closes without sharing is not a failure
+ *    for it (a WKWebView on iOS and on macOS shows the system sheet;
+ *    checked in a bare web view on each, 2026-11-18). A sheet the user closes without sharing is not a failure
  *    and copies nothing;
  * 2. else the clipboard, with a "Copied" toast.
  */

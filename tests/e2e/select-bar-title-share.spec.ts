@@ -270,7 +270,7 @@ test('Share: the task’s text to the share sheet, the selection kept; with no s
   }
 })
 
-test('Share in the editors: a reminder’s link (title and notes only) and a task’s ⋯', async ({
+test('Share in the editors: a reminder’s link (title and notes only), a task’s ⋯, a quota’s button', async ({
   page,
 }) => {
   const title = uniqueTitle('TE reminder')
@@ -278,6 +278,11 @@ test('Share in the editors: a reminder’s link (title and notes only) and a tas
     data: { title, is_reminder: true, notes: 'Bring the lantern.' },
   })
   const id = (await res.json()).data.id as number
+  const quotaTitle = uniqueTitle('TE quota')
+  const made = await page.request.post('/api/tasks', {
+    data: { title: quotaTitle, is_tracked: true, progress_target: 2, rrule: 'FREQ=WEEKLY' },
+  })
+  const quotaId = (await made.json()).data.id as number
   const taskTitle = uniqueTitle('TE plain')
   const taskId = await daysTask(page, taskTitle)
   try {
@@ -305,7 +310,12 @@ test('Share in the editors: a reminder’s link (title and notes only) and a tas
     await page.getByRole('button', { name: 'More options' }).click()
     await page.locator('[data-share-item]').click()
     expect(await shared()).toEqual([taskTitle])
+    // A quota's editor: a Share button; the count and period follow the title.
+    await page.goto(`/quotas?quota=${quotaId}`)
+    await page.getByRole('button', { name: /^TE quota .* Open its details\.$/ }).click()
+    await page.locator('[data-share-item]').click()
+    expect(await shared()).toEqual([`${quotaTitle}\n2 a week`])
   } finally {
-    await trash(page, [id, taskId])
+    await trash(page, [id, taskId, quotaId])
   }
 })
