@@ -91,6 +91,20 @@ describe('stripMachineLines', () => {
     expect(stripMachineLines('desk-relay: message=ab12cd34ef56')).toBe('')
   })
 
+  test('SH-14: a pointer to a local file goes, alone on a line or closing one; a web address stays', () => {
+    expect(
+      stripMachineLines('Two sessions left.\nfull notes: /srv/desk/ferns/_ai/summary.md'),
+    ).toBe('Two sessions left.')
+    expect(
+      stripMachineLines(
+        'Two sessions left, see https://example.test/ferns — full notes: /srv/desk/ferns/_ai/summary.md',
+      ),
+    ).toBe('Two sessions left, see https://example.test/ferns')
+    const kept =
+      'Filed: the green binder\nsite: https://example.test/a/b\nratio: 3/4 or so\nit is in /tmp somewhere'
+    expect(stripMachineLines(kept)).toBe(kept)
+  })
+
   test('SH-12: what a person writes stays', () => {
     const notes = [
       '[x] buy twine',

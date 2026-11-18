@@ -158,11 +158,6 @@ export function SelectionActionSheet({
 }: SelectionActionSheetProps) {
   const timezone = useTimezone()
   const [sheetOpen, setSheetOpen] = useState(false)
-  // The selection as of now: a title save that lands later reads it.
-  const selectedNow = useRef(selectedTasks)
-  useEffect(() => {
-    selectedNow.current = selectedTasks
-  })
   const isMobile = useIsMobile()
 
   // Staged changes from the most recent QuickActionPanel.onSaveAll call. The
@@ -468,17 +463,8 @@ export function SelectionActionSheet({
             .catch(() => undefined)
         }
         // The title, edited in place (2026-11-18): one save, one Undo. It
-        // is the selection's one action once it lands — unless Select All
-        // started it, the edit was ended by pressing something else on the
-        // bar (that press is the action), or the selection is no longer
-        // this one task (a click on another row saved it and grew it).
-        onTitleSave={(title, { end }) => {
-          const id = selectedTasks[0].id
-          return onSaveAll({ title }).then(() => {
-            const now = selectedNow.current
-            if (end && !sticky && now.length === 1 && now[0].id === id) onClear()
-          })
-        }}
+        // never ends the selection — rename, then Done, is the natural order.
+        onTitleSave={(title) => onSaveAll({ title })}
         onShowInList={(id) => {
           requestShowInList(id)
           onClear()

@@ -5,9 +5,8 @@
  *   field holding the whole title, wrapping. Enter or leaving the field
  *   saves (one request, one Undo); Escape puts it back; an unchanged or
  *   empty title saves nothing.
- * - A hold-started selection ends once the save lands — when the edit ended
- *   on its own (Enter, a click away), not when it ended by pressing
- *   something else on the bar. The Select button's mode keeps the pick.
+ * - A title edit never ends the selection, hold-started or not. A press on
+ *   anything else on the bar saves the open field first, on the press itself.
  * - ⋯ → Share hands the task's text to the browser's share sheet, or — with
  *   none — copies it and says "Copied". The selection stays.
  *
@@ -98,7 +97,7 @@ test.afterAll(async ({ request }) => {
   await request.post('/api/test/task-queue', { data: { enabled: false } })
 })
 
-test('a held row: the title opens whole in a field; Escape and an unchanged title save nothing; Enter saves once, with Undo, and ends the hold', async ({
+test('a held row: the title opens whole in a field; Escape and an unchanged title save nothing; Enter saves once, with Undo, and the hold’s selection stays', async ({
   page,
 }) => {
   const long = uniqueTitle(
@@ -137,13 +136,13 @@ test('a held row: the title opens whole in a field; Escape and an unchanged titl
     await expect(bar.locator('[data-selection-title]')).toContainText('TE held')
     expect(writes()).toBe(0)
 
-    // Enter saves: one request, the hold's selection ends, Undo puts it back.
+    // Enter saves: one request, the hold's selection stays, Undo puts it back.
     const renamed = uniqueTitle('TE renamed')
     await bar.locator('[data-selection-title]').click()
     await field(bar).fill(renamed)
     await page.keyboard.press('Enter')
     await expect.poll(() => titleOf(page, id)).toBe(renamed)
-    await expect(bar).toHaveCount(0)
+    await expect(bar.locator('[data-selection-title]')).toContainText(renamed)
     expect(writes()).toBe(1)
     await expect(row(page, id)).toContainText(renamed)
     const undo = await page.request.post('/api/undo')
@@ -178,7 +177,7 @@ test('the Select button’s mode keeps the pick after a title save; a pasted lin
   }
 })
 
-test('the list’s bar: leaving the field by pressing a verb saves and keeps the bar; a click away saves and ends it', async ({
+test('the list’s bar: pressing ⋯ or clicking away saves and keeps the selection; a press on Done saves before it completes', async ({
   page,
 }) => {
   const id = await daysTask(page, uniqueTitle('TE list'))
@@ -203,13 +202,26 @@ test('the list’s bar: leaving the field by pressing a verb saves and keeps the
       await page.keyboard.press('Escape')
       await expect(bar.locator('[data-selection-title]')).toContainText(first)
 
-      // A click away from the bar: saved, and that was the one action.
+      // A click away from the bar saves too, and the selection stays.
       await bar.locator('[data-selection-title]').click()
       const second = uniqueTitle('TE list two')
       await field(bar).fill(second)
       await page.locator('h1, h2').first().click()
       await expect.poll(() => titleOf(page, id)).toBe(second)
-      await expect(bar).toHaveCount(0)
+      await expect(bar.locator('[data-selection-title]')).toContainText(second)
+
+      // Rename, then Done with the field still open: the press on Done saves
+      // the title first (no blur needed), then completes the task.
+      await bar.locator('[data-selection-title]').click()
+      const third = uniqueTitle('TE list three')
+      await field(bar).fill(third)
+      await bar.getByRole('button', { name: 'Done' }).dispatchEvent('pointerdown')
+      await expect(field(bar)).toHaveCount(0)
+      await expect.poll(() => titleOf(page, id)).toBe(third)
+      await bar.getByRole('button', { name: 'Done' }).click()
+      await expect
+        .poll(async () => (await (await page.request.get(`/api/tasks/${id}`)).json()).data.done)
+        .toBe(true)
     })
   } finally {
     await trash(page, [id])

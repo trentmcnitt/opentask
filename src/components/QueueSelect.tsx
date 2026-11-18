@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { Check, CheckCheck, FileText, Forward, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BarAction, SelectionBarShell, type TitleSave } from '@/components/SelectionBarShell'
@@ -164,14 +164,6 @@ export function useQueueSelectMode({
     },
     [anchor, on, toggle, enter],
   )
-  // What is picked and how the mode started, as of now: a save that lands
-  // later reads them (`onTitleSave`).
-  const selectedNow = useRef(selected)
-  const heldNow = useRef(held)
-  useEffect(() => {
-    selectedNow.current = selected
-    heldNow.current = held
-  })
   const leave = useCallback(() => {
     setOn(false)
     setHeld(false)
@@ -227,16 +219,9 @@ export function useQueueSelectMode({
             if (held) leave()
           })
         }
-        // The title, edited in place (2026-11-18): a hold's selection ends
-        // once the save lands — if the edit was ended on its own (not by a
-        // press on the bar) and the pick is still this one row.
-        onTitleSave={(title, { end }) => {
-          const id = picked[0].id
-          return actions.retitle(id, title).then(() => {
-            const now = selectedNow.current
-            if (end && heldNow.current && now.size === 1 && now.has(id)) leave()
-          })
-        }}
+        // The title, edited in place (2026-11-18): it never ends the
+        // selection, a hold's included — rename, then Done, is the order.
+        onTitleSave={(title) => actions.retitle(picked[0].id, title)}
         onOpen={() => {
           actions.openDetails(picked[0])
           leave()

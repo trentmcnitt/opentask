@@ -52,7 +52,7 @@ export function shareMoment(iso: string, timezone: string, now: Date = new Date(
  * THE MACHINE PARTS OF NOTES, left out of a share. Tasks made by other
  * programs carry lines that are for those programs (how to find the source
  * message again, which program owns the task); they mean nothing to the
- * person the task is shared with. Three shapes, each narrow enough that a
+ * person the task is shared with. Four shapes, each narrow enough that a
  * line a person wrote is not caught:
  *
  * 1. A bracketed command with a reference, on a line of its own or closing
@@ -63,6 +63,9 @@ export function shareMoment(iso: string, timezone: string, now: Date = new Date(
  *    tokens — a hyphenated lowercase slug, a colon, and a `name=value` with
  *    no spaces. "follow-up: call back" is not this.
  * 3. A program's signature sentence: a line opening "Made by the … desk".
+ * 4. A pointer to a file on the sharer's own machine: a short label, a
+ *    colon, then an absolute path ("full notes: /some/folder/file"), as a
+ *    whole line or closing one after a dash. A web address is not this.
  *
  * Blank lines left at the ends, and runs of them inside, are tidied after.
  */
@@ -70,11 +73,13 @@ const BRACKET_COMMAND =
   /[ \t]*\[[a-z][a-z0-9_-]*(?: [a-z][a-z0-9_-]*)+ (?:<[^<>\]\n]+>|[^\s\]]*:[^\s\]]+)\][ \t]*$/
 const KEY_LINE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+: [^\s=]+=\S+(?: #\S+)*$/
 const SIGNATURE_LINE = /^Made by the [a-z][a-z -]* desk\b/
+const LOCAL_PATH_POINTER =
+  /(?:^|\s+[—–-]\s+)[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+){0,3}: (?:~\/|\/)(?:[\w.@%+-]+\/)+[\w.@%+-]*[ \t]*$/
 
 export function stripMachineLines(notes: string): string {
   const kept: string[] = []
   for (const raw of notes.split(/\r?\n/)) {
-    const line = raw.replace(BRACKET_COMMAND, '')
+    const line = raw.replace(BRACKET_COMMAND, '').replace(LOCAL_PATH_POINTER, '')
     const text = line.trim()
     if (text === '' && raw.trim() !== '') continue
     if (KEY_LINE.test(text) || SIGNATURE_LINE.test(text)) continue

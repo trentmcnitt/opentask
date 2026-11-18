@@ -305,13 +305,10 @@ function BarPanel({
 }
 
 /**
- * How a title edit is saved. `end` says whether the edit was finished on its
- * own — Enter, or a click away from the bar — and not by pressing something
- * else ON the bar (a verb, ⋯, Cancel), whose own action is what the user
- * meant next: a surface whose selection ends after one action ends it only
- * for the first.
+ * How a title edit is saved. It never ends the selection (Trent's ruling,
+ * 2026-11-18): renaming and then Done on the same task is the natural order.
  */
-export type TitleSave = (title: string, how: { end: boolean }) => Promise<unknown> | void
+export type TitleSave = (title: string) => Promise<unknown> | void
 
 /**
  * HOW MUCH OF THE WINDOW THE ON-SCREEN KEYBOARD COVERS, while `active`: a
@@ -368,10 +365,9 @@ function BarTitle({
   if (saved && saved.from !== title) setSaved(null)
   const shown = saved ? saved.to : title
   const fieldRef = useRef<HTMLTextAreaElement>(null)
-  // Whether the press that is taking the focus away landed on the bar itself.
-  const pressedBar = useRef(false)
-  // Escape, or a save already made by Enter: the blur that follows does nothing.
+  // Escape, or a save already made: the blur that follows does nothing.
   const settled = useRef(false)
+  const finishRef = useRef<(save: boolean) => void>(() => {})
 
   // The field as tall as its text, from one line up.
   useLayoutEffect(() => {
@@ -385,25 +381,35 @@ function BarTitle({
     const field = fieldRef.current
     field?.focus()
     field?.setSelectionRange(field.value.length, field.value.length)
+    // A PRESS ON THE BAR SAVES FIRST: a verb, ⋯ or Cancel pressed with the
+    // field open commits the edit on the press itself, before the button's
+    // own click. On a phone a tapped button need not take the focus, so the
+    // field's blur can't be what saves ("edit, tap Done" dropped the rename).
     const onPress = (e: PointerEvent) => {
       const target = e.target as Element
-      pressedBar.current =
-        !!target.closest('[data-selection-sheet]') &&
+      if (
+        target.closest('[data-selection-sheet]') &&
         !target.closest('[data-selection-title-field]')
+      ) {
+        finishRef.current(true)
+      }
     }
     document.addEventListener('pointerdown', onPress, true)
     return () => document.removeEventListener('pointerdown', onPress, true)
   }, [editing])
 
-  const finish = (save: boolean, end: boolean) => {
+  const finish = (save: boolean) => {
     if (settled.current) return
     settled.current = true
     onEditing(false)
     const next = draft.replace(/\s*[\r\n]+\s*/g, ' ').trim()
     if (!save || next === '' || next === shown.trim()) return
     setSaved({ from: title, to: next })
-    Promise.resolve(onSave?.(next, { end })).catch(() => setSaved(null))
+    Promise.resolve(onSave?.(next)).catch(() => setSaved(null))
   }
+  useEffect(() => {
+    finishRef.current = finish
+  })
 
   if (!editing) {
     const words = (
@@ -422,7 +428,6 @@ function BarTitle({
         onClick={() => {
           setDraft(shown)
           settled.current = false
-          pressedBar.current = false
           onEditing(true)
         }}
         className="-mx-1 min-w-0 cursor-text truncate rounded px-1 text-left text-sm font-semibold hover:bg-white/10"
@@ -443,17 +448,17 @@ function BarTitle({
       rows={1}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => finish(true, !pressedBar.current)}
+      onBlur={() => finish(true)}
       onKeyDown={(e) => {
         // The page's own keys (Escape leaves the selection, letters act on
         // it) stay out of a field being typed in.
         e.stopPropagation()
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
           e.preventDefault()
-          finish(true, true)
+          finish(true)
         } else if (e.key === 'Escape') {
           e.preventDefault()
-          finish(false, false)
+          finish(false)
         }
       }}
       // 16px on a phone: Safari zooms the page into a smaller field.
