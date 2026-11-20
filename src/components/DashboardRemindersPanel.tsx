@@ -69,14 +69,14 @@ import {
  *   the only place this panel can edit or delete a reminder from. That, a
  *   tap, paging and Show more/less are the whole interaction set; multi-select
  *   and a floating action bar remain the real page's job.
- * - No leaving animation. `useReminders`' `registerRow`/`rowLeft` pair exists
- *   so a row can hold its place on screen while it collapses (so a fast
- *   double-tap doesn't land on whatever slid up under it) — this panel never
- *   calls either, so every id the hook completes is treated as "off screen"
- *   and removed from `groups` at once. The accepted cost is that a fast
+ * - No leaving animation, and no ghost. A considered row leaves the list at
+ *   once, here as on /reminders (2026-11-20: rows that held their place while
+ *   they collapsed swallowed the taps of a fast run), so the row below is
+ *   under the finger straight away. The accepted cost is that a fast
  *   double-tap on one circle can consider the row that slides up into its
- *   place; the toast's Undo is the recovery. `/reminders` is the surface that
- *   pays for the animation, because it is where a long sitting is done.
+ *   place; the toast's Undo is the recovery. /reminders also fades a ghost
+ *   of the row over the spot (`src/lib/row-ghost.ts`); this card, made for a
+ *   glance, does not.
  * - No confirmation dialog on "Considered all" (the real page's
  *   `ConsiderAllDialog` asks first). The toast's Undo covers a slip, and this
  *   panel's whole design is "glance and tap", not a place to pause and confirm.
