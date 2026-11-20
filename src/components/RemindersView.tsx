@@ -131,13 +131,14 @@ export function RemindersView({
   // Held for the details editor's slot chips (so opening one never waits on a
   // fetch) and for placing a new reminder in its slot at once.
   const { timeSlots, refresh: refreshTimeSlots } = useTimeSlots()
+  // A considered row leaves the list at once; its ghost fades in its place
+  // (`ghostLeavingRows`, `src/lib/row-ghost.ts`, 2026-11-20).
   const {
     groups,
     total,
     hasAny,
     loading,
     error,
-    completingIds,
     consideredAny,
     complete,
     completeMany,
@@ -145,8 +146,6 @@ export function RemindersView({
     considerPrompt,
     didPrompt,
     movePrompt,
-    rowLeft,
-    registerRow,
     hydrated,
     putBack,
     putBackPrompt,
@@ -158,7 +157,7 @@ export function RemindersView({
     requestSeq,
     create,
     applyUndone,
-  } = useReminders({ onUndo, onCompleted, timeSlots, timezone })
+  } = useReminders({ onUndo, onCompleted, timeSlots, timezone, ghostLeavingRows: true })
   // Every reminder the surface holds — waiting, considered today, not today —
   // for the Just now card (`SurfaceJustAdded`): a just-added one is in exactly
   // one of the three.
@@ -518,7 +517,6 @@ export function RemindersView({
   // Quota prompts: their rows (a hold opens the quota's own bubble and
   // editor), drawn by the slot groups through `rowHandlers.renderPrompt`.
   const prompts = usePromptRows({
-    completingIds,
     isSelectionMode: actions.isSelectionMode,
     selectedIds,
     onSelect: actions.selectPrompt,
@@ -526,8 +524,6 @@ export function RemindersView({
     considerPrompt: actions.considerPrompt,
     didPrompt: actions.didPrompt,
     movePrompt,
-    rowLeft,
-    registerRow,
     onUndo,
     onCompleted,
     refresh,
@@ -675,9 +671,7 @@ export function RemindersView({
       onOpen: openDetail,
       onComplete: actions.complete,
       onRetry: retryEnrichment,
-      onLeft: rowLeft,
       onHighlightDone: clearHighlight,
-      onRegister: registerRow,
       renderPrompt: prompts.renderPrompt,
       onPutBackPrompt: putBackPrompt,
     }),
@@ -687,9 +681,7 @@ export function RemindersView({
       openDetail,
       actions.complete,
       retryEnrichment,
-      rowLeft,
       clearHighlight,
-      registerRow,
       prompts.renderPrompt,
       putBackPrompt,
     ],
@@ -744,7 +736,6 @@ export function RemindersView({
           query={searchQuery?.trim() ?? ''}
           groups={[...searchSummary.started, ...searchSummary.later]}
           notToday={searchNotToday}
-          completingIds={completingIds}
           selectedIds={selectedIds}
           isSelectionMode={actions.isSelectionMode}
           rowHandlers={rowHandlers}
@@ -788,7 +779,6 @@ export function RemindersView({
                     expanded={expandedKeys.has(key)}
                     onToggle={() => toggleOpen(key)}
                     onExpand={(expanded) => setExpanded(key, expanded)}
-                    completingIds={completingIds}
                     selectedIds={selectedIds}
                     isSelectionMode={actions.isSelectionMode}
                     highlightId={highlightId}
