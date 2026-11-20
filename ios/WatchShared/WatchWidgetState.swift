@@ -203,6 +203,41 @@ enum WatchWidgetState {
         return Set(live.keys.compactMap(Int.init))
     }
 
+    // MARK: - A tap on a card that is already behind (2026-11-20)
+
+    /// Whether the card item `key` has a tap of its own still drawn (a live
+    /// tombstone): a reminder ✓'d (`r:<id>`), a segment row considered or
+    /// done (`s:<id>`), a prompt handled (its `prompt_key`).
+    static func isPending(itemKey key: String, now: Date = Date()) -> Bool {
+        if key.hasPrefix("r:"), let id = Int(key.dropFirst(2)) {
+            return pendingDoneIds(now: now).contains(id)
+        }
+        if key.hasPrefix("s:"), let id = Int(key.dropFirst(2)) {
+            return pendingPrompts(now: now)[key] != nil || pendingDoneIds(now: now).contains(id)
+        }
+        return pendingPrompts(now: now)[key] != nil
+    }
+
+    /// The item a consider tap acts on. Trent, 2026-11-20: "if I'm going
+    /// through very quickly, sometimes it won't register". A card's buttons
+    /// carry the item they were drawn for, and the card repaints only after
+    /// an intent returns; intents run one at a time, so a second ✓ on a card
+    /// that hasn't repainted yet runs AFTER the first, with the first item's
+    /// id — it sent done for that reminder again (a repeating one advanced
+    /// two occurrences) and the next item was never considered.
+    ///
+    /// Now: the tapped item, while it has no tap of its own pending; else the
+    /// next item after it in the card's order (`remainingKeys`, as drawn)
+    /// that has none — the item the card would be showing; nil when there is
+    /// none (the tap is dropped, never sent twice). A card drawn before this
+    /// build passes no order: a repeat is dropped.
+    static func considerTarget(tapped: String, remainingKeys: [String], now: Date = Date()) -> String? {
+        guard isPending(itemKey: tapped, now: now) else { return tapped }
+        let after = remainingKeys.firstIndex(of: tapped).map { remainingKeys[($0 + 1)...] }
+            ?? remainingKeys[...]
+        return after.first { $0 != tapped && !isPending(itemKey: $0, now: now) }
+    }
+
     // MARK: - Last bulk-snooze result
 
     /// What the card's overdue mode shows right after "Snooze all": the

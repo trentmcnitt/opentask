@@ -370,6 +370,32 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertTrue(cached.seen)
     }
 
+    /// A confirmed consider or Today keeps its tombstone for the 90s, as a
+    /// completion's does (2026-11-20, "ones I already tapped will
+    /// reappear"): a fetch that started before the consider reached the
+    /// server, landing after it was confirmed, overwrites the cache with the
+    /// row still waiting — the tombstone draws it considered over that.
+    func testAConfirmedConsiderOrTodayOutlivesAStaleFetch() throws {
+        WidgetStore.saveReminders([], taskSegments: segments(), fetchStartedAt: t0)
+        WidgetStore.stagePendingSegmentConsider(1, now: t0)
+        WidgetStore.stagePendingSegmentTarget(3, now: t0)
+        WidgetStore.confirmSegmentConsider(1)
+        WidgetStore.confirmSegmentTarget(3)
+        // The fetch sent before both writes lands now, both rows waiting.
+        WidgetStore.saveReminders([], taskSegments: segments(), fetchStartedAt: t0)
+        let drawn = WidgetStore.filterPendingSegments(
+            try XCTUnwrap(WidgetStore.loadReminders()?.value.taskSegments), now: t0.addingTimeInterval(5)
+        )
+        XCTAssertEqual(drawn[0].tasks.first?.state, .considered, "the considered row stays considered")
+        XCTAssertEqual(drawn[1].tasks.first?.left, .target, "the targeted row stays left")
+        // And the fast path's stamp is still live (a recent tap).
+        XCTAssertTrue(WidgetStore.hasRecentInteraction(now: t0.addingTimeInterval(5)))
+        // Past the 90s every later fetch has the writes; the tombstones lapse.
+        let later = WidgetStore.filterPendingSegments(segments(), now: t0.addingTimeInterval(91))
+        XCTAssertEqual(later[0].tasks.first?.state, .waiting)
+        XCTAssertNil(later[1].tasks.first?.left)
+    }
+
     func testCacheWritesKeepSegmentsAndConfirmCompletionLeavesTheRowHandled() throws {
         WidgetStore.saveReminders(try Fixtures.reminders(), taskSegments: segments(), fetchStartedAt: t0)
         WidgetStore.confirmCompletion(1)
@@ -381,7 +407,6 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertEqual(cached.taskSegments[0].tasks.map(\.state), [.considered, .deferred])
         XCTAssertEqual(cached.taskSegments[0].tasks.first?.left, .done)
         XCTAssertEqual(cached.taskSegments[1].tasks.first?.state, .considered)
-        XCTAssertTrue(WidgetStore.pendingSegmentConsiders(now: t0).isEmpty)
     }
 
     func testAnOlderCacheWithoutSegmentsStillDecodes() throws {
@@ -468,7 +493,10 @@ final class TaskSegmentsWidgetTests: WidgetStoreTestCase {
         XCTAssertTrue(WidgetStore.outboxEntries().isEmpty)
         XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.map(\.id), [3, 4])
         XCTAssertEqual(WidgetStore.loadReminders()?.value.taskSegments[1].tasks.first?.left, .target)
-        XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0).isEmpty)
+        // The tombstone outlives the confirm, for its 90s (2026-11-20): a
+        // fetch sent before the write must not draw the row back.
+        XCTAssertEqual(WidgetStore.pendingSegmentTargets(now: t0), [3])
+        XCTAssertTrue(WidgetStore.pendingSegmentTargets(now: t0.addingTimeInterval(91)).isEmpty)
         XCTAssertEqual(reports.all.first?.dependentKinds, [TasksWidget.kind], "the task now has a target today")
     }
 

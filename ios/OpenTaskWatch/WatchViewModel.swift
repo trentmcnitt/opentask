@@ -189,6 +189,9 @@ final class WatchViewModel: ObservableObject {
         let loadStartedAt = Date()
         // See `settleCounter`: quotas settled after this point keep our copy.
         let settleCounterAtStart = settleCounter
+        // See `WatchTapLedger`: a load begun before the newest list tap is
+        // dropped, and taps it may not include are drawn over it.
+        let ticket = ledger.beginLoad()
 
         async let remindersResult = asyncResult { try await api.fetchReminders() }
         async let tasksResult = asyncResult { try await api.fetchOpenTasks() }
@@ -200,14 +203,22 @@ final class WatchViewModel: ObservableObject {
             remindersResult, tasksResult, projectsResult, undoResult, labelsResult
         )
 
+        // A list tap came after this load began: its answer may predate the
+        // tap and would put the row back. The load after the last tap shows
+        // instead (`WatchTapLedger`, rule 1).
+        guard ledger.admit(ticket) else {
+            isLoading = false
+            return
+        }
+
         if case let .success(payload) = rem {
-            reminderGroups = overlayingPendingPrompts(payload.groups)
+            reminderGroups = ledger.overlay(groups: payload.groups)
             WatchCache.saveReminders(payload.groups)
-            taskSegments = payload.taskSegments
+            taskSegments = ledger.overlay(segments: payload.taskSegments)
             WatchCache.saveTaskSegments(payload.taskSegments)
         } else if let cached = WatchCache.loadReminders() {
-            reminderGroups = overlayingPendingPrompts(cached)
-            taskSegments = WatchCache.loadTaskSegments()
+            reminderGroups = ledger.overlay(groups: cached)
+            taskSegments = ledger.overlay(segments: WatchCache.loadTaskSegments())
         }
 
         if case let .success(fetched) = tsk, case let .success(proj) = proj {
@@ -230,13 +241,16 @@ final class WatchViewModel: ObservableObject {
                     return mine
                 }
             }
-            tasks = openTasks
+            tasks = ledger.overlay(tasks: openTasks)
             projects = proj
             WatchCache.saveTasks(openTasks, projects: proj)
         } else if let cached = WatchCache.loadTasks() {
-            tasks = cached.tasks
+            tasks = ledger.overlay(tasks: cached.tasks)
             projects = cached.projects
         }
+        // Only a payload that was fetched retires a tap: a cached fallback
+        // knows nothing new.
+        if case .success = rem, case .success = tsk, case .success = proj { ledger.landed(ticket) }
 
         if case let .success(status) = undo {
             legacyUndoable = status.undoableCount
@@ -312,40 +326,47 @@ final class WatchViewModel: ObservableObject {
             prompts: group.prompts
         )
         WKInterfaceDevice.current().play(.click)
+        let key = WatchTapLedger.reminderKey(task.id)
+        let token = ledger.tap(key, .reminderConsidered)
 
         Task {
             do {
                 try await api.markDone(taskId: task.id)
+                ledger.settle(key, token: token)
                 // No success chime (Trent, 2026-10-11): the tap's single
                 // click is the whole feedback, as on a segment row; only a
                 // failure buzzes.
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
+                ledger.drop(key, token: token)
                 WKInterfaceDevice.current().play(.failure)
             }
             await load()
         }
     }
 
+    /// The list taps that run no load of their own (segment considers, done,
+    /// Today): when a load was dropped for coming before a tap (`owesLoad`)
+    /// and every tap has now answered, run the one the burst is owed — or
+    /// the lists would stay on the optimistic draw until the next load.
+    private func loadIfOwed() async {
+        if ledger.owesLoad && !ledger.anyInFlight { await load() }
+    }
+
     // MARK: - Task segments (2026-10-10, docs/TASK-MODEL.md § Task segments)
 
-    /// Considers whose round trip is still in flight — drawn considered over
-    /// every payload, so a fetch that lands mid-flight can't flash the row
-    /// back (the `pendingPromptActions` rule).
-    @Published private var pendingSegmentConsiders: Set<Int> = []
+    /// Every list tap not yet in a payload (`WatchTapLedger`): drawn over
+    /// every payload as it is applied, so a load that lands mid-burst can't
+    /// put a tapped row back. Not published: the lists it draws over are.
+    private var ledger = WatchTapLedger()
 
     /// Every segment the server sent (`?fill=1`, native PR E — empty ones
-    /// too), in screen order, with in-flight considers drawn (a safety-net
-    /// row SEEN, still waiting — `consideredByTap`). The Reminders page
+    /// too), in screen order, taps not yet in a payload drawn in
+    /// (`WatchTapLedger`, applied as each payload lands). The Reminders page
     /// shows each one that still has a row waiting under the time slot's
     /// rows, and the deadlines page always (`TaskSegmentSection`).
     var listedSegments: [TaskSegmentDTO] {
-        let drawn = pendingSegmentConsiders.isEmpty ? taskSegments : taskSegments.map { segment in
-            segment.replacingTasks(segment.tasks.map {
-                pendingSegmentConsiders.contains($0.id) && $0.isConsiderable ? $0.consideredByTap() : $0
-            })
-        }
-        return TaskSegmentDTO.listed(drawn)
+        TaskSegmentDTO.listed(taskSegments)
     }
 
     /// Edit one row of the live segments: a new state, or nil to drop it.
@@ -381,20 +402,21 @@ final class WatchViewModel: ObservableObject {
     /// today, `targetSegmentTaskToday`), so it never gets here
     /// (`isConsiderable`).
     func considerSegmentTask(_ task: TaskDTO) {
-        guard !pendingSegmentConsiders.contains(task.id), let before = segmentRow(task.id),
-              before.isConsiderable
+        let key = WatchTapLedger.segmentKey(task.id)
+        guard !ledger.isInFlight(key), let before = segmentRow(task.id), before.isConsiderable
         else { return }
-        pendingSegmentConsiders.insert(task.id)
+        let token = ledger.tap(key, .segmentConsidered)
         editSegmentRow(task.id) { $0.consideredByTap() }
         WatchCache.editSegmentRow(taskId: task.id) { $0.consideredByTap() }
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.considerSegmentTasks(ids: [task.id])
-                pendingSegmentConsiders.remove(task.id)
+                ledger.settle(key, token: token)
                 noteOwnAction()
+                await loadIfOwed()
             } catch {
-                pendingSegmentConsiders.remove(task.id)
+                ledger.drop(key, token: token)
                 editSegmentRow(task.id) { _ in before }
                 WatchCache.editSegmentRow(taskId: task.id) { _ in before }
                 WKInterfaceDevice.current().play(.failure)
@@ -409,15 +431,20 @@ final class WatchViewModel: ObservableObject {
     /// Instant like a consider: the row LEAVES "· targeted" on the tap, a
     /// failure reloads it back from the server.
     func targetSegmentTaskToday(_ task: TaskDTO) {
+        let key = WatchTapLedger.segmentKey(task.id)
+        let token = ledger.tap(key, .segmentLeft(.target))
         editSegmentRow(task.id) { $0.left == nil ? $0.leaving(.target) : $0 }
         WatchCache.editSegmentRow(taskId: task.id) { $0.left == nil ? $0.leaving(.target) : $0 }
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.targetSegmentTasksToday(ids: [task.id])
+                ledger.settle(key, token: token)
                 noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
+                await loadIfOwed()
             } catch {
+                ledger.drop(key, token: token)
                 WKInterfaceDevice.current().play(.failure)
                 await load()
             }
@@ -431,15 +458,20 @@ final class WatchViewModel: ObservableObject {
     func completeSegmentTask(_ task: TaskDTO) {
         // Instant like a consider: the row leaves on the tap, a failure
         // reloads it back from the server.
+        let key = WatchTapLedger.segmentKey(task.id)
+        let token = ledger.tap(key, .segmentLeft(.done))
         editSegmentRow(task.id) { $0.left == nil ? $0.leaving(.done) : $0 }
         WatchCache.editSegmentRow(taskId: task.id) { $0.left == nil ? $0.leaving(.done) : $0 }
         WKInterfaceDevice.current().play(.click)
         Task {
             do {
                 try await api.markDone(taskId: task.id)
+                ledger.settle(key, token: token)
                 noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
+                await loadIfOwed()
             } catch {
+                ledger.drop(key, token: token)
                 WKInterfaceDevice.current().play(.failure)
                 await load()
             }
@@ -469,25 +501,6 @@ final class WatchViewModel: ObservableObject {
 
     // MARK: - Quota prompts (quota reminders, 2026-09-24)
 
-    /// Prompt actions whose server round trip is still in flight,
-    /// `prompt_key -> did`. Drawn over every reminders payload
-    /// (`overlayingPendingPrompts`) — including one `load()` fetched while
-    /// the action was on the wire — so tapping through several prompts
-    /// quickly never flashes an already-tapped one back. Each key leaves the
-    /// map when its own response lands, success or failure, BEFORE the
-    /// reconciling `load()`.
-    private var pendingPromptActions: [String: Bool] = [:]
-
-    private func overlayingPendingPrompts(_ groups: [ReminderGroupDTO]) -> [ReminderGroupDTO] {
-        guard !pendingPromptActions.isEmpty else { return groups }
-        return groups.map { group in
-            group.replacingPrompts(group.prompts.map { prompt in
-                guard let did = pendingPromptActions[prompt.promptKey], prompt.isWaiting else { return prompt }
-                return prompt.handled(did: did)
-            })
-        }
-    }
-
     /// A quota PROMPT on the Reminders page: tap = CONSIDERED (the circle —
     /// handled for today, nothing logged), the square = DID IT (+1 and
     /// considered). Keyed by `prompt_key`: a daily quota's prompts in
@@ -503,9 +516,14 @@ final class WatchViewModel: ObservableObject {
     /// state is the server's to compute (a did-it on Piano Scales #1 can finish
     /// #2 in another slot).
     func actOnPrompt(_ prompt: QuotaPromptDTO, did: Bool) {
-        guard prompt.isWaiting, pendingPromptActions[prompt.promptKey] == nil else { return }
-        pendingPromptActions[prompt.promptKey] = did
-        reminderGroups = overlayingPendingPrompts(reminderGroups)
+        let key = WatchTapLedger.promptKey(prompt.promptKey)
+        guard prompt.isWaiting, !ledger.isInFlight(key) else { return }
+        // Drawn handled over every payload until one that includes it lands
+        // (`WatchTapLedger`) — a load fetched while the action was on the
+        // wire too, so tapping through several prompts quickly never flashes
+        // an already-tapped one back.
+        let token = ledger.tap(key, .prompt(did: did))
+        reminderGroups = ledger.overlay(groups: reminderGroups)
         WKInterfaceDevice.current().play(.click)
 
         Task {
@@ -514,15 +532,16 @@ final class WatchViewModel: ObservableObject {
                     ? try await api.didPrompts(keys: [prompt.promptKey], source: .watch)
                     : try await api.considerPrompts(keys: [prompt.promptKey])
                 settleConfirmedQuotas(result.tasks)
+                ledger.settle(key, token: token)
                 // The click was the feedback; no success chime (2026-10-11).
                 noteOwnAction()
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
                 // Most likely a key from before midnight (the server refuses
                 // another day's key) — the reload below fetches today's.
+                ledger.drop(key, token: token)
                 WKInterfaceDevice.current().play(.failure)
             }
-            pendingPromptActions.removeValue(forKey: prompt.promptKey)
             await load()
         }
     }
@@ -581,27 +600,35 @@ final class WatchViewModel: ObservableObject {
     /// in it. Not a full `load()`: that refetches `/api/tasks` too, which
     /// the Quotas page deliberately avoids after each tap (see `logQuota`).
     private func refreshReminders() async {
-        guard let payload = try? await api.fetchReminders() else { return }
-        reminderGroups = overlayingPendingPrompts(payload.groups)
+        let ticket = ledger.beginLoad()
+        guard let payload = try? await api.fetchReminders(), ledger.admit(ticket) else { return }
+        // Drawn over, never retiring a tap: this fetch has no tasks, and a
+        // tap retires only with a full load (`WatchTapLedger.landed`).
+        reminderGroups = ledger.overlay(groups: payload.groups)
         WatchCache.saveReminders(payload.groups)
-        taskSegments = payload.taskSegments
+        taskSegments = ledger.overlay(segments: payload.taskSegments)
         WatchCache.saveTaskSegments(payload.taskSegments)
     }
 
     // MARK: - Tasks
 
     func completeTask(_ task: TaskDTO) {
+        let key = WatchTapLedger.taskKey(task.id)
+        guard !ledger.isInFlight(key) else { return }
+        let token = ledger.tap(key, .taskDone)
         tasks.removeAll { $0.id == task.id }
         WKInterfaceDevice.current().play(.click)
 
         Task {
             do {
                 try await api.markDone(taskId: task.id)
+                ledger.settle(key, token: token)
                 // No success chime (Trent, 2026-10-11): the tap's single
                 // click is the whole feedback, as on a segment row; only a
                 // failure buzzes.
                 WidgetCenter.shared.reloadAllTimelines()
             } catch {
+                ledger.drop(key, token: token)
                 WKInterfaceDevice.current().play(.failure)
             }
             await load()
