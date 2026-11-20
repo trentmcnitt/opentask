@@ -208,13 +208,13 @@ private struct ReminderCardView: View {
         return Group {
             if let taskId = card.segmentTaskId {
                 // A task segment row: "I saw it" — never a completion.
-                Button(intent: ConsiderSegmentCardIntent(taskId: taskId)) { label }
+                Button(intent: ConsiderSegmentCardIntent(taskId: taskId, remainingKeys: card.remainingKeys)) { label }
                     .accessibilityLabel("Consider")
             } else if let promptKey = card.promptKey {
-                Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: false)) { label }
+                Button(intent: ActOnPromptCardIntent(promptKey: promptKey, did: false, remainingKeys: card.remainingKeys)) { label }
                     .accessibilityLabel("Consider")
             } else {
-                Button(intent: ConsiderReminderIntent(taskId: card.taskId)) { label }
+                Button(intent: ConsiderReminderIntent(taskId: card.taskId, remainingKeys: card.remainingKeys)) { label }
                     .accessibilityLabel("Check off")
             }
         }

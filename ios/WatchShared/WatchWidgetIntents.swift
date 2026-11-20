@@ -29,38 +29,92 @@ struct ConsiderReminderIntent: AppIntent {
     @Parameter(title: "Reminder ID")
     var taskId: Int
 
+    /// The card's items in order, as drawn (`ReminderCard.remainingKeys`):
+    /// where a tap on a card that is already behind goes (`CardConsider`).
+    @Parameter(title: "Card Order", default: [])
+    var remainingKeys: [String]
+
     init() {}
 
-    init(taskId: Int) {
+    init(taskId: Int, remainingKeys: [String] = []) {
         self.taskId = taskId
+        self.remainingKeys = remainingKeys
     }
 
     func perform() async throws -> some IntentResult {
+        await CardConsider.perform(
+            tapped: WatchWidgetState.itemKey(reminderId: taskId), remainingKeys: remainingKeys
+        )
+        return .result()
+    }
+}
+
+/// The consider family of the card's buttons — ✓ on a reminder, ✓ on a
+/// prompt, ○ on a segment row — acting on the item
+/// `WatchWidgetState.considerTarget` names: the tapped one, or, when the
+/// card hadn't repainted since the tapped item's own tap, the item after it
+/// (2026-11-20; a repeat used to send done for the same reminder again, and
+/// a repeating reminder advanced twice). Each verb is optimistic: tombstone
+/// first and repaint from cache, so the card advances at once; the server
+/// call; a write-through to the cache (so a reload whose own fetch fails
+/// still shows the advance after the tombstone's TTL); a failure clears the
+/// tombstone and the item honestly comes back on the post-perform reload.
+enum CardConsider {
+    static func perform(tapped: String, remainingKeys: [String]) async {
         WatchCache.installUndoRecorder()
-        let claim = "consider-\(taskId)"
-        guard WatchWidgetState.tryClaim(claim) else { return .result() }
-        defer { WatchWidgetState.releaseClaim(claim) }
-
-        // Optimistic: tombstone first and repaint from cache, so the card
-        // advances immediately instead of after the round trip. A failed
-        // call clears the tombstone below and the reminder honestly comes
-        // back on the post-perform reload.
-        WatchWidgetState.stagePendingDone(taskId: taskId)
-        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
-
-        do {
-            try await APIClient.shared.markDone(taskId: taskId)
-            // Patch the shared cache too, so a reload whose own fetch fails
-            // (watch off Wi-Fi, phone out of range) still shows the advance
-            // after the tombstone's TTL runs out.
-            WatchCache.markReminderConsidered(taskId: taskId)
-        } catch {
-            WatchWidgetState.clearPendingDone(taskId: taskId)
+        guard let key = WatchWidgetState.considerTarget(tapped: tapped, remainingKeys: remainingKeys)
+        else { return }
+        if key.hasPrefix("r:"), let id = Int(key.dropFirst(2)) {
+            await considerReminder(id)
+        } else if key.hasPrefix("s:"), let id = Int(key.dropFirst(2)) {
+            await considerSegmentRow(id)
+        } else {
+            await considerPrompt(key)
         }
         if #available(watchOS 11.0, *) {
             WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
         }
-        return .result()
+    }
+
+    /// Same server call as the watch app's tap-to-consider (`markDone`).
+    private static func considerReminder(_ taskId: Int) async {
+        let claim = "consider-\(taskId)"
+        guard WatchWidgetState.tryClaim(claim) else { return }
+        defer { WatchWidgetState.releaseClaim(claim) }
+        WatchWidgetState.stagePendingDone(taskId: taskId)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        do {
+            try await APIClient.shared.markDone(taskId: taskId)
+            WatchCache.markReminderConsidered(taskId: taskId)
+        } catch {
+            WatchWidgetState.clearPendingDone(taskId: taskId)
+        }
+    }
+
+    /// A prompt considered (never `markDone`: the server refuses a done on
+    /// a quota).
+    static func considerPrompt(_ promptKey: String) async {
+        let claim = "prompt-\(promptKey)"
+        guard WatchWidgetState.tryClaim(claim) else { return }
+        defer { WatchWidgetState.releaseClaim(claim) }
+        await ActOnPromptCardIntent.act(promptKey: promptKey, did: false)
+    }
+
+    /// A segment row considered — `POST /api/task-segments/consider`,
+    /// staged under its `s:<id>` key in the prompt map
+    /// (`ReminderStackTimeline.applyingPending` reads it).
+    private static func considerSegmentRow(_ taskId: Int) async {
+        let key = "s:\(taskId)"
+        guard WatchWidgetState.tryClaim(key) else { return }
+        defer { WatchWidgetState.releaseClaim(key) }
+        WatchWidgetState.stagePendingPrompt(key: key, did: false)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
+        do {
+            try await APIClient.shared.considerSegmentTasks(ids: [taskId])
+            WatchCache.editSegmentRow(taskId: taskId) { $0.consideredByTap() }
+        } catch {
+            WatchWidgetState.clearPendingPrompt(key: key)
+        }
     }
 }
 
@@ -80,19 +134,41 @@ struct ActOnPromptCardIntent: AppIntent {
     @Parameter(title: "Did It", default: false)
     var did: Bool
 
+    /// The card's items in order, as drawn (`CardConsider`).
+    @Parameter(title: "Card Order", default: [])
+    var remainingKeys: [String]
+
     init() {}
 
-    init(promptKey: String, did: Bool) {
+    init(promptKey: String, did: Bool, remainingKeys: [String] = []) {
         self.promptKey = promptKey
         self.did = did
+        self.remainingKeys = remainingKeys
     }
 
     func perform() async throws -> some IntentResult {
+        // ✓ is the consider family: a tap on a card that is behind goes on
+        // to the next item (`CardConsider`).
+        guard did else {
+            await CardConsider.perform(tapped: promptKey, remainingKeys: remainingKeys)
+            return .result()
+        }
         WatchCache.installUndoRecorder()
+        // ☐ on a card that is behind: this prompt's tap is still drawn, so
+        // the tap is dropped rather than logging one more (2026-11-20).
+        guard !WatchWidgetState.isPending(itemKey: promptKey) else { return .result() }
         let claim = "prompt-\(promptKey)"
         guard WatchWidgetState.tryClaim(claim) else { return .result() }
         defer { WatchWidgetState.releaseClaim(claim) }
+        await Self.act(promptKey: promptKey, did: true)
+        if #available(watchOS 11.0, *) {
+            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
+        }
+        return .result()
+    }
 
+    /// Stage, send, write through; the caller holds the prompt's claim.
+    static func act(promptKey: String, did: Bool) async {
         WatchWidgetState.stagePendingPrompt(key: promptKey, did: did)
         WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
 
@@ -112,10 +188,6 @@ struct ActOnPromptCardIntent: AppIntent {
             // the post-perform reload fetches today's prompts.
             WatchWidgetState.clearPendingPrompt(key: promptKey)
         }
-        if #available(watchOS 11.0, *) {
-            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
-        }
-        return .result()
     }
 }
 
@@ -131,29 +203,19 @@ struct ConsiderSegmentCardIntent: AppIntent {
     @Parameter(title: "Task ID")
     var taskId: Int
 
+    /// The card's items in order, as drawn (`CardConsider`).
+    @Parameter(title: "Card Order", default: [])
+    var remainingKeys: [String]
+
     init() {}
 
-    init(taskId: Int) {
+    init(taskId: Int, remainingKeys: [String] = []) {
         self.taskId = taskId
+        self.remainingKeys = remainingKeys
     }
 
     func perform() async throws -> some IntentResult {
-        WatchCache.installUndoRecorder()
-        let key = "s:\(taskId)"
-        guard WatchWidgetState.tryClaim(key) else { return .result() }
-        defer { WatchWidgetState.releaseClaim(key) }
-
-        WatchWidgetState.stagePendingPrompt(key: key, did: false)
-        WidgetCenter.shared.reloadTimelines(ofKind: WatchWidgetState.kind)
-        do {
-            try await APIClient.shared.considerSegmentTasks(ids: [taskId])
-            WatchCache.editSegmentRow(taskId: taskId) { $0.consideredByTap() }
-        } catch {
-            WatchWidgetState.clearPendingPrompt(key: key)
-        }
-        if #available(watchOS 11.0, *) {
-            WidgetCenter.shared.invalidateRelevance(ofKind: WatchWidgetState.kind)
-        }
+        await CardConsider.perform(tapped: "s:\(taskId)", remainingKeys: remainingKeys)
         return .result()
     }
 }
@@ -176,6 +238,9 @@ struct CompleteSegmentCardIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         WatchCache.installUndoRecorder()
+        // A card that is behind: this row's own tap is still drawn, so the
+        // tap is dropped rather than sent twice (2026-11-20).
+        guard !WatchWidgetState.isPending(itemKey: "s:\(taskId)") else { return .result() }
         let claim = "segment-done-\(taskId)"
         guard WatchWidgetState.tryClaim(claim) else { return .result() }
         defer { WatchWidgetState.releaseClaim(claim) }
