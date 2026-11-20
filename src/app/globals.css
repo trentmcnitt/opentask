@@ -357,22 +357,37 @@
 
 /* A considered row's ghost (`src/lib/row-ghost.ts`, 2026-11-20): the row has
    already left the list — the next one is in its place, under the finger — and
-   this copy, struck through and out of the flow, fades over the spot. It wears
-   the page's background so the two rows never show through each other, and
-   takes no pointer events, so a tap during the fade reaches the row beneath.
-   The copy removes itself on `animationend`. */
+   this copy, struck through and out of the flow, fades over the spot. Two
+   steps, so the two rows' words never show through each other: the copy's
+   words fade while its background (the card's own colour, `--row-ghost-bg`,
+   set by the script) still covers the row beneath, then the background fades
+   and shows that row. Pointer events pass through it all along. The copy
+   removes itself when its own animation ends. */
 @keyframes row-ghost {
-  0% {
-    opacity: 1;
+  0%,
+  45% {
+    background-color: var(--row-ghost-bg);
   }
   100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes row-ghost-words {
+  from {
+    opacity: 1;
+  }
+  to {
     opacity: 0;
   }
 }
 
 .animate-row-ghost {
   animation: row-ghost 180ms ease-out forwards;
-  background-color: var(--background);
+}
+
+.animate-row-ghost > * {
+  animation: row-ghost-words 80ms ease-out forwards;
 }
 
 .animate-row-ghost [data-row-title] {
@@ -383,7 +398,8 @@
 /* Reduced motion: no fade, and the 0 s animation still ends, which is what
    removes the copy. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-row-ghost {
+  .animate-row-ghost,
+  .animate-row-ghost > * {
     animation-duration: 0s;
   }
 }

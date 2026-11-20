@@ -6,7 +6,8 @@
  * one row per tap (`completeIds` in `src/hooks/useReminders.ts` has the why).
  * What used to show the tap had been taken, the row struck through and
  * collapsing in place, is now a GHOST: a copy of the row drawn over the spot
- * it left, struck through, fading out over 180 ms.
+ * it left, struck through, fading out over 180 ms — its words first, on the
+ * card's own colour, then that colour (`.animate-row-ghost` in globals.css).
  *
  * The ghost is out of the page's flow and takes no pointer events, so it never
  * holds a row's place and every tap passes through it to the row now
@@ -46,6 +47,9 @@ function ghost(row: HTMLElement): void {
     }
     if (el.tabIndex >= 0) el.tabIndex = -1
   }
+  // The colour it sits on — the card's, not the page's — so it covers the
+  // row now beneath it until its words have faded (`.animate-row-ghost`).
+  copy.style.setProperty('--row-ghost-bg', surfaceColor(row))
   copy.setAttribute(GHOST_ATTR, '')
   copy.setAttribute('aria-hidden', 'true')
   copy.inert = true
@@ -61,8 +65,35 @@ function ghost(row: HTMLElement): void {
     zIndex: '30',
     listStyle: 'none',
   })
-  const done = () => copy.remove()
-  copy.addEventListener('animationend', done, { once: true })
-  copy.addEventListener('animationcancel', done, { once: true })
+  // Its own animation, not its words' (theirs end first and bubble here).
+  const done = (e: AnimationEvent) => {
+    if (e.target === copy) copy.remove()
+  }
+  copy.addEventListener('animationend', done)
+  copy.addEventListener('animationcancel', done)
   document.body.appendChild(copy)
+}
+
+/**
+ * The colour the row is drawn on, as one opaque colour: every background from
+ * the page down to the row, painted in order onto one pixel — a card's is
+ * often translucent over the page's, and a translucent cover would let the
+ * row beneath show through. Any CSS colour works (`oklch()` included), since
+ * the canvas parses it.
+ */
+function surfaceColor(el: HTMLElement): string {
+  const layers: string[] = []
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    layers.unshift(getComputedStyle(node).backgroundColor)
+  }
+  const ctx = document.createElement('canvas').getContext('2d')
+  if (!ctx) return getComputedStyle(document.body).backgroundColor
+  ctx.canvas.width = 1
+  ctx.canvas.height = 1
+  for (const color of layers) {
+    ctx.fillStyle = color
+    ctx.fillRect(0, 0, 1, 1)
+  }
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return `rgb(${r}, ${g}, ${b})`
 }
