@@ -42,12 +42,18 @@ func slotSnoozeActions(now: Date = Date()) -> [UNNotificationAction] {
     return actions
 }
 
+/// `TaskNotificationList` rows as the system's actions.
+func notificationActions(_ rows: [TaskNotificationList.Row]) -> [UNNotificationAction] {
+    rows.map { UNNotificationAction(identifier: $0.identifier, title: $0.title, options: []) }
+}
+
 /// Register notification categories for the app.
 /// Called by both AppDelegate (iOS) and WatchAppDelegate (watchOS).
 ///
 /// Six categories:
-/// - TASK_REMINDER: individual task (Done, +1hr, All +1hr, then All → Next
-///   period and the next three periods — see `slotSnoozeActions()`)
+/// - TASK_REMINDER: individual task — Done, Next period and +1hr for this
+///   task alone, then All → Next period (`TaskNotificationList.registered`,
+///   2026-11-18; before: Done, +1hr, All +1hr and every "All →" period row)
 /// - TASK_ADDED: the "AI finished" notification for a just-added task
 ///   (Done, Delete). No snooze: a task added a minute ago isn't overdue.
 ///   Delete is `.destructive` (drawn red) and deliberately NOT
@@ -76,11 +82,6 @@ func registerNotificationCategories() {
         title: "Done",
         options: []
     )
-    let snoozeAction = UNNotificationAction(
-        identifier: NotificationAction.snooze1hr,
-        title: "+1hr",
-        options: []
-    )
     let snoozeAllAction = UNNotificationAction(
         identifier: NotificationAction.snoozeAll1hr,
         title: "All +1hr",
@@ -90,7 +91,9 @@ func registerNotificationCategories() {
 
     let taskReminderCategory = UNNotificationCategory(
         identifier: NotificationCategory.taskReminder,
-        actions: [doneAction, snoozeAction, snoozeAllAction] + slotActions,
+        // Done, Next period and +1hr for THIS task, then the one bulk row
+        // (`TaskNotificationList.registered`, 2026-11-18).
+        actions: notificationActions(TaskNotificationList.registered(hasSlots: !TimeSlotStore.cachedSlots.isEmpty)),
         intentIdentifiers: [],
         options: []
     )

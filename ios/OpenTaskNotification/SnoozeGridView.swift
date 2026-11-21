@@ -16,7 +16,8 @@ enum SnoozeMode {
 /// Row 1: Preset times (gray, the user's pad presets) — snap to next occurrence of that wall-clock time
 /// Row 2: Increments (green) — +1 min, +30 min, +1 hr, +1 day
 /// Row 3: Decrements (amber) — -5 min, -30 min, -1 hr, -1 day
-/// Row 4: Reset + Next Hour (blue) — snap to the next round hour
+/// Row 4: Reset + Next Hour (blue, the next round hour) + Next period (blue,
+///        the next period's start after the task's own time)
 ///
 /// Tapping a button updates `workingDueAt` and fires `onGridSelection` so the
 /// NotificationViewController can update the action button labels dynamically.
@@ -31,6 +32,10 @@ struct SnoozeGridView: View {
     /// view controller can update preferredContentSize to avoid clipping.
     var onDirtyStateChanged: ((Bool) -> Void)?
 
+    /// False under the overdue checklist (2026-11-21), whose own header says
+    /// what the grid acts on — the checked set.
+    var showsHeader = true
+
     @State private var workingDueAt: String
     @State private var isDirty = false
 
@@ -41,9 +46,13 @@ struct SnoozeGridView: View {
     init(
         mode: SnoozeMode,
         onGridSelection: @escaping (String) -> Void,
-        onDirtyStateChanged: ((Bool) -> Void)? = nil
+        onDirtyStateChanged: ((Bool) -> Void)? = nil,
+        slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots,
+        showsHeader: Bool = true
     ) {
         self.mode = mode
+        self.showsHeader = showsHeader
+        self.slots = slots
         self.onGridSelection = onGridSelection
         self.onDirtyStateChanged = onDirtyStateChanged
 
@@ -93,6 +102,9 @@ struct SnoozeGridView: View {
         IncrementButton(id: "i-1d", label: "+1 day", minutes: nil, days: 1),
     ]
 
+    /// The periods, read once when the grid is built (`TimeSlotStore`'s cache).
+    private let slots: [TimeSlotDTO]
+
     private let decrements: [IncrementButton] = [
         IncrementButton(id: "d-5", label: "-5 min", minutes: -5, days: nil),
         IncrementButton(id: "d-30", label: "-30 min", minutes: -30, days: nil),
@@ -105,7 +117,7 @@ struct SnoozeGridView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header
-            headerSection
+            if showsHeader { headerSection }
 
             // Resolved time (shown when grid is dirty)
             if isDirty {
@@ -141,7 +153,7 @@ struct SnoozeGridView: View {
                     Image(systemName: "tray.full")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text("\(taskCount) \(TaskWording.overdueLower)")
+                    Text(taskCount > 0 ? "\(taskCount) \(TaskWording.overdueLower)" : "All \(TaskWording.overdueLower)")
                         .font(.subheadline.weight(.semibold))
                 }
             }
@@ -198,33 +210,74 @@ struct SnoozeGridView: View {
                 }
             }
 
-            // Row 4: Reset + Next Hour
+            // Row 4: Reset + Next Hour + Next period (2026-11-18). The two
+            // blue buttons say their name over their time, so three fit the
+            // row at the other rows' width with nothing shrunk; Reset takes
+            // the row's height.
             HStack(spacing: 6) {
-                gridButton(label: "Reset", color: .gray) {
+                gridButton(label: "Reset", color: .gray, fillsHeight: true) {
                     handleReset()
                 }
-                gridButton(label: nextHourLabel, color: .blue) {
+                gridButton(label: "Next Hour", detail: nextHourTime, color: .blue) {
                     handleNextHour()
                 }
+                if let nextPeriod {
+                    // "tomorrow 8:00 AM" when it starts on a later day, as the
+                    // action rows say it (2026-11-21).
+                    gridButton(
+                        label: "Next period", detail: TaskNotificationList.timeWords(nextPeriod, now: Date()),
+                        color: .blue
+                    ) {
+                        workingDueAt = DateHelpers.formatISO(nextPeriod)
+                        commitChange()
+                    }
+                }
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    /// "Next Hour · 3:00 PM" — computed fresh on each render so the time stays current.
-    private var nextHourLabel: String {
-        let snapped = DateHelpers.snapToNextHour()
-        return "Next Hour · \(DateHelpers.formatShortTime(snapped))"
+    /// "3:00 PM" under "Next Hour" — computed fresh on each render so the time stays current.
+    private var nextHourTime: String {
+        DateHelpers.formatShortTime(DateHelpers.snapToNextHour())
     }
 
-    private func gridButton(label: String, color: Color, action: @escaping () -> Void) -> some View {
+    /// The next period's start: the first one strictly after max(now, the
+    /// task's own time) — the action list's "Lunchtime · 11:00 AM" row and
+    /// the widget's ⏭ (`TaskNotificationList.singleTarget`); in bulk mode, after
+    /// now. Nil with no cached period (the button is then left out).
+    private var nextPeriod: Date? {
+        let own: String?
+        if case .individual(_, let dueAt) = mode { own = dueAt } else { own = nil }
+        return TaskNotificationList.singleTarget(
+            for: NotificationAction.snoozeNextPeriod, dueAtISO: own, now: Date(), slots: slots
+        )
+    }
+
+    /// One grid button: its label, and under it an optional second line (a
+    /// time). `fillsHeight` stretches a one-line button to its row's height.
+    private func gridButton(
+        label: String, detail: String? = nil, color: Color, fillsHeight: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.caption.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(color.opacity(0.15))
-                .foregroundColor(color == .gray ? .primary : color)
-                .cornerRadius(6)
+            VStack(spacing: 1) {
+                Text(label)
+                    .font(.caption.weight(.medium))
+                if let detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .opacity(0.85)
+                }
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 2)
+            .background(color.opacity(0.15))
+            .foregroundColor(color == .gray ? .primary : color)
+            .cornerRadius(6)
         }
         .buttonStyle(.plain)
     }

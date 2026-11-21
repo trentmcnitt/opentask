@@ -103,6 +103,8 @@ targets:
           - '*.entitlements'
           - Info.plist
       - path: Shared
+      # The overdue checklist's row times (2026-11-21): the widgets' words.
+      - path: OpenTaskWidgets/DueLabel.swift
     dependencies:
       - sdk: UserNotificationsUI.framework
     entitlements:
