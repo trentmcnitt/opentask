@@ -256,6 +256,7 @@
 		B58C73D0FF5FB19FA7B9F7E2 /* PageAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48C1737B0497AEDC038E7868 /* PageAnchor.swift */; };
 		B631C0923839CAAB69653444 /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5AD2085E636FB318922CE9AA /* Intents.framework */; };
 		B67D46CA78687C1257FB52D0 /* notifications-stale.json in Resources */ = {isa = PBXBuildFile; fileRef = CA6B897C53879FC8D116C9BA /* notifications-stale.json */; };
+		B71FF253E3CFCA41B3BABF51 /* OverdueChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7F791F285CE84046502BD1 /* OverdueChecklist.swift */; };
 		B75C43B87ED7288B98BD9578 /* QuotaCountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13865C4D7DA320D5CAA82CE /* QuotaCountTests.swift */; };
 		B7A6C49AEC224FA14079678E /* TasksWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E6B867A41342C3900ECE01 /* TasksWidgetViews.swift */; };
 		B829B450DE43446FC2089841 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
@@ -307,6 +308,7 @@
 		D9EF8BAF2B05017FFE43DA89 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
 		DA6FEFBCA8F79E2BEC42C435 /* TaskNotificationList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15B5EF64638A8F1A27A0BF5 /* TaskNotificationList.swift */; };
 		DA8FB5A617C614C58D7ABD4C /* RowCornerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DD5A0D38F3F38C3D5EC9D21 /* RowCornerTests.swift */; };
+		DAA755D2B3D1DABB342D0CDB /* OverdueChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7F791F285CE84046502BD1 /* OverdueChecklist.swift */; };
 		DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F814F05408288A5A627F9CC /* OpenTaskModels.swift */; };
 		DBCA794BCC63F980AE658F47 /* tasks.json in Resources */ = {isa = PBXBuildFile; fileRef = 6676B0D8909B96B0AAA98C71 /* tasks.json */; };
 		DBFDDD23B1A6B2402017A200 /* ProgressSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26D82069C489AB70ADFFC141 /* ProgressSource.swift */; };
@@ -317,6 +319,7 @@
 		E03D1BFCABD032C51C794C59 /* WebBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA7A0B6F7260FB3D4427285 /* WebBridge.swift */; };
 		E047572CD6FAF1072C30F2D3 /* PadPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9DBFA5C3F04DA1B616E7D4 /* PadPresetStore.swift */; };
 		E0A1855EE988816C5C6D8880 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */; };
+		E192609BD04B84C3DE570981 /* OverdueChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7F791F285CE84046502BD1 /* OverdueChecklist.swift */; };
 		E1E1FA07EB499EAC75A70604 /* SweepDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BEA167B70531B2904292843 /* SweepDismissal.swift */; };
 		E2178CDCEEC7B5AABAD0C9F5 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = D374734A31EFC60FF30C1DE0 /* MenuBarIcon.swift */; };
 		E3DEAC0DDF5D70B663069797 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */; };
@@ -337,6 +340,7 @@
 		EE5A06EF55B46C3132933303 /* time-slots.json in Resources */ = {isa = PBXBuildFile; fileRef = B7DD47E083E073FE32FA2C34 /* time-slots.json */; };
 		EEE628E522E5DF619FD5B933 /* OpenTaskMacWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EF9B9D541E938BB134EA1D78 /* bulk-complete.json in Resources */ = {isa = PBXBuildFile; fileRef = EF47E45ECA0ED429A8C52D35 /* bulk-complete.json */; };
+		F098555C266C84134F7D70FD /* OverdueChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7F791F285CE84046502BD1 /* OverdueChecklist.swift */; };
 		F19207BFA50354FA3F432FED /* DayStartStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CA12A04B151CFF15398C18 /* DayStartStoreTests.swift */; };
 		F2584C36A1FCEBDD4A4E05A9 /* OpenTaskMacNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0482F23F01CDA7B3D0C95B62 /* OpenTaskMacNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F2614268BC1F53F49D9AC8B7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */; };
@@ -350,6 +354,7 @@
 		F98C44868E3AA34930C5D2B4 /* RemindersTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8978A06D1EC922FE90F1F98 /* RemindersTimeline.swift */; };
 		FA63DF44534D4DD08E7F4116 /* WidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A535170EA850BA882099BFB1 /* WidgetStore.swift */; };
 		FA7BA42783C7FA87612704DB /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
+		FA9B531C050C99AB25859A50 /* OverdueChecklistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F437E609351DDD28D818C58 /* OverdueChecklistTests.swift */; };
 		FB905349F20E16A9BEE0E2B2 /* task-badges.json in Resources */ = {isa = PBXBuildFile; fileRef = E3290E5D7B8A509F3BA310ED /* task-badges.json */; };
 		FD6F742C3FBA80159407A5F3 /* PageAnchorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD335222D78E4FB5DDDB879 /* PageAnchorTests.swift */; };
 		FF3F98E6426867E259E59B7D /* TasksPageControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A465FB343DC09F05B9CAF017 /* TasksPageControl.swift */; };
@@ -438,6 +443,7 @@
 		3D6C0BF30FB6B5278E16317C /* SweepSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepSummaryTests.swift; sourceTree = "<group>"; };
 		3E976BDF1943E2A6E03E1BAC /* DayStartStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayStartStore.swift; sourceTree = "<group>"; };
 		3EBEF5EED37D51458C482AC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3F437E609351DDD28D818C58 /* OverdueChecklistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverdueChecklistTests.swift; sourceTree = "<group>"; };
 		3F7B22313C4BC57FABC04BA8 /* SweepDismissalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepDismissalTests.swift; sourceTree = "<group>"; };
 		427CAB54160F5AF30612308D /* quota.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = quota.png; sourceTree = "<group>"; };
 		432BE88E6B26A0457EC674D6 /* TimeSlotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeSlotStore.swift; sourceTree = "<group>"; };
@@ -549,6 +555,7 @@
 		CA6B897C53879FC8D116C9BA /* notifications-stale.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "notifications-stale.json"; sourceTree = "<group>"; };
 		CB9E0F6B81614554A449E3E5 /* quota-prompts-restore.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "quota-prompts-restore.json"; sourceTree = "<group>"; };
 		CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		CD7F791F285CE84046502BD1 /* OverdueChecklist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverdueChecklist.swift; sourceTree = "<group>"; };
 		CF865E3EF02E02F147369E30 /* TargetAgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAgeTests.swift; sourceTree = "<group>"; };
 		CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		D11E6EB02F51D4DF6D8C2367 /* label-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "label-cases.json"; sourceTree = "<group>"; };
@@ -673,6 +680,7 @@
 				4B8215D5A6897042668F0E5D /* NotificationIdentifiers.swift */,
 				0416FE5790E90F7D67FF1112 /* OpenTaskDay.swift */,
 				7F814F05408288A5A627F9CC /* OpenTaskModels.swift */,
+				CD7F791F285CE84046502BD1 /* OverdueChecklist.swift */,
 				5E9DBFA5C3F04DA1B616E7D4 /* PadPresetStore.swift */,
 				48C1737B0497AEDC038E7868 /* PageAnchor.swift */,
 				A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */,
@@ -767,6 +775,7 @@
 				E67F4801FB535177364242D4 /* NightDayTests.swift */,
 				4B81BC442517CEF9C27927AF /* NotificationActionRunnerTests.swift */,
 				977F5732E72B529DD4DC88F1 /* OpenTaskDayTests.swift */,
+				3F437E609351DDD28D818C58 /* OverdueChecklistTests.swift */,
 				0A71580BA2CE66A23CB65D2B /* PadPresetStoreTests.swift */,
 				FAD335222D78E4FB5DDDB879 /* PageAnchorTests.swift */,
 				ACEF2491B3B8C5BB19401933 /* PendingLockTests.swift */,
@@ -1201,6 +1210,7 @@
 				227ED182C18F9A0E85D09028 /* OpenTaskCommands.swift in Sources */,
 				A910EEE4CB8138966446AD76 /* OpenTaskDay.swift in Sources */,
 				818379AA1A07C71D74720E37 /* OpenTaskModels.swift in Sources */,
+				B71FF253E3CFCA41B3BABF51 /* OverdueChecklist.swift in Sources */,
 				05AE2FFEBBC95AB8B1924D93 /* PadPresetStore.swift in Sources */,
 				B58C73D0FF5FB19FA7B9F7E2 /* PageAnchor.swift in Sources */,
 				161ED908F8B6F869443891BD /* PreviewLocalData.swift in Sources */,
@@ -1283,6 +1293,7 @@
 				B1B67C7043CD619A5970F023 /* OpenTaskDay.swift in Sources */,
 				4AAFC03D30E04FA841BE999D /* OpenTaskMacApp.swift in Sources */,
 				6D835FFC83B34D8653FACAF4 /* OpenTaskModels.swift in Sources */,
+				DAA755D2B3D1DABB342D0CDB /* OverdueChecklist.swift in Sources */,
 				E047572CD6FAF1072C30F2D3 /* PadPresetStore.swift in Sources */,
 				D450828901011E592F78C056 /* PageAnchor.swift in Sources */,
 				1065DE5F13ABB56144BC9136 /* PreviewLocalData.swift in Sources */,
@@ -1358,6 +1369,8 @@
 				78524F1E514DC0A9797AC86C /* OpenTaskDay.swift in Sources */,
 				058AA5A4A396C85977EC7418 /* OpenTaskDayTests.swift in Sources */,
 				DB2A34F60D593B058F242792 /* OpenTaskModels.swift in Sources */,
+				F098555C266C84134F7D70FD /* OverdueChecklist.swift in Sources */,
+				FA9B531C050C99AB25859A50 /* OverdueChecklistTests.swift in Sources */,
 				CD60D00E79DF062274372897 /* PadPresetStore.swift in Sources */,
 				A30053A8CFB6802E1E62EF98 /* PadPresetStoreTests.swift in Sources */,
 				231E37DD1193D759A0F0BFAA /* PageAnchor.swift in Sources */,
@@ -1447,6 +1460,7 @@
 				770AE814F23EBC306447A18F /* OpenTaskDay.swift in Sources */,
 				ED82B81A737BC79D08FFE378 /* OpenTaskModels.swift in Sources */,
 				CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */,
+				E192609BD04B84C3DE570981 /* OverdueChecklist.swift in Sources */,
 				7CC1249ED4A76AB54DCD865B /* PadPresetStore.swift in Sources */,
 				06074DBB58EB5164A8770BB3 /* PageAnchor.swift in Sources */,
 				6A9B5E10389B15AE08DA8BD4 /* PreviewLocalData.swift in Sources */,

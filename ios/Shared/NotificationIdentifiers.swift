@@ -100,6 +100,10 @@ enum NotificationAction {
     static let snoozeAll1hr = "SNOOZE_ALL_1HR"
     static let snoozeCustom = "SNOOZE_CUSTOM"
     static let snoozeAllCustom = "SNOOZE_ALL_CUSTOM"
+    /// The overdue checklist's last row (TNC-8, 2026-11-21): close the
+    /// long-press and remove this banner. Nothing is sent. Only the content
+    /// extension offers it; a handler that gets it anyway ignores it.
+    static let cancel = "CANCEL"
     /// §6.1 batch checklist: commit the rows the user checked in the extension.
     /// Only ever offered by the content extension — from the lock screen there
     /// is nothing to check, so the registered category omits it.

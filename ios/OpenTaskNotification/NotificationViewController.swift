@@ -7,10 +7,13 @@ import UserNotificationsUI
 /// when the user long-presses a task notification.
 ///
 /// Handles three notification categories:
-/// - **TASK_REMINDER**: individual task — grid uses the task's dueAt as the base time,
-///   action buttons include Done, single-task snooze, and bulk snooze.
-/// - **TASK_SUMMARY**: overflow summary — grid uses "now" as the base time,
-///   action buttons are bulk-only (no Done or single-task snooze).
+/// - **TASK_REMINDER**: the overdue checklist (2026-11-21, `OverdueChecklist`,
+///   TNC-1…9) over the grid — the pressed task first and checked, the user's
+///   other overdue tasks under it; Done and every time act on the checked
+///   set. The grid counts from the task's own time.
+/// - **TASK_SUMMARY**: the same checklist with no held row and nothing
+///   checked; "All → Next period" (the sweep) while nothing is. The grid
+///   counts from now.
 /// - **SLOT_REMINDER**: a §6 time slot — shows the batch checklist instead of the
 ///   grid (see `ReminderChecklistView`), committed with one bulk request.
 ///
@@ -29,23 +32,17 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     /// (snooze grid vs. reminder checklist); only `view` is used from here.
     private var hostingController: UIViewController?
 
-    // Task data from APNs payload. (The task id is read from the response's
-    // own payload when an action runs — `NotificationActionRunner`.)
+    /// The grid's base: the held task's own time, or now on a summary (TNC-9).
     private var dueAt: String = ""
+    /// The time picked in the grid, for the checked set; nil = none picked.
     private var selectedDueAt: String?
-    private var selectedDeltaMinutes: Int?
     private var hasReceivedInitialNotification = false
 
-    /// True when displaying a TASK_SUMMARY notification (bulk-only actions, no taskId).
+    /// True when displaying a TASK_SUMMARY notification (no held task).
     private var isBulkMode = false
 
-    /// A task notification's switch (2026-11-18, `SnoozePanel`): this task
-    /// alone, or every overdue task. A summary has no switch (`isBulkMode`).
-    private var scope: TaskNotificationList.SnoozeScope = .thisTask
-    /// The task's own time from the payload (the grid's base in "This task").
-    private var taskDueAt: String = ""
-    /// Whether the list and the grid act on every overdue task right now.
-    private var actsOnAll: Bool { isBulkMode || scope == .allOverdue }
+    /// The overdue checklist (TASK_REMINDER and TASK_SUMMARY).
+    private var overdueModel: OverdueChecklistModel?
 
     // §6.1 batch checklist state
     /// True when displaying a SLOT_REMINDER notification (checklist, not grid).
@@ -71,18 +68,17 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         // the custom action buttons (e.g., "+3hr") persist even though the grid resets.
         hasReceivedInitialNotification = false
         isBulkMode = false
-        scope = .thisTask
+        overdueModel = nil
         selectedDueAt = nil
-        selectedDeltaMinutes = nil
 
         // Staged check-marks are discarded with the view: an unseen checklist
-        // must never commit rows the user staged in a previous expansion.
-        let wasSlotMode = isSlotMode
+        // must never commit rows the user staged in a previous expansion —
+        // the overdue checklist's checks included (`overdueModel`, above).
+        // The next expansion's `didReceive` rebuilds the view and its action
+        // list from scratch.
         isSlotMode = false
         slotId = -1
         checklistModel = nil
-
-        if !wasSlotMode { setDefaultTimeActions() }
     }
 
     // MARK: - UNNotificationContentExtension
@@ -112,42 +108,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             return
         }
 
-        let onSelection: (String) -> Void = { [weak self] newDueAt in
-            self?.handleGridSelection(newDueAt)
-        }
-        let onDirty: (Bool) -> Void = { [weak self] isDirty in
-            self?.updatePreferredContentSize()
-            if !isDirty {
-                self?.selectedDueAt = nil
-                self?.selectedDeltaMinutes = nil
-                self?.setDefaultTimeActions()
-            }
-        }
-        if isBulkMode {
-            let overflowCount = userInfo["overflowCount"] as? Int ?? 0
-            let totalOverdueCount = userInfo["totalOverdueCount"] as? Int ?? overflowCount
-            // Use "now" as the base time for bulk mode (no single task's dueAt)
-            dueAt = DateHelpers.formatISO(Date())
-            install(hosting: UIHostingController(rootView: SnoozeGridView(
-                mode: .bulk(taskCount: totalOverdueCount),
-                onGridSelection: onSelection,
-                onDirtyStateChanged: onDirty
-            )))
-        } else {
-            taskDueAt = userInfo["dueAt"] as? String ?? ""
-            dueAt = taskDueAt
-            install(hosting: UIHostingController(rootView: SnoozePanel(
-                taskTitle: title,
-                taskDueAt: taskDueAt,
-                overdueCount: userInfo["overdueCount"] as? Int,
-                onScopeChange: { [weak self] scope in self?.handleScopeChange(scope) },
-                onGridSelection: onSelection,
-                onDirtyStateChanged: onDirty
-            )))
-        }
-
-        // Set initial action buttons with absolute time (e.g., "4:00 PM" instead of "+1hr")
-        setDefaultTimeActions()
+        presentOverdueChecklist(userInfo: userInfo, title: title)
     }
 
     /// Pin a SwiftUI hosting controller to the extension's top and sides.
@@ -277,14 +238,12 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     /// Called when the user taps an action button while the extension is visible.
-    /// Fires the API call and dismisses the notification.
     ///
-    /// Which call each button makes is `NotificationActionRunner` — the same
-    /// dispatch the phone, Mac and Watch delegates use — given the time picked
-    /// in the grid for the custom snoozes. It also clears the banners of the
-    /// tasks a bulk snooze moved (`dismissNotificationsAfterSweep`, by the
-    /// server's `moved_ids`), and no others. This notification's own banner
-    /// goes with `.dismiss`.
+    /// The period checklist commits its own staging (`commitSlotChecklist`);
+    /// a task notification and a summary commit the overdue checklist
+    /// (`commitOverdueChecklist`). Neither is forwarded to the app: the
+    /// extension made the call, and `.dismissAndForwardAction` would make the
+    /// AppDelegate run it a second time.
     func didReceive(
         _ response: UNNotificationResponse,
         completionHandler completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
@@ -293,37 +252,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             commitSlotChecklist(response, completion: completion)
             return
         }
-
-        let content = response.notification.request.content
-        Task {
-            do {
-                _ = try await NotificationActionRunner.perform(
-                    category: content.categoryIdentifier,
-                    action: NotificationActionRunner.Action(actionIdentifier: response.actionIdentifier),
-                    userInfo: content.userInfo,
-                    customDueAt: selectedDueAt,
-                    api: APIClient.shared,
-                    dismissAfterSweep: dismissNotificationsAfterSweep
-                )
-            } catch {
-                print("[OpenTask] Content extension action error: \(error)")
-                // Keep notification visible so the user knows it failed
-                completion(.doNotDismiss)
-                return
-            }
-
-            // No local badge update here. The server's badge-only push lands
-            // about a second after the mutation, and a count fetch before
-            // `.dismiss` would add a second round trip to every tap. (This
-            // used to set "payload count − 1", from a count that was never
-            // the badge total.)
-
-            // Dismiss only — the extension already handled the action via API call.
-            // Using .dismissAndForwardAction would cause AppDelegate's didReceive to
-            // fire the same API call again (double action). A body tap makes no
-            // call here and is not forwarded either, as before.
-            completion(.dismiss)
-        }
+        commitOverdueChecklist(response, completion: completion)
     }
 
     /// Commit the staged checklist in ONE request (§6.1).
@@ -472,65 +401,211 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         updatePreferredContentSize()
     }
 
-    // MARK: - Grid Selection Handler (see also `SizingHost` below)
+    // MARK: - Overdue Checklist (2026-11-21, TNC-1…9)
 
-    /// Called when the user taps a grid button. Updates the action buttons to show
-    /// the resolved absolute time. If the net change is zero (e.g., +1hr then -1hr),
-    /// restores default action buttons.
-    private func handleGridSelection(_ newDueAt: String) {
-        selectedDueAt = newDueAt
-
-        // Compute delta from base time to selected time
-        guard let originalDate = DateHelpers.parseISO(dueAt),
-              let targetDate = DateHelpers.parseISO(newDueAt)
-        else { return }
-
-        let deltaSeconds = targetDate.timeIntervalSince(originalDate)
-        let deltaMinutes = Int(deltaSeconds / 60)
-        selectedDeltaMinutes = deltaMinutes
-
-        // Net-zero: user adjusted back to the original time — reset to defaults
-        if deltaMinutes == 0 {
-            selectedDueAt = nil
-            selectedDeltaMinutes = nil
-            setDefaultTimeActions()
-            return
+    /// Build the overdue checklist for a task notification or a summary.
+    ///
+    /// The held row comes from the payload, checked, so Done and the times
+    /// work at once (TNC-2); the user's other overdue tasks are fetched live
+    /// and fill in under it (TNC-1). The grid below keeps #499's grid; it
+    /// counts from the held task's own time, or from now on a summary (TNC-9).
+    private func presentOverdueChecklist(userInfo: [AnyHashable: Any], title: String) {
+        let state: OverdueChecklist.State
+        let gridMode: SnoozeMode
+        if !isBulkMode, let taskId = userInfo["taskId"] as? Int {
+            let taskDueAt = userInfo["dueAt"] as? String ?? ""
+            dueAt = taskDueAt
+            state = .held(OverdueChecklist.Row(
+                id: taskId, title: title, priority: userInfo["priority"] as? Int ?? 0,
+                dueAt: taskDueAt.isEmpty ? nil : taskDueAt
+            ))
+            gridMode = .individual(taskTitle: title, originalDueAt: taskDueAt)
+        } else {
+            dueAt = DateHelpers.formatISO(Date())
+            state = .summary()
+            gridMode = .bulk(taskCount: 0)
         }
 
+        let model = OverdueChecklistModel(state)
+        model.onChange = { [weak self] in
+            self?.setChecklistActions()
+            self?.updatePreferredContentSize()
+        }
+        overdueModel = model
+
+        let onDirty: (Bool) -> Void = { [weak self] isDirty in
+            if !isDirty {
+                self?.selectedDueAt = nil
+                self?.setChecklistActions()
+            }
+            self?.updatePreferredContentSize()
+        }
+        install(hosting: UIHostingController(rootView: OverdueLongPressView(
+            model: model,
+            gridMode: gridMode,
+            onGridSelection: { [weak self] newDueAt in self?.handleGridSelection(newDueAt) },
+            onDirtyStateChanged: onDirty
+        )))
+        setChecklistActions()
+
+        Task { await reloadOverdueChecklist(model) }
+    }
+
+    /// Fetch the overdue list into the checklist (on open, and to recover
+    /// from a refused batch or a re-check that left nothing to send). A
+    /// failure keeps whatever is drawn; the held row still works alone.
+    private func reloadOverdueChecklist(_ model: OverdueChecklistModel) async {
+        do {
+            let tasks = try await APIClient.shared.fetchOverdueTasks()
+            model.update { $0.apply(fetched: tasks) }
+        } catch {
+            print("[OpenTask] Overdue checklist load error: \(error)")
+            model.update { $0.fetchFailed() }
+        }
+    }
+
+    /// The action list for what is on screen (`OverdueChecklist.actions`):
+    /// the checked set's rows, "(N)" from two up, Cancel last.
+    private func setChecklistActions() {
+        guard let model = overdueModel else { return }
         extensionContext?.notificationActions = notificationActions(
-            TaskNotificationList.picked(targetDate, scope: actsOnAll ? .allOverdue : .thisTask)
+            OverdueChecklist.actions(
+                for: model.state, picked: selectedDueAt.flatMap(DateHelpers.parseISO),
+                now: Date(), slots: TimeSlotStore.cachedSlots
+            )
         )
     }
 
-    /// The switch was flipped (`SnoozePanel`): the grid is a fresh one in the
-    /// other mode — nothing picked, counting from now for "All overdue" and
-    /// from the task's own time for "This task" — and the list is rewritten.
-    /// The notification stays open.
-    private func handleScopeChange(_ newScope: TaskNotificationList.SnoozeScope) {
-        scope = newScope
-        selectedDueAt = nil
-        selectedDeltaMinutes = nil
-        dueAt = newScope == .allOverdue ? DateHelpers.formatISO(Date()) : taskDueAt
-        setDefaultTimeActions()
-        updatePreferredContentSize()
+    /// Commit the checked set in ONE request (TNC-4), after the re-check
+    /// (TNC-6); Cancel closes and removes this banner (TNC-8).
+    ///
+    /// As the period checklist does, anything short of the server acting
+    /// keeps the view open (`.doNotDismiss`): a failure must never look like
+    /// a success. After a success the banners of the tasks acted on go
+    /// (TNC-7). This notification's own banner goes with them when its task
+    /// was one of them; when it was unchecked, the view closes WITHOUT
+    /// dismissing it (`dismissNotificationContentExtension`), so the banner
+    /// stays — to confirm on a device.
+    private func commitOverdueChecklist(
+        _ response: UNNotificationResponse,
+        completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
+    ) {
+        let content = response.notification.request.content
+        guard response.actionIdentifier != UNNotificationDefaultActionIdentifier, let model = overdueModel else {
+            // A body tap: nothing was committed here, and it is not forwarded
+            // (as before the checklist).
+            completion(.dismiss)
+            return
+        }
+        let intent = OverdueChecklist.intent(
+            for: response.actionIdentifier, picked: selectedDueAt.flatMap(DateHelpers.parseISO),
+            now: Date(), slots: TimeSlotStore.cachedSlots
+        )
+        Task {
+            switch intent {
+            case .none:
+                completion(.doNotDismiss)
+
+            case .cancel:
+                UNUserNotificationCenter.current().removeDeliveredNotifications(
+                    withIdentifiers: [response.notification.request.identifier]
+                )
+                completion(.dismiss)
+
+            case .sweep:
+                // "All → Next period" on a summary with nothing checked: the
+                // ordinary sweep, which clears the moved tasks' banners.
+                do {
+                    _ = try await NotificationActionRunner.perform(
+                        category: content.categoryIdentifier,
+                        action: .button(response.actionIdentifier),
+                        userInfo: content.userInfo,
+                        customDueAt: nil,
+                        api: APIClient.shared,
+                        dismissAfterSweep: dismissNotificationsAfterSweep
+                    )
+                    completion(.dismiss)
+                } catch {
+                    print("[OpenTask] Overdue checklist sweep error: \(error)")
+                    completion(.doNotDismiss)
+                }
+
+            case .complete, .snooze:
+                await commitChecked(intent, model: model, completion: completion)
+            }
+        }
     }
 
-    // MARK: - Default Actions
+    private func commitChecked(
+        _ intent: OverdueChecklist.Intent,
+        model: OverdueChecklistModel,
+        completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
+    ) async {
+        let checked = model.state.checkedRows
+        guard !checked.isEmpty else {
+            completion(.doNotDismiss)
+            return
+        }
+        do {
+            // TNC-6: only rows still overdue at the time the list showed.
+            let current = try await APIClient.shared.fetchOverdueTasks()
+            let ids = OverdueChecklist.toSend(checked: checked, current: current)
+            guard !ids.isEmpty else {
+                model.update { $0.apply(fetched: current) }
+                completion(.doNotDismiss)
+                return
+            }
 
-    /// The action list with nothing picked in the grid, worked out as it is
-    /// set (`TaskNotificationList`): this task's rows — Done, the next
-    /// period by name, +1 hour, the next three periods, then All → Next
-    /// period — or, for a summary or with the switch on "All overdue", the
-    /// bulk rows. Periods come from `TimeSlotStore`'s cache; the extension
-    /// never fetches on its own.
-    private func setDefaultTimeActions() {
-        let now = Date()
-        let slots = TimeSlotStore.cachedSlots
-        extensionContext?.notificationActions = notificationActions(
-            actsOnAll
-                ? TaskNotificationList.allOverdue(now: now, slots: slots)
-                : TaskNotificationList.thisTask(dueAtISO: taskDueAt, now: now, slots: slots)
-        )
+            let acted: [Int]
+            switch intent {
+            case .complete:
+                _ = try await APIClient.shared.completeTasks(ids: ids)
+                acted = ids
+                _ = await removeDeliveredNotifications(
+                    forTaskIds: OverdueChecklist.bannersToClear(completed: ids)
+                )
+            case .snooze(let until):
+                let result = try await APIClient.shared.bulkSnoozeTasks(
+                    ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids, capAtDeadlineIds: ids
+                )
+                acted = result.movedIds ?? ids
+                _ = await removeDeliveredNotifications(
+                    forTaskIds: OverdueChecklist.bannersToClear(snoozed: result)
+                )
+            default:
+                completion(.doNotDismiss)
+                return
+            }
+
+            if OverdueChecklist.removesOwnBanner(intent: intent, heldId: model.state.heldId, acted: acted) {
+                completion(.dismiss)
+            } else {
+                completion(.doNotDismiss)
+                extensionContext?.dismissNotificationContentExtension()
+            }
+        } catch {
+            print("[OpenTask] Overdue checklist commit error: \(error)")
+            // A refused batch (4xx: a sent id was done or deleted between the
+            // re-check and the request): reload, keep what is still checked.
+            if case APIError.serverError(let code) = error, (400..<500).contains(code) {
+                await reloadOverdueChecklist(model)
+            }
+            completion(.doNotDismiss)
+        }
+    }
+
+    // MARK: - Grid Selection Handler (see also `SizingHost` below)
+
+    /// Called when the user taps a grid button: the action list names the
+    /// picked time for the checked set (TNC-9). Back at the grid's own base
+    /// (e.g. +1hr then -1hr), the list goes back to its named rows.
+    private func handleGridSelection(_ newDueAt: String) {
+        selectedDueAt = newDueAt
+        if let base = DateHelpers.parseISO(dueAt), let picked = DateHelpers.parseISO(newDueAt),
+           Int(picked.timeIntervalSince(base) / 60) == 0 {
+            selectedDueAt = nil
+        }
+        setChecklistActions()
     }
 }
 

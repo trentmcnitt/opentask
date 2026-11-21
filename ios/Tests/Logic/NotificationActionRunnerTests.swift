@@ -323,69 +323,14 @@ final class NotificationActionRunnerTests: XCTestCase {
         XCTAssertEqual(titles(TaskNotificationList.registered(hasSlots: false)), ["Done", "+1hr"])
     }
 
-    /// The long-press in "This task": Done, the next period by name, +1 hour,
-    /// the periods after it (all of them here: there are only two more), each
-    /// single-task, then the standing bulk row.
-    func testThisTaskListIsSingleTaskRowsThenAllNext() {
-        let rows = TaskNotificationList.thisTask(dueAtISO: nil, now: local(10, 20), slots: periods)
-        XCTAssertEqual(titles(rows), [
-            "Done",
-            "Midday \u{00B7} \(clock(local(12)))",
-            "+1 hour \u{00B7} \(clock(local(11)))",
-            "Evening \u{00B7} \(clock(local(20, 30)))",
-            "Morning \u{00B7} \(clock(local(9, day: 1)))",
-            "All \u{2192} Next period",
-        ])
-        XCTAssertEqual(ids(rows), [
-            NotificationAction.done,
-            NotificationAction.snoozeNextPeriod,
-            NotificationAction.snooze1hr,
-            NotificationAction.snoozeSlotIdentifier(startTime: "20:30"),
-            NotificationAction.snoozeSlotIdentifier(startTime: "09:00"),
-            NotificationAction.snoozeAllSlotNext,
-        ])
-        // Every row's identifier is one the runner acts on for a task.
-        XCTAssertEqual(Set(ids(rows)).count, rows.count)
-    }
-
-    /// At most three named periods after the next one: seven rows in all.
-    func testThisTaskListNamesAtMostThreePeriodsAfterTheNext() {
-        let many = (6...12).map { TimeSlotDTO(id: $0, label: "P\($0)", startTime: String(format: "%02d:00", $0)) }
-        let rows = TaskNotificationList.thisTask(dueAtISO: nil, now: local(5), slots: many)
-        XCTAssertEqual(rows.count, 7)
-        XCTAssertEqual(rows.map(\.title).map { $0.components(separatedBy: " ").first }, [
-            "Done", "P6", "+1", "P7", "P8", "P9", "All",
-        ])
-    }
-
-    /// With no cached period: Done and +1 hour only.
-    func testThisTaskListWithoutPeriods() {
-        let rows = TaskNotificationList.thisTask(dueAtISO: nil, now: local(10, 20), slots: [])
-        XCTAssertEqual(ids(rows), [NotificationAction.done, NotificationAction.snooze1hr])
-    }
-
-    /// "All overdue": the bulk rows, no Done.
-    func testAllOverdueListIsTheBulkRows() {
-        let rows = TaskNotificationList.allOverdue(now: local(10, 20), slots: periods)
-        XCTAssertEqual(titles(rows), [
-            "All \u{2192} +1 hour \u{00B7} \(clock(local(11)))", "All \u{2192} Next period", "All \u{2192} Evening",
-            "All \u{2192} Morning",
-        ])
-        XCTAssertEqual(ids(rows), [
-            NotificationAction.snoozeAll1hr, NotificationAction.snoozeAllSlotNext,
-            NotificationAction.snoozeAllSlotIdentifier(startTime: "20:30"),
-            NotificationAction.snoozeAllSlotIdentifier(startTime: "09:00"),
-        ])
-    }
-
-    /// A time picked in the grid: that time for the scope, with Done only for this task.
-    func testPickedTimeListFollowsTheScope() {
-        XCTAssertEqual(ids(TaskNotificationList.picked(local(15), scope: .thisTask)), [
-            NotificationAction.done, NotificationAction.snoozeCustom,
-        ])
-        XCTAssertEqual(ids(TaskNotificationList.picked(local(15), scope: .allOverdue)), [
-            NotificationAction.snoozeAllCustom,
-        ])
+    /// The overdue checklist's Cancel (TNC-8) is the content extension's own:
+    /// any handler that is sent it anyway sends nothing.
+    func testCancelSendsNothingAnywhere() async throws {
+        let onTask = try await run(task, .button(NotificationAction.cancel), userInfo: taskInfo)
+        let onSummary = try await run(summary, .button(NotificationAction.cancel))
+        XCTAssertEqual(onTask, .ignored)
+        XCTAssertEqual(onSummary, .ignored)
+        XCTAssertEqual(api.calls, [])
     }
 
     /// No cached period: nothing to move it to, nothing sent.

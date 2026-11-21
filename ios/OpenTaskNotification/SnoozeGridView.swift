@@ -11,84 +11,6 @@ enum SnoozeMode {
     case bulk(taskCount: Int)
 }
 
-/// A task notification's long-press (`TASK_REMINDER`, 2026-11-18): the switch
-/// "This task" / "All overdue (N)" over the grid. Trent: "it starts in
-/// single, then it can show up in all mode." Flipping it swaps the grid
-/// between its individual and bulk modes (a fresh grid: whatever was picked
-/// is dropped) and tells the controller, which rewrites the action list
-/// (`TaskNotificationList`). It is a control in the custom view because a
-/// list row can't be a checkbox; it never dismisses the notification.
-struct SnoozePanel: View {
-    let taskTitle: String
-    let taskDueAt: String
-    /// The payload's count of overdue tasks, when it carries one.
-    let overdueCount: Int?
-    var slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots
-    var initialScope: TaskNotificationList.SnoozeScope = .thisTask
-    var onScopeChange: (TaskNotificationList.SnoozeScope) -> Void
-    var onGridSelection: (String) -> Void
-    var onDirtyStateChanged: ((Bool) -> Void)?
-
-    @State private var scope: TaskNotificationList.SnoozeScope?
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var current: TaskNotificationList.SnoozeScope { scope ?? initialScope }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Two segments drawn here, not the system's segmented control:
-            // plain SwiftUI, so it is the same thing in a preview render and
-            // on the phone, and each half is one 36pt-tall target.
-            HStack(spacing: 2) {
-                segment("This task", .thisTask)
-                segment(overdueCount.map { "All overdue (\($0))" } ?? "All overdue", .allOverdue)
-            }
-            .padding(2)
-            .background(Color.gray.opacity(0.18))
-            .cornerRadius(9)
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Apply to")
-
-            SnoozeGridView(
-                mode: current == .thisTask
-                    ? .individual(taskTitle: taskTitle, originalDueAt: taskDueAt)
-                    : .bulk(taskCount: overdueCount ?? 0),
-                onGridSelection: onGridSelection,
-                onDirtyStateChanged: onDirtyStateChanged,
-                slots: slots
-            )
-            .id(current)
-        }
-    }
-}
-
-extension SnoozePanel {
-    /// One half of the switch; the chosen one is the raised, filled one.
-    private func segment(_ title: String, _ value: TaskNotificationList.SnoozeScope) -> some View {
-        let chosen = current == value
-        return Button {
-            guard !chosen else { return }
-            scope = value
-            onScopeChange(value)
-        } label: {
-            Text(title)
-                .font(.footnote.weight(chosen ? .semibold : .regular))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity)
-                .frame(height: 32)
-                .background(chosen ? (colorScheme == .dark ? Color(white: 0.36) : Color.white) : Color.clear)
-                .foregroundColor(.primary)
-                .cornerRadius(7)
-                .shadow(color: .black.opacity(chosen ? 0.12 : 0), radius: 1, y: 1)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(chosen ? .isSelected : [])
-    }
-}
-
 /// Interactive snooze grid for the notification content extension.
 ///
 /// Row 1: Preset times (gray, the user's pad presets) — snap to next occurrence of that wall-clock time
@@ -110,6 +32,10 @@ struct SnoozeGridView: View {
     /// view controller can update preferredContentSize to avoid clipping.
     var onDirtyStateChanged: ((Bool) -> Void)?
 
+    /// False under the overdue checklist (2026-11-21), whose own header says
+    /// what the grid acts on — the checked set.
+    var showsHeader = true
+
     @State private var workingDueAt: String
     @State private var isDirty = false
 
@@ -121,9 +47,11 @@ struct SnoozeGridView: View {
         mode: SnoozeMode,
         onGridSelection: @escaping (String) -> Void,
         onDirtyStateChanged: ((Bool) -> Void)? = nil,
-        slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots
+        slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots,
+        showsHeader: Bool = true
     ) {
         self.mode = mode
+        self.showsHeader = showsHeader
         self.slots = slots
         self.onGridSelection = onGridSelection
         self.onDirtyStateChanged = onDirtyStateChanged
@@ -189,7 +117,7 @@ struct SnoozeGridView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header
-            headerSection
+            if showsHeader { headerSection }
 
             // Resolved time (shown when grid is dirty)
             if isDirty {
