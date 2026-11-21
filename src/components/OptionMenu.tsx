@@ -184,7 +184,8 @@ export function OptionMenu({
               to the row below — the task's details opened over the defer. */}
           <SheetContent
             side="bottom"
-            className="rounded-t-2xl select-none [-webkit-touch-callout:none]"
+            // Above the toasts, like every menu (`--layer-menu`).
+            className="z-(--layer-menu) rounded-t-2xl select-none [-webkit-touch-callout:none]"
             showCloseButton={false}
           >
             <SheetHeader>
@@ -242,8 +243,7 @@ export function OptionMenu({
           align="end"
           className={cn(
             // Never sideways (2026-11-04): a long row wraps (`OptionItem`).
-            // z: above the toasts, as the dropdown below.
-            'z-[1000000000] max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-x-hidden overflow-y-auto p-1',
+            'max-h-[var(--radix-popover-content-available-height)] w-auto max-w-[22rem] min-w-[200px] overflow-x-hidden overflow-y-auto p-1',
             options.some((o) => o.chipGroup) && 'w-[20rem]',
           )}
           // Focus stays where it was: the trigger's own keys still work.
@@ -366,7 +366,7 @@ function OptionDropdown({
         // into the spot the toasts take above the bar, and a fresh toast
         // (its z-index is Sonner's 999999999) covered the menu's items for
         // its five seconds — "Share" right after a rename.
-        'bg-popover text-popover-foreground fixed z-[1000000000] max-w-[22rem] min-w-[200px] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md',
+        'bg-popover text-popover-foreground fixed z-(--layer-menu) max-w-[22rem] min-w-[200px] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md border p-1 shadow-md',
         // A chip group wraps across the menu's width: give it one, or the
         // rows' width leaves one chip per line (T1's periods, 2026-10-30).
         options.some((o) => o.chipGroup) && 'w-[20rem]',

@@ -584,6 +584,19 @@
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* THE MENU LAYER (2026-11-21, Trent's phone: the select bar's Horizon menu
+   drawn under an "On deck" toast). Every menu and picker — a DropdownMenu, a
+   Popover, a Select, OptionMenu (its phone sheet too) — opens on this one
+   layer, above the toasts (Sonner's 999999999) and so above everything that
+   floats on the page: the select bar, the FABs, the jump chevron, the tab
+   bar. A toast that lands while a menu is open waits underneath it; the
+   menu is what the finger is on. Until then the primitives sat at z-50 and
+   only OptionMenu's desktop menus (#498) cleared the toasts.
+   tests/e2e/menus-above-toasts.spec.ts. */
+:root {
+  --layer-menu: 1000000000;
+}
+
 /* The top inset, ONE value for the bar's padding and every landing line
    below it (2026-10-29: the Reminders sections' landing ignored it, so in the
    iOS app a section's header ended up under the bar). A test can set it to
