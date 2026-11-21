@@ -62,17 +62,21 @@ enum OverdueChecklist {
         let id: Int
         let title: String
         let priority: Int
-        /// The target as the list saw it (ISO), compared by instant at the
-        /// re-check (TNC-6).
-        let dueAt: String?
+        /// The target as the list saw it, compared by instant at the
+        /// re-check (TNC-6) — parsed the one way `TaskDTO.dueDate` parses.
+        let dueDate: Date?
+        /// Drawn from the notification's payload, not the fetched list: its
+        /// time is the notifier's (`effective_due_at`), which for a repeating
+        /// task need not equal the stored `due_at` the list carries, so the
+        /// re-check compares only that it is still overdue (TNC-6).
+        let fromPayload: Bool
 
-        var dueDate: Date? { dueAt.flatMap(DateHelpers.parseISO) }
-
-        init(id: Int, title: String, priority: Int, dueAt: String?) {
+        init(id: Int, title: String, priority: Int, dueAt: String?, fromPayload: Bool = false) {
             self.id = id
             self.title = title
             self.priority = priority
-            self.dueAt = dueAt
+            self.dueDate = dueAt.flatMap(DateHelpers.parseISO)
+            self.fromPayload = fromPayload
         }
 
         init(_ task: TaskDTO) {
@@ -214,16 +218,19 @@ enum OverdueChecklist {
         }
         let periods = TaskNotificationList.upcoming(dueAtISO: nil, now: now, slots: slots, calendar: calendar)
         if let next = periods.first {
-            rows.append(row(NotificationAction.snoozeNextPeriod, TaskNotificationList.named(next.slot.label, next.at)))
+            rows.append(row(
+                NotificationAction.snoozeNextPeriod,
+                TaskNotificationList.named(next.slot.label, next.at, now: now, calendar: calendar)
+            ))
         }
         rows.append(row(
             NotificationAction.snooze1hr,
-            TaskNotificationList.named("+1 hour", DateHelpers.snapToNextHour(now: now))
+            TaskNotificationList.named("+1 hour", DateHelpers.snapToNextHour(now: now), now: now, calendar: calendar)
         ))
         rows += periods.dropFirst().prefix(namedPeriodsAfterNext).map { period in
             row(
                 NotificationAction.snoozeSlotIdentifier(startTime: period.slot.startTime),
-                TaskNotificationList.named(period.slot.label, period.at)
+                TaskNotificationList.named(period.slot.label, period.at, now: now, calendar: calendar)
             )
         }
         return rows + [cancel]
@@ -277,11 +284,69 @@ enum OverdueChecklist {
     /// still holds at the SAME target instant as the list showed. A row whose
     /// target moved (a repeating task done elsewhere, a task deferred
     /// elsewhere) or that left the list is dropped.
+    /// A payload row (the list never loaded) is sent while it is still
+    /// overdue at all.
     static func toSend(checked: [Row], current: [TaskDTO]) -> [Int] {
         let now = Dictionary(current.map { ($0.id, $0.dueDate) }, uniquingKeysWith: { first, _ in first })
         return checked.compactMap { row in
-            guard let fresh = now[row.id], fresh == row.dueDate else { return nil }
+            guard let fresh = now[row.id] else { return nil }
+            guard row.fromPayload || fresh == row.dueDate else { return nil }
             return row.id
+        }
+    }
+
+    // MARK: - The commit (TNC-4, TNC-6, TNC-7)
+
+    enum CommitOutcome {
+        /// The server acted. Clear `clearBanners`; close the view, removing
+        /// the pressed banner only when `removesOwnBanner`.
+        case sent(acted: [Int], clearBanners: [Int], removesOwnBanner: Bool)
+        /// Nothing checked: nothing sent, the view stays.
+        case nothingChecked
+        /// The re-check left nothing to send: reload with `current`, stay.
+        case nothingLeft(current: [TaskDTO])
+        /// The server refused the batch (4xx: a sent id was done or deleted
+        /// between the re-check and the request): reload, stay.
+        case refused
+    }
+
+    /// Done or a time on the checked set: the re-check, then ONE request.
+    ///
+    /// The one shortcut: when the list never loaded (still loading, or its
+    /// fetch failed) and only the pressed task is checked, it is sent as it
+    /// is — the notification is about it, and #499's single-task Done never
+    /// needed the list. Any other error propagates (the view stays open).
+    static func commit(_ intent: Intent, state: State, api: OverdueChecklistAPI) async throws -> CommitOutcome {
+        let checked = state.checkedRows
+        guard !checked.isEmpty else { return .nothingChecked }
+        do {
+            let ids: [Int]
+            if state.load != .loaded, let held = state.heldId, checked.map(\.id) == [held] {
+                ids = [held]
+            } else {
+                let current = try await api.fetchOverdueTasks()
+                ids = toSend(checked: checked, current: current)
+                guard !ids.isEmpty else { return .nothingLeft(current: current) }
+            }
+            switch intent {
+            case .complete:
+                _ = try await api.completeTasks(ids: ids)
+                return .sent(
+                    acted: ids, clearBanners: bannersToClear(completed: ids),
+                    removesOwnBanner: removesOwnBanner(intent: intent, heldId: state.heldId, acted: ids)
+                )
+            case .snooze(let until):
+                let result = try await api.bulkSnooze(ids: ids, until: until)
+                let acted = result.movedIds ?? ids
+                return .sent(
+                    acted: acted, clearBanners: bannersToClear(snoozed: result),
+                    removesOwnBanner: removesOwnBanner(intent: intent, heldId: state.heldId, acted: acted)
+                )
+            case .cancel, .sweep, .none:
+                return .nothingChecked
+            }
+        } catch APIError.serverError(let code) where (400..<500).contains(code) {
+            return .refused
         }
     }
 
@@ -301,5 +366,25 @@ enum OverdueChecklist {
         if intent == .cancel { return true }
         guard let heldId else { return true }
         return acted.contains(heldId)
+    }
+}
+
+/// The calls the overdue checklist makes — `APIClient`'s, behind a protocol
+/// so `OverdueChecklistTests` can record them with a stub.
+protocol OverdueChecklistAPI {
+    /// `GET /api/tasks?overdue=true`.
+    func fetchOverdueTasks() async throws -> [TaskDTO]
+    /// `POST /api/tasks/bulk/complete {ids}`: one transaction, one undo entry.
+    func completeTasks(ids: [Int]) async throws -> Int
+    /// `POST /api/tasks/bulk/snooze` with `ids`, `include_task_ids` and one
+    /// `until` (and `cap_at_deadline_ids`): one undo entry.
+    func bulkSnooze(ids: [Int], until: Date) async throws -> APIClient.BulkSnoozeResult
+}
+
+extension APIClient: OverdueChecklistAPI {
+    func bulkSnooze(ids: [Int], until: Date) async throws -> BulkSnoozeResult {
+        try await bulkSnoozeTasks(
+            ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids, capAtDeadlineIds: ids
+        )
     }
 }

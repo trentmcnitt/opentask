@@ -51,9 +51,18 @@ enum TaskNotificationList {
         }
     }
 
-    /// "Lunchtime · 11:00 AM".
-    static func named(_ label: String, _ at: Date) -> String {
-        "\(label) \u{00B7} \(DateHelpers.formatShortTime(at))"
+    /// "Midday · 12:00 PM" — or "Morning · tomorrow 8:00 AM" when the start
+    /// is on a later calendar day than `now`, so it can't be read as this
+    /// morning's (2026-11-21). The day is the calendar's, not the OpenTask
+    /// day's: at 1:00 AM, 8:00 AM the same date is "this morning" to anyone.
+    static func named(_ label: String, _ at: Date, now: Date, calendar: Calendar = .current) -> String {
+        "\(label) \u{00B7} \(timeWords(at, now: now, calendar: calendar))"
+    }
+
+    /// "12:00 PM", or "tomorrow 8:00 AM" on a later calendar day.
+    static func timeWords(_ at: Date, now: Date, calendar: Calendar = .current) -> String {
+        let time = DateHelpers.formatShortTime(at)
+        return calendar.isDate(at, inSameDayAs: now) ? time : "tomorrow \(time)"
     }
 
     /// Where a single-task period button sends its task, worked out when it

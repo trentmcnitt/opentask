@@ -428,7 +428,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             dueAt = taskDueAt
             state = .held(OverdueChecklist.Row(
                 id: taskId, title: title, priority: userInfo["priority"] as? Int ?? 0,
-                dueAt: taskDueAt.isEmpty ? nil : taskDueAt
+                dueAt: taskDueAt.isEmpty ? nil : taskDueAt, fromPayload: true
             ))
             gridMode = .individual(taskTitle: title, originalDueAt: taskDueAt)
         } else {
@@ -502,10 +502,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
     ) {
         let content = response.notification.request.content
-        guard response.actionIdentifier != UNNotificationDefaultActionIdentifier, let model = overdueModel else {
+        guard response.actionIdentifier != UNNotificationDefaultActionIdentifier else {
             // A body tap: nothing was committed here, and it is not forwarded
             // (as before the checklist).
             completion(.dismiss)
+            return
+        }
+        guard let model = overdueModel else {
+            // A button with no checklist behind it: nothing was sent, so
+            // nothing may look handled.
+            completion(.doNotDismiss)
             return
         }
         let intent = OverdueChecklist.intent(
@@ -547,60 +553,36 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
     }
 
+    /// Done or a time on the checked set (`OverdueChecklist.commit`: the
+    /// re-check, then one request), and what the view does with the answer.
     private func commitChecked(
         _ intent: OverdueChecklist.Intent,
         model: OverdueChecklistModel,
         completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
     ) async {
-        let checked = model.state.checkedRows
-        guard !checked.isEmpty else {
-            completion(.doNotDismiss)
-            return
-        }
         do {
-            // TNC-6: only rows still overdue at the time the list showed.
-            let current = try await APIClient.shared.fetchOverdueTasks()
-            let ids = OverdueChecklist.toSend(checked: checked, current: current)
-            guard !ids.isEmpty else {
+            switch try await OverdueChecklist.commit(intent, state: model.state, api: APIClient.shared) {
+            case .sent(_, let clearBanners, let removesOwnBanner):
+                _ = await removeDeliveredNotifications(forTaskIds: clearBanners)
+                if removesOwnBanner {
+                    completion(.dismiss)
+                } else {
+                    // The pressed task was unchecked: close the view, keep
+                    // its banner (TNC-7) — to confirm on a device.
+                    completion(.doNotDismiss)
+                    extensionContext?.dismissNotificationContentExtension()
+                }
+            case .nothingChecked:
+                completion(.doNotDismiss)
+            case .nothingLeft(let current):
                 model.update { $0.apply(fetched: current) }
                 completion(.doNotDismiss)
-                return
-            }
-
-            let acted: [Int]
-            switch intent {
-            case .complete:
-                _ = try await APIClient.shared.completeTasks(ids: ids)
-                acted = ids
-                _ = await removeDeliveredNotifications(
-                    forTaskIds: OverdueChecklist.bannersToClear(completed: ids)
-                )
-            case .snooze(let until):
-                let result = try await APIClient.shared.bulkSnoozeTasks(
-                    ids: ids, until: DateHelpers.formatISO(until), includeTaskIds: ids, capAtDeadlineIds: ids
-                )
-                acted = result.movedIds ?? ids
-                _ = await removeDeliveredNotifications(
-                    forTaskIds: OverdueChecklist.bannersToClear(snoozed: result)
-                )
-            default:
+            case .refused:
+                await reloadOverdueChecklist(model)
                 completion(.doNotDismiss)
-                return
-            }
-
-            if OverdueChecklist.removesOwnBanner(intent: intent, heldId: model.state.heldId, acted: acted) {
-                completion(.dismiss)
-            } else {
-                completion(.doNotDismiss)
-                extensionContext?.dismissNotificationContentExtension()
             }
         } catch {
             print("[OpenTask] Overdue checklist commit error: \(error)")
-            // A refused batch (4xx: a sent id was done or deleted between the
-            // re-check and the request): reload, keep what is still checked.
-            if case APIError.serverError(let code) = error, (400..<500).contains(code) {
-                await reloadOverdueChecklist(model)
-            }
             completion(.doNotDismiss)
         }
     }

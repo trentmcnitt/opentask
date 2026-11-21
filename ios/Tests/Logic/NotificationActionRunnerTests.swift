@@ -279,8 +279,9 @@ final class NotificationActionRunnerTests: XCTestCase {
         ])
     }
 
-    /// A named single-task period (`SNOOZE_SLOT:<HH:MM>`, the long-press's
-    /// "This task" rows) lands on that period's next start: this task alone.
+    /// A named single-task period (`SNOOZE_SLOT:<HH:MM>`) lands on that
+    /// period's next start: this task alone. (The long-press's own period
+    /// rows act on its checked set instead — `OverdueChecklist`.)
     func testTaskNamedPeriodMovesJustTheTaskToThatPeriodsNextStart() async throws {
         _ = try await run(
             task, .button(NotificationAction.snoozeSlotIdentifier(startTime: "20:30")), userInfo: taskInfo,

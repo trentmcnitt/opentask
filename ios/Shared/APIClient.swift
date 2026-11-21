@@ -878,8 +878,8 @@ final class APIClient {
     /// long-press's overdue checklist (2026-11-21) reads it when it opens and
     /// again right before it sends (TNC-1, TNC-6). In the server's order; the
     /// checklist sorts it.
-    func fetchOverdueTasks(limit: Int = 500) async throws -> [TaskDTO] {
-        try await get(path: "/api/tasks?overdue=true&limit=\(limit)", as: TasksPage.self).tasks
+    func fetchOverdueTasks() async throws -> [TaskDTO] {
+        try await get(path: "/api/tasks?overdue=true&limit=500", as: TasksPage.self).tasks
     }
 
     /// Open (not-done) tasks. The server has no "today" filter — the dashboard

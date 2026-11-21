@@ -222,8 +222,11 @@ struct SnoozeGridView: View {
                     handleNextHour()
                 }
                 if let nextPeriod {
+                    // "tomorrow 8:00 AM" when it starts on a later day, as the
+                    // action rows say it (2026-11-21).
                     gridButton(
-                        label: "Next period", detail: DateHelpers.formatShortTime(nextPeriod), color: .blue
+                        label: "Next period", detail: TaskNotificationList.timeWords(nextPeriod, now: Date()),
+                        color: .blue
                     ) {
                         workingDueAt = DateHelpers.formatISO(nextPeriod)
                         commitChange()

@@ -33,7 +33,7 @@ final class OverdueChecklistTests: XCTestCase {
     /// The pressed task, as its payload draws it.
     private func held(_ id: Int = 1, due: Date? = nil) -> OverdueChecklist.State {
         .held(OverdueChecklist.Row(
-            id: id, title: "Return the borrowed ladder", priority: 0, dueAt: iso(due ?? local(8))
+            id: id, title: "Return the borrowed ladder", priority: 0, dueAt: iso(due ?? local(8)), fromPayload: true
         ))
     }
 
@@ -72,7 +72,8 @@ final class OverdueChecklistTests: XCTestCase {
     func testTNC1_theFetchedRowReplacesThePayloadsAndStaysChecked() {
         var state = held(1, due: local(8))
         state.apply(fetched: [task(1, "Return the borrowed ladder", due: local(8, 5)), task(2, "Other", due: local(7))])
-        XCTAssertEqual(state.rows.first?.dueAt, iso(local(8, 5)))
+        XCTAssertEqual(state.rows.first?.dueDate, local(8, 5))
+        XCTAssertEqual(state.rows.first?.fromPayload, false)
         XCTAssertTrue(state.isChecked(1))
     }
 
@@ -327,5 +328,152 @@ final class OverdueChecklistTests: XCTestCase {
         var summary = OverdueChecklist.State.summary()
         summary.apply(fetched: [])
         XCTAssertEqual(actionIds(actions(summary)), [NotificationAction.cancel])
+    }
+
+    // MARK: - "tomorrow" in a period's title (2026-11-21)
+
+    func testAPeriodStartingTomorrowSaysSo() {
+        let rows = OverdueChecklist.actions(for: held(), picked: nil, now: local(21), slots: periods)
+        XCTAssertEqual(titles(rows), [
+            "Done",
+            "Morning \u{00B7} tomorrow \(clock(local(9, day: 1)))",
+            "+1 hour \u{00B7} \(clock(local(22)))",
+            "Midday \u{00B7} tomorrow \(clock(local(12, day: 1)))",
+            "Afternoon \u{00B7} tomorrow \(clock(local(15, day: 1)))",
+            "Cancel",
+        ])
+        XCTAssertEqual(
+            TaskNotificationList.timeWords(local(0, day: 1), now: local(23, 30)), "tomorrow \(clock(local(0, day: 1)))"
+        )
+    }
+
+    // MARK: - The commit (TNC-4, TNC-6, TNC-7), with a stub API
+
+    private final class StubAPI: OverdueChecklistAPI {
+        enum Call: Equatable {
+            case fetch
+            case complete([Int])
+            case snooze([Int], Date)
+        }
+        var calls: [Call] = []
+        var overdue: [TaskDTO] = []
+        var fetchError: Error?
+        var sendError: Error?
+        var moved: [Int]?
+
+        func fetchOverdueTasks() async throws -> [TaskDTO] {
+            calls.append(.fetch)
+            if let fetchError { throw fetchError }
+            return overdue
+        }
+        func completeTasks(ids: [Int]) async throws -> Int {
+            calls.append(.complete(ids))
+            if let sendError { throw sendError }
+            return ids.count
+        }
+        func bulkSnooze(ids: [Int], until: Date) async throws -> APIClient.BulkSnoozeResult {
+            calls.append(.snooze(ids, until))
+            if let sendError { throw sendError }
+            return APIClient.BulkSnoozeResult(
+                tasksAffected: ids.count, skippedOnPriority: 0, skippedHigh: 0, snoozedHigh: 0, movedIds: moved
+            )
+        }
+    }
+
+    private func loaded(_ count: Int, checking extra: [Int] = []) -> OverdueChecklist.State {
+        var state = held()
+        state.apply(fetched: overdue(count))
+        extra.forEach { state.toggle($0) }
+        return state
+    }
+
+    func testCommit_doneRechecksThenSendsOneRequestAndClearsThoseBanners() async throws {
+        let api = StubAPI()
+        api.overdue = overdue(4)
+        let outcome = try await OverdueChecklist.commit(.complete, state: loaded(4, checking: [3]), api: api)
+        XCTAssertEqual(api.calls, [.fetch, .complete([1, 3])])
+        guard case let .sent(acted, clear, own) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(acted, [1, 3])
+        XCTAssertEqual(clear, [1, 3])
+        XCTAssertTrue(own)
+    }
+
+    func testCommit_aTimeSendsOneUntilAndClearsTheMovedBanners() async throws {
+        let api = StubAPI()
+        api.overdue = overdue(4)
+        api.moved = [3]
+        var state = loaded(4, checking: [3])
+        state.toggle(1)  // the pressed task unchecked
+        let outcome = try await OverdueChecklist.commit(.snooze(until: local(12)), state: state, api: api)
+        XCTAssertEqual(api.calls, [.fetch, .snooze([3], local(12))])
+        guard case let .sent(_, clear, own) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(clear, [3])
+        XCTAssertFalse(own, "the pressed task was not acted on: its banner stays")
+    }
+
+    func testCommit_theRecheckDropsRowsHandledElsewhere() async throws {
+        let api = StubAPI()
+        let state = loaded(4, checking: [2, 3])
+        // 2 was done elsewhere; 3 is a repeat that advanced (a new time).
+        api.overdue = [overdue(4)[0], task(3, "Invented chore 3", due: local(9, 30)), overdue(4)[3]]
+        _ = try await OverdueChecklist.commit(.complete, state: state, api: api)
+        XCTAssertEqual(api.calls, [.fetch, .complete([1])])
+    }
+
+    func testCommit_nothingLeftSendsNothingAndHandsBackTheList() async throws {
+        let api = StubAPI()
+        api.overdue = [task(9, "Something new", due: local(7))]
+        let outcome = try await OverdueChecklist.commit(.complete, state: loaded(3, checking: [2]), api: api)
+        XCTAssertEqual(api.calls, [.fetch])
+        guard case let .nothingLeft(current) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(current.map(\.id), [9])
+    }
+
+    func testCommit_aRefusedBatchIsRefusedNotThrown() async throws {
+        let api = StubAPI()
+        api.overdue = overdue(3)
+        api.sendError = APIError.serverError(statusCode: 400)
+        let outcome = try await OverdueChecklist.commit(.complete, state: loaded(3), api: api)
+        guard case .refused = outcome else { return XCTFail("\(outcome)") }
+    }
+
+    func testCommit_otherErrorsPropagate() async {
+        let api = StubAPI()
+        api.fetchError = URLError(.notConnectedToInternet)
+        do {
+            _ = try await OverdueChecklist.commit(.complete, state: loaded(3, checking: [2]), api: api)
+            XCTFail("expected a throw")
+        } catch {
+            XCTAssertEqual(api.calls, [.fetch])
+        }
+    }
+
+    func testCommit_nothingCheckedSendsNothing() async throws {
+        let api = StubAPI()
+        var state = loaded(3)
+        state.toggle(1)
+        let outcome = try await OverdueChecklist.commit(.complete, state: state, api: api)
+        XCTAssertEqual(api.calls, [])
+        guard case .nothingChecked = outcome else { return XCTFail("\(outcome)") }
+    }
+
+    /// TNC-2: the list never loaded and only the pressed task is checked —
+    /// it is sent as it is, without the list.
+    func testCommit_thePressedTaskAloneWorksWithoutTheList() async throws {
+        let api = StubAPI()
+        var failed = held()
+        failed.fetchFailed()
+        _ = try await OverdueChecklist.commit(.complete, state: failed, api: api)
+        _ = try await OverdueChecklist.commit(.snooze(until: local(11)), state: held(), api: api)
+        XCTAssertEqual(api.calls, [.complete([1]), .snooze([1], local(11))])
+    }
+
+    /// A payload row's time is the notifier's, not the stored target: the
+    /// re-check takes it while it is still overdue at all.
+    func testRecheck_aPayloadRowIsSentWhileStillOverdue() {
+        let payload = OverdueChecklist.Row(id: 1, title: "Held", priority: 0, dueAt: iso(local(8)), fromPayload: true)
+        let current = [task(1, "Held", due: local(7, 45))]
+        XCTAssertEqual(OverdueChecklist.toSend(checked: [payload], current: current), [1])
+        XCTAssertEqual(OverdueChecklist.toSend(checked: [payload], current: []), [])
     }
 }

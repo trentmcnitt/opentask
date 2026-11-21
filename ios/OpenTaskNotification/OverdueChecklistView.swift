@@ -213,6 +213,10 @@ struct OverdueLongPressView: View {
             if model.state.isEmpty {
                 Color.clear.frame(height: 12)
             } else {
+                // Nothing checked: nothing for a time to act on, so the grid
+                // is dimmed and ignores taps until a row is checked
+                // (2026-11-21). What was picked stays picked.
+                let idle = model.state.checked.isEmpty
                 SnoozeGridView(
                     mode: gridMode,
                     onGridSelection: onGridSelection,
@@ -220,6 +224,8 @@ struct OverdueLongPressView: View {
                     slots: slots,
                     showsHeader: false
                 )
+                .disabled(idle)
+                .opacity(idle ? 0.35 : 1)
             }
         }
     }

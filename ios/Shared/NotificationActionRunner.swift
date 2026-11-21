@@ -14,8 +14,10 @@ import Foundation
 ///
 /// What the runner decides, by category:
 /// - `TASK_SUMMARY` (overflow summary, no taskId): "All +1hr", "All → <slot>"
-///   and the content extension's "All → <custom time>" — bulk snoozes with NO
-///   `include_task_ids`, since no single task was picked.
+///   and "All → <custom time>" — bulk snoozes with NO `include_task_ids`,
+///   since no single task was picked. (The content extension's long-press is
+///   the overdue checklist, which sends its checked set itself and comes here
+///   only for "All → Next period" — `OverdueChecklist`, 2026-11-21.)
 /// - `SLOT_REMINDER` (§6, the slot is the unit): "Complete all" completes the
 ///   slot's pending reminders (and considers its waiting quota prompts). The
 ///   content extension's staged checklist commit is NOT here — it is its own
