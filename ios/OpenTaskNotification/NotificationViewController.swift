@@ -2,6 +2,13 @@ import UIKit
 import SwiftUI
 import UserNotifications
 import UserNotificationsUI
+import os
+
+/// The long-press's sizes in the device log (2026-11-21): the height the view
+/// asks for and the height iOS gives it, so a phone can say how tall the
+/// expanded notification may get before it clips. Read with
+/// `idevicesyslog -p OpenTaskNotification -m "long-press size"` (time-bounded).
+private let sizeLog = Logger(subsystem: "io.mcnitt.opentask.notification", category: "size")
 
 /// Notification Content Extension — displays the interactive snooze grid
 /// when the user long-presses a task notification.
@@ -394,11 +401,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         else { return }
 
         preferredContentSize = newSize
+        sizeLog.notice("long-press size: asked \(Int(newSize.height), privacy: .public) pt, granted \(Int(self.view.bounds.height), privacy: .public) pt, width \(Int(width), privacy: .public)")
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updatePreferredContentSize()
+        if view.bounds.height > 0, abs(view.bounds.height - preferredContentSize.height) > 0.5 {
+            sizeLog.notice("long-press size: asked \(Int(self.preferredContentSize.height), privacy: .public) pt, granted \(Int(self.view.bounds.height), privacy: .public) pt")
+        }
     }
 
     // MARK: - Overdue Checklist (2026-11-21, TNC-1…9)
