@@ -284,6 +284,20 @@
   html body[data-scroll-locked] {
     margin-right: 0 !important;
   }
+  /* BODY NEVER BECOMES A SCROLL CONTAINER (Trent's phone, 2026-11-21: "the
+     top bar just disappeared when I pressed it. I think the app froze").
+     The library's `overflow: hidden` stays on <body> here (<html>'s clip
+     keeps it from the viewport, above), so body became a scroll container of
+     its own — and the sticky header, now sticking to a body that never
+     scrolls, went off the top of a scrolled page with the ☰ menu anchored
+     under it, while the open menu kept every tap. `clip` makes no scroll
+     container, so sticky keeps sticking to the screen. The lock itself is
+     the library's: it cancels the wheel and touch scrolling outside the
+     menu. (Locking <html> instead hid WebKit's scrollbar and moved the page,
+     menu-no-shift.spec.ts.) tests/e2e/menu-scrolled.spec.ts. */
+  html body[data-scroll-locked] {
+    overflow: clip !important;
+  }
   /* Every enabled button is pressable, so it gets the hand (2026-10-20: Today
      and On deck on the task rows, the pager chevrons, Considered all and Show
      more all showed the arrow — browsers give a <button> `cursor: default`,
