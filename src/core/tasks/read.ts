@@ -9,7 +9,7 @@
 
 import { effectiveTargetDayFirst } from '@/lib/target-day-first'
 import { getDb } from '@/core/db'
-import type { QuotaDayState, QuotaPromptConfig, Task } from '@/types'
+import type { DayMove, QuotaDayState, QuotaPromptConfig, Task } from '@/types'
 import { normalizeDayState } from '@/lib/quota-prompts'
 import {
   coerceCheckInDay,
@@ -94,6 +94,7 @@ const TASK_COLUMNS = [
   'is_tracked',
   'quota_prompt_config',
   'quota_day_state',
+  'day_move',
   'completion_count',
   'skip_count',
   'first_completed_at',
@@ -374,6 +375,7 @@ export interface TaskRow {
   is_tracked: number
   quota_prompt_config: string | null
   quota_day_state: string | null
+  day_move: string | null
   completion_count: number
   skip_count: number
   first_completed_at: string | null
@@ -583,6 +585,7 @@ function baseTask(row: TaskRow): Task {
     is_tracked: (row.is_tracked ?? 0) === 1,
     quota_prompt_config: parseJsonColumn<QuotaPromptConfig>(row.quota_prompt_config),
     quota_day_state: normalizeDayState(parseJsonColumn<QuotaDayState>(row.quota_day_state)),
+    day_move: parseJsonColumn<DayMove>(row.day_move ?? null),
     completion_count: row.completion_count,
     skip_count: row.skip_count ?? 0,
     first_completed_at: row.first_completed_at,

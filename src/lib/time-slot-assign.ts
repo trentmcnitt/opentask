@@ -10,6 +10,7 @@
  */
 
 import { DateTime } from 'luxon'
+import type { DayMove } from '@/types'
 import { groupWaiting, type CountableGroup } from '@/lib/quota-prompts'
 
 export interface TimeSlot {
@@ -54,6 +55,8 @@ export function sortSlotsByStart<T extends { start_time: string }>(slots: readon
 export interface SlottableItem {
   anchor_time: string | null
   due_at: string | null
+  /** A one-day move to a later period (reminders, RULE RM-MOVE-PLACE). */
+  day_move?: DayMove | null
 }
 
 /**
@@ -82,12 +85,27 @@ export function itemTimeOfDayMinutes(item: SlottableItem, timezone: string): num
  * item's time of day. An item earlier than every slot boundary, or with no time
  * of day at all, gets null — those render in the un-slotted group ("Anytime
  * today", §7.3) rather than being silently dropped from the front door.
+ *
+ * RULE RM-MOVE-PLACE: On `day` (an OpenTask date), a reminder moved for that day
+ *   (`day_move`) is in the period it was moved to, while that period still
+ *   exists; on any other day, or with its period deleted, it is in its home
+ *   period by its time. Every reader that groups reminders passes the day, so
+ *   the roster, the period push and nag, the named nag and the web agree.
+ * Why: A reminder that can't be done yet nagged all through its period, with
+ *   "Considered" as the only answer though it still needed doing today.
+ * Ruling: Trent 2026-11-21 ("the ability to be moved to another time period,
+ *   from the notification or in the app"); rules RM-MOVE-1..5, designer-approved.
  */
 export function assignSlot(
   item: SlottableItem,
   slots: TimeSlot[],
   timezone: string,
+  day?: string | null,
 ): TimeSlot | null {
+  if (day && item.day_move && item.day_move.date === day) {
+    const moved = slots.find((slot) => slot.id === item.day_move!.slot_id)
+    if (moved) return moved
+  }
   const minutes = itemTimeOfDayMinutes(item, timezone)
   if (minutes === null) return null
 
@@ -142,6 +160,8 @@ export function groupBySlot<T extends SlottableItem>(
   items: T[],
   slots: TimeSlot[],
   timezone: string,
+  /** The OpenTask date the grouping is for: today's moves apply (RM-MOVE-PLACE). */
+  day?: string | null,
 ): { slot: TimeSlot | null; items: T[] }[] {
   const ordered = sortSlotsByStart(slots)
   const groups = new Map<number | null, T[]>()
@@ -149,7 +169,7 @@ export function groupBySlot<T extends SlottableItem>(
   groups.set(null, [])
 
   for (const item of items) {
-    const slot = assignSlot(item, ordered, timezone)
+    const slot = assignSlot(item, ordered, timezone, day)
     groups.get(slot?.id ?? null)!.push(item)
   }
 

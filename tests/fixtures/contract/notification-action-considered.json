@@ -68,6 +68,7 @@
         "is_tracked": false,
         "quota_prompt_config": null,
         "quota_day_state": null,
+        "day_move": null,
         "completion_count": 1,
         "skip_count": 0,
         "first_completed_at": "2026-01-15T16:00:00.000Z",

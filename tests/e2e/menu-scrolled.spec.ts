@@ -28,7 +28,9 @@ async function longPage(page: Page): Promise<number[]> {
     const res = await page.request.post('/api/tasks', {
       data: {
         title: uniqueTitle(`MSC scrolled page ${i}`),
-        due_at: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+        // An hour ago: overdue, so on the dashboard at any hour. "Now + 3h"
+        // crossed the day start late in the evening and the rows went quiet.
+        due_at: new Date(Date.now() - 3_600_000).toISOString(),
       },
     })
     expect(res.ok()).toBeTruthy()

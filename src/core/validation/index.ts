@@ -87,9 +87,11 @@ export {
   bulkCompleteSchema,
   validatePromptKeys,
   validateBulkComplete,
+  reminderMoveSchema,
+  validateReminderMove,
 } from './quota-prompt'
 
-export type { PromptKeysInput, BulkCompleteInput } from './quota-prompt'
+export type { PromptKeysInput, BulkCompleteInput, ReminderMoveInput } from './quota-prompt'
 
 // The banner reconcile (2026-11-10)
 export { staleBannersSchema, validateStaleBanners } from './notification'

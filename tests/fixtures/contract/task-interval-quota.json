@@ -63,6 +63,7 @@
     "is_tracked": true,
     "quota_prompt_config": null,
     "quota_day_state": null,
+    "day_move": null,
     "completion_count": 0,
     "skip_count": 0,
     "first_completed_at": null,

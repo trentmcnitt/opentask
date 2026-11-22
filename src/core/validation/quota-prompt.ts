@@ -64,3 +64,23 @@ export function validatePromptKeys(input: unknown): PromptKeysInput {
 export function validateBulkComplete(input: unknown): BulkCompleteInput {
   return bulkCompleteSchema.parse(input)
 }
+
+/**
+ * POST /api/reminders/move — the one-day move (2026-11-21, RULE
+ * RM-MOVE-TARGET's request): reminder `ids` and/or prompt `prompt_keys`, and
+ * the period to move them to. Which periods are allowed is checked in
+ * `moveForToday`, where the user's day and periods are known.
+ */
+export const reminderMoveSchema = z
+  .object({
+    ids: z.array(z.number().int().positive()).max(500).default([]),
+    prompt_keys: z.array(promptKey).max(500).default([]),
+    slot_id: z.number().int().positive(),
+  })
+  .refine((v) => v.ids.length + v.prompt_keys.length > 0, { message: 'Nothing to move' })
+
+export type ReminderMoveInput = z.infer<typeof reminderMoveSchema>
+
+export function validateReminderMove(input: unknown): ReminderMoveInput {
+  return reminderMoveSchema.parse(input)
+}

@@ -252,6 +252,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- progress or prompt action and restored by undo like any other field. A
   -- date other than today reads as empty.
   quota_day_state TEXT DEFAULT NULL,
+  -- day_move (2026-11-21): a reminder moved to a later period for ONE
+  -- OpenTask day, JSON {date, slot_id}. A date other than today reads as no
+  -- move (the reminder is in its home period again), so nothing clears it.
+  -- Restored by undo like any other field.
+  -- (restates RULE RM-MOVE-STORE, home: src/core/tasks/reminder-move.ts)
+  day_move TEXT DEFAULT NULL,
 
   -- Task model (2026-10-10, docs/TASK-MODEL.md § Deadline, target, horizon).
   -- `due_at` is the TARGET: when nagging starts, soft, snoozable.

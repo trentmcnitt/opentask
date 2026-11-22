@@ -51,6 +51,11 @@ export interface QuotaPromptConfig {
 export interface QuotaDayState {
   /** The owner's local date, YYYY-MM-DD. */
   date: string
+  /**
+   * Prompts moved to a later period for this day (2026-11-21, RULE
+   * RM-MOVE-STORE): prompt_key → slot id. Absent on older states.
+   */
+  moved: Record<string, number>
   /** Net progress logged today from anywhere (never below 0). */
   logged: number
   /** prompt_keys "did it" today — the idempotency record. */
@@ -68,6 +73,16 @@ export interface QuotaDayState {
 
 /** What a repeating task's scheduled instant is (`Task.repeat_anchor`). */
 export type RepeatAnchor = 'target' | 'deadline'
+
+/**
+ * A reminder moved to a later period for one OpenTask day (2026-11-21, RULE
+ * RM-MOVE-STORE): `date` is the OpenTask date, `slot_id` the period. Any
+ * other day reads as no move.
+ */
+export interface DayMove {
+  date: string
+  slot_id: number
+}
 
 export interface Task {
   id: number
@@ -354,6 +369,8 @@ export interface Task {
    * server-owned, restored by undo. A stale date reads as an empty day.
    */
   quota_day_state: QuotaDayState | null
+  /** A reminder's one-day move to a later period (`DayMove`); null = none. */
+  day_move?: DayMove | null
 
   /**
    * §6: this item lives on the Reminders surface — a prompted thought rather
@@ -450,6 +467,9 @@ export type UndoAction =
   // Task model (2026-10-10): a task segment's circle (considered) or Defer All.
   // Field snapshots of last_considered_at / segment_deferred_at; never a completion.
   | 'task_segment'
+  // The one-day move (2026-11-21, RM-MOVE-COMMIT): reminders' `day_move` and
+  // prompts' `quota_day_state.moved`, field snapshots; undo puts them home.
+  | 'reminder_move'
   // The task queue (2026-10-20): "Roll over now" — the rollover run by hand
   // (src/core/tasks/rollover-now.ts). The cron's rollover writes no entry.
   | 'task_rollover'

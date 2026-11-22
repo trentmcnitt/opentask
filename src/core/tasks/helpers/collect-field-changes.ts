@@ -346,7 +346,9 @@ export function collectFieldChanges(options: CollectFieldChangesOptions): FieldC
   /**
    * RULE TGT-REMINDER-NO-SNOOZE: The snooze endpoint refuses a reminder, bulk snooze skips one, and
    *   a bare PATCH that moves a dated reminder's due_at is refused. The one exception is an
-   *   explicit reschedule (reset_original_due_at: true), which a period move sends.
+   *   explicit reschedule (reset_original_due_at: true), which a period move sends. A one-day
+   *   move to a later period (RULE RM-MOVE-STORE, 2026-11-21) is not a snooze: it changes no
+   *   date, only where the reminder sits today.
    * Why: A reminder carries no debt (§6), and a bare due_at on a dated reminder is a move by every
    *   other measure.
    * Ruling: none recorded.

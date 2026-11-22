@@ -2384,6 +2384,61 @@ paths:
                       undo_id:
                         $ref: '#/components/schemas/UndoId'
                       considered: { type: integer }
+  /api/reminders/move:
+    post:
+      summary: Move reminders or quota prompts to a later period, for today only
+      operationId: remindersMove
+      tags: [Reminders]
+      description: >
+        The one-day move (2026-11-21). Reminders (`ids`) and/or quota prompts (`prompt_keys`) waiting
+        today move to `slot_id`, a period that opens later today than each item's own and after now;
+        tomorrow they are in their home periods again (a reminder's `day_move`, a prompt's
+        `quota_day_state.moved`, both for one OpenTask date). A move is not a snooze: no target,
+        schedule or occurrence changes. Every surface that groups reminders by period shows them in
+        the new one, and a named push starts fresh at that period's open. One undo entry. 400 when
+        an item is not waiting today, the period is not the caller's, has already opened, or is not
+        later than an item's own; nothing is written then.
+      parameters:
+        - $ref: '#/components/parameters/ClientHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot_id]
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+                prompt_keys:
+                  type: array
+                  items: { type: string }
+                slot_id: { type: integer }
+      responses:
+        '200':
+          description: Moved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      undo_id:
+                        $ref: '#/components/schemas/UndoId'
+                      moved:
+                        type: array
+                        items: { type: integer }
+                      moved_prompts:
+                        type: array
+                        items: { type: string }
+                      slot_id: { type: integer }
+                      slot_label: { type: string }
+                      description: { type: string }
+        '400':
+          description: Not movable (see description)
   /api/rollover/run-now:
     post:
       summary: Roll over now
@@ -6614,6 +6669,16 @@ components:
               description: Daily quotas — the period for prompt number k, keyed "1".."N".
               additionalProperties:
                 type: [integer, 'null']
+        day_move:
+          type: [object, 'null']
+          readOnly: true
+          description: >
+            A reminder moved to a later period for one OpenTask day
+            (`POST /api/reminders/move`, 2026-11-21). On any other date it means
+            nothing: the reminder is in its home period.
+          properties:
+            date: { type: string, example: '2026-11-21' }
+            slot_id: { type: integer }
         quota_day_state:
           type: [object, 'null']
           readOnly: true
@@ -6635,6 +6700,11 @@ components:
               type: array
               items:
                 type: string
+            moved:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Prompt keys moved to a later period today (prompt_key → slot id).
             did_applied:
               type: object
               additionalProperties:

@@ -212,9 +212,20 @@ export function dayStateFor(state: QuotaDayState | null | undefined, date: strin
       did: Array.isArray(state.did) ? state.did : [],
       considered: Array.isArray(state.considered) ? state.considered : [],
       did_applied: applied && typeof applied === 'object' && !Array.isArray(applied) ? applied : {},
+      moved: isMoveMap(state.moved) ? state.moved : {},
     }
   }
-  return { date, logged: 0, did: [], considered: [], did_applied: {} }
+  return { date, logged: 0, did: [], considered: [], did_applied: {}, moved: {} }
+}
+
+/** A stored `moved` map: prompt_key → slot id (RM-MOVE-STORE). */
+function isMoveMap(value: unknown): value is Record<string, number> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((v) => typeof v === 'number')
+  )
 }
 
 /** A stored record as the API sends it: every field present (legacy rows lack `did_applied`). */

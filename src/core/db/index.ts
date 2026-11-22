@@ -58,6 +58,10 @@ function migrateQuotaPrompts(database: Database.Database): void {
   if (!hasColumn(database, 'tasks', 'quota_day_state')) {
     database.exec('ALTER TABLE tasks ADD COLUMN quota_day_state TEXT DEFAULT NULL')
   }
+  // A reminder's one-day move to a later period (2026-11-21, RM-MOVE-STORE).
+  if (!hasColumn(database, 'tasks', 'day_move')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN day_move TEXT DEFAULT NULL')
+  }
   if (!hasColumn(database, 'users', 'quota_prompt_slot_id')) {
     database.exec('ALTER TABLE users ADD COLUMN quota_prompt_slot_id INTEGER DEFAULT NULL')
   }

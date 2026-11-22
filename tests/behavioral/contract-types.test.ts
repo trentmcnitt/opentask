@@ -171,6 +171,7 @@ const TASK: Record<keyof FormattedTask, Field> = {
   period_label: STR_N,
   quota_prompt_config: ['object', 'null'],
   quota_day_state: ['object', 'null'],
+  day_move: ['object', 'null'],
   is_reminder: BOOL,
   completion_count: INT,
   skip_count: INT,
@@ -209,6 +210,7 @@ const QUOTA_DAY_STATE: Record<keyof QuotaDayState, Field> = {
   did: ['array'],
   considered: ['array'],
   did_applied: ['object'],
+  moved: ['object'],
 }
 
 function kindOf(v: Json): Kind | 'null' {

@@ -248,6 +248,7 @@ export function DashboardRemindersPanel({
 }: DashboardRemindersPanelProps) {
   const reminders = useReminders({ onUndo, onCompleted, timeSlots, timezone })
   const { groups, complete, completeGroup, putBack, putBackPrompt, remove, refresh } = reminders
+  const { moveForToday } = reminders
   const segments = useTaskSegments({
     segments: reminders.taskSegments,
     payloadSeq: reminders.payloadSeq,
@@ -398,6 +399,8 @@ export function DashboardRemindersPanel({
               onRemove={(task) => void remove([task])}
               onOpenEditor={editor.open}
               renderPrompt={prompts.renderPrompt}
+              slot={page.group.slot}
+              onMoveForToday={(task, to) => void moveForToday([task], [], to)}
               timeSlots={timeSlots}
               timezone={timezone}
             />
@@ -512,6 +515,8 @@ function PanelRowList({
   onRemove,
   onOpenEditor,
   renderPrompt,
+  slot,
+  onMoveForToday,
   timeSlots,
   timezone,
 }: {
@@ -527,6 +532,10 @@ function PanelRowList({
   onRemove: (reminder: Task) => void
   onOpenEditor: (reminder: Task) => void
   renderPrompt: (prompt: QuotaPrompt, extra: { hiddenWhenNarrow?: boolean }) => React.ReactNode
+  /** The slot on screen — where its reminders are today (a moved one included). */
+  slot: TimeSlot | null
+  /** A bubble's Later today chip (`useReminders().moveForToday`). */
+  onMoveForToday: (reminder: Task, to: TimeSlot) => void
   timeSlots: TimeSlot[]
   timezone: string
 }) {
@@ -557,6 +566,12 @@ function PanelRowList({
               // leaving it open would stack a popover behind a dialog.
               setPeekId(null)
               onOpenEditor(task)
+            }}
+            slot={slot}
+            onMove={(task, to) => {
+              // The row leaves this slot: its bubble goes first.
+              setPeekId(null)
+              onMoveForToday(task, to)
             }}
             timeSlots={timeSlots}
             timezone={timezone}
@@ -594,6 +609,8 @@ function PanelRow({
   onPeekChange,
   onOpenEditor,
   onDelete,
+  slot,
+  onMove,
   timeSlots,
   timezone,
 }: {
@@ -614,6 +631,9 @@ function PanelRow({
   onOpenEditor: (reminder: Task) => void
   /** The bubble's trash can. Soft delete, with an Undo toast. */
   onDelete: (reminder: Task) => void
+  /** The period the row is in today, and the bubble's Later today chips. */
+  slot: TimeSlot | null
+  onMove: (reminder: Task, to: TimeSlot) => void
   timeSlots: TimeSlot[]
   timezone: string
 }) {
@@ -631,6 +651,8 @@ function PanelRow({
       onOpenChange={onPeekChange}
       onOpen={onOpenEditor}
       onDelete={onDelete}
+      slot={slot}
+      onMove={onMove}
     >
       {/* THE WHOLE ROW CONSIDERS, not just the circle (Trent, 2026-09-22:
           "we need to be able to tap the actual text to finish the reminder
