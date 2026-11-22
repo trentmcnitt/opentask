@@ -30,7 +30,7 @@
  * (`draftToPatch`), so the rule text alone says whether the pattern changed.
  */
 
-import { formatTime, monthlyDay, parseRRuleParts } from '@/lib/format-rrule'
+import { formatTime, monthlyDay, parseRRuleParts, weeklyDaySet } from '@/lib/format-rrule'
 
 export type RuleFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
 export type RuleEndType = 'never' | 'count' | 'date'
@@ -200,15 +200,6 @@ function monthlyPreview(monthDay: number | 'last', monthWeekday: MonthlyWeekday 
   return monthDay === 'last' ? 'the last day' : `day ${monthDay}`
 }
 
-/** The weekly days in words: "Weekdays", "Weekends", or " on Monday, Friday". */
-function weeklyWords(days: string[]): string | null {
-  if (days.length === 0) return null
-  const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
-  if (days.length === 5 && weekdays.every((d) => days.includes(d))) return 'Weekdays'
-  if (days.length === 2 && ['SA', 'SU'].every((d) => days.includes(d))) return 'Weekends'
-  return null
-}
-
 /**
  * The draft in words, as the picker previews it: "Every week on Friday at
  * 4:00 PM", "Every month on the 1st Sat at 8:00 AM", "Weekdays at 9:00 AM".
@@ -225,7 +216,9 @@ export function describeRuleDraft(
       break
     case 'WEEKLY': {
       base = n === 1 ? 'Every week' : `Every ${n} weeks`
-      const shortcut = weeklyWords(draft.days)
+      // Weekdays or weekends, with the interval ("Every 2 weeks on weekends").
+      // Seven days stays "Every week on …" here, as before.
+      const shortcut = draft.days.length === 7 ? null : weeklyDaySet(n, draft.days)
       if (shortcut) base = shortcut
       else if (draft.days.length > 0) {
         const names = draft.days.map((d) => DAYS_OF_WEEK.find((day) => day.id === d)?.full || d)
