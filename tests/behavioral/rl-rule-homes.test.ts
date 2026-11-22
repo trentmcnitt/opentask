@@ -33,14 +33,24 @@ const DOC_CITE = /\bRULE ([A-Z][A-Z0-9-]*[A-Z0-9])/g
 const registry: Record<string, { home: string; symbol: string; pins: readonly string[] }> =
   RULE_REGISTRY
 
+/**
+ * Every file a RULE block may live in: src/ (TypeScript, SQL) and, since
+ * 2026-11-22, the native apps' Swift under ios/ and macos/ (the notification
+ * checklists' TNC and NCL rules). Xcode's generated project bundles hold no
+ * Swift, so the walk skips nothing.
+ */
 function sources(): string[] {
-  const walk = (dir: string): string[] =>
+  const walk = (dir: string, ext: RegExp): string[] =>
     fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
       const p = path.join(dir, e.name)
-      if (e.isDirectory()) return walk(p)
-      return /\.(tsx?|sql)$/.test(e.name) ? [p] : []
+      if (e.isDirectory()) return walk(p, ext)
+      return ext.test(e.name) ? [p] : []
     })
-  return walk(path.join(ROOT, 'src'))
+  return [
+    ...walk(path.join(ROOT, 'src'), /\.(tsx?|sql)$/),
+    ...walk(path.join(ROOT, 'ios'), /\.swift$/),
+    ...walk(path.join(ROOT, 'macos'), /\.swift$/),
+  ]
     .map((p) => path.relative(ROOT, p))
     .filter((rel) => rel !== REGISTRY_FILE)
 }
@@ -87,7 +97,7 @@ describe('RL-G: every task-state rule has one commented home (src/lib/rule-regis
     expect(wrong).toEqual([])
   })
 
-  test('RL-G03: every RULE block in src/ is registered (no orphans)', () => {
+  test('RL-G03: every RULE block in src/, ios/ and macos/ is registered (no orphans)', () => {
     const orphans = homes.filter((h) => !(h.id in registry)).map((h) => `${h.id} at ${where(h)}`)
     expect(orphans).toEqual([])
   })
@@ -123,6 +133,8 @@ describe('RL-G: every task-state rule has one commented home (src/lib/rule-regis
     expect(wrong).toEqual([])
   })
 
+  // A Swift pin (ios/Tests/Logic/*.swift) names a `// MARK:` line that names
+  // the id: XCTest method names can't start with "TNC-1".
   test('RL-G07: every pin names a file that holds a test or describe titled with its id', () => {
     const wrong: string[] = []
     for (const [id, { pins }] of Object.entries(registry)) {
@@ -134,9 +146,9 @@ describe('RL-G: every task-state rule has one commented home (src/lib/rule-regis
           continue
         }
         const escaped = testId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const title = new RegExp(
-          `(?:test|it|describe)(?:\\.\\w+)?\\(\\s*['"\`]${escaped}(?![\\w-])`,
-        )
+        const title = file.endsWith('.swift')
+          ? new RegExp(`//\\s*MARK:[^\\n]*\\b${escaped}(?![\\w-])`)
+          : new RegExp(`(?:test|it|describe)(?:\\.\\w+)?\\(\\s*['"\`]${escaped}(?![\\w-])`)
         if (!title.test(fs.readFileSync(abs, 'utf8'))) wrong.push(`${id}: ${pin} (no such title)`)
       }
     }

@@ -21,7 +21,10 @@
  *   function, constant or statement the rule lives in).
  * - `pins`: tests that pin the rule, as `tests/behavioral/<file>#<id>` — a
  *   test or describe title that starts with the id. A pin of CURRENT behaviour
- *   on an open issue says so in its title.
+ *   on an open issue says so in its title. A native rule (its home a Swift
+ *   file under ios/ or macos/) is pinned as `ios/Tests/Logic/<file>.swift#<id>`:
+ *   a `// MARK:` line in that file that names the id (XCTest names can't start
+ *   with one); the tests under it are what pin it.
  *
  * Two questions are PARKED, never decided here: whether a deck may coexist
  * with a target (I-01, parked at 51%), and write-time exclusivity vs read-time
@@ -1318,6 +1321,96 @@ export const RULE_REGISTRY = {
     home: 'src/lib/task-segments.ts',
     symbol: 'DeadlineWindow',
     pins: ['tests/behavioral/sd-start-date.test.ts#SD-12'],
+  },
+  // The native notification checklists (2026-11-21; Swift homes, pinned by
+  // `// MARK:` lines in ios/Tests/Logic, run by OpenTaskLogicTests).
+  'TNC-1': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static func ordered',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-1'],
+  },
+  'TNC-2': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static func held(',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-2'],
+  },
+  'TNC-3': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static var pageSize',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-3'],
+  },
+  'TNC-4': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static func commit(',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-4'],
+  },
+  'TNC-5': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'guard count > 0',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-5'],
+  },
+  'TNC-6': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static func toSend',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-6'],
+  },
+  'TNC-7': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'func removesOwnBanner',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-7'],
+  },
+  'TNC-8': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static let cancel',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-8'],
+  },
+  'TNC-9': {
+    home: 'ios/Shared/OverdueChecklist.swift',
+    symbol: 'static func intent(',
+    pins: ['ios/Tests/Logic/OverdueChecklistTests.swift#TNC-9'],
+  },
+  'NCL-1': {
+    home: 'ios/Shared/NotificationChecklist.swift',
+    symbol: 'struct ChecklistState',
+    pins: ['ios/Tests/Logic/NotificationChecklistTests.swift#NCL-1'],
+  },
+  'NCL-2': {
+    home: 'ios/Shared/NotificationChecklist.swift',
+    symbol: 'static let pageSize = 6',
+    pins: ['ios/Tests/Logic/NotificationChecklistTests.swift#NCL-2'],
+  },
+  'NCL-3': {
+    home: 'ios/Shared/NotificationChecklist.swift',
+    symbol: 'mutating func apply(fetched',
+    pins: [
+      'ios/Tests/Logic/NotificationChecklistTests.swift#NCL-3',
+      'ios/Tests/Logic/NagChecklistTests.swift#NCL-3',
+    ],
+  },
+  'NCL-4': {
+    home: 'ios/Shared/NotificationChecklist.swift',
+    symbol: 'var marked:',
+    pins: ['ios/Tests/Logic/NotificationChecklistTests.swift#NCL-4'],
+  },
+  'NCL-5': {
+    home: 'ios/Shared/PeriodChecklist.swift',
+    symbol: 'static func commit(',
+    pins: ['ios/Tests/Logic/NotificationChecklistTests.swift#NCL-5'],
+  },
+  'NCL-6': {
+    home: 'ios/Shared/NotificationChecklist.swift',
+    symbol: 'static let cancel = "Cancel"',
+    pins: ['ios/Tests/Logic/NotificationChecklistTests.swift#NCL-6'],
+  },
+  'NCL-7': {
+    home: 'ios/Shared/PeriodChecklist.swift',
+    symbol: 'case sent(periodEmpty',
+    pins: ['ios/Tests/Logic/NotificationChecklistTests.swift#NCL-7'],
+  },
+  'NCL-8': {
+    home: 'ios/Shared/NagChecklist.swift',
+    symbol: 'static func showsPeriodLabels',
+    pins: ['ios/Tests/Logic/NagChecklistTests.swift#NCL-8'],
   },
 } as const satisfies Record<string, RuleEntry>
 

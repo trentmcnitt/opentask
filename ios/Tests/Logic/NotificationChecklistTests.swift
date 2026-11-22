@@ -112,7 +112,7 @@ final class NotificationChecklistTests: XCTestCase {
         XCTAssertEqual(NotificationWords.counted("Consider", 3), "Consider (3)")
     }
 
-    // MARK: - The period checklist
+    // MARK: - The period checklist (NCL-4 counts, NCL-6 Cancel last)
 
     func testPeriod_rowsAreItsRemindersThenItsWaitingPrompts() {
         let items = PeriodChecklist.items(group(reminders: [1, 2], prompts: ["q:50:0:2026-01-15"]))

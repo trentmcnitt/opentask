@@ -11,50 +11,22 @@ import Foundation
 /// draws it and sends what it says. It replaced #499's This task / All
 /// overdue switch.
 ///
-/// The rules (ids used by the tests, the PR and the docs; Swift rules are not
-/// in `src/lib/rule-registry.ts` yet):
-///
-/// - TNC-1 ROWS: the badge's overdue set (`GET /api/tasks?overdue=true`, no
-///   reminders or quotas), fetched live when the view opens. The held task —
-///   the one whose notification was pressed — first; the rest by priority,
-///   highest first, then the most overdue first.
-/// - TNC-2 HELD MARKER: the held row is checked when the view opens, and is
-///   tinted a slightly different gray (unchecked) or green (checked) from the
-///   other rows. No icon. It is drawn from the notification's payload at
-///   once, so its actions work before (and without) the fetch; a held task
-///   missing from the fetched list was handled elsewhere and drops off.
-/// - TNC-3 PAGES: never more than 6 rows on a page (Trent, 2026-11-21: 6, not
-///   8, "so we're not pushing it too far"): page 1 is the held task and 5
-///   more, later pages up to 6. "Show less" (left) and "Show more" (right)
-///   under the list; the first page only Show more, the last only Show less,
-///   a middle page both, a single page neither. Show less goes back one
-///   page. Checked state survives paging, and the header ("2 of 20
-///   checked") and every "(N)" count all pages.
-/// - TNC-4 ONE REQUEST: Done and every time act on every checked row, on any
-///   page, in one request (`bulk/complete`, `bulk/snooze` with `ids`), one
-///   undo entry. With two or more checked, each title ends in "(N)".
-/// - TNC-5 NOTHING CHECKED: the acting rows are absent (iOS can't disable an
-///   action button) — only Cancel; a summary keeps "All → Next period", the
-///   ordinary sweep, while nothing is checked.
-/// - TNC-6 RE-CHECK: right before sending, the overdue list is fetched again
-///   and only checked rows still overdue AT THE SAME TIME are sent — a
-///   repeating task done elsewhere would otherwise advance twice, a task
-///   deferred elsewhere be moved again. Nothing left: the list reloads and
-///   the view stays open.
-/// - TNC-7 BANNERS: after a success the view closes and the banners of the
-///   tasks acted on go (the ids completed; a snooze's `moved_ids`, as the
-///   sweep does). Every other banner stays.
-/// - TNC-8 CANCEL: always the last row. Closes the view and removes this
-///   notification's banner (Trent: "I want Cancel to mark it as seen and get
-///   rid of the banner"). Nothing is sent; the next nag is unchanged.
-/// - TNC-9 GRID: unchanged (#499's, Next period beside Next Hour). A picked
-///   time is one absolute time for the whole checked set. On a task
-///   notification it counts from the held task's own time, on a summary from
-///   now; the named action rows count from now (every row is overdue, so that
-///   is each row's own rule).
+/// The rules, each a `RULE TNC-n:` block at the code it governs (registered
+/// in `src/lib/rule-registry.ts`, pinned by `OverdueChecklistTests`): TNC-1
+/// rows and order (`ordered`), TNC-2 the held marker (`State.held`), TNC-3
+/// pages (`pageSize`), TNC-4 one request (`commit`), TNC-5 nothing checked
+/// and TNC-8 Cancel (`actions`), TNC-6 the re-check (`toSend`), TNC-7 banners
+/// (`removesOwnBanner`), TNC-9 the grid (`intent(for:)`).
 enum OverdueChecklist {
 
-    /// TNC-3 (the shared checklist's page size, NCL-2).
+    /// RULE TNC-3: PAGES. Never more than 6 rows on a page: page 1 is the held
+    ///   task and 5 more, later pages up to 6. "Show less" (left) and "Show
+    ///   more" (right) under the list; checks survive paging, and the header
+    ///   ("2 of 20 checked") and every "(N)" count all pages (the shared
+    ///   checklist's paging, NCL-2).
+    /// Why: a long overdue list must not make the expanded notification
+    ///   unusable, and a check on page 3 must still be sent.
+    /// Ruling: Trent 2026-11-21: 6, not 8, "so we're not pushing it too far".
     static var pageSize: Int { NotificationChecklist.pageSize }
 
     /// One row: what the list draws and what the re-check compares.
@@ -96,7 +68,16 @@ enum OverdueChecklist {
         /// The pressed notification's task; nil on a summary.
         let heldId: Int?
 
-        /// A task notification: the held row from the payload, checked.
+        /// RULE TNC-2: HELD MARKER. The held row (the task whose notification
+        ///   was pressed) is checked when the view opens and tinted a step
+        ///   apart from the other rows (gray unchecked, green checked); no icon.
+        ///   It is drawn from the payload at once, so its actions work before
+        ///   (and without) the fetch; a held task missing from the fetched list
+        ///   was handled elsewhere and drops off.
+        /// Why: the push was about this task, so Done must act on it even when
+        ///   the list never loads.
+        /// Ruling: none recorded (the design session approved TNC-1…9 on
+        ///   2026-11-21).
         static func held(_ row: Row) -> State {
             State(
                 list: ChecklistState(rows: [row], marks: [row.checklistKey: .check], load: .loading, heldKey: row.checklistKey),
@@ -150,9 +131,14 @@ enum OverdueChecklist {
         var isEmpty: Bool { list.isEmpty }
     }
 
-    /// TNC-1's order for every row but the held one: priority, highest
-    /// first, then the most overdue (earliest target) first; undated last,
-    /// then by id so the order is total.
+    /// RULE TNC-1: ROWS. The badge's overdue set (`GET /api/tasks?overdue=true`,
+    ///   no reminders or quotas), fetched live when the view opens. The held
+    ///   task first; the rest by priority, highest first, then the most overdue
+    ///   (earliest target) first; undated last, then by id so the order is
+    ///   total.
+    /// Why: the rows are the badge's own set, so the number on the icon and
+    ///   the list agree; what costs most to miss comes first.
+    /// Ruling: none recorded (the design session, 2026-11-21).
     static func ordered(_ a: Row, _ b: Row) -> Bool {
         if a.priority != b.priority { return a.priority > b.priority }
         switch (a.dueDate, b.dueDate) {
@@ -165,6 +151,19 @@ enum OverdueChecklist {
 
     // MARK: - The action rows (TNC-4, TNC-5, TNC-8)
 
+    /// RULE TNC-8: CANCEL. Always the last row. It closes the view and removes
+    ///   this notification's banner. Nothing is sent; the next nag is
+    ///   unchanged.
+    /// Why: a way out of the list that also clears what was seen.
+    /// Ruling: Trent (relayed for #499): "I want Cancel to mark it as seen and
+    ///   get rid of the banner".
+    ///
+    /// RULE TNC-5: NOTHING CHECKED. The acting rows are absent, only Cancel; a
+    ///   summary keeps "All → Next period", the ordinary sweep, while nothing
+    ///   is checked.
+    /// Why: iOS can't disable an action button, so a button with nothing to
+    ///   act on must not be there.
+    /// Ruling: none recorded (the design session, 2026-11-21).
     static let cancel = TaskNotificationList.Row(identifier: NotificationAction.cancel, title: NotificationWords.cancel)
 
     /// The action list for the state on screen.
@@ -234,6 +233,15 @@ enum OverdueChecklist {
         case none
     }
 
+    /// RULE TNC-9: GRID. The snooze grid is #499's, unchanged (Next period
+    ///   beside Next Hour). A picked time is one absolute time for the whole
+    ///   checked set. On a task notification the grid counts from the held
+    ///   task's own time, on a summary from now; the named action rows count
+    ///   from now (every row is overdue, so that is each row's own rule).
+    /// Why: `bulk/snooze` takes one `until` for the set, and an overdue row
+    ///   has no later time of its own to count from.
+    /// Ruling: none recorded (the design session, 2026-11-21).
+    ///
     /// The intent of the button pressed. Times are worked out now, from now
     /// (every checked row is overdue), so a list left open still does what
     /// its title says.
@@ -256,6 +264,13 @@ enum OverdueChecklist {
 
     // MARK: - The re-check (TNC-6)
 
+    /// RULE TNC-6: RE-CHECK. Right before sending, the overdue list is fetched
+    ///   again and only checked rows still overdue AT THE SAME TIME are sent.
+    ///   Nothing left: the list reloads and the view stays open.
+    /// Why: a repeating task done elsewhere would otherwise advance twice, a
+    ///   task deferred elsewhere be moved again.
+    /// Ruling: none recorded (the design session, 2026-11-21).
+    ///
     /// The checked rows to send, in list order: those the fresh overdue list
     /// still holds at the SAME target instant as the list showed. A row whose
     /// target moved (a repeating task done elsewhere, a task deferred
@@ -286,6 +301,14 @@ enum OverdueChecklist {
         case refused
     }
 
+    /// RULE TNC-4: ONE REQUEST. Done and every time act on every checked row, on
+    ///   any page, in one request (`bulk/complete`, `bulk/snooze` with `ids`)
+    ///   and one undo entry. With two or more checked, each title ends in
+    ///   "(N)".
+    /// Why: one press is one action, and one Undo takes it all back.
+    /// Ruling: none recorded. The ask, Trent 2026-11-21: "I can snooze all,
+    ///   but I can't complete multiple."
+    ///
     /// Done or a time on the checked set: the re-check, then ONE request.
     ///
     /// The one shortcut: when the list never loaded (still loading, or its
@@ -335,6 +358,13 @@ enum OverdueChecklist {
     static func bannersToClear(completed: [Int]) -> [Int] { completed }
     static func bannersToClear(snoozed result: APIClient.BulkSnoozeResult) -> [Int] { result.movedIds ?? [] }
 
+    /// RULE TNC-7: BANNERS. After a success the view closes and the banners of
+    ///   the tasks acted on go (the ids completed; a snooze's `moved_ids`, as
+    ///   the sweep does). Every other banner stays, the pressed one too when
+    ///   its task was not acted on.
+    /// Why: a banner stands while what it names is still waiting.
+    /// Ruling: none recorded (the design session, 2026-11-21).
+    ///
     /// Whether the pressed notification's own banner goes too: always for
     /// Cancel and on a summary; on a task notification only when its task
     /// was acted on (`acted`). Unchecked, it stays (TNC-7).

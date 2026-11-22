@@ -10,43 +10,23 @@ import Foundation
 /// rows, its order and its actions. Foundation-only, pinned by
 /// `NotificationChecklistTests`.
 ///
-/// The rules (ids used by the tests, the PRs and the docs):
-///
-/// - NCL-1 ONE COMPONENT: one state (`ChecklistState`), one set of words
-///   (`NotificationWords`), one look (`ChecklistChrome` in the content
-///   extension). Row kinds: a task or reminder row has a circle; a quota
-///   prompt row has a circle (consider) and a square (did), one choice per
-///   row (`ChecklistMark`).
-/// - NCL-2 PAGES: at most `pageSize` (6) rows on a page; "Show less" at the
-///   left and "Show more" at the right under the list — the first page only
-///   Show more, the last only Show less, a middle page both, a single page
-///   neither; Show less goes back one page. Marks survive paging, and the
-///   header counts every page ("2 of 20 checked"). A page is padded to the
-///   page size with one-line spacers while there is more than one page, so
-///   the links stay put (a reminder title that wraps still makes its page
-///   taller: reminders are never truncated).
-/// - NCL-3 HELD ROW: a push about one item shows it first, marked, a step
-///   stronger in tint; a period push has none and starts with nothing marked.
-/// - NCL-4 ONE REQUEST: each action covers every marked row, on any page, in
-///   one request and one undo entry, and titles end in "(N)" from two up.
-///   Nothing marked: the acting rows are absent (iOS can't disable an action
-///   button).
-/// - NCL-5 RE-CHECK: right before sending, the list is fetched again and only
-///   rows still waiting are sent; nothing left → the list reloads and the
-///   view stays open.
-/// - NCL-6 CANCEL: always the last row. Closes the view and removes that
-///   banner; nothing is sent.
-/// - NCL-7 AFTER A SUCCESS the view closes (Trent, 2026-11-21: "completing
-///   them should close them, but only because now we have a way to select
-///   the rest"). The banners of the items acted on go; a period banner goes
-///   when its period is left empty and otherwise stays — with its old count,
-///   accepted: a delivered banner's words can't be edited, and the next push
-///   for the period (same collapse id) replaces it.
-/// - NCL-8 (with the reminder push, later): rows from more than one period
-///   each carry a small grey period label, grouped in period order.
+/// The rules, each a `RULE NCL-n:` block at the code it governs (registered
+/// in `src/lib/rule-registry.ts`, pinned by `NotificationChecklistTests` and
+/// `NagChecklistTests`): NCL-1 one component (`ChecklistState`), NCL-2 pages
+/// (`pageSize`), NCL-3 the held row (`apply(fetched:)`), NCL-4 one request
+/// (`marked`), NCL-6 Cancel (`NotificationWords.cancel`); NCL-5 the re-check
+/// and NCL-7 after a success in `PeriodChecklist`, NCL-8 period names in
+/// `NagChecklist`.
 enum NotificationChecklist {
-    /// NCL-2 (Trent, 2026-11-21: 6, "so we're not pushing it too far"; the
-    /// phone scrolls the whole expanded notification, so it never clips).
+    /// RULE NCL-2: PAGES. At most `pageSize` (6) rows on a page; "Show less" at
+    ///   the left and "Show more" at the right under the list: the first page
+    ///   only Show more, the last only Show less, a middle page both, a single
+    ///   page neither; Show less goes back one page. Marks survive paging, and
+    ///   the header counts every page ("2 of 20 checked"). A page is padded to
+    ///   the page size with one-line spacers while there is more than one page.
+    /// Why: the links stay put while paging; the phone scrolls the whole
+    ///   expanded notification (measured 2026-11-21), so a page never clips.
+    /// Ruling: Trent 2026-11-21: 6, "so we're not pushing it too far".
     static let pageSize = 6
 }
 
@@ -71,6 +51,14 @@ protocol ChecklistItem: Hashable {
 }
 
 /// The list on screen: rows, marks, the page, and whether it has loaded.
+///
+/// RULE NCL-1: ONE COMPONENT. One state (`ChecklistState`), one set of words
+///   (`NotificationWords`), one look (`ChecklistChrome` in the content
+///   extension) for every notification checklist. Row kinds: a task or
+///   reminder row has a circle; a quota prompt row has a circle (consider)
+///   and a square (did), one choice per row (`ChecklistMark`).
+/// Why: each kind of push brings only its rows, order and actions.
+/// Ruling: Trent 2026-11-21: "consistent visually and on the code side".
 struct ChecklistState<Item: ChecklistItem>: Equatable {
     private(set) var rows: [Item]
     private(set) var marks: [String: ChecklistMark]
@@ -88,6 +76,13 @@ struct ChecklistState<Item: ChecklistItem>: Equatable {
 
     // MARK: Rows
 
+    /// RULE NCL-3: HELD ROW. A push about one item shows it first, marked, a
+    ///   step stronger in tint; a period push has none and starts with nothing
+    ///   marked.
+    /// Why: the push was about that item; a period push is about the whole
+    ///   period.
+    /// Ruling: none recorded (the design session, 2026-11-21).
+    ///
     /// The fetched list landed, in its kind's order. The held row goes
     /// first while listed and drops off once it isn't; marks stay on rows
     /// still listed.
@@ -144,6 +139,13 @@ struct ChecklistState<Item: ChecklistItem>: Equatable {
         marks[key] = marks[key] == mark ? nil : mark
     }
 
+    /// RULE NCL-4: ONE REQUEST. Each action covers every marked row, on any
+    ///   page, in one request and one undo entry, and titles end in "(N)" from
+    ///   two up (`NotificationWords.counted`). Nothing marked: the acting rows
+    ///   are absent.
+    /// Why: one press is one action and one Undo; iOS can't disable a button.
+    /// Ruling: none recorded (the design session, 2026-11-21).
+    ///
     /// Every marked row, in list order, on any page.
     var marked: [(item: Item, mark: ChecklistMark)] {
         rows.compactMap { item in marks[item.checklistKey].map { (item, $0) } }
@@ -177,7 +179,10 @@ enum NotificationWords {
     /// The period push's whole-period button: every reminder considered for
     /// today, every waiting prompt considered (the app's "Consider all").
     static let considerAll = "Consider all"
-    /// NCL-6.
+    /// RULE NCL-6: CANCEL. Always the last row. It closes the view and removes
+    ///   that banner; nothing is sent.
+    /// Why: a way out that also clears what was seen (as TNC-8).
+    /// Ruling: none recorded (the design session, 2026-11-21).
     static let cancel = "Cancel"
 
     /// "Done (3)" from two up; a single one plain.
