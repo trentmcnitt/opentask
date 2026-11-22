@@ -438,21 +438,23 @@ test.describe('Reminders surface', () => {
     }
   })
 
-  test('a double-click considers one reminder, never the one beneath it', async ({
+  test('a fast run of clicks at one spot considers one reminder per click, through the ghost', async ({
     authenticatedPage: page,
   }) => {
-    // The regression this pins: a considered row used to leave the list on the
-    // click, so the list reflowed under a pointer that had not moved and the
-    // second click of a double-click landed on whichever thought had slid up
-    // into the gap. Measured on dev at the time: one double-click, two
-    // reminders considered. The row now holds its place, struck through and
-    // inert, until its collapse animation ends.
-    // One shared moment, not two `inStartedSlot()` calls, so both land in the
-    // same slot even if a minute (or a slot boundary) ticks over between them.
+    // Trent, 2026-11-20: "if I'm going through very quickly, sometimes it won't
+    // register." A considered row used to hold its place, struck through and
+    // inert, for its 180 ms collapse (so a double-click could not reach the
+    // row that slid up) — and a fast run of taps at one spot is that same
+    // gesture, so taps inside the collapse did nothing. Now the row leaves the
+    // list at once and a ghost of it fades over the spot, taking no pointer
+    // events: every click lands on the row now under it. A double-click on one
+    // row considers two — the accepted cost; the toast's Undo is the recovery.
+    // One shared moment, so all three land in the same slot.
     const dueAt = inStartedSlot()
     const ids = [
-      await createReminder(page, { title: 'One of a close pair', due_at: dueAt }),
-      await createReminder(page, { title: 'The other of the pair', due_at: dueAt }),
+      await createReminder(page, { title: 'Run thought one', due_at: dueAt }),
+      await createReminder(page, { title: 'Run thought two', due_at: dueAt }),
+      await createReminder(page, { title: 'Run thought three', due_at: dueAt }),
     ]
     const completions = async (id: number) =>
       (await (await page.request.get(`/api/tasks/${id}`)).json()).data.completion_count
@@ -460,34 +462,40 @@ test.describe('Reminders surface', () => {
     try {
       await openReminders(page)
       await openAllSlots(page)
-      const rows = page.locator('li[data-reminder-id]')
-      const slot = page.locator('[data-slot-group]', { hasText: 'The other of the pair' })
+      // The slot by its name: its rows leave it as they are considered.
+      const slotName = await page
+        .locator('[data-slot-group]', { hasText: 'Run thought one' })
+        .getAttribute('data-slot-group')
+      const slot = page.locator(`[data-slot-group="${slotName}"]`)
       const counter = slot.locator('span[aria-label*="considered"]')
-      await expect(counter).toHaveText('0 of 2')
+      await expect(counter).toHaveText('0 of 3')
+      const rows = slot.locator('li[data-reminder-id]')
+      const box = await rows.first().locator('[data-row-title]').boundingBox()
+      if (!box) throw new Error('no row')
+      const x = box.x + 8
+      const y = box.y + box.height / 2
 
-      // Whichever is drawn first — the survivor is the other one, and which is
-      // which does not matter to the point being made.
-      const firstId = Number(await rows.first().getAttribute('data-reminder-id'))
-      const survivorId = ids.find((id) => id !== firstId) as number
+      // The first click: the row is gone from the list at once, and its ghost
+      // is over the spot, out of the way of the pointer.
+      await page.mouse.click(x, y)
+      await expect(counter).toHaveText('1 of 3')
+      const ghost = page.locator('[data-row-ghost]')
+      expect(await ghost.count()).toBeLessThanOrEqual(1)
+      if ((await ghost.count()) === 1) {
+        expect(await ghost.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none')
+      }
+      // Two more at the same spot, as fast as a hand: each takes the next row.
+      await page.mouse.click(x, y)
+      await page.mouse.click(x, y)
+      await expect(counter).toHaveText('3 of 3')
+      for (const id of ids) await expect.poll(() => completions(id)).toBe(1)
+      // The ghosts take themselves away.
+      await expect(ghost).toHaveCount(0)
 
-      await rows.first().dblclick()
-
-      // Exactly one left, and the counter agrees.
-      await expect(page.locator(`li[data-reminder-id="${firstId}"]`)).toHaveCount(0)
-      await expect(counter).toHaveText('1 of 2')
-      await expect(page.locator(`li[data-reminder-id="${survivorId}"]`)).toBeVisible()
-      // The second click did not select it either.
-      await expect(page.locator(`li[data-reminder-id="${survivorId}"]`)).toHaveAttribute(
-        'aria-selected',
-        'false',
-      )
-      // And the server was only ever asked once.
-      await expect.poll(() => completions(firstId)).toBe(1)
-      expect(await completions(survivorId)).toBe(0)
-
-      await toastUndo(page).click()
-      await expect(page.locator(`li[data-reminder-id="${firstId}"]`)).toBeVisible()
-      await expect(counter).toHaveText('0 of 2')
+      // Three toasts, one per click; the newest is the third's (sonner
+      // stacks the newest first).
+      await toastUndo(page).first().click()
+      await expect(counter).toHaveText('2 of 3')
     } finally {
       await deleteTasks(page, ids)
     }
@@ -496,11 +504,13 @@ test.describe('Reminders surface', () => {
   test('a thought the AI is still reading leaves like any other, and the surface keeps refreshing', async ({
     authenticatedPage: page,
   }) => {
-    // Three animations want the row's single `animation` property: the leaving
-    // collapse, the AI pulse, the deep-link flash. If the pulse wins, the
-    // collapse never ends, the row never reports itself gone, and the refresh
-    // held behind it switches this surface off for the rest of the session.
-    // `ai-to-process` is what the quick add sets on everything it creates.
+    // Until 2026-11-20 three animations wanted the row's single `animation`
+    // property — the leaving collapse, the AI pulse, the deep-link flash — and
+    // a pulse that won stranded the row and held the surface's refresh shut.
+    // The collapse is gone (the row leaves at once, its ghost fades apart from
+    // it); this keeps the promise that a pulsing row leaves and the surface
+    // keeps refreshing. `ai-to-process` is what the quick add sets on
+    // everything it creates.
     const ids: number[] = [
       await createReminder(page, {
         title: 'A thought the AI is still reading',
@@ -534,8 +544,8 @@ test.describe('Reminders surface', () => {
     authenticatedPage: page,
   }) => {
     // "Considered all so far" takes every started slot, folded ones included —
-    // and a folded slot renders no rows, so nothing in it can report a collapse
-    // finishing. Those ids have to leave at once instead of holding the screen.
+    // and a folded slot renders no rows. Those ids leave at once, as every
+    // considered row does now.
     const soFar = inStartedSlot()
     const ids: number[] = [
       await createReminder(page, { title: 'Folded thought one', due_at: soFar }),
@@ -581,11 +591,12 @@ test.describe('Reminders surface', () => {
   })
 
   test('two fast Enters on a focused row consider it once', async ({ authenticatedPage: page }) => {
-    // Focus stays on a row while it collapses, so a second Enter inside those
-    // 180ms would ask for a second completion — and a recurring reminder would
-    // advance two occurrences for one intention. The events are dispatched
-    // rather than pressed because the point is the pair arriving faster than a
-    // re-render, which is the case only the in-flight guard can catch.
+    // Two Enters on one row before it has re-rendered must ask for one
+    // completion — a recurring reminder would advance two occurrences for one
+    // intention. Both events are dispatched in one task, so the pair arrives
+    // before React re-renders (a considered row leaves the list at once since
+    // 2026-11-20, so the second Enter can only reach it that fast) — the case
+    // only the in-flight guard can catch.
     const ids = [
       await createReminder(page, {
         title: 'A thought Entered twice',
@@ -602,8 +613,11 @@ test.describe('Reminders surface', () => {
       await openAllSlots(page)
       const row = page.locator(`li[data-reminder-id="${ids[0]}"]`)
       await row.focus()
-      await row.dispatchEvent('keydown', { key: 'Enter' })
-      await row.dispatchEvent('keydown', { key: 'Enter' })
+      await row.evaluate((el) => {
+        for (let i = 0; i < 2; i++) {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        }
+      })
 
       await expect(page.locator(`li[data-reminder-id="${ids[0]}"]`)).toHaveCount(0)
       await expect.poll(() => completions(ids[0])).toBe(1)

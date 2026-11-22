@@ -284,6 +284,20 @@
   html body[data-scroll-locked] {
     margin-right: 0 !important;
   }
+  /* BODY NEVER BECOMES A SCROLL CONTAINER (Trent's phone, 2026-11-21: "the
+     top bar just disappeared when I pressed it. I think the app froze").
+     The library's `overflow: hidden` stays on <body> here (<html>'s clip
+     keeps it from the viewport, above), so body became a scroll container of
+     its own — and the sticky header, now sticking to a body that never
+     scrolls, went off the top of a scrolled page with the ☰ menu anchored
+     under it, while the open menu kept every tap. `clip` makes no scroll
+     container, so sticky keeps sticking to the screen. The lock itself is
+     the library's: it cancels the wheel and touch scrolling outside the
+     menu. (Locking <html> instead hid WebKit's scrollbar and moved the page,
+     menu-no-shift.spec.ts.) tests/e2e/menu-scrolled.spec.ts. */
+  html body[data-scroll-locked] {
+    overflow: clip !important;
+  }
   /* Every enabled button is pressable, so it gets the hand (2026-10-20: Today
      and On deck on the task rows, the pager chevrons, Considered all and Show
      more all showed the arrow — browsers give a <button> `cursor: default`,
@@ -355,44 +369,51 @@
   animation: fade-in 0.15s ease-out;
 }
 
-/* A considered reminder leaving its slot.
-   It holds its full height for the first half — long enough that the second
-   click of a double-click lands on the inert row it just struck through
-   rather than on whichever thought would otherwise have slid up into the gap
-   — and only then collapses. The row is removed from the list on this
-   animation's `animationend`, never on a timer, so the two can never disagree.
-   `--reminder-row-h` is measured on the element as the animation starts,
-   because a row's height is however long its thought is. */
-@keyframes reminder-leaving {
-  0% {
-    height: var(--reminder-row-h);
-    opacity: 1;
-  }
-  50% {
-    height: var(--reminder-row-h);
-    opacity: 0.45;
+/* A considered row's ghost (`src/lib/row-ghost.ts`, 2026-11-20): the row has
+   already left the list — the next one is in its place, under the finger — and
+   this copy, struck through and out of the flow, fades over the spot. Two
+   steps, so the two rows' words never show through each other: the copy's
+   words fade while its background (the card's own colour, `--row-ghost-bg`,
+   set by the script) still covers the row beneath, then the background fades
+   and shows that row. Pointer events pass through it all along. The copy
+   removes itself when its own animation ends. */
+@keyframes row-ghost {
+  0%,
+  45% {
+    background-color: var(--row-ghost-bg);
   }
   100% {
-    height: 0;
-    margin-top: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-top-width: 0;
-    border-bottom-width: 0;
+    background-color: transparent;
+  }
+}
+
+@keyframes row-ghost-words {
+  from {
+    opacity: 1;
+  }
+  to {
     opacity: 0;
   }
 }
 
-.animate-reminder-leaving {
-  animation: reminder-leaving 180ms ease-out forwards;
-  overflow: hidden;
+.animate-row-ghost {
+  animation: row-ghost 180ms ease-out forwards;
 }
 
-/* Reduced motion still needs the event — the row is removed by `animationend`,
-   so it must fire. A zero-duration animation does fire it, and the dev check
-   confirms it end to end. */
+.animate-row-ghost > * {
+  animation: row-ghost-words 80ms ease-out forwards;
+}
+
+.animate-row-ghost [data-row-title] {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+
+/* Reduced motion: no fade, and the 0 s animation still ends, which is what
+   removes the copy. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-reminder-leaving {
+  .animate-row-ghost,
+  .animate-row-ghost > * {
     animation-duration: 0s;
   }
 }
@@ -563,6 +584,19 @@
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* THE MENU LAYER (2026-11-21, Trent's phone: the select bar's Horizon menu
+   drawn under an "On deck" toast). Every menu and picker — a DropdownMenu, a
+   Popover, a Select, OptionMenu (its phone sheet too) — opens on this one
+   layer, above the toasts (Sonner's 999999999) and so above everything that
+   floats on the page: the select bar, the FABs, the jump chevron, the tab
+   bar. A toast that lands while a menu is open waits underneath it; the
+   menu is what the finger is on. Until then the primitives sat at z-50 and
+   only OptionMenu's desktop menus (#498) cleared the toasts.
+   tests/e2e/menus-above-toasts.spec.ts. */
+:root {
+  --layer-menu: 1000000000;
+}
+
 /* The top inset, ONE value for the bar's padding and every landing line
    below it (2026-10-29: the Reminders sections' landing ignored it, so in the
    iOS app a section's header ended up under the bar). A test can set it to

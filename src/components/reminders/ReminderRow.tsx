@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
 import { cadenceMark } from '@/lib/reminder-rule'
@@ -12,11 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePriorityRowStyles } from '@/hooks/usePriorityRowStyles'
 import type { PriorityRowStyles } from '@/lib/priority-display'
-import {
-  focusAfterRow,
-  measureLeavingRow,
-  onSurfaceRowAnimationEnd,
-} from '@/components/reminders/row-shell'
+import { focusAfterRow, onSurfaceRowAnimationEnd } from '@/components/reminders/row-shell'
 import type { Task } from '@/types'
 
 /**
@@ -24,7 +20,7 @@ import type { Task } from '@/types'
  *
  * One object rather than nine props, because the same set is threaded
  * unchanged through the slot groups and the search view, and a chain that long
- * drifts: it is how `onLeft` reached the rows in a slot before it reached the
+ * drifts: a handler once reached the rows in a slot before it reached the
  * ones in a search result.
  */
 export interface ReminderRowHandlers {
@@ -33,12 +29,8 @@ export interface ReminderRowHandlers {
   onOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onRetry: (task: Task) => void
-  /** This row has finished collapsing and may leave the list. */
-  onLeft: (id: number) => void
   /** The deep link's flash has played; it must not play again on a remount. */
   onHighlightDone: () => void
-  /** Report that a row is on screen; returns its own deregistration. */
-  onRegister: (id: number) => () => void
   /**
    * Draw one waiting quota prompt (2026-09-24). Threaded with the row
    * handlers because it goes everywhere they go — every slot group, the
@@ -52,22 +44,18 @@ export interface ReminderRowHandlers {
 /**
  * A row's own classes.
  *
- * The load-bearing part is the animation. `animation` is ONE property and three
- * of these set it, so they must never be on the row together: the last one
- * defined in the stylesheet would win and the others would simply not run.
- * That matters beyond looks — the leaving animation's `animationend` is what
- * removes the row and releases the surface's held refresh, so an AI pulse
- * quietly beating it would strand a struck-through row and switch refreshing
- * off for the rest of the session. While a row is leaving, leaving is the only
- * animation it gets.
+ * `animation` is ONE property and two of these set it, so they must never be
+ * on the row together: the last one defined in the stylesheet would win and
+ * the other would simply not run. The AI pulse is the later one there, so it
+ * is the one that runs when both apply.
+ * (A considered row no longer animates here: it leaves the list at once and
+ * its ghost fades in its place, `src/lib/row-ghost.ts`.)
  */
 function reminderRowClasses({
-  completing,
   selected,
   highlighted,
   aiProcessing,
 }: {
-  completing: boolean
   selected: boolean
   highlighted: boolean
   aiProcessing: boolean
@@ -78,9 +66,7 @@ function reminderRowClasses({
     'group relative flex cursor-pointer items-start gap-3 rounded-xl border border-transparent px-2 py-2.5 select-none',
     'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
     selected ? 'ring-ring bg-accent ring-2' : 'hover:bg-foreground/[0.04]',
-    completing && 'animate-reminder-leaving pointer-events-none',
-    !completing && aiProcessing && 'animate-ai-processing',
-    !completing && highlighted && 'animate-row-highlight',
+    aiProcessing ? 'animate-ai-processing' : highlighted && 'animate-row-highlight',
   )
 }
 
@@ -103,26 +89,19 @@ function reminderRowClasses({
  */
 function useReminderRowGestures({
   reminder,
-  completing,
-  highlighted,
   isSelectionMode,
   onComplete,
   onSelect,
   onRangeSelect,
   onOpen,
-  onLeft,
   onHighlightDone,
 }: {
   reminder: Task
-  /** Already considered and on its way out — every gesture is a no-op. */
-  completing: boolean
-  highlighted: boolean
   isSelectionMode: boolean
   onComplete: (task: Task) => void
   onSelect: (task: Task) => void
   onRangeSelect: (task: Task) => void
   onOpen: (task: Task) => void
-  onLeft: (id: number) => void
   onHighlightDone: () => void
 }) {
   // In selection mode the hold extends the range from the anchor, exactly as on
@@ -142,9 +121,6 @@ function useReminderRowGestures({
       }
       // The circle, the checkbox and Retry own their own clicks.
       if (fromRowControl(e)) return
-      // A row on its way out is inert to pointers in CSS as well; this is the
-      // same answer for anything that gets past that.
-      if (completing) return
       // A held modifier never completes: it is the mouse's fast way into a
       // selection, and a slip that considered a thought is the one mistake
       // this surface should not make.
@@ -152,7 +128,7 @@ function useReminderRowGestures({
       else if (e.metaKey || e.ctrlKey || isSelectionMode) onSelect(reminder)
       else onComplete(reminder)
     },
-    [pointer, completing, isSelectionMode, onComplete, onSelect, onRangeSelect, reminder],
+    [pointer, isSelectionMode, onComplete, onSelect, onRangeSelect, reminder],
   )
 
   /**
@@ -165,11 +141,6 @@ function useReminderRowGestures({
       // Enter on the circle or on Retry has already done its work; the same
       // keystroke bubbles here and must not do it a second time.
       if (e.target !== e.currentTarget) return
-      // Focus stays on a row while it collapses (the browser does not move it
-      // just because tabindex went to -1), so a second Enter inside those
-      // 180ms would ask for a second completion — and a recurring reminder
-      // would advance two occurrences for one intention.
-      if (completing) return
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         onOpen(reminder)
@@ -186,28 +157,26 @@ function useReminderRowGestures({
       focusAfterRow(e.currentTarget as HTMLElement)
       onComplete(reminder)
     },
-    [completing, isSelectionMode, onComplete, onSelect, onOpen, reminder],
+    [isSelectionMode, onComplete, onSelect, onOpen, reminder],
   )
 
   /**
    * What an animation ending on this row MEANS — the shared reading in
-   * `onSurfaceRowAnimationEnd` (the list closes the gap once the row has
-   * visibly gone; the deep link's flash is spent once it has played).
+   * `onSurfaceRowAnimationEnd` (the deep link's flash is spent once it has
+   * played).
    */
   const onAnimationEnd = useCallback(
-    (e: React.AnimationEvent) =>
-      onSurfaceRowAnimationEnd(e, { id: reminder.id, highlighted, onLeft, onHighlightDone }),
-    [highlighted, onHighlightDone, onLeft, reminder.id],
+    (e: React.AnimationEvent) => onSurfaceRowAnimationEnd(e, { onHighlightDone }),
+    [onHighlightDone],
   )
 
   return { pointer, onClick, onKeyDown, onAnimationEnd }
 }
 
 /**
- * The 24px mark at the head of a row, in its three states.
+ * The 24px mark at the head of a row, in its two states.
  *
- * Leaving: a filled check, aria-hidden — it is the answer to the tap, not
- * something still to press. Selection mode: a check box, as the dashboard's
+ * Selection mode: a check box, as the dashboard's
  * done button becomes. Otherwise: the circle, which considers this one item
  * and never touches the selection, so it stops the row's click from reaching
  * the row handler — and its pointer events too, or holding it would turn
@@ -215,7 +184,6 @@ function useReminderRowGestures({
  */
 function ReminderRowMarker({
   reminder,
-  completing,
   selected,
   isSelectionMode,
   check,
@@ -223,7 +191,6 @@ function ReminderRowMarker({
   onComplete,
 }: {
   reminder: Task
-  completing: boolean
   selected: boolean
   isSelectionMode: boolean
   /** "Color checkbox" (`priorityRowStyles(...).check`): the task row's circle colours. */
@@ -231,16 +198,6 @@ function ReminderRowMarker({
   onSelect: (task: Task) => void
   onComplete: (task: Task) => void
 }) {
-  if (completing) {
-    return (
-      <span
-        aria-hidden
-        className="mt-[3px] flex size-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white"
-      >
-        <Check className="size-3.5" strokeWidth={3} />
-      </span>
-    )
-  }
   if (isSelectionMode) {
     return (
       <Checkbox
@@ -291,7 +248,6 @@ function ReminderRowMarker({
 
 export function ReminderRow({
   reminder,
-  completing,
   selected,
   isSelectionMode,
   highlighted,
@@ -300,12 +256,9 @@ export function ReminderRow({
   onOpen,
   onComplete,
   onRetry,
-  onLeft,
   onHighlightDone,
-  onRegister,
 }: {
   reminder: Task
-  completing: boolean
   selected: boolean
   isSelectionMode: boolean
   /** Deep-linked from the widget: scroll to it and flash it once. */
@@ -315,12 +268,8 @@ export function ReminderRow({
   onOpen: (task: Task) => void
   onComplete: (task: Task) => void
   onRetry: (task: Task) => void
-  /** This row has finished collapsing and may leave the list. */
-  onLeft: (id: number) => void
   /** The deep link's flash has played; it must not play again on a remount. */
   onHighlightDone: () => void
-  /** Report that this row is on screen; returns its own deregistration. */
-  onRegister: (id: number) => () => void
 }) {
   const hasNotes = !!reminder.notes?.trim()
   const mark = cadenceMark(reminder.rrule)
@@ -337,49 +286,24 @@ export function ReminderRow({
 
   const { pointer, onClick, onKeyDown, onAnimationEnd } = useReminderRowGestures({
     reminder,
-    completing,
-    highlighted,
     isSelectionMode,
     onComplete,
     onSelect,
     onRangeSelect,
     onOpen,
-    onLeft,
     onHighlightDone,
   })
-
-  // The animation is what normally releases the row, but a row can be taken
-  // off screen before it ends — a slot folded, the surface navigated away
-  // from. Reporting it on unmount too means a considered thought can never be
-  // left half-gone, and can never hold the surface's refresh shut.
-  const id = reminder.id
-  useEffect(() => {
-    if (!completing) return
-    return () => onLeft(id)
-  }, [completing, onLeft, id])
-
-  // Being on screen is what qualifies a row to hold its place when it is
-  // considered — and to hold the surface's refresh with it. A row that is not
-  // rendered (a folded slot, or under a "Show all N" cap) cannot report its
-  // animation finishing, so the surface must know which rows these are rather
-  // than assume every completed id has one. See `completeIds`.
-  useEffect(() => onRegister(id), [onRegister, id])
 
   return (
     <li
       data-reminder-id={reminder.id}
       data-reminder-highlight={highlighted ? '' : undefined}
-      data-reminder-leaving={completing ? '' : undefined}
-      ref={completing ? measureLeavingRow : highlighted ? scrollRowIntoView : undefined}
+      ref={highlighted ? scrollRowIntoView : undefined}
       role="option"
       aria-selected={selected}
-      // Struck through, inert, and out of the tab order the moment it is
-      // considered: what is on screen is a record of what just happened, not
-      // something still to act on.
-      aria-disabled={completing || undefined}
       // The row is the keyboard's way in — it has to be focusable for
       // Enter/Space to reach it at all, and it is what a screen reader reads.
-      tabIndex={completing ? -1 : 0}
+      tabIndex={0}
       onClick={onClick}
       onKeyDown={onKeyDown}
       onPointerDown={pointer.onPointerDown}
@@ -389,7 +313,6 @@ export function ReminderRow({
       onPointerCancel={pointer.onPointerUp}
       onAnimationEnd={onAnimationEnd}
       className={reminderRowClasses({
-        completing,
         selected,
         highlighted,
         aiProcessing,
@@ -400,7 +323,6 @@ export function ReminderRow({
       <PriorityEdgeBar bar={pri.bar} />
       <ReminderRowMarker
         reminder={reminder}
-        completing={completing}
         selected={selected}
         isSelectionMode={isSelectionMode}
         check={pri.check}
@@ -408,16 +330,14 @@ export function ReminderRow({
         onComplete={onComplete}
       />
       {/* The notes marker sits inline after the title — see `NotesMarker`. */}
-      <p className={cn('min-w-0 flex-1 text-[16px] leading-6', completing && 'line-through')}>
+      <p className="min-w-0 flex-1 text-[16px] leading-6">
         <span
           data-row-title
           className={cn(
             'text-pretty',
             // "Color task titles" adds the hue over §6's weight: twMerge
             // swaps the colour and keeps High/Urgent's `font-medium`.
-            completing
-              ? 'text-muted-foreground'
-              : cn(prominenceClasses(reminder.priority), pri.title),
+            cn(prominenceClasses(reminder.priority), pri.title),
           )}
         >
           {reminder.title}

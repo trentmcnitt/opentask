@@ -17,6 +17,7 @@ import { createLatestRequestGuard } from '@/lib/refresh-guards'
 import { PinnedUndone, SettlingConsiders, restoreInPlace } from '@/lib/reminder-undo'
 import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/prompt-intents'
 import { REMINDERS_URL } from '@/lib/reminders-query'
+import { ghostRows } from '@/lib/row-ghost'
 import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
 
 /**
@@ -85,6 +86,11 @@ interface UseRemindersOptions {
    */
   timeSlots?: TimeSlot[]
   timezone?: string
+  /**
+   * A considered row's ghost fades where it was (`src/lib/row-ghost.ts`) —
+   * the /reminders page. The dashboard's card has no leaving animation.
+   */
+  ghostLeavingRows?: boolean
 }
 
 export interface UseRemindersReturn {
@@ -97,30 +103,9 @@ export interface UseRemindersReturn {
   hasAny: boolean
   loading: boolean
   error: string | null
-  /** IDs (and prompt_keys) mid-completion — the row is animating out while the request is in flight. */
-  completingIds: Set<number | string>
   /** True once anything has been completed on this surface in this session. */
   consideredAny: boolean
   complete: (task: Task) => Promise<void>
-  /**
-   * "The row has finished leaving the screen." Called by the row itself when
-   * its collapse animation ends (or when it unmounts mid-collapse), and only
-   * then does the considered reminder leave `groups`.
-   *
-   * Completion used to remove the row the instant it was clicked, which made
-   * the list reflow under a stationary pointer: the second click of a
-   * double-click landed on whichever thought had slid up into the gap and
-   * considered that one too. Now the row stays where it is, inert, until it
-   * has visibly gone.
-   */
-  rowLeft: (id: number | string) => void
-  /**
-   * A row reporting that it is on screen. Returns its own deregistration, so a
-   * row can call it straight out of an effect. Only a mounted row can report
-   * its animation finishing, so only a mounted row's completion is allowed to
-   * hold anything back — see `completeIds`.
-   */
-  registerRow: (id: number | string) => () => void
   /**
    * The undo pipeline's answer (`POST /api/undo`'s `undone_id`): when it is
    * the entry one of this surface's own considers wrote, that consider's rows
@@ -411,6 +396,7 @@ export function useReminders({
   onCompleted,
   timeSlots,
   timezone,
+  ghostLeavingRows = false,
 }: UseRemindersOptions): UseRemindersReturn {
   const [groups, setGroups] = useState<ReminderGroup[]>(remindersCache?.groups ?? [])
   const [hasAny, setHasAny] = useState(remindersCache?.hasAny ?? false)
@@ -426,7 +412,6 @@ export function useReminders({
   const [payloadSeq, setPayloadSeq] = useState(0)
   const [loading, setLoading] = useState(remindersCache === null)
   const [error, setError] = useState<string | null>(null)
-  const [completingIds, setCompletingIds] = useState<Set<number | string>>(new Set())
   const [consideredAny, setConsideredAny] = useState(false)
   const consideredAnyRef = useRef(consideredAny)
   consideredAnyRef.current = consideredAny
@@ -464,19 +449,8 @@ export function useReminders({
   // is applied (`SettlingConsiders`): an older refresh must not bring them back.
   const settlingRef = useRef<SettlingConsiders>(new SettlingConsiders())
   const ownConsidersRef = useRef<Map<number, OwnConsider>>(new Map())
-  /**
-   * IDs whose row is still on screen, collapsing. They are still in `groups`,
-   * so a server payload — which no longer lists them — cannot be applied
-   * without deciding where to put them back. Rather than guess, `refresh`
-   * holds until the last one has gone and `rowLeft` runs the held one; the
-   * wait is the length of one animation.
-   */
-  const leavingIdsRef = useRef<Set<number | string>>(new Set())
-  const heldRefreshRef = useRef(false)
   // Out-of-order guard for `refresh` (see `createLatestRequestGuard`).
   const [requestGuard] = useState(createLatestRequestGuard)
-  /** IDs with a row actually rendered right now (see `registerRow`). */
-  const mountedIdsRef = useRef<Set<number | string>>(new Set())
   /**
    * The current groups — what every optimistic change computes from and every
    * failure snapshot is taken from. `writeGroups` updates it at once, so two
@@ -522,10 +496,6 @@ export function useReminders({
     )
 
   const refresh = useCallback(async () => {
-    if (leavingIdsRef.current.size > 0) {
-      heldRefreshRef.current = true
-      return
-    }
     const seq = requestGuard.begin()
     try {
       const res = await fetch(WEB_REMINDERS_URL)
@@ -587,18 +557,6 @@ export function useReminders({
   )
 
   /**
-   * Run the refresh that was held while rows were collapsing, if the last of
-   * them has now gone. Every path that empties `leavingIdsRef` ends here —
-   * a held refresh that nothing releases would silently switch this surface
-   * off for the rest of the session.
-   */
-  const releaseHeldRefresh = useCallback(() => {
-    if (leavingIdsRef.current.size > 0 || !heldRefreshRef.current) return
-    heldRefreshRef.current = false
-    void refresh()
-  }, [refresh])
-
-  /**
    * Apply prompt actions to `groups` — the prompts' `commitConsidered`. A
    * handled prompt stays in its group (it counts as considered there) but no
    * longer renders, since only waiting prompts are rows.
@@ -611,35 +569,20 @@ export function useReminders({
     },
     [writeGroups],
   )
-  /** The action each collapsing prompt row commits when it has gone. */
-  const leavingPromptsRef = useRef<Map<string, PromptIntent>>(new Map())
 
   /**
    * Put a consider's rows back, at once (`src/lib/reminder-undo.ts`): out of
-   * the considered list into their place, a row still collapsing un-struck,
-   * prompts waiting again — and pinned there until a payload from after the
+   * the considered list into their place, prompts waiting again — and pinned there until a payload from after the
    * undo lands.
    */
   const restoreLocally = useCallback(
     (ids: number[], keys: string[], snapshot: ReminderGroup[]) => {
       const all: (number | string)[] = [...ids, ...keys]
-      for (const key of all) {
-        leavingIdsRef.current.delete(key)
-        if (typeof key === 'string') leavingPromptsRef.current.delete(key)
-      }
-      setCompletingIds((prev) => {
-        if (!all.some((key) => prev.has(key))) return prev
-        const next = new Set(prev)
-        for (const key of all) next.delete(key)
-        return next
-      })
       pinnedRef.current.pin(all)
       settlingRef.current.release(all)
       writeGroups(restoreInPlace(groupsRef.current, snapshot, new Set(ids), new Set(keys)))
-      // A refresh held behind a row that was collapsing may run now.
-      releaseHeldRefresh()
     },
-    [writeGroups, releaseHeldRefresh],
+    [writeGroups],
   )
 
   const applyUndone = useCallback(
@@ -656,13 +599,6 @@ export function useReminders({
     },
     [requestGuard, restoreLocally],
   )
-
-  const registerRow = useCallback((id: number | string) => {
-    mountedIdsRef.current.add(id)
-    return () => {
-      mountedIdsRef.current.delete(id)
-    }
-  }, [])
 
   /**
    * Consider reminders, and act on quota prompts, in one request and one undo
@@ -687,6 +623,21 @@ export function useReminders({
    * restores the snapshot taken before anything moved, so the item honestly
    * reappears, and turns the toast's promise into a no-op — the same failure
    * semantics as the widget's tombstones (§8).
+   *
+   * THE ROWS LEAVE THE LIST AT ONCE (Trent, 2026-11-20: "if I'm going through
+   * very quickly, sometimes it won't register"). From 09-era until then an
+   * on-screen row held its place, struck through and inert, for its 180 ms
+   * collapse, so the second click of a double-click could not land on the row
+   * that slid up. But a fast run of taps at one spot IS that gesture: measured
+   * on /reminders with 10 taps 120 ms apart, 2–3 landed on the collapsing row
+   * or its gap and did nothing, and the row he aimed at stayed waiting. Now the
+   * next row is under the finger the moment a tap has been taken, as on the
+   * dashboard's Reminders card; on /reminders a ghost of the row fades over the
+   * spot (`ghostRows`, `src/lib/row-ghost.ts`), and pointers pass through it.
+   * The accepted cost: a double-click on one row considers the row below it
+   * too, and the toast's Undo is the recovery. No double-click guard either:
+   * a fast run at one spot sends clicks with a rising click count, so any
+   * guard on them would swallow exactly the run it was meant to keep.
    */
   const completeIds = useCallback(
     async (
@@ -695,9 +646,8 @@ export function useReminders({
       prompts: QuotaPrompt[] = [],
       intent: PromptIntent = 'consider',
     ) => {
-      // One completion per reminder in flight. Two Enters inside the collapse,
-      // or a slot sweep confirmed over a row that is still going, would
-      // otherwise send /done twice — and a recurring reminder would advance two
+      // One completion per reminder in flight. A slot sweep confirmed while a
+      // row's own consider is still out would otherwise send /done twice — and a recurring reminder would advance two
       // occurrences for one intention.
       const fresh = tasks.filter((t) => !pendingIdsRef.current.has(t.id))
       const ids = fresh.map((t) => t.id)
@@ -705,34 +655,18 @@ export function useReminders({
       // task id).
       const keys = prompts.map((p) => p.prompt_key).filter((k) => !pendingPromptsRef.current.has(k))
       if (ids.length === 0 && keys.length === 0) return
-      // Only a row that is ON SCREEN can report its animation finishing, so
-      // only those are allowed to hold their place — and with it the refresh.
-      // Anything swept out of a folded slot, or from under a "Show all N" cap,
-      // has no row to reflow under anyone's pointer, so it leaves at once, the
-      // way everything used to.
       const all: (number | string)[] = [...ids, ...keys]
       // Considered again after an undo: no longer pinned waiting.
       pinnedRef.current.release(all)
-      const onScreen = all.filter((id) => mountedIdsRef.current.has(id))
-      const offScreen = all.filter((id) => !mountedIdsRef.current.has(id))
       for (const id of ids) pendingIdsRef.current.add(id)
       for (const key of keys) pendingPromptsRef.current.set(key, intent)
-      for (const id of onScreen) leavingIdsRef.current.add(id)
-      for (const id of onScreen)
-        if (typeof id === 'string') leavingPromptsRef.current.set(id, intent)
-      // The on-screen rows do not leave `groups` here. They are marked as
-      // leaving, which is what draws them struck through and inert while they
-      // collapse; each one calls `rowLeft` when its animation ends, and THAT is
-      // what moves it behind the slot's counter. Holding the position is the
-      // whole point: see `rowLeft` for the double-click this prevents.
+      // The ghosts are drawn from the rows as they are now, before the commit
+      // takes them out of the list.
+      if (ghostLeavingRows) ghostRows(ids, keys)
       const snapshot = groupsRef.current
       const hadConsidered = consideredAnyRef.current
-      if (onScreen.length > 0) setCompletingIds((prev) => new Set([...prev, ...onScreen]))
-      commitConsidered(offScreen.filter((id): id is number => typeof id === 'number'))
-      commitPrompts(
-        offScreen.filter((id): id is string => typeof id === 'string'),
-        intent,
-      )
+      commitConsidered(ids)
+      commitPrompts(keys, intent)
       setConsideredAny(true)
 
       const request = (async () => {
@@ -782,23 +716,11 @@ export function useReminders({
         await request
         settledOk = true
       } catch {
-        // A thought still collapsing never went anywhere the user can see, so
-        // this puts it back in place rather than re-inserting it: drop the
-        // leaving marks, restore whatever a row that already finished had
-        // committed, and take back the session flag if this was the first one.
-        for (const id of all) leavingIdsRef.current.delete(id)
-        for (const key of keys) leavingPromptsRef.current.delete(key)
-        setCompletingIds((prev) => {
-          const next = new Set(prev)
-          for (const id of all) next.delete(id)
-          return next
-        })
+        // Put the rows back where they were, and take back the session flag if
+        // this was the first one.
         writeGroups(snapshot)
         if (!hadConsidered) setConsideredAny(false)
         showToast({ message: 'Could not complete reminders', type: 'error' })
-        // Clearing those marks may have emptied the leaving set, and a refresh
-        // held behind it must not be stranded by a failure.
-        releaseHeldRefresh()
       } finally {
         // Answered: drawn considered until a payload requested from now on is
         // applied — not merely until the next one lands (`SettlingConsiders`).
@@ -820,52 +742,11 @@ export function useReminders({
       refresh,
       commitConsidered,
       commitPrompts,
-      releaseHeldRefresh,
       writeGroups,
       restoreLocally,
       requestGuard,
+      ghostLeavingRows,
     ],
-  )
-
-  /**
-   * A considered row has finished collapsing — now it leaves the data.
-   *
-   * This is the other half of the deferral in `completeIds`, and the reason
-   * for it: with removal on click, the list reflowed under a pointer that had
-   * not moved, so the second click of a double-click landed on whichever
-   * thought slid up into the gap and considered that one too (measured on dev:
-   * one double-click took two reminders). The row now holds its place, inert,
-   * until it has visibly gone.
-   *
-   * Idempotent, because two things call it: the row's `animationend`, and the
-   * row unmounting while still mid-collapse (a folded slot, a navigation) —
-   * without that second path a row that never finished animating would hold
-   * `refresh` shut.
-   */
-  const rowLeft = useCallback(
-    (id: number | string) => {
-      if (!leavingIdsRef.current.has(id)) return
-      leavingIdsRef.current.delete(id)
-      setCompletingIds((prev) => {
-        if (!prev.has(id)) return prev
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
-      // It moves behind the slot's counter as it goes, so the progress bar and
-      // the "put back" list agree with the row that just left. A prompt row
-      // (keyed by its prompt_key) commits the action it was leaving for.
-      if (typeof id === 'string') {
-        commitPrompts([id], leavingPromptsRef.current.get(id) ?? 'consider')
-        leavingPromptsRef.current.delete(id)
-      } else {
-        commitConsidered([id])
-      }
-      // Any refresh that arrived during the collapse was held rather than
-      // applied over a row that was still on screen. Run it now.
-      releaseHeldRefresh()
-    },
-    [commitConsidered, commitPrompts, releaseHeldRefresh],
   )
 
   const completeMany = useCallback(
@@ -991,7 +872,6 @@ export function useReminders({
     hasAny,
     loading,
     error,
-    completingIds,
     consideredAny,
     complete,
     completeMany,
@@ -999,8 +879,6 @@ export function useReminders({
     considerPrompt,
     didPrompt,
     movePrompt,
-    rowLeft,
-    registerRow,
     applyUndone,
     hydrated,
     putBack,

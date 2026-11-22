@@ -72,10 +72,38 @@ enum NotificationAction {
     /// can't offer `DONE` twice, and neither is a task's Done.
     static let considered = "CONSIDERED"
     static let didIt = "DID_IT"
+    /// Move ONLY this task to the next period (Trent, 2026-11-18: "I have no
+    /// way to move a single item to the next period"). The device works the
+    /// time out when the button is pressed — `TaskNotificationList.singleTarget`,
+    /// the widget's ⏭ rule — so a button registered hours ago still lands on
+    /// what is the next period now. `TASK_REMINDER` only; the rows and their
+    /// titles are `TaskNotificationList`.
+    static let snoozeNextPeriod = "SNOOZE_NEXT_PERIOD"
+
+    /// Move ONLY this task to a named period's next start: `SNOOZE_SLOT:<HH:MM>`
+    /// (the period's `start_time`). Offered by the iPhone's long-press in its
+    /// "This task" mode (`TaskNotificationList.thisTask`); resolved on the
+    /// device when pressed, like `snoozeNextPeriod`. Not `SNOOZE_ALL_SLOT:`,
+    /// which sweeps every overdue task.
+    static let snoozeSlotPrefix = "SNOOZE_SLOT:"
+
+    static func snoozeSlotIdentifier(startTime: String) -> String {
+        snoozeSlotPrefix + startTime
+    }
+
+    static func parseSnoozeSlot(_ identifier: String) -> String? {
+        guard identifier.hasPrefix(snoozeSlotPrefix) else { return nil }
+        let value = String(identifier.dropFirst(snoozeSlotPrefix.count))
+        return value.isEmpty ? nil : value
+    }
     static let snooze1hr = "SNOOZE_1HR"
     static let snoozeAll1hr = "SNOOZE_ALL_1HR"
     static let snoozeCustom = "SNOOZE_CUSTOM"
     static let snoozeAllCustom = "SNOOZE_ALL_CUSTOM"
+    /// The overdue checklist's last row (TNC-8, 2026-11-21): close the
+    /// long-press and remove this banner. Nothing is sent. Only the content
+    /// extension offers it; a handler that gets it anyway ignores it.
+    static let cancel = "CANCEL"
     /// §6.1 batch checklist: commit the rows the user checked in the extension.
     /// Only ever offered by the content extension — from the lock screen there
     /// is nothing to check, so the registered category omits it.

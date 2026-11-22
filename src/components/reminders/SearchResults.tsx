@@ -23,7 +23,6 @@ export function SearchResults({
   query,
   groups,
   notToday,
-  completingIds,
   selectedIds,
   isSelectionMode,
   rowHandlers,
@@ -34,7 +33,6 @@ export function SearchResults({
   query: string
   groups: ReminderGroup[]
   notToday: Task[]
-  completingIds: Set<number | string>
   selectedIds: Set<number | string>
   isSelectionMode: boolean
   rowHandlers: ReminderRowHandlers
@@ -62,7 +60,6 @@ export function SearchResults({
               locked
               onToggle={NO_OP}
               onExpand={NO_OP}
-              completingIds={completingIds}
               selectedIds={selectedIds}
               isSelectionMode={isSelectionMode}
               highlightId={null}

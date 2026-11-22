@@ -161,7 +161,6 @@ export function ReminderSlotGroup({
   retapPlace,
   onToggle,
   onExpand,
-  completingIds,
   selectedIds,
   isSelectionMode,
   highlightId,
@@ -187,7 +186,6 @@ export function ReminderSlotGroup({
   retapPlace?: number
   onToggle: () => void
   onExpand: (expanded: boolean) => void
-  completingIds: Set<number | string>
   selectedIds: Set<number | string>
   isSelectionMode: boolean
   highlightId: number | null
@@ -282,7 +280,6 @@ export function ReminderSlotGroup({
                 <ReminderRow
                   key={reminder.id}
                   reminder={reminder}
-                  completing={completingIds.has(reminder.id)}
                   selected={selectedIds.has(reminder.id)}
                   isSelectionMode={isSelectionMode}
                   highlighted={highlightId === reminder.id}

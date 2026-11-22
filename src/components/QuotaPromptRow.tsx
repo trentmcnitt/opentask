@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 import { cn, fromRowControl } from '@/lib/utils'
@@ -19,11 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { usePromptSetup } from '@/components/QuotaPromptField'
 import { log } from '@/lib/logger'
 import { scrollRowIntoView } from '@/lib/scroll-row-into-view'
-import {
-  focusAfterRow,
-  measureLeavingRow,
-  onSurfaceRowAnimationEnd,
-} from '@/components/reminders/row-shell'
+import { focusAfterRow, onSurfaceRowAnimationEnd } from '@/components/reminders/row-shell'
 import { showToast } from '@/lib/toast'
 import { quotaInListHref } from '@/lib/show-in-list'
 import type { Task } from '@/types'
@@ -95,8 +91,6 @@ export interface QuotaPromptRowProps {
   prompt: QuotaPrompt
   /** 'surface' is the /reminders row; 'panel' the dashboard card's compact one. */
   variant?: 'surface' | 'panel'
-  /** Mid-collapse after an action: struck through and inert. */
-  completing?: boolean
   /** A selection is active — a tap toggles this row's place in it (see above). */
   isSelectionMode?: boolean
   /** This row is in the selection. */
@@ -111,17 +105,13 @@ export interface QuotaPromptRowProps {
   onDid: (prompt: QuotaPrompt) => void
   /** Hold / Cmd+Enter: open the quota's bubble. */
   onPeek: (prompt: QuotaPrompt) => void
-  /** The collapse ended (or the row unmounted mid-collapse). */
-  onLeft?: (key: string) => void
-  /** Report being on screen; returns its deregistration (`useReminders`). */
-  onRegister?: (key: string) => () => void
   /**
    * The Reminders widget's deep link named this row (`?prompt=<key>` on
    * /reminders): bring it on screen and flash it once — `ReminderRow`'s
    * `?reminder=<id>` highlight, keyed by `prompt_key`.
    */
   highlighted?: boolean
-  /** The flash has played (or the row left mid-flash): spend the highlight. */
+  /** The flash has played: spend the highlight. */
   onHighlightDone?: () => void
   /**
    * Render the quota's bubble, anchored to the element handed in (an inert
@@ -134,7 +124,6 @@ export interface QuotaPromptRowProps {
 export function QuotaPromptRow({
   prompt,
   variant = 'surface',
-  completing = false,
   isSelectionMode = false,
   selected = false,
   hiddenWhenNarrow = false,
@@ -143,8 +132,6 @@ export function QuotaPromptRow({
   onSelect,
   onRangeSelect,
   onPeek,
-  onLeft,
-  onRegister,
   highlighted,
   onHighlightDone,
   bubble,
@@ -157,7 +144,6 @@ export function QuotaPromptRow({
   const selecting = isSelectionMode && onSelect !== undefined
   const { press, onClick, onKeyDown } = usePromptRowGestures({
     prompt,
-    completing,
     isSelectionMode,
     onConsider,
     onSelect,
@@ -165,26 +151,15 @@ export function QuotaPromptRow({
     onPeek,
   })
 
-  // Same two effects as `ReminderRow`: a row that unmounts mid-collapse still
-  // reports leaving (or it would hold the surface's refresh shut), and only a
-  // row that is on screen may hold its place while it collapses.
-  useEffect(() => {
-    if (!completing || !onLeft) return
-    return () => onLeft(key)
-  }, [completing, onLeft, key])
-  useEffect(() => onRegister?.(key), [onRegister, key])
-
   const row = (
     <li
       data-prompt-key={key}
       data-prompt-task={prompt.task_id}
       role={onSelect ? 'option' : undefined}
       aria-selected={onSelect ? selected : undefined}
-      data-reminder-leaving={completing ? '' : undefined}
       data-prompt-highlight={highlighted ? '' : undefined}
-      ref={rowRef(completing, highlighted)}
-      aria-disabled={completing || undefined}
-      tabIndex={completing ? -1 : 0}
+      ref={highlighted ? scrollRowIntoView : undefined}
+      tabIndex={0}
       onClick={onClick}
       onKeyDown={onKeyDown}
       onPointerDown={press.onPointerDown}
@@ -192,19 +167,11 @@ export function QuotaPromptRow({
       onPointerMove={press.onPointerMove}
       onPointerLeave={press.onPointerLeave}
       onPointerCancel={press.onPointerUp}
-      onAnimationEnd={(e) =>
-        onSurfaceRowAnimationEnd(e, {
-          id: key,
-          highlighted: !!highlighted,
-          onLeft,
-          onHighlightDone,
-        })
-      }
+      onAnimationEnd={(e) => onSurfaceRowAnimationEnd(e, { onHighlightDone })}
       className={promptRowClasses({
         panel,
         selected,
         hiddenWhenNarrow,
-        completing,
         highlighted: !!highlighted,
       })}
     >
@@ -239,7 +206,6 @@ export function QuotaPromptRow({
       <PromptDashedCircle
         prompt={prompt}
         panel={panel}
-        completing={completing}
         selection={selecting ? { selected, onToggle: () => onSelect(prompt) } : null}
         check={pri.check}
         onConsider={onConsider}
@@ -252,7 +218,7 @@ export function QuotaPromptRow({
           // "Clean bedroom / fans · 0/1 this month" (Trent, 2026-09-26).
           'min-w-0 flex-1',
           panel ? 'text-[13.5px] leading-[1.42]' : 'text-[16px] leading-6',
-          completing ? 'text-muted-foreground line-through' : pri.title,
+          pri.title,
         )}
       >
         {prompt.title}
@@ -274,13 +240,7 @@ export function QuotaPromptRow({
             cadence mark. The bubble a hold opens is where they are read. */}
         {prompt.has_notes && <NotesMarker />}
       </p>
-      <PromptDidButton
-        prompt={prompt}
-        panel={panel}
-        completing={completing}
-        selecting={selecting}
-        onDid={onDid}
-      />
+      <PromptDidButton prompt={prompt} panel={panel} selecting={selecting} onDid={onDid} />
     </li>
   )
   return row
@@ -363,13 +323,11 @@ export function ConsideredPromptRow({
 function PromptDidButton({
   prompt,
   panel,
-  completing,
   selecting,
   onDid,
 }: {
   prompt: QuotaPrompt
   panel: boolean
-  completing: boolean
   selecting: boolean
   onDid: (prompt: QuotaPrompt) => void
 }) {
@@ -378,7 +336,7 @@ function PromptDidButton({
       type="button"
       onClick={(e) => {
         e.stopPropagation()
-        if (!completing) onDid(prompt)
+        onDid(prompt)
       }}
       onPointerDown={(e) => e.stopPropagation()}
       tabIndex={-1}
@@ -423,14 +381,12 @@ function PromptDidButton({
  */
 function usePromptRowGestures({
   prompt,
-  completing,
   isSelectionMode,
   onConsider,
   onSelect,
   onRangeSelect,
   onPeek,
 }: Pick<QuotaPromptRowProps, 'prompt' | 'onConsider' | 'onSelect' | 'onRangeSelect' | 'onPeek'> & {
-  completing: boolean
   isSelectionMode: boolean
 }) {
   const press = useLongPress({ onLongPress: () => onPeek(prompt) })
@@ -439,7 +395,7 @@ function usePromptRowGestures({
       e.preventDefault()
       return
     }
-    if (fromRowControl(e) || completing) return
+    if (fromRowControl(e)) return
     // The reminder row's rule: a held modifier never considers — it is the
     // mouse's way into a selection. Where there is no selection to join (the
     // dashboard card), a modifier-click and a selection-mode tap do nothing.
@@ -448,7 +404,7 @@ function usePromptRowGestures({
     else onConsider(prompt)
   }
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.target !== e.currentTarget || completing) return
+    if (e.target !== e.currentTarget) return
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       onPeek(prompt)
@@ -472,12 +428,10 @@ function usePromptRowGestures({
  * The dashed circle — "considered" (seen) — in the reminder row's circle's
  * exact box: same size, same place, same tap target, and the same
  * selection-mode checkbox (`ReminderRowMarker`). Only the glyph differs (see
- * the docblock). Waiting: a dashed ring (`DashedRing`) in the circle's muted tone.
- * Considered (the collapse): the dashed ring in green around a filled green
- * disc — the reminder circle's green disc, kept inside the dashes — which is
- * SF Symbols' `circle.dashed.inset.filled`, the native surfaces' glyph.
- * (Lucide's dashes are open arcs, so `fill` on the icon itself would paint
- * slivers, not a disc; the disc is its own element.) Lucide draws the ring at
+ * the docblock): a dashed ring (`DashedRing`) in the circle's muted tone.
+ * (A handled prompt's glyph — the ring in green around a filled green disc,
+ * SF Symbols' `circle.dashed.inset.filled` — is `ConsideredPromptRow`'s.)
+ * Lucide draws the ring at
  * r=10 in its 24-unit box, a touch smaller than the reminder circle's ring. It
  * is NOT scaled up to match: scaling pushed the dashes past the box into the
  * label-colour stripe on its left (Trent, 2026-09-25).
@@ -485,14 +439,12 @@ function usePromptRowGestures({
 function PromptDashedCircle({
   prompt,
   panel,
-  completing,
   selection,
   check,
   onConsider,
 }: {
   prompt: QuotaPrompt
   panel: boolean
-  completing: boolean
   /** In selection mode: the checkbox's state and toggle. */
   selection: { selected: boolean; onToggle: () => void } | null
   /**
@@ -503,17 +455,6 @@ function PromptDashedCircle({
   onConsider: (prompt: QuotaPrompt) => void
 }) {
   const size = panel ? 'size-[19px]' : 'mt-[3px] size-6'
-  if (completing) {
-    return (
-      <span
-        aria-hidden
-        className={cn('relative flex shrink-0 items-center justify-center text-green-600', size)}
-      >
-        <DashedRing px={panel ? 19 : 24} />
-        <span className="absolute inset-[22%] rounded-full bg-green-600" />
-      </span>
-    )
-  }
   if (selection) {
     return (
       <Checkbox
@@ -592,13 +533,11 @@ function promptRowClasses({
   panel,
   selected,
   hiddenWhenNarrow,
-  completing,
   highlighted,
 }: {
   panel: boolean
   selected: boolean
   hiddenWhenNarrow: boolean
-  completing: boolean
   highlighted: boolean
 }): string {
   const hover = panel ? 'hover:bg-foreground/5' : 'hover:bg-foreground/[0.04]'
@@ -608,19 +547,8 @@ function promptRowClasses({
     panel ? 'gap-2.5 px-1 py-1.5 transition-colors' : 'gap-3 px-2 py-2.5',
     selected ? 'ring-ring bg-accent ring-2' : hover,
     hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
-    completing && 'animate-reminder-leaving pointer-events-none',
-    !completing && highlighted && 'animate-row-highlight',
+    highlighted && 'animate-row-highlight',
   )
-}
-
-/**
- * The row's ref: a leaving row measures its height for the collapse; a
- * deep-linked one (`?prompt=<key>`) brings itself on screen — `ReminderRow`'s
- * pair, the collapse first.
- */
-function rowRef(completing: boolean, highlighted: boolean | undefined) {
-  if (completing) return measureLeavingRow
-  return highlighted ? scrollRowIntoView : undefined
 }
 
 /** `useReminders().movePrompt`'s shape. */
@@ -654,7 +582,6 @@ const noop = () => {}
  */
 export function usePromptRows({
   variant = 'surface',
-  completingIds,
   isSelectionMode = false,
   selectedIds,
   onSelect,
@@ -662,8 +589,6 @@ export function usePromptRows({
   considerPrompt,
   didPrompt,
   movePrompt,
-  rowLeft,
-  registerRow,
   onUndo,
   onCompleted,
   refresh,
@@ -671,7 +596,6 @@ export function usePromptRows({
   onHighlightDone,
 }: {
   variant?: 'surface' | 'panel'
-  completingIds?: Set<number | string>
   isSelectionMode?: boolean
   /** The surface's selection (reminder ids and prompt keys). Absent: not selectable. */
   selectedIds?: Set<number | string>
@@ -681,8 +605,6 @@ export function usePromptRows({
   didPrompt: (prompt: QuotaPrompt) => void
   /** `useReminders().movePrompt` — the period chips' optimistic move. */
   movePrompt: MovePrompt
-  rowLeft?: (id: string) => void
-  registerRow?: (id: string) => () => void
   onUndo: () => void
   onCompleted?: () => void
   refresh: () => Promise<void>
@@ -702,7 +624,6 @@ export function usePromptRows({
       bubble={(row) => detail.wrap(prompt, row)}
       prompt={prompt}
       variant={variant}
-      completing={completingIds?.has(prompt.prompt_key) ?? false}
       isSelectionMode={isSelectionMode}
       selected={selectedIds?.has(prompt.prompt_key) ?? false}
       onSelect={onSelect}
@@ -711,8 +632,6 @@ export function usePromptRows({
       onConsider={considerPrompt}
       onDid={didPrompt}
       onPeek={detail.peek}
-      onLeft={rowLeft}
-      onRegister={registerRow}
       highlighted={highlightKey === prompt.prompt_key}
       onHighlightDone={onHighlightDone}
     />
