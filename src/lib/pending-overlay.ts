@@ -100,6 +100,21 @@ export function activePending<K, V>(map: PendingMap<K, V>, payloadSeq: number): 
 }
 
 /**
+ * `map` without the entries a payload requested as `payloadSeq` already
+ * includes — for a surface that keeps its map across payloads and forgets an
+ * entry once it is retired. Unchanged (the same map) when none is.
+ */
+export function prunePending<K, V>(map: PendingMap<K, V>, payloadSeq: number): PendingMap<K, V> {
+  let next: Map<K, PendingEntry<V>> | null = null
+  for (const [id, entry] of map) {
+    if (!retired(entry, payloadSeq)) continue
+    next ??= new Map(map)
+    next.delete(id)
+  }
+  return next ?? map
+}
+
+/**
  * A row change for a list that holds whole rows (the dashboard's task list):
  * the row as the tap left it, or `null` for a row the tap took off the list.
  */

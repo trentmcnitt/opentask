@@ -1,10 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
+import { useDayStart } from '@/components/PreferencesProvider'
 import { reminderInListHref } from '@/lib/show-in-list'
 import { describeCadence, describeTimeOfDay, readSchedule } from '@/lib/reminder-rule'
-import type { TimeSlot } from '@/lib/time-slot-assign'
+import { laterPeriodsToday } from '@/lib/reminder-move'
+import { assignSlot, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
 /**
@@ -27,20 +30,31 @@ import type { Task } from '@/types'
  *
  * The bubble's shell and body are `RowPeekPopover` / `RowPeekBody`, shared
  * with the task-segment rows' peek (2026-10-20) so the two stay one shape.
+ *
+ * LATER TODAY (2026-11-21, the one-day move): under the meta, a chip per
+ * period the reminder can still move to today (`laterPeriodsToday`) — a tap
+ * moves it there for today only (`useReminders().moveForToday`), with the
+ * usual Undo toast. The meta keeps naming its HOME period (its schedule);
+ * once moved, the line says where it is now: "Later today (now Afternoon):".
+ * No later period, no line.
  */
 export function ReminderRowPopover({
   reminder,
   timeSlots,
   timezone,
+  slot,
   open,
   onOpenChange,
   onOpen,
   onDelete,
+  onMove,
   children,
 }: {
   reminder: Task | null
   timeSlots: TimeSlot[]
   timezone: string
+  /** The period the reminder is in today — its home one, or the one it was moved to. */
+  slot: TimeSlot | null
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The bubble's own "Open" button was pressed — the caller decides what that
@@ -49,6 +63,8 @@ export function ReminderRowPopover({
   /** Move it to Trash. Soft, undoable, and asks nothing first — see
    *  `PopoverFooter`. */
   onDelete: (reminder: Task) => void
+  /** A Later today chip: move it to that period for today. */
+  onMove: (reminder: Task, to: TimeSlot) => void
   /** The row this bubble points at. */
   children: React.ReactNode
 }) {
@@ -64,6 +80,8 @@ export function ReminderRowPopover({
             reminder={reminder}
             timeSlots={timeSlots}
             timezone={timezone}
+            slot={slot}
+            onMove={(to) => onMove(reminder, to)}
             onOpen={() => onOpen(reminder)}
             // Its row in its period on the Reminders tab (`reminderInListHref`).
             onShowInList={() => {
@@ -84,6 +102,8 @@ function ReminderSummary({
   reminder,
   timeSlots,
   timezone,
+  slot,
+  onMove,
   onOpen,
   onShowInList,
   onDelete,
@@ -91,6 +111,8 @@ function ReminderSummary({
   reminder: Task
   timeSlots: TimeSlot[]
   timezone: string
+  slot: TimeSlot | null
+  onMove: (to: TimeSlot) => void
   onOpen: () => void
   onShowInList: () => void
   onDelete: () => void
@@ -106,10 +128,19 @@ function ReminderSummary({
     <RowPeekBody
       title={reminder.title}
       meta={
-        <p className="text-muted-foreground text-xs">
-          {cadence}
-          {time ? ` · ${time}` : ''}
-        </p>
+        <>
+          <p className="text-muted-foreground text-xs">
+            {cadence}
+            {time ? ` · ${time}` : ''}
+          </p>
+          <LaterToday
+            reminder={reminder}
+            slot={slot}
+            timeSlots={timeSlots}
+            timezone={timezone}
+            onMove={onMove}
+          />
+        </>
       }
       notes={reminder.notes}
       onOpen={onOpen}
@@ -117,5 +148,56 @@ function ReminderSummary({
       onDelete={onDelete}
       deleteLabel={`Move "${reminder.title}" to Trash`}
     />
+  )
+}
+
+/**
+ * "Later today:" and a chip per later period (the one-day move). The chips
+ * are the quota bubble's period chips (`TrackChipPopover`), at their compact
+ * size, so a bubble has one kind of period chip; none is pressed — where the
+ * reminder is now is never offered.
+ *
+ * `now` is the moment the bubble opened (it mounts with each opening): a
+ * period that starts while it is open is refused by the server with a toast
+ * that says so, and the next opening no longer offers it.
+ */
+function LaterToday({
+  reminder,
+  slot,
+  timeSlots,
+  timezone,
+  onMove,
+}: {
+  reminder: Task
+  slot: TimeSlot | null
+  timeSlots: TimeSlot[]
+  timezone: string
+  onMove: (to: TimeSlot) => void
+}) {
+  const dayStart = useDayStart()
+  const [openedAt] = useState(() => new Date())
+  const later = laterPeriodsToday(slot, timeSlots, openedAt, timezone, dayStart)
+  if (later.length === 0) return null
+  // Moved: it is not in the period its schedule says (the meta's).
+  const home = assignSlot(reminder, timeSlots, timezone)
+  const moved = slot !== null && slot.id !== home?.id
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1" data-reminder-later>
+      <span className="text-muted-foreground mr-0.5 text-xs" data-reminder-later-label>
+        {moved ? `Later today (now ${slot.label}):` : 'Later today:'}
+      </span>
+      {later.map((to) => (
+        <button
+          key={to.id}
+          type="button"
+          onClick={() => onMove(to)}
+          data-reminder-later-period={to.id}
+          aria-label={`Move to ${to.label} for today`}
+          className="hover:border-foreground/40 rounded-full border px-2 py-0.5 text-xs transition-colors"
+        >
+          {to.label}
+        </button>
+      ))}
+    </div>
   )
 }

@@ -75,6 +75,30 @@ export function useRenderedSelection({
 }
 
 /**
+ * The period each selected row is in today (a moved one's new period; null =
+ * Anytime), reminders then prompts — what Later today's periods are worked
+ * out from (`laterPeriodsForAll`, the one-day move). Read from `groups`, as
+ * the rows themselves don't carry it.
+ */
+export function useSelectedPeriods(
+  groups: ReminderGroup[],
+  selectedTasks: Task[],
+  selectedPrompts: QuotaPrompt[],
+): (ReminderGroup['slot'] | null)[] {
+  return useMemo(() => {
+    const slotOf = new Map<number | string, ReminderGroup['slot']>()
+    for (const g of groups) {
+      for (const r of g.reminders) slotOf.set(r.id, g.slot)
+      for (const p of g.prompts) slotOf.set(p.prompt_key, g.slot)
+    }
+    return [
+      ...selectedTasks.map((t) => slotOf.get(t.id) ?? null),
+      ...selectedPrompts.map((p) => slotOf.get(p.prompt_key) ?? null),
+    ]
+  }, [groups, selectedTasks, selectedPrompts])
+}
+
+/**
  * The surface's verbs, wired to the selection so a row that leaves the screen
  * leaves the selection too, whichever path took it. Escape clears a selection,
  * as it does on the dashboard.
