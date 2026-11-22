@@ -142,9 +142,21 @@ func registerNotificationCategories() {
         options: []
     )
 
+    // "→ Next period" (2026-11-21, the one-day move): only while a period
+    // is left to open today — a Bedtime push offers Consider alone. Worked
+    // out at registration (launch, foreground, a slot change; the Mac also
+    // at every period start), so a list registered earlier can still offer
+    // it after the last period opens: the press then sends nothing and says
+    // so (`NotificationActionRunner.noPeriodLeftMessage`).
+    let moveActions = NagChecklist.laterPeriodRemains(
+        slots: TimeSlotStore.cachedSlots, now: Date(), day: DayStartStore.current
+    )
+        ? [UNNotificationAction(identifier: NotificationAction.moveNextPeriod, title: "\u{2192} Next period", options: [])]
+        : []
+
     let reminderNagCategory = UNNotificationCategory(
         identifier: NotificationCategory.reminderNag,
-        actions: [consideredAction],
+        actions: [consideredAction] + moveActions,
         intentIdentifiers: [],
         options: []
     )
@@ -154,7 +166,7 @@ func registerNotificationCategories() {
         actions: [
             UNNotificationAction(identifier: NotificationAction.considered, title: NotificationWords.consider, options: []),
             UNNotificationAction(identifier: NotificationAction.didIt, title: NotificationWords.did, options: []),
-        ],
+        ] + moveActions,
         intentIdentifiers: [],
         options: []
     )

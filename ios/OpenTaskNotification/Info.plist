@@ -25,6 +25,8 @@
 				<string>TASK_REMINDER</string>
 				<string>TASK_SUMMARY</string>
 				<string>SLOT_REMINDER</string>
+				<string>REMINDER_NAG</string>
+				<string>QUOTA_NAG</string>
 			</array>
 			<key>UNNotificationExtensionUserInteractionEnabled</key>
 			<true/>

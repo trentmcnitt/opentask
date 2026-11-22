@@ -104,6 +104,11 @@ enum NotificationAction {
     /// long-press and remove this banner. Nothing is sent. Only the content
     /// extension offers it; a handler that gets it anyway ignores it.
     static let cancel = "CANCEL"
+    /// A reminder's or quota prompt's one-day move to the next period
+    /// (2026-11-21, `POST /api/reminders/move`): the fixed lists' "→ Next
+    /// period" on `REMINDER_NAG` / `QUOTA_NAG`, and the push checklist's
+    /// "→ <period> (N)" (`NagChecklist`).
+    static let moveNextPeriod = "MOVE_NEXT_PERIOD"
     /// §6.1 batch checklist: commit the rows the user checked in the extension.
     /// Only ever offered by the content extension — from the lock screen there
     /// is nothing to check, so the registered category omits it.

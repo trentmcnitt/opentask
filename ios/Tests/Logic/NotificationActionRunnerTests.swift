@@ -22,6 +22,7 @@ final class NotificationActionRunnerTests: XCTestCase {
         case completeSlot(Int, Set<String>, ProgressSource?)
         case considerPrompts([String])
         case didPrompts([String], ProgressSource?)
+        case move([Int], [String], Int)
     }
 
     private struct StubError: Error {}
@@ -84,6 +85,11 @@ final class NotificationActionRunnerTests: XCTestCase {
             try record(.completeSlot(slotId, didKeys, source))
             return slotAffected
         }
+
+        func moveForToday(ids: [Int], promptKeys: [String], slotId: Int) async throws -> APIClient.MoveResult {
+            try record(.move(ids, promptKeys, slotId))
+            return APIClient.MoveResult(moved: ids, movedPrompts: promptKeys, slotId: slotId, slotLabel: "")
+        }
     }
 
     private var api: StubAPI!
@@ -101,7 +107,8 @@ final class NotificationActionRunnerTests: XCTestCase {
         userInfo: [AnyHashable: Any] = [:],
         customDueAt: String? = nil,
         now: Date = Date(),
-        slots: [TimeSlotDTO] = []
+        slots: [TimeSlotDTO] = [],
+        day: OpenTaskDay = OpenTaskDay(dayStart: "03:00", timeZone: .current)
     ) async throws -> NotificationActionRunner.Outcome {
         try await NotificationActionRunner.perform(
             category: category,
@@ -111,6 +118,7 @@ final class NotificationActionRunnerTests: XCTestCase {
             api: api,
             now: now,
             slots: slots,
+            day: day,
             dismissAfterSweep: { self.dismissed.append($0) }
         )
     }
@@ -674,5 +682,54 @@ final class NotificationActionRunnerTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is StubError)
         }
+    }
+
+    // MARK: - "→ Next period" on the named pushes (2026-11-21, the one-day move)
+
+    private let dayPeriods = [
+        TimeSlotDTO(id: 1, label: "Morning", startTime: "09:00"),
+        TimeSlotDTO(id: 2, label: "Midday", startTime: "12:00"),
+        TimeSlotDTO(id: 3, label: "Bedtime", startTime: "21:00"),
+    ]
+
+    private func today(_ hour: Int, _ minute: Int = 0) -> Date {
+        Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date())!
+    }
+
+    func testReminderMovesToTheFirstPeriodAfterNow() async throws {
+        let outcome = try await run(
+            NotificationCategory.reminderNag, .button(NotificationAction.moveNextPeriod),
+            userInfo: ["taskId": 42, ReminderNagKey.day: "2026-01-15"], now: today(10, 20), slots: dayPeriods
+        )
+        XCTAssertEqual(api.calls, [.move([42], [], 2)])
+        XCTAssertEqual(outcome, .movedForToday(label: "Midday"))
+    }
+
+    func testAPromptMovesByItsKey() async throws {
+        let outcome = try await run(
+            NotificationCategory.quotaNag, .button(NotificationAction.moveNextPeriod),
+            userInfo: ["taskId": 7, QuotaNagKey.promptKey: "q:7:0:2026-01-15"], now: today(13), slots: dayPeriods
+        )
+        XCTAssertEqual(api.calls, [.move([], ["q:7:0:2026-01-15"], 3)])
+        XCTAssertEqual(outcome, .movedForToday(label: "Bedtime"))
+    }
+
+    /// After the last period has opened (Bedtime) there is nowhere to go:
+    /// nothing sent, and the device says so.
+    func testNoPeriodLeftSendsNothing() async throws {
+        let outcome = try await run(
+            NotificationCategory.reminderNag, .button(NotificationAction.moveNextPeriod),
+            userInfo: ["taskId": 42, ReminderNagKey.day: "2026-01-15"], now: today(21, 30), slots: dayPeriods
+        )
+        XCTAssertEqual(api.calls, [])
+        XCTAssertEqual(outcome, .noPeriodLeft)
+    }
+
+    func testTheFixedListOffersTheMoveOnlyWhileAPeriodIsLeft() {
+        let day = OpenTaskDay(dayStart: "03:00", timeZone: .current)
+        XCTAssertTrue(NagChecklist.laterPeriodRemains(slots: dayPeriods, now: today(20), day: day))
+        XCTAssertFalse(NagChecklist.laterPeriodRemains(slots: dayPeriods, now: today(21, 30), day: day))
+        XCTAssertFalse(NagChecklist.laterPeriodRemains(slots: dayPeriods, now: today(1, 30), day: day),
+                       "past midnight, before the 3:00 day start: still the same day, Bedtime long opened")
     }
 }

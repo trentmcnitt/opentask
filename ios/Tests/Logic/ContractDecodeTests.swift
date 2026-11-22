@@ -365,6 +365,18 @@ final class ContractDecodeTests: WidgetStoreTestCase {
 
     /// `POST /api/undo { id }`'s answer: the entry undone is the consider's
     /// own `undo_id` — what the recorder pushed for it.
+    /// The one-day move (2026-11-21): what "→ Next period" and the push
+    /// checklist's "→ <period>" read back.
+    func testReminderMove() throws {
+        let data = try Fixtures.data("reminders-move")
+        let result = APIClient.parseMoveResult(data, slotId: -1)
+        XCTAssertEqual(result.moved, [136])
+        XCTAssertEqual(result.movedPrompts, [])
+        XCTAssertEqual(result.slotId, 14)
+        XCTAssertEqual(result.slotLabel, "Afternoon")
+        XCTAssertNotNil(APIClient.undoId(in: data), "a move answers its undo_id")
+    }
+
     func testUndoById() throws {
         let consider = try Fixtures.data("quota-prompts-consider")
         let ownId = try XCTUnwrap(APIClient.undoId(in: consider), "every native mutation answers undo_id")

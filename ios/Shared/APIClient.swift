@@ -622,6 +622,38 @@ final class APIClient {
         return payload.groups.first(where: { $0.slotKey == slotId })
     }
 
+    /// `POST /api/reminders/move`'s answer (2026-11-21, the one-day move).
+    struct MoveResult: Equatable {
+        let moved: [Int]
+        let movedPrompts: [String]
+        let slotId: Int
+        let slotLabel: String
+    }
+
+    /// Move reminders and/or quota prompts waiting today to a later period,
+    /// for today only (`POST /api/reminders/move`; RM-MOVE-* on the server).
+    /// One undo entry; a 400 when an item isn't waiting or the period isn't
+    /// one that opens later today than its own.
+    @discardableResult
+    func moveForToday(ids: [Int], promptKeys: [String], slotId: Int) async throws -> MoveResult {
+        let data = try await post(
+            path: "/api/reminders/move",
+            body: ["ids": ids, "prompt_keys": promptKeys, "slot_id": slotId]
+        )
+        return Self.parseMoveResult(data, slotId: slotId)
+    }
+
+    /// `POST /api/reminders/move`'s body (contract fixture `reminders-move`).
+    static func parseMoveResult(_ data: Data, slotId: Int) -> MoveResult {
+        let page = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["data"] as? [String: Any]
+        return MoveResult(
+            moved: page?["moved"] as? [Int] ?? [],
+            movedPrompts: page?["moved_prompts"] as? [String] ?? [],
+            slotId: page?["slot_id"] as? Int ?? slotId,
+            slotLabel: page?["slot_label"] as? String ?? ""
+        )
+    }
+
     /// "Complete all" for a slot, available even without the expanded
     /// checklist (iOS, watch and Mac notification actions). Completes every
     /// pending reminder AND considers every waiting quota prompt — CONSIDERED
