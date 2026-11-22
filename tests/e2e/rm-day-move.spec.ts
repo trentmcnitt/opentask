@@ -190,6 +190,36 @@ for (const [name, viewport] of [
       }
     })
 
+    test('a refused move puts the row back and says why', async ({ page }) => {
+      const ids: number[] = []
+      try {
+        const title = uniqueTitle('Book the dentist')
+        const id = await morningReminder(page, title)
+        ids.push(id)
+        // The server's refusal when a period starts while the bubble is open.
+        await page.route('**/api/reminders/move', (route) =>
+          route.fulfill({
+            status: 400,
+            json: {
+              error: 'Afternoon has already started; pick a later period',
+              code: 'VALIDATION_ERROR',
+            },
+          }),
+        )
+        await page.goto('/')
+        const b = await openBubble(page, id)
+        await b.getByRole('button', { name: 'Move to Afternoon for today' }).click()
+        await expect(
+          toast(page, 'Afternoon has already started; pick a later period'),
+        ).toBeVisible()
+        await expect(panelRow(page, id)).toBeVisible()
+        expect(await periodOf(page, id)).toBe('Morning')
+      } finally {
+        await page.unrouteAll()
+        await trash(page, ids)
+      }
+    })
+
     test('a moved reminder’s bubble says where it is now and offers only what comes after', async ({
       page,
     }) => {
@@ -273,9 +303,17 @@ for (const [name, viewport] of [
         await expect(bar).toHaveCount(0)
         await expect(row).toHaveCount(0)
         await expect(promptRow).toHaveCount(0)
-        await expect(toast(page, 'Moved 2 to Evening for today')).toBeVisible()
+        const t = toast(page, 'Moved 2 to Evening for today')
+        await expect(t).toBeVisible()
         await expect.poll(() => periodOf(page, id)).toBe('Evening')
         await expect.poll(() => promptPeriodOf(page, quotaId)).toBe('Evening')
+
+        // One Undo puts both back in Morning: the reminder and the prompt.
+        await t.getByRole('button', { name: 'Undo' }).click()
+        await expect(row).toBeVisible()
+        await expect(promptRow).toBeVisible()
+        await expect.poll(() => periodOf(page, id)).toBe('Morning')
+        await expect.poll(() => promptPeriodOf(page, quotaId)).toBe('Morning')
       } finally {
         await trash(page, ids)
       }
