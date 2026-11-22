@@ -209,7 +209,7 @@ export function PeekTitleAndNote({
         {meta}
       </div>
 
-      <div className="border-t pt-2.5">
+      <div className="border-t pt-2">
         <PeekText
           kind="note"
           value={notes ?? ''}
