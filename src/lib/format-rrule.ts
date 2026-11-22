@@ -87,17 +87,32 @@ function formatDaily(interval: number, timeStr: string): string {
   return `Every ${interval} days${timeStr}`
 }
 
+/**
+ * Weekdays, weekends or every day, said with the interval: "Weekends" every
+ * week, "Every 2 weeks on weekends" otherwise (the native summary's words,
+ * ios/Shared/RecurrenceSummary.swift). The shortcut used to drop the interval,
+ * so an every-other-weekend task read "Weekends" (2026-11-22). Null for any
+ * other set of days.
+ */
+export function weeklyDaySet(interval: number, byDay: string[]): string | null {
+  const days = new Set(byDay.map((d) => d.toUpperCase()))
+  const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
+  let set: 'days' | 'weekdays' | 'weekends' | null = null
+  if (days.size === 7) set = 'days'
+  else if (days.size === 5 && weekdays.every((d) => days.has(d))) set = 'weekdays'
+  else if (days.size === 2 && days.has('SA') && days.has('SU')) set = 'weekends'
+  if (set === null) return null
+  if (interval === 1) return set === 'days' ? 'Daily' : set === 'weekdays' ? 'Weekdays' : 'Weekends'
+  return set === 'days' ? `Every ${interval} weeks, every day` : `Every ${interval} weeks on ${set}`
+}
+
 function formatWeekly(interval: number, byDay: string[], timeStr: string): string {
   const dayNames = byDay.map((d) => SHORT_DAY_NAMES[d.toUpperCase()] || d)
   const prefix = interval === 1 ? 'Weekly' : `Every ${interval} weeks`
 
   if (dayNames.length === 0) return `${prefix}${timeStr}`
-  if (dayNames.length === 5 && !byDay.includes('SA') && !byDay.includes('SU')) {
-    return `Weekdays${timeStr}`
-  }
-  if (dayNames.length === 2 && byDay.includes('SA') && byDay.includes('SU')) {
-    return `Weekends${timeStr}`
-  }
+  const daySet = weeklyDaySet(interval, byDay)
+  if (daySet && dayNames.length !== 7) return `${daySet}${timeStr}`
   if (dayNames.length === 1) {
     return `${prefix} on ${DAY_NAMES[byDay[0].toUpperCase()] || dayNames[0]}${timeStr}`
   }
@@ -269,10 +284,9 @@ function formatWeeklyCompact(interval: number, byDay: string[], timeStr: string)
 
   const dayStr = formatDaysCompact(byDay)
 
-  // "Daily", "Weekdays", "Weekends" are already complete
-  if (dayStr === 'Daily' || dayStr === 'Weekdays' || dayStr === 'Weekends') {
-    return `${dayStr}${timeStr}`
-  }
+  // Every day, weekdays or weekends: complete words, the interval included.
+  const daySet = weeklyDaySet(interval, byDay)
+  if (daySet) return `${daySet}${timeStr}`
 
   if (interval === 1) {
     // Single day weekly: use plural natural form ("Fridays")

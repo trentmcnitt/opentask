@@ -118,6 +118,11 @@ describe('RD-DRAFT: parse and build round-trip', () => {
     expect(describeRuleDraft(parseRule('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')!, t)).toBe(
       'Weekdays at 4:00 PM',
     )
+    // The interval is never dropped (2026-11-22: every other weekend read "Weekends").
+    expect(describeRuleDraft(parseRule('FREQ=WEEKLY;INTERVAL=2;BYDAY=SA,SU')!, t)).toBe(
+      'Every 2 weeks on weekends at 4:00 PM',
+    )
+    expect(describeRuleDraft(parseRule('FREQ=WEEKLY;BYDAY=SA,SU')!, t)).toBe('Weekends at 4:00 PM')
     expect(describeRuleDraft(parseRule('FREQ=MONTHLY;BYDAY=1SA')!, t)).toBe(
       'Every month on the 1st Sat at 4:00 PM',
     )
