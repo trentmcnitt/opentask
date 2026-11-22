@@ -22,7 +22,9 @@
 		05B69D2BB021E37E85B4C115 /* TrackWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E35704B2F8326A34CA8AD5 /* TrackWidgetViews.swift */; };
 		0783B3FA74952A5E472B3439 /* LeanRowViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DCE8C4D86F1FF4B753EBB89 /* LeanRowViews.swift */; };
 		0A155E4978B3662FFF375686 /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
+		0A2F3518E3B01C248D461283 /* NagChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */; };
 		0C322152C7EE3BA45D574410 /* OpenTaskDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FA710A65047564F35B53D2 /* OpenTaskDay.swift */; };
+		0D2E679BFBCC93682B9DC11D /* ChecklistRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74CF0F6B2445EF728F2F7905 /* ChecklistRows.swift */; };
 		0DCC136807BE357B328D49FD /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
 		0F129206B451CDAC5870115C /* OpenTaskDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FA710A65047564F35B53D2 /* OpenTaskDay.swift */; };
 		10DC84D1FB60BBEA3F354C6E /* SnoozeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */; };
@@ -82,6 +84,7 @@
 		38491646BCB157D234A0F89E /* ReminderStackTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBC0580F954EC226733CA293 /* ReminderStackTimeline.swift */; };
 		3B38D9F33860B8973B5F4624 /* ApsEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AEE73FBE53ABEC9C290F33 /* ApsEnvironment.swift */; };
 		3BAE5E1D16A5F50149DA1980 /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED94027914BC15E39E2469B /* SweepSummary.swift */; };
+		3BD177743CC9B5D29D3318D0 /* NagChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */; };
 		3C4DEB282467E655E35E605E /* PadPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC753D086C4403EADE7AF2D /* PadPresetStore.swift */; };
 		3C623C7B0C30811AB4555335 /* DueLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ED5C4E6660C81E3DAFC512B /* DueLabel.swift */; };
 		3CE33CEE2597EB15240789FA /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */; };
@@ -97,6 +100,7 @@
 		46293F3775FACE277E85ED63 /* NotificationIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC010CEA92F7D3F7E58D8DA9 /* NotificationIdentifiers.swift */; };
 		46513B019B9D9460B7D15B73 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */; };
 		46DBB701F67534F467D4F47B /* ReminderDefaultPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE6A4D31FAFEFAE4127202CA /* ReminderDefaultPage.swift */; };
+		46F5F820EE9D235504A437DC /* NagChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */; };
 		474DE8E3DCA60AA567966C9D /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745EFD099B17F5A9EF43899C /* QuotaRules.swift */; };
 		47A6D6459C1F8D895C6099D7 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65AA422DED4654FD15D0C535 /* APIClient.swift */; };
 		482D47CDBCB19ABB028184ED /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE3C1FB9B2F70EE6B3B55B5 /* QuotaCount.swift */; };
@@ -122,6 +126,7 @@
 		532750219041769490D1EFD2 /* OpenTaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 156C7A7BA3CB870EAFD8CF58 /* OpenTaskModels.swift */; };
 		5481CB0C47BEEEA103C88576 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D540A7CEAB4F70DC1E9EEA85 /* DateHelpers.swift */; };
 		551B4C39CEBAF1B1175172F7 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF23F7E7947DAD1F6AE3750 /* SegmentWidths.swift */; };
+		558948805E12D75D96EB6C7E /* NagChecklistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D986C70496BD73811FEFF81 /* NagChecklistView.swift */; };
 		565AC3E90D05E6DAEB600958 /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4AA3D7BA53FB714D8109DB /* TaskLists.swift */; };
 		5692A461B1813A3BD713547E /* WatchSlotLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4BA37EA1BFACF97944D4A4E /* WatchSlotLogic.swift */; };
 		57379086E2833F35E1327B75 /* RecurrenceSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E164EB220C542AF701A6E66F /* RecurrenceSummary.swift */; };
@@ -166,6 +171,7 @@
 		76D83632FD8B18895F9E99E7 /* TimeSlotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4082830975CB97DA7B61ED8 /* TimeSlotStore.swift */; };
 		76EA5A4B242F069CB8E9D904 /* QuotaSegmentsPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58884DAC6E52E3DDA537FD7A /* QuotaSegmentsPreviews.swift */; };
 		77C148C8686BE394E4983BB8 /* BannerReconcile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA791610CBA4A18FB357A7C /* BannerReconcile.swift */; };
+		79E03D0FE2899DBC12E59540 /* NagChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */; };
 		7BFB8809C693F7820EAEC0D8 /* UndoScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64863DD395DDFC0117B667D3 /* UndoScope.swift */; };
 		7C1B8D05F3C1585F1E49FDD7 /* PeriodChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = A056BA3EFF34CF6905706B16 /* PeriodChecklist.swift */; };
 		7D875014177D998BA2E32866 /* ProgressSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 232562C1B05EE04ACD36161F /* ProgressSource.swift */; };
@@ -251,6 +257,7 @@
 		C8ED22076295A99579AB4702 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6670206D951705CAC891F28F /* WidgetTheme.swift */; };
 		C968A85CBE51EF1751D74DAF /* NightDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE36231B06E14A7C384793A6 /* NightDay.swift */; };
 		C999133C4C6036F6ACF62636 /* ProgressSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 232562C1B05EE04ACD36161F /* ProgressSource.swift */; };
+		C9C8DEDAF6D5CBCB48899683 /* NagChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */; };
 		CAF32C5A978E106974A5BE83 /* LeanRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C47298DA98651C102D86D1 /* LeanRow.swift */; };
 		CCA721EC95F789A3C87B16AD /* TaskSnoozePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00C59E6ED11D6327F40FCF85 /* TaskSnoozePlan.swift */; };
 		CD4A273A28EC06F63F76B38C /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E9D38B33CBD58AAFF49E4E /* WatchRootView.swift */; };
@@ -424,6 +431,7 @@
 		45409ACC51E54EF875E68A9F /* PreviewLocalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewLocalData.swift; sourceTree = "<group>"; };
 		479167B600656D8A1F161597 /* TargetAge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetAge.swift; sourceTree = "<group>"; };
 		4BBF203FAC515A5C83498F70 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4D986C70496BD73811FEFF81 /* NagChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NagChecklistView.swift; sourceTree = "<group>"; };
 		4DE3C1FB9B2F70EE6B3B55B5 /* QuotaCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCount.swift; sourceTree = "<group>"; };
 		4ED94027914BC15E39E2469B /* SweepSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepSummary.swift; sourceTree = "<group>"; };
 		4F310AC24140D9552AE7C83F /* quota.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = quota.png; sourceTree = "<group>"; };
@@ -444,6 +452,7 @@
 		6B4551ACAEF40F8906C15079 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		7217478BDB26B0487A7C05FF /* TasksTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTimeline.swift; sourceTree = "<group>"; };
 		745EFD099B17F5A9EF43899C /* QuotaRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaRules.swift; sourceTree = "<group>"; };
+		74CF0F6B2445EF728F2F7905 /* ChecklistRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistRows.swift; sourceTree = "<group>"; };
 		769EE5EC3F734DFE675FF986 /* SnoozeGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeGridView.swift; sourceTree = "<group>"; };
 		78853DF57CF91B869B3AFBCB /* OpenTaskWatchWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWatchWidgetBundle.swift; sourceTree = "<group>"; };
 		796964A2DD4C8A80D223996C /* WatchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViewModel.swift; sourceTree = "<group>"; };
@@ -510,6 +519,7 @@
 		E351757DF79BFD8A5FA11A08 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E4BA37EA1BFACF97944D4A4E /* WatchSlotLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSlotLogic.swift; sourceTree = "<group>"; };
 		E682262161055A496C984E98 /* RowCorner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowCorner.swift; sourceTree = "<group>"; };
+		E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NagChecklist.swift; sourceTree = "<group>"; };
 		E858FC2DC1A3B9FC84FCD954 /* ServerURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerURL.swift; sourceTree = "<group>"; };
 		EBC0580F954EC226733CA293 /* ReminderStackTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderStackTimeline.swift; sourceTree = "<group>"; };
 		ECFF68F6FC2B3E713F6A6D8A /* OverdueChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverdueChecklistView.swift; sourceTree = "<group>"; };
@@ -680,6 +690,8 @@
 			isa = PBXGroup;
 			children = (
 				42859BBCF535EEDCED6FF425 /* ChecklistChrome.swift */,
+				74CF0F6B2445EF728F2F7905 /* ChecklistRows.swift */,
+				4D986C70496BD73811FEFF81 /* NagChecklistView.swift */,
 				41FD21B7CC5A3B1E775338E0 /* NotificationViewController.swift */,
 				ECFF68F6FC2B3E713F6A6D8A /* OverdueChecklistView.swift */,
 				3CE09C5AD2427A9B5676DC0D /* PeriodChecklistView.swift */,
@@ -712,6 +724,7 @@
 				BDEAA974DB59E15EB73FF937 /* KeychainHelper.swift */,
 				F5C47298DA98651C102D86D1 /* LeanRow.swift */,
 				1DCE8C4D86F1FF4B753EBB89 /* LeanRowViews.swift */,
+				E6CDFC2CF06B395FF957DAAA /* NagChecklist.swift */,
 				AE36231B06E14A7C384793A6 /* NightDay.swift */,
 				A64F4684B1F08B3D0E9C8FA7 /* NotificationActionRunner.swift */,
 				DCA5B4135D70B59741C2213C /* NotificationChecklist.swift */,
@@ -1006,6 +1019,7 @@
 				904CB82B0033452FECC92DD2 /* KeychainHelper.swift in Sources */,
 				7E990EAB911ACAF5346E298D /* LeanRow.swift in Sources */,
 				C7652B127AE2DAD5420FAC41 /* LeanRowViews.swift in Sources */,
+				79E03D0FE2899DBC12E59540 /* NagChecklist.swift in Sources */,
 				C968A85CBE51EF1751D74DAF /* NightDay.swift in Sources */,
 				F872076B2B9491D810F3DF1B /* NotificationActionRunner.swift in Sources */,
 				D3C1989D71ACEAA258F6EE49 /* NotificationChecklist.swift in Sources */,
@@ -1074,6 +1088,7 @@
 				E51D8D6F02BEB9BEE1486257 /* KeychainHelper.swift in Sources */,
 				90BE889A503D487A5E2DADF0 /* LeanRow.swift in Sources */,
 				B70A6C43FF2CAE024D396CB9 /* LeanRowViews.swift in Sources */,
+				3BD177743CC9B5D29D3318D0 /* NagChecklist.swift in Sources */,
 				BDB83DC25250DE842CB53266 /* NightDay.swift in Sources */,
 				1CAB42AC5D11B1626BDEE014 /* NotificationActionRunner.swift in Sources */,
 				B62E1CFDB60FB1C3DEFE26FC /* NotificationChecklist.swift in Sources */,
@@ -1144,6 +1159,7 @@
 				362A9BE2289B994692C81CBF /* LeanRow.swift in Sources */,
 				F57BC68F61B9B90F57DB98AF /* LeanRowViews.swift in Sources */,
 				8B0E062F3E0495845AF8D931 /* MeasuringBox.swift in Sources */,
+				46F5F820EE9D235504A437DC /* NagChecklist.swift in Sources */,
 				35DCF7CA9AA1E0E784C31CF3 /* NightDay.swift in Sources */,
 				917AA65E43D8A46805B4E674 /* NotesGlyphPreviews.swift in Sources */,
 				C7402FD42452F9BCB7034518 /* NotificationActionRunner.swift in Sources */,
@@ -1209,6 +1225,7 @@
 				3B38D9F33860B8973B5F4624 /* ApsEnvironment.swift in Sources */,
 				77C148C8686BE394E4983BB8 /* BannerReconcile.swift in Sources */,
 				BA1660F328259D1ED635E570 /* ChecklistChrome.swift in Sources */,
+				0D2E679BFBCC93682B9DC11D /* ChecklistRows.swift in Sources */,
 				D0A8EF707175098AA7B28EFF /* DateHelpers.swift in Sources */,
 				330C94030E730302AEAF8A60 /* DayStartStore.swift in Sources */,
 				FAEC59000538203A53AC6DA6 /* DeepLinkRouter.swift in Sources */,
@@ -1216,6 +1233,8 @@
 				1135A613B9BE637CBD113074 /* KeychainHelper.swift in Sources */,
 				FDCB19D2283A934B00CCDB87 /* LeanRow.swift in Sources */,
 				0783B3FA74952A5E472B3439 /* LeanRowViews.swift in Sources */,
+				C9C8DEDAF6D5CBCB48899683 /* NagChecklist.swift in Sources */,
+				558948805E12D75D96EB6C7E /* NagChecklistView.swift in Sources */,
 				ED5D6200540EC24B202ED18A /* NightDay.swift in Sources */,
 				4F244E673051D059F9A37A35 /* NotificationActionRunner.swift in Sources */,
 				24C19ED29A9DB1DE54965210 /* NotificationChecklist.swift in Sources */,
@@ -1271,6 +1290,7 @@
 				F177F1DE946BA6A9DDE51027 /* KeychainHelper.swift in Sources */,
 				CAF32C5A978E106974A5BE83 /* LeanRow.swift in Sources */,
 				5B93253D6815CF95DE2A91C1 /* LeanRowViews.swift in Sources */,
+				0A2F3518E3B01C248D461283 /* NagChecklist.swift in Sources */,
 				4AC9B98A21AB96A5B1AAF528 /* NightDay.swift in Sources */,
 				6EF7EFC511B1AFD5175DDA42 /* NotificationActionRunner.swift in Sources */,
 				E8D76DFEDC39E2C169728E98 /* NotificationChecklist.swift in Sources */,

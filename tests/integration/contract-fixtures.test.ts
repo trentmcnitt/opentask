@@ -317,6 +317,7 @@ function normalise(value: Json, ids: IdMap, key?: string, parent?: Record<string
       case 'task_id':
       case 'skipped_recurring': // target-today's skipped repeating tasks (2026-10-12)
       case 'moved_ids': // a bulk snooze's moved tasks (2026-10-26)
+      case 'moved': // the one-day move's reminders (2026-11-21)
         return ids.map('task', value)
       case 'slot_id':
       case 'quota_prompt_slot_id':
@@ -1243,6 +1244,38 @@ describe('contract fixtures (native clients)', () => {
     }
   })
 
+  // 28. The one-day move (2026-11-21): a Morning reminder moved to Afternoon
+  //     for today — what the push checklist's "→ Afternoon" and the fixed
+  //     lists' "→ Next period" send. The server's clock is pinned to 10:00 in
+  //     New York on the latest day it has passed (pin at or before real now),
+  //     so a later period exists whatever the hour; reset after. Its own hook,
+  //     last: it pins the clock.
+  beforeAll(async () => {
+    const ny = DateTime.now().setZone('America/New_York')
+    const ten = ny.set({ hour: 10, minute: 0, second: 0, millisecond: 0 })
+    const pinned = ten <= ny ? ten : ten.minus({ days: 1 })
+    await call('/api/test/clock', { now: pinned.toUTC().toISO() })
+    try {
+      const res = (await call('/api/tasks', {
+        title: 'Water the balcony herbs',
+        is_reminder: true,
+        due_at: pinned.set({ hour: 9, minute: 30 }).toUTC().toISO(),
+      })) as { data: { id: number } }
+      ids.register('task', res.data.id, 101 + Object.keys(created).length)
+      created.moved = res.data.id
+      const slots = (await call('/api/time-slots')) as {
+        data: { time_slots: { id: number; label: string }[] }
+      }
+      const afternoon = slots.data.time_slots.find((s) => s.label === 'Afternoon')!
+      captured['reminders-move'] = await call('/api/reminders/move', {
+        ids: [res.data.id],
+        slot_id: afternoon.id,
+      })
+    } finally {
+      await call('/api/test/clock', { now: null })
+    }
+  })
+
   test('a start date: the task says its stage, and its Due row is an open-window row, last', () => {
     type T = { data: Record<string, unknown> }
     const task = (captured['task-start-date'] as unknown as T).data
@@ -1530,6 +1563,7 @@ describe('contract fixtures (native clients)', () => {
     'notifications-stale',
     'task-start-date',
     'reminders-open-window',
+    'reminders-move',
   ]
 
   for (const name of names) {

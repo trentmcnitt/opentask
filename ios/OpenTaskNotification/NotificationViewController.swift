@@ -58,6 +58,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     /// `time_slots.id` from the payload; -1 is the un-slotted "Anytime" group.
     private var slotId = -1
     private var checklistModel: PeriodChecklistModel?
+    /// The checklist on a named reminder or quota-prompt push (`NagChecklist`).
+    private var nagModel: NagChecklistModel?
 
     // MARK: - Lifecycle
 
@@ -87,6 +89,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         isSlotMode = false
         slotId = -1
         checklistModel = nil
+        nagModel = nil
     }
 
     // MARK: - UNNotificationContentExtension
@@ -113,6 +116,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         if isSlotMode {
             presentSlotChecklist(userInfo: userInfo, fallbackTitle: title)
+            return
+        }
+        if categoryId == NotificationCategory.reminderNag || categoryId == NotificationCategory.quotaNag {
+            presentNagChecklist(userInfo: userInfo, isPrompt: categoryId == NotificationCategory.quotaNag)
             return
         }
 
@@ -227,7 +234,119 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             commitSlotChecklist(response, completion: completion)
             return
         }
+        if nagModel != nil {
+            commitNagChecklist(response, completion: completion)
+            return
+        }
         commitOverdueChecklist(response, completion: completion)
+    }
+
+    // MARK: - The push checklist (REMINDER_NAG, QUOTA_NAG; 2026-11-21)
+
+    /// Build the checklist for a named reminder or quota-prompt push: the
+    /// pushed item marked (its key from the payload), every waiting item of
+    /// today's opened periods fetched live (`NagChecklist`).
+    private func presentNagChecklist(userInfo: [AnyHashable: Any], isPrompt: Bool) {
+        let key: String
+        if isPrompt, let promptKey = userInfo[QuotaNagKey.promptKey] as? String, !promptKey.isEmpty {
+            key = promptKey
+        } else if let taskId = userInfo["taskId"] as? Int {
+            key = NagChecklist.reminderKey(taskId)
+        } else {
+            key = ""
+        }
+        let model = NagChecklistModel(heldKey: key)
+        model.onChange = { [weak self] in
+            self?.setNagActions()
+            self?.updatePreferredContentSize()
+        }
+        nagModel = model
+        install(hosting: UIHostingController(rootView: NagChecklistView(model: model)))
+        setNagActions()
+        Task { await reloadNagChecklist(model) }
+    }
+
+    private func reloadNagChecklist(_ model: NagChecklistModel) async {
+        do {
+            let groups = try await APIClient.shared.fetchReminderGroups()
+            let items = NagChecklist.items(groups, now: Date(), day: DayStartStore.current)
+            model.update { $0.apply(fetched: items) }
+        } catch {
+            print("[OpenTask] Push checklist load error: \(error)")
+            model.update { $0.fetchFailed() }
+        }
+    }
+
+    /// Consider / Did / Log (N), → <period> (N), Cancel (`NagChecklist.actions`).
+    private func setNagActions() {
+        guard let model = nagModel else { return }
+        extensionContext?.notificationActions = notificationActions(
+            NagChecklist.actions(
+                for: model.state, slots: TimeSlotStore.cachedSlots, now: Date(), day: DayStartStore.current
+            )
+        )
+    }
+
+    /// The push checklist's buttons: the commit or the move, re-checked and
+    /// sent in one request; Cancel; a body tap forwards to the app (it opens
+    /// the item — nothing was sent here, so forwarding can't repeat a call).
+    private func commitNagChecklist(
+        _ response: UNNotificationResponse,
+        completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
+    ) {
+        Task {
+            guard let model = nagModel else {
+                completion(.doNotDismiss)
+                return
+            }
+            let intent: NagChecklist.Intent
+            switch response.actionIdentifier {
+            case UNNotificationDefaultActionIdentifier:
+                completion(.dismissAndForwardAction)
+                return
+            case NotificationAction.cancel:
+                UNUserNotificationCenter.current().removeDeliveredNotifications(
+                    withIdentifiers: [response.notification.request.identifier]
+                )
+                completion(.dismiss)
+                return
+            case NotificationAction.completeChecked:
+                intent = .commit
+            case NotificationAction.moveNextPeriod:
+                intent = .move
+            default:
+                completion(.doNotDismiss)
+                return
+            }
+            do {
+                let outcome = try await NagChecklist.commit(
+                    intent, state: model.state, slots: TimeSlotStore.cachedSlots, now: Date(),
+                    day: DayStartStore.current, api: APIClient.shared
+                )
+                switch outcome {
+                case .sent(let reminderIds, let promptKeys, let removesOwnBanner):
+                    _ = await removeDeliveredNotifications(forTaskIds: reminderIds, promptKeys: promptKeys)
+                    if removesOwnBanner {
+                        completion(.dismiss)
+                    } else {
+                        completion(.doNotDismiss)
+                        extensionContext?.dismissNotificationContentExtension()
+                    }
+                case .nothingMarked:
+                    completion(.doNotDismiss)
+                case .nothingLeft(let groups):
+                    let items = NagChecklist.items(groups, now: Date(), day: DayStartStore.current)
+                    model.update { $0.apply(fetched: items) }
+                    completion(.doNotDismiss)
+                case .refused:
+                    await reloadNagChecklist(model)
+                    completion(.doNotDismiss)
+                }
+            } catch {
+                print("[OpenTask] Push checklist commit error: \(error)")
+                completion(.doNotDismiss)
+            }
+        }
     }
 
     /// The period checklist's buttons.

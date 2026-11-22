@@ -278,6 +278,14 @@ class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCente
                     postLocalErrorNotification(NotificationActionRunner.staleDidMessage)
                 case .slotCompleted(let affected):
                     playHaptic(affected > 0 ? .click : .failure)
+                case .movedForToday:
+                    // Moved to the next period for today: the Smart Stack
+                    // card shows it in its new period.
+                    playHaptic(.click)
+                    WidgetCenter.shared.reloadAllTimelines()
+                case .noPeriodLeft:
+                    playHaptic(.failure)
+                    postLocalErrorNotification(NotificationActionRunner.noPeriodLeftMessage)
                 case .ignored, .missingTaskId, .openDashboard, .openSlot, .openTask, .openDeadlines, .openPrompt:
                     break
                 }

@@ -370,6 +370,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                     postLocalNotice(
                         NotificationActionRunner.staleDidMessage, identifier: "prompt-stale-\(promptKey)"
                     )
+                case .noPeriodLeft:
+                    // "→ Next period" after the last period opened: nothing sent.
+                    postLocalNotice(NotificationActionRunner.noPeriodLeftMessage, identifier: "no-period-left")
                 default:
                     break
                 }

@@ -104,6 +104,13 @@ enum NotificationActionRunner {
         /// and logged NOTHING. The banner goes, and the device says so with
         /// `staleDidMessage`.
         case promptDidStale(promptKey: String)
+        /// "→ Next period" on a named reminder or quota-prompt push
+        /// (2026-11-21): moved to `label`'s period for today
+        /// (`POST /api/reminders/move`).
+        case movedForToday(label: String)
+        /// "→ Next period" with no period left to open today: nothing sent.
+        /// Each device says so (`noPeriodLeftMessage`).
+        case noPeriodLeft
         /// Body tap on a named quota-prompt push: the phone and Mac load
         /// `DeepLinkRouter.notificationPromptPath` (`/?prompt=<key>`), the
         /// dashboard, whose Reminders card lifts that prompt to the top of its
@@ -135,6 +142,9 @@ enum NotificationActionRunner {
     /// server's 400): the web's words for the same case (`public/sw.js`).
     static let staleDidMessage = "That was yesterday's \u{2014} open OpenTask to log it"
 
+    /// What a device says when "→ Next period" found no period left today.
+    static let noPeriodLeftMessage = "No period left today to move it to"
+
 
     /// Make the server call for `action` on a notification of `category`.
     ///
@@ -155,6 +165,7 @@ enum NotificationActionRunner {
         api: NotificationActionAPI,
         now: Date = Date(),
         slots: [TimeSlotDTO] = TimeSlotStore.cachedSlots,
+        day: OpenTaskDay = DayStartStore.current,
         dismissAfterSweep: (APIClient.BulkSnoozeResult) async -> Void
     ) async throws -> Outcome {
         switch category {
@@ -192,11 +203,19 @@ enum NotificationActionRunner {
                 guard let day = userInfo[ReminderNagKey.day] as? String, !day.isEmpty else { return .ignored }
                 let considered = try await api.markDone(taskId: taskId, day: day)
                 return .reminderConsidered(taskId: taskId, considered: considered)
+            case .button(NotificationAction.moveNextPeriod):
+                return try await moveToNextPeriod(ids: [taskId], promptKeys: [], api: api, now: now, slots: slots, day: day)
             case .button:
                 return .ignored
             }
 
         case NotificationCategory.quotaNag:
+            if action == .button(NotificationAction.moveNextPeriod) {
+                guard let key = (userInfo[QuotaNagKey.promptKey] as? String).flatMap({ $0.isEmpty ? nil : $0 }) else {
+                    return .ignored
+                }
+                return try await moveToNextPeriod(ids: [], promptKeys: [key], api: api, now: now, slots: slots, day: day)
+            }
             return try await performQuotaNag(action: action, userInfo: userInfo, api: api)
 
         default:
@@ -261,6 +280,18 @@ enum NotificationActionRunner {
         case .button:
             return .ignored
         }
+    }
+
+    /// "→ Next period" on a named push: its one reminder or prompt to the
+    /// first period that opens after now (its own has opened — a named push
+    /// only comes in an opened period), for today only. None left: nothing
+    /// sent (`.noPeriodLeft`).
+    private static func moveToNextPeriod(
+        ids: [Int], promptKeys: [String], api: NotificationActionAPI, now: Date, slots: [TimeSlotDTO], day: OpenTaskDay
+    ) async throws -> Outcome {
+        guard let target = NagChecklist.nextPeriod(slots: slots, now: now, day: day) else { return .noPeriodLeft }
+        _ = try await api.moveForToday(ids: ids, promptKeys: promptKeys, slotId: target.id)
+        return .movedForToday(label: target.label)
     }
 
     /// Summary notifications: bulk actions only, never `include_task_ids`.
@@ -356,6 +387,8 @@ protocol NotificationActionAPI {
     func considerPrompts(keys: [String]) async throws -> APIClient.PromptActionResult
     /// `POST /api/quota-prompts/did` (the named quota-prompt push).
     func didPrompts(keys: [String], source: ProgressSource?) async throws -> APIClient.PromptActionResult
+    /// `POST /api/reminders/move` (the pushes' "→ Next period", 2026-11-21).
+    func moveForToday(ids: [Int], promptKeys: [String], slotId: Int) async throws -> APIClient.MoveResult
 }
 
 /// The three sweep requirements are spelled out because `APIClient`'s own
