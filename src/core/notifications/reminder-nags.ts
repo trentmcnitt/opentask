@@ -99,8 +99,13 @@ export function reminderNagKey(taskId: number): string {
   return `${REMINDER_NAG_KEY_PREFIX}${taskId}`
 }
 
-/** The Web Push "Considered" button (public/sw.js handles `considered`). */
-export const CONSIDERED_ACTION = { action: 'considered', title: 'Considered' } as const
+/**
+ * The Web Push "Consider" button (public/sw.js handles `considered`). The
+ * title is imperative since 2026-11-21 (Trent: "Consider" and "Did" on every
+ * notification; it read "Considered"); the action id is unchanged, so a
+ * service worker of either age handles it.
+ */
+export const CONSIDERED_ACTION = { action: 'considered', title: 'Consider' } as const
 
 export interface PendingReminderNag {
   userId: number

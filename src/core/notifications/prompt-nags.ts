@@ -121,8 +121,8 @@ export function promptNagKey(key: string): string {
   return `${PROMPT_NAG_KEY_PREFIX}${key}`
 }
 
-/** The Web Push "Did it" button (public/sw.js handles `did`). */
-export const DID_ACTION = { action: 'did', title: 'Did it' } as const
+/** The Web Push "Did" button (public/sw.js handles `did`; "Did it" until 2026-11-21). */
+export const DID_ACTION = { action: 'did', title: 'Did' } as const
 
 /** How long a `prompt-…` row is kept: its day is over well before this. */
 const PROMPT_NAG_RETENTION_DAYS = 2

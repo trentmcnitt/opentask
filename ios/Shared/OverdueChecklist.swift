@@ -54,11 +54,11 @@ import Foundation
 ///   is each row's own rule).
 enum OverdueChecklist {
 
-    /// TNC-3.
-    static let pageSize = 6
+    /// TNC-3 (the shared checklist's page size, NCL-2).
+    static var pageSize: Int { NotificationChecklist.pageSize }
 
     /// One row: what the list draws and what the re-check compares.
-    struct Row: Equatable {
+    struct Row: ChecklistItem {
         let id: Int
         let title: String
         let priority: Int
@@ -82,95 +82,72 @@ enum OverdueChecklist {
         init(_ task: TaskDTO) {
             self.init(id: task.id, title: task.title, priority: task.priority, dueAt: task.dueAt)
         }
+
+        var checklistKey: String { Self.key(id) }
+        static func key(_ id: Int) -> String { "t:\(id)" }
     }
 
-    enum Load: Equatable {
-        /// Only the payload's held row so far (TNC-2).
-        case loading
-        case loaded
-        /// The fetch failed; the held row still works alone.
-        case failed
-    }
+    typealias Load = ChecklistLoad
 
+    /// The overdue list on screen: the shared checklist state
+    /// (`ChecklistState`, NCL-1…6), addressed by task id.
     struct State: Equatable {
-        private(set) var rows: [Row]
-        private(set) var checked: Set<Int>
-        private(set) var page = 0
-        private(set) var load: Load
+        private(set) var list: ChecklistState<Row>
         /// The pressed notification's task; nil on a summary.
         let heldId: Int?
 
         /// A task notification: the held row from the payload, checked.
         static func held(_ row: Row) -> State {
-            State(rows: [row], checked: [row.id], load: .loading, heldId: row.id)
+            State(
+                list: ChecklistState(rows: [row], marks: [row.checklistKey: .check], load: .loading, heldKey: row.checklistKey),
+                heldId: row.id
+            )
         }
 
         /// A summary: no held row, nothing checked.
         static func summary() -> State {
-            State(rows: [], checked: [], load: .loading, heldId: nil)
+            State(list: ChecklistState(rows: [], load: .loading), heldId: nil)
         }
 
         var isSummary: Bool { heldId == nil }
+        var rows: [Row] { list.rows }
+        var load: Load { list.load }
+        var page: Int { list.page }
 
         // MARK: Rows and pages (TNC-1, TNC-3)
 
         /// The fetched overdue list landed (on open, after a refused batch,
-        /// or when a re-check left nothing to send). Checked rows that are
-        /// still listed stay checked; the held row keeps its place first
-        /// while listed, and drops off (unchecked) once it isn't.
+        /// or when a re-check left nothing to send), in TNC-1's order. Checked
+        /// rows that are still listed stay checked; the held row keeps its
+        /// place first while listed, and drops off (unchecked) once it isn't.
         mutating func apply(fetched tasks: [TaskDTO]) {
-            let fresh = tasks.map(Row.init)
-            let held = heldId.flatMap { id in fresh.first { $0.id == id } }
-            let others = fresh.filter { $0.id != heldId }.sorted(by: OverdueChecklist.ordered)
-            rows = (held.map { [$0] } ?? []) + others
-            let live = Set(rows.map(\.id))
-            checked = checked.intersection(live)
-            load = .loaded
-            page = min(page, max(pageCount - 1, 0))
+            list.apply(fetched: tasks.map(Row.init).sorted(by: OverdueChecklist.ordered))
         }
 
-        mutating func fetchFailed() {
-            if load == .loading { load = .failed }
-        }
+        mutating func fetchFailed() { list.fetchFailed() }
 
-        var pageCount: Int { rows.isEmpty ? 0 : (rows.count + pageSize - 1) / pageSize }
-
-        /// The rows on the page on screen.
-        var pageRows: [Row] {
-            guard !rows.isEmpty else { return [] }
-            let start = page * pageSize
-            return Array(rows[start ..< min(start + pageSize, rows.count)])
-        }
-
-        var showsLess: Bool { page > 0 }
-        var showsMore: Bool { page < pageCount - 1 }
-
-        mutating func showMore() { if showsMore { page += 1 } }
-        mutating func showLess() { if showsLess { page -= 1 } }
+        var pageCount: Int { list.pageCount }
+        var pageRows: [Row] { list.pageRows }
+        var pageSpacers: Int { list.pageSpacers }
+        var showsLess: Bool { list.showsLess }
+        var showsMore: Bool { list.showsMore }
+        mutating func showMore() { list.showMore() }
+        mutating func showLess() { list.showLess() }
 
         // MARK: Checking (TNC-2, TNC-4)
 
-        func isChecked(_ id: Int) -> Bool { checked.contains(id) }
-
-        mutating func toggle(_ id: Int) {
-            guard rows.contains(where: { $0.id == id }) else { return }
-            if checked.contains(id) { checked.remove(id) } else { checked.insert(id) }
-        }
+        var checked: Set<Int> { Set(list.marked.map(\.item.id)) }
+        func isChecked(_ id: Int) -> Bool { list.mark(of: Row.key(id)) != nil }
+        mutating func toggle(_ id: Int) { list.toggle(Row.key(id)) }
 
         /// Every checked row, in list order, on any page.
-        var checkedRows: [Row] { rows.filter { checked.contains($0.id) } }
+        var checkedRows: [Row] { list.marked.map(\.item) }
 
-        /// "2 of 20 checked"; "20 overdue" with nothing checked; nil before
-        /// the fetch has said how many there are.
-        var headerCount: String? {
-            guard load == .loaded else { return checked.isEmpty ? nil : "\(checked.count) checked" }
-            if rows.isEmpty { return nil }
-            if checked.isEmpty { return "\(rows.count) \(TaskWording.overdueLower)" }
-            return "\(checked.count) of \(rows.count) checked"
-        }
+        /// "2 of 20 checked"; "20 overdue" with nothing checked.
+        var headerCount: String? { list.headerCount(noun: TaskWording.overdueLower) }
 
         /// Nothing overdue at all (the held task too was handled first).
-        var isEmpty: Bool { load == .loaded && rows.isEmpty }
+        var isEmpty: Bool { list.isEmpty }
     }
 
     /// TNC-1's order for every row but the held one: priority, highest
@@ -188,7 +165,7 @@ enum OverdueChecklist {
 
     // MARK: - The action rows (TNC-4, TNC-5, TNC-8)
 
-    static let cancel = TaskNotificationList.Row(identifier: NotificationAction.cancel, title: "Cancel")
+    static let cancel = TaskNotificationList.Row(identifier: NotificationAction.cancel, title: NotificationWords.cancel)
 
     /// The action list for the state on screen.
     ///
@@ -207,11 +184,10 @@ enum OverdueChecklist {
             }
             return [cancel]
         }
-        let suffix = count > 1 ? " (\(count))" : ""
         let row = { (identifier: String, title: String) in
-            TaskNotificationList.Row(identifier: identifier, title: title + suffix)
+            TaskNotificationList.Row(identifier: identifier, title: NotificationWords.counted(title, count))
         }
-        var rows = [row(NotificationAction.done, "Done")]
+        var rows = [row(NotificationAction.done, NotificationWords.done)]
         if let picked {
             rows.append(row(NotificationAction.snoozeCustom, DateHelpers.formatShortTime(picked)))
             return rows + [cancel]
