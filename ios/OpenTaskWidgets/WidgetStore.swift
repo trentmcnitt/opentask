@@ -1266,7 +1266,18 @@ enum WidgetStore {
 
     /// The server took a consider: the row is `considered` (or, in the
     /// safety net, `seen`) in the cache, so the next tap repaints from cache
-    /// with it ticked, and the tombstone goes.
+    /// with it ticked.
+    ///
+    /// The tombstone STAYS until its 90s expiry, as a completion's and a
+    /// prompt's do (2026-11-20, Trent: "ones I already tapped will
+    /// reappear"). It used to go here, and a fetch overwrites the cache whole
+    /// (`saveReminders`): a fetch that STARTED before this consider reached
+    /// the server and landed after it drew the row waiting again — and in a
+    /// fast run of considers one is usually out. The tombstone draws the
+    /// row considered over whatever such a fetch brings, and keeps the fast
+    /// path's interaction stamp alive (`hasRecentInteraction`), as a
+    /// completion's does; any later fetch has the consider anyway. Undo and
+    /// Redo clear it (`clearAllPendingState`); a failure clears it at once.
     static func confirmSegmentConsider(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
@@ -1279,7 +1290,6 @@ enum WidgetStore {
                 forKey: remindersKey, at: cached.fetchedAt
             )
         }
-        clearPendingSegmentConsiderLocked(id)
     }
 
     // "Target today" (2026-10-11): the row LEAVES the segment — the task now
@@ -1324,7 +1334,8 @@ enum WidgetStore {
     /// handled (`segment_left: target`, native PR E — the server's own
     /// answer with `?handled=1`). The task's new target lives in the Tasks
     /// payload, which the next pass fetches (`requireTasksFetch` — the
-    /// server chose the time).
+    /// server chose the time). The tombstone stays until its 90s expiry, for
+    /// `confirmSegmentConsider`'s reason (2026-11-20).
     static func confirmSegmentTarget(_ id: Int) {
         pendingLock.lock()
         defer { pendingLock.unlock() }
@@ -1337,7 +1348,6 @@ enum WidgetStore {
                 forKey: remindersKey, at: cached.fetchedAt
             )
         }
-        clearPendingSegmentTargetLocked(id)
     }
 
     /// The server took a Defer All: those rows are `deferred` (off today's

@@ -47,6 +47,7 @@
 		1A468232572DBE1C33D50075 /* WatchFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDA2C7C18D4DEF724E76051 /* WatchFormatting.swift */; };
 		1AC1A15D57137AB7752D12E2 /* SweepSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03744B394D091E76B95FDE0C /* SweepSummary.swift */; };
 		1ADEF2C6F042962055818FAE /* PromptDeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF75FD7803D1BDC240C8EDF /* PromptDeepLinkTests.swift */; };
+		1B1D8DF02C9936B4A5FC6FFF /* WatchTapLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2779F5983537570B8A119D /* WatchTapLedger.swift */; };
 		1C2F3B649D24FD3C87F57B03 /* TasksScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FC638C7B38D509AB4E2DFE /* TasksScopeTests.swift */; };
 		1D457179C4A93CDCB0FFFCA7 /* RecurrenceSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700281E5CE4D89D08424F789 /* RecurrenceSummaryTests.swift */; };
 		1E09B45CC465F173871345A1 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCEA4FB581FB3B2E6B2CBB65 /* SwiftUI.framework */; };
@@ -122,6 +123,7 @@
 		4ABEC9743D9F16FBA470924F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456B0402D3211FEEE9D56F67 /* APIClient.swift */; };
 		4B1A0BA96C5C08ED15949CF1 /* TaskSnoozePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */; };
 		4B5D27BAD6E46632BF5F65FF /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		4B7D9F3188C3F23305B5974F /* WatchTapLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20F5E149BEF7A869A899AE7 /* WatchTapLedgerTests.swift */; };
 		4BAF9904F8F7345246E0A710 /* PreviewLocalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35CC02E60319C491BD7DB22 /* PreviewLocalData.swift */; };
 		4CDF98945F8B7D2BA045B29C /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */; };
 		4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124940586D73E6C268F9E443 /* AppConfig.swift */; };
@@ -443,6 +445,7 @@
 		3D6C0BF30FB6B5278E16317C /* SweepSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepSummaryTests.swift; sourceTree = "<group>"; };
 		3E976BDF1943E2A6E03E1BAC /* DayStartStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayStartStore.swift; sourceTree = "<group>"; };
 		3EBEF5EED37D51458C482AC4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3F2779F5983537570B8A119D /* WatchTapLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTapLedger.swift; sourceTree = "<group>"; };
 		3F437E609351DDD28D818C58 /* OverdueChecklistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverdueChecklistTests.swift; sourceTree = "<group>"; };
 		3F7B22313C4BC57FABC04BA8 /* SweepDismissalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SweepDismissalTests.swift; sourceTree = "<group>"; };
 		427CAB54160F5AF30612308D /* quota.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = quota.png; sourceTree = "<group>"; };
@@ -533,6 +536,7 @@
 		AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPushHandler.swift; sourceTree = "<group>"; };
 		B0431240DA3532D2272FDFAC /* TasksTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTimeline.swift; sourceTree = "<group>"; };
 		B1235F3EA2C0A8FBEB481A11 /* LeanRowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeanRowTests.swift; sourceTree = "<group>"; };
+		B20F5E149BEF7A869A899AE7 /* WatchTapLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTapLedgerTests.swift; sourceTree = "<group>"; };
 		B2AEB213C1DDD3CB8C2F3DD7 /* OpenTaskMacWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenTaskMacWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTaskWidgetBundle.swift; sourceTree = "<group>"; };
 		B494CCB1EBBEBD1900184F2D /* user-preferences.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "user-preferences.json"; sourceTree = "<group>"; };
@@ -755,6 +759,7 @@
 				8FDA2C7C18D4DEF724E76051 /* WatchFormatting.swift */,
 				7A4863D1A97D7C3CCE910E77 /* WatchQuotaLogic.swift */,
 				31F3D834718970617BD8C9C4 /* WatchSlotLogic.swift */,
+				3F2779F5983537570B8A119D /* WatchTapLedger.swift */,
 				581F215131E6EB3EB5CBA0E2 /* WatchWidgetState.swift */,
 			);
 			name = WatchShared;
@@ -800,6 +805,7 @@
 				59D5D6E9F7E578D73DAEE122 /* UndoScopeTests.swift */,
 				795AAC23EB7E48AEF9D07BCC /* UpcomingSectionsTests.swift */,
 				7523E283C5FDBDC9455AC49A /* WatchQuotaLogicTests.swift */,
+				B20F5E149BEF7A869A899AE7 /* WatchTapLedgerTests.swift */,
 				BBB728AF67D6A2F6BF7B641A /* WebBridgeTests.swift */,
 				C10F1EE098B248D10F6E354B /* WidgetOutboxTests.swift */,
 				BF62CE079EFE27FAE6A3CCA1 /* WidgetPushRegistrationTests.swift */,
@@ -1424,6 +1430,8 @@
 				62886AC7F979636FE750C08E /* WatchQuotaLogic.swift in Sources */,
 				40450947C2F394E54C073AE0 /* WatchQuotaLogicTests.swift in Sources */,
 				5ACFC5419BA8178CCBDD0D35 /* WatchSlotLogic.swift in Sources */,
+				1B1D8DF02C9936B4A5FC6FFF /* WatchTapLedger.swift in Sources */,
+				4B7D9F3188C3F23305B5974F /* WatchTapLedgerTests.swift in Sources */,
 				3783589455416899AAD84D14 /* WatchWidgetState.swift in Sources */,
 				8DF8D527829DB50BFE9AC4B9 /* WebBridge.swift in Sources */,
 				98A9790A664E1E6116027933 /* WebBridgeTests.swift in Sources */,
