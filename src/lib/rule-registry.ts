@@ -1037,7 +1037,35 @@ export const RULE_REGISTRY = {
     pins: [
       'tests/behavioral/rm-reminder-nags.test.ts#RR-02',
       'tests/behavioral/rm-reminder-nags.test.ts#RR-03',
+      'tests/behavioral/rm-move.test.ts#RM-MV-04',
     ],
+  },
+  // The one-day move (2026-11-21): a reminder or prompt in a later period for today.
+  'RM-MOVE-STORE': {
+    home: 'src/core/tasks/reminder-move.ts',
+    symbol: 'export function moveForToday',
+    pins: [
+      'tests/behavioral/rm-move.test.ts#RM-MV-01',
+      'tests/behavioral/rm-move.test.ts#RM-MV-05',
+    ],
+  },
+  'RM-MOVE-PLACE': {
+    home: 'src/lib/time-slot-assign.ts',
+    symbol: 'export function assignSlot',
+    pins: [
+      'tests/behavioral/rm-move.test.ts#RM-MV-01',
+      'tests/behavioral/rm-move.test.ts#RM-MV-04',
+    ],
+  },
+  'RM-MOVE-TARGET': {
+    home: 'src/core/tasks/reminder-move.ts',
+    symbol: 'function opensAt',
+    pins: ['tests/behavioral/rm-move.test.ts#RM-MV-03'],
+  },
+  'RM-MOVE-COMMIT': {
+    home: 'src/core/tasks/reminder-move.ts',
+    symbol: 'dismissNotificationsForTasks(userId, ids)',
+    pins: ['tests/behavioral/rm-move.test.ts#RM-MV-02'],
   },
   'DL-NAG': {
     home: 'src/core/notifications/deadline-nags.ts',

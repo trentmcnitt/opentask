@@ -59,6 +59,7 @@
  */
 
 import { getDb } from '@/core/db'
+import type { DayMove } from '@/types'
 import { log } from '@/lib/logger'
 import { getPriorityOption, HIGH_PRIORITY_THRESHOLD, URGENT_PRIORITY } from '@/lib/priority'
 import { assignSlot, parseHHMM, sortSlotsByStart, type TimeSlot } from '@/lib/time-slot-assign'
@@ -149,6 +150,8 @@ interface NamedReminderCandidate {
   rrule: string | null
   last_completed_at: string | null
   last_sent_at: string | null
+  /** The raw `day_move` column (RM-MOVE-STORE); parsed by `mayBeDue`. */
+  day_move: string | null
 }
 
 /**
@@ -161,7 +164,7 @@ function namedReminderCandidates(userId: number): NamedReminderCandidate[] {
   return getDb()
     .prepare(
       `SELECT t.id, t.priority, t.anchor_time, t.due_at, t.rrule, t.last_completed_at,
-              n.last_sent_at
+              t.day_move, n.last_sent_at
        FROM tasks t
        LEFT JOIN nag_sends n ON n.user_id = t.user_id AND n.key = ? || t.id
        WHERE t.user_id = ? AND t.is_reminder = 1 AND t.done = 0
@@ -174,7 +177,8 @@ function namedReminderCandidates(userId: number): NamedReminderCandidate[] {
 /**
  * RULE NAMED-PUSH-TIMING: A named push fires first when its period opens, then repeats at the
  *   slot_nag rung on clock marks. It stops once the item is considered, done or met, or the
- *   OpenTask day ends.
+ *   OpenTask day ends. "Its period" is the one it is in TODAY: a reminder moved for the day
+ *   (RM-MOVE-PLACE) starts fresh at the new period's open, its earlier sends being before it.
  * Why: No extra state: the roster and the end of the OpenTask day stop it.
  * Ruling: Trent 2026-10-26 (src/core/notifications/reminder-nags.ts:1).
  */
@@ -227,7 +231,12 @@ function mayBeDue(
   now: Date,
   timezone: string,
 ): boolean {
-  const slot = assignSlot(c, periods.slots, timezone)
+  const slot = assignSlot(
+    { ...c, day_move: parseDayMove(c.day_move) },
+    periods.slots,
+    timezone,
+    periods.day.date,
+  )
   const openedAt = slot ? periods.opened.get(slot.id) : undefined
   if (!openedAt) return false
   if (c.rrule && withinDay(c.last_completed_at, periods.day)) return false
@@ -500,4 +509,17 @@ export function purgeGoneReminderNags(): number {
     log.info('cron', `Deleted ${result.changes} reminder push records of reminders that are gone`)
   }
   return result.changes
+}
+
+/** A raw `day_move` column, or null when it isn't one (RM-MOVE-STORE). */
+function parseDayMove(raw: string | null): DayMove | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw) as Partial<DayMove>
+    return typeof value?.date === 'string' && typeof value.slot_id === 'number'
+      ? { date: value.date, slot_id: value.slot_id }
+      : null
+  } catch {
+    return null
+  }
 }

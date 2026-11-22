@@ -129,6 +129,7 @@ const VALID_TASK_COLUMNS = new Set([
   // for why missing them here is never "undo does nothing".
   'quota_prompt_config',
   'quota_day_state',
+  'day_move',
 ])
 
 /**
@@ -144,7 +145,7 @@ const FLAG_COLUMNS = new Set([
 ])
 
 /** Task columns holding a JSON object; undo writes them back serialized. */
-const JSON_OBJECT_COLUMNS = new Set(['quota_prompt_config', 'quota_day_state'])
+const JSON_OBJECT_COLUMNS = new Set(['quota_prompt_config', 'quota_day_state', 'day_move'])
 
 /**
  * Apply a partial state to a task, updating only the specified fields.

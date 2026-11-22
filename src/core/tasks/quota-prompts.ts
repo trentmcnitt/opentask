@@ -83,7 +83,7 @@ import {
 } from '@/lib/quota-prompts'
 import { effectiveProgress, isTracked, quotaLabelOf, quotaPeriodOf } from '@/lib/track'
 import { coerceWeekStart, type WeekStart } from '@/lib/week-start'
-import type { LabelColor, LabelConfig, Task } from '@/types'
+import type { LabelColor, LabelConfig, Task, QuotaDayState } from '@/types'
 import { getTasks } from './create'
 import { dayBoundaryForUser } from './rollover-time'
 
@@ -180,8 +180,12 @@ export function getQuotaPromptsBySlot(
   )
 
   const slotIdAt = (slotIndex: number) => (slotIndex < 0 ? null : slots[slotIndex].id)
-  const push = (slotIndex: number, prompt: Omit<QuotaPrompt, 'slot_id'>) => {
-    const slotId = slotIdAt(slotIndex)
+  // A prompt moved to a later period for today (RM-MOVE-PLACE) sits there
+  // while that period exists; otherwise its home period.
+  const push = (slotIndex: number, prompt: Omit<QuotaPrompt, 'slot_id'>, day: QuotaDayState) => {
+    const moved = day.moved[prompt.prompt_key]
+    const slotId =
+      moved !== undefined && slots.some((s) => s.id === moved) ? moved : slotIdAt(slotIndex)
     bySlot.set(slotId, [...(bySlot.get(slotId) ?? []), { ...prompt, slot_id: slotId }])
   }
 
@@ -206,14 +210,18 @@ export function getQuotaPromptsBySlot(
       const doneNumbers = dailyDoneNumbers(day, current, target)
       for (const row of promptPlacements(task, slots, settings.defaultSlotId)) {
         const key = promptKey(task.id, row.number, date)
-        push(row.slotIndex, {
-          ...base,
-          prompt_key: key,
-          number: row.number,
-          numbers: row.numbers,
-          considered: day.considered.includes(key),
-          done: doneNumbers.has(row.number),
-        })
+        push(
+          row.slotIndex,
+          {
+            ...base,
+            prompt_key: key,
+            number: row.number,
+            numbers: row.numbers,
+            considered: day.considered.includes(key),
+            done: doneNumbers.has(row.number),
+          },
+          day,
+        )
       }
       continue
     }
@@ -226,14 +234,18 @@ export function getQuotaPromptsBySlot(
     // Met TODAY (by a did-it or a +1) stays, handled, so today's count of
     // handled prompts does not drop a row the user just finished.
     if (current >= target && !loggedToday && !did && !considered) continue
-    push(resolvePromptSlot(slots, task.quota_prompt_config?.slot_id, settings.defaultSlotId), {
-      ...base,
-      prompt_key: key,
-      number: null,
-      numbers: null,
-      considered,
-      done: did || loggedToday,
-    })
+    push(
+      resolvePromptSlot(slots, task.quota_prompt_config?.slot_id, settings.defaultSlotId),
+      {
+        ...base,
+        prompt_key: key,
+        number: null,
+        numbers: null,
+        considered,
+        done: did || loggedToday,
+      },
+      day,
+    )
   }
 
   // Priority first, Urgent to None, like the period's reminders (Trent,
