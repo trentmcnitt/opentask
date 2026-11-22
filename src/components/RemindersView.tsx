@@ -18,7 +18,11 @@ import { useTimeSlots } from '@/hooks/useTimeSlots'
 import { useTimezone } from '@/hooks/useTimezone'
 import { useDayStart, useTaskQueue } from '@/components/PreferencesProvider'
 import { useSyncStream } from '@/hooks/useSyncStream'
-import { useReminderActions, useRenderedSelection } from '@/hooks/useReminderSelection'
+import {
+  useReminderActions,
+  useRenderedSelection,
+  useSelectedPeriods,
+} from '@/hooks/useReminderSelection'
 import { DeleteQuotasDialog } from '@/components/DeleteQuotasDialog'
 import { ReminderSelectionBar } from '@/components/ReminderSelectionBar'
 import { TaskSegmentSections } from '@/components/reminders/TaskSegmentGroup'
@@ -157,6 +161,7 @@ export function RemindersView({
     requestSeq,
     create,
     applyUndone,
+    moveForToday,
   } = useReminders({ onUndo, onCompleted, timeSlots, timezone, ghostLeavingRows: true })
   // Every reminder the surface holds — waiting, considered today, not today —
   // for the Just now card (`SurfaceJustAdded`): a just-added one is in exactly
@@ -501,6 +506,7 @@ export function RemindersView({
     selectedIds,
   })
 
+  const selectedPeriods = useSelectedPeriods(groups, selectedTasks, selectedPrompts)
   const actions = useReminderActions({
     selection,
     orderedIds,
@@ -823,6 +829,14 @@ export function RemindersView({
             ? void prompts.openQuotas(selectedPrompts)
             : setDetailTasks(selectedTasks)
         }
+        currents={selectedPeriods}
+        timeSlots={timeSlots}
+        timezone={timezone}
+        onMoveForToday={(to) => {
+          // One action, then the selection is done — as Consider and Delete.
+          clear()
+          void moveForToday(selectedTasks, selectedPrompts, to)
+        }}
         onClear={clear}
       />
       {/* A task-segment row's editor: its peek bubble's Open (task queue PR 3). */}

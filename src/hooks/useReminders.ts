@@ -19,6 +19,16 @@ import { applyPromptIntents, completionRequest, type PromptIntent } from '@/lib/
 import { REMINDERS_URL } from '@/lib/reminders-query'
 import { ghostRows } from '@/lib/row-ghost'
 import { AGED_OUT_ENABLED, AGED_OUT_QUERY } from '@/lib/aged-out'
+import { applyDayMoves, moveMessage } from '@/lib/reminder-move'
+import {
+  activePending,
+  addPending,
+  dropPending,
+  nextPendingToken,
+  prunePending,
+  settlePending,
+  type PendingMap,
+} from '@/lib/pending-overlay'
 
 /**
  * Today's reminders, grouped by time slot (REDESIGN-V03 §6).
@@ -149,6 +159,13 @@ export interface UseRemindersReturn {
   putBackPrompt: (prompt: QuotaPrompt) => Promise<void>
   /** Move reminders — and quotas, once confirmed — to Trash (soft delete), one Undo. */
   remove: (tasks: Task[], quotas?: DeletedQuota[]) => Promise<void>
+  /**
+   * The one-day move (2026-11-21): reminders and quota prompts waiting today
+   * to a LATER period, for today only (`POST /api/reminders/move`, one undo
+   * entry). The caller offers only `laterPeriodsToday`'s periods
+   * (`src/lib/reminder-move.ts`); see `useMoveForToday`.
+   */
+  moveForToday: (tasks: Task[], prompts: QuotaPrompt[], to: TimeSlot) => Promise<void>
   refresh: () => Promise<void>
   /** Reminders with no occurrence today — reachable, never counted. */
   notToday: Task[]
@@ -449,6 +466,10 @@ export function useReminders({
   // is applied (`SettlingConsiders`): an older refresh must not bring them back.
   const settlingRef = useRef<SettlingConsiders>(new SettlingConsiders())
   const ownConsidersRef = useRef<Map<number, OwnConsider>>(new Map())
+  // One-day moves (reminder id or prompt key → the slot id it is drawn in),
+  // kept over every payload until one requested after the write answered
+  // lands (`src/lib/pending-overlay.ts`; `useMoveForToday`).
+  const dayMovesRef = useRef<PendingMap<number | string, number>>(new Map())
   // Out-of-order guard for `refresh` (see `createLatestRequestGuard`).
   const [requestGuard] = useState(createLatestRequestGuard)
   /**
@@ -485,15 +506,24 @@ export function useReminders({
       })
     }
   }, [])
-  const stripPending = (incoming: ReminderGroup[]) =>
-    reconcileInFlight(
-      incoming,
+  /**
+   * A payload with what is still in flight drawn over it. `seq` is the
+   * payload's request seq (`requestGuard`): a day move is drawn until a
+   * payload requested after its write answered — this one, once `seq` passes
+   * it — and then forgotten.
+   */
+  const stripPending = (incoming: ReminderGroup[], seq: number) => {
+    const moves = activePending(dayMovesRef.current, seq)
+    dayMovesRef.current = prunePending(dayMovesRef.current, seq)
+    return reconcileInFlight(
+      applyDayMoves(incoming, moves),
       new Set([...pendingIdsRef.current, ...settlingRef.current.ids()]),
       new Set([...restoringIdsRef.current, ...pinnedRef.current.ids()]),
       new Map([...settlingRef.current.prompts(), ...pendingPromptsRef.current]),
       pendingMovesRef.current,
       new Set([...restoringPromptsRef.current, ...pinnedRef.current.keys()]),
     )
+  }
 
   const refresh = useCallback(async () => {
     const seq = requestGuard.begin()
@@ -510,7 +540,7 @@ export function useReminders({
       pinnedRef.current.settle(seq)
       // And considers answered before it.
       settlingRef.current.settle(seq)
-      writeGroups(stripPending(parsed.groups), {
+      writeGroups(stripPending(parsed.groups, seq), {
         hasAny: parsed.hasAny,
         notToday: parsed.notToday,
         taskSegments: parsed.taskSegments,
@@ -812,6 +842,7 @@ export function useReminders({
   const putBack = usePutBack({ ...optimisticDeps, restoringIdsRef, settlingRef })
   const putBackPrompt = usePutBackPrompt({ ...optimisticDeps, restoringPromptsRef, settlingRef })
   const remove = useRemove({ ...optimisticDeps, pendingIdsRef })
+  const moveForToday = useMoveForToday({ ...optimisticDeps, dayMovesRef, requestGuard })
 
   const complete = useCallback(
     (task: Task) => completeIds([task], () => `Considered \u201c${task.title}\u201d`),
@@ -884,6 +915,7 @@ export function useReminders({
     putBack,
     putBackPrompt,
     remove,
+    moveForToday,
     refresh,
     notToday,
     taskSegments,
@@ -1047,6 +1079,131 @@ function useRemove({
       })
     },
     [writeGroups, groupsRef, refresh, callbacksRef, pendingIdsRef],
+  )
+}
+
+/**
+ * THE ONE-DAY MOVE (2026-11-21, `POST /api/reminders/move`): reminders and
+ * quota prompts waiting today, to a later period for today only. Trent: a
+ * reminder that couldn't be done yet nagged all morning, and "Considered"
+ * was the only answer though it still needed doing that day.
+ *
+ * Optimistic, like a consider: the rows jump to the new period and the toast
+ * (the server's own words, `moveMessage`) shows at once. The move is held in
+ * `dayMovesRef` (`src/lib/pending-overlay.ts`): drawn over every payload
+ * until one REQUESTED AFTER the write answered lands, so a refresh already on
+ * its way can't draw the rows back in the period they left.
+ *
+ * Undo (the toast's) is a move the other way: the rows go back to where they
+ * were at once, held there by an entry of its own until a payload from after
+ * the undo lands; it waits for the move's request first, so it can never
+ * undo whatever came before. A failed move puts the rows back where they
+ * were (not the snapshot: other rows may have changed since) and says why —
+ * most often a period that started meanwhile ("Afternoon has already
+ * started").
+ */
+function useMoveForToday({
+  dayMovesRef,
+  requestGuard,
+  ...deps
+}: OptimisticDeps & {
+  dayMovesRef: React.MutableRefObject<PendingMap<number | string, number>>
+  requestGuard: { latest: () => number }
+}) {
+  const { writeGroups, groupsRef, refresh, callbacksRef } = deps
+  return useCallback(
+    async (tasks: Task[], prompts: QuotaPrompt[], to: TimeSlot) => {
+      const ids = tasks.map((t) => t.id)
+      const keys = prompts.map((p) => p.prompt_key)
+      // Where each one is now: Undo's (and a failure's) way back.
+      const from = new Map<number | string, number>()
+      for (const g of groupsRef.current) {
+        if (!g.slot) continue
+        for (const r of g.reminders) if (ids.includes(r.id)) from.set(r.id, g.slot.id)
+        for (const p of g.prompts)
+          if (keys.includes(p.prompt_key)) from.set(p.prompt_key, g.slot.id)
+      }
+      const items = [...from.keys()]
+      if (items.length === 0) return
+      const back = () => {
+        writeGroups(applyDayMoves(groupsRef.current, from))
+      }
+
+      const token = nextPendingToken()
+      dayMovesRef.current = addPending(dayMovesRef.current, items, to.id, token)
+      writeGroups(
+        applyDayMoves(groupsRef.current, new Map(items.map((item) => [item, to.id] as const))),
+      )
+
+      const request = (async () => {
+        const res = await fetch('/api/reminders/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, prompt_keys: keys, slot_id: to.id }),
+        })
+        if (!res.ok) {
+          const err = (await res.json().catch(() => null)) as { error?: string } | null
+          throw new Error(err?.error || 'Could not move it')
+        }
+        callbacksRef.current.onCompleted?.()
+      })()
+
+      const undo = async () => {
+        const backToken = nextPendingToken()
+        dayMovesRef.current = addPending(dayMovesRef.current, items, (i) => from.get(i)!, backToken)
+        back()
+        try {
+          await request
+          await callbacksRef.current.onUndo()
+          dayMovesRef.current = settlePending(
+            dayMovesRef.current,
+            items,
+            backToken,
+            requestGuard.latest(),
+          )
+        } catch {
+          dayMovesRef.current = dropPending(dayMovesRef.current, items, backToken)
+        } finally {
+          void refresh()
+        }
+      }
+      showToast({
+        // One name per quota, as the server counts them (a daily quota's rows share one).
+        message: moveMessage(
+          [
+            ...tasks.map((t) => t.title),
+            ...[...new Map(prompts.map((p) => [p.task_id, p.title])).values()],
+          ],
+          to.label,
+        ),
+        type: 'success',
+        action: { label: 'Undo', onClick: () => void undo() },
+      })
+
+      try {
+        await request
+        dayMovesRef.current = settlePending(
+          dayMovesRef.current,
+          items,
+          token,
+          requestGuard.latest(),
+        )
+      } catch (err) {
+        // Only this move's own entries: an Undo pressed meanwhile owns them now.
+        const mine = items.filter((i) => dayMovesRef.current.get(i)?.token === token)
+        dayMovesRef.current = dropPending(dayMovesRef.current, items, token)
+        writeGroups(
+          applyDayMoves(groupsRef.current, new Map(mine.map((i) => [i, from.get(i)!] as const))),
+        )
+        showToast({
+          message: err instanceof Error ? err.message : 'Could not move it',
+          type: 'error',
+        })
+      } finally {
+        void refresh()
+      }
+    },
+    [writeGroups, groupsRef, refresh, callbacksRef, dayMovesRef, requestGuard],
   )
 }
 
