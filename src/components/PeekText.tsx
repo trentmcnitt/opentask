@@ -151,7 +151,7 @@ export function PeekText({
       onClick={start}
       className={cn(
         !empty && className,
-        'hover:bg-muted -mx-1 block w-[calc(100%+0.5rem)] cursor-text rounded px-1 text-left',
+        'hover:bg-muted focus-visible:bg-muted -mx-1 block w-[calc(100%+0.5rem)] cursor-text rounded px-1 text-left focus-visible:outline-none',
       )}
     >
       {words}
