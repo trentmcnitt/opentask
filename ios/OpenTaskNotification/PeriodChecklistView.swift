@@ -93,8 +93,10 @@ struct PeriodChecklistView: View {
                     // §6: priority is prominence — a high priority reminder
                     // renders heavier.
                     .fontWeight(task.priority >= 3 ? .semibold : .regular)
-                    .foregroundColor(checked ? .secondary : .primary)
-                    .strikethrough(checked, color: .secondary)
+                    // A mark means "the button applies to this row", not
+                    // done: tinted only, never struck (2026-11-21, the task
+                    // checklist's rule).
+                    .foregroundColor(.primary)
                     // Wraps in full (2026-09-24) — a reminder is never
                     // truncated, and `fixedSize` keeps a parent from
                     // squeezing the wrapped rows into each other.
@@ -149,8 +151,7 @@ struct PeriodChecklistView: View {
                     // server's rule: a daily #k rises to k, else +1).
                     (Text(prompt.title) + Text(" ") + promptCount(did ? prompt.handled(did: true) : prompt))
                         .font(.caption)
-                        .foregroundColor(staged ? .secondary : .primary)
-                        .strikethrough(staged, color: .secondary)
+                        .foregroundColor(.primary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
