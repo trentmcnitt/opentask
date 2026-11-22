@@ -447,7 +447,7 @@ describe('RR-06 the payloads', () => {
           reminder_day: '2026-01-15',
         },
         tag: `reminder-${r.id}`,
-        actions: [{ action: 'considered', title: 'Considered' }],
+        actions: [{ action: 'considered', title: 'Consider' }],
         renotify: true,
       },
     ])

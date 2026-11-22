@@ -21,8 +21,9 @@ private let sizeLog = Logger(subsystem: "io.mcnitt.opentask.notification", categ
 /// - **TASK_SUMMARY**: the same checklist with no held row and nothing
 ///   checked; "All → Next period" (the sweep) while nothing is. The grid
 ///   counts from now.
-/// - **SLOT_REMINDER**: a §6 time slot — shows the batch checklist instead of the
-///   grid (see `ReminderChecklistView`), committed with one bulk request.
+/// - **SLOT_REMINDER**: a §6 period — the period checklist (`PeriodChecklist`,
+///   `PeriodChecklistView`) instead of the grid, committed with one bulk
+///   request. Both checklists are the shared one (`NotificationChecklist`).
 ///
 /// Communication flow:
 /// 1. User long-presses notification → iOS calls didReceive(_:) with payload
@@ -56,7 +57,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     private var isSlotMode = false
     /// `time_slots.id` from the payload; -1 is the un-slotted "Anytime" group.
     private var slotId = -1
-    private var checklistModel: ReminderChecklistModel?
+    private var checklistModel: PeriodChecklistModel?
 
     // MARK: - Lifecycle
 
@@ -166,82 +167,49 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     // MARK: - Slot Checklist (§6.1)
 
-    /// Build the batch checklist for a SLOT_REMINDER notification.
+    /// Build the period checklist for a SLOT_REMINDER notification
+    /// (`PeriodChecklist`, on the shared checklist, NCL-1…7).
     ///
-    /// The push carries only the slot's identity and a count — the item list is
-    /// fetched live here, because between "slot opened" and "user long-pressed"
-    /// the set can change, and a checklist that completes a stale row is the
-    /// exact failure this surface exists to avoid.
+    /// The push carries only the period's identity and a count — the rows are
+    /// fetched live here, because between "period opened" and "user
+    /// long-pressed" the set can change, and a checklist that completes a
+    /// stale row is the exact failure this surface exists to avoid.
     private func presentSlotChecklist(userInfo: [AnyHashable: Any], fallbackTitle: String) {
         slotId = userInfo[SlotReminderKey.slotId] as? Int ?? -1
         let label = userInfo[SlotReminderKey.slotLabel] as? String ?? fallbackTitle
         let expected = userInfo[SlotReminderKey.reminderCount] as? Int ?? 0
 
-        let model = ReminderChecklistModel(slotLabel: label, expectedCount: expected)
-        model.onStagedChange = { [weak self] count in
-            self?.setSlotActions(stagedCount: count)
+        let model = PeriodChecklistModel(slotLabel: label, expectedCount: expected)
+        model.onChange = { [weak self] in
+            self?.setSlotActions()
             self?.updatePreferredContentSize()
         }
         checklistModel = model
 
-        install(hosting: UIHostingController(rootView: ReminderChecklistView(model: model)))
-        setSlotActions(stagedCount: 0)
+        install(hosting: UIHostingController(rootView: PeriodChecklistView(model: model)))
+        setSlotActions()
 
         Task { await reloadSlotChecklist(model) }
     }
 
-    /// Fetch the slot's live group into the checklist: its reminders, then
-    /// its waiting quota prompts (2026-09-25 — the web's and the widgets'
-    /// order), dropping staged rows that are gone. Also the recovery after a
-    /// refused commit (a stale prompt key after midnight).
-    private func reloadSlotChecklist(_ model: ReminderChecklistModel) async {
+    /// Fetch the period's live group into the checklist: its reminders, then
+    /// its waiting quota prompts; marks stay on rows still listed. Also the
+    /// recovery after a refused commit (a prompt key from before midnight).
+    private func reloadSlotChecklist(_ model: PeriodChecklistModel) async {
         do {
             let group = try await APIClient.shared.fetchSlotGroup(slotId: slotId)
-            let items = (group?.reminders ?? []).map(ChecklistItem.reminder)
-                + (group?.waitingPrompts ?? []).map(ChecklistItem.prompt)
-            model.state = .loaded(items)
-            model.pruneStaged()
+            model.update { $0.apply(fetched: PeriodChecklist.items(group)) }
         } catch {
-            print("[OpenTask] Slot checklist load error: \(error)")
-            model.state = .failed("Couldn\u{2019}t load this slot")
+            print("[OpenTask] Period checklist load error: \(error)")
+            model.update { $0.fetchFailed() }
         }
-        setSlotActions(stagedCount: model.staged.count)
-        updatePreferredContentSize()
     }
 
-    /// Action buttons for the checklist.
-    ///
-    /// "Complete checked" only appears once something is staged — an action
-    /// button that can only no-op is worse than no button. "Complete all"
-    /// always appears and acts on the whole slot, including rows past the
-    /// visible cap.
-    private func setSlotActions(stagedCount: Int) {
-        var actions: [UNNotificationAction] = []
-
-        if stagedCount > 0 {
-            actions.append(
-                UNNotificationAction(
-                    identifier: NotificationAction.completeChecked,
-                    title: "Complete \(stagedCount) checked",
-                    options: []
-                )
-            )
-        }
-
-        if case .loaded(let items) = checklistModel?.state, items.isEmpty {
-            // Nothing to act on — leave only whatever is staged (nothing).
-            extensionContext?.notificationActions = actions
-            return
-        }
-
-        actions.append(
-            UNNotificationAction(
-                identifier: NotificationAction.completeAll,
-                title: "Complete all",
-                options: []
-            )
-        )
-        extensionContext?.notificationActions = actions
+    /// The action list for what is marked (`PeriodChecklist.actions`):
+    /// Consider / Did / Log (N), Consider all, Cancel.
+    private func setSlotActions() {
+        guard let model = checklistModel else { return }
+        extensionContext?.notificationActions = notificationActions(PeriodChecklist.actions(for: model.state))
     }
 
     /// Called when the user taps an action button while the extension is visible.
@@ -262,97 +230,85 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         commitOverdueChecklist(response, completion: completion)
     }
 
-    /// Commit the staged checklist in ONE request (§6.1).
+    /// The period checklist's buttons.
     ///
-    /// Anything short of "the server completed something" keeps the
-    /// notification on screen (`.doNotDismiss`) — dismissing on a failed or
-    /// empty commit would tell the user their reminders were handled when they
-    /// were not, which is the one lie this app cannot tell.
+    /// Anything short of "the server acted" keeps the view open
+    /// (`.doNotDismiss`) — dismissing on a failed or empty commit would say
+    /// the reminders were handled when they were not. After a success the
+    /// view closes (NCL-7, 2026-11-21: paging is now the way to the rest, so
+    /// the 11-12 stay-and-reload went); the period's banner goes only when
+    /// nothing in it is left waiting, and otherwise stays with its old count
+    /// until the period's next push replaces it.
     private func commitSlotChecklist(
         _ response: UNNotificationResponse,
         completion: @escaping (UNNotificationContentExtensionResponseOption) -> Void
     ) {
         Task {
-            do {
-                let affected: Int
+            switch response.actionIdentifier {
+            case UNNotificationDefaultActionIdentifier:
+                // Body tap: nothing was committed here, so hand off to the
+                // app (AppDelegate opens the dashboard). Forwarding is safe
+                // precisely because this branch performed no API call.
+                completion(.dismissAndForwardAction)
 
-                switch response.actionIdentifier {
-                case NotificationAction.completeChecked:
-                    // Reminders AND quota prompts (2026-09-24), in ONE
-                    // request — one transaction, one undo entry. `affected`
-                    // counts both, so a prompts-only commit still dismisses.
-                    let ids = checklistModel?.stagedReminderIds ?? []
-                    let prompts = checklistModel?.stagedPrompts ?? []
-                    guard !ids.isEmpty || !prompts.isEmpty else {
+            case NotificationAction.cancel:
+                // NCL-6: close and remove this banner; nothing sent.
+                UNUserNotificationCenter.current().removeDeliveredNotifications(
+                    withIdentifiers: [response.notification.request.identifier]
+                )
+                completion(.dismiss)
+
+            case NotificationAction.completeChecked:
+                guard let model = checklistModel else {
+                    completion(.doNotDismiss)
+                    return
+                }
+                do {
+                    switch try await PeriodChecklist.commit(model.state, slotId: slotId, api: APIClient.shared) {
+                    case .sent(let periodEmpty):
+                        if periodEmpty {
+                            completion(.dismiss)
+                        } else {
+                            completion(.doNotDismiss)
+                            extensionContext?.dismissNotificationContentExtension()
+                        }
+                    case .nothingMarked:
                         completion(.doNotDismiss)
-                        return
+                    case .nothingLeft(let current):
+                        model.update { $0.apply(fetched: PeriodChecklist.items(current)) }
+                        completion(.doNotDismiss)
+                    case .refused:
+                        await reloadSlotChecklist(model)
+                        completion(.doNotDismiss)
                     }
-                    affected = try await APIClient.shared.completeTasks(ids: ids, prompts: prompts).total
-
-                case NotificationAction.completeAll:
-                    // Reminders completed + waiting prompts CONSIDERED —
-                    // except any the user staged as DID IT here first, which
-                    // keep their +1 (`completeSlotReminders`' doc).
-                    let didKeys = Set((checklistModel?.stagedPrompts ?? []).filter(\.did).map(\.key))
-                    affected = try await APIClient.shared.completeSlotReminders(slotId: slotId, didKeys: didKeys)
-
-                case UNNotificationDefaultActionIdentifier:
-                    // Body tap: nothing was committed here, so hand off to the
-                    // app (AppDelegate opens the dashboard). Forwarding is safe
-                    // precisely because this branch performed no API call.
-                    completion(.dismissAndForwardAction)
-                    return
-
-                default:
-                    completion(.dismiss)
-                    return
-                }
-
-                guard affected > 0 else {
+                } catch {
+                    print("[OpenTask] Period checklist commit error: \(error)")
                     completion(.doNotDismiss)
-                    return
                 }
-            } catch {
-                print("[OpenTask] Slot checklist commit error: \(error)")
-                // A refused batch (4xx) is almost always a prompt key from
-                // before midnight — the server refuses another day's key, and
-                // the WHOLE batch with it. Retrying the same staging would
-                // fail forever, so reload today's slot and drop staged rows
-                // that no longer exist (quota reminders, 2026-09-25); the user
-                // re-checks and commits again.
-                if case APIError.serverError(let code) = error, (400..<500).contains(code),
-                   let model = checklistModel {
-                    await reloadSlotChecklist(model)
+
+            case NotificationAction.completeAll:
+                // Consider all: every reminder considered for today, every
+                // waiting prompt considered — except any marked DID here
+                // first, which keep their +1 (`completeSlotReminders`' doc).
+                let didKeys = Set((checklistModel?.state.marked ?? []).compactMap { entry -> String? in
+                    if case .prompt(let prompt) = entry.item, entry.mark == .did { return prompt.promptKey }
+                    return nil
+                })
+                do {
+                    let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId, didKeys: didKeys)
+                    completion(affected > 0 ? .dismiss : .doNotDismiss)
+                } catch {
+                    print("[OpenTask] Consider all error: \(error)")
+                    if case APIError.serverError(let code) = error, (400..<500).contains(code),
+                       let model = checklistModel {
+                        await reloadSlotChecklist(model)
+                    }
+                    completion(.doNotDismiss)
                 }
+
+            default:
                 completion(.doNotDismiss)
-                return
             }
-
-            // LEFTOVERS STAY REACHABLE (Trent, 2026-11-12: he checked the
-            // rows shown, tapped "Complete N checked", and the banner went —
-            // with "+4 more" still waiting and no way back to them: "it's a
-            // confusing state… I'm tempted to not use that"). After a
-            // "Complete checked" the checklist reloads IN PLACE with what
-            // still waits in the period, and the notification stays until
-            // nothing does. Only an empty period (or "Complete all", which
-            // takes the whole period) dismisses. A reload that fails keeps
-            // the banner too: the leftovers are unknown, and a body tap still
-            // leads to them. The server agrees: its reconcile keeps a period
-            // banner while anything in the period waits (`stale.ts`).
-            if response.actionIdentifier == NotificationAction.completeChecked,
-               let model = checklistModel {
-                await reloadSlotChecklist(model)
-                if case .loaded(let items) = model.state, items.isEmpty {
-                    completion(.dismiss)
-                } else {
-                    completion(.doNotDismiss)
-                }
-                return
-            }
-
-            // The extension already performed the action; forwarding it would
-            // make AppDelegate run the same completion a second time.
-            completion(.dismiss)
         }
     }
 

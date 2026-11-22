@@ -62,18 +62,23 @@ func notificationActions(_ rows: [TaskNotificationList.Row]) -> [UNNotificationA
 ///   a destructive action unless that option is set.
 /// - TASK_SUMMARY: overflow summary (All +1hr, then the same period actions —
 ///   no single-task actions)
-/// - SLOT_REMINDER: §6 time slot (Complete all; long-press expands to the
-///   batch checklist, which supplies its own "Complete checked" button).
+/// - SLOT_REMINDER: §6 time slot ("Consider all" — "Complete all" until
+///   2026-11-21; long-press expands to the period checklist, which supplies
+///   its own "Consider / Did / Log (N)" and Cancel). Titles are
+///   `NotificationWords`; identifiers never change, so older builds' and the
+///   Watch's and Mac's handlers keep working.
 ///   Slot-snooze actions are NOT added here — this category is about a
 ///   slot's own pending reminders, an unrelated §6 feature that happens to
 ///   share the word "slot".
 /// - REMINDER_NAG: the named push for one Medium+ reminder (2026-10-26).
-///   One action, "Considered" — the `DONE` identifier (identifiers are per
+///   One action, "Consider" ("Considered" until 2026-11-21, Trent's
+///   imperative ruling) — the `DONE` identifier (identifiers are per
 ///   category), which `NotificationActionRunner` sends as `done` with the
 ///   payload's `reminder_day`. No snooze and no delete: a reminder is
 ///   considered or left; the server's own nag cadence brings it back.
 /// - QUOTA_NAG: the named push for one prompt of a Medium+ quota (Push PR
-///   4b, 2026-10-26). Two actions, "Considered" and "Did it", sent by the
+///   4b, 2026-10-26). Two actions, "Consider" and "Did" ("Considered" and
+///   "Did it" until 2026-11-21), sent by the
 ///   payload's `prompt_key` (`NotificationActionRunner`). No snooze and no
 ///   delete, as for a reminder.
 func registerNotificationCategories() {
@@ -107,7 +112,7 @@ func registerNotificationCategories() {
 
     let completeAllAction = UNNotificationAction(
         identifier: NotificationAction.completeAll,
-        title: "Complete all",
+        title: NotificationWords.considerAll,
         options: []
     )
 
@@ -133,7 +138,7 @@ func registerNotificationCategories() {
 
     let consideredAction = UNNotificationAction(
         identifier: NotificationAction.done,
-        title: "Considered",
+        title: NotificationWords.consider,
         options: []
     )
 
@@ -147,8 +152,8 @@ func registerNotificationCategories() {
     let quotaNagCategory = UNNotificationCategory(
         identifier: NotificationCategory.quotaNag,
         actions: [
-            UNNotificationAction(identifier: NotificationAction.considered, title: "Considered", options: []),
-            UNNotificationAction(identifier: NotificationAction.didIt, title: "Did it", options: []),
+            UNNotificationAction(identifier: NotificationAction.considered, title: NotificationWords.consider, options: []),
+            UNNotificationAction(identifier: NotificationAction.didIt, title: NotificationWords.did, options: []),
         ],
         intentIdentifiers: [],
         options: []

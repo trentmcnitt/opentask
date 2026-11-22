@@ -626,8 +626,8 @@ describe('QN-P08 the body text and the payloads', () => {
         },
         tag: `prompt-${key(q.id)}`,
         actions: [
-          { action: 'considered', title: 'Considered' },
-          { action: 'did', title: 'Did it' },
+          { action: 'considered', title: 'Consider' },
+          { action: 'did', title: 'Did' },
         ],
         renotify: true,
       },
