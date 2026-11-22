@@ -186,7 +186,9 @@ test('a dashboard row’s target menu (a DropdownMenu) opens above a toast', asy
   const ids: number[] = []
   try {
     ids.push(await create(page, { title: uniqueTitle('MT toast maker'), horizon: 'days' }))
-    const at = new Date(Date.now() + 3 * 3_600_000).toISOString()
+    // An hour ago: overdue, its target chip on the dashboard at any hour
+    // ("now + 3h" crosses the day start late in the evening).
+    const at = new Date(Date.now() - 3_600_000).toISOString()
     ids.push(await create(page, { title: uniqueTitle('MT targeted'), target_at: at }))
     await page.addInitScript(() => window.localStorage.setItem('opentask_dashboard_mode', 'all'))
     await page.goto('/?tasks=days')
