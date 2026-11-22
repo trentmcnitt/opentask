@@ -70,8 +70,10 @@
           "logged": 0,
           "did": [],
           "considered": [],
-          "did_applied": {}
+          "did_applied": {},
+          "moved": {}
         },
+        "day_move": null,
         "completion_count": 0,
         "skip_count": 0,
         "first_completed_at": null,
