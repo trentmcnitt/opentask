@@ -873,6 +873,15 @@ final class APIClient {
         try await get(path: Self.remindersPath, as: RemindersPayload.self).orderedByDay(day)
     }
 
+    /// The user's overdue tasks — the badge's set (`GET /api/tasks?overdue=true`:
+    /// no reminders, no quotas, due-ness from the schedule). The notification
+    /// long-press's overdue checklist (2026-11-21) reads it when it opens and
+    /// again right before it sends (TNC-1, TNC-6). In the server's order; the
+    /// checklist sorts it.
+    func fetchOverdueTasks() async throws -> [TaskDTO] {
+        try await get(path: "/api/tasks?overdue=true&limit=500", as: TasksPage.self).tasks
+    }
+
     /// Open (not-done) tasks. The server has no "today" filter — the dashboard
     /// fetches the open set and buckets client-side, and the widget does the
     /// same rather than inventing an endpoint.

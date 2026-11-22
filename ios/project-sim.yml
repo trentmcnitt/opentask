@@ -84,6 +84,7 @@ targets:
       - '*.entitlements'
       - Info.plist
     - path: Shared
+    - path: OpenTaskWidgets/DueLabel.swift
     dependencies:
     - sdk: UserNotificationsUI.framework
     entitlements:
