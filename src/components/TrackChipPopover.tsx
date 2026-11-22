@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback, useEffect, useState } from 'react'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { PopoverFooter } from '@/components/RowPeekPopover'
 import { taskPeriodLabel, type TrackState } from '@/lib/track'
@@ -100,6 +101,7 @@ export function TrackChipPopover({
   /** The chip this bubble points at. */
   children: React.ReactNode
 }) {
+  const { attach, measure, more } = useMoreBelow()
   return (
     <Popover open={open && task !== null} onOpenChange={onOpenChange}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
@@ -117,6 +119,8 @@ export function TrackChipPopover({
           // safe area); without it Radix flipped a tall bubble up UNDER the
           // top bar, title and all.
           collisionPadding={{ top: 64, bottom: 72 }}
+          ref={attach}
+          onScroll={measure}
           className="max-h-(--radix-popover-content-available-height) w-[min(20rem,calc(100vw-2rem))] overflow-y-auto p-0"
           data-track-popover={task.id}
           // The chip owns the pointer that opened this. Without these, the
@@ -135,6 +139,7 @@ export function TrackChipPopover({
             onEdit={onEdit && ((changes) => onEdit(task, changes))}
             periods={periods}
           />
+          {more && <ScrollFade />}
         </PopoverContent>
       )}
     </Popover>
@@ -162,7 +167,7 @@ function QuotaSummary({
   const cadence = task.rrule ? formatRRule(task.rrule, task.anchor_time) : null
 
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-2 p-2.5">
       <PeekTitleAndNote
         title={task.title}
         notes={task.notes}
@@ -180,7 +185,7 @@ function QuotaSummary({
         }}
       />
 
-      <QuotaRecord task={task} state={state} className="border-t pt-2.5" />
+      <QuotaRecord task={task} state={state} className="border-t pt-2" />
 
       {periods && periods.slots.length > 0 && periods.rows.length > 0 && (
         <PeriodChips periods={periods} />
@@ -210,7 +215,7 @@ function QuotaSummary({
 function PeriodChips({ periods }: { periods: PromptPeriods }) {
   const [only] = periods.rows
   return (
-    <div className="space-y-1.5 border-t pt-2.5" data-prompt-periods>
+    <div className="space-y-1.5 border-t pt-2" data-prompt-periods>
       <p className="text-muted-foreground text-xs">{periods.label}</p>
       {periods.rows.length === 1 ? (
         <div className="flex flex-wrap gap-1.5">
@@ -255,7 +260,7 @@ function PeriodChipRow({
         data-prompt-period={slot.id}
         className={cn(
           'rounded-full border transition-colors',
-          compact ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm',
+          compact ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-0.5 text-sm',
           pressed
             ? 'border-foreground bg-foreground text-background'
             : 'hover:border-foreground/40',
@@ -265,4 +270,41 @@ function PeriodChipRow({
       </button>
     )
   })
+}
+
+/**
+ * MORE BELOW (2026-11-22, the design session): a bubble taller than the room
+ * Radix measured scrolls inside itself (see `collisionPadding` above), and it
+ * opens at its top, so the footer can sit out of sight with nothing saying
+ * so. While there is more below, a faint fade sits at the bottom edge; it
+ * goes once the bubble is scrolled to the end, or never shows when it fits.
+ * Measured on mount, on scroll and whenever the bubble's size changes.
+ */
+function useMoreBelow() {
+  const [node, setNode] = useState<HTMLElement | null>(null)
+  const [more, setMore] = useState(false)
+  const measure = useCallback(() => {
+    if (!node) return
+    setMore(node.scrollHeight - node.scrollTop - node.clientHeight > 1)
+  }, [node])
+  useEffect(() => {
+    if (!node) return
+    // A ResizeObserver reports once as it starts, so this also takes the first measure.
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    for (const child of node.children) observer.observe(child)
+    return () => observer.disconnect()
+  }, [node, measure])
+  return { attach: setNode, measure, more }
+}
+
+/** The fade itself: sticky at the scroll area's bottom edge, inert. */
+function ScrollFade() {
+  return (
+    <div
+      aria-hidden="true"
+      data-bubble-more
+      className="from-popover pointer-events-none sticky bottom-0 -mt-8 h-8 bg-gradient-to-t to-transparent"
+    />
+  )
 }

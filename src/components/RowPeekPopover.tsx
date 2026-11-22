@@ -118,7 +118,7 @@ export function RowPeekBody({
   deleteLabel: string
 }) {
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-2 p-2.5">
       <PeekTitleAndNote
         title={title}
         notes={notes}

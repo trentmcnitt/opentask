@@ -52,7 +52,7 @@ export function QuotaRecord({
 
   return (
     <dl
-      className={cn('grid grid-cols-2 gap-x-3 gap-y-2 text-xs', className)}
+      className={cn('grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs', className)}
       data-quota-record={loading ? 'loading' : 'ready'}
     >
       <div>
