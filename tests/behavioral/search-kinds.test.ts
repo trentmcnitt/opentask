@@ -63,6 +63,8 @@ describe('kinds', () => {
 describe('the rows’ words', () => {
   test('a task the queue holds says its horizon; a dated one says nothing', () => {
     expect(searchQueueWord(task({ horizon: 'days' }))).toBe('Task queue · Days')
+    // Weeks, stated (unset read as Weeks before 2026-11-17 and stood in for it).
+    expect(searchQueueWord(task({ horizon: 'weeks' }))).toBe('Task queue · Weeks')
     // Unset reads as Days.
     expect(searchQueueWord(task({ horizon: null }))).toBe('Task queue · Days')
     expect(searchQueueWord(task({ due_at: '2026-11-20T15:00:00Z' }))).toBeNull()

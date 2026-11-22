@@ -180,11 +180,12 @@ export function waitForTaskCreate(page: Page) {
  * Other specs leave tasks behind (a quick add, a task they never trash), and
  * whether those show in today's segments depends on the DATE the suite runs,
  * not on anything the spec does (`segmentState`, `upcomingState` in
- * src/lib/task-segments.ts): an undated task reads as weeks, and a weeks task
- * created ON the check-in day — Saturday by default — shows that same day. So
- * on a Saturday every undated task the run had made so far appeared under the
- * reminder slots, and two specs that pass on any other day failed (2026-10-17,
- * first seen just after midnight). A run that crosses midnight does the same
+ * src/lib/task-segments.ts): a weeks task created ON the check-in day —
+ * Saturday by default — shows that same day. Until 2026-11-17 an undated task
+ * read as weeks, so on a Saturday every undated task the run had made so far
+ * appeared under the reminder slots, and two specs that pass on any other day
+ * failed (2026-10-17, first seen just after midnight); since then it reads as
+ * days, which shows every day after the one it was made. A run that crosses midnight does the same
  * for `days` tasks (created before today) and can land a stray target's
  * Upcoming heads-up day on today.
  *

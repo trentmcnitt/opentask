@@ -488,6 +488,17 @@ describe('OD-W: refusals, un-deck, the queue, PATCH, undo', () => {
     expect(placesOf(a.id)).toEqual(['days'])
   })
 
+  test('OD-W08w: un-decked, a stated Weeks task is back in Weeks, ticked, off its check-in day', () => {
+    // OD-W08's Weeks twin: until 2026-11-17 its unset task read as Weeks and
+    // pinned this. Tue Oct 20 is not the check-in day (Saturday); considered
+    // today by the deck, the row is still listed, ticked.
+    const a = make({ horizon: 'weeks' })
+    deck([a.id], '2026-10-23')
+    setClock('2026-10-20T11:00')
+    deck([a.id], null)
+    expect(placesOf(a.id)).toEqual(['weeks'])
+  })
+
   test('OD-W09: decking a queued task takes it out of the queue (rule 3, B8)', () => {
     const t = make({ due_at: at('2026-10-19T16:00') })
     getDb()
