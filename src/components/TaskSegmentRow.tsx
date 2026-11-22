@@ -551,6 +551,7 @@ function SegmentRowPeek({
         actions.closePeek()
         void actions.remove(task)
       }}
+      onEdit={(changes) => actions.editText(task.id, changes)}
       deleteLabel={`Move "${task.title}" to Trash`}
     />
   )

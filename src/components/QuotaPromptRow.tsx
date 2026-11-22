@@ -9,6 +9,7 @@ import { movedPromptConfig, ordinal, promptCountText, type QuotaPrompt } from '@
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useQuotaEditor } from '@/hooks/useQuotaEditor'
+import { peekTextMessage } from '@/components/PeekText'
 import { TrackChipPopover } from '@/components/TrackChipPopover'
 import { NotesMarker } from '@/components/NotesMarker'
 import { InlinePriorityTab, PriorityEdgeBar } from '@/components/RowCorner'
@@ -162,7 +163,11 @@ export function QuotaPromptRow({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      onPointerDown={press.onPointerDown}
+      // A press in the bubble (portalled, but bubbling here through React)
+      // never starts a hold: only a press on the row itself does.
+      onPointerDown={(e) => {
+        if (e.currentTarget.contains(e.target as Node)) press.onPointerDown(e)
+      }}
       onPointerUp={press.onPointerUp}
       onPointerMove={press.onPointerMove}
       onPointerLeave={press.onPointerLeave}
@@ -189,15 +194,17 @@ export function QuotaPromptRow({
       {/* "Show right border": the stripe's mirror on the right edge. */}
       <PriorityEdgeBar bar={pri.bar} panel={panel} />
       {/* The bubble's anchor: an inert box over the whole row. The wrapper
-          stops the bubble's own events (it renders in a portal, but React
+          stops the bubble's clicks and keys (it renders in a portal, but React
           still bubbles them through here) from reaching the row, where a
-          click would consider the prompt and a press would start a hold. */}
+          click would consider the prompt. NOT its pointerdown (2026-11-22):
+          stopping that stopped the native event too, so Radix never saw the
+          press inside and swallowed the next press outside, and the bubble
+          would not close. The row ignores a press that isn't on it instead. */}
       {bubble && (
         <span
           // No box of its own: a flex item here would add a gap to the row.
           className="contents"
           onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
           {bubble(<span aria-hidden="true" className="pointer-events-none absolute inset-0" />)}
@@ -772,6 +779,13 @@ function useQuotaPromptDetail({
         onDelete={(t) => {
           setPeekKey(null)
           void deleteQuotas([t])
+        }}
+        // The title or note edited in place (2026-11-22): the quota editor's
+        // own write and Undo. The bubble's task is a fetched copy, so it takes
+        // the new text too (Open then shows it).
+        onEdit={async (t, changes) => {
+          await saveQuotas([t.id], changes, { message: peekTextMessage(changes) })
+          setTask((cur) => (cur && cur.id === t.id ? { ...cur, ...changes } : cur))
         }}
         periods={
           mine

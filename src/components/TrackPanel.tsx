@@ -1,5 +1,6 @@
 'use client'
 
+import { peekTextMessage, type PeekTextChanges } from '@/components/PeekText'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -303,6 +304,14 @@ function useTrackChipDetail({
     [deleteQuotas],
   )
 
+  // The bubble's title or note, edited in place (2026-11-22): the quota
+  // editor's own write and Undo. The bubble stays open.
+  const editFromPopover = useCallback(
+    (task: Task, changes: PeekTextChanges) =>
+      saveQuotas([task.id], changes, { message: peekTextMessage(changes) }),
+    [saveQuotas],
+  )
+
   // Read once here, not per chip: `useQuotaPromptPrefs` fetches on every mount.
   const setup = usePromptSetup()
 
@@ -354,6 +363,7 @@ function useTrackChipDetail({
     closePopover,
     openEditor,
     deleteFromPopover,
+    editFromPopover,
     periodsFor,
     modal,
     // The Quotas page's selection bar: several quotas' editor, and Trash.
@@ -1052,6 +1062,7 @@ function PeriodSection({
                 onCloseDetail={detail.closePopover}
                 onEdit={detail.openEditor}
                 onDeleteQuota={detail.deleteFromPopover}
+                onEditText={detail.editFromPopover}
                 periods={detail.openId === item.task.id ? detail.periodsFor(item.task) : undefined}
                 highlighted={highlightId === item.task.id}
                 onHighlightDone={onHighlightDone}
@@ -1557,6 +1568,7 @@ function TrackChip({
   onCloseDetail,
   onEdit,
   onDeleteQuota,
+  onEditText,
   periods,
   highlighted = false,
   onHighlightDone,
@@ -1576,6 +1588,8 @@ function TrackChip({
   onEdit: (task: Task) => void
   /** The bubble's trash can. Soft delete, with an Undo toast. */
   onDeleteQuota: (task: Task) => void
+  /** The bubble's title or note, edited in place. */
+  onEditText: (task: Task, changes: PeekTextChanges) => Promise<unknown>
   /** Where its daily reminder sits, while its bubble is open — see `periodsFor`. */
   periods?: PromptPeriods
   /**
@@ -1621,6 +1635,7 @@ function TrackChip({
         }}
         onOpen={onEdit}
         onDelete={onDeleteQuota}
+        onEdit={onEditText}
         periods={periods}
       >
         <button

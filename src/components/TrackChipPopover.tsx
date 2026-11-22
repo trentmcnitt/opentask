@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 import { QuotaRecord } from '@/components/QuotaRecord'
+import { PeekTitleAndNote, keepOpenWhileTyping, type PeekTextChanges } from '@/components/PeekText'
 
 /**
  * The period chips a bubble can carry (2026-09-25): where the quota's daily
@@ -46,8 +47,10 @@ export interface PeriodRow {
  * click is +1, and a trigger would fight it for the same gesture. The chip
  * stays a plain button and this is positioned against it.
  *
- * It reads and does not edit ("I don't want an editable field"). Editing is
- * one tap further in, behind the Open button — which opens `QuotaDetailModal`
+ * It read and did not edit ("I don't want an editable field") until
+ * 2026-11-22, when Trent asked for the title and the note to be editable in
+ * place "as the task selection bubble is" (`PeekText`, via `onEdit`); every
+ * other edit is still one tap further in, behind the Open button — which opens `QuotaDetailModal`
  * IN PLACE rather than navigating to the task page (Trent, 2026-09-21:
  * "whenever I do things with tasks it opens a modal for me to do my work...
  * that's how I like to work: with a modal"). This component only tells its
@@ -71,6 +74,7 @@ export function TrackChipPopover({
   onOpen,
   onShowInList,
   onDelete,
+  onEdit,
   periods,
   children,
 }: {
@@ -89,6 +93,8 @@ export function TrackChipPopover({
   /** Move it to Trash. Soft, undoable, and asks nothing first — see
    *  `PopoverFooter`. */
   onDelete: (task: Task) => void
+  /** Saves an edit of the title or note; without it, both read only. */
+  onEdit?: (task: Task, changes: PeekTextChanges) => Promise<unknown> | void
   /** Where its daily reminder sits — absent when it has none. */
   periods?: PromptPeriods
   /** The chip this bubble points at. */
@@ -117,6 +123,8 @@ export function TrackChipPopover({
           // long-press's own pointerup lands on the popover's outside-press
           // handler and closes it in the same gesture that opened it.
           onOpenAutoFocus={(e) => e.preventDefault()}
+          // An Escape in the title or note field reverts the field, not the bubble.
+          onEscapeKeyDown={keepOpenWhileTyping}
         >
           <QuotaSummary
             task={task}
@@ -124,6 +132,7 @@ export function TrackChipPopover({
             onOpen={() => onOpen(task)}
             onShowInList={onShowInList && (() => onShowInList(task))}
             onDelete={() => onDelete(task)}
+            onEdit={onEdit && ((changes) => onEdit(task, changes))}
             periods={periods}
           />
         </PopoverContent>
@@ -138,6 +147,7 @@ function QuotaSummary({
   onOpen,
   onShowInList,
   onDelete,
+  onEdit,
   periods,
 }: {
   task: Task
@@ -145,6 +155,7 @@ function QuotaSummary({
   onOpen: () => void
   onShowInList?: () => void
   onDelete: () => void
+  onEdit?: (changes: PeekTextChanges) => Promise<unknown> | void
   periods?: PromptPeriods
 }) {
   const period = taskPeriodLabel(task)
@@ -152,24 +163,22 @@ function QuotaSummary({
 
   return (
     <div className="space-y-3 p-3">
-      <div>
-        <p className="text-sm leading-snug font-medium">{task.title}</p>
-        <p className="text-muted-foreground text-xs tabular-nums">
-          {state.current} of {state.target}
-          {period ? ` ${period}` : ''}
-          {cadence ? ` · ${cadence}` : ''}
-        </p>
-      </div>
-
-      <div className="border-t pt-2.5">
-        {task.notes ? (
-          <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{task.notes}</p>
-        ) : (
-          <p className="text-muted-foreground text-xs italic">
-            No note yet — open it to say what this one means.
+      <PeekTitleAndNote
+        title={task.title}
+        notes={task.notes}
+        onEdit={onEdit}
+        meta={
+          <p className="text-muted-foreground text-xs tabular-nums">
+            {state.current} of {state.target}
+            {period ? ` ${period}` : ''}
+            {cadence ? ` · ${cadence}` : ''}
           </p>
-        )}
-      </div>
+        }
+        emptyNote={{
+          editable: 'No note yet — click to say what this one means.',
+          readOnly: 'No note yet — open it to say what this one means.',
+        }}
+      />
 
       <QuotaRecord task={task} state={state} className="border-t pt-2.5" />
 

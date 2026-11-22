@@ -3,11 +3,13 @@
 import { Trash2 } from 'lucide-react'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
+import { PeekTitleAndNote, keepOpenWhileTyping, type PeekTextEdit } from '@/components/PeekText'
 
 /**
  * THE ROW PEEK BUBBLE: what a row is, in a bubble anchored to the row itself,
- * opened by holding the row — read-only, with Open (the full editor) and a
- * trash can. The shell both bubbles share: the dashboard panel's reminder rows
+ * opened by holding the row, with Open (the full editor) and a trash can. Its
+ * title and note are editable in place since 2026-11-22 (`PeekText`); the
+ * rest of the task is edited behind Open. The shell both bubbles share: the dashboard panel's reminder rows
  * (`ReminderRowPopover`, 2026-09-21) and, since 2026-10-20, the task-segment
  * and queue rows (`TaskSegmentRow`'s peek, which replaced their pencil). One
  * shape, so the two can never drift apart: the title, a muted meta line, the
@@ -58,10 +60,21 @@ export function RowPeekPopover({
           // Never wider than the phone it is on, and never wider than it needs.
           className="w-[min(20rem,calc(100vw-2rem))] p-0"
           {...contentProps}
+          // An Escape in the title or note field reverts the field, not the bubble.
+          onEscapeKeyDown={keepOpenWhileTyping}
           // The row owns the pointer that opened this. Without this, the long
           // press's own pointerup lands on the popover's outside-press handler
           // and closes it in the same gesture that opened it.
-          onOpenAutoFocus={autoFocus ? undefined : (e) => e.preventDefault()}
+          // A keyboard-opened bubble focuses Open (Enter opens the editor),
+          // not the first button, which is the editable title since 2026-11-22.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            if (autoFocus) {
+              ;(e.target as HTMLElement | null)
+                ?.querySelector<HTMLElement>('[data-peek-open]')
+                ?.focus()
+            }
+          }}
         >
           {content}
         </PopoverContent>
@@ -76,9 +89,12 @@ export function RowPeekPopover({
  *
  * NOTES ARE THE POINT (Trent, 2026-09-21: "I feel like there are some times
  * I'm going to want notes"): before the bubble the only way to read a note
- * was to open the full editor and close it again. It reads and does not
- * edit; Open is the way through, and this neither knows nor decides what
- * "open" means.
+ * was to open the full editor and close it again. Since 2026-11-22 (Trent,
+ * via the design session: "as the task selection bubble is") the title and
+ * the note are edited right here when the caller passes `onEdit`, by the
+ * select bar's rules (`PeekText`): click to type, Enter or leaving saves,
+ * Escape puts it back, an Undo toast. Everything else is behind Open, and
+ * this neither knows nor decides what "open" means.
  */
 export function RowPeekBody({
   title,
@@ -88,10 +104,13 @@ export function RowPeekBody({
   onShowInList,
   onDelete,
   deleteLabel,
+  onEdit,
 }: {
   title: string
   meta: React.ReactNode
   notes: string | null | undefined
+  /** Saves an edit of the title or note; without it, both read only. */
+  onEdit?: PeekTextEdit
   onOpen: () => void
   /** A task row's "Show in list" beside Open (`src/lib/show-in-list.ts`). */
   onShowInList?: () => void
@@ -100,20 +119,16 @@ export function RowPeekBody({
 }) {
   return (
     <div className="space-y-3 p-3">
-      <div>
-        <p className="text-sm leading-snug font-medium">{title}</p>
-        {meta}
-      </div>
-
-      <div className="border-t pt-2.5">
-        {notes ? (
-          <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{notes}</p>
-        ) : (
-          <p className="text-muted-foreground text-xs italic">
-            No note yet — open it to say what this one is for.
-          </p>
-        )}
-      </div>
+      <PeekTitleAndNote
+        title={title}
+        notes={notes}
+        onEdit={onEdit}
+        meta={meta}
+        emptyNote={{
+          editable: 'No note yet — click to say what this one is for.',
+          readOnly: 'No note yet — open it to say what this one is for.',
+        }}
+      />
 
       <PopoverFooter
         onOpen={onOpen}
@@ -150,7 +165,7 @@ export function PopoverFooter({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Button size="sm" className="flex-1" onClick={onOpen}>
+      <Button size="sm" className="flex-1" onClick={onOpen} data-peek-open>
         Open
       </Button>
       {onShowInList && (
