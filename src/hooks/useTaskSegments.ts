@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { peekTextMessage, type PeekTextChanges } from '@/components/PeekText'
 import { DateTime } from 'luxon'
 import { showToast } from '@/lib/toast'
 import {
@@ -309,7 +310,8 @@ export function useTaskSegments({
   const setHorizon = useSetHorizon(onUndo, refresh, onCompleted)
   const horizonMany = useSetHorizonMany(onUndo, refresh, onCompleted)
   const headsUpMany = useSetHeadsUpMany(onUndo, refresh, onCompleted)
-  const retitle = useRetitle(onUndo, refresh, onCompleted)
+  // The title and note, edited in place: `retitle` and `editText`.
+  const text = useEditText(onUndo, refresh, onCompleted)
 
   // Put back (2026-10-11): a considered or deferred row from "Show N
   // considered" waits again — the slots' put-back.
@@ -349,7 +351,7 @@ export function useTaskSegments({
     setHorizon,
     horizonMany,
     headsUpMany,
-    retitle,
+    ...text,
     restore,
     removeTarget,
     remove,
@@ -686,13 +688,18 @@ function useSetHorizonMany(
  * place — a PATCH of `title`, with Undo; the row redraws with the refresh.
  * Rejects when the save failed (the bar puts the old title back).
  */
-function useRetitle(onUndo: () => void, refresh: () => Promise<void>, onCompleted?: () => void) {
-  return useCallback(
-    async (id: number, title: string) => {
+/**
+ * A row's title or note, edited in place — the select bar's title (#497) and,
+ * since 2026-11-22, the peek bubble's title and note (`PeekText`). One PATCH,
+ * one Undo.
+ */
+function useEditText(onUndo: () => void, refresh: () => Promise<void>, onCompleted?: () => void) {
+  const editText = useCallback(
+    async (id: number, changes: PeekTextChanges) => {
       try {
-        await patchTask(id, { title })
+        await patchTask(id, changes)
         showToast({
-          message: `Renamed: “${title}”`,
+          message: peekTextMessage(changes),
           type: 'success',
           action: { label: 'Undo', onClick: onUndo },
         })
@@ -706,6 +713,8 @@ function useRetitle(onUndo: () => void, refresh: () => Promise<void>, onComplete
     },
     [onUndo, onCompleted, refresh],
   )
+  const retitle = useCallback((id: number, title: string) => editText(id, { title }), [editText])
+  return { editText, retitle }
 }
 
 /**

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RowPeekBody, RowPeekPopover } from '@/components/RowPeekPopover'
+import type { PeekTextChanges, PeekTextEdit } from '@/components/PeekText'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { reminderInListHref } from '@/lib/show-in-list'
 import { describeCadence, describeTimeOfDay, readSchedule } from '@/lib/reminder-rule'
@@ -48,6 +49,7 @@ export function ReminderRowPopover({
   onOpen,
   onDelete,
   onMove,
+  onEdit,
   children,
 }: {
   reminder: Task | null
@@ -65,6 +67,8 @@ export function ReminderRowPopover({
   onDelete: (reminder: Task) => void
   /** A Later today chip: move it to that period for today. */
   onMove: (reminder: Task, to: TimeSlot) => void
+  /** Saves an edit of the title or note in place (`PeekText`). */
+  onEdit?: (reminder: Task, changes: PeekTextChanges) => Promise<unknown> | void
   /** The row this bubble points at. */
   children: React.ReactNode
 }) {
@@ -89,6 +93,7 @@ export function ReminderRowPopover({
               router.push(reminderInListHref(reminder.id))
             }}
             onDelete={() => onDelete(reminder)}
+            onEdit={onEdit && ((changes) => onEdit(reminder, changes))}
           />
         )
       }
@@ -107,6 +112,7 @@ function ReminderSummary({
   onOpen,
   onShowInList,
   onDelete,
+  onEdit,
 }: {
   reminder: Task
   timeSlots: TimeSlot[]
@@ -116,6 +122,7 @@ function ReminderSummary({
   onOpen: () => void
   onShowInList: () => void
   onDelete: () => void
+  onEdit?: PeekTextEdit
 }) {
   // The same two halves the editor's own summary line is built from, so the
   // bubble and the editor behind it can never describe one schedule
@@ -146,6 +153,7 @@ function ReminderSummary({
       onOpen={onOpen}
       onShowInList={onShowInList}
       onDelete={onDelete}
+      onEdit={onEdit}
       deleteLabel={`Move "${reminder.title}" to Trash`}
     />
   )

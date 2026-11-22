@@ -165,7 +165,7 @@ test.describe('desktop', () => {
       await r.getByText(title).click({ button: 'right' })
       const b = bubble(page, id)
       await expect(b).toBeVisible()
-      await expect(b.getByText('No note yet — open it to say what this one is for.')).toBeVisible()
+      await expect(b.getByText('No note yet — click to say what this one is for.')).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(b).toHaveCount(0)
 

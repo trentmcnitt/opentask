@@ -35,6 +35,7 @@ import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
 import { saveReminderDetail } from '@/lib/save-reminder-detail'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
+import type { PeekTextChanges } from '@/components/PeekText'
 import { retapOrder } from '@/lib/retap-walk'
 import {
   liftFirst,
@@ -93,6 +94,19 @@ import {
  * short — the same reason `useQuotaMutations` is its own file rather than
  * inline in the quota surfaces.
  */
+/** The dashboard's handle on this card's refresh, while the card is mounted. */
+function useRefreshRef(
+  refreshRef: DashboardRemindersPanelProps['refreshRef'],
+  refresh: () => Promise<void>,
+) {
+  useEffect(() => {
+    refreshRef.current = () => void refresh()
+    return () => {
+      refreshRef.current = null
+    }
+  }, [refreshRef, refresh])
+}
+
 function useRowEditor({
   timeSlots,
   onUndo,
@@ -135,7 +149,15 @@ function useRowEditor({
     />
   )
 
-  return { open, modal, isOpen: editing.length > 0 }
+  // The row bubble's title or note, edited in place (2026-11-22): the
+  // editor's own write, its toast and Undo.
+  const editText = useCallback(
+    (task: Task, changes: PeekTextChanges) =>
+      saveReminderDetail(task.id, changes, { source: [task], onUndo, onCompleted, refresh }),
+    [onUndo, onCompleted, refresh],
+  )
+
+  return { open, modal, isOpen: editing.length > 0, editText }
 }
 
 /**
@@ -281,12 +303,7 @@ export function DashboardRemindersPanel({
   // a single `detailId` for its chips.
   const [peekId, setPeekId] = useState<number | null>(null)
 
-  useEffect(() => {
-    refreshRef.current = () => void refresh()
-    return () => {
-      refreshRef.current = null
-    }
-  }, [refreshRef, refresh])
+  useRefreshRef(refreshRef, refresh)
 
   // A row's bubble, its editor, a prompt's bubble or editor: the card is held.
   const blocked = peekId !== null || editor.isOpen || prompts.busy
@@ -398,6 +415,7 @@ export function DashboardRemindersPanel({
               onComplete={(reminder) => void complete(reminder)}
               onRemove={(task) => void remove([task])}
               onOpenEditor={editor.open}
+              onEditText={editor.editText}
               renderPrompt={prompts.renderPrompt}
               slot={page.group.slot}
               onMoveForToday={(task, to) => void moveForToday([task], [], to)}
@@ -514,6 +532,7 @@ function PanelRowList({
   onComplete,
   onRemove,
   onOpenEditor,
+  onEditText,
   renderPrompt,
   slot,
   onMoveForToday,
@@ -531,6 +550,8 @@ function PanelRowList({
   onComplete: (reminder: Task) => void
   onRemove: (reminder: Task) => void
   onOpenEditor: (reminder: Task) => void
+  /** A bubble's title or note edited in place. */
+  onEditText: (reminder: Task, changes: PeekTextChanges) => Promise<unknown>
   renderPrompt: (prompt: QuotaPrompt, extra: { hiddenWhenNarrow?: boolean }) => React.ReactNode
   /** The slot on screen — where its reminders are today (a moved one included). */
   slot: TimeSlot | null
@@ -561,6 +582,7 @@ function PanelRowList({
               setPeekId(null)
               onRemove(task)
             }}
+            onEditText={onEditText}
             onOpenEditor={(task) => {
               // The bubble is done the moment the editor takes over —
               // leaving it open would stack a popover behind a dialog.
@@ -609,6 +631,7 @@ function PanelRow({
   onPeekChange,
   onOpenEditor,
   onDelete,
+  onEditText,
   slot,
   onMove,
   timeSlots,
@@ -631,6 +654,8 @@ function PanelRow({
   onOpenEditor: (reminder: Task) => void
   /** The bubble's trash can. Soft delete, with an Undo toast. */
   onDelete: (reminder: Task) => void
+  /** The bubble's title or note, edited in place. */
+  onEditText: (reminder: Task, changes: PeekTextChanges) => Promise<unknown>
   /** The period the row is in today, and the bubble's Later today chips. */
   slot: TimeSlot | null
   onMove: (reminder: Task, to: TimeSlot) => void
@@ -651,6 +676,7 @@ function PanelRow({
       onOpenChange={onPeekChange}
       onOpen={onOpenEditor}
       onDelete={onDelete}
+      onEdit={onEditText}
       slot={slot}
       onMove={onMove}
     >
