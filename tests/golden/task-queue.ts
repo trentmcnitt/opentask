@@ -149,6 +149,17 @@ export const taskQueueScenarios: GoldenScenario[] = [
         created: '2026-10-18T10:00',
         input: { title: 'Synthetic one-off', due_at: iso('2026-10-19T16:00') },
       },
+      {
+        // Its Weeks twin (until 2026-11-17 the unset task read as Weeks and
+        // pinned this): out of the queue onto the weekly rhythm.
+        name: 'weeks',
+        created: '2026-10-18T10:00',
+        input: {
+          title: 'Synthetic weekly one-off',
+          due_at: iso('2026-10-19T16:00'),
+          horizon: 'weeks',
+        },
+      },
     ],
     expect: {
       task: {
@@ -156,6 +167,13 @@ export const taskQueueScenarios: GoldenScenario[] = [
         '2026-10-20': 'queue_today queued 1×',
         // Out of the queue, untargeted: Days (unset), daily.
         '2026-10-21..2026-10-24': 'days',
+      },
+      weeks: {
+        '2026-10-19': 'over 1×',
+        '2026-10-20': 'queue_today queued 1×',
+        // Out of the queue, untargeted: quiet until the check-in Saturday.
+        '2026-10-21..2026-10-23': 'quiet',
+        '2026-10-24': 'weeks',
       },
     },
   },
