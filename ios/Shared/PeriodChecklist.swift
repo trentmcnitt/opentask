@@ -73,6 +73,14 @@ enum PeriodChecklist {
 
     // MARK: - The commit (NCL-4, NCL-5, NCL-7)
 
+    /// RULE NCL-7: AFTER A SUCCESS the view closes. The banners of the items
+    ///   acted on go; a period banner goes when its period is left empty and
+    ///   otherwise stays, with its old count (accepted: a delivered banner's
+    ///   words can't be edited, and the period's next push replaces it).
+    /// Why: paging is the way back to the rest of the list, so reloading in
+    ///   place is no longer needed.
+    /// Ruling: Trent 2026-11-21: "completing them should close them, but only
+    ///   because now we have a way to select the rest".
     enum CommitOutcome {
         /// The server acted. `periodEmpty`: nothing in the period is left
         /// waiting, so its banner goes too.
@@ -86,6 +94,13 @@ enum PeriodChecklist {
         case refused
     }
 
+    /// RULE NCL-5: RE-CHECK. Right before sending, the list is fetched again
+    ///   and only rows still waiting are sent; nothing left → the list reloads
+    ///   and the view stays open.
+    /// Why: a row handled elsewhere (considered on another device, a prompt
+    ///   from before midnight) must not refuse the batch or act twice.
+    /// Ruling: none recorded (the design session, 2026-11-21).
+    ///
     /// The marked rows, re-checked against the period as it is now, in ONE
     /// request. A row that left the period (considered elsewhere, a
     /// yesterday's prompt) is dropped rather than refusing the batch.

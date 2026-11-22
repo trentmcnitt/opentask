@@ -59,7 +59,13 @@ enum NagChecklist {
         }
     }
 
-    /// NCL-8: a row names its period while the rows span more than one.
+    /// RULE NCL-8: PERIOD NAMES. Rows from more than one period each end in a
+    ///   small grey period label ("· Morning"), grouped in period order; rows
+    ///   of one period carry none.
+    /// Why: a reminder left over from an earlier period should say so.
+    /// Ruling: Trent 2026-11-21: "It would need to list which period it's
+    ///   from in case there's something from early morning and from morning
+    ///   that I hadn't finished with."
     static func showsPeriodLabels(_ state: State) -> Bool {
         Set(state.rows.map(\.slot.id)).count > 1
     }
@@ -158,6 +164,7 @@ enum NagChecklist {
 
     /// The marked rows, re-checked against today's periods as they are now,
     /// in ONE request: the commit's `bulk/complete`, or the move.
+    /// (restates RULE NCL-5, home: ios/Shared/PeriodChecklist.swift)
     static func commit(
         _ intent: Intent, state: State, slots: [TimeSlotDTO], now: Date, day: OpenTaskDay, api: NagChecklistAPI
     ) async throws -> CommitOutcome {

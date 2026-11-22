@@ -44,7 +44,7 @@ final class NagChecklistTests: XCTestCase {
 
     private func titles(_ rows: [TaskNotificationList.Row]) -> [String] { rows.map(\.title) }
 
-    // MARK: - Rows
+    // MARK: - Rows (NCL-3 held first, NCL-8 period names)
 
     func testRowsAreTheOpenedPeriodsInDayOrderHeldFirstNeverAnytime() {
         let state = loaded(held: "r:20", at: today(13))
