@@ -130,9 +130,19 @@ targets:
     sources:
       - path: OpenTaskNotificationService
         excludes:
+          - '*.entitlements'
           - Info.plist
+      # The banner reconcile before each banner (2026-11-23, PushDelivery):
+      # the API client and BannerReconcile, and the App Group below for the
+      # stored credentials (KeychainHelper).
+      - path: Shared
     dependencies:
       - sdk: Intents.framework
+    entitlements:
+      path: OpenTaskNotificationService/OpenTaskNotificationService.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.io.mcnitt.opentask
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification-service

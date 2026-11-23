@@ -104,9 +104,16 @@ targets:
     sources:
     - path: OpenTaskNotificationService
       excludes:
+      - '*.entitlements'
       - Info.plist
+    - path: Shared
     dependencies:
     - sdk: Intents.framework
+    entitlements:
+      path: OpenTaskNotificationService/OpenTaskNotificationService.entitlements
+      properties:
+        com.apple.security.application-groups:
+        - group.io.mcnitt.opentask
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mcnitt.opentask.notification-service
