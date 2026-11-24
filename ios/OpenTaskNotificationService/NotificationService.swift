@@ -23,22 +23,44 @@ import UserNotifications
  * No `icon`, an unknown one, or any failure: the push is shown as sent —
  * today's look. The server only asks for this extension (`mutable-content`)
  * on the five kinds, so every other push never reaches it.
+ *
+ * AND IT CLEANS UP FIRST, on the iPhone (2026-11-23, `PushDelivery`): before
+ * its own banner shows, the delivered banners that no longer stand are
+ * removed (`reconcileDeliveredBanners`) — iOS rations the silent `dismiss`
+ * push, but always runs this extension for a visible one. Not on the Mac:
+ * its app is always running and gets every silent push, and this sandboxed
+ * extension has no access to the stored credentials there.
  */
 final class NotificationService: UNNotificationServiceExtension {
+    #if os(iOS)
+    private var delivery: PushDelivery<UNNotificationContent>?
+    #else
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var original: UNNotificationContent?
+    #endif
 
     override func didReceive(
         _ request: UNNotificationRequest,
         withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
     ) {
+        let content = NotificationKind.decorated(request.content) ?? request.content
+        #if os(iOS)
+        let delivery = PushDelivery(original: request.content, handler: contentHandler)
+        self.delivery = delivery
+        delivery.deliver(content) { await reconcileDeliveredBanners() }
+        #else
         self.contentHandler = contentHandler
         original = request.content
-        contentHandler(NotificationKind.decorated(request.content) ?? request.content)
+        contentHandler(content)
+        #endif
     }
 
     /// Out of time: the push as sent.
     override func serviceExtensionTimeWillExpire() {
+        #if os(iOS)
+        delivery?.expire()
+        #else
         if let contentHandler, let original { contentHandler(original) }
+        #endif
     }
 }

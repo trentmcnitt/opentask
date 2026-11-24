@@ -261,6 +261,7 @@ targets:
       - path: ../ios/OpenTaskNotificationService
         excludes:
           - Info.plist
+          - '*.entitlements'
     dependencies:
       - sdk: Intents.framework
     entitlements:
