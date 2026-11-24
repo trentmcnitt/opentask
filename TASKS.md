@@ -19,3 +19,15 @@ Backlog of improvements, bugs, and ideas. Not prioritized — just a place to ca
 - Consider whether this should be a warning (logged) or a hard rejection (400)
 
 **See also:** `src/core/validation/task.ts` (where rrule validation is invoked), `src/core/recurrence/rrule-builder.ts` (where `isValidRRule` lives)
+
+---
+
+## Parked
+
+Ideas captured on purpose and not to be worked on yet.
+
+### Ask AI about an item
+
+**Area:** Dashboard / Integrations (parked 2026-11-24)
+
+A button on a task row, and on a multi-select, that sends the item or items to the user's preferred AI command: an outside assistant the user already runs (for example a chat bot on Telegram), as an external check on the task. How the command is configured, and what is sent, are open.
