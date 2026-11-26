@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The notification checklist's one look (NCL-1, `NotificationChecklist`):
 /// the header with its count, the page of rows padded to the page size, the
-/// Show less / Show more links, the loading and failure lines, and the row
+/// pager (Previous · "2 of 3" · Next), the loading and failure lines, and the row
 /// fill. The overdue checklist and the period checklist draw their own rows
 /// inside it; everything around the rows is this.
 ///
@@ -81,11 +81,19 @@ struct ChecklistFrame<Item: ChecklistItem, RowView: View, SpacerRow: View>: View
         case .failed:
             statusLine(failedText, spinner: false)
         case .loaded:
-            if state.pageCount > 1 {
-                HStack {
-                    if state.showsLess { pageLink("Show less", action: onShowLess) }
-                    Spacer()
-                    if state.showsMore { pageLink("Show more", action: onShowMore) }
+            if let pageLabel = state.pageLabel {
+                // The page in the middle whichever links show: Previous and
+                // Next sit at the edges over it, not beside it.
+                ZStack {
+                    Text(pageLabel)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .accessibilityLabel("Page \(pageLabel)")
+                    HStack {
+                        if state.showsLess { pageLink(NotificationWords.previous, action: onShowLess) }
+                        Spacer()
+                        if state.showsMore { pageLink(NotificationWords.next, action: onShowMore) }
+                    }
                 }
             }
         }

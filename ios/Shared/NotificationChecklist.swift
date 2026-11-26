@@ -18,12 +18,14 @@ import Foundation
 /// and NCL-7 after a success in `PeriodChecklist`, NCL-8 period names in
 /// `NagChecklist`.
 enum NotificationChecklist {
-    /// RULE NCL-2: PAGES. At most `pageSize` (6) rows on a page; "Show less" at
-    ///   the left and "Show more" at the right under the list: the first page
-    ///   only Show more, the last only Show less, a middle page both, a single
-    ///   page neither; Show less goes back one page. Marks survive paging, and
-    ///   the header counts every page ("2 of 20 checked"). A page is padded to
-    ///   the page size with one-line spacers while there is more than one page.
+    /// RULE NCL-2: PAGES. At most `pageSize` (6) rows on a page. Under the list,
+    ///   "Previous" at the left, "Next" at the right and the page ("2 of 3")
+    ///   centred between them: the first page shows Next only, the last
+    ///   Previous only, a middle page both, a single page none of the three.
+    ///   Marks survive paging, and the header counts every page ("2 of 20
+    ///   checked"). A page is padded to the page size with one-line spacers
+    ///   while there is more than one page. (Trent, 2026-11-25: "Show more /
+    ///   Show less" was wrong for paging.)
     /// Why: the links stay put while paging; the phone scrolls the whole
     ///   expanded notification (measured 2026-11-21), so a page never clips.
     /// Ruling: Trent 2026-11-21: 6, "so we're not pushing it too far".
@@ -32,7 +34,7 @@ enum NotificationChecklist {
 
 /// What a row is marked with: the circle (a task or reminder selected, a
 /// prompt considered) or the square (a prompt done).
-enum ChecklistMark: Hashable {
+enum ChecklistMark: String, Hashable, Codable {
     case check
     case did
 }
@@ -64,6 +66,9 @@ struct ChecklistState<Item: ChecklistItem>: Equatable {
     private(set) var marks: [String: ChecklistMark]
     private(set) var page = 0
     private(set) var load: ChecklistLoad
+    /// A page restored from `ChecklistMemory`, taken (and clamped) when the
+    /// fetched list lands: before that only the payload's row is listed.
+    private var restoredPage: Int?
     /// The pushed item's key (NCL-3); nil for a push about a whole list.
     let heldKey: String?
 
@@ -92,7 +97,23 @@ struct ChecklistState<Item: ChecklistItem>: Equatable {
         let live = Set(rows.map(\.checklistKey))
         marks = marks.filter { live.contains($0.key) }
         load = .loaded
+        if let restoredPage {
+            page = restoredPage
+            self.restoredPage = nil
+        }
         page = min(page, max(pageCount - 1, 0))
+    }
+
+    /// Put back what `ChecklistMemory` kept for this notification: its marks
+    /// at once (any row the fetch no longer lists drops them), its page once
+    /// the list has landed.
+    mutating func restore(marks: [String: ChecklistMark], page: Int) {
+        self.marks = marks
+        if load == .loaded {
+            self.page = min(max(page, 0), max(pageCount - 1, 0))
+        } else {
+            restoredPage = max(page, 0)
+        }
     }
 
     mutating func fetchFailed() {
@@ -117,6 +138,9 @@ struct ChecklistState<Item: ChecklistItem>: Equatable {
     /// One-line spacers that pad this page to the page size (only while
     /// there is more than one page).
     var pageSpacers: Int { pageCount > 1 ? NotificationChecklist.pageSize - pageRows.count : 0 }
+
+    /// "2 of 3" between Previous and Next; nil on a single page.
+    var pageLabel: String? { pageCount > 1 ? NotificationWords.page(page + 1, of: pageCount) : nil }
 
     var showsLess: Bool { page > 0 }
     var showsMore: Bool { page < pageCount - 1 }
@@ -179,6 +203,10 @@ enum NotificationWords {
     /// The period push's whole-period button: every reminder considered for
     /// today, every waiting prompt considered (the app's "Consider all").
     static let considerAll = "Consider all"
+    /// The pager under the list (NCL-2, Trent 2026-11-25).
+    static let previous = "Previous"
+    static let next = "Next"
+    static func page(_ number: Int, of count: Int) -> String { "\(number) of \(count)" }
     /// RULE NCL-6: CANCEL. Always the last row. It closes the view and removes
     ///   that banner; nothing is sent.
     /// Why: a way out that also clears what was seen (as TNC-8).

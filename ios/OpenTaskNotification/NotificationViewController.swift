@@ -60,6 +60,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     private var checklistModel: PeriodChecklistModel?
     /// The checklist on a named reminder or quota-prompt push (`NagChecklist`).
     private var nagModel: NagChecklistModel?
+    /// The open notification's identifier: `ChecklistMemory`'s key.
+    private var memoryId: String?
 
     // MARK: - Lifecycle
 
@@ -103,6 +105,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         if hasReceivedInitialNotification { return }
         hasReceivedInitialNotification = true
 
+        memoryId = notification.request.identifier
         let userInfo = notification.request.content.userInfo
         let title = notification.request.content.title
         let categoryId = notification.request.content.categoryIdentifier
@@ -187,11 +190,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let expected = userInfo[SlotReminderKey.reminderCount] as? Int ?? 0
 
         let model = PeriodChecklistModel(slotLabel: label, expectedCount: expected)
-        model.onChange = { [weak self] in
+        model.onChange = { [weak self, weak model] in
             self?.setSlotActions()
             self?.updatePreferredContentSize()
+            if let state = model?.state { self?.rememberChecklist(marks: state.marks, page: state.page) }
         }
         checklistModel = model
+        if let kept = recallChecklist() { model.update { $0.restore(marks: kept.marks, page: kept.page) } }
 
         install(hosting: UIHostingController(rootView: PeriodChecklistView(model: model)))
         setSlotActions()
@@ -256,11 +261,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             key = ""
         }
         let model = NagChecklistModel(heldKey: key)
-        model.onChange = { [weak self] in
+        model.onChange = { [weak self, weak model] in
             self?.setNagActions()
             self?.updatePreferredContentSize()
+            if let state = model?.state { self?.rememberChecklist(marks: state.marks, page: state.page) }
         }
         nagModel = model
+        if let kept = recallChecklist() { model.update { $0.restore(marks: kept.marks, page: kept.page) } }
         install(hosting: UIHostingController(rootView: NagChecklistView(model: model)))
         setNagActions()
         Task { await reloadNagChecklist(model) }
@@ -308,6 +315,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 UNUserNotificationCenter.current().removeDeliveredNotifications(
                     withIdentifiers: [response.notification.request.identifier]
                 )
+                forgetChecklist()
                 completion(.dismiss)
                 return
             case NotificationAction.completeChecked:
@@ -325,6 +333,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 )
                 switch outcome {
                 case .sent(let reminderIds, let promptKeys, let removesOwnBanner):
+                    forgetChecklist()
                     _ = await removeDeliveredNotifications(forTaskIds: reminderIds, promptKeys: promptKeys)
                     if removesOwnBanner {
                         completion(.dismiss)
@@ -375,6 +384,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 UNUserNotificationCenter.current().removeDeliveredNotifications(
                     withIdentifiers: [response.notification.request.identifier]
                 )
+                forgetChecklist()
                 completion(.dismiss)
 
             case NotificationAction.completeChecked:
@@ -385,6 +395,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 do {
                     switch try await PeriodChecklist.commit(model.state, slotId: slotId, api: APIClient.shared) {
                     case .sent(let periodEmpty):
+                        forgetChecklist()
                         if periodEmpty {
                             completion(.dismiss)
                         } else {
@@ -415,6 +426,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 })
                 do {
                     let affected = try await APIClient.shared.completeSlotReminders(slotId: slotId, didKeys: didKeys)
+                    if affected > 0 { forgetChecklist() }
                     completion(affected > 0 ? .dismiss : .doNotDismiss)
                 } catch {
                     print("[OpenTask] Consider all error: \(error)")
@@ -429,6 +441,26 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 completion(.doNotDismiss)
             }
         }
+    }
+
+    // MARK: - Kept marks (ChecklistMemory, 2026-11-25)
+
+    /// The marks and page this notification's checklist had when it closed
+    /// earlier today, if any.
+    private func recallChecklist() -> ChecklistMemory.Entry? {
+        guard let memoryId else { return nil }
+        return ChecklistMemory.recall(memoryId, today: DayStartStore.current.openTaskDay(of: Date()))
+    }
+
+    private func rememberChecklist(marks: [String: ChecklistMark], page: Int) {
+        guard let memoryId else { return }
+        ChecklistMemory.remember(
+            memoryId, marks: marks, page: page, today: DayStartStore.current.openTaskDay(of: Date())
+        )
+    }
+
+    private func forgetChecklist() {
+        if let memoryId { ChecklistMemory.forget(memoryId) }
     }
 
     // MARK: - Size Management
@@ -513,11 +545,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
 
         let model = OverdueChecklistModel(state)
-        model.onChange = { [weak self] in
+        model.onChange = { [weak self, weak model] in
             self?.setChecklistActions()
             self?.updatePreferredContentSize()
+            if let state = model?.state { self?.rememberChecklist(marks: state.marks, page: state.page) }
         }
         overdueModel = model
+        if let kept = recallChecklist() { model.update { $0.restore(marks: kept.marks, page: kept.page) } }
 
         let onDirty: (Bool) -> Void = { [weak self] isDirty in
             if !isDirty {
@@ -602,6 +636,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 UNUserNotificationCenter.current().removeDeliveredNotifications(
                     withIdentifiers: [response.notification.request.identifier]
                 )
+                forgetChecklist()
                 completion(.dismiss)
 
             case .sweep:
@@ -616,6 +651,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                         api: APIClient.shared,
                         dismissAfterSweep: dismissNotificationsAfterSweep
                     )
+                    forgetChecklist()
                     completion(.dismiss)
                 } catch {
                     print("[OpenTask] Overdue checklist sweep error: \(error)")
@@ -638,6 +674,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         do {
             switch try await OverdueChecklist.commit(intent, state: model.state, api: APIClient.shared) {
             case .sent(_, let clearBanners, let removesOwnBanner):
+                forgetChecklist()
                 _ = await removeDeliveredNotifications(forTaskIds: clearBanners)
                 if removesOwnBanner {
                     completion(.dismiss)
