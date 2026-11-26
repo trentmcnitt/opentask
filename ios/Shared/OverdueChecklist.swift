@@ -20,8 +20,9 @@ import Foundation
 enum OverdueChecklist {
 
     /// RULE TNC-3: PAGES. Never more than 6 rows on a page: page 1 is the held
-    ///   task and 5 more, later pages up to 6. "Show less" (left) and "Show
-    ///   more" (right) under the list; checks survive paging, and the header
+    ///   task and 5 more, later pages up to 6. Under the list, NCL-2's pager:
+    ///   "Previous" (left), "Next" (right), "2 of 3" between them ("Show
+    ///   less" / "Show more" until 2026-11-25); checks survive paging, and the header
     ///   ("2 of 20 checked") and every "(N)" count all pages (the shared
     ///   checklist's paging, NCL-2).
     /// Why: a long overdue list must not make the expanded notification
@@ -106,6 +107,12 @@ enum OverdueChecklist {
         }
 
         mutating func fetchFailed() { list.fetchFailed() }
+
+        /// `ChecklistMemory`'s put-back (the shared state's).
+        mutating func restore(marks: [String: ChecklistMark], page: Int) {
+            list.restore(marks: marks, page: page)
+        }
+        var marks: [String: ChecklistMark] { list.marks }
 
         var pageCount: Int { list.pageCount }
         var pageRows: [Row] { list.pageRows }

@@ -72,6 +72,7 @@
 		2A1060F16DCD1A1E9F3F0405 /* ServerURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF69531FE48B319A9AD5A85 /* ServerURL.swift */; };
 		2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		2ACFFF7B3CB81D12BFC9AC0D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48B4A75163FF407F49D160B /* KeychainHelper.swift */; };
+		2B8835AF388A121E500F116E /* ChecklistMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C6271D90C09507F0413D7A /* ChecklistMemory.swift */; };
 		2C173F16D5A8C3A6D024E50A /* PromptDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117EFA0D78F7DF59E8BA7A75 /* PromptDeepLink.swift */; };
 		2CB01EC9E23BF96101F784AC /* bulk-snooze.json in Resources */ = {isa = PBXBuildFile; fileRef = 84C0FFA97E95DE58317EDCC4 /* bulk-snooze.json */; };
 		2CF9AE9A7711630A1DA64EB2 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
@@ -205,6 +206,7 @@
 		8572FB55A8FC3CE966EEF5F1 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AD825E02510A2E981723EE /* DeepLinkRouter.swift */; };
 		859499321A21C46AB2727916 /* WidgetPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD4DE4578099F2522D9420F /* WidgetPushHandler.swift */; };
 		86647EEAE73EFBFE2EB0D2FF /* SessionBootstrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E47A32082E1BBBC28851915 /* SessionBootstrapper.swift */; };
+		86AFF6281641C7D848D3B3AF /* ChecklistMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16E4528468A306D117FB4263 /* ChecklistMemoryTests.swift */; };
 		877A43596F9549A5925748FB /* ReminderDayProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BE26DEC5BFD175EB325C40 /* ReminderDayProgress.swift */; };
 		89277737F8985E83203CF74D /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D351611FEE1FDCC48702D /* SampleData.swift */; };
 		89AD80C13AA009D51F316140 /* NotificationConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 606B27B10869F5EC627043D9 /* NotificationConstants.swift */; };
@@ -215,6 +217,7 @@
 		8ECFAF141CBE9756932134B5 /* NagChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258FE9E5A2273AB4B1F40284 /* NagChecklist.swift */; };
 		8ED2D6DEE51E11BFC2F3CA4B /* reminders-open-window.json in Resources */ = {isa = PBXBuildFile; fileRef = 6E173229D95F5B2AD900DF65 /* reminders-open-window.json */; };
 		8F29A23E9522301BD81E07E3 /* PeriodChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56D91159116C2429EB173398 /* PeriodChecklist.swift */; };
+		8F546F92EB41384F7EDA737E /* ChecklistMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C6271D90C09507F0413D7A /* ChecklistMemory.swift */; };
 		9068C2E58CE2C69E562698A3 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */; };
 		909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C605F50E331B33C23631EE81 /* DateHelpers.swift */; };
 		92C4BEE80620D8082FFF06FE /* TaskLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E710EC06D677571B16557AD /* TaskLists.swift */; };
@@ -232,6 +235,7 @@
 		9CB7D17CF6958D8BFC5BFF04 /* PushDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81695FE5F19C88583B1885DB /* PushDelivery.swift */; };
 		A075A5F40D6F4464C5F82F1D /* reminders-deadlines-plain.json in Resources */ = {isa = PBXBuildFile; fileRef = 9AA687139A144097D74861DE /* reminders-deadlines-plain.json */; };
 		A12F9EEBDB5AA28D5E654192 /* QuotaCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77660CA27D2B28508DE93F7A /* QuotaCount.swift */; };
+		A150BD991A8142FE5719BFD7 /* ChecklistMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C6271D90C09507F0413D7A /* ChecklistMemory.swift */; };
 		A2128E6CAB247BBB42C2BB69 /* SegmentWidths.swift in Sources */ = {isa = PBXBuildFile; fileRef = B834F701D7E0835FD6951CF5 /* SegmentWidths.swift */; };
 		A30053A8CFB6802E1E62EF98 /* PadPresetStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A71580BA2CE66A23CB65D2B /* PadPresetStoreTests.swift */; };
 		A3008694EA34DADE18F5746B /* LeanRowViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9EFFC82FBF5D07E1FEDD58 /* LeanRowViews.swift */; };
@@ -310,6 +314,7 @@
 		CEEE5229AF4CE09198D208AF /* PushDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81695FE5F19C88583B1885DB /* PushDelivery.swift */; };
 		CF495A060AC7DF9AEEF49093 /* OpenTaskWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45F5B5DF3FABB2CE2A080CC /* OpenTaskWidgetBundle.swift */; };
 		CFD511F99123F9566F341262 /* QuotaPeriodBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E8557A45EA6669C5FDB4B7 /* QuotaPeriodBounds.swift */; };
+		D0413574C2D63D010BC04C6A /* ChecklistMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C6271D90C09507F0413D7A /* ChecklistMemory.swift */; };
 		D09FE2DF9244C2099B0FA227 /* TaskFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C87419D6853F3A661B2252 /* TaskFeed.swift */; };
 		D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFE9ACA003A54F3EE5B248E5 /* ContentView.swift */; };
 		D450828901011E592F78C056 /* PageAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48C1737B0497AEDC038E7868 /* PageAnchor.swift */; };
@@ -433,6 +438,7 @@
 		15B287B429DD24241776457A /* reminders-native.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "reminders-native.json"; sourceTree = "<group>"; };
 		15F267EFD3BA9EEB8B99D504 /* ProgressSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressSourceTests.swift; sourceTree = "<group>"; };
 		16B02ED85AD6D71F5E9BEFF2 /* TasksWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksWidget.swift; sourceTree = "<group>"; };
+		16E4528468A306D117FB4263 /* ChecklistMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistMemoryTests.swift; sourceTree = "<group>"; };
 		17FA87993976FFAE51C4EAD9 /* reminder.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = reminder.png; sourceTree = "<group>"; };
 		181DCFC8BA0B8166D0C8DDB8 /* NotificationChecklist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationChecklist.swift; sourceTree = "<group>"; };
 		199FD759557102796327A78F /* UndoScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoScope.swift; sourceTree = "<group>"; };
@@ -557,6 +563,7 @@
 		A57DBC0049034F78F14766C1 /* SegmentWidthsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWidthsTests.swift; sourceTree = "<group>"; };
 		A59865DC432492CC09224C71 /* PushDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushDeliveryTests.swift; sourceTree = "<group>"; };
 		A69BD86B26AFE8B5943729CD /* RemindersWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersWidgetViews.swift; sourceTree = "<group>"; };
+		A6C6271D90C09507F0413D7A /* ChecklistMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecklistMemory.swift; sourceTree = "<group>"; };
 		A78C64FF75ACBAAD8C4818F1 /* notification-action-considered.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "notification-action-considered.json"; sourceTree = "<group>"; };
 		ACEF2491B3B8C5BB19401933 /* PendingLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingLockTests.swift; sourceTree = "<group>"; };
 		AF57B9644ABAED7C457D6ABC /* TaskSnoozePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSnoozePlanTests.swift; sourceTree = "<group>"; };
@@ -701,6 +708,7 @@
 				456B0402D3211FEEE9D56F67 /* APIClient.swift */,
 				243ACE5E093C995C1146BDA5 /* ApsEnvironment.swift */,
 				2DDCD788548886AD96EDA5D8 /* BannerReconcile.swift */,
+				A6C6271D90C09507F0413D7A /* ChecklistMemory.swift */,
 				C605F50E331B33C23631EE81 /* DateHelpers.swift */,
 				3E976BDF1943E2A6E03E1BAC /* DayStartStore.swift */,
 				26AD825E02510A2E981723EE /* DeepLinkRouter.swift */,
@@ -804,6 +812,7 @@
 			children = (
 				8D8A1972A4197E30FDE92D8D /* ApsEnvironmentTests.swift */,
 				E2E35956F18F05543B47DAB6 /* BannerReconcileTests.swift */,
+				16E4528468A306D117FB4263 /* ChecklistMemoryTests.swift */,
 				4558F59EAB6CFD3564EBF789 /* ContractDecodeTests.swift */,
 				12CA12A04B151CFF15398C18 /* DayStartStoreTests.swift */,
 				2BFC62E0F89CD20210B0D6D0 /* DayStartSurfacesTests.swift */,
@@ -1229,6 +1238,7 @@
 				BD4DBE20DC068A1E10334D0F /* AppConfig.swift in Sources */,
 				28474208C6B76704F2916092 /* ApsEnvironment.swift in Sources */,
 				B3DB40CBDF1766FF97790846 /* BannerReconcile.swift in Sources */,
+				2B8835AF388A121E500F116E /* ChecklistMemory.swift in Sources */,
 				5C5D2DC3DFC8320A56B7E201 /* ContentView.swift in Sources */,
 				46CD72C3DB9ACAA0FA4228A1 /* DateHelpers.swift in Sources */,
 				4D6581981B52544AE311F240 /* DayStartStore.swift in Sources */,
@@ -1318,6 +1328,7 @@
 				4D1CD89019963DFB2B9B3782 /* AppConfig.swift in Sources */,
 				C32613CD16537759B94E8923 /* ApsEnvironment.swift in Sources */,
 				28A130D7D7F01FEAB306E1E6 /* BannerReconcile.swift in Sources */,
+				D0413574C2D63D010BC04C6A /* ChecklistMemory.swift in Sources */,
 				D190CB7C79D9B2F2747875A9 /* ContentView.swift in Sources */,
 				DFF4E35F79E5BF521DE26A33 /* DateHelpers.swift in Sources */,
 				5DE54EDC36485E64DEACF85E /* DayStartStore.swift in Sources */,
@@ -1397,6 +1408,8 @@
 				5F6F249B5F70259FA9A01A58 /* ApsEnvironmentTests.swift in Sources */,
 				79F6FEAA3FF170C8D30F882F /* BannerReconcile.swift in Sources */,
 				E6F731EDFBEEBBFEC987A44C /* BannerReconcileTests.swift in Sources */,
+				A150BD991A8142FE5719BFD7 /* ChecklistMemory.swift in Sources */,
+				86AFF6281641C7D848D3B3AF /* ChecklistMemoryTests.swift in Sources */,
 				2F05AABCFFE75A4507E1FC36 /* ContractDecodeTests.swift in Sources */,
 				909163FB70D4F177D28E68BA /* DateHelpers.swift in Sources */,
 				E69526176D4B469274A11414 /* DayStartStore.swift in Sources */,
@@ -1504,6 +1517,7 @@
 				21209A9C1D48956AA56CCA9B /* APIClient.swift in Sources */,
 				D5E5DBDF3011374CF3EA036F /* ApsEnvironment.swift in Sources */,
 				35C6110062B74EE1211CA251 /* BannerReconcile.swift in Sources */,
+				8F546F92EB41384F7EDA737E /* ChecklistMemory.swift in Sources */,
 				2A8EA7DBADE9DF2C965DAD63 /* DateHelpers.swift in Sources */,
 				D52800982EC66DCDA572D8B2 /* DayStartStore.swift in Sources */,
 				FA7BA42783C7FA87612704DB /* DeepLinkRouter.swift in Sources */,
