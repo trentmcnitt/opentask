@@ -555,7 +555,7 @@ function PanelRowList({
   renderPrompt: (prompt: QuotaPrompt, extra: { hiddenWhenNarrow?: boolean }) => React.ReactNode
   /** The slot on screen — where its reminders are today (a moved one included). */
   slot: TimeSlot | null
-  /** A bubble's Later today chip (`useReminders().moveForToday`). */
+  /** A bubble's Today chip (`useReminders().moveForToday`). */
   onMoveForToday: (reminder: Task, to: TimeSlot) => void
   timeSlots: TimeSlot[]
   timezone: string
@@ -656,7 +656,7 @@ function PanelRow({
   onDelete: (reminder: Task) => void
   /** The bubble's title or note, edited in place. */
   onEditText: (reminder: Task, changes: PeekTextChanges) => Promise<unknown>
-  /** The period the row is in today, and the bubble's Later today chips. */
+  /** The period the row is in today, and the bubble's Today chips. */
   slot: TimeSlot | null
   onMove: (reminder: Task, to: TimeSlot) => void
   timeSlots: TimeSlot[]

@@ -162,7 +162,7 @@ export interface UseRemindersReturn {
   /**
    * The one-day move (2026-11-21): reminders and quota prompts waiting today
    * to a LATER period, for today only (`POST /api/reminders/move`, one undo
-   * entry). The caller offers only `laterPeriodsToday`'s periods
+   * entry). The caller offers only `movePeriodsToday`'s periods
    * (`src/lib/reminder-move.ts`); see `useMoveForToday`.
    */
   moveForToday: (tasks: Task[], prompts: QuotaPrompt[], to: TimeSlot) => Promise<void>

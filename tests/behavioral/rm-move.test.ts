@@ -149,21 +149,32 @@ describe('RM-MV-02 one undo entry; undo puts it home, redo moves it again (RM-MO
   })
 })
 
-describe('RM-MV-03 only to a later period that opens after now (RM-MOVE-TARGET)', () => {
+describe('RM-MV-03 to any other period of today, earlier or later, open or not (RM-MOVE-TARGET)', () => {
   const refused = (fn: () => unknown) => expect(fn).toThrow(ValidationError)
 
-  test('a period already open is refused, even a later one', () => {
-    const r = reminder()
+  test('a period already open is accepted, earlier and later (Trent, 2026-11-27)', () => {
+    const r = reminder() // Morning
     vi.setSystemTime(at(13))
-    refused(() => move([r.id], 'Midday'))
-    expect(move([r.id], 'Afternoon').moved).toEqual([r.id])
+    expect(move([r.id], 'Midday').moved).toEqual([r.id]) // later, already open
+    expect(periodOf(r.id, at(13))).toBe('Midday')
+    expect(move([r.id], 'Early morning').moved).toEqual([r.id]) // earlier than its home
+    expect(periodOf(r.id, at(13))).toBe('Early morning')
   })
 
-  test('a period not later than its own is refused', () => {
+  test('a period earlier than its own, not yet reached, is accepted', () => {
+    const r = reminder(0, 17, 0) // Afternoon
+    vi.setSystemTime(at(8))
+    expect(move([r.id], 'Morning').moved).toEqual([r.id])
+    expect(periodOf(r.id, at(8))).toBe('Morning')
+  })
+
+  test('its own period (a moved one: the period it moved to) is refused', () => {
     const r = reminder(0, 12, 30) // Midday
     vi.setSystemTime(at(8))
-    refused(() => move([r.id], 'Morning'))
     refused(() => move([r.id], 'Midday'))
+    move([r.id], 'Evening')
+    refused(() => move([r.id], 'Evening'))
+    expect(move([r.id], 'Midday').moved).toEqual([r.id]) // back to its home is a move
   })
 
   test('not waiting today: considered, Anytime, another user’s id, an unknown period', () => {
@@ -188,9 +199,9 @@ describe('RM-MV-03 only to a later period that opens after now (RM-MOVE-TARGET)'
 
   test('nothing is written when any item is refused', () => {
     const ok = reminder()
-    const later = reminder(0, 17, 0) // Afternoon
+    const already = reminder(0, 17, 0) // Afternoon
     vi.setSystemTime(at(10))
-    refused(() => move([ok.id, later.id], 'Afternoon'))
+    refused(() => move([ok.id, already.id], 'Afternoon'))
     expect(periodOf(ok.id, at(10))).toBe('Morning')
   })
 })
@@ -251,5 +262,40 @@ describe('RM-MV-05 a quota prompt moves for today the same way', () => {
     expect(dismissPromptNotifications).toHaveBeenCalledWith(TEST_USER_ID, [before.key])
     executeUndo(TEST_USER_ID)
     expect(where()!.slot).toBe('Morning')
+  })
+})
+
+describe('RM-MV-06 moved into an open period, the named push starts at once (RM-MOVE-NAG)', () => {
+  const tick = (now: Date) =>
+    planTick([REMINDER_NAG_SOURCE], now, { apns: true, webPush: true }).sends.length > 0
+
+  test('pushed at Midday; moved back to Morning at 13:10, pushed at the next tick, then on its cadence', () => {
+    const r = reminder(2, 12, 30) // Medium, Midday
+    expect(tick(at(12))).toBe(true)
+    vi.setSystemTime(at(13, 10))
+    expect(pendingReminderNags(at(13, 10))).toEqual([]) // its cadence has not come round
+    move([r.id], 'Morning')
+    expect(pendingReminderNags(at(13, 11))).toMatchObject([{ taskId: r.id, slotLabel: 'Morning' }])
+    expect(tick(at(13, 11))).toBe(true)
+    expect(pendingReminderNags(at(13, 12))).toEqual([]) // then its cadence again
+  })
+
+  test('undo puts the old floor back: no stray push', () => {
+    const r = reminder(2, 12, 30)
+    expect(tick(at(12))).toBe(true)
+    vi.setSystemTime(at(13, 10))
+    move([r.id], 'Morning')
+    executeUndo(TEST_USER_ID)
+    expect(periodOf(r.id, at(13, 11))).toBe('Midday')
+    expect(pendingReminderNags(at(13, 11))).toEqual([])
+  })
+
+  test('moved into a period still ahead, the period’s open is the floor, as before', () => {
+    const r = reminder(2) // Morning
+    expect(tick(at(9))).toBe(true)
+    vi.setSystemTime(at(10))
+    move([r.id], 'Afternoon')
+    expect(pendingReminderNags(at(10, 1))).toEqual([])
+    expect(pendingReminderNags(at(16))).toMatchObject([{ taskId: r.id, slotLabel: 'Afternoon' }])
   })
 })

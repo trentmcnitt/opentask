@@ -2,9 +2,9 @@
  * POST /api/reminders/move — the one-day move (2026-11-21).
  *
  * Moves reminders (`ids`) and/or quota prompts (`prompt_keys`) waiting today
- * to a later period (`slot_id`) for today only; tomorrow they are home again.
- * One undo entry (`undo_id`). 400 when an item isn't waiting today or the
- * period isn't one that opens later today than the item's own (RULE
+ * to another period of today (`slot_id`, earlier or later) for today only;
+ * tomorrow they are home again. One undo entry (`undo_id`). 400 when an item
+ * isn't waiting today, is in Anytime or is already in that period (RULE
  * RM-MOVE-TARGET, src/core/tasks/reminder-move.ts).
  */
 

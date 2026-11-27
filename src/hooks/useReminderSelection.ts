@@ -76,8 +76,8 @@ export function useRenderedSelection({
 
 /**
  * The period each selected row is in today (a moved one's new period; null =
- * Anytime), reminders then prompts — what Later today's periods are worked
- * out from (`laterPeriodsForAll`, the one-day move). Read from `groups`, as
+ * Anytime), reminders then prompts — what Today's periods are worked
+ * out from (`movePeriodsForAll`, the one-day move). Read from `groups`, as
  * the rows themselves don't carry it.
  */
 export function useSelectedPeriods(

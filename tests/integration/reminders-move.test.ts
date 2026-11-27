@@ -1,7 +1,7 @@
 /**
  * POST /api/reminders/move — the one-day move over HTTP (2026-11-21; rules
  * RM-MOVE-*, src/core/tasks/reminder-move.ts). The server's clock is pinned to
- * a morning (`/api/test/clock`) so "a later period" is deterministic; the
+ * a morning (`/api/test/clock`) so which periods are open is deterministic; the
  * default periods: Early morning 07:00, Morning 09:00, Midday 12:00,
  * Afternoon 16:00, Evening 20:30. User A is in America/Chicago.
  */
@@ -80,15 +80,24 @@ describe('POST /api/reminders/move', () => {
     expect(await periodOf(id)).toBe('Morning')
   })
 
-  test('refuses a period already open, one not later, an unknown one, and an empty body', async () => {
+  test('refuses its own period, an unknown one, and an empty body', async () => {
     const id = await reminderAt(9, 45)
     const status = async (body: unknown) =>
       (await apiFetch('/api/reminders/move', { method: 'POST', body })).status
     expect(await status({ ids: [id], slot_id: slotId('Morning') })).toBe(400)
-    expect(await status({ ids: [id], slot_id: slotId('Early morning') })).toBe(400)
     expect(await status({ ids: [id], slot_id: 999_999 })).toBe(400)
     expect(await status({ slot_id: slotId('Evening') })).toBe(400)
     expect(await status({ ids: [id] })).toBe(400)
     expect(await periodOf(id)).toBe('Morning')
+  })
+
+  test('moves EARLIER, into a period already open (2026-11-27)', async () => {
+    const id = await reminderAt(9, 50)
+    const res = await apiFetch('/api/reminders/move', {
+      method: 'POST',
+      body: { ids: [id], slot_id: slotId('Early morning') },
+    })
+    expect(res.status).toBe(200)
+    expect(await periodOf(id)).toBe('Early morning')
   })
 })

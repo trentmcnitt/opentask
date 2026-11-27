@@ -143,6 +143,8 @@ export interface PendingPromptNag {
   label: string
   /** The slot nag's rung for its quota's priority (minutes). */
   intervalMinutes: number
+  /** A moved prompt's pacing floor (RULE RM-MOVE-NAG); absent when not moved. */
+  floor?: Date
   /** The user's zone, whose clock marks the repeats land on. */
   timezone: string
 }
@@ -233,6 +235,26 @@ function stampsFor(userId: number, date: string): Map<string, string> {
  * considered keys, the stamps — never the count, so a superset of the real
  * test in `pendingPromptNags`.
  */
+/** A standing prompt's pacing floor: its move's time, if it moved today into its open period. */
+function promptFloor(
+  opened: Date | undefined,
+  candidate: NamedPromptCandidate | undefined,
+  key: string,
+  date: string,
+): Date | undefined {
+  if (!opened || !candidate) return undefined
+  const day = dayStateFor(parseJsonColumn<QuotaDayState>(candidate.quota_day_state), date)
+  return movedFloor(opened, day.moved_at?.[key])
+}
+
+/** The pacing floor of a prompt moved at `movedAt` into a period opened at `opened` (RULE RM-MOVE-NAG, reminder-nags.ts). */
+function movedFloor(opened: Date, movedAt: string | undefined): Date | undefined {
+  if (!movedAt) return undefined
+  const at = new Date(movedAt)
+  if (Number.isNaN(at.getTime())) return undefined
+  return at > opened ? at : opened
+}
+
 function mayBeDue(
   candidates: NamedPromptCandidate[],
   ctx: {
@@ -258,16 +280,16 @@ function mayBeDue(
     if (!isTracked(task) || !promptEnabled(task)) continue
     const interval = nagIntervalMinutes('slot_nag', c.priority, ctx.tiers)
     if (interval <= 0) continue
-    const considered = dayStateFor(
-      parseJsonColumn<QuotaDayState>(c.quota_day_state),
-      ctx.date,
-    ).considered
+    const day = dayStateFor(parseJsonColumn<QuotaDayState>(c.quota_day_state), ctx.date)
     for (const row of promptPlacements(task, slots, settings.defaultSlotId)) {
-      const slot = slots[row.slotIndex]
-      if (!slot || !ctx.opened.has(slot.id)) continue
       const key = promptKey(c.id, row.number, ctx.date)
-      if (considered.includes(key)) continue
-      if (dueAfter(stamps.get(key) ?? null, interval, ctx.now, ctx.timezone)) return true
+      if (day.considered.includes(key)) continue
+      // Where it is today: a move's period (RM-MOVE-STORE), else its own.
+      const slotId = day.moved[key] ?? slots[row.slotIndex]?.id
+      const opened = slotId === undefined ? undefined : ctx.opened.get(slotId)
+      if (!opened) continue
+      const floor = movedFloor(opened, day.moved_at?.[key])
+      if (dueAfter(stamps.get(key) ?? null, interval, ctx.now, ctx.timezone, floor)) return true
     }
   }
   return false
@@ -339,7 +361,9 @@ export function pendingPromptNags(
       const priority = p.priority ?? 0
       const interval = nagIntervalMinutes('slot_nag', priority, tiers)
       if (interval <= 0 || p.slot_id === null) continue
-      if (!dueAfter(stamps.get(p.prompt_key) ?? null, interval, now, user.timezone)) continue
+      // A moved prompt's floor is its move (RULE RM-MOVE-NAG): first push now.
+      const floor = promptFloor(periods.opened.get(p.slot_id), candidate, p.prompt_key, date)
+      if (!dueAfter(stamps.get(p.prompt_key) ?? null, interval, now, user.timezone, floor)) continue
       pending.push({
         userId: user.id,
         taskId: p.task_id,
@@ -354,6 +378,7 @@ export function pendingPromptNags(
         ),
         intervalMinutes: interval,
         timezone: user.timezone,
+        floor,
       })
     }
   }
@@ -433,6 +458,7 @@ export function planPromptNagSends(now: Date, channels: Channels): SourcePlan {
           nag.intervalMinutes,
           now,
           nag.timezone,
+          nag.floor,
         )
         if (won) {
           log.info(

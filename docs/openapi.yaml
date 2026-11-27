@@ -2386,18 +2386,19 @@ paths:
                       considered: { type: integer }
   /api/reminders/move:
     post:
-      summary: Move reminders or quota prompts to a later period, for today only
+      summary: Move reminders or quota prompts to another period, for today only
       operationId: remindersMove
       tags: [Reminders]
       description: >
-        The one-day move (2026-11-21). Reminders (`ids`) and/or quota prompts (`prompt_keys`) waiting
-        today move to `slot_id`, a period that opens later today than each item's own and after now;
-        tomorrow they are in their home periods again (a reminder's `day_move`, a prompt's
-        `quota_day_state.moved`, both for one OpenTask date). A move is not a snooze: no target,
-        schedule or occurrence changes. Every surface that groups reminders by period shows them in
-        the new one, and a named push starts fresh at that period's open. One undo entry. 400 when
-        an item is not waiting today, the period is not the caller's, has already opened, or is not
-        later than an item's own; nothing is written then.
+        The one-day move (2026-11-21; earlier periods too since 2026-11-27). Reminders (`ids`)
+        and/or quota prompts (`prompt_keys`) waiting today move to `slot_id`, any period of today
+        other than each item's own, earlier or later, open or not; tomorrow they are in their home
+        periods again (a reminder's `day_move`, a prompt's `quota_day_state.moved`, both for one
+        OpenTask date). A move is not a snooze: no target, schedule or occurrence changes. Every
+        surface that groups reminders by period shows them in the new one. A named push starts at
+        that period's open, or at once when it has already opened (the move is its pacing floor).
+        One undo entry. 400 when an item is not waiting today or is in Anytime, the period is not
+        the caller's, or an item is already in it; nothing is written then.
       parameters:
         - $ref: '#/components/parameters/ClientHeader'
       requestBody:
@@ -6673,12 +6674,16 @@ components:
           type: [object, 'null']
           readOnly: true
           description: >
-            A reminder moved to a later period for one OpenTask day
+            A reminder moved to another period for one OpenTask day
             (`POST /api/reminders/move`, 2026-11-21). On any other date it means
             nothing: the reminder is in its home period.
           properties:
             date: { type: string, example: '2026-11-21' }
             slot_id: { type: integer }
+            at:
+              type: string
+              format: date-time
+              description: When the move was made; the named push's pacing floor. Absent on older moves.
         quota_day_state:
           type: [object, 'null']
           readOnly: true
@@ -6704,7 +6709,13 @@ components:
               type: object
               additionalProperties:
                 type: integer
-              description: Prompt keys moved to a later period today (prompt_key → slot id).
+              description: Prompt keys moved to another period today (prompt_key → slot id).
+            moved_at:
+              type: object
+              additionalProperties:
+                type: string
+                format: date-time
+              description: When each prompt was moved today (prompt_key → time); its named push's pacing floor.
             did_applied:
               type: object
               additionalProperties:

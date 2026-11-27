@@ -381,6 +381,7 @@ describe('A −1 after a did-it brings the prompt back waiting', () => {
       considered: [key],
       did_applied: { [key]: 1 },
       moved: {},
+      moved_at: {},
     }
     expect(withLogged(state, TODAY, -1, 0)).toEqual({
       date: TODAY,
@@ -389,6 +390,7 @@ describe('A −1 after a did-it brings the prompt back waiting', () => {
       considered: [],
       did_applied: {},
       moved: {},
+      moved_at: {},
     })
     expect(withLogged(state, TODAY, 1, 2)).toEqual({ ...state, logged: 2 })
   })

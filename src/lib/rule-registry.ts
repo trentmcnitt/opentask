@@ -1063,7 +1063,18 @@ export const RULE_REGISTRY = {
   'RM-MOVE-TARGET': {
     home: 'src/core/tasks/reminder-move.ts',
     symbol: 'function opensAt',
-    pins: ['tests/behavioral/rm-move.test.ts#RM-MV-03'],
+    pins: [
+      'tests/behavioral/rm-move.test.ts#RM-MV-03',
+      'tests/behavioral/rm-move-later.test.ts#RM-ML-01',
+    ],
+  },
+  'RM-MOVE-NAG': {
+    home: 'src/core/notifications/reminder-nags.ts',
+    symbol: 'export function moveFloor',
+    pins: [
+      'tests/behavioral/rm-move.test.ts#RM-MV-06',
+      'tests/behavioral/qn-prompt-pushes.test.ts#QN-P-MOVE',
+    ],
   },
   'RM-MOVE-COMMIT': {
     home: 'src/core/tasks/reminder-move.ts',

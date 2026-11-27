@@ -71,7 +71,8 @@
           "did": [],
           "considered": [],
           "did_applied": {},
-          "moved": {}
+          "moved": {},
+          "moved_at": {}
         },
         "day_move": null,
         "completion_count": 0,
