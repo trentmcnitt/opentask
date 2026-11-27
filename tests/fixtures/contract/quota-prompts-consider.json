@@ -72,7 +72,8 @@
           "did": [],
           "considered": ["q:132:0:2026-01-15"],
           "did_applied": {},
-          "moved": {}
+          "moved": {},
+          "moved_at": {}
         },
         "day_move": null,
         "completion_count": 0,

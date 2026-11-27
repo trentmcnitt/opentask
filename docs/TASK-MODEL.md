@@ -885,12 +885,12 @@ Each is one transaction and one undo entry (`quota_prompt`, or the `bulk_done` e
 
 ## The one-day move
 
-A reminder, or a quota prompt, waiting today can be moved to a **later period for today only** (2026-11-21; Trent: a Medium reminder nagged all morning when it couldn't be done yet, and "Considered" was the only answer). `POST /api/reminders/move { ids, prompt_keys, slot_id }`; one undo entry.
+A reminder, or a quota prompt, waiting today can be moved to **another period for today only** (2026-11-21, later periods only; earlier ones too since 2026-11-27, Trent: "this should allow moving reminders earlier as well"; Trent: a Medium reminder nagged all morning when it couldn't be done yet, and "Considered" was the only answer). `POST /api/reminders/move { ids, prompt_keys, slot_id }`; one undo entry.
 
-- **Stored for one OpenTask date** (RULE RM-MOVE-STORE): a reminder's `day_move` `{date, slot_id}`, a prompt's `quota_day_state.moved[prompt_key]`. Any other date reads as no move, so tomorrow the item is in its home period with nothing to clear. No target, schedule or occurrence changes: a move between periods is not a snooze (RULE TGT-REMINDER-NO-SNOOZE keeps refusing snoozes).
+- **Stored for one OpenTask date** (RULE RM-MOVE-STORE): a reminder's `day_move` `{date, slot_id, at}`, a prompt's `quota_day_state.moved[prompt_key]` (and `moved_at[prompt_key]`, the move's time). Any other date reads as no move, so tomorrow the item is in its home period with nothing to clear. No target, schedule or occurrence changes: a move between periods is not a snooze (RULE TGT-REMINDER-NO-SNOOZE keeps refusing snoozes).
 - **Placed by one rule** (RULE RM-MOVE-PLACE): `assignSlot` takes the day, so the Reminders roster (`GET /api/reminders`, the web, widgets and watch), the considered lists, the period push and nag, and the named nag all see the item in its new period. A move into a period deleted since falls back home.
-- **Only later** (RULE RM-MOVE-TARGET): to a period that opens after now and later than the item's own; never to Anytime or an open period. Anything refused refuses the whole request, and nothing is written.
-- **Nags**: the named push starts fresh at the new period's open (RULE NAMED-PUSH-TIMING); the move dismisses the moved items' banners (RULE RM-MOVE-COMMIT).
+- **Any other period** (RULE RM-MOVE-TARGET): any period of today but the item's own, earlier or later, open or not; never from or to Anytime. Anything refused refuses the whole request, and nothing is written. The web offers it as "Today:" in the dashboard bubble and "Today" in the /reminders select bar, periods in day order, the current one left out; the notification checklist's "→ <next period>" row stays the one-tap default.
+- **Nags**: moved into a period that has opened, the item is waiting there now, and a Medium+ named push starts at once: its pacing floor is the move (RULE RM-MOVE-NAG), so the next minute's tick sends it, then its cadence. Into a period still ahead, the push starts at that period's open (RULE NAMED-PUSH-TIMING). The move dismisses the moved items' banners (RULE RM-MOVE-COMMIT).
 
 ## Overdue
 

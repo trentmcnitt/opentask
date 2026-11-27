@@ -58,11 +58,15 @@ export interface MoveForTodayResult {
 }
 
 /**
- * RULE RM-MOVE-TARGET: A one-day move goes only to a period that opens LATER today — after now,
- *   within the OpenTask day — and later than the item's own period; never to Anytime, never
- *   to a period already open. Every item must be waiting today in a period (not Anytime).
- * Why: A move means "not now, later"; into an open period it would only nag again at once.
- * Ruling: Trent 2026-11-21 (via the design session): later periods only.
+ * RULE RM-MOVE-TARGET: A one-day move goes to any period of today other than the item's own
+ *   (a moved item's own is the one it was moved to): earlier or later, open or not; never to
+ *   Anytime. Every item must be waiting today in a period (not Anytime). Moved into a period
+ *   that has opened, the item waits there now: it is in that period's list at once, and a
+ *   Medium+ named push starts at once (its pacing floor is the move, RULE RM-MOVE-NAG).
+ * Why: "Not now" and "I meant to do this earlier" are both a move; a move into an open period
+ *   is a deliberate "now", so it nags now.
+ * Ruling: Trent 2026-11-27 (via the design session): "this should allow moving reminders
+ *   earlier as well", overruling the 2026-11-21 later-only rule.
  */
 function opensAt(slot: TimeSlot, date: string, timezone: string, dayStart: string): Date | null {
   if (parseHHMM(slot.start_time) === null) return null
@@ -88,25 +92,12 @@ export function moveForToday(input: MoveForTodayInput): MoveForTodayResult {
   const slots = listTimeSlots(userId)
   const target = slots.find((s) => s.id === slotId)
   if (!target) throw new ValidationError('No such period')
-  const targetOpens = opensAt(target, date, timezone, dayStart)
-  if (!targetOpens || targetOpens.getTime() <= now.getTime()) {
-    throw new ValidationError(`${target.label} has already started; pick a later period`)
-  }
+  if (!opensAt(target, date, timezone, dayStart)) throw new ValidationError('No such period')
 
-  const { promptSlot } = assertMovable({
-    userId,
-    timezone,
-    now,
-    slots,
-    target,
-    targetOpens,
-    date,
-    dayStart,
-    ids,
-    keys,
-  })
+  const { promptSlot } = assertMovable({ userId, timezone, now, slots, target, ids, keys })
 
-  const move: DayMove = { date, slot_id: target.id }
+  // `at`: the move's own time, the named push's pacing floor (RULE RM-MOVE-NAG).
+  const move: DayMove = { date, slot_id: target.id, at: now.toISOString() }
   const pDate = promptDate(timezone, dayStart, now)
   const quotaIds = [...new Set(keys.map((k) => promptSlot.get(k)!.taskId))]
 
@@ -130,8 +121,13 @@ export function moveForToday(input: MoveForTodayInput): MoveForTodayResult {
       const before = getTaskById(quotaId) as Task
       const day = dayStateFor(before.quota_day_state, pDate)
       const moved = { ...day.moved }
-      for (const key of keys) if (promptSlot.get(key)!.taskId === quotaId) moved[key] = target.id
-      const after = { ...day, moved }
+      const movedAt = { ...day.moved_at }
+      for (const key of keys) {
+        if (promptSlot.get(key)!.taskId !== quotaId) continue
+        moved[key] = target.id
+        movedAt[key] = stamp
+      }
+      const after = { ...day, moved, moved_at: movedAt }
       tx.prepare('UPDATE tasks SET quota_day_state = ?, updated_at = ? WHERE id = ?').run(
         JSON.stringify(after),
         stamp,
@@ -177,13 +173,10 @@ function assertMovable(args: {
   now: Date
   slots: TimeSlot[]
   target: TimeSlot
-  targetOpens: Date
-  date: string
-  dayStart: string
   ids: number[]
   keys: string[]
 }): { promptSlot: Map<string, { slot: TimeSlot | null; taskId: number }> } {
-  const { userId, timezone, now, slots, target, targetOpens, date, dayStart, ids, keys } = args
+  const { userId, timezone, now, slots, target, ids, keys } = args
   const reminderSlot = new Map<number, TimeSlot | null>()
   for (const group of getRemindersBySlot(userId, timezone, now)) {
     for (const t of group.reminders) reminderSlot.set(t.id, group.slot)
@@ -198,21 +191,23 @@ function assertMovable(args: {
       })
     }
   }
-  const laterThanOwn = (own: TimeSlot | null | undefined): boolean => {
-    const ownOpens = own ? opensAt(own, date, timezone, dayStart) : null
-    return !!ownOpens && targetOpens.getTime() > ownOpens.getTime()
-  }
+  // From a period (never Anytime) to another one.
+  const movable = (own: TimeSlot | null | undefined): 'anytime' | 'same' | null =>
+    !own ? 'anytime' : own.id === target.id ? 'same' : null
   for (const id of ids) {
     if (!reminderSlot.has(id)) throw new ValidationError(`Reminder ${id} is not waiting today`)
-    if (!laterThanOwn(reminderSlot.get(id))) {
-      throw new ValidationError(`${target.label} is not later than reminder ${id}'s period`)
-    }
+    const why = movable(reminderSlot.get(id))
+    if (why === 'anytime')
+      throw new ValidationError(`Reminder ${id} is in Anytime; it has no period to move from`)
+    if (why === 'same') throw new ValidationError(`Reminder ${id} is already in ${target.label}`)
   }
   for (const key of keys) {
     const at = promptSlot.get(key)
     if (!at) throw new ValidationError(`Prompt ${key} is not waiting today`)
-    if (!laterThanOwn(at.slot))
-      throw new ValidationError(`${target.label} is not later than that prompt's period`)
+    const why = movable(at.slot)
+    if (why === 'anytime')
+      throw new ValidationError(`That prompt is in Anytime; it has no period to move from`)
+    if (why === 'same') throw new ValidationError(`That prompt is already in ${target.label}`)
   }
   return { promptSlot }
 }

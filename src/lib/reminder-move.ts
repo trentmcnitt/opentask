@@ -4,9 +4,10 @@
  * the server's next payload confirms it.
  *
  * The server's rule is RULE RM-MOVE-TARGET (`src/core/tasks/reminder-move.ts`):
- * only to a period that opens LATER today — after now, within the OpenTask
- * day — and later than the period the item is in now (a moved item's "own"
- * period is the one it was moved to); never from or to Anytime. This file is
+ * any period of today other than the one the item is in now (a moved item's
+ * "own" period is the one it was moved to), earlier or later, open or not
+ * (Trent, 2026-11-27; later periods only until then); never from or to
+ * Anytime. This file is
  * that rule, once, for every web surface that offers a move (the dashboard
  * bubble's chips, the /reminders select bar's menu), so the UI never offers a
  * period the server would refuse. `tests/behavioral/rm-move-later.test.ts`
@@ -29,10 +30,11 @@ function opensAt(slot: TimeSlot, date: string, timezone: string, dayStart: strin
 
 /**
  * The periods an item in `current` (the period it is in NOW; null = Anytime)
- * can be moved to for today: those that open after `now` and after `current`
- * opens, on `now`'s OpenTask day, earliest first. Anytime has none.
+ * can be moved to for today: every period of `now`'s OpenTask day but its
+ * own, earlier and later, open or not, in day order (RULE RM-MOVE-TARGET,
+ * 2026-11-27). Anytime has none, and is never one.
  */
-export function laterPeriodsToday(
+export function movePeriodsToday(
   current: TimeSlot | null,
   slots: readonly TimeSlot[],
   now: Date,
@@ -41,23 +43,22 @@ export function laterPeriodsToday(
 ): TimeSlot[] {
   if (!current) return []
   const date = openTaskDayOf(now, timezone, dayStart)
-  const own = opensAt(current, date, timezone, dayStart)
-  if (!own) return []
-  const after = Math.max(own.getTime(), now.getTime())
+  if (!opensAt(current, date, timezone, dayStart)) return []
   return slots
+    .filter((slot) => slot.id !== current.id)
     .map((slot) => ({ slot, at: opensAt(slot, date, timezone, dayStart) }))
-    .filter((x): x is { slot: TimeSlot; at: Date } => x.at !== null && x.at.getTime() > after)
+    .filter((x): x is { slot: TimeSlot; at: Date } => x.at !== null)
     .sort((a, b) => a.at.getTime() - b.at.getTime())
     .map((x) => x.slot)
 }
 
 /**
- * The periods EVERY one of a selection can move to (`laterPeriodsToday` of
- * each, intersected): one request moves them all to one period, and the
- * server refuses the whole request if any one of them can't go there.
- * Nothing selected has none.
+ * The periods EVERY one of a selection can move to (`movePeriodsToday` of
+ * each, intersected): every period none of them is in now. One request
+ * moves them all to one period, and the server refuses the whole request if
+ * any one of them can't go there. Nothing selected, or one in Anytime: none.
  */
-export function laterPeriodsForAll(
+export function movePeriodsForAll(
   currents: readonly (TimeSlot | null)[],
   slots: readonly TimeSlot[],
   now: Date,
@@ -65,11 +66,11 @@ export function laterPeriodsForAll(
   dayStart: string,
 ): TimeSlot[] {
   if (currents.length === 0) return []
-  let common = laterPeriodsToday(currents[0], slots, now, timezone, dayStart)
+  let common = movePeriodsToday(currents[0], slots, now, timezone, dayStart)
   for (const current of currents.slice(1)) {
     if (common.length === 0) break
     const ids = new Set(
-      laterPeriodsToday(current, slots, now, timezone, dayStart).map((slot) => slot.id),
+      movePeriodsToday(current, slots, now, timezone, dayStart).map((slot) => slot.id),
     )
     common = common.filter((slot) => ids.has(slot.id))
   }

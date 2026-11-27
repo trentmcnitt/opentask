@@ -211,6 +211,7 @@ const QUOTA_DAY_STATE: Record<keyof QuotaDayState, Field> = {
   considered: ['array'],
   did_applied: ['object'],
   moved: ['object'],
+  moved_at: ['object'],
 }
 
 function kindOf(v: Json): Kind | 'null' {

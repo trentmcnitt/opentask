@@ -1,6 +1,7 @@
 /**
- * The one-day move's client rule (2026-11-21): which later periods the web
- * offers (`laterPeriodsToday`, `laterPeriodsForAll` in src/lib/reminder-move.ts),
+ * The one-day move's client rule (2026-11-21; earlier periods too since
+ * 11-27): which periods the web offers (`movePeriodsToday`,
+ * `movePeriodsForAll` in src/lib/reminder-move.ts),
  * how a move is drawn before the server confirms it (`applyDayMoves`), and
  * the parity that matters most — every period the web offers is one the
  * server accepts, and every other one it refuses (RULE RM-MOVE-TARGET).
@@ -25,8 +26,8 @@ import { listTimeSlots } from '@/core/time-slots'
 import { ValidationError } from '@/core/errors'
 import {
   applyDayMoves,
-  laterPeriodsForAll,
-  laterPeriodsToday,
+  movePeriodsForAll,
+  movePeriodsToday,
   moveMessage,
 } from '@/lib/reminder-move'
 import type { TimeSlot } from '@/lib/time-slot-assign'
@@ -52,32 +53,41 @@ const EVENING = slot(5, 'Evening', '20:30')
 const SLOTS = [EVENING, EARLY, AFTERNOON, MORNING, MIDDAY]
 const labels = (slots: TimeSlot[]) => slots.map((s) => s.label)
 
-describe('RM-ML-01 laterPeriodsToday: after now and after the current period', () => {
-  test('from Morning at 10:00: Midday, Afternoon, Evening, in opening order', () => {
-    expect(labels(laterPeriodsToday(MORNING, SLOTS, at(10), tz, '00:00'))).toEqual([
+describe('RM-ML-01 movePeriodsToday: every period of today but its own, in day order', () => {
+  test('from Morning at 10:00: the rest, earlier and later, in opening order', () => {
+    expect(labels(movePeriodsToday(MORNING, SLOTS, at(10), tz, '00:00'))).toEqual([
+      'Early morning',
       'Midday',
       'Afternoon',
       'Evening',
     ])
   })
 
-  test('a period already open is never offered (Morning at 16:30: only Evening)', () => {
-    expect(labels(laterPeriodsToday(MORNING, SLOTS, at(16, 30), tz, '00:00'))).toEqual(['Evening'])
+  test('periods already open are offered too (Morning at 16:30)', () => {
+    expect(labels(movePeriodsToday(MORNING, SLOTS, at(16, 30), tz, '00:00'))).toEqual([
+      'Early morning',
+      'Midday',
+      'Afternoon',
+      'Evening',
+    ])
   })
 
-  test('the current period not yet open: only those after it (Afternoon at 10:00)', () => {
-    expect(labels(laterPeriodsToday(AFTERNOON, SLOTS, at(10), tz, '00:00'))).toEqual(['Evening'])
-  })
-
-  test('the last period, and Anytime, have none', () => {
-    expect(laterPeriodsToday(EVENING, SLOTS, at(10), tz, '00:00')).toEqual([])
-    expect(laterPeriodsToday(null, SLOTS, at(10), tz, '00:00')).toEqual([])
+  test('the last period moves earlier; Anytime has none', () => {
+    expect(labels(movePeriodsToday(EVENING, SLOTS, at(21), tz, '00:00'))).toEqual([
+      'Early morning',
+      'Morning',
+      'Midday',
+      'Afternoon',
+    ])
+    expect(movePeriodsToday(null, SLOTS, at(10), tz, '00:00')).toEqual([])
   })
 
   test('an unparseable start is neither a current period nor a target', () => {
     const bad = slot(9, 'Broken', '9am')
-    expect(laterPeriodsToday(bad, SLOTS, at(10), tz, '00:00')).toEqual([])
-    expect(labels(laterPeriodsToday(MIDDAY, [...SLOTS, bad], at(10), tz, '00:00'))).toEqual([
+    expect(movePeriodsToday(bad, SLOTS, at(10), tz, '00:00')).toEqual([])
+    expect(labels(movePeriodsToday(MIDDAY, [...SLOTS, bad], at(10), tz, '00:00'))).toEqual([
+      'Early morning',
+      'Morning',
       'Afternoon',
       'Evening',
     ])
@@ -86,44 +96,30 @@ describe('RM-ML-01 laterPeriodsToday: after now and after the current period', (
   test('a period before the day start is the LAST of the day (01:00 with a 03:00 start)', () => {
     const late = slot(6, 'Late night', '01:00')
     const slots = [...SLOTS, late]
-    // 22:00: Evening is open; Late night opens at 01:00 on the next calendar date,
-    // still within this OpenTask day.
-    expect(labels(laterPeriodsToday(EVENING, slots, at(22), tz, '03:00'))).toEqual(['Late night'])
-    expect(labels(laterPeriodsToday(MORNING, slots, at(10), tz, '03:00'))).toEqual([
-      'Midday',
-      'Afternoon',
-      'Evening',
-      'Late night',
-    ])
-    // With a midnight day start 01:00 is the day's first period: long gone at 22:00.
-    expect(laterPeriodsToday(EVENING, slots, at(22), tz, '00:00')).toEqual([])
-  })
-
-  test('between midnight and the day start, the OpenTask day is still yesterday', () => {
-    const late = slot(6, 'Late night', '01:30')
-    // 00:30 on the 16th, 3:00 day start: still the 15th's day; Evening is open,
-    // Late night (01:30) is still ahead today.
-    expect(
-      labels(laterPeriodsToday(EVENING, [...SLOTS, late], at(0, 30, 16), tz, '03:00')),
-    ).toEqual(['Late night'])
+    expect(labels(movePeriodsToday(EVENING, slots, at(22), tz, '03:00')).at(-1)).toBe('Late night')
+    // With a midnight day start 01:00 is the day's first period.
+    expect(labels(movePeriodsToday(EVENING, slots, at(22), tz, '00:00'))[0]).toBe('Late night')
   })
 })
 
-describe('RM-ML-02 laterPeriodsForAll: the periods every selected item can go to', () => {
-  test('Morning and Afternoon at 10:00: only Evening', () => {
-    expect(labels(laterPeriodsForAll([MORNING, AFTERNOON], SLOTS, at(10), tz, '00:00'))).toEqual([
+describe('RM-ML-02 movePeriodsForAll: the periods every selected item can go to', () => {
+  test('Morning and Afternoon: every period but those two', () => {
+    expect(labels(movePeriodsForAll([MORNING, AFTERNOON], SLOTS, at(10), tz, '00:00'))).toEqual([
+      'Early morning',
+      'Midday',
       'Evening',
     ])
   })
 
-  test('one in Anytime, or one in the last period: none', () => {
-    expect(laterPeriodsForAll([MORNING, null], SLOTS, at(10), tz, '00:00')).toEqual([])
-    expect(laterPeriodsForAll([MORNING, EVENING], SLOTS, at(10), tz, '00:00')).toEqual([])
+  test('one in Anytime: none', () => {
+    expect(movePeriodsForAll([MORNING, null], SLOTS, at(10), tz, '00:00')).toEqual([])
   })
 
   test('nothing selected: none; one item: its own', () => {
-    expect(laterPeriodsForAll([], SLOTS, at(10), tz, '00:00')).toEqual([])
-    expect(labels(laterPeriodsForAll([MIDDAY], SLOTS, at(10), tz, '00:00'))).toEqual([
+    expect(movePeriodsForAll([], SLOTS, at(10), tz, '00:00')).toEqual([])
+    expect(labels(movePeriodsForAll([MIDDAY], SLOTS, at(10), tz, '00:00'))).toEqual([
+      'Early morning',
+      'Morning',
       'Afternoon',
       'Evening',
     ])
@@ -256,7 +252,7 @@ describe('RM-ML-05 parity: the web offers exactly the periods the server accepts
       for (const target of slots) {
         const r = reminder(hour)
         const current = periodOf(r.id, now) ?? null
-        const offered = laterPeriodsToday(current, slots, now, tz, dayStart).some(
+        const offered = movePeriodsToday(current, slots, now, tz, dayStart).some(
           (s) => s.id === target.id,
         )
         const call = () =>

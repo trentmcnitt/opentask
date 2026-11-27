@@ -1,15 +1,17 @@
 /**
- * The one-day move, on the web (2026-11-21): a reminder — or a quota prompt —
- * waiting today, moved to a LATER period for today only
- * (`POST /api/reminders/move`, src/lib/reminder-move.ts).
+ * The one-day move, on the web (2026-11-21; earlier periods too since
+ * 2026-11-27): a reminder — or a quota prompt — waiting today, moved to
+ * another period for today only (`POST /api/reminders/move`,
+ * src/lib/reminder-move.ts).
  *
  * - The dashboard's Reminders card: a hold opens the row's bubble, whose
- *   "Later today:" chips move it; the toast's Undo puts it back. Once moved,
- *   the line names where it is now: "Later today (now Midday):".
- * - /reminders: the select bar's Later today menu moves the whole selection
- *   (a reminder and a quota prompt) to a period all of it can go to.
+ *   "Today:" chips (every other period, in day order) move it; the toast's
+ *   Undo puts it back. Once moved, the line names where it is now: "Today
+ *   (now Midday):". Moved into a period already open, it shows there at once.
+ * - /reminders: the select bar's Today menu moves the whole selection (a
+ *   reminder and a quota prompt) to a period all of it can go to.
  *
- * "Later" depends on the time of day, so both clocks are pinned to 10:00 in
+ * Which periods are open depends on the time of day, so both clocks are pinned to 10:00 in
  * the user's zone — the most recent 10:00 at or before real now (never ahead
  * of it: the cron jobs compute on the shifted clock), as tq-late-night.spec.ts
  * does: the server's through the test-only POST /api/test/clock, the
@@ -155,7 +157,7 @@ for (const [name, viewport] of [
   test.describe(`${name}`, () => {
     test.use({ viewport })
 
-    test('the bubble’s Later today chips move a Morning reminder; Undo puts it back', async ({
+    test('the bubble’s Today chips move a Morning reminder; Undo puts it back', async ({
       page,
     }) => {
       const ids: number[] = []
@@ -169,8 +171,13 @@ for (const [name, viewport] of [
 
         const b = await openBubble(page, id)
         const later = b.locator('[data-reminder-later]')
-        await expect(later.locator('[data-reminder-later-label]')).toHaveText('Later today:')
-        await expect(later.locator('button')).toHaveText(['Midday', 'Afternoon', 'Evening'])
+        await expect(later.locator('[data-reminder-later-label]')).toHaveText('Today:')
+        await expect(later.locator('button')).toHaveText([
+          'Early morning',
+          'Midday',
+          'Afternoon',
+          'Evening',
+        ])
 
         await later.getByRole('button', { name: 'Move to Afternoon for today' }).click()
         await expect(bubble(page, id)).toHaveCount(0)
@@ -190,37 +197,7 @@ for (const [name, viewport] of [
       }
     })
 
-    test('a refused move puts the row back and says why', async ({ page }) => {
-      const ids: number[] = []
-      try {
-        const title = uniqueTitle('Book the dentist')
-        const id = await morningReminder(page, title)
-        ids.push(id)
-        // The server's refusal when a period starts while the bubble is open.
-        await page.route('**/api/reminders/move', (route) =>
-          route.fulfill({
-            status: 400,
-            json: {
-              error: 'Afternoon has already started; pick a later period',
-              code: 'VALIDATION_ERROR',
-            },
-          }),
-        )
-        await page.goto('/')
-        const b = await openBubble(page, id)
-        await b.getByRole('button', { name: 'Move to Afternoon for today' }).click()
-        await expect(
-          toast(page, 'Afternoon has already started; pick a later period'),
-        ).toBeVisible()
-        await expect(panelRow(page, id)).toBeVisible()
-        expect(await periodOf(page, id)).toBe('Morning')
-      } finally {
-        await page.unrouteAll()
-        await trash(page, ids)
-      }
-    })
-
-    test('a moved reminder’s bubble says where it is now and offers only what comes after', async ({
+    test('a moved reminder’s bubble says where it is now and offers every other period', async ({
       page,
     }) => {
       const ids: number[] = []
@@ -241,25 +218,33 @@ for (const [name, viewport] of [
 
         const b = await openBubble(page, id)
         const later = b.locator('[data-reminder-later]')
-        await expect(later.locator('[data-reminder-later-label]')).toHaveText(
-          'Later today (now Midday):',
-        )
-        await expect(later.locator('button')).toHaveText(['Afternoon', 'Evening'])
+        await expect(later.locator('[data-reminder-later-label]')).toHaveText('Today (now Midday):')
+        await expect(later.locator('button')).toHaveText([
+          'Early morning',
+          'Morning',
+          'Afternoon',
+          'Evening',
+        ])
         // The meta still names its home period.
         await expect(b).toContainText('Morning')
 
-        // Moved again, to the last period: no line in its bubble there.
+        // Moved again, to the last period: from there it can still move earlier.
         await later.getByRole('button', { name: 'Move to Evening for today' }).click()
         await expect.poll(() => periodOf(page, id)).toBe('Evening')
         await pageTo(page, s.Evening.id)
         const last = await openBubble(page, id)
-        await expect(last.locator('[data-reminder-later]')).toHaveCount(0)
+        await expect(last.locator('[data-reminder-later] button')).toHaveText([
+          'Early morning',
+          'Morning',
+          'Midday',
+          'Afternoon',
+        ])
       } finally {
         await trash(page, ids)
       }
     })
 
-    test('/reminders: the select bar’s Later today menu moves a reminder and a quota prompt', async ({
+    test('/reminders: the select bar’s Today menu moves a reminder and a quota prompt', async ({
       page,
     }) => {
       const ids: number[] = []
@@ -297,7 +282,11 @@ for (const [name, viewport] of [
         const menu = name === 'phone' ? page.getByRole('dialog') : page.getByRole('menu')
         await expect(menu).toBeVisible()
         const choices = name === 'phone' ? menu.getByRole('button') : menu.getByRole('menuitem')
-        await expect(choices).toHaveText([/^Midday/, /^Afternoon/, /^Evening/])
+        await expect(choices).toHaveText([/^Early morning/, /^Midday/, /^Afternoon/, /^Evening/])
+        await page.screenshot({
+          path: `.tmp/screens/move-today-menu-${name}.png`,
+          animations: 'disabled',
+        })
         await choices.filter({ hasText: 'Evening' }).click()
 
         await expect(bar).toHaveCount(0)
@@ -321,7 +310,71 @@ for (const [name, viewport] of [
   })
 }
 
-test('/reminders: no period after all of the selection — Later today is off, and says why', async ({
+for (const [name, viewport] of [
+  ['phone', { width: 390, height: 844 }],
+  ['desktop', { width: 1280, height: 800 }],
+] as const) {
+  test.describe(`${name} · moves`, () => {
+    test.use({ viewport })
+
+    test('a Midday reminder moved EARLIER, into Morning (open at 10:00), shows there at once', async ({
+      page,
+    }) => {
+      const ids: number[] = []
+      try {
+        const s = await slots(page)
+        const title = uniqueTitle('Post the birthday card')
+        const id = await create(page, { title, is_reminder: true, due_at: pinnedAt(12, 30) })
+        ids.push(id)
+        await page.goto('/')
+        await pageTo(page, s.Midday.id)
+        const b = await openBubble(page, id)
+        const chips = b.locator('[data-reminder-later] button')
+        await expect(chips).toHaveText(['Early morning', 'Morning', 'Afternoon', 'Evening'])
+        await page.screenshot({ path: `.tmp/screens/move-today-bubble-${name}.png` })
+        await b.getByRole('button', { name: 'Move to Morning for today' }).click()
+        await expect(toast(page, `Moved “${title}” to Morning for today`)).toBeVisible()
+        await expect.poll(() => periodOf(page, id)).toBe('Morning')
+        await pageTo(page, s.Morning.id)
+        await expect(panelRow(page, id)).toBeVisible()
+      } finally {
+        await trash(page, ids)
+      }
+    })
+
+    test('a refused move puts the row back and says why', async ({ page }) => {
+      const ids: number[] = []
+      try {
+        const title = uniqueTitle('Book the dentist')
+        const id = await morningReminder(page, title)
+        ids.push(id)
+        // The server's refusal when a period starts while the bubble is open.
+        await page.route('**/api/reminders/move', (route) =>
+          route.fulfill({
+            status: 400,
+            json: {
+              error: 'Afternoon has already started; pick a later period',
+              code: 'VALIDATION_ERROR',
+            },
+          }),
+        )
+        await page.goto('/')
+        const b = await openBubble(page, id)
+        await b.getByRole('button', { name: 'Move to Afternoon for today' }).click()
+        await expect(
+          toast(page, 'Afternoon has already started; pick a later period'),
+        ).toBeVisible()
+        await expect(panelRow(page, id)).toBeVisible()
+        expect(await periodOf(page, id)).toBe('Morning')
+      } finally {
+        await page.unrouteAll()
+        await trash(page, ids)
+      }
+    })
+  })
+}
+
+test('/reminders: with an Anytime reminder selected, Today is off, and says why', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
@@ -329,12 +382,14 @@ test('/reminders: no period after all of the selection — Later today is off, a
   try {
     const s = await slots(page)
     const a = await morningReminder(page, uniqueTitle('Fold the laundry'))
+    // 05:00, before every period: Anytime, which has no period to move from.
     const b = await create(page, {
       title: uniqueTitle('Lock the shed'),
       is_reminder: true,
-      due_at: pinnedAt(20, 45),
+      due_at: pinnedAt(5, 0),
     })
     ids.push(a, b)
+    await expect.poll(() => periodOf(page, b)).toBe('Anytime')
     await page.goto('/reminders')
     const rowA = page.locator(`[data-slot-key="${s.Morning.id}"] li[data-reminder-id="${a}"]`)
     await rowA.evaluate((el) => el.scrollIntoView({ block: 'center' }))
@@ -342,17 +397,13 @@ test('/reminders: no period after all of the selection — Later today is off, a
     const bar = page.locator('[data-selection-sheet]')
     await expect(bar.locator('[data-bar-later]')).toBeEnabled()
 
-    // Evening's row too: nothing comes after Evening.
-    const evening = page.locator(`[data-slot-key="${s.Evening.id}"]`)
-    const rowB = evening.locator(`li[data-reminder-id="${b}"]`)
-    // A period still to come is folded: open it (reminders.spec.ts's `openAllSlots`).
-    const fold = evening.locator(':scope > div:first-child > button[aria-expanded="false"]')
-    if ((await fold.count()) > 0) await fold.click()
+    const rowB = page.locator(`li[data-reminder-id="${b}"]`)
+    await rowB.evaluate((el) => el.scrollIntoView({ block: 'center' }))
     await rowB.click()
     await expect(bar).toContainText('2 selected')
     await expect(bar.locator('[data-bar-later]')).toBeDisabled()
     await expect(bar.locator('[data-selection-hint]')).toHaveText(
-      'Later today: no period comes after all of them',
+      'Today: no one period fits all of them',
     )
   } finally {
     await trash(page, ids)

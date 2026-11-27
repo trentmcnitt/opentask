@@ -5,7 +5,7 @@ import { CheckCheck, ClockArrowDown, FileText, Trash2 } from 'lucide-react'
 import { BarAction, SELECTION_BAR_HINT_ID, SelectionBarShell } from '@/components/SelectionBarShell'
 import { OptionMenu } from '@/components/OptionMenu'
 import { useDayStart } from '@/components/PreferencesProvider'
-import { laterPeriodsForAll, laterPeriodsToday } from '@/lib/reminder-move'
+import { movePeriodsForAll, movePeriodsToday } from '@/lib/reminder-move'
 import { formatClockTime } from '@/lib/time-utils'
 import type { TimeSlot } from '@/lib/time-slot-assign'
 
@@ -36,8 +36,9 @@ import type { TimeSlot } from '@/lib/time-slot-assign'
  *   so the surface asks first, once (`DeleteQuotasDialog`): all of it, the
  *   reminders only, or cancel. This replaced the 2026-09-25 rule that Trash
  *   was not offered while a prompt was selected.
- * - Later today (2026-11-21, the one-day move) covers both: reminders and
- *   prompts move together, to a period every one of them can go to.
+ * - Today (the one-day move; "Later today" 2026-11-21 to 11-27, when Trent
+ *   allowed earlier periods) covers both: reminders and prompts move
+ *   together, to a period every one of them can go to.
  */
 interface ReminderSelectionBarProps {
   selectedCount: number
@@ -50,11 +51,11 @@ interface ReminderSelectionBarProps {
   onDetails: () => void
   /** Delete the selection — reminders at once; with a prompt in it, after the one confirmation. */
   onDelete: () => void
-  /** The period each selected row is in today (null = Anytime), for Later today. */
+  /** The period each selected row is in today (null = Anytime), for Today. */
   currents: (TimeSlot | null)[]
   timeSlots: TimeSlot[]
   timezone: string
-  /** Later today's pick: move the whole selection to `to` for today. */
+  /** Today's pick: move the whole selection to `to` for today. */
   onMoveForToday: (to: TimeSlot) => void
   onClear: () => void
 }
@@ -63,13 +64,12 @@ interface ReminderSelectionBarProps {
 export const MIXED_DETAILS_HINT = 'Details: pick only reminders or only quotas'
 
 /**
- * Why Later today is off when some of the selection could move, but no one
- * period comes after all of it (one in Evening, or in Anytime). Not shown
- * when none of it could move (all in the day's last period): there the
- * disabled verb says enough, and a line under every evening selection would
- * be noise.
+ * Why Today is off when some of the selection could move, but no one period
+ * fits all of it (one in Anytime, or the selection already spans every
+ * period). Not shown when none of it could move: there the disabled verb
+ * says enough.
  */
-export const LATER_NONE_HINT = 'Later today: no period comes after all of them'
+export const LATER_NONE_HINT = 'Today: no one period fits all of them'
 
 export function ReminderSelectionBar({
   selectedCount,
@@ -88,16 +88,16 @@ export function ReminderSelectionBar({
   const canDetails = !mixed && reminderCount + promptCount > 0
   const dayStart = useDayStart()
   // As of the selection's last change (`currents` is memoised on it and the
-  // payload); Later today's menu works its list out again when it opens.
+  // payload); Today's menu works its list out again when it opens.
   const { later, laterBlocked } = useMemo(() => {
     const now = new Date()
-    const common = laterPeriodsForAll(currents, timeSlots, now, timezone, dayStart)
+    const common = movePeriodsForAll(currents, timeSlots, now, timezone, dayStart)
     return {
       later: common,
       laterBlocked:
         common.length === 0 &&
         currents.length > 1 &&
-        currents.some((c) => laterPeriodsToday(c, timeSlots, now, timezone, dayStart).length > 0),
+        currents.some((c) => movePeriodsToday(c, timeSlots, now, timezone, dayStart).length > 0),
     }
   }, [currents, timeSlots, timezone, dayStart])
   const hints = [mixed && MIXED_DETAILS_HINT, laterBlocked && LATER_NONE_HINT].filter(
@@ -140,11 +140,11 @@ export function ReminderSelectionBar({
 }
 
 /**
- * Later today: a menu of the periods the whole selection can move to for
- * today (`laterPeriodsForAll`), each with its start time — the app's hold
- * menu (`OptionMenu`: a sheet on a phone, a dropdown at the verb on a wider
- * screen), opened like the task bars' Target and Deck. The list is worked
- * out again when it opens, so it never offers a period that has started.
+ * Today: a menu of the periods the whole selection can move to for today
+ * (`movePeriodsForAll`: every period none of them is in, in day order), each
+ * with its start time — the app's hold menu (`OptionMenu`: a sheet on a
+ * phone, a dropdown at the verb on a wider screen), opened like the task
+ * bars' Target and Deck. The list is worked out again when it opens.
  */
 function LaterTodayVerb({
   count,
@@ -167,13 +167,13 @@ function LaterTodayVerb({
 }) {
   const [openedAt, setOpenedAt] = useState<Date | null>(null)
   const periods = openedAt
-    ? laterPeriodsForAll(currents, timeSlots, openedAt, timezone, dayStart)
+    ? movePeriodsForAll(currents, timeSlots, openedAt, timezone, dayStart)
     : []
   return (
     <OptionMenu
       open={openedAt !== null}
       onOpenChange={(open) => setOpenedAt(open ? new Date() : null)}
-      title={count === 1 ? 'Later today' : `Later today · ${count}`}
+      title={count === 1 ? 'Today' : `Today · ${count}`}
       options={periods.map((slot) => ({
         label: slot.label,
         option: String(slot.id),
@@ -189,7 +189,7 @@ function LaterTodayVerb({
     >
       <BarAction
         icon={<ClockArrowDown />}
-        label="Later today"
+        label="Today"
         onClick={() => setOpenedAt(new Date())}
         disabled={disabled}
         describedBy={describedBy}

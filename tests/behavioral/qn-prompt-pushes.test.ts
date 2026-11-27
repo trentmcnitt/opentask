@@ -63,6 +63,7 @@ import { bulkDone, bulkEdit, createTask, updateTask } from '@/core/tasks'
 import { actOnPrompts } from '@/core/tasks/quota-prompt-actions'
 import { incrementProgress } from '@/core/tasks/progress'
 import { getQuotaPromptsBySlot } from '@/core/tasks/quota-prompts'
+import { moveForToday } from '@/core/tasks/reminder-move'
 import { planTick, runTick } from '@/core/notifications/tick'
 import { MINUTE_TICK_SOURCES } from '@/core/notifications/minute-tick'
 import {
@@ -936,5 +937,46 @@ describe('QN-P13 user-level changes dismiss the prompt banners they end', () => 
       input: { start_time: '10:00' },
     })
     expect(dismissed()).toEqual([[key(q.id)]])
+  })
+})
+
+describe('QN-P-MOVE a moved prompt’s push (RULE RM-MOVE-NAG, 2026-11-27)', () => {
+  const tick = (now: Date) => planTick([PROMPT_NAG_SOURCE], now, CHANNELS).sends.length > 0
+
+  test('pushed at Midday; moved back to Morning, pushed at the next tick, then on its cadence', () => {
+    const q = quota(2, {}, 'Midday')
+    expect(tick(at(12))).toBe(true)
+    vi.setSystemTime(at(13, 10))
+    expect(pendingPromptNags(at(13, 10))).toEqual([])
+    moveForToday({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      ids: [],
+      promptKeys: [key(q.id)],
+      slotId: slotId('Morning'),
+      now: at(13, 10),
+    })
+    expect(pendingPromptNags(at(13, 11))).toMatchObject([
+      { promptKey: key(q.id), slotLabel: 'Morning' },
+    ])
+    expect(tick(at(13, 11))).toBe(true)
+    expect(pendingPromptNags(at(13, 12))).toEqual([])
+  })
+
+  test('moved from a period still ahead into an open one: pushed at the next tick (the gate sees the move)', () => {
+    const q = quota(2, {}, 'Evening')
+    vi.setSystemTime(at(10))
+    expect(pendingPromptNags(at(10))).toEqual([])
+    moveForToday({
+      userId: TEST_USER_ID,
+      userTimezone: tz,
+      ids: [],
+      promptKeys: [key(q.id)],
+      slotId: slotId('Morning'),
+      now: at(10),
+    })
+    expect(pendingPromptNags(at(10, 1))).toMatchObject([
+      { promptKey: key(q.id), slotLabel: 'Morning' },
+    ])
   })
 })

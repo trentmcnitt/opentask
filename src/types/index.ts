@@ -56,6 +56,8 @@ export interface QuotaDayState {
    * RM-MOVE-STORE): prompt_key → slot id. Absent on older states.
    */
   moved: Record<string, number>
+  /** When each prompt was moved (ISO): its named push's pacing floor (RULE RM-MOVE-NAG). */
+  moved_at?: Record<string, string>
   /** Net progress logged today from anywhere (never below 0). */
   logged: number
   /** prompt_keys "did it" today — the idempotency record. */
@@ -82,6 +84,8 @@ export type RepeatAnchor = 'target' | 'deadline'
 export interface DayMove {
   date: string
   slot_id: number
+  /** When the move was made (ISO): the named push's pacing floor (RULE RM-MOVE-NAG). Absent on older moves. */
+  at?: string
 }
 
 export interface Task {

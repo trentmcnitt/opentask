@@ -213,9 +213,20 @@ export function dayStateFor(state: QuotaDayState | null | undefined, date: strin
       considered: Array.isArray(state.considered) ? state.considered : [],
       did_applied: applied && typeof applied === 'object' && !Array.isArray(applied) ? applied : {},
       moved: isMoveMap(state.moved) ? state.moved : {},
+      moved_at: isStampMap(state.moved_at) ? state.moved_at : {},
     }
   }
-  return { date, logged: 0, did: [], considered: [], did_applied: {}, moved: {} }
+  return { date, logged: 0, did: [], considered: [], did_applied: {}, moved: {}, moved_at: {} }
+}
+
+/** A stored `moved_at` map: prompt_key → the move's ISO time (RM-MOVE-NAG). */
+function isStampMap(value: unknown): value is Record<string, string> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((v) => typeof v === 'string')
+  )
 }
 
 /** A stored `moved` map: prompt_key → slot id (RM-MOVE-STORE). */

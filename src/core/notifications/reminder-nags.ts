@@ -242,7 +242,8 @@ function mayBeDue(
   if (c.rrule && withinDay(c.last_completed_at, periods.day)) return false
   const interval = nagIntervalMinutes('slot_nag', c.priority, tiers)
   if (interval <= 0) return false
-  return dueAfter(c.last_sent_at, interval, now, timezone, openedAt)
+  const floor = moveFloor(openedAt, parseDayMove(c.day_move), periods.day.date)
+  return dueAfter(c.last_sent_at, interval, now, timezone, floor)
 }
 
 /**
@@ -279,7 +280,8 @@ export function pendingReminderNags(
         const interval = nagIntervalMinutes('slot_nag', priority, tiers)
         if (interval <= 0) continue
         const key = reminderNagKey(task.id)
-        if (!nagSendDue(user.id, key, interval, now, user.timezone, openedAt)) continue
+        const floor = moveFloor(openedAt, task.day_move, periods.day.date)
+        if (!nagSendDue(user.id, key, interval, now, user.timezone, floor)) continue
         pending.push({
           userId: user.id,
           taskId: task.id,
@@ -287,7 +289,7 @@ export function pendingReminderNags(
           priority,
           slotLabel: group.slot.label,
           reminderDay: periods.day.date,
-          periodOpenedAt: openedAt,
+          periodOpenedAt: floor,
           intervalMinutes: interval,
           timezone: user.timezone,
         })
@@ -512,13 +514,35 @@ export function purgeGoneReminderNags(): number {
 }
 
 /** A raw `day_move` column, or null when it isn't one (RM-MOVE-STORE). */
+/**
+ * RULE RM-MOVE-NAG: A named push's pacing floor is its period's open, or the move that put it
+ *   there today, whichever is later. So an item moved into a period that has opened (earlier or
+ *   later than its own, RM-MOVE-TARGET) gets its first push at the next minute's tick, then its
+ *   cadence; moved into a period still ahead, the period's open is the floor as before. An undo
+ *   puts the old move (or none) back, and with it the old floor.
+ * Why: A move into an open period is a deliberate "now"; the last push from its old period
+ *   must not hold the new one back for a whole cadence.
+ * Ruling: Trent 2026-11-27 (via the design session): "the named nag starts at once for Medium+
+ *   (first push now, then its cadence)".
+ */
+export function moveFloor(
+  opened: Date,
+  move: { date: string; at?: string } | null | undefined,
+  date: string,
+): Date {
+  if (!move || move.date !== date || !move.at) return opened
+  const at = new Date(move.at)
+  return Number.isNaN(at.getTime()) || at <= opened ? opened : at
+}
+
 function parseDayMove(raw: string | null): DayMove | null {
   if (!raw) return null
   try {
     const value = JSON.parse(raw) as Partial<DayMove>
-    return typeof value?.date === 'string' && typeof value.slot_id === 'number'
-      ? { date: value.date, slot_id: value.slot_id }
-      : null
+    if (typeof value?.date !== 'string' || typeof value.slot_id !== 'number') return null
+    return typeof value.at === 'string'
+      ? { date: value.date, slot_id: value.slot_id, at: value.at }
+      : { date: value.date, slot_id: value.slot_id }
   } catch {
     return null
   }

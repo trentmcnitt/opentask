@@ -7,7 +7,7 @@ import type { PeekTextChanges, PeekTextEdit } from '@/components/PeekText'
 import { useDayStart } from '@/components/PreferencesProvider'
 import { reminderInListHref } from '@/lib/show-in-list'
 import { describeCadence, describeTimeOfDay, readSchedule } from '@/lib/reminder-rule'
-import { laterPeriodsToday } from '@/lib/reminder-move'
+import { movePeriodsToday } from '@/lib/reminder-move'
 import { assignSlot, type TimeSlot } from '@/lib/time-slot-assign'
 import type { Task } from '@/types'
 
@@ -32,12 +32,13 @@ import type { Task } from '@/types'
  * The bubble's shell and body are `RowPeekPopover` / `RowPeekBody`, shared
  * with the task-segment rows' peek (2026-10-20) so the two stay one shape.
  *
- * LATER TODAY (2026-11-21, the one-day move): under the meta, a chip per
- * period the reminder can still move to today (`laterPeriodsToday`) — a tap
+ * TODAY (the one-day move, 2026-11-21; earlier periods too since 11-27):
+ * under the meta, a chip per period the reminder can move to today
+ * (`movePeriodsToday`) — a tap
  * moves it there for today only (`useReminders().moveForToday`), with the
  * usual Undo toast. The meta keeps naming its HOME period (its schedule);
- * once moved, the line says where it is now: "Later today (now Afternoon):".
- * No later period, no line.
+ * once moved, the line says where it is now: "Today (now Afternoon):".
+ * No other period, no line.
  */
 export function ReminderRowPopover({
   reminder,
@@ -65,7 +66,7 @@ export function ReminderRowPopover({
   /** Move it to Trash. Soft, undoable, and asks nothing first — see
    *  `PopoverFooter`. */
   onDelete: (reminder: Task) => void
-  /** A Later today chip: move it to that period for today. */
+  /** A Today chip: move it to that period for today. */
   onMove: (reminder: Task, to: TimeSlot) => void
   /** Saves an edit of the title or note in place (`PeekText`). */
   onEdit?: (reminder: Task, changes: PeekTextChanges) => Promise<unknown> | void
@@ -160,14 +161,14 @@ function ReminderSummary({
 }
 
 /**
- * "Later today:" and a chip per later period (the one-day move). The chips
- * are the quota bubble's period chips (`TrackChipPopover`), at their compact
- * size, so a bubble has one kind of period chip; none is pressed — where the
- * reminder is now is never offered.
- *
- * `now` is the moment the bubble opened (it mounts with each opening): a
- * period that starts while it is open is refused by the server with a toast
- * that says so, and the next opening no longer offers it.
+ * "Today:" and a chip per period of today the reminder could move to (the
+ * one-day move: earlier or later, its own omitted), in day order (restates
+ * RULE RM-MOVE-TARGET, home: src/core/tasks/reminder-move.ts). "Later today:" until 2026-11-27, when Trent allowed earlier
+ * periods. The chips are the quota bubble's period chips
+ * (`TrackChipPopover`), at their compact size, so a bubble has one kind of
+ * period chip; none is pressed — where the reminder is now is never offered.
+ * Moved into a period that has opened, it waits there now and its named
+ * push starts at once (RULE RM-MOVE-NAG).
  */
 function LaterToday({
   reminder,
@@ -184,17 +185,17 @@ function LaterToday({
 }) {
   const dayStart = useDayStart()
   const [openedAt] = useState(() => new Date())
-  const later = laterPeriodsToday(slot, timeSlots, openedAt, timezone, dayStart)
-  if (later.length === 0) return null
+  const periods = movePeriodsToday(slot, timeSlots, openedAt, timezone, dayStart)
+  if (periods.length === 0) return null
   // Moved: it is not in the period its schedule says (the meta's).
   const home = assignSlot(reminder, timeSlots, timezone)
   const moved = slot !== null && slot.id !== home?.id
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1" data-reminder-later>
       <span className="text-muted-foreground mr-0.5 text-xs" data-reminder-later-label>
-        {moved ? `Later today (now ${slot.label}):` : 'Later today:'}
+        {moved ? `Today (now ${slot.label}):` : 'Today:'}
       </span>
-      {later.map((to) => (
+      {periods.map((to) => (
         <button
           key={to.id}
           type="button"
