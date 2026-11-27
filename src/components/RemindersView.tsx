@@ -8,7 +8,7 @@ import { naturalSlotIndex, orderGroupsByDay, parseHHMM } from '@/lib/time-slot-a
 import { summarizeReminders } from '@/lib/reminders-summary'
 import { groupConsidered, groupWaiting } from '@/lib/quota-prompts'
 import { slotAtMinutes } from '@/lib/reminder-rule'
-import { saveReminderDetail } from '@/lib/save-reminder-detail'
+import { saveReminderDetail, saveReminderDetailMany } from '@/lib/save-reminder-detail'
 import { matchesTaskSearch, normalizeTaskSearch } from '@/lib/task-search'
 import { onlyWithQueue } from '@/lib/task-segments'
 import { showToast } from '@/lib/toast'
@@ -631,42 +631,10 @@ export function RemindersView({
       saveReminderDetail(taskId, changes, { source: detailTasks, onUndo, onCompleted, refresh }),
     [detailTasks, onUndo, onCompleted, refresh],
   )
-  // Several at once: each reminder's own new rule in ONE bulk edit, so the
-  // toast's Undo puts every one of them back.
+  // Several at once: one bulk edit, one Undo (`saveReminderDetailMany`).
   const saveDetailMany = useCallback(
-    async ({ ids, rules, priority }: ReminderBulkChanges) => {
-      try {
-        // A shared priority goes to every id; a rule change only to the ids
-        // whose rule moved. Both in one request, one Undo.
-        const targets = priority !== undefined ? ids : rules.map((r) => r.id)
-        const res = await fetch('/api/tasks/bulk/edit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ids: targets,
-            changes: priority !== undefined ? { priority } : {},
-            per_task: Object.fromEntries(rules.map((c) => [c.id, { rrule: c.rrule }])),
-          }),
-        })
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null
-          throw new Error(body?.error || 'Failed to update reminders')
-        }
-        showToast({
-          message: `Updated ${targets.length} reminders`,
-          type: 'success',
-          action: { label: 'Undo', onClick: onUndo },
-        })
-        onCompleted?.()
-        void refresh()
-      } catch (err) {
-        showToast({
-          message: err instanceof Error && err.message ? err.message : 'Save failed',
-          type: 'error',
-        })
-        throw err
-      }
-    },
+    (changes: ReminderBulkChanges) =>
+      saveReminderDetailMany(changes, { onUndo, onCompleted, refresh }),
     [onUndo, onCompleted, refresh],
   )
 

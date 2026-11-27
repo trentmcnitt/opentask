@@ -1,5 +1,6 @@
 import type { Task } from '@/types'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
+import type { ReminderBulkChanges } from '@/components/ReminderDetail'
 import { saveTaskChanges, withAiFailedCleared } from '@/lib/save-task-changes'
 import { showToast } from '@/lib/toast'
 
@@ -37,6 +38,53 @@ export async function saveReminderDetail(
     const { description } = await saveTaskChanges(taskId, withAiFailedCleared(task, changes))
     showToast({
       message: description || 'Reminder updated',
+      type: 'success',
+      action: { label: 'Undo', onClick: onUndo },
+    })
+    onCompleted?.()
+    void refresh()
+  } catch (err) {
+    showToast({
+      message: err instanceof Error && err.message ? err.message : 'Save failed',
+      type: 'error',
+    })
+    throw err
+  }
+}
+
+/**
+ * Save SEVERAL reminders from `ReminderDetailModal`'s bulk editor: each one's
+ * own new rule and a shared priority in ONE `bulk/edit`, so the toast's Undo
+ * puts every one of them back. Shared by `RemindersView` and the dashboard
+ * card's selection (2026-11-27). Rethrows on failure so the editor stays.
+ */
+export async function saveReminderDetailMany(
+  { ids, rules, priority }: ReminderBulkChanges,
+  {
+    onUndo,
+    onCompleted,
+    refresh,
+  }: { onUndo: () => void; onCompleted?: () => void; refresh: () => Promise<void> | void },
+): Promise<void> {
+  try {
+    // A shared priority goes to every id; a rule change only to the ids
+    // whose rule moved. Both in one request, one Undo.
+    const targets = priority !== undefined ? ids : rules.map((r) => r.id)
+    const res = await fetch('/api/tasks/bulk/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: targets,
+        changes: priority !== undefined ? { priority } : {},
+        per_task: Object.fromEntries(rules.map((c) => [c.id, { rrule: c.rrule }])),
+      }),
+    })
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null
+      throw new Error(body?.error || 'Failed to update reminders')
+    }
+    showToast({
+      message: `Updated ${targets.length} reminders`,
       type: 'success',
       action: { label: 'Undo', onClick: onUndo },
     })
