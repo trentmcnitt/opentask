@@ -32,7 +32,13 @@ import {
 } from '@/components/reminders/PanelPagerParts'
 import { groupConsidered, groupWaiting, promptWaiting, type QuotaPrompt } from '@/lib/quota-prompts'
 import type { QuickActionPanelChanges } from '@/components/QuickActionPanel'
-import { saveReminderDetail } from '@/lib/save-reminder-detail'
+import { saveReminderDetail, saveReminderDetailMany } from '@/lib/save-reminder-detail'
+import { QueueSelectToggle } from '@/components/QueueSelect'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  useReminderCardSelection,
+  useReminderCardSelectionState,
+} from '@/components/ReminderCardSelection'
 import { log } from '@/lib/logger'
 import type { Task } from '@/types'
 import type { PeekTextChanges } from '@/components/PeekText'
@@ -57,8 +63,9 @@ import {
  * about elsewhere in this file).
  *
  * DELIBERATELY SMALLER than `/reminders`' `RemindersView`:
- * - No SELECTION mode, no floating action bar, no multi-select, no create
- *   flow. A circle completes one reminder on a tap; press-and-hold opens that
+ * - No create flow. (No SELECTION either until 2026-11-27, when Trent asked
+ *   for it: a "Select" pill in the header now turns the page's rows into
+ *   checkboxes, with /reminders' own bar — `ReminderCardSelection.tsx`.) A circle completes one reminder on a tap; press-and-hold opens that
  *   ONE reminder's read-only bubble (`ReminderRowPopover`), and the bubble's
  *   Open is what reaches the `ReminderDetailModal` editor `/reminders` uses —
  *   two steps, exactly as a quota chip has worked since 2026-09-06. Trent
@@ -94,6 +101,82 @@ import {
  * short — the same reason `useQuotaMutations` is its own file rather than
  * inline in the quota surfaces.
  */
+/**
+ * A stop of the Dashboard tab's re-tap walk while a period that has come
+ * round still waits — the pager's own order (`retapOrder`).
+ */
+function periodNeedsYou(pages: { waiting: number }[], naturalSlot: number): boolean {
+  return (
+    retapOrder(
+      pages.map((p) => p.waiting),
+      pages.length,
+      naturalSlot,
+    ).length > 0
+  )
+}
+
+/** The Tasks card under the Reminders card, with a segment row's editor (its peek's Open). */
+function PanelTasksCard({
+  segments,
+  timezone,
+  hydrated,
+  onUndo,
+  onCompleted,
+}: {
+  segments: ReturnType<typeof useTaskSegments>
+  timezone: string
+  hydrated: boolean
+  onUndo: () => void
+  onCompleted: () => void
+}) {
+  return (
+    <>
+      <DashboardTasksPanel
+        actions={segments}
+        timezone={timezone}
+        hydrated={hydrated}
+        onUndo={onUndo}
+      />
+      <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
+    </>
+  )
+}
+
+/**
+ * Quota prompts (2026-09-24): the /reminders surface's own rows, compact. No
+ * leaving animation here, like the reminder rows (see the docblock). In
+ * select mode they are checkable like the reminder rows (2026-11-27).
+ */
+function usePanelPromptRows({
+  reminders,
+  select,
+  liftState,
+  onUndo,
+  onCompleted,
+}: {
+  reminders: UseRemindersReturn
+  select: ReturnType<typeof useReminderCardSelectionState>
+  liftState: ReturnType<typeof usePanelLift>
+  onUndo: () => void
+  onCompleted: () => void
+}) {
+  const { considerPrompt, didPrompt, movePrompt, refresh } = reminders
+  return usePromptRows({
+    isSelectionMode: select.selecting,
+    selectedIds: select.selectedIds,
+    onSelect: (prompt) => select.pick(prompt.prompt_key),
+    considerPrompt,
+    didPrompt,
+    movePrompt,
+    refresh,
+    onUndo,
+    onCompleted,
+    variant: 'panel',
+    highlightKey: typeof liftState.flashId === 'string' ? liftState.flashId : null,
+    onHighlightDone: liftState.clearFlash,
+  })
+}
+
 /** The dashboard's handle on this card's refresh, while the card is mounted. */
 function useRefreshRef(
   refreshRef: DashboardRemindersPanelProps['refreshRef'],
@@ -122,6 +205,8 @@ function useRowEditor({
   const router = useRouter()
   const [editing, setEditing] = useState<Task[]>([])
   const open = useCallback((task: Task) => setEditing([task]), [])
+  // Details from the card's selection (2026-11-27): one or several.
+  const openMany = useCallback((tasks: Task[]) => setEditing(tasks), [])
 
   const saveDetail = useCallback(
     (taskId: number, changes: QuickActionPanelChanges) =>
@@ -136,12 +221,10 @@ function useRowEditor({
       timeSlots={timeSlots}
       onClose={() => setEditing([])}
       onSaveAll={saveDetail}
-      // Never reached: this panel always opens the modal with exactly one
-      // reminder (no multi-select — see the module docblock) and never passes
-      // `create`, so the editor's bulk-save and new-reminder paths never
-      // mount. Logged rather than left empty in case that assumption is ever
-      // broken by a future change.
-      onSaveMany={async () => log.error('ui', 'DashboardRemindersPanel: unexpected bulk save')}
+      // Several reminders from the card's selection: /reminders' bulk save.
+      onSaveMany={(changes) => saveReminderDetailMany(changes, { onUndo, onCompleted, refresh })}
+      // Never reached: this panel never passes `create`, so the new-reminder
+      // path never mounts. Logged in case a future change breaks that.
       onCreate={async () => log.error('ui', 'DashboardRemindersPanel: unexpected create')}
       onConsidered={(tasks) => void completeMany(tasks)}
       onDelete={(tasks) => void remove(tasks)}
@@ -157,7 +240,7 @@ function useRowEditor({
     [onUndo, onCompleted, refresh],
   )
 
-  return { open, modal, isOpen: editing.length > 0, editText }
+  return { open, openMany, modal, isOpen: editing.length > 0, editText }
 }
 
 /**
@@ -281,23 +364,11 @@ export function DashboardRemindersPanel({
     onCompleted,
   })
   const editor = useRowEditor({ timeSlots, onUndo, onCompleted, reminders })
+  const select = useReminderCardSelectionState()
   // A notification tap's row (src/lib/panel-lift.ts): first in its period
   // while it waits, and flashed once.
   const liftState = usePanelLift(lift, onLiftApplied)
-  // Quota prompts (2026-09-24): the /reminders surface's own rows, compact.
-  // No leaving animation here, like the reminder rows (see the docblock).
-  const { considerPrompt, didPrompt, movePrompt } = reminders
-  const prompts = usePromptRows({
-    considerPrompt,
-    didPrompt,
-    movePrompt,
-    refresh,
-    onUndo,
-    onCompleted,
-    variant: 'panel',
-    highlightKey: typeof liftState.flashId === 'string' ? liftState.flashId : null,
-    onHighlightDone: liftState.clearFlash,
-  })
+  const prompts = usePanelPromptRows({ reminders, select, liftState, onUndo, onCompleted })
   // Which row's read-only bubble is open, if any. One id rather than a flag
   // per row: only ever one bubble at a time, the same way `TrackPanel` holds
   // a single `detailId` for its chips.
@@ -305,30 +376,30 @@ export function DashboardRemindersPanel({
 
   useRefreshRef(refreshRef, refresh)
 
-  // A row's bubble, its editor, a prompt's bubble or editor: the card is held.
-  const blocked = peekId !== null || editor.isOpen || prompts.busy
+  // A row's bubble, its editor, a prompt's bubble or editor, select mode: the card is held.
+  const blocked = peekId !== null || editor.isOpen || prompts.busy || select.selecting
   const { pages, naturalSlot, pager } = useSlotPager({ groups, timeSlots, timezone, blocked })
   liftState.apply({ hydrated: reminders.hydrated, pages, pager })
+  const selectBar = useReminderCardSelection({
+    state: select,
+    group: pager?.page.group ?? null,
+    pageKey: pager?.page.key ?? null,
+    reminders,
+    timeSlots,
+    timezone,
+    openReminders: editor.openMany,
+    openQuotas: (rows) => void prompts.openQuotas(rows),
+  })
   const { lifted, flashId } = liftState
-  // A stop of the Dashboard tab's re-tap walk while a period that has come
-  // round still waits — the pager's own order (`retapOrder`).
-  const needsYou =
-    retapOrder(
-      pages.map((p) => p.waiting),
-      pages.length,
-      naturalSlot,
-    ).length > 0
+  const needsYou = periodNeedsYou(pages, naturalSlot)
   const tasksCard = (
-    <>
-      <DashboardTasksPanel
-        actions={segments}
-        timezone={timezone}
-        hydrated={reminders.hydrated}
-        onUndo={onUndo}
-      />
-      {/* A task-segment row's editor: its peek bubble's Open (task queue PR 3). */}
-      <SegmentDetailsModal actions={segments} onUndo={onUndo} onCompleted={onCompleted} />
-    </>
+    <PanelTasksCard
+      segments={segments}
+      timezone={timezone}
+      hydrated={reminders.hydrated}
+      onUndo={onUndo}
+      onCompleted={onCompleted}
+    />
   )
   // No reminder waiting or considered today: no Reminders card, the same way
   // `TrackPanel` returns null with no quotas. The Tasks card stands alone.
@@ -363,13 +434,26 @@ export function DashboardRemindersPanel({
           // Only while the slot has something waiting (spec rule 9: Considered
           // all shows only while the panel has waiting rows) — the card open
           // or not (Trent, 2026-11-12).
+          // Select sits on the actions line, left of Consider all (2026-11-27,
+          // the design session): in the header row on a wide card, on the line
+          // under it on a narrow one, so the header stays one line at a phone;
+          // with nothing waiting the line, and Select, are gone.
           sweep={
-            page.waiting > 0 ? (
-              <PagerSweep
-                kind="consider"
-                ariaLabel={`Consider all in ${page.label}`}
-                onClick={() => void completeGroup(page.group)}
-              />
+            select.selecting ? (
+              // Selecting: Select alone, to turn it off (the bar has the verbs),
+              // as on the Task queue card.
+              <QueueSelectToggle on onToggle={select.toggleMode} />
+            ) : page.waiting > 0 ? (
+              <>
+                <span className="mr-1 flex items-center">
+                  <QueueSelectToggle on={false} onToggle={select.toggleMode} />
+                </span>
+                <PagerSweep
+                  kind="consider"
+                  ariaLabel={`Consider all in ${page.label}`}
+                  onClick={() => void completeGroup(page.group)}
+                />
+              </>
             ) : null
           }
           // The gaps give way so "EARLY MORNING · 7:00 AM" stays on one line
@@ -416,6 +500,9 @@ export function DashboardRemindersPanel({
               onRemove={(task) => void remove([task])}
               onOpenEditor={editor.open}
               onEditText={editor.editText}
+              selecting={select.selecting}
+              selectedIds={select.selectedIds}
+              onPick={select.pick}
               renderPrompt={prompts.renderPrompt}
               slot={page.group.slot}
               onMoveForToday={(task, to) => void moveForToday([task], [], to)}
@@ -429,6 +516,7 @@ export function DashboardRemindersPanel({
 
         {editor.modal}
         {prompts.modal}
+        {selectBar.bar}
       </section>
       {tasksCard}
     </>
@@ -533,6 +621,9 @@ function PanelRowList({
   onRemove,
   onOpenEditor,
   onEditText,
+  selecting,
+  selectedIds,
+  onPick,
   renderPrompt,
   slot,
   onMoveForToday,
@@ -552,6 +643,10 @@ function PanelRowList({
   onOpenEditor: (reminder: Task) => void
   /** A bubble's title or note edited in place. */
   onEditText: (reminder: Task, changes: PeekTextChanges) => Promise<unknown>
+  /** Select mode (`ReminderCardSelection.tsx`): rows are checkboxes. */
+  selecting: boolean
+  selectedIds: Set<number | string>
+  onPick: (id: number) => void
   renderPrompt: (prompt: QuotaPrompt, extra: { hiddenWhenNarrow?: boolean }) => React.ReactNode
   /** The slot on screen — where its reminders are today (a moved one included). */
   slot: TimeSlot | null
@@ -583,6 +678,11 @@ function PanelRowList({
               onRemove(task)
             }}
             onEditText={onEditText}
+            selection={
+              selecting
+                ? { selected: selectedIds.has(reminder.id), onToggle: () => onPick(reminder.id) }
+                : null
+            }
             onOpenEditor={(task) => {
               // The bubble is done the moment the editor takes over —
               // leaving it open would stack a popover behind a dialog.
@@ -632,12 +732,15 @@ function PanelRow({
   onOpenEditor,
   onDelete,
   onEditText,
+  selection,
   slot,
   onMove,
   timeSlots,
   timezone,
 }: {
   reminder: Task
+  /** Select mode: a tap or the box picks the row; no consider, no bubble. */
+  selection: { selected: boolean; onToggle: () => void } | null
   /** Past the narrow cap: in the DOM, but only on screen from `xl` up. */
   hiddenWhenNarrow?: boolean
   /** A notification tap's row: flashes once (`.animate-row-highlight`). */
@@ -662,7 +765,8 @@ function PanelRow({
   timeSlots: TimeSlot[]
   timezone: string
 }) {
-  const press = useLongPress({ onLongPress: onPeek })
+  // In select mode a hold opens nothing: the tap picks the row.
+  const press = useLongPress({ onLongPress: selection ? () => {} : onPeek })
   // Settings → Priority Display, the task rows' own rule (2026-10-26) — as
   // on the /reminders row (`ReminderRow`), in this card's sizes.
   const pri = usePriorityRowStyles(reminder.priority)
@@ -690,10 +794,14 @@ function PanelRow({
       <li
         data-reminder-id={reminder.id}
         data-reminder-highlight={highlighted ? '' : undefined}
+        // Select mode: an option of the page's list, as a prompt row is.
+        role={selection ? 'option' : undefined}
+        aria-selected={selection ? selection.selected : undefined}
         className={cn(
           'hover:bg-foreground/5 relative cursor-pointer items-start gap-2.5 rounded-xl border border-transparent px-1 py-1.5 transition-colors select-none',
           hiddenWhenNarrow ? 'hidden xl:flex' : 'flex',
           highlighted && 'animate-row-highlight',
+          selection?.selected && 'bg-foreground/[0.07] border-foreground/15',
         )}
         onAnimationEnd={(e) => {
           // The flash has played: spend it, so a re-render can't replay it.
@@ -705,7 +813,8 @@ function PanelRow({
             return
           }
           if ((e.target as HTMLElement).closest('button')) return
-          onComplete()
+          if (selection) selection.onToggle()
+          else onComplete()
         }}
         onPointerDown={press.onPointerDown}
         onPointerUp={press.onPointerUp}
@@ -715,25 +824,36 @@ function PanelRow({
       >
         {/* "Show right border": a bar on the right edge (`PriorityEdgeBar`). */}
         <PriorityEdgeBar bar={pri.bar} panel />
-        <button
-          type="button"
-          onClick={onComplete}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label={`Mark "${reminder.title}" as considered`}
-          title="Consider"
-          // No top margin: the 19px circle and the 19.2px first line share a
-          // centre on their own. The `mt-0.5` this used to carry pushed the
-          // circle ~2px below it — Trent, 2026-09-21: "the text is a little
-          // higher than the center line of the circle."
-          // "Color checkbox": the task row's circle colours (this circle draws
-          // no check mark, so only its border and hover).
-          className={cn(
-            'flex size-[19px] shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
-            pri.check
-              ? cn(pri.check.checkbox, pri.check.checkboxHover)
-              : 'border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5',
-          )}
-        />
+        {selection ? (
+          <Checkbox
+            checked={selection.selected}
+            onCheckedChange={selection.onToggle}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            aria-label={`Select "${reminder.title}"`}
+            className="size-[19px] shrink-0 cursor-pointer"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onComplete}
+            onPointerDown={(e) => e.stopPropagation()}
+            aria-label={`Mark "${reminder.title}" as considered`}
+            title="Consider"
+            // No top margin: the 19px circle and the 19.2px first line share a
+            // centre on their own. The `mt-0.5` this used to carry pushed the
+            // circle ~2px below it — Trent, 2026-09-21: "the text is a little
+            // higher than the center line of the circle."
+            // "Color checkbox": the task row's circle colours (this circle draws
+            // no check mark, so only its border and hover).
+            className={cn(
+              'flex size-[19px] shrink-0 cursor-pointer items-center justify-center rounded-full border-[1.5px] transition-colors',
+              pri.check
+                ? cn(pri.check.checkbox, pri.check.checkboxHover)
+                : 'border-foreground/25 hover:border-foreground/60 hover:bg-foreground/5',
+            )}
+          />
+        )}
         {/* NEVER TRUNCATED. Trent, 2026-09-21: "reminders can't be truncated.
             They have to show the full thing... It needs to line wrap somehow."
             Half a thought prompts nothing — the same reason the iOS widget

@@ -81,7 +81,7 @@ test.describe('phone', () => {
     try {
       await page.goto('/')
       await expect(row(page, ids[0])).toBeVisible()
-      const toggle = card(page).locator('[data-queue-select-toggle]')
+      const toggle = card(page).locator('[data-queue-select-toggle]:visible')
       await toggle.click()
       await expect(toggle).toHaveAttribute('aria-pressed', 'true')
       // Checkboxes for circles, no buttons; no bar with nothing picked.
@@ -235,7 +235,7 @@ test.describe("Trent's phone", () => {
       // without opening it (2026-11-12).
       const sweeps = card(page).getByRole('button', { name: /^(Consider all|Not today: all)/ })
       await expect(sweeps).toHaveCount(2)
-      await card(page).locator('[data-queue-select-toggle]').click()
+      await card(page).locator('[data-queue-select-toggle]:visible').click()
       // Selecting: the bar has Consider and Not today; the header drops its sweeps.
       await expect(sweeps).toHaveCount(0)
       await row(page, ids[5]).locator('[data-pick-box]').click()
@@ -302,9 +302,9 @@ test.describe('the header sweeps, without opening the card', () => {
         )
         await expect(sweeps(page)).toHaveText(['Consider all', 'Not today, all'])
         // Select mode: they step aside; back when it ends.
-        await card(page).locator('[data-queue-select-toggle]').click()
+        await card(page).locator('[data-queue-select-toggle]:visible').click()
         await expect(sweeps(page)).toHaveCount(0)
-        await card(page).locator('[data-queue-select-toggle]').click()
+        await card(page).locator('[data-queue-select-toggle]:visible').click()
         await expect(sweeps(page)).toHaveCount(2)
 
         await card(page)
