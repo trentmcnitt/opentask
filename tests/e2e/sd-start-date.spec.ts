@@ -54,7 +54,11 @@ async function pickDay(page: Page, day: string) {
     [d.year, d.month, d.day],
   )
   const cell = picker.locator(`button[data-day="${key}"]`).first()
-  if ((await cell.count()) === 0) await picker.getByRole('button', { name: /next month/i }).click()
+  // Page forward until the day's month is shown: late in a month, 39 days
+  // ahead is two months on (it clicked once, and failed from Nov 27).
+  for (let i = 0; i < 12 && (await cell.count()) === 0; i++) {
+    await picker.getByRole('button', { name: /next month/i }).click()
+  }
   return { picker, cell }
 }
 
