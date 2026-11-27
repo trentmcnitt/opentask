@@ -439,10 +439,14 @@ export function DashboardRemindersPanel({
           // under it on a narrow one, so the header stays one line at a phone;
           // with nothing waiting the line, and Select, are gone.
           sweep={
-            page.waiting > 0 ? (
+            select.selecting ? (
+              // Selecting: Select alone, to turn it off (the bar has the verbs),
+              // as on the Task queue card.
+              <QueueSelectToggle on onToggle={select.toggleMode} />
+            ) : page.waiting > 0 ? (
               <>
                 <span className="mr-1 flex items-center">
-                  <QueueSelectToggle on={select.selecting} onToggle={select.toggleMode} />
+                  <QueueSelectToggle on={false} onToggle={select.toggleMode} />
                 </span>
                 <PagerSweep
                   kind="consider"

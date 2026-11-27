@@ -215,39 +215,32 @@ export function DashboardTasksPanel({
         onNext={() => goTo(index + 1)}
         prevLabel="Previous task segment"
         nextLabel="Next task segment"
-        // No sweeps while selecting (2026-10-30): the bar has Consider and
-        // Not today for the picked rows. Otherwise whenever rows wait, the
-        // card open or not (2026-11-12; `SlotPagerHeader` gives them a second
-        // line where the header row has no room).
+        // The actions line (2026-11-27, the design session): Select first,
+        // then the sweeps — the Reminders card's line. No sweeps while
+        // selecting (2026-10-30): the bar has Consider and Not today for the
+        // picked rows, so the line is then Select alone, to turn it off.
+        // Otherwise whenever rows wait, the card open or not (2026-11-12;
+        // `SlotPagerHeader` gives the line its own row where the header row
+        // has no room). With nothing waiting there is no line, and no Select.
+        // Null with no line (PagerSweeps draws nothing for null only).
         sweep={
-          // Null, not an empty fragment, when the page offers neither (a
-          // Due page of safety-net rows): the header then has no second line.
-          page.waiting > 0 && !select.on && (offersConsider || offersDeferAll(segment.horizon)) ? (
-            <>
-              {/* "Considered all" (task queue PR 3, spec rule 9): the slot
-                  page's sweep, beside Defer all, with the queue on. The
-                  queue's panels have no Defer all (spec rule 8). */}
-              {offersConsider && (
-                <PagerSweep
-                  kind="consider"
-                  ariaLabel={`Consider all in ${page.label}`}
-                  onClick={() => void actions.considerAll(segment)}
-                />
-              )}
-              {offersDeferAll(segment.horizon) && (
-                <PagerSweep
-                  kind="defer"
-                  ariaLabel={`Not today: all ${page.waiting} in ${page.label}`}
-                  onClick={() => void actions.deferAll(segment)}
-                />
-              )}
-            </>
-          ) : null
+          !select.on &&
+          !(page.waiting > 0 && (offersConsider || offersDeferAll(segment.horizon))) ? null : (
+            <QueueActionsLine
+              selecting={select.on}
+              onToggleSelect={select.toggleMode}
+              waiting={page.waiting}
+              label={page.label}
+              offersConsider={offersConsider}
+              offersDeferAll={offersDeferAll(segment.horizon)}
+              onConsiderAll={() => void actions.considerAll(segment)}
+              onDeferAll={() => void actions.deferAll(segment)}
+            />
+          )
         }
-        beforeCount={<QueueSelectToggle on={select.on} onToggle={select.toggleMode} />}
         // Always (2026-11-12; in select mode only until then): "TASK QUEUE"
-        // stays on one line beside Select and the count at a 375 phone and
-        // the app's 119% text, as the Reminders card's header does.
+        // stays on one line at a 375 phone and the app's 119% text, as the
+        // Reminders card's header does.
         compact
         onToggleExpanded={() => setExpanded(!expanded)}
         showConsidered={showConsidered}
@@ -377,6 +370,63 @@ function TaskPageBody({
           hiddenWhenNarrow={rows.length - NARROW_CAP}
           hiddenWhenWide={rows.length - WIDE_CAP}
           onToggle={onToggleExpanded}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * The Task queue card's actions line (2026-11-27, the design session, to match
+ * the Reminders card): Select first, then the sweeps. No sweeps while
+ * selecting (2026-10-30): the bar has Consider and Not today for the picked
+ * rows, so the line is then Select alone, to turn it off. Otherwise whenever
+ * rows wait, the card open or not (2026-11-12; `SlotPagerHeader` gives the
+ * line its own row where the header row has no room). Null when the page
+ * offers neither sweep (a Due page of safety-net rows): then there is no
+ * line, and no Select.
+ */
+function QueueActionsLine({
+  selecting,
+  onToggleSelect,
+  waiting,
+  label,
+  offersConsider,
+  offersDeferAll: offersDefer,
+  onConsiderAll,
+  onDeferAll,
+}: {
+  selecting: boolean
+  onToggleSelect: () => void
+  waiting: number
+  label: string
+  offersConsider: boolean
+  offersDeferAll: boolean
+  onConsiderAll: () => void
+  onDeferAll: () => void
+}) {
+  if (selecting) return <QueueSelectToggle on onToggle={onToggleSelect} />
+  if (waiting === 0 || !(offersConsider || offersDefer)) return null
+  return (
+    <>
+      <span className="mr-1 flex items-center">
+        <QueueSelectToggle on={false} onToggle={onToggleSelect} />
+      </span>
+      {/* "Considered all" (task queue PR 3, spec rule 9): the slot page's
+          sweep, beside Defer all, with the queue on. The queue's panels have
+          no Defer all (spec rule 8). */}
+      {offersConsider && (
+        <PagerSweep
+          kind="consider"
+          ariaLabel={`Consider all in ${label}`}
+          onClick={onConsiderAll}
+        />
+      )}
+      {offersDefer && (
+        <PagerSweep
+          kind="defer"
+          ariaLabel={`Not today: all ${waiting} in ${label}`}
+          onClick={onDeferAll}
         />
       )}
     </>

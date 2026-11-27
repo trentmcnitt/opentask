@@ -86,7 +86,7 @@ test('Cmd-click turns the mode on with the row picked; again, it toggles off and
     await expect(row(page, ids[0])).toBeVisible()
     await title(page, ids[0]).click({ modifiers: ['ControlOrMeta'] })
     await expect(picked(page, ids[0])).toHaveAttribute('aria-checked', 'true')
-    await expect(card(page).locator('[data-queue-select-toggle]')).toHaveAttribute(
+    await expect(card(page).locator('[data-queue-select-toggle]:visible')).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -128,9 +128,10 @@ test('Shift-click picks the range from the last-clicked row; one bar action, the
     // One action (Consider), then out: the list's rule for a modifier's selection.
     await queueBar(page).locator('[data-bar-consider]').click()
     await expect(queueBar(page)).toHaveCount(0)
-    await expect(card(page).locator('[data-queue-select-toggle]')).toHaveAttribute(
-      'aria-pressed',
-      'false',
+    // Out of select mode. (Every row considered, the actions line — and its
+    // Select — may be gone: no Select is pressed either way.)
+    await expect(card(page).locator('[data-queue-select-toggle][aria-pressed="true"]')).toHaveCount(
+      0,
     )
     await expect.poll(async () => (await stateOf(page, last)).last_considered_at).toBeTruthy()
   } finally {
@@ -151,7 +152,7 @@ test("a modifier-click on the row's own buttons is the button's; a plain click s
       .click({ modifiers: ['ControlOrMeta'] })
     await expect.poll(async () => (await stateOf(page, ids[0])).done).toBe(true)
     await expect(queueBar(page)).toHaveCount(0)
-    await expect(card(page).locator('[data-queue-select-toggle]')).toHaveAttribute(
+    await expect(card(page).locator('[data-queue-select-toggle]:visible')).toHaveAttribute(
       'aria-pressed',
       'false',
     )

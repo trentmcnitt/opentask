@@ -79,7 +79,7 @@ test.afterAll(async ({ request }) => {
   await request.post('/api/test/task-queue', { data: { enabled: false } })
 })
 
-const toggle = (page: Page) => card(page).locator('[data-queue-select-toggle]')
+const toggle = (page: Page) => card(page).locator('[data-queue-select-toggle]:visible')
 const pickBoxes = (page: Page) => card(page).locator('[data-pick-box]')
 
 test('a hold, then Done: out of select mode — no bar, no checkboxes', async ({ page }) => {

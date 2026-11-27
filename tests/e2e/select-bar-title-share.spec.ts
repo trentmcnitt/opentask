@@ -160,7 +160,7 @@ test('the Select button’s mode keeps the pick after a title save; a pasted lin
   try {
     await page.goto('/')
     await expect(row(page, id)).toBeVisible()
-    await card(page).locator('[data-queue-select-toggle]').click()
+    await card(page).locator('[data-queue-select-toggle]:visible').click()
     await row(page, id)
       .getByText(/^TE kept/)
       .click()

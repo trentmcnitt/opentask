@@ -9,7 +9,7 @@
  * The shared test user, quota reminders on; unique titles, every item trashed
  * in `finally`.
  */
-import { test, expect, uniqueTitle } from './fixtures'
+import { test, expect, uniqueTitle, backdateCreated } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 interface Slot {
@@ -223,3 +223,37 @@ for (const [name, viewport, fontSize] of [
     }
   })
 }
+
+test('the Task queue card: Select on its actions line too, at 402 and 119% text', async ({
+  authenticatedPage: page,
+}) => {
+  await page.setViewportSize({ width: 402, height: 874 })
+  const queue = page.locator('section[data-tasks-panel]')
+  await page.request.post('/api/test/task-queue', { data: { enabled: true } })
+  const id = await create(page, { title: uniqueTitle('Card select queue row'), horizon: 'days' })
+  try {
+    // Made two days ago and settled, so it waits in Days today (fixtures' backdateCreated).
+    backdateCreated([id], { inSegments: true })
+    await page.goto('/')
+    await page.evaluate(() => (document.documentElement.style.fontSize = '19.04px'))
+    await expect(queue).toBeVisible()
+    const row = queue.locator(`[data-segment-task="${id}"]`)
+    for (let i = 0; i < 8 && !(await row.isVisible()); i++) {
+      await queue.getByRole('button', { name: 'Next task segment' }).click()
+    }
+    await expect(row).toBeVisible()
+    const pill = queue.locator('[data-queue-select-toggle]:visible')
+    await expect(pill).toBeVisible()
+    await pill.click()
+    await row.click()
+    await queue.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: '.tmp/screens/queue-select-402-119.png', animations: 'disabled' })
+    // Selecting: the line is Select alone, and it turns Select off.
+    await expect(pill).toHaveAttribute('aria-pressed', 'true')
+    await pill.click()
+    await expect(pill).toHaveAttribute('aria-pressed', 'false')
+  } finally {
+    await page.request.post('/api/tasks/bulk/delete', { data: { ids: [id] } })
+    await page.request.post('/api/test/task-queue', { data: { enabled: false } })
+  }
+})
