@@ -31,3 +31,9 @@ Ideas captured on purpose and not to be worked on yet.
 **Area:** Dashboard / Integrations (parked 2026-11-24)
 
 A button on a task row, and on a multi-select, that sends the item or items to the user's preferred AI command: an outside assistant the user already runs (for example a chat bot on Telegram), as an external check on the task. How the command is configured, and what is sent, are open.
+
+### An inbound panel
+
+**Area:** Dashboard / Integrations (parked 2026-11-27)
+
+Outside systems the user runs post "waiting for you" items into one reminders-style panel, grouped by source, so OpenTask is the single place where things waiting on the user show up. How a source posts (an API, a token per source), how an item is handled or cleared, and how sources are grouped or split by domain are open.
